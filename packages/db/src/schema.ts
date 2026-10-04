@@ -57,6 +57,15 @@ export const feedbackReason = pgEnum("feedback_reason", [
   "other",
 ]);
 export const ruleKind = pgEnum("rule_kind", ["custom", "learned"]);
+export const agentAuditEvent = pgEnum("agent_audit_event", [
+  "enroll",
+  "token_refresh",
+  "refresh_reuse",
+  "revoke",
+  "credential_issued",
+  "result_submitted",
+  "auth_failed",
+]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -255,6 +264,63 @@ export const agentEnrollments = pgTable("agent_enrollments", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
+
+/**
+ * Opaque refresh tokens an agent exchanges for 15-minute access JWTs. Every refresh marks the
+ * presented token used and issues a new one in the same family; presenting a used token again
+ * revokes the family and the agent (theft detection).
+ */
+export const agentRefreshTokens = pgTable(
+  "agent_refresh_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /** Rotation chain: one per enrollment. */
+    familyId: uuid("family_id").notNull(),
+    /** `hashToken()` of the 256-bit random token; the token itself is never stored. */
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: createdAt(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("agent_refresh_tokens_agent_id_idx").on(t.agentId),
+    index("agent_refresh_tokens_family_id_idx").on(t.familyId),
+  ],
+);
+
+/** Security events for agents (enrollment, token refresh/reuse, revocation, auth failures, ...). */
+export const agentAudit = pgTable(
+  "agent_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    event: agentAuditEvent("event").notNull(),
+    ip: text("ip"),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("agent_audit_agent_id_created_at_idx").on(t.agentId, t.createdAt),
+    index("agent_audit_created_at_idx").on(t.createdAt),
+  ],
+);
+
+/** Fixed-window counters for rate limiting (`apps/web/src/lib/rate-limit.ts`). */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.windowStart] }),
+    index("rate_limits_window_start_idx").on(t.windowStart),
+  ],
+);
 
 export const agentRepoPins = pgTable(
   "agent_repo_pins",

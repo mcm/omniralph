@@ -63,12 +63,21 @@ importers:
       '@omniralph/scm':
         specifier: workspace:*
         version: link:../../packages/scm
+      '@omniralph/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tabler/icons-react':
         specifier: ^3.40.0
         version: 3.48.0(react@19.3.0)
+      '@vercel/kms':
+        specifier: ^0.3.2
+        version: 0.3.2
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.1)
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       next:
         specifier: ^16.1.6
         version: 16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

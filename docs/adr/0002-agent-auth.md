@@ -1,6 +1,6 @@
 # ADR 0002: Agent and code-host authentication
 
-- **Status:** Accepted (GitHub App JWTs, US-004). Agent identity and token lifecycle are added by US-017.
+- **Status:** Accepted (GitHub App JWTs, US-004; agent identity and token lifecycle, US-017)
 - **Date:** 2026-10-04
 
 ## Context
@@ -53,3 +53,60 @@ exercises the production code path.
 - Each JWT signature is a network call to KMS, mitigated by JWT caching.
 - Rotating the GitHub App key means importing the new key into a new KMS issuer
   and updating `GITHUB_APP_KMS_ISSUER_ID`.
+
+## Decision: agent identity and token lifecycle
+
+Agents only make outbound calls to the control panel and must not hold
+long-lived code-host or Vercel credentials. Their identity is:
+
+- **Enrollment.** An admin creates a one-time enrollment token (256-bit
+  random, valid 1 hour, single use, stored as a SHA-256 hash).
+  `POST /api/agent/enroll` consumes it, creates the agent and returns
+  `{ agentId, refreshToken }`.
+- **Refresh tokens.** Opaque 256-bit random values; only their SHA-256 hash is
+  stored (`agent_refresh_tokens`). The agent keeps its token in a 0600 file.
+  `POST /api/agent/token` marks the presented token used and returns a new one
+  in the same **family** plus an access token (rotation on every refresh).
+- **Reuse detection.** Presenting an already-used refresh token means two
+  parties hold the chain (theft or a cloned host): the whole family **and the
+  agent** are revoked (`agents.revoked_at`), a `refresh_reuse` audit row is
+  written, and the agent has to re-enroll. The rotation runs in a transaction
+  with the token row locked, so concurrent presentations resolve to one
+  rotation and one reuse.
+- **Access and job tokens.** Short-lived (900s) **RS256** JWTs signed by
+  **Vercel KMS** (`signJWT`, issuer `KMS_AGENT_ISSUER_ID`, one issuer per Vercel
+  environment), so no signing key ever sits in an env var. Access tokens:
+  `typ: "agent"`, `sub: agentId`, `aud: "omniralph-agent"`. Job tokens (issued
+  when a job starts): `typ: "job"`, `sub: jobId`, `agentId`, `scopes` (review:
+  `["credentials:read"]`). Processes inside a job (the `git-credential` helper)
+  only see the job token. `LocalTokenSigner` (`jose`, `LOCAL_AGENT_SIGNING_KEY`
+  or an in-memory key) exists for local dev and tests and refuses to run with
+  `VERCEL_ENV=production`.
+- **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/agent-auth/verify.ts`)
+  check the signature (RS256 only), `aud`, `typ` and `exp` with `jose` against
+  the issuer's cached JWKS (`https://kms.vercel.com/<issuer>/jwks.json`), then
+  **check the database** that the agent isn't revoked (and, for job tokens,
+  that the job is `running` on that agent and the scope matches). Revocation
+  (`revokeAgent`) therefore takes effect on the next request, not when the
+  token expires.
+- **No HS\* keys.** Tokens are never signed with a shared HMAC secret: a
+  verifier holding the secret could mint tokens, and the secret would have to
+  live in an env var. Only RS256 is accepted, so `alg` confusion attacks don't
+  apply.
+- **Rate limits and audit.** Fixed windows in Postgres (`rate_limits`):
+  `/enroll` 10/min per IP; `/token` 30/min per agent and 60/min per IP; 20 failed
+  auth attempts from one IP within 10 minutes lock that IP out of the agent API
+  (429) for 10 minutes. `agent_audit` records enroll, token refresh, refresh
+  reuse, revoke, credential issuance, results and auth failures (sampled to one
+  per agent per minute).
+
+### Consequences
+
+- A leaked access or job token is usable for at most 15 minutes and is cut off
+  immediately by revoking the agent; a leaked refresh token is detected the
+  next time either holder refreshes.
+- Every authenticated agent request costs one indexed database lookup.
+- Each refresh costs one KMS signature; agents refresh about every 15 minutes.
+- An agent that crashes between the control panel rotating its token and
+  persisting the new one will present the old token and be revoked; it must
+  re-enroll. The agent writes the new token atomically before using it.

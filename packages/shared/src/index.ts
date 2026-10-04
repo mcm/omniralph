@@ -10,3 +10,4 @@ export function isCapability(value: string): value is Capability {
   return (CAPABILITIES as readonly string[]).includes(value);
 }
 export * from "./finding.js";
+export * from "./agent-protocol.js";

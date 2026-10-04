@@ -29,6 +29,13 @@
       "when": 1791151084247,
       "tag": "0003_repository_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791151715454,
+      "tag": "0004_agent_auth",
+      "breakpoints": true
     }
   ]
 }
