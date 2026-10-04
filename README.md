@@ -43,3 +43,21 @@ Every Vercel build runs `pnpm --filter @omniralph/db migrate` before `turbo run 
 Neon branch for previews, the main branch for production. It runs outside `turbo` so the remote
 cache can't skip it. Migrations apply before the new deployment serves traffic, so they must stay
 compatible with the code that's still live.
+
+## Running an agent
+
+Agents run from a checkout for now (`pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent`), as a
+dedicated Unix user with Node 22, git and a logged-in `claude`. They only make outbound HTTPS calls
+to the control panel.
+
+```bash
+# One-time: exchange an enrollment token from the Agents page for a refresh token.
+node apps/agent/dist/cli.js enroll --server https://omniralph.example --token <enrollment-token> \
+  [--name <name>] [--workspace-root <dir>]   # writes ~/.config/omniralph/agent.json (mode 0600)
+# Run under systemd or tmux; SIGTERM waits up to 60s for running jobs.
+node apps/agent/dist/cli.js start [--healthz-port 9310]
+```
+
+Concurrency, poll interval, capabilities and topics come from the control panel with every
+heartbeat. If the control panel rejects the refresh token (agent revoked, or token reuse detected)
+the agent exits non-zero and has to be enrolled again.
