@@ -59,6 +59,12 @@ export const AUTH_FAILURE_LIMIT = 20;
 export const AUTH_FAILURE_WINDOW_SECONDS = 10 * 60;
 export const AUTH_LOCKOUT_SECONDS = 10 * 60;
 
+/**
+ * How long `rate_limits` rows are kept (the prune cron). Must exceed every
+ * window and lockout above, or a sweep could reset a live counter.
+ */
+export const RATE_LIMIT_RETENTION_SECONDS = 60 * 60;
+
 const lockoutKey = (ip: string) => `auth_lockout:ip:${ip}`;
 
 /**
