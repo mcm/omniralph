@@ -1,0 +1,442 @@
+import { generateKeyPairSync } from "node:crypto";
+import {
+  agentRefreshTokens,
+  agents,
+  createAgentEnrollment,
+  createDb,
+  jobs,
+  listAgentAudit,
+  runMigrations,
+  type Database,
+} from "@omniralph/db";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { eq } from "drizzle-orm";
+import { SignJWT } from "jose";
+import { getContainerRuntimeClient } from "testcontainers";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+const state = vi.hoisted(() => ({ db: undefined as unknown as Database }));
+vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+
+const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const SIGNING_KEY = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+delete process.env.KMS_AGENT_ISSUER_ID;
+process.env.LOCAL_AGENT_SIGNING_KEY = SIGNING_KEY;
+
+const { POST: enroll } = await import("./enroll/route");
+const { POST: token } = await import("./token/route");
+const { requireAgent, requireJob } = await import("@/lib/agent-auth/verify");
+const { revokeAgent } = await import("@/lib/agent-auth/revoke");
+const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/signer");
+
+const dockerAvailable = await getContainerRuntimeClient().then(
+  () => true,
+  () => false,
+);
+
+let ipCounter = 0;
+/** A fresh client IP per test, so rate limits and lockouts don't leak between tests. */
+function newIp(): string {
+  ipCounter += 1;
+  return `203.0.113.${ipCounter}`;
+}
+
+function post(path: string, body: unknown, ip: string): Request {
+  return new Request(`http://localhost/api/agent/${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": `${ip}, 10.0.0.1` },
+    body: JSON.stringify(body),
+  });
+}
+
+function authed(accessToken: string, ip: string): Request {
+  return new Request("http://localhost/api/agent/heartbeat", {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": ip },
+  });
+}
+
+describe.skipIf(!dockerAvailable)("agent auth", () => {
+  let container: StartedPostgreSqlContainer;
+  let db: Database;
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer("postgres:17-alpine").start();
+    await runMigrations(container.getConnectionUri());
+    db = createDb(container.getConnectionUri());
+    state.db = db;
+    // Rate limits use fixed windows: freeze the clock just after a window starts so a
+    // test can't straddle a window boundary.
+    const minute = 60_000;
+    vi.useFakeTimers({
+      toFake: ["Date"],
+      now: (Math.floor(Date.now() / minute) + 1) * minute + 1000,
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    vi.useRealTimers();
+    await db?.$client.end();
+    await container?.stop();
+  });
+
+  async function enrollNew(ip = newIp()) {
+    const enrollment = await createAgentEnrollment(db, { name: null });
+    const res = await enroll(
+      post(
+        "enroll",
+        {
+          enrollmentToken: enrollment.token,
+          name: "coder-1",
+          version: "0.1.0",
+          capabilities: ["review"],
+        },
+        ip,
+      ),
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as { agentId: string; refreshToken: string };
+  }
+
+  async function refresh(refreshToken: string, ip = newIp()) {
+    return token(post("token", { refreshToken }, ip));
+  }
+
+  async function accessTokenFor() {
+    const { agentId, refreshToken } = await enrollNew();
+    const res = await refresh(refreshToken);
+    const body = (await res.json()) as { accessToken: string; refreshToken: string };
+    return { agentId, accessToken: body.accessToken, refreshToken: body.refreshToken };
+  }
+
+  async function runningJob(agentId: string, status: "running" | "completed" = "running") {
+    const [job] = await db
+      .insert(jobs)
+      .values({ capability: "review", type: "review.run", status, agentId })
+      .returning({ id: jobs.id });
+    return job!.id;
+  }
+
+  describe("POST /api/agent/enroll", () => {
+    it("consumes the enrollment token, creates the agent and audits it", async () => {
+      const enrollment = await createAgentEnrollment(db, { name: "Build box" });
+      const ip = newIp();
+      const body = {
+        enrollmentToken: enrollment.token,
+        name: "coder-1",
+        version: "0.1.0",
+        capabilities: ["review"],
+      };
+      const res = await enroll(post("enroll", body, ip));
+      expect(res.status).toBe(200);
+      const { agentId, refreshToken } = (await res.json()) as {
+        agentId: string;
+        refreshToken: string;
+      };
+      expect(refreshToken).toMatch(/^orr_[\w-]{43}$/);
+
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent).toMatchObject({
+        name: "Build box",
+        reportedVersion: "0.1.0",
+        reportedCapabilities: ["review"],
+        revokedAt: null,
+      });
+      const tokens = await db
+        .select()
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, agentId));
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]!.tokenHash).not.toContain(refreshToken);
+
+      const audit = await listAgentAudit(db, { agentId, event: "enroll" });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.ip).toBe(ip);
+
+      // Single use.
+      const again = await enroll(post("enroll", body, ip));
+      expect(again.status).toBe(401);
+    });
+
+    it("rejects expired and unknown enrollment tokens", async () => {
+      const expired = await createAgentEnrollment(db, {
+        now: new Date(Date.now() - 61 * 60 * 1000),
+      });
+      const base = { name: "x", version: "0.1.0", capabilities: [] };
+      const ip = newIp();
+      expect(
+        (await enroll(post("enroll", { ...base, enrollmentToken: expired.token }, ip))).status,
+      ).toBe(401);
+      expect(
+        (await enroll(post("enroll", { ...base, enrollmentToken: "ore_nope" }, ip))).status,
+      ).toBe(401);
+      expect((await enroll(post("enroll", { name: "x" }, ip))).status).toBe(400);
+    });
+  });
+
+  describe("POST /api/agent/token", () => {
+    it("rotates the refresh token and returns a 15-minute access token", async () => {
+      const { agentId, refreshToken } = await enrollNew();
+      const ip = newIp();
+      const res = await refresh(refreshToken, ip);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        accessToken: string;
+        expiresIn: number;
+        refreshToken: string;
+      };
+      expect(body.expiresIn).toBe(900);
+      expect(body.refreshToken).not.toBe(refreshToken);
+
+      const principal = await requireAgent(authed(body.accessToken, ip));
+      expect(principal).toEqual({ agentId });
+
+      // The new token works and belongs to the same family.
+      const next = await refresh(body.refreshToken, ip);
+      expect(next.status).toBe(200);
+      const rows = await db
+        .select()
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, agentId));
+      expect(rows).toHaveLength(3);
+      expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
+      expect(rows.filter((r) => r.usedAt === null)).toHaveLength(1);
+      expect(await listAgentAudit(db, { agentId, event: "token_refresh" })).toHaveLength(2);
+    });
+
+    it("revokes the family and the agent when a used refresh token is presented again", async () => {
+      const { agentId, refreshToken } = await enrollNew();
+      const first = (await (await refresh(refreshToken)).json()) as {
+        accessToken: string;
+        refreshToken: string;
+      };
+
+      const reuse = await refresh(refreshToken);
+      expect(reuse.status).toBe(401);
+      expect(await reuse.json()).toEqual({ error: "refresh_token_reused" });
+
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).not.toBeNull();
+      const rows = await db
+        .select()
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, agentId));
+      expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
+      expect(await listAgentAudit(db, { agentId, event: "refresh_reuse" })).toHaveLength(1);
+
+      // The legitimate holder's newer token and access token are dead too: re-enroll.
+      expect((await refresh(first.refreshToken)).status).toBe(401);
+      expect(await requireAgent(authed(first.accessToken, newIp()))).toBeInstanceOf(Response);
+    });
+
+    it("treats concurrent presentations of one token as reuse", async () => {
+      const { agentId, refreshToken } = await enrollNew();
+      const statuses = await Promise.all([refresh(refreshToken), refresh(refreshToken)]).then((r) =>
+        r.map((res) => res.status).sort(),
+      );
+      expect(statuses).toEqual([200, 401]);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).not.toBeNull();
+    });
+
+    it("rejects unknown refresh tokens", async () => {
+      expect((await refresh("orr_unknown")).status).toBe(401);
+    });
+  });
+
+  describe("requireAgent", () => {
+    it("rejects missing, malformed and foreign-key tokens", async () => {
+      const ip = newIp();
+      const noHeader = new Request("http://localhost/api/agent/heartbeat", { method: "POST" });
+      expect(((await requireAgent(noHeader)) as Response).status).toBe(401);
+      expect(((await requireAgent(authed("not.a.jwt", ip))) as Response).status).toBe(401);
+
+      const { agentId } = await enrollNew();
+      const other = new LocalTokenSigner({ env: {} });
+      const forged = await other.signAccessToken(agentId);
+      expect(((await requireAgent(authed(forged, ip))) as Response).status).toBe(401);
+    });
+
+    it("rejects expired tokens", async () => {
+      const { agentId } = await enrollNew();
+      const past = new LocalTokenSigner({
+        privateKey: SIGNING_KEY,
+        env: {},
+        now: () => Date.now() - 901_000,
+      });
+      const res = await requireAgent(authed(await past.signAccessToken(agentId), newIp()));
+      expect(res).toBeInstanceOf(Response);
+      expect((res as Response).status).toBe(401);
+    });
+
+    it("rejects the wrong typ or aud", async () => {
+      const { agentId } = await enrollNew();
+      const jobId = await runningJob(agentId);
+      const ip = newIp();
+      const jobToken = await getTokenSigner().signJobToken({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+      expect(((await requireAgent(authed(jobToken, ip))) as Response).status).toBe(401);
+
+      const sign = (claims: Record<string, unknown>) =>
+        new SignJWT(claims)
+          .setProtectedHeader({ alg: "RS256" })
+          .setIssuedAt()
+          .setExpirationTime("15m")
+          .sign(privateKey);
+      const wrongAud = await sign({ typ: "agent", sub: agentId, aud: "someone-else" });
+      expect(((await requireAgent(authed(wrongAud, ip))) as Response).status).toBe(401);
+      const noTyp = await sign({ sub: agentId, aud: "omniralph-agent" });
+      expect(((await requireAgent(authed(noTyp, ip))) as Response).status).toBe(401);
+      // Sanity check: the same construction with the right claims passes.
+      const ok = await sign({ typ: "agent", sub: agentId, aud: "omniralph-agent" });
+      expect(await requireAgent(authed(ok, ip))).toEqual({ agentId });
+
+      // An agent token isn't a job token either.
+      const access = await getTokenSigner().signAccessToken(agentId);
+      expect(((await requireJob(authed(access, ip), "credentials:read")) as Response).status).toBe(
+        401,
+      );
+    });
+
+    it("rejects a revoked agent's unexpired access token immediately", async () => {
+      const { agentId, accessToken, refreshToken } = await accessTokenFor();
+      const ip = newIp();
+      expect(await requireAgent(authed(accessToken, ip))).toEqual({ agentId });
+
+      expect(await revokeAgent(agentId, { revokedBy: null })).toBe(true);
+
+      const res = await requireAgent(authed(accessToken, ip));
+      expect((res as Response).status).toBe(401);
+      expect((await refresh(refreshToken)).status).toBe(401);
+      const rows = await db
+        .select()
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, agentId));
+      expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
+      expect(await listAgentAudit(db, { agentId, event: "revoke" })).toHaveLength(1);
+    });
+
+    it("samples auth_failed audit rows to one per agent per minute", async () => {
+      const { agentId, accessToken } = await accessTokenFor();
+      await revokeAgent(agentId);
+      for (let i = 0; i < 3; i++) await requireAgent(authed(accessToken, newIp()));
+      const failures = await listAgentAudit(db, { agentId, event: "auth_failed" });
+      expect(failures).toHaveLength(1);
+      expect(failures[0]!.detail).toMatchObject({ reason: "agent_revoked" });
+    });
+  });
+
+  describe("requireJob", () => {
+    it("accepts a running job's token with the right scope", async () => {
+      const { agentId } = await enrollNew();
+      const jobId = await runningJob(agentId);
+      const jobToken = await getTokenSigner().signJobToken({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+      expect(await requireJob(authed(jobToken, newIp()), "credentials:read")).toEqual({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+    });
+
+    it("rejects the token once the job is no longer running", async () => {
+      const { agentId } = await enrollNew();
+      const jobId = await runningJob(agentId);
+      const jobToken = await getTokenSigner().signJobToken({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+      await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, jobId));
+      const res = await requireJob(authed(jobToken, newIp()), "credentials:read");
+      expect((res as Response).status).toBe(401);
+    });
+
+    it("rejects the wrong scope, another agent's job and a revoked agent", async () => {
+      const ip = newIp();
+      const { agentId } = await enrollNew();
+      const jobId = await runningJob(agentId);
+      const noScope = await getTokenSigner().signJobToken({ jobId, agentId, scopes: [] });
+      expect(((await requireJob(authed(noScope, ip), "credentials:read")) as Response).status).toBe(
+        401,
+      );
+
+      const { agentId: otherAgent } = await enrollNew();
+      const stolen = await getTokenSigner().signJobToken({
+        jobId,
+        agentId: otherAgent,
+        scopes: ["credentials:read"],
+      });
+      expect(((await requireJob(authed(stolen, ip), "credentials:read")) as Response).status).toBe(
+        401,
+      );
+
+      const valid = await getTokenSigner().signJobToken({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+      await revokeAgent(agentId);
+      expect(((await requireJob(authed(valid, ip), "credentials:read")) as Response).status).toBe(
+        401,
+      );
+    });
+  });
+
+  describe("rate limits", () => {
+    it("limits /enroll to 10 per minute per IP", async () => {
+      const ip = newIp();
+      const statuses: number[] = [];
+      for (let i = 0; i < 10; i++) {
+        statuses.push((await enroll(post("enroll", {}, ip))).status);
+      }
+      expect(statuses.every((s) => s === 400)).toBe(true);
+      const res = await enroll(post("enroll", {}, ip));
+      expect(res.status).toBe(429);
+      expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+      // Another IP isn't affected.
+      expect((await enroll(post("enroll", {}, newIp()))).status).toBe(400);
+    });
+
+    it("limits /token to 60 per minute per IP", async () => {
+      const ip = newIp();
+      const statuses = [];
+      for (let i = 0; i < 61; i++) statuses.push((await token(post("token", {}, ip))).status);
+      expect(statuses.slice(0, 60).every((s) => s === 400)).toBe(true);
+      expect(statuses[60]).toBe(429);
+    });
+
+    it("limits /token to 30 per minute per agent", async () => {
+      let { refreshToken } = await enrollNew();
+      for (let i = 0; i < 30; i++) {
+        const res = await refresh(refreshToken);
+        expect(res.status).toBe(200);
+        ({ refreshToken } = (await res.json()) as { refreshToken: string });
+      }
+      const limited = await refresh(refreshToken);
+      expect(limited.status).toBe(429);
+    });
+
+    it("locks an IP out for 10 minutes after 20 failed auth attempts", async () => {
+      const { agentId, accessToken } = await accessTokenFor();
+      const ip = newIp();
+      for (let i = 0; i < 20; i++) {
+        expect(((await requireAgent(authed("garbage", ip))) as Response).status).toBe(401);
+      }
+      const locked = await requireAgent(authed(accessToken, ip));
+      expect((locked as Response).status).toBe(429);
+      expect(Number((locked as Response).headers.get("retry-after"))).toBeGreaterThan(500);
+      expect((await refresh("orr_whatever", ip)).status).toBe(429);
+      expect((await enroll(post("enroll", {}, ip))).status).toBe(429);
+      // Other IPs are fine.
+      expect(await requireAgent(authed(accessToken, newIp()))).toEqual({ agentId });
+    });
+  });
+});
