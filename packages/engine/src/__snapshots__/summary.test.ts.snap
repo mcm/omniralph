@@ -1,0 +1,29 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderSummary > renders profile, severity counts, tokens, skipped files and the link 1`] = `
+"## Omniralph review
+
+- **Profile:** Standard
+- **Findings:** 4
+- **Tokens:** 43,345 / 200,000
+
+| Severity | Count |
+| --- | ---: |
+| critical | 0 |
+| high | 1 |
+| medium | 2 |
+| low | 0 |
+| info | 1 |
+
+<details>
+<summary>Skipped files (3)</summary>
+
+- \`pnpm-lock.yaml\`: excluded by path filters
+- \`logo.png\`: binary file
+- \`\`src/\`odd\`.ts\`\`: over the token budget
+
+</details>
+
+[View the full review](https://omniralph.example.com/reviews/r-1)
+"
+`;

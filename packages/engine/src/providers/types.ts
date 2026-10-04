@@ -22,7 +22,8 @@ export interface ReviewRequest {
   signal?: AbortSignal;
 }
 
-export interface ReviewResult {
+/** One task's result from a provider; `runReview` aggregates these into a `ReviewResult`. */
+export interface TaskReviewResult {
   /** Valid findings inside the task's files and diff lines (partial unless `completed`). */
   findings: Finding[];
   usage: TokenUsage;
@@ -36,7 +37,7 @@ export interface ReviewResult {
 }
 
 export interface ReviewProvider {
-  review(request: ReviewRequest): Promise<ReviewResult>;
+  review(request: ReviewRequest): Promise<TaskReviewResult>;
 }
 
 /** pino-compatible subset. */

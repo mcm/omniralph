@@ -5,6 +5,21 @@ export const FINDING_SEVERITIES = ["critical", "high", "medium", "low", "info"] 
 export const FindingSeverity = z.enum(FINDING_SEVERITIES);
 export type FindingSeverity = z.infer<typeof FindingSeverity>;
 
+/** Matches the review rubric's sections (`packages/engine/src/rubric/`). */
+export const FINDING_CATEGORIES = [
+  "security",
+  "correctness",
+  "concurrency",
+  "resources",
+  "error-handling",
+  "performance",
+  "breaking-change",
+  "tests",
+] as const;
+
+export const FindingCategory = z.enum(FINDING_CATEGORIES);
+export type FindingCategory = z.infer<typeof FindingCategory>;
+
 /**
  * One review finding as produced by the model and stored in `findings`.
  * Lines are 1-based head-side line numbers (base side for deleted files).
@@ -15,7 +30,7 @@ export const Finding = z
     startLine: z.int().min(1),
     endLine: z.int().min(1),
     severity: FindingSeverity,
-    category: z.string().min(1).max(100),
+    category: FindingCategory,
     title: z.string().min(1).max(200),
     body: z.string().min(1).max(10_000),
     suggestion: z.string().max(10_000).optional(),
