@@ -1,0 +1,11 @@
+/**
+ * Capabilities an agent host can run. v1 ships only code review; cyralph
+ * ("ralph") lands in a follow-up epic.
+ */
+export const CAPABILITIES = ["review"] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];
+
+export function isCapability(value: string): value is Capability {
+  return (CAPABILITIES as readonly string[]).includes(value);
+}

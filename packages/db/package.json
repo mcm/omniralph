@@ -1,0 +1,23 @@
+{
+  "name": "@omniralph/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drizzle ORM schema, migrations and typed queries",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@omniralph/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  }
+}
