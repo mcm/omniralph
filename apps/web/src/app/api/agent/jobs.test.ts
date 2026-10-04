@@ -272,14 +272,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         { agentId: idle.agentId, repositoryId },
         { agentId: revoked.agentId, repositoryId },
       ]);
-      await db
-        .insert(jobs)
-        .values({
-          capability: "review",
-          type: "review.run",
-          status: "running",
-          agentId: busy.agentId,
-        });
+      await db.insert(jobs).values({
+        capability: "review",
+        type: "review.run",
+        status: "running",
+        agentId: busy.agentId,
+      });
 
       await newJob({ repositoryId });
       expect(state.sends.at(-1)!.topic).toBe(`review-jobs-agent-${idle.agentId}`);
@@ -553,7 +551,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         pollIntervalSeconds: 7,
         enabledCapabilities: ["review"],
         pinnedRepoIds: [repositoryId],
-        topics: [`review-jobs-agent-${agentId}`, "review-jobs"],
+        topics: [`review-jobs-agent-${agentId}`, "review-jobs", `system-jobs-agent-${agentId}`],
         queueRegion: "iad1",
       });
       expect(body.cancelJobIds.sort()).toEqual([canceled, takenOver].sort());
@@ -650,6 +648,28 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       ];
       for (const res of await Promise.all(denied)) expect(res.status).toBe(403);
       expect(upstreamCalls).toHaveLength(0);
+    });
+
+    it("lets every agent read its own system topic (even with no capability enabled), not others'", async () => {
+      const agent = await newAgent({ enabledCapabilities: [] });
+      const other = await newAgent();
+      const own = await queueRoute.POST(
+        proxyRequest(
+          `${base}/system-jobs-agent-${agent.agentId}/consumer/agents`,
+          agent.accessToken,
+        ),
+      );
+      expect(own.status).toBe(204);
+      const foreign = await queueRoute.POST(
+        proxyRequest(
+          `${base}/system-jobs-agent-${other.agentId}/consumer/agents`,
+          agent.accessToken,
+        ),
+      );
+      expect(foreign.status).toBe(403);
+      expect(upstreamCalls.map((c) => c.url)).toEqual([
+        `https://iad1.vercel-queue.com/api/v3/topic/system-jobs-agent-${agent.agentId}/consumer/agents`,
+      ]);
     });
 
     it("requires an agent access token", async () => {

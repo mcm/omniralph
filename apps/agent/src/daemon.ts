@@ -2,6 +2,7 @@ import {
   HEARTBEAT_INTERVAL_SECONDS,
   JobMessage,
   QUEUE_CONSUMER_GROUP,
+  SYSTEM_CAPABILITY,
   capabilityTopic,
   type HeartbeatResponse,
   type JobFailure,
@@ -23,6 +24,8 @@ import type {
   QueueReceiverFactory,
   RetryDirective,
 } from "./queue.js";
+import { defaultCredentialHelper } from "./workspace/git.js";
+import { RepoCache } from "./workspace/repoCache.js";
 
 /** Lease taken per receive; the SDK re-extends it every min(60s, lease/5) while the job runs. */
 export const VISIBILITY_TIMEOUT_SECONDS = 300;
@@ -59,6 +62,8 @@ class Redeliver extends Error {
 export interface DaemonOptions {
   server: string;
   workspaceRoot: string;
+  /** The repo cache under `workspaceRoot` (default: one with this CLI's credential helper). */
+  repos?: RepoCache;
   version: string;
   api: ControlPanelApi;
   /** Asked to refresh when an authenticated call gets 401. */
@@ -107,8 +112,10 @@ export class AgentDaemon {
   private readonly heartbeatIntervalMs: number;
   private readonly shutdownGraceMs: number;
   private readonly reportRetryDelayMs: number;
+  private repoCache: RepoCache | undefined;
 
   constructor(private readonly options: DaemonOptions) {
+    this.repoCache = options.repos;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_SECONDS * 1000;
     this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
     this.reportRetryDelayMs = options.reportRetryDelayMs ?? 2_000;
@@ -253,14 +260,15 @@ export class AgentDaemon {
 
   /**
    * Topics to poll: those from the heartbeat whose capability this host has
-   * registered and the control panel has enabled. Pinned (per-agent) topics first.
+   * registered and the control panel has enabled (the built-in `system`
+   * capability is always enabled). Pinned (per-agent) topics first.
    */
   pollableTopics(): string[] {
     const config = this.config;
     if (!config) return [];
     const capabilities = this.options.registry
       .names()
-      .filter((name) => config.enabledCapabilities.includes(name));
+      .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
     const topics = config.topics.filter((topic) =>
       capabilities.some((name) => {
         const shared = capabilityTopic(name);
@@ -430,8 +438,18 @@ export class AgentDaemon {
       spawn: (command, args, options) => spawnJobProcess(identity(), command, args, options),
       server,
       workspaceRoot,
+      repos: this.repos(),
       logger,
     };
+  }
+
+  private repos(): RepoCache {
+    this.repoCache ??= new RepoCache({
+      workspaceRoot: this.options.workspaceRoot,
+      credentialHelper: defaultCredentialHelper(),
+      logger: this.options.logger,
+    });
+    return this.repoCache;
   }
 
   /**

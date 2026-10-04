@@ -3,6 +3,7 @@ import {
   AGENT_TOKEN_TTL_SECONDS,
   CAPABILITY_JOB_SCOPES,
   isCapability,
+  SYSTEM_CAPABILITY,
   type JobToken,
   type JobTokenScope,
 } from "@omniralph/shared";
@@ -31,7 +32,13 @@ export function notCurrentAgent(): Response {
 }
 
 export function jobScopes(capability: string): JobTokenScope[] {
+  if (capability === SYSTEM_CAPABILITY) return CAPABILITY_JOB_SCOPES.system;
   return isCapability(capability) ? CAPABILITY_JOB_SCOPES[capability] : [];
+}
+
+/** Capabilities an agent may run: its enabled ones plus the built-in `system` capability. */
+export function runnableCapabilities(enabledCapabilities: readonly string[]): string[] {
+  return [...enabledCapabilities, SYSTEM_CAPABILITY];
 }
 
 /** Signs a job token carrying the capability's scopes. */

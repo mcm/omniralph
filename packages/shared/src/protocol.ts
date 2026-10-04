@@ -32,9 +32,21 @@ export function agentTopic(capability: string, agentId: string): string {
   return `${capability}-jobs-agent-${agentId}`;
 }
 
-/** The job token scopes each capability's jobs get. Review is read-only. */
-export const CAPABILITY_JOB_SCOPES: Record<Capability, JobTokenScope[]> = {
+/**
+ * The built-in capability every agent runs, regardless of central config:
+ * housekeeping jobs such as `repo.sync`. Its jobs only reach an agent through
+ * its own topic (`system-jobs-agent-<agentId>`).
+ */
+export const SYSTEM_CAPABILITY = "system";
+export type SystemCapability = typeof SYSTEM_CAPABILITY;
+
+/** `system` job that clones or fetches a repo into the agent's cache without running anything. */
+export const REPO_SYNC_JOB_TYPE = "repo.sync";
+
+/** The job token scopes each capability's jobs get. Review and repo sync are read-only. */
+export const CAPABILITY_JOB_SCOPES: Record<Capability | SystemCapability, JobTokenScope[]> = {
   review: ["credentials:read"],
+  system: ["credentials:read"],
 };
 
 /** Payload of every queue message; the job itself lives in Postgres. */
@@ -152,3 +164,39 @@ export const JobOutcomeResponse = z.discriminatedUnion("status", [
   z.object({ status: z.literal("retry"), retryAfterSeconds: z.int().min(0) }),
 ]);
 export type JobOutcomeResponse = z.infer<typeof JobOutcomeResponse>;
+
+/** Where a job's repository lives; part of the payload of every job that needs a checkout. */
+export const JobRepository = z.object({
+  provider: z.enum(["github", "gitlab"]),
+  /** `owner/repo` or `group/subgroup/project`. */
+  fullPath: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/)
+    .refine((p) => p.split("/").every((segment) => segment !== "." && segment !== ".."), {
+      message: "invalid path segment",
+    }),
+  /** HTTPS clone URL without credentials (the agent's `git-credential` helper supplies them). */
+  cloneUrl: z.url(),
+});
+export type JobRepository = z.infer<typeof JobRepository>;
+
+/** Payload of a `repo.sync` job. */
+export const RepoSyncPayload = z.object({
+  repository: JobRepository,
+});
+export type RepoSyncPayload = z.infer<typeof RepoSyncPayload>;
+
+/**
+ * `POST /api/agent/credentials` response (authenticated with a job token): a
+ * short-lived, read-only credential for the job's repository.
+ */
+export const CloneCredentialResponse = z.object({
+  cloneUrl: z.url(),
+  username: z.string().min(1),
+  password: z.string().min(1),
+  /** ISO 8601 */
+  expiresAt: z.iso.datetime(),
+});
+export type CloneCredentialResponse = z.infer<typeof CloneCredentialResponse>;

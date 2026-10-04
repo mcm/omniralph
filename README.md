@@ -61,3 +61,11 @@ node apps/agent/dist/cli.js start [--healthz-port 9310]
 Concurrency, poll interval, capabilities and topics come from the control panel with every
 heartbeat. If the control panel rejects the refresh token (agent revoked, or token reuse detected)
 the agent exits non-zero and has to be enrolled again.
+
+Repositories are cached under `workspaceRoot` (blobless bare clones in
+`<workspaceRoot>/<provider>/<repo path>`, one git worktree per job in `.worktrees/<jobId>`, removed
+afterwards and pruned on startup). Git never uses the host's credentials: job git commands reset
+`credential.helper` and use `omniralph-agent git-credential`, which fetches a short-lived read-only
+token for the job's repository from the control panel with the job's token. Pinning a repository to
+an agent makes it pre-clone the repository (`repo.sync`). git ≥ 2.44 is recommended (older versions
+lazily fetch commits while checking whether they're cached).

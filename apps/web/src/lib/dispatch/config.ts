@@ -1,4 +1,4 @@
-import { agentTopic, capabilityTopic } from "@omniralph/shared";
+import { agentTopic, capabilityTopic, SYSTEM_CAPABILITY } from "@omniralph/shared";
 
 type Env = Record<string, string | undefined>;
 
@@ -25,7 +25,8 @@ export function publishRegion(env: Env = process.env): string {
 
 /**
  * Topics an agent may read: its own pinned topic and the shared topic for
- * every capability enabled for it.
+ * every capability enabled for it, plus its own topic of the built-in
+ * `system` capability (`repo.sync` pre-clones), which is always enabled.
  */
 export function agentTopics(agent: {
   id: string;
@@ -34,5 +35,6 @@ export function agentTopics(agent: {
   return [
     ...agent.enabledCapabilities.map((c) => agentTopic(c, agent.id)),
     ...agent.enabledCapabilities.map((c) => capabilityTopic(c)),
+    agentTopic(SYSTEM_CAPABILITY, agent.id),
   ];
 }

@@ -252,3 +252,68 @@ export async function listRepositoryOverview(db: Database): Promise<RepositoryOv
     lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
   }));
 }
+
+export type PinRepositoryResult =
+  "pinned" | "already_pinned" | "unknown_agent" | "unknown_repository";
+
+/**
+ * Pins a connected repository to an agent: its jobs then go to that agent's
+ * topic (see `pinnedAgentFor`). Revoked agents and disconnected repositories
+ * can't be pinned.
+ */
+export async function pinRepositoryToAgent(
+  db: Database,
+  input: { agentId: string; repositoryId: string },
+): Promise<PinRepositoryResult> {
+  return db.transaction(async (tx) => {
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, input.agentId), isNull(agents.revokedAt)))
+      .limit(1);
+    if (!agent) return "unknown_agent";
+    const [repo] = await tx
+      .select({ id: repositories.id })
+      .from(repositories)
+      .where(and(eq(repositories.id, input.repositoryId), isNull(repositories.disconnectedAt)))
+      .limit(1);
+    if (!repo) return "unknown_repository";
+    const inserted = await tx
+      .insert(agentRepoPins)
+      .values({ agentId: input.agentId, repositoryId: input.repositoryId })
+      .onConflictDoNothing()
+      .returning({ id: agentRepoPins.id });
+    return inserted.length > 0 ? "pinned" : "already_pinned";
+  });
+}
+
+/** Removes a pin. Returns false if there was none. */
+export async function unpinRepositoryFromAgent(
+  db: Database,
+  input: { agentId: string; repositoryId: string },
+): Promise<boolean> {
+  const rows = await db
+    .delete(agentRepoPins)
+    .where(
+      and(
+        eq(agentRepoPins.agentId, input.agentId),
+        eq(agentRepoPins.repositoryId, input.repositoryId),
+      ),
+    )
+    .returning({ id: agentRepoPins.id });
+  return rows.length > 0;
+}
+
+/** A repository together with its connection (null if either is unknown). */
+export async function getRepositoryWithConnection(
+  db: Database,
+  id: string,
+): Promise<{ repository: Repository; connection: ScmConnection } | null> {
+  const [row] = await db
+    .select({ repository: repositories, connection: scmConnections })
+    .from(repositories)
+    .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
+    .where(eq(repositories.id, id))
+    .limit(1);
+  return row ?? null;
+}

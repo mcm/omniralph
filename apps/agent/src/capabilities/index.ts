@@ -1,7 +1,9 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { JobPayload } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
+import type { RepoCache } from "../workspace/repoCache.js";
 import { reviewCapability } from "./review.js";
+import { systemCapability } from "./system.js";
 
 /**
  * What a capability's sessions may do. The review capability is read-only:
@@ -32,6 +34,11 @@ export interface JobContext {
   spawn(command: string, args: readonly string[], options?: SpawnOptions): ChildProcess;
   server: string;
   workspaceRoot: string;
+  /**
+   * The repo cache under `workspaceRoot`. Pass `env()` to its calls, so git
+   * runs the `git-credential` helper with this job's token.
+   */
+  repos: RepoCache;
   logger: Logger;
 }
 
@@ -88,7 +95,7 @@ export class CapabilityRegistry {
   }
 }
 
-/** The capabilities this build of the agent ships. */
+/** The capabilities this build of the agent ships; `system` is built in and always enabled. */
 export function defaultCapabilities(): Capability[] {
-  return [reviewCapability];
+  return [systemCapability, reviewCapability];
 }
