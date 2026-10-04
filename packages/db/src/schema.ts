@@ -1,0 +1,399 @@
+/**
+ * Drizzle schema for the Omniralph control panel. Postgres is the single source
+ * of truth for repos, reviews, agents and jobs.
+ *
+ * After changing this file run `pnpm --filter db generate` to emit a migration
+ * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
+ */
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date());
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
+export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention"]);
+export const reviewStatus = pgEnum("review_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "budget_exhausted",
+  "skipped",
+]);
+export const findingSeverity = pgEnum("finding_severity", [
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+]);
+export const findingStatus = pgEnum("finding_status", ["open", "dismissed", "resolved"]);
+export const feedbackSource = pgEnum("feedback_source", ["ui", "scm"]);
+export const feedbackReason = pgEnum("feedback_reason", [
+  "false_positive",
+  "wont_fix",
+  "not_relevant",
+  "other",
+]);
+export const ruleKind = pgEnum("rule_kind", ["custom", "learned"]);
+export const jobStatus = pgEnum("job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+  "expired",
+]);
+
+// ── Auth.js (@auth/drizzle-adapter compatible) ───────────────────────────────
+
+export const users = pgTable("users", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").unique(),
+  emailVerified: timestamp("email_verified", { mode: "date", withTimezone: true }),
+  image: text("image"),
+  createdAt: createdAt(),
+});
+
+export const accounts = pgTable(
+  "accounts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.provider, t.providerAccountId] }),
+    index("accounts_user_id_idx").on(t.userId),
+  ],
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    sessionToken: text("session_token").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expires: timestamp("expires", { mode: "date", withTimezone: true }).notNull(),
+  },
+  (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
+
+// ── Code hosts and repositories ──────────────────────────────────────────────
+
+export const scmConnections = pgTable("scm_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: scmProvider("provider").notNull(),
+  name: text("name").notNull(),
+  /** API base URL, e.g. https://api.github.com or https://gitlab.example.com. */
+  baseUrl: text("base_url").notNull(),
+  /** Provider-side identifier, e.g. the GitHub App installation ID or GitLab group path. */
+  externalId: text("external_id"),
+  /** JSON credentials encrypted with `encrypt()` (AES-256-GCM). */
+  encryptedCredentials: text("encrypted_credentials").notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const reviewProfiles = pgTable("review_profiles", {
+  /** Stable slug, e.g. `quick`, `standard`, `deep`. */
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  model: text("model").notNull(),
+  maxTokensPerReview: integer("max_tokens_per_review").notNull(),
+  maxFiles: integer("max_files").notNull(),
+  allowRepoExploration: boolean("allow_repo_exploration").notNull(),
+  builtIn: boolean("built_in").notNull().default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export interface RepositoryTriggers {
+  onOpen: boolean;
+  onPush: boolean;
+  drafts: boolean;
+}
+
+export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
+  onOpen: true,
+  onPush: true,
+  drafts: false,
+};
+
+export const DEFAULT_PROFILE_ID = "standard";
+
+export const repositories = pgTable(
+  "repositories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: scmProvider("provider").notNull(),
+    /** Provider repository/project ID. */
+    externalId: text("external_id").notNull(),
+    /** `owner/repo` or the GitLab `group/subgroup/project` path. */
+    fullPath: text("full_path").notNull(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => scmConnections.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(true),
+    profileId: text("profile_id")
+      .notNull()
+      .default(DEFAULT_PROFILE_ID)
+      .references(() => reviewProfiles.id),
+    triggers: jsonb("triggers")
+      .$type<RepositoryTriggers>()
+      .notNull()
+      .default(DEFAULT_REPOSITORY_TRIGGERS),
+    pathExcludes: text("path_excludes")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    customInstructions: text("custom_instructions"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("repositories_connection_external_id_uq").on(t.connectionId, t.externalId)],
+);
+
+// ── Agents ───────────────────────────────────────────────────────────────────
+
+export const agents = pgTable("agents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  maxConcurrency: integer("max_concurrency").notNull().default(1),
+  pollIntervalSeconds: integer("poll_interval_seconds").notNull().default(5),
+  enabledCapabilities: text("enabled_capabilities")
+    .array()
+    .notNull()
+    .default(sql`'{review}'::text[]`),
+  reportedVersion: text("reported_version"),
+  reportedCapabilities: text("reported_capabilities").array(),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const agentEnrollments = pgTable("agent_enrollments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** `hashToken()` of the one-time enrollment token; the token itself is never stored. */
+  tokenHash: text("token_hash").notNull().unique(),
+  /** Display name for the agent this enrollment creates. */
+  name: text("name"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  /** The agent created when the token was redeemed. */
+  agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+
+export const agentRepoPins = pgTable(
+  "agent_repo_pins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("agent_repo_pins_agent_repo_uq").on(t.agentId, t.repositoryId),
+    index("agent_repo_pins_repository_id_idx").on(t.repositoryId),
+  ],
+);
+
+export const scmCredentialCache = pgTable(
+  "scm_credential_cache",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** Credential scope, e.g. `read_repository`. */
+    scope: text("scope").notNull(),
+    /** Provider-side token ID (e.g. GitLab project access token ID) for rotation/revocation. */
+    externalId: text("external_id"),
+    encryptedToken: text("encrypted_token").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("scm_credential_cache_repo_scope_uq").on(t.repositoryId, t.scope)],
+);
+
+// ── Reviews ──────────────────────────────────────────────────────────────────
+
+export interface SkippedFile {
+  path: string;
+  reason: string;
+}
+
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number").notNull(),
+    headSha: text("head_sha").notNull(),
+    baseSha: text("base_sha").notNull(),
+    trigger: reviewTrigger("trigger").notNull(),
+    status: reviewStatus("status").notNull().default("queued"),
+    profileId: text("profile_id").references(() => reviewProfiles.id),
+    tokensIn: integer("tokens_in").notNull().default(0),
+    tokensOut: integer("tokens_out").notNull().default(0),
+    /** Token budget (the profile's `maxTokensPerReview` at review time). */
+    budget: integer("budget").notNull(),
+    durationMs: integer("duration_ms"),
+    model: text("model"),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    skippedFiles: jsonb("skipped_files").$type<SkippedFile[]>().notNull().default([]),
+    /** SCM ID of the summary comment, so it is posted at most once per review. */
+    summaryCommentId: text("summary_comment_id"),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("reviews_repository_pr_idx").on(t.repositoryId, t.prNumber)],
+);
+
+export const findings = pgTable(
+  "findings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reviewId: uuid("review_id")
+      .notNull()
+      .references(() => reviews.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    startLine: integer("start_line").notNull(),
+    endLine: integer("end_line").notNull(),
+    severity: findingSeverity("severity").notNull(),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    suggestion: text("suggestion"),
+    /** Model confidence, 0–1. */
+    confidence: real("confidence").notNull(),
+    scmCommentId: text("scm_comment_id"),
+    status: findingStatus("status").notNull().default("open"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("findings_review_id_idx").on(t.reviewId)],
+);
+
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    findingId: uuid("finding_id")
+      .notNull()
+      .references(() => findings.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    source: feedbackSource("source").notNull(),
+    reason: feedbackReason("reason").notNull(),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("feedback_finding_id_idx").on(t.findingId)],
+);
+
+export const rules = pgTable(
+  "rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    kind: ruleKind("kind").notNull(),
+    text: text("text").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    sourceFindingId: uuid("source_finding_id").references(() => findings.id, {
+      onDelete: "set null",
+    }),
+    /** Null for rules learned automatically from feedback. */
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("rules_repository_id_idx").on(t.repositoryId)],
+);
+
+// ── Jobs ─────────────────────────────────────────────────────────────────────
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Capability that runs the job, e.g. `review`. */
+    capability: text("capability").notNull(),
+    /** Job type within the capability, e.g. `review.run` or `repo.sync`. */
+    type: text("type").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    status: jobStatus("status").notNull().default("queued"),
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** Vercel Queues topic the job was published to. */
+    topic: text("topic"),
+    queueMessageId: text("queue_message_id"),
+    deliveryCount: integer("delivery_count").notNull().default(0),
+    /** At most one queued/running job per dedupe key (see the partial unique index). */
+    dedupeKey: text("dedupe_key"),
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    error: text("error"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("jobs_dedupe_key_active_uq")
+      .on(t.dedupeKey)
+      .where(sql`status in ('queued', 'running')`),
+    index("jobs_status_created_at_idx").on(t.status, t.createdAt),
+    index("jobs_agent_id_idx").on(t.agentId),
+  ],
+);

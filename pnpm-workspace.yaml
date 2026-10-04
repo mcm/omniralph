@@ -6,3 +6,9 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - unrs-resolver
+
+# Optional native add-ons pulled in by testcontainers (ssh2/dockerode); not needed.
+ignoredBuiltDependencies:
+  - cpu-features
+  - protobufjs
+  - ssh2
