@@ -22,7 +22,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@omniralph/shared": "workspace:*"
+    "@omniralph/engine": "workspace:*",
+    "@omniralph/shared": "workspace:*",
+    "@vercel/queue": "^0.7.0",
+    "pino": "^10.4.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "tsx": "^4.23.15"
