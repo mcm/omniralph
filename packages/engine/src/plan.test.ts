@@ -1,0 +1,182 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { parseDiff } from "./diff.js";
+import { BUDGET_FILL_RATIO, createPathFilter, planReview } from "./plan.js";
+import { estimateTokens } from "./tokens.js";
+
+const fixture = (name: string) =>
+  parseDiff(readFileSync(new URL(`../test/fixtures/${name}.diff`, import.meta.url), "utf8"));
+
+const ROOMY = { maxTokensPerReview: 1_000_000, maxFiles: 100 };
+
+// budget.diff token estimates (ceil(patch chars / 3.5)) and risk weights:
+//   docs/notes.md 1807 (1), test/e2e.ts 387 (1), src/lib/big-table.ts 5470 (2),
+//   src/lib/format.ts 569 (2), src/handlers/order.ts 1104 (3),
+//   src/api/users.ts 3638 (4), src/auth/login.ts 746 (5). Total 13721.
+const budgetFiles = fixture("budget");
+
+describe("planReview", () => {
+  it("returns a single task with every included file and the full budget", () => {
+    const plan = planReview(fixture("basic"), { maxTokensPerReview: 50_000, maxFiles: 25 });
+    expect(plan.tasks).toHaveLength(1);
+    expect(plan.tasks[0]?.id).toBe("task-1");
+    expect(plan.tasks[0]?.budget).toBe(50_000);
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual(["src/app.ts", "src/new.ts", "src/old.ts", "src/tail.txt"]);
+    expect(plan.skipped).toEqual([]);
+    expect(plan.estimatedInputTokens).toBe(
+      fixture("basic").reduce((sum, f) => sum + estimateTokens(f.patch), 0),
+    );
+  });
+
+  it("skips built-in excluded paths at any depth", () => {
+    const plan = planReview(fixture("excluded"), ROOMY);
+    expect(plan.skipped.filter((s) => s.reason === "excluded").map((s) => s.path).sort()).toEqual([
+      "apps/web/Cargo.lock",
+      "apps/web/package-lock.json",
+      "dist/index.js",
+      "package-lock.json",
+      "packages/web/dist/app.js",
+      "pnpm-lock.yaml",
+      "public/app.min.js",
+      "public/style.min.css",
+      "src/__snapshots__/a.test.ts.snap",
+      "vendor/lib/x.go",
+      "yarn.lock",
+    ]);
+    expect(plan.tasks[0]?.files.map((f) => f.path).sort()).toEqual([
+      ".github/workflows/ci.yml",
+      "docs/guide.md",
+      "src/gen/api.generated.ts",
+      "src/index.ts",
+    ]);
+  });
+
+  it("skips repo pathExcludes (gitignore-like globs)", () => {
+    const plan = planReview(fixture("excluded"), ROOMY, { pathExcludes: ["*.generated.ts", "docs/**", " "] });
+    expect(plan.tasks[0]?.files.map((f) => f.path).sort()).toEqual([".github/workflows/ci.yml", "src/index.ts"]);
+    expect(plan.skipped).toContainEqual({ path: "docs/guide.md", reason: "excluded" });
+    expect(plan.skipped).toContainEqual({ path: "src/gen/api.generated.ts", reason: "excluded" });
+  });
+
+  it("skips binary files and files without hunks", () => {
+    const plan = planReview(fixture("renames-binary"), ROOMY);
+    expect(plan.skipped).toEqual([
+      { path: "bin.dat", reason: "binary" },
+      { path: "mode.sh", reason: "no_changes" },
+      { path: "new name ä.txt", reason: "no_changes" },
+      { path: "newbin.bin", reason: "binary" },
+    ]);
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual(["big.txt", "copy.txt", "gone.txt"]);
+  });
+
+  it("keeps everything while the estimate is within 70% of the cap", () => {
+    const plan = planReview(budgetFiles, { maxTokensPerReview: Math.ceil(13_721 / BUDGET_FILL_RATIO), maxFiles: 10 });
+    expect(plan.skipped).toEqual([]);
+    expect(plan.estimatedInputTokens).toBe(13_721);
+  });
+
+  it("treats an estimate exactly at 70% as fitting", () => {
+    const plan = planReview(budgetFiles, { maxTokensPerReview: 1_000, maxFiles: 10 }, { estimateFileTokens: () => 100 });
+    expect(plan.skipped).toEqual([]);
+    expect(plan.estimatedInputTokens).toBe(700);
+  });
+
+  it("drops files lowest risk weight first, then largest first, until the plan fits", () => {
+    // Limit 7000: notes (w1) → 11914, e2e (w1) → 11527, big-table (w2, larger) → 6057.
+    const plan = planReview(budgetFiles, { maxTokensPerReview: 10_000, maxFiles: 10 });
+    expect(plan.skipped).toEqual([
+      { path: "docs/notes.md", reason: "budget" },
+      { path: "test/e2e.ts", reason: "budget" },
+      { path: "src/lib/big-table.ts", reason: "budget" },
+    ]);
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual([
+      "src/api/users.ts",
+      "src/auth/login.ts",
+      "src/handlers/order.ts",
+      "src/lib/format.ts",
+    ]);
+    expect(plan.estimatedInputTokens).toBe(6_057);
+    expect(plan.estimatedInputTokens).toBeLessThanOrEqual(10_000 * BUDGET_FILL_RATIO);
+    expect(plan.tasks[0]?.budget).toBe(10_000);
+  });
+
+  it("trims files beyond maxFiles in the same risk order", () => {
+    const plan = planReview(budgetFiles, { maxTokensPerReview: 1_000_000, maxFiles: 3 });
+    expect(plan.skipped).toEqual([
+      { path: "docs/notes.md", reason: "max_files" },
+      { path: "test/e2e.ts", reason: "max_files" },
+      { path: "src/lib/big-table.ts", reason: "max_files" },
+      { path: "src/lib/format.ts", reason: "max_files" },
+    ]);
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual([
+      "src/api/users.ts",
+      "src/auth/login.ts",
+      "src/handlers/order.ts",
+    ]);
+  });
+
+  it("applies maxFiles before the token budget", () => {
+    // maxFiles drops notes and e2e; limit 4200 then drops big-table, format, order, users.
+    const plan = planReview(budgetFiles, { maxTokensPerReview: 6_000, maxFiles: 5 });
+    expect(plan.skipped).toEqual([
+      { path: "docs/notes.md", reason: "max_files" },
+      { path: "test/e2e.ts", reason: "max_files" },
+      { path: "src/lib/big-table.ts", reason: "budget" },
+      { path: "src/lib/format.ts", reason: "budget" },
+      { path: "src/handlers/order.ts", reason: "budget" },
+      { path: "src/api/users.ts", reason: "budget" },
+    ]);
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual(["src/auth/login.ts"]);
+    expect(plan.estimatedInputTokens).toBe(746);
+  });
+
+  it("returns an empty task when nothing fits", () => {
+    const plan = planReview(budgetFiles, { maxTokensPerReview: 100, maxFiles: 10 });
+    expect(plan.tasks).toEqual([{ id: "task-1", files: [], budget: 100 }]);
+    expect(plan.skipped).toHaveLength(7);
+    expect(plan.estimatedInputTokens).toBe(0);
+    expect(plan.hotspots).toEqual([]);
+  });
+
+  it("returns hotspots (highest weight plus files with signals) and the complexity score", () => {
+    const plan = planReview(fixture("risk-signals"), ROOMY);
+    const hotspots = plan.hotspots.map((h) => h.path);
+    // lib/secret.ts is the only weight-5 file; every file with a signal follows.
+    expect(hotspots[0]).toBe("lib/secret.ts");
+    expect(hotspots).toContain("lib/injection.md");
+    expect(hotspots).toContain("db/migrations/0005_drop.sql");
+    expect(hotspots).not.toContain("lib/clean.ts");
+    expect(plan.hotspots.find((h) => h.path === "lib/injection.md")?.signals[0]?.name).toBe("prompt_injection");
+    expect(plan.complexityScore).toBe(6);
+  });
+
+  it("ranks the highest-weight files as hotspots even without signals", () => {
+    const plan = planReview(budgetFiles, ROOMY);
+    expect(plan.hotspots.map((h) => h.path)).toEqual(["src/auth/login.ts"]);
+    expect(plan.complexityScore).toBe(4); // 7 files (+1), 750 lines (+3)
+  });
+
+  it("only reports hotspots for files that stay in the plan", () => {
+    const plan = planReview(fixture("risk-signals"), { maxTokensPerReview: 1_000_000, maxFiles: 1 });
+    expect(plan.tasks[0]?.files.map((f) => f.path)).toEqual(["lib/secret.ts"]);
+    expect(plan.hotspots.map((h) => h.path)).toEqual(["lib/secret.ts"]);
+  });
+});
+
+describe("createPathFilter", () => {
+  it("anchors patterns with a leading slash to the repo root", () => {
+    const isExcluded = createPathFilter(["/generated/**"]);
+    expect(isExcluded("generated/a.ts")).toBe(true);
+    expect(isExcluded("src/generated/a.ts")).toBe(false);
+  });
+});
+
+describe("estimateTokens", () => {
+  it("is ceil(chars / 3.5)", () => {
+    expect(estimateTokens("")).toBe(0);
+    expect(estimateTokens("abc")).toBe(1);
+    expect(estimateTokens("abcdefg")).toBe(2);
+    expect(estimateTokens("abcdefgh")).toBe(3);
+    expect(estimateTokens("x".repeat(350))).toBe(100);
+  });
+});

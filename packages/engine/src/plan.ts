@@ -1,0 +1,167 @@
+import picomatch from "picomatch";
+import type { DiffFile } from "./diff.js";
+import { riskScan, type FileRisk } from "./riskScan.js";
+import { estimateTokens } from "./tokens.js";
+
+/** Lock files, minified bundles, build output, vendored code and snapshots. */
+export const BUILTIN_EXCLUDES: readonly string[] = [
+  "**/*.lock",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "**/*.min.*",
+  "**/dist/**",
+  "**/vendor/**",
+  "**/*.snap",
+];
+
+/** Share of `maxTokensPerReview` the diff may take; the rest is for prompt, exploration and output. */
+export const BUDGET_FILL_RATIO = 0.7;
+
+/** Cap on the "highest weight" part of the hotspots (files with signals are always included). */
+export const MAX_TOP_WEIGHT_HOTSPOTS = 10;
+
+/** The profile fields the planner needs (`review_profiles` row or shared `ReviewProfile`). */
+export interface PlanProfile {
+  maxTokensPerReview: number;
+  maxFiles: number;
+}
+
+export interface PlanOptions {
+  /** Repo-level globs (e.g. `docs/**`, `*.generated.ts`); patterns without `/` match the basename. */
+  pathExcludes?: readonly string[];
+  /** Per-file token estimate; defaults to `estimateTokens(file.patch)`. */
+  estimateFileTokens?: (file: DiffFile) => number;
+}
+
+export type SkipReason = "excluded" | "binary" | "no_changes" | "budget" | "max_files";
+
+export interface SkippedFile {
+  path: string;
+  reason: SkipReason;
+}
+
+export interface ReviewTask {
+  id: string;
+  files: DiffFile[];
+  /** Token budget for the task (the profile's full `maxTokensPerReview` in v1). */
+  budget: number;
+}
+
+export interface ReviewPlan {
+  /** v1: exactly one task with every included file. */
+  tasks: ReviewTask[];
+  skipped: SkippedFile[];
+  /** Estimated input tokens of the included files' diffs. */
+  estimatedInputTokens: number;
+  /** Highest-weight included files plus every included file with a risk signal, riskiest first. */
+  hotspots: FileRisk[];
+  /** 1–10, over every reviewable (non-excluded, non-binary) file. */
+  complexityScore: number;
+}
+
+/**
+ * gitignore-like globs: a pattern without `/` matches at any depth, a leading
+ * `/` anchors to the repo root. (picomatch's `basename` option would break
+ * the `**` patterns, so slash-less patterns get a `**` prefix instead.)
+ */
+function normalizePattern(pattern: string): string {
+  if (pattern.startsWith("/")) return pattern.slice(1);
+  return pattern.includes("/") ? pattern : `**/${pattern}`;
+}
+
+export function createPathFilter(pathExcludes: readonly string[] = []): (path: string) => boolean {
+  const patterns = [...BUILTIN_EXCLUDES, ...pathExcludes]
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map(normalizePattern);
+  return picomatch(patterns, { dot: true });
+}
+
+interface Candidate {
+  file: DiffFile;
+  risk: FileRisk;
+  tokens: number;
+  index: number;
+}
+
+/** Drop order: lowest risk weight first, then largest first; ties drop later files first. */
+function dropOrder(a: Candidate, b: Candidate): number {
+  return a.risk.weight - b.risk.weight || b.tokens - a.tokens || b.index - a.index;
+}
+
+const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 } as const;
+
+function signalScore(risk: FileRisk): number {
+  return risk.signals.reduce((max, s) => Math.max(max, SEVERITY_RANK[s.severity]), 0);
+}
+
+export function planReview(
+  files: readonly DiffFile[],
+  profile: PlanProfile,
+  options: PlanOptions = {},
+): ReviewPlan {
+  const isExcluded = createPathFilter(options.pathExcludes);
+  const estimate = options.estimateFileTokens ?? ((file: DiffFile) => estimateTokens(file.patch));
+  const skipped: SkippedFile[] = [];
+
+  const reviewable: DiffFile[] = [];
+  for (const file of files) {
+    if (isExcluded(file.path)) skipped.push({ path: file.path, reason: "excluded" });
+    else if (file.binary) skipped.push({ path: file.path, reason: "binary" });
+    else if (file.hunks.length === 0) skipped.push({ path: file.path, reason: "no_changes" });
+    else reviewable.push(file);
+  }
+
+  const scan = riskScan(reviewable);
+  let candidates: Candidate[] = reviewable.map((file, index) => ({
+    file,
+    risk: scan.files[index] as FileRisk,
+    tokens: estimate(file),
+    index,
+  }));
+
+  const dropped = new Map<Candidate, SkipReason>();
+  const byDropOrder = [...candidates].sort(dropOrder);
+
+  const maxFiles = Math.max(0, profile.maxFiles);
+  for (const candidate of byDropOrder.slice(0, Math.max(0, candidates.length - maxFiles))) {
+    dropped.set(candidate, "max_files");
+  }
+
+  const limit = profile.maxTokensPerReview * BUDGET_FILL_RATIO;
+  let total = candidates.filter((c) => !dropped.has(c)).reduce((sum, c) => sum + c.tokens, 0);
+  for (const candidate of byDropOrder) {
+    if (total <= limit) break;
+    if (dropped.has(candidate)) continue;
+    dropped.set(candidate, "budget");
+    total -= candidate.tokens;
+  }
+
+  for (const candidate of byDropOrder) {
+    const reason = dropped.get(candidate);
+    if (reason) skipped.push({ path: candidate.file.path, reason });
+  }
+  candidates = candidates.filter((c) => !dropped.has(c));
+
+  return {
+    tasks: [{ id: "task-1", files: candidates.map((c) => c.file), budget: profile.maxTokensPerReview }],
+    skipped,
+    estimatedInputTokens: total,
+    hotspots: selectHotspots(candidates.map((c) => c.risk)),
+    complexityScore: scan.complexityScore,
+  };
+}
+
+function selectHotspots(risks: FileRisk[]): FileRisk[] {
+  if (risks.length === 0) return [];
+  const topWeight = Math.max(...risks.map((r) => r.weight));
+  const top = risks.filter((r) => r.weight === topWeight).slice(0, MAX_TOP_WEIGHT_HOTSPOTS);
+  const selected = new Set([...top, ...risks.filter((r) => r.signals.length > 0)]);
+  return [...selected].sort(
+    (a, b) =>
+      b.weight - a.weight ||
+      signalScore(b) - signalScore(a) ||
+      b.signals.length - a.signals.length ||
+      a.path.localeCompare(b.path),
+  );
+}

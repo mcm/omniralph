@@ -1,0 +1,105 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..890a100
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1 @@
++content of .github/workflows/ci.yml
+diff --git a/apps/web/Cargo.lock b/apps/web/Cargo.lock
+new file mode 100644
+index 0000000..c83819c
+--- /dev/null
++++ b/apps/web/Cargo.lock
+@@ -0,0 +1 @@
++content of apps/web/Cargo.lock
+diff --git a/apps/web/package-lock.json b/apps/web/package-lock.json
+new file mode 100644
+index 0000000..75535aa
+--- /dev/null
++++ b/apps/web/package-lock.json
+@@ -0,0 +1 @@
++content of apps/web/package-lock.json
+diff --git a/dist/index.js b/dist/index.js
+new file mode 100644
+index 0000000..08e655e
+--- /dev/null
++++ b/dist/index.js
+@@ -0,0 +1 @@
++content of dist/index.js
+diff --git a/docs/guide.md b/docs/guide.md
+new file mode 100644
+index 0000000..c4a5e2f
+--- /dev/null
++++ b/docs/guide.md
+@@ -0,0 +1 @@
++content of docs/guide.md
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000..55ca007
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1 @@
++content of package-lock.json
+diff --git a/packages/web/dist/app.js b/packages/web/dist/app.js
+new file mode 100644
+index 0000000..be50537
+--- /dev/null
++++ b/packages/web/dist/app.js
+@@ -0,0 +1 @@
++content of packages/web/dist/app.js
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+new file mode 100644
+index 0000000..8ea093b
+--- /dev/null
++++ b/pnpm-lock.yaml
+@@ -0,0 +1 @@
++content of pnpm-lock.yaml
+diff --git a/public/app.min.js b/public/app.min.js
+new file mode 100644
+index 0000000..8a68944
+--- /dev/null
++++ b/public/app.min.js
+@@ -0,0 +1 @@
++content of public/app.min.js
+diff --git a/public/style.min.css b/public/style.min.css
+new file mode 100644
+index 0000000..7b34078
+--- /dev/null
++++ b/public/style.min.css
+@@ -0,0 +1 @@
++content of public/style.min.css
+diff --git a/src/__snapshots__/a.test.ts.snap b/src/__snapshots__/a.test.ts.snap
+new file mode 100644
+index 0000000..cbaa911
+--- /dev/null
++++ b/src/__snapshots__/a.test.ts.snap
+@@ -0,0 +1 @@
++content of src/__snapshots__/a.test.ts.snap
+diff --git a/src/gen/api.generated.ts b/src/gen/api.generated.ts
+new file mode 100644
+index 0000000..2a33bbc
+--- /dev/null
++++ b/src/gen/api.generated.ts
+@@ -0,0 +1 @@
++content of src/gen/api.generated.ts
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..0735dc7
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1 @@
++content of src/index.ts
+diff --git a/vendor/lib/x.go b/vendor/lib/x.go
+new file mode 100644
+index 0000000..1966e2a
+--- /dev/null
++++ b/vendor/lib/x.go
+@@ -0,0 +1 @@
++content of vendor/lib/x.go
+diff --git a/yarn.lock b/yarn.lock
+new file mode 100644
+index 0000000..c1f1fef
+--- /dev/null
++++ b/yarn.lock
+@@ -0,0 +1 @@
++content of yarn.lock

@@ -1,0 +1,49 @@
+diff --git a/src/app.ts b/src/app.ts
+index ac9837c..924d8e3 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,6 +1,6 @@
+ line 1
+ line 2
+-line 3
++line three
+ line 4
+ line 5
+ line 6
+@@ -22,9 +22,8 @@ line 21
+ line 22
+ line 23
+ line 24
+-line 25
++line twenty-five
+ line 26
+-line 27
+ line 28
+ line 29
+ line 30
+diff --git a/src/new.ts b/src/new.ts
+new file mode 100644
+index 0000000..0f5248f
+--- /dev/null
++++ b/src/new.ts
+@@ -0,0 +1,2 @@
++export const added = 1;
++export const two = 2;
+diff --git a/src/old.ts b/src/old.ts
+deleted file mode 100644
+index 961d584..0000000
+--- a/src/old.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-remove me
+-please
+diff --git a/src/tail.txt b/src/tail.txt
+index 20cbb4d..c62e0d4 100644
+--- a/src/tail.txt
++++ b/src/tail.txt
+@@ -1 +1,2 @@
+-no newline
+\ No newline at end of file
++no newline
++now has more
+\ No newline at end of file
