@@ -1,7 +1,7 @@
 # ADR 0001: Job dispatch through Vercel Queues (poll mode)
 
-- **Status:** Accepted (US-009). Live verification against the `omniralph` Vercel
-  project is still open: see [Spike](#spike).
+- **Status:** Accepted (US-009). Verified live against the `omniralph` Vercel
+  project on 2026-10-04 (TOOL-45): see [Spike](#spike).
 - **Date:** 2026-10-04
 
 ## Context
@@ -128,14 +128,16 @@ The AC asks to verify three behaviours against a real Vercel project in the
 target region. **No Vercel credentials were available in the implementation
 environment** (no CLI login, no `VERCEL_OIDC_TOKEN`). The findings below
 therefore come from the `@vercel/queue` 0.7.0 source and README, not from a
-live run. The live checks are listed at the end and are tracked as a manual
-follow-up.
+live run. The live checks were run afterwards (TOOL-45, 2026-10-04) on
+CLI-deployed previews of the `omniralph` project in `iad1`, with a KMS-signed
+agent access token and the procedure below. All of them passed, so the
+decision stands.
 
 | Question | Finding (SDK source) | Live check |
 | -- | -- | -- |
-| Deploymentless publishing survives redeploys | `QueueClient({ deploymentId: null })` sets `explicitlyUnpinned`, and `sendMessage` then sends no `Vqs-Deployment-Id`. Poll consumers send none either (`getConsumeDeploymentId()` is undefined when unpinned). The pinned default exists only for push-mode callbacks, which route deliveries to the publishing deployment. | Pending |
-| `PollingQueueClient` + `resolveBaseUrl` through the proxy, incl. multipart streaming | `resolveBaseUrl(region)` replaces the base URL, and the SDK appends `/api/v3/topic/…`. Receive sends `Accept: multipart/mixed` and parses the response body as a stream (`parseMultipartStream`). The only state it needs is the top-level `Content-Type` boundary, which the proxy passes through. The proxy returns `upstream.body` unbuffered. Covered by `queue-proxy.test.ts` with a multipart upstream. | Pending |
-| Does polling `receive()` auto-extend the lease while the handler runs? | **Yes.** `ConsumerGroup.processMessage` calls `startVisibilityExtension` before invoking the handler. Every `min(60s, max(10s, vt/5))` it re-extends by `visibilityTimeoutSeconds` (default 300, max 3600); transient errors are retried every 3s. It stops on handler completion, then acknowledges. On a thrown error with a `retry` directive, it acknowledges (`{ acknowledge: true }`) or `changeVisibility(afterSeconds)` instead. A crashed process stops extending, so the lease lapses after at most `visibilityTimeoutSeconds`. | Pending |
+| Deploymentless publishing survives redeploys | `QueueClient({ deploymentId: null })` sets `explicitlyUnpinned`, and `sendMessage` then sends no `Vqs-Deployment-Id`. Poll consumers send none either (`getConsumeDeploymentId()` is undefined when unpinned). The pinned default exists only for push-mode callbacks, which route deliveries to the publishing deployment. | **Passed.** A job published by deployment A was received through the proxy of deployment B, deployed after the publish (`deliveryCount: 1`). |
+| `PollingQueueClient` + `resolveBaseUrl` through the proxy, incl. multipart streaming | `resolveBaseUrl(region)` replaces the base URL, and the SDK appends `/api/v3/topic/…`. Receive sends `Accept: multipart/mixed` and parses the response body as a stream (`parseMultipartStream`). The only state it needs is the top-level `Content-Type` boundary, which the proxy passes through. The proxy returns `upstream.body` unbuffered. Covered by `queue-proxy.test.ts` with a multipart upstream. | **Passed.** Receive through the proxy returned `200 multipart/mixed` and the handler got `{ jobId }`; the ack (`DELETE …/lease/…`) returned 204. The proxy refused send, a foreign topic, another consumer group and a region outside `QUEUE_REGIONS` (403), and a missing token (401). |
+| Does polling `receive()` auto-extend the lease while the handler runs? | **Yes.** `ConsumerGroup.processMessage` calls `startVisibilityExtension` before invoking the handler. Every `min(60s, max(10s, vt/5))` it re-extends by `visibilityTimeoutSeconds` (default 300, max 3600); transient errors are retried every 3s. It stops on handler completion, then acknowledges. On a thrown error with a `retry` directive, it acknowledges (`{ acknowledge: true }`) or `changeVisibility(afterSeconds)` instead. A crashed process stops extending, so the lease lapses after at most `visibilityTimeoutSeconds`. | **Passed.** With `visibilityTimeoutSeconds: 30` and a 75s handler, the SDK sent `PATCH …/lease/…` every ~10s (7 times, all 200 through the proxy); a second consumer polling every 5s got `empty` 18 times. After killing a consumer (`SIGKILL`) 4s after its last extension, the message was redelivered to the other consumer exactly 30s after that extension (`deliveryCount: 2`). |
 
 **Live verification procedure** (a person with access to the `omniralph`
 Vercel project; the region is the first entry of `QUEUE_REGIONS`):
