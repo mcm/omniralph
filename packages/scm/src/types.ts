@@ -20,7 +20,13 @@ export interface ChangeRequest {
   description: string;
   author: string;
   draft: boolean;
+  /** Merge base of the target branch and head (GitLab `diff_refs.base_sha`). */
   baseSha: string;
+  /**
+   * Target-branch tip the diff was computed against (GitLab
+   * `diff_refs.start_sha`); GitLab inline positions need it.
+   */
+  startSha?: string;
   headSha: string;
   baseRef: string;
   headRef: string;
@@ -62,8 +68,9 @@ export interface PostedReview {
   summaryCommentId: string;
   /**
    * One entry per `inlineComments` item, in input order: the posted comment
-   * ID, or `null` when the comment fell back into the summary because its
-   * lines aren't part of the diff.
+   * ID (GitHub review comment ID, GitLab discussion ID), or `null` when the
+   * comment fell back into the summary because its lines aren't part of the
+   * diff.
    */
   inlineCommentIds: (string | null)[];
 }

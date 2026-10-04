@@ -20,3 +20,10 @@ export {
   type User,
   type UserRole,
 } from "./users.js";
+export {
+  createScmCredentialCache,
+  getScmCredential,
+  saveScmCredential,
+  type ScmCredential,
+  type ScmRepoRef,
+} from "./scm-credentials.js";

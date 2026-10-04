@@ -20,3 +20,15 @@ export type {
 } from "./github/app-auth.js";
 export { GitHubAdapter, splitRepoPath } from "./github/adapter.js";
 export type { GitHubAdapterOptions } from "./github/adapter.js";
+export { MemoryCredentialCache } from "./credential-cache.js";
+export type { CachedCredential, CredentialCache } from "./credential-cache.js";
+export {
+  CLONE_TOKEN_ROTATE_MS,
+  GITLAB_URL,
+  GitLabAdapter,
+  READ_REPOSITORY_SCOPE,
+  renderGitLabComment,
+} from "./gitlab/adapter.js";
+export type { GitLabAdapterOptions } from "./gitlab/adapter.js";
+export { buildGitLabDiffIndex, buildPosition, lineCode, parseFileLines } from "./gitlab/positions.js";
+export type { DiffRefs, GitLabDiffFile, GitLabDiffIndex, TextPosition } from "./gitlab/positions.js";
