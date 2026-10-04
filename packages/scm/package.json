@@ -19,5 +19,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "@octokit/webhooks-methods": "^6.0.0",
+    "@vercel/kms": "^0.3.2",
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "msw": "^3.0.2"
   }
 }
