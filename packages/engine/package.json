@@ -21,6 +21,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.289",
+    "@omniralph/shared": "workspace:*",
     "picomatch": "^4.0.7"
   },
   "devDependencies": {
