@@ -1,0 +1,56 @@
+diff --git a/big.txt b/big.txt
+index f62562a..468857d 100644
+--- a/big.txt
++++ b/big.txt
+@@ -1,8 +1,8 @@
+ line1
+-line2
++line2 changed
+ line3
+ line4
+ line5
+ line6
+ line7
+-line8
++line8 no newline
+\ No newline at end of file
+diff --git a/bin.dat b/bin.dat
+index d5d0b8b..4a27031 100644
+Binary files a/bin.dat and b/bin.dat differ
+diff --git a/big.txt b/copy.txt
+similarity index 54%
+copy from big.txt
+copy to copy.txt
+index f62562a..468857d 100644
+--- a/big.txt
++++ b/copy.txt
+@@ -1,8 +1,8 @@
+ line1
+-line2
++line2 changed
+ line3
+ line4
+ line5
+ line6
+ line7
+-line8
++line8 no newline
+\ No newline at end of file
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index abaddc0..0000000
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-del
+diff --git a/mode.sh b/mode.sh
+old mode 100644
+new mode 100755
+diff --git a/old.txt "b/new name \303\244.txt"
+similarity index 100%
+rename from old.txt
+rename to "new name \303\244.txt"
+diff --git a/newbin.bin b/newbin.bin
+new file mode 100644
+index 0000000..f71ac66
+Binary files /dev/null and b/newbin.bin differ

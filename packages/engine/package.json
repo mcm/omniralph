@@ -19,5 +19,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.7"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3"
   }
 }
