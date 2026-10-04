@@ -12,21 +12,25 @@ import {
   useSidebar,
   Avatar,
   AvatarFallback,
+  AvatarImage,
 } from "@iamthemcmaster/ui";
-import { IconGitPullRequest, IconListCheck, IconServer, IconShieldLock } from "@tabler/icons-react";
-import { isNavItemActive, navGroups, type NavIcon } from "@/lib/navigation";
+import { IconGitPullRequest, IconListCheck, IconServer, IconUsers } from "@tabler/icons-react";
+import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
+import { userDisplayName, userInitials } from "@/lib/user-display";
+import { useCurrentUser } from "./current-user";
 
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
   agents: IconServer,
   jobs: IconListCheck,
-  admin: IconShieldLock,
+  users: IconUsers,
 };
 
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { collapsed } = useSidebar();
+  const user = useCurrentUser();
 
   return (
     <SidebarRoot>
@@ -83,7 +87,7 @@ export function AppSidebar() {
       <SidebarContent>
         {collapsed && <SidebarTrigger style={{ margin: "var(--space-2) auto" }} />}
 
-        {navGroups.map((group) => (
+        {navGroupsForRole(user.role).map((group) => (
           <SidebarGroup key={group.label} label={group.label}>
             {group.items.map(({ href, label, icon }) => {
               const Icon = navIcons[icon];
@@ -111,10 +115,11 @@ export function AppSidebar() {
         }}
       >
         <Avatar style={{ width: 28, height: 28, flexShrink: 0 }}>
+          {user.image && <AvatarImage src={user.image} alt="" />}
           <AvatarFallback
             style={{ fontSize: 11, background: "var(--bg-raised)", color: "var(--text-secondary)" }}
           >
-            ?
+            {userInitials(user)}
           </AvatarFallback>
         </Avatar>
         {!collapsed && (
@@ -128,7 +133,7 @@ export function AppSidebar() {
                 textOverflow: "ellipsis",
               }}
             >
-              Guest
+              {userDisplayName(user)}
             </div>
             <div
               style={{
@@ -139,7 +144,7 @@ export function AppSidebar() {
                 textOverflow: "ellipsis",
               }}
             >
-              Not signed in
+              {user.role === "admin" ? "Admin" : "Member"}
             </div>
           </div>
         )}

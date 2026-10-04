@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "@iamthemcmaster/ui/styles";
 import "./globals.css";
-import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: "Omniralph",
@@ -31,9 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body>
-        <AppShell>{children}</AppShell>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
