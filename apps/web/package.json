@@ -14,6 +14,7 @@
     "@auth/drizzle-adapter": "^1.11.3",
     "@iamthemcmaster/ui": "~1.0.0",
     "@omniralph/db": "workspace:*",
+    "@omniralph/scm": "workspace:*",
     "@tabler/icons-react": "^3.40.0",
     "drizzle-orm": "^0.45.3",
     "next": "^16.1.6",
@@ -24,8 +25,11 @@
     "sonner": "^2.0.7"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint-config-next": "^16.1.6"
+    "eslint-config-next": "^16.1.6",
+    "msw": "^3.0.2",
+    "testcontainers": "^12.2.0"
   }
 }

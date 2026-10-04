@@ -130,20 +130,30 @@ export const sessions = pgTable(
 
 // ── Code hosts and repositories ──────────────────────────────────────────────
 
-export const scmConnections = pgTable("scm_connections", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  provider: scmProvider("provider").notNull(),
-  name: text("name").notNull(),
-  /** API base URL, e.g. https://api.github.com or https://gitlab.example.com. */
-  baseUrl: text("base_url").notNull(),
-  /** Provider-side identifier, e.g. the GitHub App installation ID or GitLab group path. */
-  externalId: text("external_id"),
-  /** JSON credentials encrypted with `encrypt()` (AES-256-GCM). */
-  encryptedCredentials: text("encrypted_credentials").notNull(),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const scmConnections = pgTable(
+  "scm_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: scmProvider("provider").notNull(),
+    name: text("name").notNull(),
+    /** API base URL, e.g. https://api.github.com or https://gitlab.example.com. */
+    baseUrl: text("base_url").notNull(),
+    /** Provider-side identifier, e.g. the GitHub App installation ID or GitLab group path. */
+    externalId: text("external_id"),
+    /** JSON credentials encrypted with `encrypt()` (AES-256-GCM). */
+    encryptedCredentials: text("encrypted_credentials").notNull(),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("scm_connections_provider_base_url_external_id_uq").on(
+      t.provider,
+      t.baseUrl,
+      t.externalId,
+    ),
+  ],
+);
 
 export const reviewProfiles = pgTable("review_profiles", {
   /** Stable slug, e.g. `quick`, `standard`, `deep`. */
@@ -199,6 +209,13 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
+    /** GitLab project webhook ID created on connect (deleted on disconnect). */
+    webhookId: text("webhook_id"),
+    /**
+     * Set when an admin disconnects the repo: it's disabled, unpinned and hidden from the
+     * Repositories list, but its review history is kept. Reconnecting clears it.
+     */
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

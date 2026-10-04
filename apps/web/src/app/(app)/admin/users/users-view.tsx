@@ -28,9 +28,8 @@ import {
   Separator,
 } from "@iamthemcmaster/ui";
 import { IconMail, IconTrash, IconUserPlus } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { AppHeader } from "@/components/app-header";
-import type { ActionResult } from "@/lib/action-result";
+import { useAction } from "@/components/use-action";
 import { isRole, type Role } from "@/lib/auth/roles";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { allowEmail, changeUserRole, disallowEmail, removeUser } from "./actions";
@@ -57,26 +56,6 @@ interface UsersViewProps {
   allowedDomains: string[];
   users: UserRow[];
   allowedEmails: AllowedEmailRow[];
-}
-
-/** Runs a server action in a transition and reports its result as a toast. */
-function useAction() {
-  const [pending, startTransition] = React.useTransition();
-  const run = React.useCallback(
-    (action: () => Promise<ActionResult>, success: string, onSuccess?: () => void) => {
-      startTransition(async () => {
-        const result = await action();
-        if (result.ok) {
-          toast.success(success);
-          onSuccess?.();
-        } else {
-          toast.error(result.error);
-        }
-      });
-    },
-    [],
-  );
-  return { pending, run };
 }
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
