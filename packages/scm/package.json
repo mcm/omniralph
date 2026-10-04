@@ -21,6 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@gitbeaker/rest": "^43.8.0",
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks-methods": "^6.0.0",
     "@vercel/kms": "^0.3.2",
