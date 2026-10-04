@@ -27,3 +27,22 @@ export {
   type ScmCredential,
   type ScmRepoRef,
 } from "./scm-credentials.js";
+export {
+  connectionCredentials,
+  connectRepository,
+  disconnectRepository,
+  findScmConnection,
+  getRepository,
+  getScmConnection,
+  listConnectionRepositories,
+  listRepositoryOverview,
+  listScmConnections,
+  setRepositoryEnabled,
+  upsertScmConnection,
+  type ConnectRepositoryInput,
+  type Repository,
+  type RepositoryOverview,
+  type ScmConnection,
+  type ScmConnectionInput,
+  type ScmProvider,
+} from "./repositories.js";

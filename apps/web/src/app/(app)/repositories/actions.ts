@@ -1,0 +1,202 @@
+"use server";
+
+import { randomBytes } from "node:crypto";
+import {
+  connectionCredentials,
+  connectRepository,
+  disconnectRepository as disconnectRepositoryRow,
+  findScmConnection,
+  getRepository,
+  getScmConnection,
+  listConnectionRepositories,
+  setRepositoryEnabled as setRepositoryEnabledRow,
+  upsertScmConnection,
+} from "@omniralph/db";
+import { GitLabSetupClient, GitLabSetupError, listInstallationRepos } from "@omniralph/scm";
+import { revalidatePath } from "next/cache";
+import type { ActionResult } from "@/lib/action-result";
+import { gitlabWebhookUrl } from "@/lib/app-url";
+import { runAdminAction } from "@/lib/auth/admin-action";
+import { getDb } from "@/lib/db";
+import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
+import { getGitHubAppAuth } from "@/lib/scm/github-app";
+
+const REPOSITORIES_PATH = "/repositories";
+
+/** Encrypted `scm_connections.encrypted_credentials` of a GitLab connection. */
+interface GitLabCredentials extends Record<string, unknown> {
+  /** Bot group/project access token (`api` scope). */
+  token: string;
+  /** Secret on every project webhook of the connection (`X-Gitlab-Token`). */
+  webhookSecret: string;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Connects GitLab projects: validates the bot token, resolves every project, stores the
+ * connection (token and webhook secret encrypted) and creates a project webhook for MR and
+ * comment events on each project. Nothing is stored if the token or a project path is bad.
+ */
+export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const parsed = parseGitLabConnectForm(form);
+    if (!parsed.ok) return parsed;
+    const { baseUrl, token, projectPaths } = parsed.input;
+    const webhookUrl = gitlabWebhookUrl();
+
+    const gitlab = new GitLabSetupClient({ baseUrl, token });
+    let owner;
+    const projects = [];
+    try {
+      owner = await gitlab.validateToken();
+      for (const path of projectPaths) projects.push(await gitlab.getProject(path));
+    } catch (error) {
+      if (error instanceof GitLabSetupError) return { ok: false, error: error.message };
+      throw error;
+    }
+
+    const db = getDb();
+    const externalId = String(owner.userId);
+    const existing = await findScmConnection(db, "gitlab", baseUrl, externalId);
+    const webhookSecret =
+      (existing && connectionCredentials<GitLabCredentials>(existing).webhookSecret) ||
+      randomBytes(32).toString("base64url");
+    const connection = await upsertScmConnection(db, {
+      provider: "gitlab",
+      name: `${owner.username} @ ${new URL(baseUrl).host}`,
+      baseUrl,
+      externalId,
+      credentials: { token, webhookSecret } satisfies GitLabCredentials,
+      createdBy: admin.id,
+    });
+    const known = new Map(
+      (await listConnectionRepositories(db, connection.id)).map((repo) => [repo.externalId, repo]),
+    );
+
+    const failed: string[] = [];
+    for (const project of projects) {
+      const previous = known.get(String(project.id));
+      let hookId: number;
+      try {
+        hookId = await gitlab.createProjectHook(project.id, {
+          url: webhookUrl,
+          secret: webhookSecret,
+        });
+      } catch (error) {
+        failed.push(`${project.fullPath}: ${errorMessage(error)}`);
+        continue;
+      }
+      await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "gitlab",
+        externalId: String(project.id),
+        fullPath: project.fullPath,
+        webhookId: String(hookId),
+      });
+      // Reconnecting replaces the old hook, so there is exactly one per project.
+      if (previous?.webhookId) {
+        await gitlab
+          .deleteProjectHook(project.id, Number(previous.webhookId))
+          .catch(() => undefined);
+      }
+    }
+
+    revalidatePath(REPOSITORIES_PATH);
+    if (failed.length === projects.length) {
+      return { ok: false, error: `Couldn't create the webhook. ${failed.join(" ")}` };
+    }
+    if (failed.length > 0) {
+      return { ok: true, warning: `Some projects weren't connected. ${failed.join(" ")}` };
+    }
+  });
+}
+
+/** Turns reviews for a connected repository on or off. */
+export async function setRepositoryEnabled(id: string, enabled: boolean): Promise<ActionResult> {
+  return runAdminAction(async () => {
+    if (!(await setRepositoryEnabledRow(getDb(), id, Boolean(enabled)))) {
+      return { ok: false, error: "That repository isn't connected." };
+    }
+    revalidatePath(REPOSITORIES_PATH);
+  });
+}
+
+/**
+ * Disconnects a repository: disables it, removes its agent pins and, for GitLab, deletes
+ * its project webhook. Its review history is kept.
+ */
+export async function disconnectRepository(id: string): Promise<ActionResult> {
+  return runAdminAction(async () => {
+    const db = getDb();
+    const repo = await getRepository(db, id);
+    if (!repo || repo.disconnectedAt)
+      return { ok: false, error: "That repository isn't connected." };
+
+    let warning: string | undefined;
+    if (repo.provider === "gitlab" && repo.webhookId) {
+      const connection = await getScmConnection(db, repo.connectionId);
+      try {
+        if (!connection) throw new Error("its connection no longer exists");
+        const { token } = connectionCredentials<GitLabCredentials>(connection);
+        await new GitLabSetupClient({ baseUrl: connection.baseUrl, token }).deleteProjectHook(
+          Number(repo.externalId),
+          Number(repo.webhookId),
+        );
+      } catch (error) {
+        warning = `Disconnected ${repo.fullPath}, but its GitLab webhook (ID ${repo.webhookId}) couldn't be deleted: ${errorMessage(error)}. Remove it under the project's Settings › Webhooks.`;
+      }
+    }
+
+    await disconnectRepositoryRow(db, id);
+    revalidatePath(REPOSITORIES_PATH);
+    return { ok: true, warning };
+  });
+}
+
+/**
+ * Saves which repositories of a GitHub App installation get reviews: selected ones are
+ * connected (or re-enabled), other connected ones are disabled. Only repositories the
+ * installation can access are accepted.
+ */
+export async function saveGitHubRepositories(
+  connectionId: string,
+  selectedRepoIds: number[],
+): Promise<ActionResult> {
+  return runAdminAction(async () => {
+    const db = getDb();
+    const connection = await getScmConnection(db, connectionId);
+    if (!connection || connection.provider !== "github" || !connection.externalId) {
+      return { ok: false, error: "That GitHub installation isn't connected." };
+    }
+    let available;
+    try {
+      available = await listInstallationRepos(getGitHubAppAuth(), Number(connection.externalId));
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Couldn't list the installation's repositories: ${errorMessage(error)}`,
+      };
+    }
+
+    const selected = new Set(selectedRepoIds.map(String));
+    for (const repo of available) {
+      if (!selected.has(String(repo.id))) continue;
+      await connectRepository(db, {
+        connectionId,
+        provider: "github",
+        externalId: String(repo.id),
+        fullPath: repo.fullPath,
+      });
+    }
+    for (const repo of await listConnectionRepositories(db, connectionId)) {
+      if (!repo.disconnectedAt && repo.enabled && !selected.has(repo.externalId)) {
+        await setRepositoryEnabledRow(db, repo.id, false);
+      }
+    }
+    revalidatePath(REPOSITORIES_PATH);
+    revalidatePath(`${REPOSITORIES_PATH}/github/${connectionId}`);
+  });
+}
