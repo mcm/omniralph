@@ -35,3 +35,11 @@ pnpm build
 Workspace packages export their TypeScript source under the `@omniralph/source` export condition
 (used by `tsc`, Vitest and `tsx`), and compiled `dist/` output for everything else (`node`, Next.js).
 `turbo` builds dependencies first for `build` and `dev`.
+
+## Deployment
+
+Every Vercel build runs `pnpm --filter @omniralph/db migrate` before `turbo run build`
+(`apps/web/vercel.json`), so each deployment migrates the database it's connected to: its own
+Neon branch for previews, the main branch for production. It runs outside `turbo` so the remote
+cache can't skip it. Migrations apply before the new deployment serves traffic, so they must stay
+compatible with the code that's still live.
