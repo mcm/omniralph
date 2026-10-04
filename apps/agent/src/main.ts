@@ -19,10 +19,13 @@ import {
   writeConfig,
 } from "./config.js";
 import { AgentDaemon } from "./daemon.js";
+import { readCredentialRequest, runGitCredential } from "./credential-helper.js";
 import { startHealthServer } from "./healthz.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createQueueReceiver, type QueueReceiverFactory } from "./queue.js";
 import { AGENT_VERSION } from "./version.js";
+import { defaultCredentialHelper } from "./workspace/git.js";
+import { RepoCache } from "./workspace/repoCache.js";
 
 export const USAGE = `Usage: omniralph-agent <command> [options]
 
@@ -34,7 +37,8 @@ Commands:
                     --workspace-root <dir>  Repo cache directory (default: ~/.omniralph/repos)
   start           Run the agent daemon
                     --healthz-port <port>   Serve GET /healthz on 127.0.0.1:<port>
-  git-credential  Git credential helper (not yet implemented)
+  git-credential  Git credential helper for job git commands (\`get\` only; reads
+                  OMNIRALPH_JOB_TOKEN, set by the agent for in-job processes)
 
 Options:
   --config <file> Agent config (default: ~/.config/omniralph/agent.json, or $OMNIRALPH_AGENT_CONFIG)
@@ -53,6 +57,10 @@ export interface MainDeps {
   logger?: Logger;
   capabilities?: Capability[];
   queue?: QueueReceiverFactory;
+  /** Reads stdin (the `git-credential` request). */
+  readStdin?: () => Promise<string>;
+  /** `credential.helper` for job git commands (default: this CLI's `git-credential`). */
+  credentialHelper?: string;
   /** Registers the shutdown handler (SIGTERM/SIGINT by default). */
   onShutdownSignal?: (handler: () => void) => void;
 }
@@ -102,8 +110,12 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
       case "start":
         return await runStart(values, configPath, deps);
       case "git-credential":
-        io.stderr(`omniralph-agent: 'git-credential' is not implemented yet\n`);
-        return 1;
+        return await runGitCredential(
+          positionals[1],
+          deps.env,
+          { readStdin: deps.readStdin ?? (() => readCredentialRequest()), ...io },
+          deps.fetch,
+        );
       default:
         io.stderr(`omniralph-agent: unknown command '${command}'\n\n${USAGE}`);
         return 1;
@@ -208,10 +220,19 @@ async function runStart(
     // Transient (network, 5xx, 429): the token manager keeps retrying.
   }
 
+  const repos = new RepoCache({
+    workspaceRoot: config.workspaceRoot,
+    credentialHelper: deps.credentialHelper ?? defaultCredentialHelper(),
+    logger,
+  });
+  // No job runs yet: whatever is left in .worktrees is from a crash.
+  await repos.pruneStaleWorktrees();
+
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
     workspaceRoot: config.workspaceRoot,
+    repos,
     version: AGENT_VERSION,
     api,
     tokens,

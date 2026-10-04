@@ -3,9 +3,11 @@ import { CapabilityRegistry, defaultCapabilities, type Capability } from "./inde
 import { REVIEW_TOOL_POLICY } from "./review.js";
 
 describe("capability registry", () => {
-  it("ships the review capability for review.run jobs", () => {
+  it("ships the system capability for repo.sync and the review capability for review.run jobs", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
-    expect(registry.names()).toEqual(["review"]);
+    expect(registry.names()).toEqual(["system", "review"]);
+    expect(registry.forJob({ capability: "system", type: "repo.sync" })?.name).toBe("system");
+    expect(registry.forJob({ capability: "system", type: "review.run" })).toBeUndefined();
     expect(registry.forJob({ capability: "review", type: "review.run" })?.name).toBe("review");
     expect(registry.forJob({ capability: "review", type: "review.other" })).toBeUndefined();
     expect(registry.forJob({ capability: "ralph", type: "review.run" })).toBeUndefined();
@@ -21,7 +23,7 @@ describe("capability registry", () => {
   });
 
   it("rejects duplicate names", () => {
-    const [review] = defaultCapabilities() as [Capability];
-    expect(() => new CapabilityRegistry([review, review])).toThrow(/twice/);
+    const [system] = defaultCapabilities() as [Capability];
+    expect(() => new CapabilityRegistry([system, system])).toThrow(/twice/);
   });
 });

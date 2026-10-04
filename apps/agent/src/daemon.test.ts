@@ -15,9 +15,11 @@ import {
   type JobContext,
 } from "./capabilities/index.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort } from "./daemon.js";
+import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
 import type { MessageHandler, QueueReceiver, RetryDirective } from "./queue.js";
 import type { ReceiveBatchOptions, ReceiveResult } from "@vercel/queue";
+import type { RepoCache } from "./workspace/repoCache.js";
 
 const AGENT_ID = randomUUID();
 
@@ -154,6 +156,7 @@ function setup(options: {
   run?: Capability["run"];
   capabilities?: Capability[];
   config?: HeartbeatResponse;
+  repos?: RepoCache;
 }) {
   const { api, state } = fakeApi(options.config);
   const queue = new FakeQueue();
@@ -161,6 +164,7 @@ function setup(options: {
   const daemon = new AgentDaemon({
     server: "https://omniralph.example",
     workspaceRoot: "/tmp/omniralph-test",
+    repos: options.repos,
     version: "1.2.3",
     api,
     tokens,
@@ -492,6 +496,44 @@ describe("AgentDaemon", () => {
     const calls = queue.receiveCalls.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(queue.receiveCalls.length).toBe(calls);
+    await daemon.shutdown();
+  });
+
+  it("always polls its system topic and runs repo.sync through the repo cache with the job env", async () => {
+    const systemTopic = `system-jobs-agent-${AGENT_ID}`;
+    const repository = {
+      provider: "gitlab" as const,
+      fullPath: "group/app",
+      cloneUrl: "https://gitlab.example/group/app.git",
+    };
+    const sync = vi.fn(async () => ({
+      dir: "/cache/gitlab/group/app",
+      cloned: true,
+      fetched: false,
+    }));
+    const { api, queue, daemon } = setup({
+      capabilities: [systemCapability, capability(async () => ({}))],
+      // Review is disabled centrally; system is built in.
+      config: centralConfig({ enabledCapabilities: [], topics: [systemTopic] }),
+      repos: { sync } as unknown as RepoCache,
+    });
+    api.startJob.mockImplementation(async (id: string) => ({
+      action: "run",
+      job: job(id, { capability: "system", type: "repo.sync", payload: { repository } }),
+      jobToken: { jobId: id, token: `job-token-${id}`, expiresIn: 900 },
+    }));
+    const id = randomUUID();
+    queue.push(systemTopic, id);
+    void daemon.run();
+    await settle();
+    expect(sync).toHaveBeenCalledTimes(1);
+    const [repo, options] = sync.mock.calls[0] as unknown as [unknown, { env: NodeJS.ProcessEnv }];
+    expect(repo).toEqual(repository);
+    expect(options.env.OMNIRALPH_JOB_TOKEN).toBe(`job-token-${id}`);
+    expect(api.submitResult).toHaveBeenCalledWith(id, {
+      result: { repository: "gitlab/group/app", cloned: true, fetched: false },
+    });
+    expect(queue.acked).toEqual([{ topic: systemTopic, message: { jobId: id } }]);
     await daemon.shutdown();
   });
 
