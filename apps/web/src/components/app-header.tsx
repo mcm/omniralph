@@ -17,8 +17,19 @@ import {
   DropdownMenuTrigger,
   Avatar,
   AvatarFallback,
+  AvatarImage,
 } from "@iamthemcmaster/ui";
-import { IconBell, IconSearch, IconChevronDown, IconSun, IconMoon } from "@tabler/icons-react";
+import {
+  IconBell,
+  IconSearch,
+  IconChevronDown,
+  IconSun,
+  IconMoon,
+  IconLogout,
+} from "@tabler/icons-react";
+import { signOutAction } from "@/lib/auth/actions";
+import { userDisplayName, userInitials } from "@/lib/user-display";
+import { useCurrentUser } from "./current-user";
 
 interface AppHeaderProps {
   breadcrumbs?: { label: string; href?: string }[];
@@ -57,6 +68,8 @@ function useTheme() {
 
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   const { theme, toggle } = useTheme();
+  const user = useCurrentUser();
+  const [signingOut, startSignOut] = React.useTransition();
   return (
     <header
       style={{
@@ -149,6 +162,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
               style={{ gap: "var(--space-2)", paddingRight: "var(--space-2)" }}
             >
               <Avatar style={{ width: 24, height: 24 }}>
+                {user.image && <AvatarImage src={user.image} alt="" />}
                 <AvatarFallback
                   style={{
                     fontSize: 10,
@@ -156,19 +170,39 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                     color: "var(--text-secondary)",
                   }}
                 >
-                  ?
+                  {userInitials(user)}
                 </AvatarFallback>
               </Avatar>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
-                Guest
+                {userDisplayName(user)}
               </span>
               <IconChevronDown size={12} style={{ color: "var(--text-tertiary)" }} />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" style={{ minWidth: 180 }}>
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuContent align="end" style={{ minWidth: 200 }}>
+            <DropdownMenuLabel>
+              <div style={{ color: "var(--text-primary)" }}>{userDisplayName(user)}</div>
+              {user.email && (
+                <div
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--text-tertiary)",
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: "normal",
+                  }}
+                >
+                  {user.email}
+                </div>
+              )}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>Sign-in arrives with multi-user auth</DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={signingOut}
+              onSelect={() => startSignOut(() => signOutAction())}
+            >
+              <IconLogout size={14} />
+              Sign out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
