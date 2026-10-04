@@ -5,9 +5,17 @@ Omniralph includes code adapted from the following third-party projects.
 ## claude-skills
 
 - Source: https://github.com/alirezarezvani/claude-skills (commit `19392f7a08264ed00486a251f5b2098321771f94`)
-- Used in: `packages/engine/src/riskScan.ts`, a TypeScript port of
-  `engineering-team/skills/code-reviewer/scripts/pr_analyzer.py` (file risk
-  categories, risk patterns and complexity score)
+- Used in:
+  - `packages/engine/src/riskScan.ts`, a TypeScript port of
+    `engineering-team/skills/code-reviewer/scripts/pr_analyzer.py` (file risk
+    categories, risk patterns and complexity score)
+  - `packages/engine/src/rubric/universal.md` and
+    `packages/engine/src/rubric/languages/*.md`, adapted from
+    `engineering-team/skills/code-reviewer/rules/universal.md` and
+    `engineering-team/skills/code-reviewer/languages/*.md` (the "Flag …" rules of
+    the security, concurrency, resource, exception and performance sections; the
+    style/idiom sections were dropped, and the correctness, breaking-change,
+    tests, probing-question, do-not-report and evidence sections are our own)
 - License: MIT
 
 ```

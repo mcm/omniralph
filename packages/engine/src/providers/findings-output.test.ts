@@ -7,7 +7,7 @@ const f = {
   startLine: 1,
   endLine: 1,
   severity: "low",
-  category: "style",
+  category: "correctness",
   title: "t",
   body: "b",
   confidence: 0.5,

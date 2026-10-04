@@ -18,8 +18,9 @@ describe("Finding", () => {
     expect(Finding.parse({ ...valid, suggestion: "x" }).suggestion).toBe("x");
   });
 
-  it("rejects bad severities, confidence and line ranges", () => {
+  it("rejects bad severities, categories, confidence and line ranges", () => {
     expect(Finding.safeParse({ ...valid, severity: "blocker" }).success).toBe(false);
+    expect(Finding.safeParse({ ...valid, category: "style" }).success).toBe(false);
     expect(Finding.safeParse({ ...valid, confidence: 1.5 }).success).toBe(false);
     expect(Finding.safeParse({ ...valid, startLine: 0 }).success).toBe(false);
     expect(Finding.safeParse({ ...valid, startLine: 1.5 }).success).toBe(false);
