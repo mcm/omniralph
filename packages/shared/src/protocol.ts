@@ -115,6 +115,9 @@ export const JOB_SKIP_REASONS = [
   "expired",
   "max_deliveries",
   "capability_disabled",
+  "skipped",
+  /** A review job whose head SHA already has a completed review. */
+  "already_reviewed",
 ] as const;
 export const JobSkipReason = z.enum(JOB_SKIP_REASONS);
 export type JobSkipReason = z.infer<typeof JobSkipReason>;

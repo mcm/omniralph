@@ -36,6 +36,12 @@ export interface RunReviewInput {
   reviewConfig: ReviewConfig;
   changeRequest: ChangeRequestText;
   previousReview?: PreviousReview;
+  /**
+   * Environment for git commands (default `process.env`). Agents pass one
+   * that configures their credential helper, since diffing a blobless clone
+   * fetches blobs on demand.
+   */
+  gitEnv?: NodeJS.ProcessEnv;
 }
 
 export interface RunReviewDeps {
@@ -74,7 +80,7 @@ export interface ReviewResult {
 export async function resolveScope(input: RunReviewInput): Promise<ReviewScope> {
   const { cwd, baseSha, headSha, previousReview } = input;
   if (!previousReview) return { mode: "full", baseSha, headSha };
-  if (await isAncestor(cwd, previousReview.headSha, headSha)) {
+  if (await isAncestor(cwd, previousReview.headSha, headSha, input.gitEnv)) {
     return { mode: "incremental", fromSha: previousReview.headSha, headSha };
   }
   return { mode: "full", baseSha, headSha, fallbackFrom: previousReview.headSha };
@@ -113,9 +119,9 @@ export async function runReview(
       "Previous review head is not an ancestor of the head (force-push?); reviewing the full diff",
     );
   }
-  const files = parseDiff(await diff(input.cwd, scopeRange(scope)));
+  const files = parseDiff(await diff(input.cwd, scopeRange(scope), input.gitEnv));
   const plan = planReview(files, profile, { pathExcludes: input.reviewConfig.pathExcludes });
-  const conventions = await showFile(input.cwd, input.baseSha, CONVENTIONS_PATH);
+  const conventions = await showFile(input.cwd, input.baseSha, CONVENTIONS_PATH, input.gitEnv);
   const incremental: IncrementalScope | undefined =
     scope.mode === "incremental" ? { fromSha: scope.fromSha, headSha: scope.headSha } : undefined;
 

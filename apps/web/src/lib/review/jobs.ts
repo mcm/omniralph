@@ -1,0 +1,122 @@
+import "server-only";
+import {
+  findCompletedReview,
+  finishReview,
+  markReviewQueued,
+  markReviewRunning,
+  saveReviewOutcome,
+  skipJob,
+  type Database,
+  type Job,
+} from "@omniralph/db";
+import {
+  REVIEW_CAPABILITY,
+  REVIEW_JOB_TYPE,
+  ReviewJobPayload,
+  ReviewJobResult,
+} from "@omniralph/shared";
+import { postFailureNote, postReview } from "./post";
+
+/**
+ * The review side of the job lifecycle: the agent API routes call these
+ * hooks for `review.run` jobs so that the `reviews` row follows its job, the
+ * result is persisted and posted, and final failures get a note on the PR/MR.
+ */
+
+/**
+ * Whether a job is a review created by `enqueueReview`: a `review.run` job
+ * with a valid payload (anything else gets the generic job lifecycle only).
+ */
+export function isReviewJob(job: Pick<Job, "capability" | "type" | "payload">): boolean {
+  return (
+    job.capability === REVIEW_CAPABILITY &&
+    job.type === REVIEW_JOB_TYPE &&
+    ReviewJobPayload.safeParse(job.payload).success
+  );
+}
+
+function reviewPayload(job: Job): ReviewJobPayload {
+  return ReviewJobPayload.parse(job.payload);
+}
+
+/**
+ * After a delivery started: a head SHA that already has a `completed` review
+ * isn't reviewed again (job and review become `skipped`); otherwise the review
+ * is marked `running` on the agent.
+ */
+export async function onReviewJobStarted(
+  db: Database,
+  job: Job,
+  agentId: string,
+): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
+  const payload = reviewPayload(job);
+  const completed = await findCompletedReview(db, {
+    repositoryId: payload.repositoryId,
+    prNumber: payload.prNumber,
+    headSha: payload.headSha,
+    exceptReviewId: payload.reviewId,
+  });
+  if (completed) {
+    const reason = `Head ${payload.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
+    await skipJob(db, job.id, { reason });
+    await finishReview(db, payload.reviewId, { status: "skipped", error: reason });
+    return { skip: true, reason: "already_reviewed" };
+  }
+  await markReviewRunning(db, payload.reviewId, agentId);
+  return { skip: false };
+}
+
+/** Validates a review job's result before the job is completed. */
+export function parseReviewResult(result: unknown): ReviewJobResult | null {
+  const parsed = ReviewJobResult.safeParse(result);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * For a `completed` review job: persists the review and its findings (once),
+ * then posts it to the PR/MR (once). Safe to call again for a replayed result;
+ * that also retries a post that failed before.
+ */
+export async function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
+  const payload = reviewPayload(job);
+  const result = ReviewJobResult.parse(job.result);
+  await saveReviewOutcome(db, payload.reviewId, {
+    status: result.stopReason === "budget_exhausted" ? "budget_exhausted" : "completed",
+    tokensIn: result.usage.inputTokens,
+    tokensOut: result.usage.outputTokens,
+    durationMs: result.durationMs,
+    skippedFiles: result.skipped,
+    findings: result.findings.map((f) => ({
+      path: f.path,
+      startLine: f.startLine,
+      endLine: f.endLine,
+      severity: f.severity,
+      category: f.category,
+      title: f.title,
+      body: f.body,
+      suggestion: f.suggestion ?? null,
+      confidence: f.confidence,
+    })),
+  });
+  await postReview(db, { reviewId: payload.reviewId, payload, result });
+}
+
+/** A review job that ended `canceled` (e.g. superseded by a newer push). */
+export async function onReviewJobCanceled(db: Database, job: Job): Promise<void> {
+  await finishReview(db, reviewPayload(job).reviewId, { status: "skipped", error: "Canceled" });
+}
+
+/** A retryable failure: the review waits for the job's redelivery. */
+export async function onReviewJobRetry(db: Database, job: Job, error: string | null) {
+  await markReviewQueued(db, reviewPayload(job).reviewId, error);
+}
+
+/**
+ * A final failure: the review becomes `failed` with the error and a short
+ * failure note is posted on the PR/MR (once).
+ */
+export async function onReviewJobFailed(db: Database, job: Job, error: string): Promise<void> {
+  const payload = reviewPayload(job);
+  await finishReview(db, payload.reviewId, { status: "failed", error });
+  await postFailureNote(db, { reviewId: payload.reviewId, payload, error });
+}

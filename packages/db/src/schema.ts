@@ -73,6 +73,8 @@ export const jobStatus = pgEnum("job_status", [
   "failed",
   "canceled",
   "expired",
+  /** Nothing to do (e.g. a review of a head SHA that already has a completed review). */
+  "skipped",
 ]);
 
 // ── Auth.js (@auth/drizzle-adapter compatible) ───────────────────────────────

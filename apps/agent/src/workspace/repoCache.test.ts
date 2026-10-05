@@ -1,78 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ENV, exists, git, Remote } from "../test/git-remote.js";
 import { RepoCache, type Worktree } from "./repoCache.js";
-
-/** Git environment isolated from the host's config. */
-const ENV: NodeJS.ProcessEnv = {
-  ...process.env,
-  GIT_CONFIG_GLOBAL: "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
-  GIT_AUTHOR_NAME: "Test",
-  GIT_AUTHOR_EMAIL: "test@example.com",
-  GIT_COMMITTER_NAME: "Test",
-  GIT_COMMITTER_EMAIL: "test@example.com",
-};
-
-function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }).trim();
-}
-
-async function exists(p: string): Promise<boolean> {
-  return stat(p).then(
-    () => true,
-    () => false,
-  );
-}
-
-/** A bare "remote" plus a working clone to push commits from. */
-class Remote {
-  readonly bare: string;
-  private readonly work: string;
-
-  constructor(readonly root: string) {
-    this.bare = path.join(root, "remote.git");
-    this.work = path.join(root, "work");
-  }
-
-  init(): void {
-    execFileSync("git", ["init", "--quiet", "--bare", "--initial-branch=main", this.bare], {
-      env: ENV,
-    });
-    git(this.bare, "config", "uploadpack.allowFilter", "true");
-    git(this.bare, "config", "uploadpack.allowAnySHA1InWant", "true");
-    execFileSync("git", ["clone", "--quiet", this.bare, this.work], { env: ENV });
-  }
-
-  /** Commits `files` on `branch` and pushes; returns the commit SHA. */
-  async commit(files: Record<string, string>, branch = "main"): Promise<string> {
-    if (git(this.work, "branch", "--show-current") !== branch) {
-      git(this.work, "checkout", "--quiet", "-B", branch);
-    }
-    for (const [file, content] of Object.entries(files)) {
-      await mkdir(path.dirname(path.join(this.work, file)), { recursive: true });
-      await writeFile(path.join(this.work, file), content);
-    }
-    git(this.work, "add", "-A");
-    git(this.work, "commit", "--quiet", "-m", `commit ${Object.keys(files).join(",")}`);
-    git(this.work, "push", "--quiet", "origin", branch);
-    return git(this.work, "rev-parse", "HEAD");
-  }
-
-  /** Rewrites `branch` to a new commit that isn't on any other branch; returns it. */
-  async unadvertisedCommit(): Promise<string> {
-    const sha = await this.commit({ "pr.txt": "pull request head\n" }, "pr-branch");
-    // Only reachable from a ref the default refspec doesn't fetch (like refs/pull/N/head).
-    git(this.bare, "update-ref", "refs/pull/1/head", sha);
-    git(this.bare, "update-ref", "-d", "refs/heads/pr-branch");
-    return sha;
-  }
-}
 
 describe("RepoCache", () => {
   let root: string;
@@ -333,5 +268,28 @@ describe("RepoCache", () => {
     }
     expect(() => repos.repoDir({ provider: "bitbucket" as "github", fullPath: "a/b" })).toThrow();
     expect(() => repos.worktreePath("../x")).toThrow(/invalid job ID/);
+  });
+
+  it("gives other git commands an environment with only the agent's credential helper", async () => {
+    const first = await remote.commit({ "README.md": "one\n" });
+    const repos = cache({ credentialHelper: "!omniralph-agent git-credential" });
+    const env = repos.gitEnv({ ...ENV, GIT_ASKPASS: "/usr/bin/askpass", OMNIRALPH_JOB_TOKEN: "t" });
+    expect(env.GIT_ASKPASS).toBeUndefined();
+    expect(env.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(env.OMNIRALPH_JOB_TOKEN).toBe("t");
+
+    await repos.withWorktree(repo, first, { ...opts, jobId: "job-env" }, async (worktree) => {
+      // A host-level helper (e.g. in the repo's config) is reset by the env config.
+      git(worktree.repoDir, "config", "credential.helper", "!host-helper");
+      const run = (...args: string[]) =>
+        execFileSync("git", args, { cwd: worktree.path, env, encoding: "utf8" });
+      expect(run("config", "--get-all", "credential.helper").split("\n")).toEqual([
+        "!host-helper",
+        "",
+        "!omniralph-agent git-credential",
+        "",
+      ]);
+      expect(run("config", "--get", "core.askPass")).toBe("\n");
+    });
   });
 });

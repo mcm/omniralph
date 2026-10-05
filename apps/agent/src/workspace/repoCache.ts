@@ -4,7 +4,7 @@ import path from "node:path";
 import type { JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
 import type { Logger } from "../logger.js";
-import { credentialConfigArgs, GitError, runGit } from "./git.js";
+import { credentialConfigArgs, credentialConfigEnv, GitError, gitEnv, runGit } from "./git.js";
 
 /** Directory (under `workspaceRoot`) holding one git worktree per running job. */
 export const WORKTREES_DIR = ".worktrees";
@@ -123,6 +123,16 @@ export class RepoCache {
       throw new Error(`invalid repository path ${repo.provider}/${repo.fullPath}`);
     }
     return path.join(this.workspaceRoot, repo.provider, ...segments);
+  }
+
+  /**
+   * Environment for git commands run by others in a worktree (e.g. the
+   * engine's diffs): no askpass or prompts, and only the agent's credential
+   * helper, so on-demand blob fetches authenticate with the job token in `env`.
+   */
+  gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const { GIT_CONFIG_PARAMETERS: _params, ...rest } = gitEnv(env);
+    return { ...rest, ...credentialConfigEnv(this.credentialHelper) };
   }
 
   worktreePath(jobId: string): string {

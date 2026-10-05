@@ -8,6 +8,12 @@ import {
   type JobRouteContext,
 } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
+import {
+  isReviewJob,
+  onReviewJobCanceled,
+  onReviewJobFailed,
+  onReviewJobStarted,
+} from "@/lib/review/jobs";
 
 /**
  * Called by an agent when it receives a job's queue message. Atomically marks
@@ -34,7 +40,21 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     maxDeliveries: MAX_JOB_DELIVERIES,
   });
   if (started.action === "skip") {
+    if (isReviewJob(job)) {
+      if (started.reason === "max_deliveries") {
+        const failed = (await getJob(db, job.id)) ?? job;
+        await onReviewJobFailed(db, failed, failed.error ?? "Gave up after too many deliveries");
+      } else if (started.reason === "canceled") {
+        await onReviewJobCanceled(db, job);
+      }
+    }
     return Response.json({ action: "skip", reason: started.reason } satisfies JobStartResponse);
+  }
+  if (isReviewJob(started.job)) {
+    const review = await onReviewJobStarted(db, started.job, agentId);
+    if (review.skip) {
+      return Response.json({ action: "skip", reason: review.reason } satisfies JobStartResponse);
+    }
   }
   const { id, capability, type, repositoryId, payload, deliveryCount } = started.job;
   return Response.json({

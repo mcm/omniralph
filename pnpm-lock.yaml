@@ -78,6 +78,9 @@ importers:
       '@omniralph/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@omniralph/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@omniralph/scm':
         specifier: workspace:*
         version: link:../../packages/scm
