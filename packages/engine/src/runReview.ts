@@ -1,6 +1,6 @@
 import type { Finding } from "@omniralph/shared";
 import { dedupeFindings } from "./dedupe.js";
-import { parseDiff } from "./diff.js";
+import { parseDiff, type DiffFile } from "./diff.js";
 import { diff, isAncestor, showFile } from "./git.js";
 import { planReview, type SkippedFile } from "./plan.js";
 import {
@@ -10,12 +10,14 @@ import {
   type ReviewConfig,
 } from "./prompt.js";
 import { ClaudeAgentProvider } from "./providers/claude-agent.js";
+import { hunkLineSets } from "./providers/findings-output.js";
 import { isCiWorkflowPath } from "./rubric/index.js";
 import {
   downgradeSuggestion,
   stripCrossReferences,
   undefinedSuggestionVariables,
 } from "./selfContained.js";
+import { alignSuggestionRange } from "./suggestionRange.js";
 import {
   consoleLogger,
   type ReviewLogger,
@@ -102,27 +104,49 @@ const location = (f: Finding) => ({ path: f.path, startLine: f.startLine, endLin
 
 /**
  * Each finding is posted as its own comment, so it must stand alone: drop
- * sentences pointing at other findings, and turn a workflow suggestion that
- * uses a variable nothing defines (an incomplete one-click fix) into body text.
+ * sentences pointing at other findings, fit a suggestion's range to the lines
+ * it actually replaces (or drop the suggestion), and turn a workflow
+ * suggestion that uses a variable nothing defines (an incomplete one-click
+ * fix) into body text.
  */
 async function makeSelfContained(
   findings: readonly Finding[],
+  diffFiles: readonly DiffFile[],
   input: RunReviewInput,
   logger: ReviewLogger,
 ): Promise<Finding[]> {
   const files = new Map<string, Promise<string | undefined>>();
+  const headFile = (path: string) => {
+    let file = files.get(path);
+    if (!file) {
+      file = showFile(input.cwd, input.headSha, path, input.gitEnv);
+      files.set(path, file);
+    }
+    return file;
+  };
+  const hunks = new Map(diffFiles.map((file) => [file.path, hunkLineSets(file)]));
   const result: Finding[] = [];
   for (const raw of findings) {
     let finding = stripCrossReferences(raw);
     if (finding !== raw) logger.info(location(finding), "Removed references to other findings");
-    if (finding.suggestion !== undefined && isCiWorkflowPath(finding.path)) {
-      let file = files.get(finding.path);
-      if (!file) {
-        file = showFile(input.cwd, input.headSha, finding.path, input.gitEnv);
-        files.set(finding.path, file);
+    const text = finding.suggestion !== undefined ? await headFile(finding.path) : undefined;
+    if (text !== undefined) {
+      const aligned = alignSuggestionRange(finding, text, hunks.get(finding.path) ?? []);
+      if (aligned.kind === "extended") {
+        logger.info(
+          { ...location(aligned.finding), suggestedRange: aligned.from },
+          "Suggestion repeats lines next to its range; extended the range over them",
+        );
+      } else if (aligned.kind === "dropped") {
+        logger.info(
+          location(finding),
+          "Suggestion repeats lines outside its diff hunk; dropped the suggestion",
+        );
       }
-      const text = await file;
-      const missing = text === undefined ? [] : undefinedSuggestionVariables(finding, text);
+      finding = aligned.finding;
+    }
+    if (text !== undefined && finding.suggestion !== undefined && isCiWorkflowPath(finding.path)) {
+      const missing = undefinedSuggestionVariables(finding, text);
       if (missing.length > 0) {
         logger.info(
           { ...location(finding), variables: missing },
@@ -213,7 +237,7 @@ export async function runReview(
     if (result.stopReason !== "completed") break;
   }
 
-  const checked = await makeSelfContained(collected, input, logger);
+  const checked = await makeSelfContained(collected, files, input, logger);
   const deduped = dedupeFindings(checked, input.previousReview?.openFindings);
   discarded.duplicate = deduped.suppressed.length;
   if (deduped.suppressed.length > 0) {

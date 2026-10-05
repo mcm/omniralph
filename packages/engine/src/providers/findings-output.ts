@@ -101,7 +101,7 @@ export function extractPartialFindings(text: string): Finding[] {
  * Commentable lines per file: head-side lines (added or context) of each hunk,
  * base-side lines for deleted files. A finding must fit inside one hunk.
  */
-function hunkLineSets(file: DiffFile): Set<number>[] {
+export function hunkLineSets(file: DiffFile): Set<number>[] {
   const deleted = file.status === "deleted";
   return file.hunks.map((hunk) => {
     const lines = new Set<number>();
