@@ -245,6 +245,38 @@ describe("ClaudeAgentProvider", () => {
     );
   });
 
+  it("stops before a tool turn whose follow-up would cross the budget", async () => {
+    const toolTurn = (input: number, output: number) =>
+      ({
+        ...assistant("", { input_tokens: input, output_tokens: output }),
+        message: {
+          id: `msg-${++messageCounter}`,
+          content: [{ type: "tool_use", id: "t", name: "Read", input: { file_path: "a.ts" } }],
+          usage: { input_tokens: input, output_tokens: output },
+        },
+      }) as unknown as SDKMessage;
+    const fake = fakeQuery([
+      // 3,100 used; the next turn re-sends ≥ 3,100 → 6,200 ≤ 10,000: continue.
+      toolTurn(3000, 100),
+      // 6,700 used; the next turn would add ≥ 3,600 → 10,300 > 10,000: stop.
+      toolTurn(3500, 100),
+      assistant("never reached", { input_tokens: 4000, output_tokens: 10 }),
+      result(answer([finding()])),
+    ]);
+    const logger = silentLogger();
+
+    const res = await new ClaudeAgentProvider({ query: fake.query, logger }).review(request());
+
+    expect(res.stopReason).toBe("budget_exhausted");
+    expect(res.usage).toEqual({ inputTokens: 6500, outputTokens: 200 });
+    expect(res.usage.inputTokens + res.usage.outputTokens).toBeLessThanOrEqual(10_000);
+    expect(fake.yielded[0]).toBe(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ budget: 10_000, nextTurn: 3600 }),
+      expect.stringContaining("next turn would exceed"),
+    );
+  });
+
   it("returns rate_limited when the SDK reports a rate limit", async () => {
     const fake = fakeQuery([assistant("API Error: rate limited", {}, { error: "rate_limit" })]);
     const res = await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
@@ -557,5 +589,15 @@ describe("worktreeGuard", () => {
     expect(await decide("Read", { file_path: join(root, "src", "link") })).toBe("deny");
     expect(await decide("Grep", { pattern: "x", path: outside })).toBe("deny");
     expect(await decide("Glob", { pattern: "/etc/**" })).toBe("deny");
+  });
+
+  it("denies relative file patterns that climb out of the worktree", async () => {
+    expect(await decide("Glob", { pattern: "../../**/*" })).toBe("deny");
+    expect(await decide("Glob", { pattern: "src/../../secret" })).toBe("deny");
+    expect(await decide("Glob", { pattern: "{src,..}/*" })).toBe("deny");
+    expect(await decide("Grep", { pattern: "x", glob: "../**/*.env" })).toBe("deny");
+    expect(await decide("Grep", { pattern: "x", glob: "/etc/*" })).toBe("deny");
+    expect(await decide("Grep", { pattern: "x", glob: "*.{ts,tsx}" })).toBe("pass");
+    expect(await decide("Glob", { pattern: "src/**/..foo.ts" })).toBe("pass");
   });
 });

@@ -22,8 +22,8 @@ import {
 export const CONVENTIONS_PATH = "CLAUDE.md";
 
 export interface PreviousReview {
-  /** Head commit the previous review covered. */
-  headSha: string;
+  /** Head commit the last complete review covered; null = review the full diff. */
+  headSha: string | null;
   /** Findings of earlier reviews of this PR that are still open. */
   openFindings?: readonly Pick<Finding, "path" | "startLine" | "endLine" | "category">[];
 }
@@ -79,7 +79,7 @@ export interface ReviewResult {
 /** Picks the commit range to review: the new commits only when possible. */
 export async function resolveScope(input: RunReviewInput): Promise<ReviewScope> {
   const { cwd, baseSha, headSha, previousReview } = input;
-  if (!previousReview) return { mode: "full", baseSha, headSha };
+  if (!previousReview?.headSha) return { mode: "full", baseSha, headSha };
   if (await isAncestor(cwd, previousReview.headSha, headSha, input.gitEnv)) {
     return { mode: "incremental", fromSha: previousReview.headSha, headSha };
   }

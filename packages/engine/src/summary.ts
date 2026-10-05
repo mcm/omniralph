@@ -4,6 +4,7 @@ import type { ReviewResult } from "./runReview.js";
 
 const SKIP_REASON_LABELS: Record<SkipReason, string> = {
   excluded: "excluded by path filters",
+  generated: "generated code",
   binary: "binary file",
   no_changes: "no line changes",
   budget: "over the token budget",
@@ -20,8 +21,9 @@ const STOP_NOTES: Record<ReviewResult["stopReason"], string | undefined> = {
 
 const number = new Intl.NumberFormat("en-US");
 
-/** Inline code that survives backticks in the content. */
-function code(text: string): string {
+/** Inline code that survives backticks and line breaks in the content. */
+function code(raw: string): string {
+  const text = raw.replace(/[\r\n]+/g, " ");
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
   const marks = "`".repeat(longest + 1);
   const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";

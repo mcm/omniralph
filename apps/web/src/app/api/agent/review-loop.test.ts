@@ -513,6 +513,36 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     expect(postReview).toHaveBeenCalledTimes(1);
   });
 
+  it("never uses a budget_exhausted review as the incremental base, but dedupes against its findings", async () => {
+    const prNumber = ++prCounter;
+    const { accessToken } = await newAgent();
+    const first = await enqueue(prNumber, head1);
+    if (first.status !== "enqueued") throw new Error(first.status);
+    const run = await startAs(first.jobId, accessToken);
+    if (run.action !== "run") throw new Error("expected run");
+    const partial = {
+      ...(await agentRun(run.job.payload)),
+      stopReason: "budget_exhausted" as const,
+    };
+    await submit(first.jobId, accessToken, partial);
+    expect(await reviewRow(first.reviewId)).toMatchObject({ status: "budget_exhausted" });
+
+    // Files the partial review never reached must still be reviewed: full diff, deduped.
+    const next = await enqueue(prNumber, head2);
+    if (next.status !== "enqueued") throw new Error(next.status);
+    const payload = ReviewJobPayload.parse((await jobRow(next.jobId)).payload);
+    expect(payload.previousReview).toEqual({
+      headSha: null,
+      openFindings: [{ path: "src/app.ts", startLine: 2, endLine: 2, category: "security" }],
+    });
+    await startAs(next.jobId, accessToken);
+    const output = await agentRun(payload);
+    expect(output.scope).toEqual({ mode: "full", baseSha: base, headSha: head2 });
+    // The fake provider re-reports src/app.ts (first file of the full diff): suppressed.
+    expect(output.findings).toEqual([]);
+    expect(output.discarded.duplicate).toBe(1);
+  });
+
   it("cancels queued and running jobs for older head SHAs of the same PR on a newer push", async () => {
     const prNumber = ++prCounter;
     const { accessToken } = await newAgent();

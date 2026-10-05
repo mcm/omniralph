@@ -220,6 +220,16 @@ describe("runReview", () => {
     expect(provider.requests[0]!.prompt).toContain("The diff covers the whole change.");
   });
 
+  it("reviews the full diff when no earlier review completed (headSha null)", async () => {
+    const provider = new FakeProvider();
+    const result = await runReview(
+      input({ headSha: second, previousReview: { headSha: null, openFindings: [] } }),
+      { provider, logger: quietLogger },
+    );
+    expect(result.scope).toEqual({ mode: "full", baseSha: input().baseSha, headSha: second });
+    expect(provider.requests[0]!.prompt).toContain("The diff covers the whole change.");
+  });
+
   it("falls back to the full diff when the previous head is unknown", async () => {
     const provider = new FakeProvider();
     const result = await runReview(

@@ -12,7 +12,8 @@ import { jobProcessEnv } from "./job-env.js";
 import { main } from "./main.js";
 import { credentialConfigArgs, defaultCredentialHelper } from "./workspace/git.js";
 
-const EXPIRES_AT = "2026-10-05T00:00:00.000Z";
+// Always in the future: git (≥ 2.41) ignores passwords whose password_expiry_utc has passed.
+const EXPIRES_AT = new Date(Math.floor(Date.now() / 1000 + 3600) * 1000).toISOString();
 const CREDENTIAL = {
   cloneUrl: "https://github.com/acme/app.git",
   username: "x-access-token",

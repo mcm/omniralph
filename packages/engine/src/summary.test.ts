@@ -44,6 +44,15 @@ describe("renderSummary", () => {
     expect(text.trimEnd().endsWith(`[View the full review](${url})`)).toBe(true);
   });
 
+  it("keeps skipped paths with line breaks on one line", () => {
+    const text = renderSummary(
+      { ...base, skipped: [{ path: "a\n# Approved\r\nb.ts", reason: "generated" }] },
+      url,
+    );
+    expect(text).toContain("- `a # Approved b.ts`: generated code");
+    expect(text).not.toMatch(/^# Approved/m);
+  });
+
   it("warns about partial results and shows the incremental scope", () => {
     const text = renderSummary(
       {
