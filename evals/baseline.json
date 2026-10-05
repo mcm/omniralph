@@ -1,5 +1,180 @@
 {
   "version": 1,
-  "updatedAt": null,
-  "profiles": {}
+  "updatedAt": "2026-10-05T16:09:18.972Z",
+  "profiles": {
+    "quick": {
+      "profileId": "quick",
+      "model": "claude-haiku-4-5",
+      "cases": 27,
+      "caseIds": [
+        "bad-async-foreach",
+        "bad-destructive-migration",
+        "bad-floating-promise",
+        "bad-hardcoded-secret",
+        "bad-interval-leak",
+        "bad-missing-ownership-check",
+        "bad-n-plus-one",
+        "bad-prompt-injection",
+        "bad-python-path-traversal",
+        "bad-removed-export",
+        "bad-sql-concat",
+        "bad-swallowed-error",
+        "clean-additive-migration",
+        "clean-async-await",
+        "clean-batched-query",
+        "clean-deprecated-export",
+        "clean-docs",
+        "clean-env-secret",
+        "clean-error-handling",
+        "clean-formatting",
+        "clean-injection-filter",
+        "clean-interval-cleanup",
+        "clean-large-refactor",
+        "clean-ownership-check",
+        "clean-parameterized-sql",
+        "clean-rename-refactor",
+        "clean-test-only"
+      ],
+      "unscored": 0,
+      "truePositives": 13,
+      "falsePositives": 4,
+      "falseNegatives": 0,
+      "precision": 0.7647058823529411,
+      "recall": 1,
+      "cleanFalsePositives": 4,
+      "cleanCasesFlagged": 4,
+      "cleanCases": 15,
+      "inputTokens": {
+        "mean": 7963,
+        "p50": 7980,
+        "max": 12779
+      },
+      "outputTokens": {
+        "mean": 7611,
+        "p50": 6536,
+        "max": 16794
+      },
+      "totalTokens": 420499,
+      "durationMs": {
+        "mean": 72534,
+        "total": 1958413
+      }
+    },
+    "standard": {
+      "profileId": "standard",
+      "model": "claude-sonnet-5-5",
+      "cases": 27,
+      "caseIds": [
+        "bad-async-foreach",
+        "bad-destructive-migration",
+        "bad-floating-promise",
+        "bad-hardcoded-secret",
+        "bad-interval-leak",
+        "bad-missing-ownership-check",
+        "bad-n-plus-one",
+        "bad-prompt-injection",
+        "bad-python-path-traversal",
+        "bad-removed-export",
+        "bad-sql-concat",
+        "bad-swallowed-error",
+        "clean-additive-migration",
+        "clean-async-await",
+        "clean-batched-query",
+        "clean-deprecated-export",
+        "clean-docs",
+        "clean-env-secret",
+        "clean-error-handling",
+        "clean-formatting",
+        "clean-injection-filter",
+        "clean-interval-cleanup",
+        "clean-large-refactor",
+        "clean-ownership-check",
+        "clean-parameterized-sql",
+        "clean-rename-refactor",
+        "clean-test-only"
+      ],
+      "unscored": 0,
+      "truePositives": 13,
+      "falsePositives": 3,
+      "falseNegatives": 0,
+      "precision": 0.8125,
+      "recall": 1,
+      "cleanFalsePositives": 0,
+      "cleanCasesFlagged": 0,
+      "cleanCases": 15,
+      "inputTokens": {
+        "mean": 14210,
+        "p50": 12096,
+        "max": 28700
+      },
+      "outputTokens": {
+        "mean": 264,
+        "p50": 220,
+        "max": 715
+      },
+      "totalTokens": 390787,
+      "durationMs": {
+        "mean": 5023,
+        "total": 135629
+      }
+    },
+    "deep": {
+      "profileId": "deep",
+      "model": "claude-opus-5-5",
+      "cases": 27,
+      "caseIds": [
+        "bad-async-foreach",
+        "bad-destructive-migration",
+        "bad-floating-promise",
+        "bad-hardcoded-secret",
+        "bad-interval-leak",
+        "bad-missing-ownership-check",
+        "bad-n-plus-one",
+        "bad-prompt-injection",
+        "bad-python-path-traversal",
+        "bad-removed-export",
+        "bad-sql-concat",
+        "bad-swallowed-error",
+        "clean-additive-migration",
+        "clean-async-await",
+        "clean-batched-query",
+        "clean-deprecated-export",
+        "clean-docs",
+        "clean-env-secret",
+        "clean-error-handling",
+        "clean-formatting",
+        "clean-injection-filter",
+        "clean-interval-cleanup",
+        "clean-large-refactor",
+        "clean-ownership-check",
+        "clean-parameterized-sql",
+        "clean-rename-refactor",
+        "clean-test-only"
+      ],
+      "unscored": 0,
+      "truePositives": 13,
+      "falsePositives": 3,
+      "falseNegatives": 0,
+      "precision": 0.8125,
+      "recall": 1,
+      "cleanFalsePositives": 2,
+      "cleanCasesFlagged": 2,
+      "cleanCases": 15,
+      "inputTokens": {
+        "mean": 20295,
+        "p50": 20350,
+        "max": 39983
+      },
+      "outputTokens": {
+        "mean": 505,
+        "p50": 397,
+        "max": 1204
+      },
+      "totalTokens": 561623,
+      "durationMs": {
+        "mean": 7651,
+        "total": 206580
+      }
+    }
+  }
 }
