@@ -70,7 +70,7 @@ export interface RepositoryRow {
   lastReviewAt: string | null;
 }
 
-export type GitHubNotice = "requested" | "invalid";
+export type GitHubNotice = "requested" | "invalid" | "error";
 
 interface RepositoriesViewProps {
   repositories: RepositoryRow[];
@@ -322,15 +322,26 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const githubNotices: Record<GitHubNotice, { title: string; description: string }> = {
+const githubNotices: Record<
+  GitHubNotice,
+  { title: string; description: string; variant: "warning" | "destructive" }
+> = {
   requested: {
+    variant: "warning",
     title: "Installation requested",
     description:
       "An organization owner has to approve the GitHub App installation. Once they do, open it again from GitHub or click Connect GitHub.",
   },
   invalid: {
+    variant: "warning",
     title: "Unknown GitHub installation",
     description: "GitHub didn't return an installation of this app. Try connecting again.",
+  },
+  error: {
+    variant: "destructive",
+    title: "Couldn't look up the GitHub installation",
+    description:
+      "Omniralph couldn't authenticate as the GitHub App or reach GitHub. Check the GitHub App configuration (GITHUB_APP_ID and its signing key) and the server logs, then try connecting again.",
   },
 };
 
@@ -387,7 +398,7 @@ export function RepositoriesView({
         </div>
 
         {isAdmin && githubNotice && (
-          <Alert variant="warning">
+          <Alert variant={githubNotices[githubNotice].variant}>
             <AlertTitle>{githubNotices[githubNotice].title}</AlertTitle>
             <AlertDescription>{githubNotices[githubNotice].description}</AlertDescription>
           </Alert>

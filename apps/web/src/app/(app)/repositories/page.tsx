@@ -13,6 +13,7 @@ export const metadata: Metadata = { title: "Repositories · Omniralph" };
 const NOTICES: Record<string, GitHubNotice> = {
   requested: "requested",
   invalid: "invalid",
+  error: "error",
 };
 
 export default async function RepositoriesPage({

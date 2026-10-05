@@ -36,8 +36,14 @@ export async function GET(request: NextRequest) {
   let installation;
   try {
     installation = await getInstallation(getGitHubAppAuth(), installationId);
-  } catch {
-    return to("/repositories?github=invalid");
+  } catch (error) {
+    const status = errorStatus(error);
+    console.error(
+      `GitHub installation ${installationId} lookup failed`,
+      // Name, status and message only: Octokit errors also carry the request (headers included).
+      { status, name: errorName(error), message: errorMessage(error) },
+    );
+    return to(`/repositories?github=${status === 404 ? "invalid" : "error"}`);
   }
   const connection = await upsertScmConnection(getDb(), {
     provider: "github",
@@ -48,4 +54,17 @@ export async function GET(request: NextRequest) {
     createdBy: admin.id,
   });
   return to(`/repositories/github/${connection.id}`);
+}
+
+function errorStatus(error: unknown): number | undefined {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
