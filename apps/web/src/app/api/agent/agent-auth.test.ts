@@ -13,7 +13,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
 import { getContainerRuntimeClient } from "testcontainers";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database }));
@@ -36,6 +36,19 @@ const dockerAvailable = await getContainerRuntimeClient().then(
 );
 
 let ipCounter = 0;
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+/**
+ * Loops of sequential token requests (RSA signing + DB transactions) take ~0.5s alone, but
+ * can pass the default 5s test timeout when every package's suite runs at once.
+ */
+const RATE_LIMIT_TEST_TIMEOUT_MS = 30_000;
+
+/** One second into the next one-minute rate-limit window, from the (possibly faked) clock. */
+function nextWindowStart(): number {
+  return (Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS) + 1) * RATE_LIMIT_WINDOW_MS + 1000;
+}
+
 /** A fresh client IP per test, so rate limits and lockouts don't leak between tests. */
 function newIp(): string {
   ipCounter += 1;
@@ -68,11 +81,7 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
     state.db = db;
     // Rate limits use fixed windows: freeze the clock just after a window starts so a
     // test can't straddle a window boundary.
-    const minute = 60_000;
-    vi.useFakeTimers({
-      toFake: ["Date"],
-      now: (Math.floor(Date.now() / minute) + 1) * minute + 1000,
-    });
+    vi.useFakeTimers({ toFake: ["Date"], now: nextWindowStart() });
   }, 180_000);
 
   afterAll(async () => {
@@ -390,7 +399,13 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
     });
   });
 
-  describe("rate limits", () => {
+  describe("rate limits", { timeout: RATE_LIMIT_TEST_TIMEOUT_MS }, () => {
+    // Each test gets its own fresh, frozen window: counters from earlier tests can't leak in,
+    // and however slow the run, the window can't roll over mid-test.
+    beforeEach(() => {
+      vi.setSystemTime(nextWindowStart());
+    });
+
     it("limits /enroll to 10 per minute per IP", async () => {
       const ip = newIp();
       const statuses: number[] = [];
@@ -422,6 +437,8 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
       }
       const limited = await refresh(refreshToken);
       expect(limited.status).toBe(429);
+      // Still the same window: the limit holds even if the loop above was slow.
+      expect(Number(limited.headers.get("retry-after"))).toBe(59);
     });
 
     it("locks an IP out for 10 minutes after 20 failed auth attempts", async () => {

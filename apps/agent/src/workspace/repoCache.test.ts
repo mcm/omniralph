@@ -9,7 +9,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENV, exists, git, Remote } from "../test/git-remote.js";
 import { RepoCache, type Worktree } from "./repoCache.js";
 
-describe("RepoCache", () => {
+// Every test spawns real `git` processes; when all packages' suites run at once under
+// `pnpm test`, one test can take well over the default 5s timeout.
+describe("RepoCache", { timeout: 30_000 }, () => {
   let root: string;
   let workspaceRoot: string;
   let remote: Remote;
