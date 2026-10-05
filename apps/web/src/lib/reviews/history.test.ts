@@ -45,6 +45,10 @@ describe("reviewListHref", () => {
     ).toBe("/repositories/r/reviews?status=budget_exhausted&trigger=webhook&page=2");
   });
 
+  it("accepts the manual (Re-run) trigger as a filter", () => {
+    expect(parseReviewListParams({ trigger: "manual" }).trigger).toBe("manual");
+  });
+
   it("round-trips through parseReviewListParams", () => {
     const params = { status: "skipped", trigger: "mention", page: 4 } as const;
     const query = new URL(reviewListHref("/reviews", params), "https://x").searchParams;
@@ -66,6 +70,7 @@ const finding = (over: Partial<FindingRow>): FindingRow => ({
   confidence: 0.5,
   scmCommentId: null,
   status: "open",
+  supersededByFindingId: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
   ...over,
@@ -149,6 +154,7 @@ describe("view mapping", () => {
       agent: null,
       findings: [finding({})],
       feedback: [],
+      supersedingReviewIds: {},
     };
     expect(reviewDetailView(detail)).toMatchObject({
       prUrl: "https://github.com/group/api/pull/3",

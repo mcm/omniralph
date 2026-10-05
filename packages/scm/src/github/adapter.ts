@@ -136,6 +136,7 @@ export class GitHubAdapter implements ScmAdapter {
       description: data.body ?? "",
       author: data.user.login,
       draft: data.draft ?? false,
+      state: data.merged ? "merged" : data.state === "closed" ? "closed" : "open",
       baseSha: data.base.sha,
       headSha: data.head.sha,
       baseRef: data.base.ref,

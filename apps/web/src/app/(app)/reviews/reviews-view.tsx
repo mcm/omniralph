@@ -43,6 +43,7 @@ import {
 } from "@/lib/reviews/display";
 import { ProviderIcon } from "../repositories/repositories-view";
 import { RepositoryNav } from "../repositories/[id]/repository-nav";
+import { RerunReviewDialog } from "./rerun-review-dialog";
 
 interface ReviewsViewProps {
   /** The repository whose reviews are listed; null lists all repositories. */
@@ -179,7 +180,12 @@ function ReviewTableRow({
       <TableCell>
         <span style={cellText}>{formatDateTime(review.createdAt)}</span>
       </TableCell>
-      <TableCell style={{ textAlign: "right" }}>
+      <TableCell style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+        <RerunReviewDialog
+          reviewId={review.id}
+          changeLabel={`${review.repository.provider === "gitlab" ? "!" : "#"}${review.prNumber}`}
+          compact
+        />
         <Button
           asChild
           variant="ghost"
@@ -405,7 +411,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                     <TableHead>Tokens / budget</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Created</TableHead>
-                    <TableHead aria-label="Details" />
+                    <TableHead aria-label="Actions" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>

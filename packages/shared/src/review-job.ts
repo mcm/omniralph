@@ -43,6 +43,10 @@ export type ReviewJobConfig = z.infer<typeof ReviewJobConfig>;
  * Payload of a `review.run` job. It carries everything the agent needs except
  * credentials: git gets a short-lived read-only token from the broker.
  */
+/** See `ReviewJobPayload.mode`. */
+export const REVIEW_MODES = ["incremental", "full", "fresh"] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
 export const ReviewJobPayload = z.object({
   reviewId: z.uuid(),
   repositoryId: z.uuid(),
@@ -59,6 +63,14 @@ export const ReviewJobPayload = z.object({
     author: z.string().max(255).nullable(),
   }),
   reviewConfig: ReviewJobConfig,
+  /**
+   * How the review was requested: `incremental` (webhook; commits since the
+   * last review), `full` (`@bot review`; the whole diff, open findings still
+   * suppressed) or `fresh` (`@bot review fresh` / Re-run › Fresh; the whole
+   * diff with nothing suppressed, and matching earlier open findings are
+   * superseded when it completes). Absent on jobs from before re-runs.
+   */
+  mode: z.enum(REVIEW_MODES).optional(),
   /**
    * Earlier reviews of the PR, for incremental reviews and dedupe. `headSha`
    * is the last fully (`completed`) reviewed head; null when no review got

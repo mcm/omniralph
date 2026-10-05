@@ -4,6 +4,8 @@
  * - `@bot review [quick|standard|deep]`: a full review of the current head
  *   (duplicates of the PR's open findings are still dropped), optionally with
  *   another profile.
+ * - `@bot review fresh [quick|standard|deep]`: the same from scratch: nothing
+ *   is dropped as a duplicate, and matching earlier findings are superseded.
  * - `@bot dismiss [reason]` in a finding's thread: dismisses the finding. The
  *   reason may start with `false positive` (the default), `won't fix`,
  *   `not relevant` or `other`; the rest is kept as the note.
@@ -26,7 +28,7 @@ export const MAX_DISMISS_NOTE_LENGTH = 1000;
 export type DismissReason = "false_positive" | "wont_fix" | "not_relevant" | "other";
 
 export type BotCommand =
-  | { kind: "review"; profileId: CommandProfile | null }
+  | { kind: "review"; fresh: boolean; profileId: CommandProfile | null }
   | { kind: "dismiss"; reason: DismissReason; note: string | null }
   | { kind: "help" }
   | { kind: "question"; text: string };
@@ -135,11 +137,16 @@ export function parseBotCommand(text: string, handle: string): BotCommand | null
   const bare = word === "" && !/[\p{L}\p{N}]/u.test(parts.before + parts.after);
   if (bare || word === "help") return { kind: "help" };
   if (word === "review") {
-    const args = line.split(/\s+/).filter(Boolean);
-    const profile = args[0]?.toLowerCase().replace(/[.,:;!?]+$/, "");
-    if (args.length === 0) return { kind: "review", profileId: null };
+    const args = line
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((arg) => arg.toLowerCase().replace(/[.,:;!?]+$/, ""));
+    const fresh = args[0] === "fresh";
+    if (fresh) args.shift();
+    const profile = args[0];
+    if (args.length === 0) return { kind: "review", fresh, profileId: null };
     if (args.length === 1 && (COMMAND_PROFILES as readonly string[]).includes(profile!)) {
-      return { kind: "review", profileId: profile as CommandProfile };
+      return { kind: "review", fresh, profileId: profile as CommandProfile };
     }
   } else if (word === "dismiss") {
     return dismissCommand(rest);

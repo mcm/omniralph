@@ -46,7 +46,8 @@ function helpText(handle: string): string {
   return [
     "Here's what I can do:",
     "",
-    `- ${cmd("review")}: review the whole diff again (optionally ${cmd("review quick")}, ${cmd("review standard")} or ${cmd("review deep")}).`,
+    `- ${cmd("review")}: review the whole diff again for new issues (optionally ${cmd("review quick")}, ${cmd("review standard")} or ${cmd("review deep")}).`,
+    `- ${cmd("review fresh")}: review the whole diff from scratch, raising issues again even if they're already open (also with a profile, e.g. ${cmd("review fresh deep")}).`,
     `- ${cmd("dismiss [reason]")} in one of my finding's threads: dismiss the finding (reasons: false positive, won't fix, not relevant, other).`,
     `- Mention me with a question in a finding's thread and I'll answer it.`,
   ].join("\n");
@@ -108,15 +109,16 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         description: cr.description,
         author: cr.author,
         trigger: "mention",
-        mode: "full",
+        mode: command.fresh ? "fresh" : "full",
         profileId: command.profileId,
       });
       const head = inlineCode(cr.headSha.slice(0, 12));
       switch (result.status) {
         case "enqueued": {
           const profile = command.profileId ? `**${PROFILE_NAMES[command.profileId]}** ` : "";
+          const kind = command.fresh ? "fresh" : "full";
           await respond(
-            `On it, @${author}: a full ${profile}review of ${head} is queued. I'll post the results here when it's done.`,
+            `On it, @${author}: a ${kind} ${profile}review of ${head} is queued. I'll post the results here when it's done.`,
           );
           return { status: "review_enqueued", reviewId: result.reviewId, jobId: result.jobId };
         }

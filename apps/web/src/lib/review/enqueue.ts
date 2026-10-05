@@ -16,6 +16,7 @@ import {
   REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
+  type ReviewMode,
 } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -32,11 +33,14 @@ export interface EnqueueReviewInput {
   author: string | null;
   trigger: Review["trigger"];
   /**
-   * `incremental` (default) reviews only the commits since the PR's last
-   * completed review; `full` reviews the whole diff at head (`@bot review`).
-   * Both drop duplicates of the PR's open findings.
+   * `incremental` (default, webhooks) reviews only the commits since the PR's
+   * last completed review; `full` reviews the whole diff at head
+   * (`@bot review`, Re-run › Incremental). Both drop duplicates of the PR's
+   * open findings. `fresh` (`@bot review fresh`, Re-run › Fresh) reviews the
+   * whole diff with no open findings passed, so nothing is dropped; matching
+   * earlier open findings are superseded when it completes.
    */
-  mode?: "incremental" | "full";
+  mode?: ReviewMode;
   /** Review profile to use instead of the repository's (`@bot review deep`). */
   profileId?: string | null;
 }
@@ -62,7 +66,7 @@ export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): stri
  * jobs for older head SHAs, creates the `queued` review and publishes a
  * `review.run` job carrying the review config resolved now (profile, rules,
  * instructions, excludes) and the previous review's head SHA (none for a
- * `full` review) and open findings. The payload holds
+ * `full` review) and open findings (neither for a `fresh` one). The payload holds
  * no credentials. A second call for the same head while its job is active
  * returns that job (`duplicate`).
  */
@@ -95,7 +99,8 @@ export async function enqueueReview(
     }
   }
 
-  const previous = await previousReviewState(db, input);
+  const mode = input.mode ?? "incremental";
+  const previous = mode === "fresh" ? null : await previousReviewState(db, input);
   const review = await createReview(db, {
     repositoryId: input.repositoryId,
     prNumber: input.prNumber,
@@ -132,8 +137,9 @@ export async function enqueueReview(
       rules: settings.rules.map((r) => ({ kind: r.kind, text: r.text, enabled: r.enabled })),
       pathExcludes: settings.pathExcludes,
     },
+    mode,
     previousReview: previous && {
-      headSha: input.mode === "full" ? null : previous.headSha,
+      headSha: mode === "full" ? null : previous.headSha,
       openFindings: previous.openFindings.flatMap((f) => {
         const category = FindingCategory.safeParse(f.category);
         return category.success ? [{ ...f, category: category.data }] : [];

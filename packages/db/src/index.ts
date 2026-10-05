@@ -124,6 +124,7 @@ export {
   postReviewOnce,
   previousReviewState,
   saveReviewOutcome,
+  supersedeOpenFindings,
   type FindingRow,
   type NewReviewInput,
   type PreviousReviewState,
@@ -132,6 +133,7 @@ export {
   type ReviewProfile,
   type ReviewStatus,
   type Rule,
+  type SupersededFinding,
 } from "./reviews.js";
 export {
   claimWebhookDelivery,

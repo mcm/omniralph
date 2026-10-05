@@ -14,7 +14,11 @@ export const REVIEW_STATUSES = [
   "budget_exhausted",
   "skipped",
 ] as const satisfies readonly ReviewStatus[];
-export const REVIEW_TRIGGERS = ["webhook", "mention"] as const satisfies readonly ReviewTrigger[];
+export const REVIEW_TRIGGERS = [
+  "webhook",
+  "mention",
+  "manual",
+] as const satisfies readonly ReviewTrigger[];
 export const FINDING_SEVERITIES = [
   "critical",
   "high",
@@ -90,7 +94,9 @@ export interface FindingView {
   body: string;
   suggestion: string | null;
   confidence: number;
-  status: "open" | "dismissed" | "resolved";
+  status: "open" | "dismissed" | "resolved" | "superseded";
+  /** The fresh review's finding that superseded this one. */
+  supersededBy: { reviewId: string; findingId: string } | null;
   /** Dismissals from the control panel and `@bot dismiss`, oldest first. */
   feedback: FeedbackView[];
 }

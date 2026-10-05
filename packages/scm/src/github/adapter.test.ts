@@ -173,12 +173,37 @@ describe("getChangeRequest", () => {
       description: "",
       author: "octocat",
       draft: true,
+      state: "open",
       baseSha: BASE,
       headSha: HEAD,
       baseRef: "main",
       headRef: "feature",
       url: "https://github.com/acme/widgets/pull/7",
     });
+  });
+
+  it("maps closed and merged pull requests", async () => {
+    for (const [fields, state] of [
+      [{ state: "closed", merged: false }, "closed"],
+      [{ state: "closed", merged: true }, "merged"],
+      [{ state: "open", merged: false }, "open"],
+    ] as const) {
+      server.use(
+        http.get(`${API}/repos/acme/widgets/pulls/7`, () =>
+          HttpResponse.json({
+            number: 7,
+            title: "Add widgets",
+            body: null,
+            user: { login: "octocat" },
+            ...fields,
+            base: { sha: BASE, ref: "main" },
+            head: { sha: HEAD, ref: "feature" },
+            html_url: "https://github.com/acme/widgets/pull/7",
+          }),
+        ),
+      );
+      expect((await makeAdapter().getChangeRequest(REPO, 7)).state).toBe(state);
+    }
   });
 });
 

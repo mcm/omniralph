@@ -130,6 +130,7 @@ describe("getChangeRequest", () => {
       description: "",
       author: "alice",
       draft: true,
+      state: "open",
       baseSha: BASE,
       startSha: START,
       headSha: HEAD,
@@ -148,6 +149,18 @@ describe("getChangeRequest", () => {
     );
     const cr = await makeAdapter().getChangeRequest({ fullPath: "acme/tools/widgets" }, 7);
     expect(cr.draft).toBe(false);
+  });
+
+  it("maps the MR state", async () => {
+    for (const [state, expected] of [
+      ["opened", "open"],
+      ["locked", "open"],
+      ["closed", "closed"],
+      ["merged", "merged"],
+    ] as const) {
+      server.use(http.get(MR, () => HttpResponse.json({ ...mrJson, state })));
+      expect((await makeAdapter().getChangeRequest(REPO, 7)).state).toBe(expected);
+    }
   });
 
   it("fails clearly while the MR diff isn't ready", async () => {

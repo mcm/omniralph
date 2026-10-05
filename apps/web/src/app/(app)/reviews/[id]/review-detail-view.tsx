@@ -49,6 +49,7 @@ import {
   type ReviewDetailView as ReviewDetail,
 } from "@/lib/reviews/display";
 import { ProviderIcon } from "../../repositories/repositories-view";
+import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
@@ -128,6 +129,18 @@ function FindingItem({ finding }: { finding: FindingView }) {
       <Muted style={{ fontSize: "var(--text-xs)" }}>
         {finding.category} · confidence {Math.round(finding.confidence * 100)}%
       </Muted>
+      {finding.supersededBy && (
+        <Muted style={{ fontSize: "var(--text-xs)" }}>
+          Superseded by{" "}
+          <Link
+            href={`/reviews/${finding.supersededBy.reviewId}#finding-${finding.supersededBy.findingId}`}
+            style={{ color: "var(--text-accent)", textDecoration: "none" }}
+          >
+            a finding of a fresh review
+          </Link>
+          .
+        </Muted>
+      )}
       <FeedbackHistory feedback={finding.feedback} />
     </div>
   );
@@ -242,12 +255,15 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               <TriggerBadge trigger={review.trigger} />
             </div>
           </div>
-          <Button asChild variant="ghost">
-            <a href={review.prUrl} target="_blank" rel="noreferrer">
-              <IconExternalLink size={14} />
-              Open {review.repository.provider === "gitlab" ? "merge" : "pull"} request
-            </a>
-          </Button>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
+            <Button asChild variant="ghost">
+              <a href={review.prUrl} target="_blank" rel="noreferrer">
+                <IconExternalLink size={14} />
+                Open {review.repository.provider === "gitlab" ? "merge" : "pull"} request
+              </a>
+            </Button>
+            <RerunReviewDialog reviewId={review.id} changeLabel={changeLabel} />
+          </div>
         </div>
 
         {review.status === "failed" && (
