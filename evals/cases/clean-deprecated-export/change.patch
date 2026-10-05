@@ -1,0 +1,49 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d1e6d36..39982d5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 2.4.0
++
++- Renamed `parsePrice` to `parseCents`. `parsePrice` stays as a deprecated alias until 3.0.0.
++
+ ## 2.3.0
+ 
+ - Added `formatCompact`.
+diff --git a/package.json b/package.json
+index f34841f..381b4fb 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@acme/money",
+-  "version": "2.3.0",
++  "version": "2.4.0",
+   "description": "Money formatting and parsing helpers shared by Acme's web and mobile apps.",
+   "type": "module",
+   "exports": "./dist/index.js",
+diff --git a/src/index.ts b/src/index.ts
+index f4a6c21..b5fafb6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -16,12 +16,17 @@ export function formatCompact(cents: number, currency: Currency = "USD", locale
+ }
+ 
+ /** Parses user input such as "19.99" or "1,299.50" into minor units; null if invalid. */
+-export function parsePrice(input: string): number | null {
++export function parseCents(input: string): number | null {
+   const normalized = input.trim().replace(/,/g, "");
+   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+   return Math.round(Number(normalized) * 100);
+ }
+ 
++/**
++ * @deprecated Renamed to `parseCents`; this alias will be removed in 3.0.0.
++ */
++export const parsePrice = parseCents;
++
+ /** Sums amounts in minor units. */
+ export function sumCents(amounts: readonly number[]): number {
+   return amounts.reduce((total, cents) => total + cents, 0);

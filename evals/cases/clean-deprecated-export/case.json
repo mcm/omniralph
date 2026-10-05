@@ -1,0 +1,21 @@
+{
+  "description": "An export is renamed with a deprecated alias kept and the change announced in the changelog (correct counterpart of bad-removed-export).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "breaking-change",
+    "library"
+  ],
+  "pr": {
+    "title": "Rename parsePrice to parseCents and release 2.4.0"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/index.ts",
+      "startLine": 19,
+      "endLine": 28,
+      "note": "The old name is still exported as a deprecated alias."
+    }
+  ]
+}

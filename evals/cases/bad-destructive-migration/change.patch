@@ -1,0 +1,8 @@
+diff --git a/migrations/0042_drop_users_email.sql b/migrations/0042_drop_users_email.sql
+new file mode 100644
+index 0000000..a217cdf
+--- /dev/null
++++ b/migrations/0042_drop_users_email.sql
+@@ -0,0 +1,2 @@
++-- Addresses live in user_emails since 0041.
++ALTER TABLE users DROP COLUMN email;

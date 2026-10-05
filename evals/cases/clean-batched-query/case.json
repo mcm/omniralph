@@ -1,0 +1,21 @@
+{
+  "description": "Recent orders loaded with one batched customer query (correct counterpart of bad-n-plus-one).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "performance",
+    "pg"
+  ],
+  "pr": {
+    "title": "Add recent orders to the admin dashboard"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/reports/recentOrders.ts",
+      "startLine": 12,
+      "endLine": 18,
+      "note": "Customers are fetched in one query with ANY($1)."
+    }
+  ]
+}

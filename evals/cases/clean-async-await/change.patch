@@ -1,0 +1,53 @@
+diff --git a/src/contacts/import.ts b/src/contacts/import.ts
+new file mode 100644
+index 0000000..b2487d9
+--- /dev/null
++++ b/src/contacts/import.ts
+@@ -0,0 +1,20 @@
++import { normalize, type ContactRow } from "./normalize.js";
++import type { ContactStore } from "./store.js";
++
++export interface ImportSummary {
++  imported: number;
++  total: number;
++}
++
++/** Imports CSV rows one at a time, in order; the first failure rejects the import. */
++export async function importContacts(
++  store: ContactStore,
++  rows: readonly ContactRow[],
++): Promise<ImportSummary> {
++  let imported = 0;
++  for (const row of rows) {
++    await store.upsert(normalize(row));
++    imported += 1;
++  }
++  return { imported, total: rows.length };
++}
+diff --git a/src/orders/service.ts b/src/orders/service.ts
+index 0122382..208a33e 100644
+--- a/src/orders/service.ts
++++ b/src/orders/service.ts
+@@ -1,5 +1,7 @@
+ import { db } from "../db.js";
++import { logger } from "../logger.js";
+ import type { Cart, Order } from "./types.js";
++import { notifyWarehouse } from "./warehouse.js";
+ 
+ export async function placeOrder(cart: Cart): Promise<Order> {
+   if (cart.items.length === 0) throw new Error("Cart is empty");
+@@ -10,5 +12,14 @@ export async function placeOrder(cart: Cart): Promise<Order> {
+       items: { create: cart.items.map((i) => ({ sku: i.sku, quantity: i.quantity })) },
+     },
+   });
++  try {
++    await notifyWarehouse(order.id);
++  } catch (error) {
++    // The nightly reconciliation job re-sends picks for orders still "placed".
++    logger.error("Warehouse notification failed; reconciliation will retry", {
++      orderId: order.id,
++      error: String(error),
++    });
++  }
+   return order;
+ }

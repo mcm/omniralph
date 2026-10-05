@@ -1,0 +1,45 @@
+diff --git a/src/routes/users.ts b/src/routes/users.ts
+index 77784c1..5c75fea 100644
+--- a/src/routes/users.ts
++++ b/src/routes/users.ts
+@@ -1,10 +1,15 @@
+ import { Router } from "express";
+ import { requireUser } from "../auth.js";
+-import { findUserById } from "../users/repository.js";
++import { findUserById, searchUsers } from "../users/repository.js";
+ 
+ export const usersRouter = Router();
+ usersRouter.use(requireUser);
+ 
++usersRouter.get("/users", async (req, res) => {
++  const term = typeof req.query.q === "string" ? req.query.q : "";
++  res.json(await searchUsers(term));
++});
++
+ usersRouter.get("/users/:id", async (req, res) => {
+   const user = await findUserById(req.params.id);
+   if (!user) return res.status(404).json({ error: "not found" });
+diff --git a/src/users/repository.ts b/src/users/repository.ts
+index 0354ff1..fa491cf 100644
+--- a/src/users/repository.ts
++++ b/src/users/repository.ts
+@@ -12,3 +12,19 @@ export async function findUserById(id: string): Promise<User | undefined> {
+   const { rows } = await pool.query<User>(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]);
+   return rows[0];
+ }
++
++/** Escapes LIKE wildcards so the term matches literally. */
++function escapeLike(term: string): string {
++  return term.replace(/[\\%_]/g, (c) => `\\${c}`);
++}
++
++export async function searchUsers(term: string, limit = 20): Promise<User[]> {
++  const { rows } = await pool.query<User>(
++    `SELECT ${USER_COLUMNS} FROM users
++     WHERE display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
++     ORDER BY display_name
++     LIMIT $2`,
++    [escapeLike(term), Math.min(Math.max(Math.trunc(Number(limit)) || 20, 1), 100)],
++  );
++  return rows;
++}

@@ -1,0 +1,21 @@
+{
+  "description": "async callback inside forEach: importContacts returns before any upsert finishes (imported is always 0) and upsert errors are unhandled.",
+  "language": "typescript",
+  "tags": [
+    "concurrency",
+    "async-foreach",
+    "node"
+  ],
+  "pr": {
+    "title": "Import contacts from CSV uploads"
+  },
+  "expected": [
+    {
+      "path": "src/contacts/import.ts",
+      "startLine": 15,
+      "endLine": 18,
+      "category": "concurrency",
+      "minSeverity": "medium"
+    }
+  ]
+}

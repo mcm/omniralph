@@ -3,3 +3,7 @@ dist
 .next
 .turbo
 coverage
+# eval cases: base/ must match change.patch byte for byte
+evals/cases
+evals/reports
+packages/engine/test/fixtures/eval-cases

@@ -1,0 +1,8 @@
+{
+  "name": "accounts-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node scripts/migrate.js"
+  }
+}

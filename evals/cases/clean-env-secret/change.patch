@@ -1,0 +1,54 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..f6ff5f1
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,3 @@
++DATABASE_URL=postgres://localhost:5432/partner_gateway
++# 32+ random characters, e.g. `openssl rand -hex 32`
++PARTNER_TOKEN_SECRET=
+diff --git a/src/config.ts b/src/config.ts
+index a998022..a009872 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -4,7 +4,15 @@ function required(name: string): string {
+   return value;
+ }
+ 
++function requiredSecret(name: string, minLength: number): string {
++  const value = required(name);
++  if (value.length < minLength) throw new Error(`${name} must be at least ${minLength} characters`);
++  return value;
++}
++
+ export const config = {
+   port: Number(process.env.PORT ?? 3000),
+   databaseUrl: required("DATABASE_URL"),
++  /** HS256 key for the tokens partners exchange with us (from the secrets manager). */
++  partnerTokenSecret: requiredSecret("PARTNER_TOKEN_SECRET", 32),
+ };
+diff --git a/src/partnerTokens.ts b/src/partnerTokens.ts
+new file mode 100644
+index 0000000..8487794
+--- /dev/null
++++ b/src/partnerTokens.ts
+@@ -0,0 +1,19 @@
++import { jwtVerify, SignJWT } from "jose";
++import { config } from "./config.js";
++
++const key = new TextEncoder().encode(config.partnerTokenSecret);
++
++export async function issuePartnerToken(partnerId: string): Promise<string> {
++  return new SignJWT({ scope: "orders:read" })
++    .setProtectedHeader({ alg: "HS256" })
++    .setSubject(partnerId)
++    .setIssuedAt()
++    .setExpirationTime("15m")
++    .sign(key);
++}
++
++export async function verifyPartnerToken(token: string): Promise<string> {
++  const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
++  if (!payload.sub) throw new Error("Token has no subject");
++  return payload.sub;
++}

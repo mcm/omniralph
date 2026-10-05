@@ -1,0 +1,22 @@
+{
+  "description": "A migration drops users.email while the running code (src/users.ts) still selects it; the old version breaks during deploy and the column's data is gone.",
+  "language": "sql",
+  "tags": [
+    "breaking-change",
+    "migration",
+    "data-loss",
+    "postgres"
+  ],
+  "pr": {
+    "title": "Drop the legacy users.email column"
+  },
+  "expected": [
+    {
+      "path": "migrations/0042_drop_users_email.sql",
+      "startLine": 2,
+      "endLine": 2,
+      "category": "breaking-change",
+      "minSeverity": "medium"
+    }
+  ]
+}

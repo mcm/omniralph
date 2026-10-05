@@ -1,0 +1,23 @@
+{
+  "description": "New DELETE route checks that the document exists but not that the caller owns it (IDOR).",
+  "language": "typescript",
+  "tags": [
+    "security",
+    "authorization",
+    "idor",
+    "express"
+  ],
+  "pr": {
+    "title": "Allow deleting documents",
+    "description": "Adds `DELETE /documents/:id`."
+  },
+  "expected": [
+    {
+      "path": "src/documents/routes.ts",
+      "startLine": 22,
+      "endLine": 26,
+      "category": "security",
+      "minSeverity": "high"
+    }
+  ]
+}

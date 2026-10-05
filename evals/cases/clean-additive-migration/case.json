@@ -1,0 +1,19 @@
+{
+  "description": "An additive migration (nullable column) and the code that writes it (correct counterpart of bad-destructive-migration).",
+  "language": "sql",
+  "tags": [
+    "clean",
+    "migration",
+    "postgres"
+  ],
+  "pr": {
+    "title": "Record users' last login time"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "migrations/0042_users_last_login.sql",
+      "note": "Adding a nullable column is backward compatible."
+    }
+  ]
+}

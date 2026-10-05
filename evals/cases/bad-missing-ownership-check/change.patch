@@ -1,0 +1,15 @@
+diff --git a/src/documents/routes.ts b/src/documents/routes.ts
+index 73c0591..f8cd180 100644
+--- a/src/documents/routes.ts
++++ b/src/documents/routes.ts
+@@ -18,3 +18,10 @@ documentsRouter.patch("/documents/:id", async (req, res) => {
+   const title = typeof req.body?.title === "string" ? req.body.title.slice(0, 200) : doc.title;
+   res.json(await db.document.update({ where: { id: doc.id }, data: { title } }));
+ });
++
++documentsRouter.delete("/documents/:id", async (req, res) => {
++  const doc = await db.document.findUnique({ where: { id: req.params.id } });
++  if (!doc) return res.status(404).end();
++  await db.document.delete({ where: { id: doc.id } });
++  res.status(204).end();
++});

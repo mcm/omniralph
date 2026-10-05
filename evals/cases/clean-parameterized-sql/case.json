@@ -1,0 +1,24 @@
+{
+  "description": "User search with a parameterized query and escaped LIKE wildcards (correct counterpart of bad-sql-concat).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "security",
+    "sql",
+    "express",
+    "pg"
+  ],
+  "pr": {
+    "title": "Add user search endpoint",
+    "description": "Adds `GET /users?q=` so the admin UI can search users by display name."
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/users/repository.ts",
+      "startLine": 21,
+      "endLine": 29,
+      "note": "The query is parameterized; the term is a bound value."
+    }
+  ]
+}

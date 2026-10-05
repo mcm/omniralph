@@ -1,0 +1,20 @@
+{
+  "description": "Fixture: the parameterized version.",
+  "language": "typescript",
+  "tags": [
+    "fixture",
+    "clean"
+  ],
+  "pr": {
+    "title": "Find users by name"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/users.ts",
+      "startLine": 9,
+      "endLine": 9,
+      "note": "Parameterized."
+    }
+  ]
+}

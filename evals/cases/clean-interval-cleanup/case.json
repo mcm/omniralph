@@ -1,0 +1,21 @@
+{
+  "description": "Polling hook that clears its interval and aborts in-flight requests on cleanup (correct counterpart of bad-interval-leak).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "resources",
+    "react"
+  ],
+  "pr": {
+    "title": "Show live job progress on the dashboard"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/hooks/useJobStatus.ts",
+      "startLine": 10,
+      "endLine": 25,
+      "note": "The effect's cleanup clears the interval and aborts the fetch."
+    }
+  ]
+}

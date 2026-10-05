@@ -1,0 +1,21 @@
+{
+  "description": "One customer query per order inside a loop (N+1): up to 501 sequential round trips per dashboard load.",
+  "language": "typescript",
+  "tags": [
+    "performance",
+    "n-plus-one",
+    "pg"
+  ],
+  "pr": {
+    "title": "Add recent orders to the admin dashboard"
+  },
+  "expected": [
+    {
+      "path": "src/reports/recentOrders.ts",
+      "startLine": 12,
+      "endLine": 17,
+      "category": "performance",
+      "minSeverity": "low"
+    }
+  ]
+}

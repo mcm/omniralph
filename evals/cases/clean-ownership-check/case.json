@@ -1,0 +1,23 @@
+{
+  "description": "New DELETE route scoped to the caller's own documents (correct counterpart of bad-missing-ownership-check).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "security",
+    "authorization",
+    "express"
+  ],
+  "pr": {
+    "title": "Allow deleting documents",
+    "description": "Adds `DELETE /documents/:id`."
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/documents/routes.ts",
+      "startLine": 22,
+      "endLine": 28,
+      "note": "The delete is filtered by ownerId, so other users' documents can't be deleted."
+    }
+  ]
+}

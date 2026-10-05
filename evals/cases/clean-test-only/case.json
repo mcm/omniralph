@@ -1,0 +1,12 @@
+{
+  "description": "Adds unit tests for existing code; no production code changes.",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "tests"
+  ],
+  "pr": {
+    "title": "Add tests for cart totals"
+  },
+  "expected": []
+}

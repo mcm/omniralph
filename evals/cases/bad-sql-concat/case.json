@@ -1,0 +1,23 @@
+{
+  "description": "User search builds its SQL by concatenating the search term (SQL injection).",
+  "language": "typescript",
+  "tags": [
+    "security",
+    "sql-injection",
+    "express",
+    "pg"
+  ],
+  "pr": {
+    "title": "Add user search endpoint",
+    "description": "Adds `GET /users?q=` so the admin UI can search users by display name."
+  },
+  "expected": [
+    {
+      "path": "src/users/repository.ts",
+      "startLine": 17,
+      "endLine": 20,
+      "category": "security",
+      "minSeverity": "high"
+    }
+  ]
+}

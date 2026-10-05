@@ -1,0 +1,8 @@
+{
+  "name": "@acme/money",
+  "version": "2.3.0",
+  "description": "Money formatting and parsing helpers shared by Acme's web and mobile apps.",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}

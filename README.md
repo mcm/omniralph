@@ -87,6 +87,7 @@ learned rules for later reviews.
 | [github-app.md](docs/github-app.md) | GitHub App manifest, permissions, events, KMS-held private key |
 | [gitlab.md](docs/gitlab.md) | Bot token scopes and role, self-managed GitLab |
 | [env.md](docs/env.md) | Every environment variable for the control panel and the agent |
+| [evals/README.md](evals/README.md) | The review eval harness (`pnpm eval`): precision, recall and tokens per profile against a baseline |
 | [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
 | [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
 
@@ -100,6 +101,7 @@ learned rules for later reviews.
 | `packages/scm`    | `@omniralph/scm`                  | SCM adapter interface + GitHub and GitLab implementations    |
 | `packages/db`     | `@omniralph/db`                   | Drizzle schema, migrations, typed queries                    |
 | `packages/shared` | `@omniralph/shared`               | zod schemas and shared types                                 |
+| `evals`           |                                   | Review eval corpus and baseline (`pnpm eval`)                |
 
 ## Development
 
@@ -113,6 +115,7 @@ pnpm typecheck  # quality gates: typecheck, lint, test
 pnpm lint
 pnpm test
 pnpm build
+pnpm eval       # review eval with real Claude tokens; not part of test/CI (see evals/README.md)
 ```
 
 Workspace packages export their TypeScript source under the `@omniralph/source` export condition

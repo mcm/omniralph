@@ -1,0 +1,21 @@
+{
+  "description": "A minor release of a shared library silently removes the public parsePrice export (a breaking change, not in the changelog).",
+  "language": "typescript",
+  "tags": [
+    "breaking-change",
+    "removed-export",
+    "library"
+  ],
+  "pr": {
+    "title": "Add convertCents and release 2.4.0"
+  },
+  "expected": [
+    {
+      "path": "src/index.ts",
+      "startLine": 18,
+      "endLine": 19,
+      "category": "breaking-change",
+      "minSeverity": "info"
+    }
+  ]
+}
