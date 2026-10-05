@@ -31,6 +31,7 @@ export {
   connectionCredentials,
   connectRepository,
   disconnectRepository,
+  findRepositoriesByExternalId,
   findScmConnection,
   getRepository,
   getRepositoryWithConnection,
@@ -117,3 +118,9 @@ export {
   type ReviewStatus,
   type Rule,
 } from "./reviews.js";
+export {
+  claimWebhookDelivery,
+  releaseWebhookDelivery,
+  setWebhookDeliveryJob,
+  type WebhookDeliveryRef,
+} from "./webhooks.js";

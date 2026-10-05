@@ -497,3 +497,28 @@ export const jobs = pgTable(
     index("jobs_agent_id_idx").on(t.agentId),
   ],
 );
+
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+
+/**
+ * Code-host webhook deliveries that were acted on, keyed by the provider's
+ * delivery ID (`X-GitHub-Delivery` / `X-Gitlab-Event-UUID`), so a redelivery
+ * doesn't enqueue a second job.
+ */
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    provider: scmProvider("provider").notNull(),
+    deliveryId: text("delivery_id").notNull(),
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    /** Job the delivery enqueued (null while enqueueing). */
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.provider, t.deliveryId] }),
+    index("webhook_deliveries_created_at_idx").on(t.createdAt),
+  ],
+);

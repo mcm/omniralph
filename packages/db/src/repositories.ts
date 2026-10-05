@@ -317,3 +317,17 @@ export async function getRepositoryWithConnection(
     .limit(1);
   return row ?? null;
 }
+
+/** Repositories (with their connection) of a provider-side repository/project ID, across connections. */
+export async function findRepositoriesByExternalId(
+  db: Database,
+  provider: ScmProvider,
+  externalId: string,
+): Promise<{ repository: Repository; connection: ScmConnection }[]> {
+  return db
+    .select({ repository: repositories, connection: scmConnections })
+    .from(repositories)
+    .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
+    .where(and(eq(repositories.provider, provider), eq(repositories.externalId, externalId)))
+    .orderBy(asc(repositories.createdAt));
+}
