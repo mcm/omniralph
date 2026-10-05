@@ -1,11 +1,94 @@
 # Omniralph
 
 Self-hosted AI code review for GitHub and GitLab, plus the shared foundation for the cyralph agent.
+PRs/MRs in connected repositories are reviewed automatically (or on `@omniralph review`) with a
+configurable depth profile, findings are posted inline, and dismissed false positives turn into
+learned rules for later reviews.
 
-- **Control panel** (`apps/web`): Next.js 16 on Vercel. The single integration point: holds code-host
-  credentials, receives webhooks, owns job state and brokers short-lived credentials to agents.
-- **Agent host** (`apps/agent`, `omniralph-agent`): a Node 22 daemon on Coder instances that pulls
-  jobs through the control panel and runs capabilities (v1: code review via the Claude Agent SDK).
+## Architecture
+
+```
+                                ┌────────────────────────────────┐        ┌──────────────┐
+ GitHub / GitLab ──webhooks───▶ │ Control panel (apps/web)       │──SQL──▶│ Postgres     │
+   ▲          ◀──reviews, ───── │ Next.js on Vercel              │        │ (Neon)       │
+   │             replies        │ • UI, webhooks, job state      │        └──────────────┘
+   │                            │ • JobDispatcher ──publish──────┼──────▶ ┌──────────────┐
+   │                            │ • queue proxy ◀─receive/ack────┼──────▶ │ Vercel Queues│
+   │                            │ • agent API, credential broker │        │ (poll mode)  │
+   │                            │ • Vercel KMS-signed tokens     │        └──────────────┘
+   │                            └───────────────▲────────────────┘
+   │                                            │ outbound HTTPS only
+   │                            ┌───────────────┴────────────────┐
+   └──git clone/fetch ───────── │ Agent hosts (apps/agent)       │
+      (read-only, brokered)     │ omniralph-agent on Coder       │
+                                │ repo cache, Claude Agent SDK   │
+                                └────────────────────────────────┘
+```
+
+- **The control panel is the single integration point.** It holds the GitHub App and GitLab bot
+  credentials (encrypted at rest), receives webhooks and `@bot` commands, owns all job state in
+  Postgres, and performs every code-host write (posting reviews, replies, resolving threads) as a
+  typed operation. The UI (repositories, settings, profiles, reviews, rules, agents, jobs) lives here.
+- **Dispatch through Vercel Queues and the proxy.** Postgres is the source of truth; Vercel Queues
+  (poll mode) only delivers `{ jobId }` messages to capability topics (`review-jobs`, or a per-agent
+  topic for pinned repos), with one competing consumer group. Agents never talk to Vercel: they
+  poll through the control panel's queue proxy (`/api/agent/queue/<region>/…`), which allows only
+  receive, acknowledge and extend-lease on the agent's own topics. Crashed agents' leases lapse
+  and jobs are redelivered; rate-limited jobs are retried after a backoff.
+  See [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md).
+- **Agents make only outbound connections.** `omniralph-agent` runs on Coder instances, has no
+  inbound port and a minimal local config (server, agent ID, rotating refresh token, workspace
+  root). Concurrency, capabilities, pins and cancellations come back with each heartbeat. It
+  authenticates with 15-minute RS256 access tokens signed by Vercel KMS, and rotating refresh tokens
+  with reuse detection. See [ADR 0002: agent auth](docs/adr/0002-agent-auth.md).
+- **Credential broker.** Agents never hold code-host write credentials. For git, the agent's
+  `git-credential` helper asks the control panel (with a job-scoped token) for a short-lived,
+  read-only token for that job's repository: a GitHub installation token limited to `contents: read`
+  (≤ 1 hour) or a GitLab `read_repository` project access token (1 day, rotated). Git traffic goes
+  straight to the code host.
+- **Security boundary.** PR content is untrusted. Review sessions are read-only: only `Read`, `Grep`
+  and `Glob` inside the job's worktree, no shell, writes or network tools, and `settingSources: []`
+  so nothing from the PR head (`.claude/`, MCP config, `CLAUDE.md`) is loaded. Repo conventions come
+  from the base branch's `CLAUDE.md`, passed as quoted data; a deterministic pre-pass flags
+  prompt-injection text; bot-posted text goes through an output sanitizer.
+
+## Quickstart
+
+1. **Deploy the control panel** on Vercel: Neon Postgres, `NPM_RC`, a KMS issuer per environment,
+   `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and the other variables in [`.env.example`](.env.example).
+   → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
+2. **Sign in.** The first allowed user (`ALLOWED_EMAIL_DOMAINS`) becomes admin.
+3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
+   **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
+   projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
+4. **Run an agent** on a Coder instance as a dedicated user with its own `claude` login, enrolled
+   from **Agents › Enroll agent** and run under systemd or tmux
+   → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
+
+   ```bash
+   omniralph-agent enroll --server https://omniralph.example.com --token <enrollment-token>
+   omniralph-agent start --healthz-port 9310
+   ```
+
+5. **Open a PR/MR** in a connected repository. The review shows up under **Jobs** and **Reviews**,
+   and the bot posts inline findings plus a summary linking to the review. Comment
+   `@omniralph review [quick|standard|deep]` to re-review, `@omniralph dismiss [reason]` in a
+   finding's thread to dismiss it, or ask a question there.
+6. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
+   excludes, custom instructions, agent pinning) and rules (**Repository › Rules**).
+
+## Documentation
+
+| Doc | Covers |
+| -- | -- |
+| [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
+| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux, central config, disk usage, coexisting with cyralph, re-enrollment |
+| [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
+| [github-app.md](docs/github-app.md) | GitHub App manifest, permissions, events, KMS-held private key |
+| [gitlab.md](docs/gitlab.md) | Bot token scopes and role, self-managed GitLab |
+| [env.md](docs/env.md) | Every environment variable for the control panel and the agent |
+| [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
+| [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
 
 ## Layout
 
@@ -35,69 +118,3 @@ pnpm build
 Workspace packages export their TypeScript source under the `@omniralph/source` export condition
 (used by `tsc`, Vitest and `tsx`), and compiled `dist/` output for everything else (`node`, Next.js).
 `turbo` builds dependencies first for `build` and `dev`.
-
-## Deployment
-
-Every Vercel build runs `pnpm --filter @omniralph/db migrate` before `turbo run build`
-(`apps/web/vercel.json`), so each deployment migrates the database it's connected to: its own
-Neon branch for previews, the main branch for production. It runs outside `turbo` so the remote
-cache can't skip it. Migrations apply before the new deployment serves traffic, so they must stay
-compatible with the code that's still live.
-
-## Setting up the control panel
-
-1. **Environment.** Set the variables in `.env.example` on the Vercel project: database (Neon
-   integration), `ENCRYPTION_KEY`, `APP_URL`, `AUTH_*` + `ALLOWED_EMAIL_DOMAINS`, `KMS_AGENT_ISSUER_ID`
-   (one Vercel KMS issuer per environment), `QUEUE_REGIONS`, `CRON_SECRET` and `NPM_RC`. The first
-   person to sign in becomes admin.
-2. **GitHub App** (one per control panel). Permissions: contents read, pull requests write, metadata
-   read, Issues: Read-only (required for the Issue comment event; GitHub won't let the App
-   subscribe to it otherwise). Events: pull request, issue comment, pull request review comment.
-   Webhook URL `<APP_URL>/api/webhooks/github` with a secret (`GITHUB_WEBHOOK_SECRET`). Setup URL
-   `<APP_URL>/repositories/github/callback` with "Redirect on update" on. Keep "Request user
-   authorization (OAuth) during installation" **off**: turning it on disables the Setup URL, and
-   the callback depends on it to record the installation. Set `GITHUB_APP_ID` and
-   either `GITHUB_APP_KMS_ISSUER_ID` or `GITHUB_APP_PRIVATE_KEY`. For KMS, import the App's private
-   key with `vercel kms import <name> --key <pem> --algorithm RS256`: GitHub only accepts RS256 and
-   KMS issuers default to RS512 (see "KMS issuer setup" in `docs/adr/0002-agent-auth.md`).
-3. **Connect repositories** (admin) under **Repositories**: "Connect GitHub" installs the App and
-   lets you pick repositories; "Connect GitLab" takes the base URL (gitlab.com or self-managed), a bot
-   access token with the `api` scope and the projects, validates the token and creates each project's
-   webhook (`<APP_URL>/api/webhooks/gitlab`) itself.
-4. **Enroll an agent** under **Agents › Enroll agent** and run the command it shows (once, within
-   an hour) on the agent host; see below.
-
-New PRs/MRs (open, reopen, ready for review, push; drafts skipped) in enabled repositories are then
-reviewed with the Standard profile.
-
-## Running an agent
-
-Agents run from a checkout for now (`pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent`), as a
-dedicated Unix user with Node 22, git and a logged-in `claude`. They only make outbound HTTPS calls
-to the control panel.
-
-The Agents page shows the enrollment command as `omniralph-agent enroll ...`. From a checkout,
-put the built CLI on `PATH` first, e.g.
-`chmod +x apps/agent/dist/cli.js && ln -s "$PWD/apps/agent/dist/cli.js" ~/.local/bin/omniralph-agent`
-(it has a `node` shebang), or
-run it as `node apps/agent/dist/cli.js`.
-
-```bash
-# One-time: exchange an enrollment token from the Agents page for a refresh token.
-node apps/agent/dist/cli.js enroll --server https://omniralph.example --token <enrollment-token> \
-  [--name <name>] [--workspace-root <dir>]   # writes ~/.config/omniralph/agent.json (mode 0600)
-# Run under systemd or tmux; SIGTERM waits up to 60s for running jobs.
-node apps/agent/dist/cli.js start [--healthz-port 9310]
-```
-
-Concurrency, poll interval, capabilities and topics come from the control panel with every
-heartbeat. If the control panel rejects the refresh token (agent revoked, or token reuse detected)
-the agent exits non-zero and has to be enrolled again.
-
-Repositories are cached under `workspaceRoot` (blobless bare clones in
-`<workspaceRoot>/<provider>/<repo path>`, one git worktree per job in `.worktrees/<jobId>`, removed
-afterwards and pruned on startup). Git never uses the host's credentials: job git commands reset
-`credential.helper` and use `omniralph-agent git-credential`, which fetches a short-lived read-only
-token for the job's repository from the control panel with the job's token. Pinning a repository to
-an agent makes it pre-clone the repository (`repo.sync`). git ≥ 2.44 is recommended (older versions
-lazily fetch commits while checking whether they're cached).
