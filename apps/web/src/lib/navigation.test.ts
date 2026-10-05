@@ -4,7 +4,15 @@ import { isNavItemActive, navGroups, navGroupsForRole } from "@/lib/navigation";
 describe("navGroups", () => {
   it("lists the Omniralph sections", () => {
     const labels = navGroups.flatMap((group) => group.items.map((item) => item.label));
-    expect(labels).toEqual(["Repositories", "Reviews", "Agents", "Jobs", "Users", "Profiles"]);
+    expect(labels).toEqual([
+      "Repositories",
+      "Reviews",
+      "Agents",
+      "Jobs",
+      "Analytics",
+      "Users",
+      "Profiles",
+    ]);
   });
 });
 
@@ -14,13 +22,15 @@ describe("navGroupsForRole", () => {
 
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
-      ["Navigation", ["Repositories", "Reviews", "Agents", "Jobs"]],
+      ["Navigation", ["Repositories", "Reviews", "Agents", "Jobs", "Analytics"]],
       ["Admin", ["Users", "Profiles"]],
     ]);
   });
 
   it("hides admin pages and empty groups from members", () => {
-    expect(labels("member")).toEqual([["Navigation", ["Repositories", "Reviews", "Agents", "Jobs"]]]);
+    expect(labels("member")).toEqual([
+      ["Navigation", ["Repositories", "Reviews", "Agents", "Jobs", "Analytics"]],
+    ]);
   });
 });
 

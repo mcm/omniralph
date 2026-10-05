@@ -191,3 +191,17 @@ export {
   type RuleEntry,
   type RuleKind,
 } from "./rules.js";
+export {
+  ANALYTICS_RANGES,
+  analyticsWindow,
+  getAnalytics,
+  listAnalyticsRepositories,
+  type AgentJobs,
+  type Analytics,
+  type AnalyticsFilter,
+  type AnalyticsRange,
+  type AnalyticsRepositoryRef,
+  type DailyUsage,
+  type ProfileUsage,
+  type RepositoryDismissals,
+} from "./queries/analytics.js";

@@ -1,0 +1,524 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  AreaChart,
+  BarChart,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ChartContainer,
+  Empty,
+  Muted,
+  NativeSelect,
+  Progress,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@iamthemcmaster/ui";
+import {
+  IconArrowDownLeft,
+  IconArrowUpRight,
+  IconChartBar,
+  IconCoins,
+  IconHistory,
+  IconServer,
+  IconThumbDown,
+} from "@tabler/icons-react";
+import type { AnalyticsRepositoryRef } from "@omniralph/db";
+import { AppHeader } from "@/components/app-header";
+import { useCurrentUser } from "@/components/current-user";
+import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
+import {
+  ANALYTICS_RANGES,
+  analyticsHref,
+  dayLabel,
+  formatRate,
+  overallAverageTokens,
+  type AnalyticsData,
+  type AnalyticsParams,
+} from "@/lib/analytics/display";
+import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
+import { ProviderIcon } from "../repositories/repositories-view";
+
+interface AnalyticsViewProps {
+  analytics: AnalyticsData;
+  /** Every repository, for the filter. */
+  repositories: AnalyticsRepositoryRef[];
+  params: AnalyticsParams;
+}
+
+/** Series colors: the library's brand and info chart hues, as design tokens. */
+const SERIES = { primary: "var(--glacier-500)", secondary: "var(--aurora-violet)" } as const;
+
+const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
+const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
+const grid = (columns: string) =>
+  ({ display: "grid", gridTemplateColumns: columns, gap: "var(--space-4)", minWidth: 0 }) as const;
+
+function StatCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: React.ElementType;
+}) {
+  return (
+    <Card style={{ minWidth: 0 }}>
+      <CardHeader style={{ paddingBottom: "var(--space-2)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <CardDescription>{label}</CardDescription>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "var(--radius-md)",
+              background: "var(--bg-raised)",
+              border: "1px solid var(--border-subtle)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--glacier-500)",
+            }}
+          >
+            <Icon size={16} />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div
+          style={{
+            fontSize: "var(--text-2xl)",
+            fontWeight: 300,
+            color: "var(--text-primary)",
+            lineHeight: 1.1,
+            marginBottom: "var(--space-1)",
+          }}
+        >
+          {value}
+        </div>
+        <Muted style={{ ...mono, color: "var(--text-tertiary)" }}>{detail}</Muted>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A label, a bar proportional to the largest count, and the count. */
+function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; count: number }[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      {rows.map((row) => (
+        <div key={row.key} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <div style={{ width: "calc(var(--space-8) * 3)", flexShrink: 0 }}>{row.label}</div>
+          <Progress value={(row.count / max) * 100} style={{ flex: 1 }} />
+          <span
+            style={{
+              ...mono,
+              color: "var(--text-primary)",
+              width: "var(--space-8)",
+              textAlign: "right",
+            }}
+          >
+            {row.count.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RepositoryLink({ repository }: { repository: AnalyticsRepositoryRef }) {
+  return (
+    <Link
+      href={`/repositories/${repository.id}/reviews`}
+      style={{
+        ...mono,
+        color: "var(--text-primary)",
+        textDecoration: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--space-1)",
+      }}
+    >
+      <ProviderIcon provider={repository.provider} size={12} />
+      {repository.fullPath}
+    </Link>
+  );
+}
+
+export function AnalyticsView({ analytics, repositories, params }: AnalyticsViewProps) {
+  const isAdmin = useCurrentUser().role === "admin";
+  const router = useRouter();
+  const pathname = usePathname();
+  const setFilter = (change: Partial<AnalyticsParams>) =>
+    router.push(analyticsHref(pathname, { ...params, ...change }));
+
+  const { totals } = analytics;
+  const repository = repositories.find((r) => r.id === params.repositoryId) ?? null;
+  const scope = repository ? repository.fullPath : "all repositories";
+  const period = `Last ${params.days} days`;
+  const daily = analytics.daily.map((d) => ({
+    day: dayLabel(d.date),
+    tokensIn: d.tokensIn,
+    tokensOut: d.tokensOut,
+    reviews: d.reviews,
+  }));
+  const profiles = analytics.byProfile.map((p) => ({
+    profile: p.profileName ?? "Deleted profile",
+    averageTokens: p.averageTokens,
+  }));
+  const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
+  const noReviews = totals.reviews === 0;
+
+  return (
+    <>
+      <AppHeader breadcrumbs={[{ label: "Analytics" }]} />
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "var(--space-6)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-5)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "var(--space-4)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Analytics</h1>
+            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+              Token usage and review quality for {scope}, by UTC day.
+            </Muted>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              aria-label="Time range"
+              value={String(params.days)}
+              onValueChange={(value) => {
+                if (value) setFilter({ days: Number(value) as AnalyticsParams["days"] });
+              }}
+            >
+              {ANALYTICS_RANGES.map((days) => (
+                <ToggleGroupItem key={days} value={String(days)} aria-label={`Last ${days} days`}>
+                  {days}d
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <NativeSelect
+              aria-label="Filter by repository"
+              value={params.repositoryId ?? ""}
+              onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
+            >
+              <option value="">All repositories</option>
+              {repositories.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.fullPath}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        </div>
+
+        <div style={grid("repeat(4, minmax(0, 1fr))")}>
+          <StatCard
+            label="Reviews"
+            value={totals.reviews.toLocaleString()}
+            detail={period}
+            icon={IconHistory}
+          />
+          <StatCard
+            label="Tokens in"
+            value={formatTokens(totals.tokensIn)}
+            detail={`${totals.tokensIn.toLocaleString()} tokens`}
+            icon={IconArrowDownLeft}
+          />
+          <StatCard
+            label="Tokens out"
+            value={formatTokens(totals.tokensOut)}
+            detail={`${totals.tokensOut.toLocaleString()} tokens`}
+            icon={IconArrowUpRight}
+          />
+          <StatCard
+            label="Average per review"
+            value={formatTokens(overallAverageTokens(analytics.byProfile))}
+            detail="Tokens in + out, finished reviews"
+            icon={IconCoins}
+          />
+        </div>
+
+        <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
+          <Card ribbon style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Tokens per day</CardTitle>
+              <CardDescription>{period}, input and output stacked</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer style={{ height: 240 }}>
+                <AreaChart
+                  data={daily}
+                  xKey="day"
+                  stacked
+                  showLegend
+                  areas={[
+                    { key: "tokensIn", label: "Tokens in", color: SERIES.primary },
+                    { key: "tokensOut", label: "Tokens out", color: SERIES.secondary },
+                  ]}
+                />
+              </ChartContainer>
+            </CardContent>
+          </Card>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Reviews per day</CardTitle>
+              <CardDescription>{period}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer style={{ height: 240 }}>
+                <BarChart
+                  data={daily}
+                  xKey="day"
+                  bars={[{ key: "reviews", label: "Reviews", color: SERIES.primary }]}
+                />
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div style={grid("repeat(3, minmax(0, 1fr))")}>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Average tokens per review</CardTitle>
+              <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
+            </CardHeader>
+            <CardContent
+              style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
+            >
+              {profiles.length === 0 ? (
+                <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" />
+              ) : (
+                <>
+                  <ChartContainer style={{ height: 160 }}>
+                    <BarChart
+                      data={profiles}
+                      xKey="profile"
+                      bars={[
+                        { key: "averageTokens", label: "Tokens per review", color: SERIES.primary },
+                      ]}
+                    />
+                  </ChartContainer>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Profile</TableHead>
+                        <TableHead style={{ textAlign: "right" }}>Reviews</TableHead>
+                        <TableHead style={{ textAlign: "right" }}>Average</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {analytics.byProfile.map((p) => (
+                        <TableRow key={p.profileId ?? "deleted"}>
+                          <TableCell style={cellText}>
+                            {p.profileName ?? "Deleted profile"}
+                          </TableCell>
+                          <TableCell style={{ ...mono, textAlign: "right" }}>
+                            {p.reviews.toLocaleString()}
+                          </TableCell>
+                          <TableCell
+                            style={{ ...mono, textAlign: "right" }}
+                            title={`${p.averageTokens.toLocaleString()} tokens`}
+                          >
+                            {formatTokens(p.averageTokens)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Reviews by status</CardTitle>
+              <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CountRows
+                rows={REVIEW_STATUSES.map((status) => ({
+                  key: status,
+                  label: <ReviewStatusBadge status={status} />,
+                  count: analytics.reviewsByStatus[status],
+                }))}
+              />
+            </CardContent>
+          </Card>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Findings by severity</CardTitle>
+              <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CountRows
+                rows={FINDING_SEVERITIES.map((severity) => ({
+                  key: severity,
+                  label: <SeverityBadge severity={severity} />,
+                  count: analytics.findingsBySeverity[severity],
+                }))}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div style={grid("minmax(0, 3fr) minmax(0, 2fr)")}>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Dismissal rate per repository</CardTitle>
+              <CardDescription>
+                Dismissed findings out of all findings (superseded ones excluded). A high rate
+                points to a noisy repository: check its learned rules and profile.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.dismissalsByRepository.length === 0 ? (
+                <Empty
+                  size="sm"
+                  icon={<IconThumbDown size={20} />}
+                  title="No findings"
+                  description={noReviews ? "No reviews in this period." : undefined}
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Repository</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>Findings</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>Dismissed</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>False positives</TableHead>
+                      <TableHead>Rate</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analytics.dismissalsByRepository.map((d) => (
+                      <TableRow key={d.repository.id}>
+                        <TableCell>
+                          <RepositoryLink repository={d.repository} />
+                        </TableCell>
+                        <TableCell style={{ ...mono, textAlign: "right" }}>
+                          {d.findings.toLocaleString()}
+                        </TableCell>
+                        <TableCell style={{ ...mono, textAlign: "right" }}>
+                          {d.dismissed.toLocaleString()}
+                        </TableCell>
+                        <TableCell style={{ ...mono, textAlign: "right" }}>
+                          {d.falsePositives.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "var(--space-2)",
+                              minWidth: "calc(var(--space-8) * 3)",
+                            }}
+                          >
+                            <Progress
+                              value={d.dismissalRate * 100}
+                              color={d.dismissalRate >= 0.5 ? "warning" : "brand"}
+                              style={{ flex: 1 }}
+                            />
+                            <span style={{ ...mono, color: "var(--text-primary)" }}>
+                              {formatRate(d.dismissalRate)}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+          <Card style={{ minWidth: 0 }}>
+            <CardHeader>
+              <CardTitle>Jobs per agent</CardTitle>
+              <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {analytics.jobsByAgent.length === 0 ? (
+                <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Agent</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>Jobs</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>Completed</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>Failed</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analytics.jobsByAgent.map((a) => (
+                      <TableRow key={a.agent.id}>
+                        <TableCell>
+                          {isAdmin ? (
+                            <Link
+                              href={`/agents/${a.agent.id}`}
+                              style={{ ...cellText, textDecoration: "none" }}
+                            >
+                              {a.agent.name}
+                            </Link>
+                          ) : (
+                            <span style={cellText}>{a.agent.name}</span>
+                          )}
+                        </TableCell>
+                        <TableCell style={{ ...mono, textAlign: "right" }}>
+                          {a.total.toLocaleString()}
+                        </TableCell>
+                        <TableCell style={{ ...mono, textAlign: "right" }}>
+                          {a.completed.toLocaleString()}
+                        </TableCell>
+                        <TableCell
+                          style={{
+                            ...mono,
+                            textAlign: "right",
+                            color: a.failed > 0 ? "var(--error)" : undefined,
+                          }}
+                        >
+                          {a.failed.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </>
+  );
+}
