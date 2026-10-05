@@ -71,8 +71,22 @@ export {
   type AgentAuditInput,
   type CreatedEnrollment,
   type EnrollAgentInput,
+  type RevokeAgentResult,
   type RotateRefreshTokenResult,
 } from "./agent-auth.js";
+export {
+  getAgentOverview,
+  listAgentOverview,
+  listQueuedJobsOnAgentTopics,
+  listRecentAgentAudit,
+  listRecentJobs,
+  updateAgentConfig,
+  type AgentConfigInput,
+  type AgentJobSummary,
+  type AgentOverview,
+  type JobListEntry,
+  type RepositoryLink,
+} from "./agents.js";
 export {
   classifyAgentRunningJobs,
   completeJob,

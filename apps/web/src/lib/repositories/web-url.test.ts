@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { repositoryWebUrl } from "./web-url";
+import { changeRequestWebUrl, repositoryWebUrl } from "./web-url";
 
 describe("repositoryWebUrl", () => {
   it("maps API URLs to browser URLs", () => {
@@ -11,6 +11,17 @@ describe("repositoryWebUrl", () => {
     );
     expect(repositoryWebUrl("gitlab", "https://gitlab.example.com", "g/sub/p")).toBe(
       "https://gitlab.example.com/g/sub/p",
+    );
+  });
+});
+
+describe("changeRequestWebUrl", () => {
+  it("links to the pull or merge request", () => {
+    expect(changeRequestWebUrl("github", "https://api.github.com", "acme/web", 12)).toBe(
+      "https://github.com/acme/web/pull/12",
+    );
+    expect(changeRequestWebUrl("gitlab", "https://gitlab.example.com", "g/p", 7)).toBe(
+      "https://gitlab.example.com/g/p/-/merge_requests/7",
     );
   });
 });

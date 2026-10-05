@@ -14,3 +14,14 @@ export function repositoryWebUrl(
   const host = base === GITHUB_API_URL ? "https://github.com" : base.replace(/\/api\/v3$/, "");
   return `${host}/${fullPath}`;
 }
+
+/** Browser URL of a pull request (GitHub) or merge request (GitLab). */
+export function changeRequestWebUrl(
+  provider: "github" | "gitlab",
+  baseUrl: string,
+  fullPath: string,
+  number: number,
+): string {
+  const repo = repositoryWebUrl(provider, baseUrl, fullPath);
+  return provider === "gitlab" ? `${repo}/-/merge_requests/${number}` : `${repo}/pull/${number}`;
+}
