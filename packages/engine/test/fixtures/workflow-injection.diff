@@ -1,0 +1,12 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 3718f2f..fec0205 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -13,6 +13,6 @@ jobs:
+       - name: Report coverage
+         env:
+           NODE_ENV: test
+-        run: echo "Coverage report"
++        run: echo "Coverage for: ${{ github.event.pull_request.title }}"
+       - name: Done
+         run: echo done

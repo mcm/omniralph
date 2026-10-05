@@ -74,6 +74,12 @@ export const MAX_DESCRIPTION_CHARS = 10_000;
 /** Most hotspot files listed as hints. */
 export const MAX_HINT_FILES = 20;
 
+/**
+ * How to use `suggestion`. Code hosts apply a suggestion by replacing exactly
+ * lines startLine..endLine, so it must be a complete fix on its own.
+ */
+export const SUGGESTION_RULE = `- suggestion: optional replacement code for exactly lines startLine..endLine. Applying it replaces those lines and nothing else, so give it only when that replacement alone is a complete, working fix. If the fix also needs other lines to change (a declaration, import, \`env:\` mapping, config entry or caller elsewhere), either widen startLine..endLine to cover every line that has to change (still inside one hunk) and replace all of them, or leave out suggestion and describe the whole fix in body. Keep the original indentation.`;
+
 export const BASE_INSTRUCTION = `# Code review
 
 You are reviewing a code change (a pull request or merge request). Report only actionable issues: defects a maintainer would want fixed before merging, each backed by evidence from the code. Do not report anything you are not confident about.
@@ -95,7 +101,7 @@ Answer with a single JSON object and nothing else:
 - category: the rubric section the issue belongs to.
 - title: one line naming the defect.
 - body: what goes wrong, for which input or state, and why (the evidence).
-- suggestion: optional replacement code for exactly lines startLine..endLine.
+${SUGGESTION_RULE}
 - confidence: 0 to 1.
 An empty list is a valid answer: {"findings": []}.`;
 
