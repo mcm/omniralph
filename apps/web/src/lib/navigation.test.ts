@@ -4,7 +4,7 @@ import { isNavItemActive, navGroups, navGroupsForRole } from "@/lib/navigation";
 describe("navGroups", () => {
   it("lists the Omniralph sections", () => {
     const labels = navGroups.flatMap((group) => group.items.map((item) => item.label));
-    expect(labels).toEqual(["Repositories", "Agents", "Jobs", "Users"]);
+    expect(labels).toEqual(["Repositories", "Agents", "Jobs", "Users", "Profiles"]);
   });
 });
 
@@ -15,7 +15,7 @@ describe("navGroupsForRole", () => {
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
       ["Navigation", ["Repositories", "Agents", "Jobs"]],
-      ["Admin", ["Users"]],
+      ["Admin", ["Users", "Profiles"]],
     ]);
   });
 

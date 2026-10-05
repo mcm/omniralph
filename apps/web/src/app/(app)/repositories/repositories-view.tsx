@@ -278,8 +278,19 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
           <Muted>Never</Muted>
         )}
       </TableCell>
-      {isAdmin && (
-        <TableCell style={{ textAlign: "right" }}>
+      <TableCell style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          aria-label={`Settings for ${repo.fullPath}`}
+          title={`Settings for ${repo.fullPath}`}
+        >
+          <Link href={`/repositories/${repo.id}/settings`}>
+            <IconSettings size={14} />
+          </Link>
+        </Button>
+        {isAdmin && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -314,8 +325,8 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        </TableCell>
-      )}
+        )}
+      </TableCell>
     </TableRow>
   );
 }
@@ -446,7 +457,7 @@ export function RepositoriesView({
                     <TableHead>Profile</TableHead>
                     <TableHead>Pinned agents</TableHead>
                     <TableHead>Last review</TableHead>
-                    {isAdmin && <TableHead aria-label="Actions" />}
+                    <TableHead aria-label="Actions" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>

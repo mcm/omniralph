@@ -13,3 +13,4 @@ export * from "./finding.js";
 export * from "./agent-protocol.js";
 export * from "./protocol.js";
 export * from "./review-job.js";
+export * from "./settings.js";
