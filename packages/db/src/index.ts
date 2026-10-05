@@ -162,3 +162,16 @@ export {
   type ReviewRepositoryRef,
   type ReviewTrigger,
 } from "./review-history.js";
+export {
+  dismissFinding,
+  listFindingFeedback,
+  restoreFinding,
+  type DismissFindingInput,
+  type DismissFindingResult,
+  type Feedback,
+  type FeedbackEntry,
+  type FeedbackReason,
+  type FeedbackSource,
+  type FeedbackUserRef,
+  type RestoreFindingResult,
+} from "./feedback.js";

@@ -1,7 +1,20 @@
 import "server-only";
-import type { FindingRow, ReviewDetail, ReviewListEntry, ReviewStatus } from "@omniralph/db";
+import type {
+  FeedbackEntry,
+  FindingRow,
+  ReviewDetail,
+  ReviewListEntry,
+  ReviewStatus,
+} from "@omniralph/db";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
-import type { FileFindings, FindingView, ReviewDetailView, ReviewRow } from "./display";
+import { userDisplayName } from "@/lib/user-display";
+import type {
+  FeedbackView,
+  FileFindings,
+  FindingView,
+  ReviewDetailView,
+  ReviewRow,
+} from "./display";
 
 /** A list entry as serializable view props. */
 export function reviewRow(entry: ReviewListEntry): ReviewRow {
@@ -51,11 +64,43 @@ export function stopReason(status: ReviewStatus): string | null {
   }
 }
 
+/** A feedback entry as view props; thread dismissals name the code-host login. */
+export function feedbackView(entry: FeedbackEntry): FeedbackView {
+  const actor = entry.user
+    ? userDisplayName(entry.user)
+    : entry.scmUsername
+      ? `@${entry.scmUsername}`
+      : "Unknown user";
+  return {
+    id: entry.id,
+    source: entry.source,
+    reason: entry.reason,
+    note: entry.note,
+    actor,
+    createdAt: entry.createdAt.toISOString(),
+    restoredAt: entry.restoredAt?.toISOString() ?? null,
+    restoredBy: entry.restoredAt
+      ? entry.restoredBy
+        ? userDisplayName(entry.restoredBy)
+        : "Unknown user"
+      : null,
+  };
+}
+
 /**
  * Findings grouped by file: files in the order of their first finding,
  * findings within a file by start line.
  */
-export function groupFindingsByFile(rows: FindingRow[]): FileFindings[] {
+export function groupFindingsByFile(
+  rows: FindingRow[],
+  feedback: FeedbackEntry[] = [],
+): FileFindings[] {
+  const feedbackByFinding = new Map<string, FeedbackView[]>();
+  for (const entry of feedback) {
+    const list = feedbackByFinding.get(entry.findingId) ?? [];
+    list.push(feedbackView(entry));
+    feedbackByFinding.set(entry.findingId, list);
+  }
   const byPath = new Map<string, FindingView[]>();
   for (const row of rows) {
     const list = byPath.get(row.path) ?? [];
@@ -70,6 +115,7 @@ export function groupFindingsByFile(rows: FindingRow[]): FileFindings[] {
       suggestion: row.suggestion,
       confidence: row.confidence,
       status: row.status,
+      feedback: feedbackByFinding.get(row.id) ?? [],
     });
     byPath.set(row.path, list);
   }
@@ -111,7 +157,7 @@ export function reviewDetailView(detail: ReviewDetail): ReviewDetailView {
     stopReason: stopReason(review.status),
     error: review.error,
     skippedFiles: review.skippedFiles.map(({ path, reason }) => ({ path, reason })),
-    files: groupFindingsByFile(detail.findings),
+    files: groupFindingsByFile(detail.findings, detail.feedback),
     findingCount: detail.findings.length,
     createdAt: review.createdAt.toISOString(),
     updatedAt: review.updatedAt.toISOString(),

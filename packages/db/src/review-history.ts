@@ -5,6 +5,7 @@
  */
 import { and, asc, count, desc, eq, inArray, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { listFindingFeedback, type FeedbackEntry } from "./feedback.js";
 import type { FindingRow, Review } from "./reviews.js";
 import {
   agents,
@@ -171,6 +172,8 @@ export interface ReviewDetail {
   agent: { id: string; name: string } | null;
   /** In the order the model reported them. */
   findings: FindingRow[];
+  /** Feedback on the findings (dismissals from the UI and `@bot dismiss`), oldest first. */
+  feedback: FeedbackEntry[];
 }
 
 /** A review with its repository, profile, agent and findings; null if it doesn't exist. */
@@ -211,5 +214,9 @@ export async function getReviewDetail(
     profile: row.profileId && row.profileName ? { id: row.profileId, name: row.profileName } : null,
     agent: row.agentId && row.agentName ? { id: row.agentId, name: row.agentName } : null,
     findings: rows,
+    feedback: await listFindingFeedback(
+      db,
+      rows.map((f) => f.id),
+    ),
   };
 }
