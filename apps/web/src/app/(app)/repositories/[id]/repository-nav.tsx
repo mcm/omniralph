@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { TabsLine, TabsLineList, TabsLineTrigger } from "@iamthemcmaster/ui";
-import { IconHistory, IconSettings } from "@tabler/icons-react";
+import { IconHistory, IconListCheck, IconSettings } from "@tabler/icons-react";
 
 const tabs = [
   { value: "reviews", label: "Reviews", icon: IconHistory },
+  { value: "rules", label: "Rules", icon: IconListCheck },
   { value: "settings", label: "Settings", icon: IconSettings },
 ] as const;
 

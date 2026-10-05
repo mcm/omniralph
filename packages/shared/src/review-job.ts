@@ -9,7 +9,7 @@ import { JobRepository } from "./protocol.js";
 export const REVIEW_CAPABILITY = "review";
 export const REVIEW_JOB_TYPE = "review.run";
 
-const CommitSha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
+export const CommitSha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
 
 /** The `review_profiles` fields a review runs with. */
 export const ReviewProfileConfig = z.object({

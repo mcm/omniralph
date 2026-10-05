@@ -3,9 +3,13 @@ import {
   agentRepoPins,
   agents,
   createDb,
+  createReview,
+  feedback,
+  findings,
   jobs,
   listAgentAudit,
   repositories,
+  rules,
   runMigrations,
   scmConnections,
   type Database,
@@ -503,6 +507,96 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         ctx(jobId),
       );
       expect(again.status).toBe(409);
+    });
+
+    it("validates a review.learn-rule result and stores its rule once", async () => {
+      const { accessToken } = await newAgent();
+      const sha = (n: number) => n.toString(16).padStart(40, "0");
+      const review = await createReview(db, {
+        repositoryId,
+        prNumber: 9,
+        headSha: sha(2),
+        baseSha: sha(1),
+        trigger: "webhook",
+        profileId: "standard",
+        model: null,
+        budget: 100_000,
+      });
+      const [finding] = await db
+        .insert(findings)
+        .values({
+          reviewId: review.id,
+          path: "src/a.ts",
+          startLine: 1,
+          endLine: 1,
+          severity: "low",
+          category: "correctness",
+          title: "Unused value",
+          body: "Never read.",
+          confidence: 0.5,
+          status: "dismissed",
+        })
+        .returning();
+      const [row] = await db
+        .insert(feedback)
+        .values({ findingId: finding!.id, source: "ui", reason: "false_positive" })
+        .returning();
+      const { job } = await dispatcher().createAndPublish({
+        capability: "review",
+        type: "review.learn-rule",
+        repositoryId,
+        dedupeKey: `review.learn-rule:${row!.id}`,
+        payload: {
+          feedbackId: row!.id,
+          findingId: finding!.id,
+          repositoryId,
+          repository: {
+            provider: "github",
+            fullPath: "acme/app",
+            cloneUrl: "https://github.com/acme/app.git",
+          },
+          baseSha: sha(1),
+          headSha: sha(2),
+          model: null,
+          maxTokens: 5000,
+          finding: {
+            path: "src/a.ts",
+            startLine: 1,
+            endLine: 1,
+            severity: "low",
+            category: "correctness",
+            title: "Unused value",
+            body: "Never read.",
+          },
+          note: null,
+        },
+      });
+      await startAs(job.id, accessToken);
+      const submit = (body: unknown) =>
+        result(agentRequest(`jobs/${job.id}/result`, accessToken, { body }), ctx(job.id));
+
+      const valid = {
+        rule: "Do not flag values kept for debugging.",
+        outcome: "rule",
+        usage: { inputTokens: 2000, outputTokens: 50 },
+        durationMs: 900,
+      };
+      expect((await submit({ result: { ...valid, rule: "x".repeat(301) } })).status).toBe(400);
+      expect((await submit({ result: { ...valid, outcome: "none" } })).status).toBe(400);
+      expect((await submit({ result: valid })).status).toBe(200);
+      // The agent's replay after a timeout stores nothing new.
+      expect((await submit({ result: valid })).status).toBe(200);
+
+      expect(await jobRow(job.id)).toMatchObject({ status: "completed", result: valid });
+      const stored = await db.select().from(rules).where(eq(rules.repositoryId, repositoryId));
+      expect(stored).toMatchObject([
+        {
+          kind: "learned",
+          text: "Do not flag values kept for debugging.",
+          enabled: true,
+          sourceFindingId: finding!.id,
+        },
+      ]);
     });
 
     it("returns 404 for unknown jobs", async () => {

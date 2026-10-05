@@ -50,3 +50,27 @@ export const consoleLogger: ReviewLogger = {
   info: (data, message) => console.info(message, data),
   warn: (data, message) => console.warn(message, data),
 };
+
+export interface LearnRuleRequest {
+  /** The assembled rule-generation prompt (`buildLearnRulePrompt`). */
+  prompt: string;
+  /** Working directory of the Claude Code process; the session has no tools. */
+  cwd: string;
+  model?: string;
+  /** Token cap (input + output). */
+  maxTokens: number;
+  signal?: AbortSignal;
+}
+
+export interface LearnRuleOutcome {
+  /** `rule`: `rule` is set; `none`: nothing generalizable; `rejected`: unusable answer. */
+  status: "rule" | "none" | "rejected" | "budget_exhausted" | "rate_limited" | "error";
+  rule: string | null;
+  usage: TokenUsage;
+  error?: string;
+  retryAfterMs?: number;
+}
+
+export interface RuleLearner {
+  learnRule(request: LearnRuleRequest): Promise<LearnRuleOutcome>;
+}

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { HookInput, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseDiff } from "../diff.js";
+import { LEARN_RULE_SYSTEM_PROMPT } from "../learnRule.js";
 import type { ReviewTask } from "../plan.js";
 import {
   ClaudeAgentProvider,
@@ -599,5 +600,68 @@ describe("worktreeGuard", () => {
     expect(await decide("Grep", { pattern: "x", glob: "/etc/*" })).toBe("deny");
     expect(await decide("Grep", { pattern: "x", glob: "*.{ts,tsx}" })).toBe("pass");
     expect(await decide("Glob", { pattern: "src/**/..foo.ts" })).toBe("pass");
+  });
+});
+
+describe("ClaudeAgentProvider.learnRule", () => {
+  const learn = (provider: ClaudeAgentProvider, maxTokens = 5000) =>
+    provider.learnRule({ prompt: "dismissed finding…", cwd: "/tmp/x", maxTokens });
+
+  it("runs one turn without tools and returns the rule with its usage", async () => {
+    const fake = fakeQuery([
+      assistant('{"rule": "Do not flag eval() in fixtures."}', {
+        input_tokens: 900,
+        output_tokens: 20,
+      }),
+      result('{"rule": "Do not flag eval() in fixtures."}'),
+    ]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    const res = await learn(provider);
+    expect(res).toEqual({
+      status: "rule",
+      rule: "Do not flag eval() in fixtures.",
+      usage: { inputTokens: 900, outputTokens: 20 },
+    });
+    const options = fake.calls[0]!.options;
+    expect(options.tools).toEqual([]);
+    expect(options.allowedTools).toEqual([]);
+    expect(options.maxTurns).toBe(1);
+    expect(options.settingSources).toEqual([]);
+    expect(options.permissionMode).toBe("dontAsk");
+    expect(options.systemPrompt).toBe(LEARN_RULE_SYSTEM_PROMPT);
+    expect(options.systemPrompt).not.toBe(REVIEW_SYSTEM_PROMPT);
+  });
+
+  it("returns none for a null rule and rejects a too-long one", async () => {
+    const none = fakeQuery([result('{"rule": null}')]);
+    expect(
+      await learn(new ClaudeAgentProvider({ query: none.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "none", rule: null });
+
+    const long = JSON.stringify({ rule: "x".repeat(400) });
+    const tooLong = fakeQuery([result(long)]);
+    expect(
+      await learn(new ClaudeAgentProvider({ query: tooLong.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "rejected", rule: null, error: expect.stringContaining("400") });
+  });
+
+  it("stops at the token cap", async () => {
+    const fake = fakeQuery([
+      assistant("{", { input_tokens: 4990, output_tokens: 20 }),
+      result('{"rule": "never reached"}'),
+    ]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    const res = await learn(provider);
+    expect(res).toMatchObject({
+      status: "budget_exhausted",
+      rule: null,
+      usage: { inputTokens: 4990, outputTokens: 20 },
+    });
+  });
+
+  it("reports rate limits", async () => {
+    const fake = fakeQuery([assistant("API Error", {}, { error: "rate_limit" })]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    expect(await learn(provider)).toMatchObject({ status: "rate_limited", rule: null });
   });
 });
