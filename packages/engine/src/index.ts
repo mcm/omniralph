@@ -8,6 +8,7 @@ export * from "./providers/claude-agent.js";
 export * from "./rubric/index.js";
 export * from "./prompt.js";
 export * from "./dedupe.js";
+export * from "./selfContained.js";
 export * from "./git.js";
 export * from "./runReview.js";
 export * from "./summary.js";

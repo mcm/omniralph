@@ -10,6 +10,12 @@ import {
   type ReviewConfig,
 } from "./prompt.js";
 import { ClaudeAgentProvider } from "./providers/claude-agent.js";
+import { isCiWorkflowPath } from "./rubric/index.js";
+import {
+  downgradeSuggestion,
+  stripCrossReferences,
+  undefinedSuggestionVariables,
+} from "./selfContained.js";
 import {
   consoleLogger,
   type ReviewLogger,
@@ -92,6 +98,44 @@ function scopeRange(scope: ReviewScope): string {
     : `${scope.baseSha}...${scope.headSha}`;
 }
 
+const location = (f: Finding) => ({ path: f.path, startLine: f.startLine, endLine: f.endLine });
+
+/**
+ * Each finding is posted as its own comment, so it must stand alone: drop
+ * sentences pointing at other findings, and turn a workflow suggestion that
+ * uses a variable nothing defines (an incomplete one-click fix) into body text.
+ */
+async function makeSelfContained(
+  findings: readonly Finding[],
+  input: RunReviewInput,
+  logger: ReviewLogger,
+): Promise<Finding[]> {
+  const files = new Map<string, Promise<string | undefined>>();
+  const result: Finding[] = [];
+  for (const raw of findings) {
+    let finding = stripCrossReferences(raw);
+    if (finding !== raw) logger.info(location(finding), "Removed references to other findings");
+    if (finding.suggestion !== undefined && isCiWorkflowPath(finding.path)) {
+      let file = files.get(finding.path);
+      if (!file) {
+        file = showFile(input.cwd, input.headSha, finding.path, input.gitEnv);
+        files.set(finding.path, file);
+      }
+      const text = await file;
+      const missing = text === undefined ? [] : undefinedSuggestionVariables(finding, text);
+      if (missing.length > 0) {
+        logger.info(
+          { ...location(finding), variables: missing },
+          "Suggestion uses undefined variables; moved it into the body",
+        );
+        finding = downgradeSuggestion(finding, missing);
+      }
+    }
+    result.push(finding);
+  }
+  return result;
+}
+
 const STOP_PRIORITY: Record<ReviewStopReason, number> = {
   completed: 0,
   budget_exhausted: 1,
@@ -169,7 +213,8 @@ export async function runReview(
     if (result.stopReason !== "completed") break;
   }
 
-  const deduped = dedupeFindings(collected, input.previousReview?.openFindings);
+  const checked = await makeSelfContained(collected, input, logger);
+  const deduped = dedupeFindings(checked, input.previousReview?.openFindings);
   discarded.duplicate = deduped.suppressed.length;
   if (deduped.suppressed.length > 0) {
     logger.info(
