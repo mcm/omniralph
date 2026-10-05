@@ -59,10 +59,15 @@ export const ReviewJobPayload = z.object({
     author: z.string().max(255).nullable(),
   }),
   reviewConfig: ReviewJobConfig,
-  /** The PR's last completed review, for incremental reviews and dedupe. */
+  /**
+   * Earlier reviews of the PR, for incremental reviews and dedupe. `headSha`
+   * is the last fully (`completed`) reviewed head; null when no review got
+   * through the whole diff (e.g. only `budget_exhausted` ones), so the full
+   * diff is reviewed but their open findings are still suppressed.
+   */
   previousReview: z
     .object({
-      headSha: CommitSha,
+      headSha: CommitSha.nullable(),
       openFindings: z
         .array(
           z.object({
@@ -80,22 +85,28 @@ export type ReviewJobPayload = z.infer<typeof ReviewJobPayload>;
 
 export const REVIEW_SKIP_REASONS = [
   "excluded",
+  "generated",
   "binary",
   "no_changes",
   "budget",
   "max_files",
 ] as const;
 
+/** Most findings a review result may carry (the agent keeps the most severe). */
+export const MAX_REVIEW_FINDINGS = 500;
+/** Most skipped-file entries a review result may carry. */
+export const MAX_REVIEW_SKIPPED = 10_000;
+
 /**
  * Result of a `review.run` job (`/api/agent/jobs/{id}/result`). Reviews that
  * stopped on a rate limit or an error are reported through `/fail` instead.
  */
 export const ReviewJobResult = z.object({
-  findings: z.array(Finding).max(500),
+  findings: z.array(Finding).max(MAX_REVIEW_FINDINGS),
   usage: z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) }),
   skipped: z
     .array(z.object({ path: z.string().min(1), reason: z.enum(REVIEW_SKIP_REASONS) }))
-    .max(10_000),
+    .max(MAX_REVIEW_SKIPPED),
   stopReason: z.enum(["completed", "budget_exhausted"]),
   scope: z.discriminatedUnion("mode", [
     z.object({

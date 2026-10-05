@@ -44,11 +44,39 @@ Neon branch for previews, the main branch for production. It runs outside `turbo
 cache can't skip it. Migrations apply before the new deployment serves traffic, so they must stay
 compatible with the code that's still live.
 
+## Setting up the control panel
+
+1. **Environment.** Set the variables in `.env.example` on the Vercel project: database (Neon
+   integration), `ENCRYPTION_KEY`, `APP_URL`, `AUTH_*` + `ALLOWED_EMAIL_DOMAINS`, `KMS_AGENT_ISSUER_ID`
+   (one Vercel KMS issuer per environment), `QUEUE_REGIONS`, `CRON_SECRET` and `NPM_RC`. The first
+   person to sign in becomes admin.
+2. **GitHub App** (one per control panel). Permissions: contents read, pull requests write, metadata
+   read. Events: pull request, issue comment, pull request review comment. Webhook URL
+   `<APP_URL>/api/webhooks/github` with a secret (`GITHUB_WEBHOOK_SECRET`). Setup URL
+   `<APP_URL>/repositories/github/callback` with "Redirect on update" on. Set `GITHUB_APP_ID` and
+   either `GITHUB_APP_KMS_ISSUER_ID` (private key imported into Vercel KMS) or
+   `GITHUB_APP_PRIVATE_KEY`.
+3. **Connect repositories** (admin) under **Repositories**: "Connect GitHub" installs the App and
+   lets you pick repositories; "Connect GitLab" takes the base URL (gitlab.com or self-managed), a bot
+   access token with the `api` scope and the projects, validates the token and creates each project's
+   webhook (`<APP_URL>/api/webhooks/gitlab`) itself.
+4. **Enroll an agent** under **Agents › Enroll agent** and run the command it shows (once, within
+   an hour) on the agent host; see below.
+
+New PRs/MRs (open, reopen, ready for review, push; drafts skipped) in enabled repositories are then
+reviewed with the Standard profile.
+
 ## Running an agent
 
 Agents run from a checkout for now (`pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent`), as a
 dedicated Unix user with Node 22, git and a logged-in `claude`. They only make outbound HTTPS calls
 to the control panel.
+
+The Agents page shows the enrollment command as `omniralph-agent enroll ...`. From a checkout,
+put the built CLI on `PATH` first, e.g.
+`chmod +x apps/agent/dist/cli.js && ln -s "$PWD/apps/agent/dist/cli.js" ~/.local/bin/omniralph-agent`
+(it has a `node` shebang), or
+run it as `node apps/agent/dist/cli.js`.
 
 ```bash
 # One-time: exchange an enrollment token from the Agents page for a refresh token.

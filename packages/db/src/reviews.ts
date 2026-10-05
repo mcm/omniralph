@@ -84,15 +84,18 @@ export async function findCompletedReview(
 }
 
 export interface PreviousReviewState {
-  /** Head SHA of the PR's most recent finished review. */
-  headSha: string;
+  /** Head SHA of the PR's most recent `completed` review; null if none. */
+  headSha: string | null;
   /** Open findings of all finished reviews of the PR. */
   openFindings: Pick<FindingRow, "path" | "startLine" | "endLine" | "category">[];
 }
 
 /**
- * The PR's latest finished (`completed` / `budget_exhausted`) review of a
- * different head SHA plus its open findings; null when there is none.
+ * The head of the PR's latest `completed` review of a different head SHA (the
+ * next review only needs the commits since), plus the open findings of all
+ * finished (`completed` / `budget_exhausted`) reviews. A `budget_exhausted`
+ * review didn't get through its diff, so it never serves as the base. Null
+ * when there is neither.
  */
 export async function previousReviewState(
   db: Database,
@@ -106,10 +109,9 @@ export async function previousReviewState(
   const [latest] = await db
     .select({ headSha: reviews.headSha })
     .from(reviews)
-    .where(and(prReviews, ne(reviews.headSha, input.headSha)))
+    .where(and(prReviews, eq(reviews.status, "completed"), ne(reviews.headSha, input.headSha)))
     .orderBy(desc(reviews.createdAt))
     .limit(1);
-  if (!latest) return null;
   const openFindings = await db
     .select({
       path: findings.path,
@@ -122,7 +124,8 @@ export async function previousReviewState(
     .where(and(prReviews, eq(findings.status, "open")))
     .orderBy(asc(findings.createdAt))
     .limit(1000);
-  return { headSha: latest.headSha, openFindings };
+  if (!latest && openFindings.length === 0) return null;
+  return { headSha: latest?.headSha ?? null, openFindings };
 }
 
 /** The repository's review settings: its profile and enabled rules (creation order). */

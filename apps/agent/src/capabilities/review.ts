@@ -5,10 +5,14 @@ import {
   type ReviewProvider,
 } from "@omniralph/engine";
 import {
+  FINDING_SEVERITIES,
   MAX_LEASE_SECONDS,
+  MAX_REVIEW_FINDINGS,
+  MAX_REVIEW_SKIPPED,
   REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
+  type Finding,
   type ReviewJobResult,
 } from "@omniralph/shared";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
@@ -21,6 +25,28 @@ export const REVIEW_TOOL_POLICY: ToolPolicy = {
   permissionMode: "dontAsk",
   loadProjectSettings: false,
 };
+
+/**
+ * The `limit` most severe (then most confident) findings, in their original
+ * order, so the result fits `ReviewJobResult`.
+ */
+export function capFindings(findings: readonly Finding[], limit = MAX_REVIEW_FINDINGS): Finding[] {
+  if (findings.length <= limit) return [...findings];
+  const rank = (f: Finding) => FINDING_SEVERITIES.indexOf(f.severity);
+  const kept = new Set(
+    findings
+      .map((finding, index) => ({ finding, index }))
+      .sort(
+        (a, b) =>
+          rank(a.finding) - rank(b.finding) ||
+          b.finding.confidence - a.finding.confidence ||
+          a.index - b.index,
+      )
+      .slice(0, limit)
+      .map(({ index }) => index),
+  );
+  return findings.filter((_, index) => kept.has(index));
+}
 
 export interface ReviewCapabilityOptions {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
@@ -56,7 +82,7 @@ export function createReviewCapability(options: ReviewCapabilityOptions = {}): C
       });
 
       await ctx.repos.sync(repository, { ...git, shas: [baseSha, headSha] });
-      if (previousReview) {
+      if (previousReview?.headSha) {
         // Gone after a force-push; the engine then reviews the full diff.
         await ctx.repos
           .sync(repository, { ...git, shas: [previousReview.headSha] })
@@ -114,10 +140,16 @@ export function createReviewCapability(options: ReviewCapabilityOptions = {}): C
         },
         "review finished",
       );
+      if (result.findings.length > MAX_REVIEW_FINDINGS) {
+        log.warn(
+          { findings: result.findings.length, kept: MAX_REVIEW_FINDINGS },
+          "too many findings; keeping the most severe",
+        );
+      }
       return {
-        findings: result.findings,
+        findings: capFindings(result.findings),
         usage: result.usage,
-        skipped: result.skipped,
+        skipped: result.skipped.slice(0, MAX_REVIEW_SKIPPED),
         stopReason: result.stopReason,
         scope: result.scope,
         discarded: result.discarded,

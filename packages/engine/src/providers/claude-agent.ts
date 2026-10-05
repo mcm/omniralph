@@ -107,8 +107,9 @@ class UsageTracker {
   private floor: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   private anonymous = 0;
 
-  record(id: string | undefined, usage: Record<string, unknown> | undefined): void {
-    if (!usage) return;
+  /** Records a message's usage and returns it (input incl. cache reads/writes). */
+  record(id: string | undefined, usage: Record<string, unknown> | undefined): MessageUsage {
+    if (!usage) return { input: 0, output: 0 };
     const num = (key: string) => (typeof usage[key] === "number" ? (usage[key] as number) : 0);
     const next: MessageUsage = {
       input:
@@ -117,10 +118,12 @@ class UsageTracker {
     };
     const key = id ?? `anonymous-${this.anonymous++}`;
     const prev = this.perMessage.get(key);
-    this.perMessage.set(key, {
+    const merged = {
       input: Math.max(prev?.input ?? 0, next.input),
       output: Math.max(prev?.output ?? 0, next.output),
-    });
+    };
+    this.perMessage.set(key, merged);
+    return merged;
   }
 
   /** Result messages carry run totals (`modelUsage`); never report less than those. */
@@ -172,11 +175,18 @@ export function worktreeGuard(worktree: string): HookCallback {
     const paths = ["file_path", "path", "notebook_path"]
       .map((key) => toolInput[key])
       .filter((value): value is string => typeof value === "string" && value !== "");
-    const pattern = toolInput.pattern;
-    if (input.tool_name === "Glob" && typeof pattern === "string" && isAbsolute(pattern)) {
-      paths.push(pattern.replace(/[*?[{].*$/, "") || "/");
+    // Glob's `pattern` and Grep's `glob` are file patterns too: check an
+    // absolute one's literal prefix, and refuse `..` segments anywhere.
+    const patterns = [
+      input.tool_name === "Glob" ? toolInput.pattern : undefined,
+      toolInput.glob,
+    ].filter((value): value is string => typeof value === "string" && value !== "");
+    for (const pattern of patterns) {
+      if (isAbsolute(pattern)) paths.push(pattern.replace(/[*?[{].*$/, "") || "/");
     }
-    const outside = paths.find((p) => !isInsideWorktree(worktree, p));
+    const outside =
+      patterns.find((p) => /(^|[\\/{,])\.\.([\\/},]|$)/.test(p)) ??
+      paths.find((p) => !isInsideWorktree(worktree, p));
     if (outside === undefined) return {};
     return {
       hookSpecificOutput: {
@@ -409,7 +419,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
               usage?: Record<string, unknown>;
               content?: Array<{ type: string; text?: string }>;
             };
-            usage.record(msg.id, msg.usage);
+            const turn = usage.record(msg.id, msg.usage);
             if (message.parent_tool_use_id === null) {
               for (const block of msg.content ?? []) {
                 if (block.type === "text" && block.text) streamed += block.text;
@@ -427,6 +437,22 @@ export class ClaudeAgentProvider implements ReviewProvider {
                 error: "Claude rate limit reached.",
                 retryAfterMs,
               };
+            }
+            // A tool call means another turn, which re-sends at least this
+            // turn's context plus its output. Stop before that turn would
+            // cross the cap instead of finding out afterwards.
+            const nextTurn = turn.input + turn.output;
+            if (
+              message.parent_tool_use_id === null &&
+              msg.content?.some((block) => block.type === "tool_use") &&
+              sum(usage.total) + nextTurn > budget
+            ) {
+              controller.abort();
+              this.logger.warn(
+                { taskId: request.task.id, budget, usage: usage.total, nextTurn },
+                "Review token budget exhausted: the next turn would exceed it; aborting",
+              );
+              return { stop: "budget_exhausted", text: streamed };
             }
             break;
           }
