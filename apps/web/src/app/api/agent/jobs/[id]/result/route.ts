@@ -10,6 +10,7 @@ import {
   onReviewJobCompleted,
   parseReviewResult,
 } from "@/lib/review/jobs";
+import { isReplyJob, onReplyJobCompleted, parseReplyResult } from "@/lib/mentions/reply";
 import { isLearnRuleJob, onLearnRuleJobCompleted, parseLearnRuleResult } from "@/lib/rules/learn";
 
 /**
@@ -24,6 +25,9 @@ import { isLearnRuleJob, onLearnRuleJobCompleted, parseLearnRuleResult } from "@
  * A `review.learn-rule` job's result must be a `LearnRuleJobResult` (its token
  * usage stays in the job's result); its rule is deduped and stored as a
  * learned rule. A replayed result stores nothing new.
+ *
+ * A `review.reply` job's result must be a `ReviewReplyJobResult`; the answer
+ * is posted in the finding's thread, at most once.
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireAgent(req);
@@ -40,6 +44,8 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   if (review && !parseReviewResult(body.data.result)) return badRequest();
   const learnRule = !review && isLearnRuleJob(job);
   if (learnRule && !parseLearnRuleResult(body.data.result)) return badRequest();
+  const threadReply = !review && !learnRule && isReplyJob(job);
+  if (threadReply && !parseReplyResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {
     jobId,
@@ -50,10 +56,11 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     case "not_found":
       return notFound();
     case "conflict": {
-      const current = review || learnRule ? await getJob(db, jobId) : null;
+      const current = review || learnRule || threadReply ? await getJob(db, jobId) : null;
       if (current?.status === "completed" && current.agentId === principal.agentId) {
         if (review) await onReviewJobCompleted(db, current);
-        else await onLearnRuleJobCompleted(db, current);
+        else if (learnRule) await onLearnRuleJobCompleted(db, current);
+        else await onReplyJobCompleted(db, current);
         return Response.json({ status: "completed" } satisfies JobOutcomeResponse);
       }
       return notCurrentAgent();
@@ -72,6 +79,8 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
         else await onReviewJobCanceled(db, finished);
       } else if (learnRule && outcome.status === "completed") {
         await onLearnRuleJobCompleted(db, (await getJob(db, jobId))!);
+      } else if (threadReply && outcome.status === "completed") {
+        await onReplyJobCompleted(db, (await getJob(db, jobId))!);
       }
       return Response.json({ status: outcome.status } satisfies JobOutcomeResponse);
     }

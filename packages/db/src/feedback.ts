@@ -3,7 +3,7 @@
  * `@bot dismiss` in its thread) records a `feedback` row with its source and
  * author; restoring the finding keeps that row and marks it restored.
  */
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import type { FindingRow, Review } from "./reviews.js";
@@ -150,4 +150,29 @@ export async function listFindingFeedback(
     restoredAt: f.restoredAt,
     restoredBy: r,
   }));
+}
+
+/**
+ * The finding whose inline SCM comment (thread) is one of `commentIds`, in a
+ * review of this PR/MR (the newest, should several match).
+ */
+export async function findFindingByScmComment(
+  db: Database,
+  input: { repositoryId: string; prNumber: number; commentIds: readonly string[] },
+): Promise<{ finding: FindingRow; review: Review } | null> {
+  if (input.commentIds.length === 0) return null;
+  const [row] = await db
+    .select({ finding: findings, review: reviews })
+    .from(findings)
+    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+    .where(
+      and(
+        eq(reviews.repositoryId, input.repositoryId),
+        eq(reviews.prNumber, input.prNumber),
+        inArray(findings.scmCommentId, [...input.commentIds]),
+      ),
+    )
+    .orderBy(desc(reviews.createdAt))
+    .limit(1);
+  return row ?? null;
 }

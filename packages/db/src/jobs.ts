@@ -412,3 +412,24 @@ export async function classifyAgentRunningJobs(
   }
   return { keep, cancel };
 }
+
+/**
+ * Runs `post` while holding a row lock on the job, unless its comment was
+ * already posted (`scm_comment_id` set): concurrent or replayed calls wait for
+ * the lock and then see the stored ID, so the comment is posted at most once.
+ * `post` returns the posted comment's ID, or null when it posted nothing.
+ */
+export async function postJobCommentOnce(
+  db: Database,
+  jobId: string,
+  post: (job: Job) => Promise<string | null>,
+): Promise<{ posted: boolean }> {
+  return db.transaction(async (tx) => {
+    const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");
+    if (!job || job.scmCommentId !== null) return { posted: false };
+    const commentId = await post(job);
+    if (commentId === null) return { posted: false };
+    await tx.update(jobs).set({ scmCommentId: commentId }).where(eq(jobs.id, jobId));
+    return { posted: true };
+  });
+}

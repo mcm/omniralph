@@ -277,6 +277,18 @@ describe("postReview", () => {
 });
 
 describe("replyToComment and resolveThread", () => {
+  it("posts a PR conversation comment", async () => {
+    let posted: unknown;
+    server.use(
+      http.post(`${API}/repos/acme/widgets/issues/7/comments`, async ({ request }) => {
+        posted = await request.json();
+        return HttpResponse.json({ id: 4321 }, { status: 201 });
+      }),
+    );
+    await expect(makeAdapter().postComment(REPO, 7, "Hello")).resolves.toEqual({ id: "4321" });
+    expect(posted).toEqual({ body: "Hello" });
+  });
+
   it("replies in the comment's thread", async () => {
     let replied: unknown;
     server.use(

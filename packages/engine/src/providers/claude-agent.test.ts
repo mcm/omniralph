@@ -5,6 +5,7 @@ import type { HookInput, Options, SDKMessage } from "@anthropic-ai/claude-agent-
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseDiff } from "../diff.js";
 import { LEARN_RULE_SYSTEM_PROMPT } from "../learnRule.js";
+import { REPLY_SYSTEM_PROMPT } from "../reply.js";
 import type { ReviewTask } from "../plan.js";
 import {
   ClaudeAgentProvider,
@@ -663,5 +664,65 @@ describe("ClaudeAgentProvider.learnRule", () => {
     const fake = fakeQuery([assistant("API Error", {}, { error: "rate_limit" })]);
     const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
     expect(await learn(provider)).toMatchObject({ status: "rate_limited", rule: null });
+  });
+});
+
+describe("ClaudeAgentProvider.answer", () => {
+  const ask = (provider: ClaudeAgentProvider, allowExploration = true, maxTokens = 20_000) =>
+    provider.answer({ prompt: "question…", cwd: "/tmp/wt", allowExploration, maxTokens });
+
+  it("answers with the review's read-only tools, confined to the worktree", async () => {
+    const fake = fakeQuery([
+      assistant("It is checked in `load()`.", { input_tokens: 900, output_tokens: 20 }),
+      result("  It is checked in `load()`.\n"),
+    ]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    expect(await ask(provider)).toEqual({
+      status: "answered",
+      answer: "It is checked in `load()`.",
+      usage: { inputTokens: 900, outputTokens: 20 },
+    });
+    const options = fake.calls[0]!.options;
+    expect(options.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(options.allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect(options.disallowedTools).toEqual([...DISALLOWED_TOOLS]);
+    expect(options.permissionMode).toBe("dontAsk");
+    expect(options.settingSources).toEqual([]);
+    expect(options.cwd).toBe("/tmp/wt");
+    expect(options.maxTurns).toBe(10);
+    expect(options.hooks?.PreToolUse).toHaveLength(1);
+    expect(options.systemPrompt).toBe(REPLY_SYSTEM_PROMPT);
+  });
+
+  it("runs one turn without tools when there is no checkout", async () => {
+    const fake = fakeQuery([result("Answer.")]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    expect(await ask(provider, false)).toMatchObject({ status: "answered", answer: "Answer." });
+    expect(fake.calls[0]!.options.tools).toEqual([]);
+    expect(fake.calls[0]!.options.maxTurns).toBe(1);
+  });
+
+  it("stops at the token cap and reports empty answers and rate limits", async () => {
+    const capped = fakeQuery([
+      assistant("Partial", { input_tokens: 1990, output_tokens: 20 }),
+      result("never reached"),
+    ]);
+    expect(
+      await ask(
+        new ClaudeAgentProvider({ query: capped.query, logger: silentLogger() }),
+        true,
+        2000,
+      ),
+    ).toMatchObject({ status: "budget_exhausted", answer: null });
+
+    const empty = fakeQuery([result("   ")]);
+    expect(
+      await ask(new ClaudeAgentProvider({ query: empty.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "error", answer: null });
+
+    const limited = fakeQuery([assistant("API Error", {}, { error: "rate_limit" })]);
+    expect(
+      await ask(new ClaudeAgentProvider({ query: limited.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "rate_limited", answer: null });
   });
 });

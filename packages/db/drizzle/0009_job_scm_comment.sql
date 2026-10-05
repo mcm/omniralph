@@ -1,0 +1,1 @@
+ALTER TABLE "jobs" ADD COLUMN "scm_comment_id" text;

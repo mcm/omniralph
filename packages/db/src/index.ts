@@ -98,6 +98,7 @@ export {
   listAgentPinnedRepositoryIds,
   markJobPublished,
   pinnedAgentFor,
+  postJobCommentOnce,
   recordAgentHeartbeat,
   requestJobCancel,
   listActiveJobsByDedupePrefix,
@@ -144,6 +145,7 @@ export {
   listPinnableAgents,
   listRepositoryPinnedAgentIds,
   listReviewProfiles,
+  getReviewProfile,
   updateRepositorySettings,
   updateReviewProfile,
   type RepositorySettingsUpdate,
@@ -164,6 +166,7 @@ export {
 } from "./review-history.js";
 export {
   dismissFinding,
+  findFindingByScmComment,
   listFindingFeedback,
   restoreFinding,
   type DismissFindingInput,

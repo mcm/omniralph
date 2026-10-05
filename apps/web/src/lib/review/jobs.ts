@@ -2,6 +2,7 @@ import "server-only";
 import {
   findCompletedReview,
   finishReview,
+  getReview,
   markReviewQueued,
   markReviewRunning,
   saveReviewOutcome,
@@ -40,9 +41,10 @@ function reviewPayload(job: Job): ReviewJobPayload {
 }
 
 /**
- * After a delivery started: a head SHA that already has a `completed` review
- * isn't reviewed again (job and review become `skipped`); otherwise the review
- * is marked `running` on the agent.
+ * After a delivery started: a webhook review of a head SHA that already has a
+ * `completed` review isn't reviewed again (job and review become `skipped`);
+ * otherwise (and always for an explicit `@bot review`) the review is marked
+ * `running` on the agent.
  */
 export async function onReviewJobStarted(
   db: Database,
@@ -50,12 +52,15 @@ export async function onReviewJobStarted(
   agentId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
   const payload = reviewPayload(job);
-  const completed = await findCompletedReview(db, {
-    repositoryId: payload.repositoryId,
-    prNumber: payload.prNumber,
-    headSha: payload.headSha,
-    exceptReviewId: payload.reviewId,
-  });
+  const review = await getReview(db, payload.reviewId);
+  const completed =
+    review?.trigger !== "mention" &&
+    (await findCompletedReview(db, {
+      repositoryId: payload.repositoryId,
+      prNumber: payload.prNumber,
+      headSha: payload.headSha,
+      exceptReviewId: payload.reviewId,
+    }));
   if (completed) {
     const reason = `Head ${payload.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
     await skipJob(db, job.id, { reason });

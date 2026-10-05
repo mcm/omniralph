@@ -74,3 +74,29 @@ export interface LearnRuleOutcome {
 export interface RuleLearner {
   learnRule(request: LearnRuleRequest): Promise<LearnRuleOutcome>;
 }
+
+export interface ReplyRequest {
+  /** The assembled reply prompt (`buildReplyPrompt`). */
+  prompt: string;
+  /** The job's worktree at the review's head; the read-only tools are confined to it. */
+  cwd: string;
+  /** False when no checkout is available (`cwd` is then an empty directory). */
+  allowExploration: boolean;
+  model?: string;
+  /** Token cap (input + output). */
+  maxTokens: number;
+  signal?: AbortSignal;
+}
+
+export interface ReplyOutcome {
+  /** `answered`: `answer` is set. */
+  status: "answered" | "budget_exhausted" | "rate_limited" | "error";
+  answer: string | null;
+  usage: TokenUsage;
+  error?: string;
+  retryAfterMs?: number;
+}
+
+export interface QuestionAnswerer {
+  answer(request: ReplyRequest): Promise<ReplyOutcome>;
+}

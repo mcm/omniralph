@@ -4,6 +4,7 @@ import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
+import { isReplyJob, onReplyJobFailed } from "@/lib/mentions/reply";
 import {
   isReviewJob,
   onReviewJobCanceled,
@@ -19,7 +20,8 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
  * last allowed delivery, fail the job (the agent acknowledges the message).
  * Otherwise the response is `retry`: the agent sets the message's lease to
  * `retryAfterSeconds` without acknowledging, so the queue redelivers it.
- * A review job's final failure fails its review and posts a failure note.
+ * A review job's final failure fails its review and posts a failure note; a
+ * `review.reply` job's final failure posts an apology in the finding's thread.
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireAgent(req);
@@ -43,6 +45,8 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     if (outcome.status === "failed") await onReviewJobFailed(db, job, error ?? "Review failed");
     else if (outcome.status === "canceled") await onReviewJobCanceled(db, job);
     else if (outcome.status === "retry") await onReviewJobRetry(db, job, error);
+  } else if (job && outcome.status === "failed" && isReplyJob(job)) {
+    await onReplyJobFailed(db, job);
   }
   switch (outcome.status) {
     case "not_found":

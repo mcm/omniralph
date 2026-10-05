@@ -5,6 +5,7 @@ import {
   finishReview,
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
+  getReviewProfile,
   listActiveJobsByDedupePrefix,
   previousReviewState,
   type Database,
@@ -30,6 +31,14 @@ export interface EnqueueReviewInput {
   /** PR/MR author's username. */
   author: string | null;
   trigger: Review["trigger"];
+  /**
+   * `incremental` (default) reviews only the commits since the PR's last
+   * completed review; `full` reviews the whole diff at head (`@bot review`).
+   * Both drop duplicates of the PR's open findings.
+   */
+  mode?: "incremental" | "full";
+  /** Review profile to use instead of the repository's (`@bot review deep`). */
+  profileId?: string | null;
 }
 
 export type EnqueueReviewResult =
@@ -40,7 +49,8 @@ export type EnqueueReviewResult =
       /** Jobs of older head SHAs of the PR that were canceled. */
       canceledJobIds: string[];
     }
-  | { status: "repository_unavailable" };
+  | { status: "repository_unavailable" }
+  | { status: "profile_not_found" };
 
 /** Dedupe key prefix of a PR's review jobs; the full key adds the head SHA. */
 export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): string {
@@ -51,7 +61,8 @@ export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): stri
  * Enqueues a review of a PR/MR head: cancels the PR's queued or running review
  * jobs for older head SHAs, creates the `queued` review and publishes a
  * `review.run` job carrying the review config resolved now (profile, rules,
- * instructions, excludes) and the previous review's head SHA. The payload holds
+ * instructions, excludes) and the previous review's head SHA (none for a
+ * `full` review) and open findings. The payload holds
  * no credentials. A second call for the same head while its job is active
  * returns that job (`duplicate`).
  */
@@ -65,6 +76,9 @@ export async function enqueueReview(
   if (!found || !settings || !found.repository.enabled || found.repository.disconnectedAt) {
     return { status: "repository_unavailable" };
   }
+
+  const profile = input.profileId ? await getReviewProfile(db, input.profileId) : settings.profile;
+  if (!profile) return { status: "profile_not_found" };
 
   const prefix = reviewJobKeyPrefix(input.repositoryId, input.prNumber);
   const canceledJobIds: string[] = [];
@@ -81,7 +95,6 @@ export async function enqueueReview(
     }
   }
 
-  const { profile } = settings;
   const previous = await previousReviewState(db, input);
   const review = await createReview(db, {
     repositoryId: input.repositoryId,
@@ -120,7 +133,7 @@ export async function enqueueReview(
       pathExcludes: settings.pathExcludes,
     },
     previousReview: previous && {
-      headSha: previous.headSha,
+      headSha: input.mode === "full" ? null : previous.headSha,
       openFindings: previous.openFindings.flatMap((f) => {
         const category = FindingCategory.safeParse(f.category);
         return category.success ? [{ ...f, category: category.data }] : [];

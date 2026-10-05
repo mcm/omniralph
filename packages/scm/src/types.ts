@@ -91,6 +91,8 @@ export interface ScmAdapter {
   getChangeRequest(repo: RepoRef, number: number): Promise<ChangeRequest>;
   /** Posts one review: a summary plus inline comments. */
   postReview(repo: RepoRef, number: number, review: ReviewSubmission): Promise<PostedReview>;
+  /** Posts a top-level comment on the PR/MR conversation; returns its ID. */
+  postComment(repo: RepoRef, number: number, body: string): Promise<{ id: string }>;
   /** Replies in the thread of an inline comment; returns the new comment ID. */
   replyToComment(repo: RepoRef, number: number, commentId: string, body: string): Promise<{ id: string }>;
   /** Resolves the thread containing an inline comment. */
