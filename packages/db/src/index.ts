@@ -120,6 +120,7 @@ export {
 } from "./reviews.js";
 export {
   claimWebhookDelivery,
+  pruneWebhookDeliveries,
   releaseWebhookDelivery,
   setWebhookDeliveryJob,
   type WebhookDeliveryRef,
