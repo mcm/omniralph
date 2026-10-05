@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@iamthemcmaster/ui";
-import { IconAt, IconWebhook } from "@tabler/icons-react";
+import { IconAt, IconRefresh, IconWebhook } from "@tabler/icons-react";
 import type { ReviewDetailView, ReviewRow } from "@/lib/reviews/display";
 
 type Variant = "success" | "warning" | "info" | "danger" | "neutral" | "emphasis" | "outline";
@@ -31,6 +31,7 @@ const FINDING_STATUS_BADGES: Record<FindingStatus, Variant> = {
   open: "emphasis",
   dismissed: "neutral",
   resolved: "success",
+  superseded: "outline",
 };
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
@@ -50,7 +51,7 @@ export function ReviewStatusBadge({ status }: { status: Status }) {
 }
 
 export function TriggerBadge({ trigger }: { trigger: ReviewRow["trigger"] }) {
-  const Icon = trigger === "mention" ? IconAt : IconWebhook;
+  const Icon = trigger === "mention" ? IconAt : trigger === "manual" ? IconRefresh : IconWebhook;
   return (
     <Badge variant="outline">
       <Icon size={12} />

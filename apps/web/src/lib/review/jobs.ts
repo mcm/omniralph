@@ -17,6 +17,7 @@ import {
   ReviewJobResult,
 } from "@omniralph/shared";
 import { postFailureNote, postReview } from "./post";
+import { supersedeEarlierFindings } from "./supersede";
 
 /**
  * The review side of the job lifecycle: the agent API routes call these
@@ -43,7 +44,7 @@ function reviewPayload(job: Job): ReviewJobPayload {
 /**
  * After a delivery started: a webhook review of a head SHA that already has a
  * `completed` review isn't reviewed again (job and review become `skipped`);
- * otherwise (and always for an explicit `@bot review`) the review is marked
+ * otherwise (and always for an explicit `@bot review` or Re-run) the review is marked
  * `running` on the agent.
  */
 export async function onReviewJobStarted(
@@ -54,7 +55,7 @@ export async function onReviewJobStarted(
   const payload = reviewPayload(job);
   const review = await getReview(db, payload.reviewId);
   const completed =
-    review?.trigger !== "mention" &&
+    (review?.trigger ?? "webhook") === "webhook" &&
     (await findCompletedReview(db, {
       repositoryId: payload.repositoryId,
       prNumber: payload.prNumber,
@@ -79,8 +80,9 @@ export function parseReviewResult(result: unknown): ReviewJobResult | null {
 
 /**
  * For a `completed` review job: persists the review and its findings (once),
- * then posts it to the PR/MR (once). Safe to call again for a replayed result;
- * that also retries a post that failed before.
+ * then posts it to the PR/MR (once). A `fresh` review then supersedes the
+ * earlier open findings it raised again. Safe to call again for a replayed
+ * result; that also retries a post that failed before.
  */
 export async function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
   const payload = reviewPayload(job);
@@ -104,6 +106,7 @@ export async function onReviewJobCompleted(db: Database, job: Job): Promise<void
     })),
   });
   await postReview(db, { reviewId: payload.reviewId, payload, result });
+  if (payload.mode === "fresh") await supersedeEarlierFindings(db, payload.reviewId);
 }
 
 /** A review job that ended `canceled` (e.g. superseded by a newer push). */

@@ -1,0 +1,452 @@
+import { randomBytes } from "node:crypto";
+import {
+  connectRepository,
+  createDb,
+  createReview,
+  findings,
+  jobs,
+  reviews,
+  runMigrations,
+  upsertScmConnection,
+  type Database,
+  type FindingRow,
+  type Job,
+} from "@omniralph/db";
+import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
+import { ReviewJobPayload, type Finding, type ReviewJobResult } from "@omniralph/shared";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { and, eq } from "drizzle-orm";
+import { getContainerRuntimeClient } from "testcontainers";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertRole, type Role } from "@/lib/auth/roles";
+import type * as Adapters from "@/lib/scm/adapters";
+
+vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
+const HEAD = "f".repeat(40);
+
+/** Records code-host calls; `failResolve` makes `resolveThread` throw for those comment IDs. */
+function fakeAdapter() {
+  const calls = {
+    getChangeRequest: [] as number[],
+    postReview: [] as { number: number; summary: string }[],
+    replyToComment: [] as { number: number; commentId: string; body: string }[],
+    resolveThread: [] as { number: number; commentId: string }[],
+  };
+  const pr = { state: "open" as ChangeRequestState, headSha: HEAD };
+  const failResolve = new Set<string>();
+  const adapter: ScmAdapter = {
+    provider: "github",
+    async getChangeRequest(_repo, number): Promise<ChangeRequest> {
+      calls.getChangeRequest.push(number);
+      return {
+        number,
+        title: "Add login",
+        description: "Please review",
+        author: "octocat",
+        draft: false,
+        state: pr.state,
+        baseSha: "a".repeat(40),
+        headSha: pr.headSha,
+        baseRef: "main",
+        headRef: "feature",
+        url: `https://github.com/acme/app/pull/${number}`,
+      };
+    },
+    async postReview(_repo, number, review) {
+      calls.postReview.push({ number, summary: review.summary });
+      return {
+        reviewId: `review-${calls.postReview.length}`,
+        summaryCommentId: `summary-${calls.postReview.length}`,
+        inlineCommentIds: review.inlineComments.map(
+          (_, i) => `new-${calls.postReview.length}-${i}`,
+        ),
+      };
+    },
+    async postComment() {
+      throw new Error("not used");
+    },
+    async replyToComment(_repo, number, commentId, body) {
+      calls.replyToComment.push({ number, commentId, body });
+      return { id: `r${calls.replyToComment.length}` };
+    },
+    async resolveThread(_repo, number, commentId) {
+      calls.resolveThread.push({ number, commentId });
+      if (failResolve.has(commentId)) throw new Error("GitHub said no");
+    },
+    async getReadOnlyCloneCredential() {
+      throw new Error("not used");
+    },
+    async hasWriteAccess() {
+      return true;
+    },
+    async verifyWebhook() {
+      return true;
+    },
+  };
+  return { adapter, calls, pr, failResolve };
+}
+
+const state = vi.hoisted(() => ({
+  db: undefined as unknown as Database,
+  user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
+  scm: undefined as unknown as ReturnType<typeof fakeAdapter>,
+}));
+vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/auth/session", () => ({
+  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+}));
+vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  scmAdapterFor: () => state.scm.adapter,
+}));
+vi.mock("@vercel/queue", () => ({
+  QueueClient: class {
+    async send() {
+      return { messageId: "msg-1" };
+    }
+  },
+}));
+
+process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+process.env.QUEUE_REGIONS = "iad1";
+process.env.APP_URL = "https://omniralph.example.com";
+
+const { enqueueReview } = await import("./enqueue");
+const { onReviewJobCompleted } = await import("./jobs");
+const { getDispatcher } = await import("@/lib/dispatch");
+const { rerunReview } = await import("@/app/(app)/reviews/actions");
+
+const dockerAvailable = await getContainerRuntimeClient().then(
+  () => true,
+  () => false,
+);
+
+const SHA = (n: number) => n.toString(16).padStart(40, "0");
+const admin = { id: "admin-1", role: "admin" as const, name: null, email: null, image: null };
+const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
+
+describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () => {
+  let container: StartedPostgreSqlContainer;
+  let db: Database;
+  let repoId: string;
+  let prCounter = 0;
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer("postgres:17-alpine").start();
+    await runMigrations(container.getConnectionUri());
+    db = createDb(container.getConnectionUri());
+    state.db = db;
+    const connection = await upsertScmConnection(db, {
+      provider: "github",
+      name: "acme",
+      baseUrl: "https://github.com",
+      externalId: "4242",
+      credentials: {},
+    });
+    repoId = (
+      await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "github",
+        externalId: "100",
+        fullPath: "acme/app",
+      })
+    ).id;
+  }, 180_000);
+
+  beforeEach(() => {
+    state.scm = fakeAdapter();
+    state.user = admin;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterAll(async () => {
+    await db?.$client.end();
+    await container?.stop();
+  });
+
+  /** A completed webhook review of the PR with open findings posted as threads `thread-<i>`. */
+  async function reviewedPr(open: Partial<typeof findings.$inferInsert>[] = [{}]) {
+    const number = ++prCounter;
+    const review = await createReview(db, {
+      repositoryId: repoId,
+      prNumber: number,
+      headSha: SHA(2),
+      baseSha: SHA(1),
+      trigger: "webhook",
+      profileId: "standard",
+      model: null,
+      budget: 200_000,
+    });
+    await db.update(reviews).set({ status: "completed" }).where(eq(reviews.id, review.id));
+    const rows = await db
+      .insert(findings)
+      .values(
+        open.map((over, i) => ({
+          reviewId: review.id,
+          path: "src/app.ts",
+          startLine: 10,
+          endLine: 12,
+          severity: "high" as const,
+          category: "correctness",
+          title: "Missing null check",
+          body: "`load()` can return undefined.",
+          confidence: 0.8,
+          scmCommentId: `thread-${number}-${i}`,
+          createdAt: new Date(Date.now() + i),
+          ...over,
+        })),
+      )
+      .returning();
+    return { number, review, findings: rows };
+  }
+
+  const enqueue = (number: number, mode: "incremental" | "full" | "fresh") =>
+    enqueueReview(db, getDispatcher(), {
+      repositoryId: repoId,
+      prNumber: number,
+      baseSha: SHA(1),
+      headSha: HEAD,
+      title: "Add login",
+      description: null,
+      author: "octocat",
+      trigger: "mention",
+      mode,
+    });
+
+  async function reviewJob(reviewId: string): Promise<Job> {
+    const rows = await db.select().from(jobs).where(eq(jobs.type, "review.run"));
+    const job = rows.find((j) => (j.payload as { reviewId?: string }).reviewId === reviewId);
+    if (!job) throw new Error(`no job for review ${reviewId}`);
+    return job;
+  }
+
+  const result = (found: Finding[]): ReviewJobResult => ({
+    findings: found,
+    usage: { inputTokens: 1000, outputTokens: 100 },
+    skipped: [],
+    stopReason: "completed",
+    scope: { mode: "full", baseSha: SHA(1), headSha: HEAD },
+    discarded: { invalid: 0, outsideDiff: 0, duplicate: 0 },
+    durationMs: 1000,
+  });
+
+  const newFinding = (over: Partial<Finding> = {}): Finding => ({
+    path: "src/app.ts",
+    startLine: 11,
+    endLine: 11,
+    severity: "high",
+    category: "correctness",
+    title: "load() may return undefined",
+    body: "Check the result.",
+    confidence: 0.9,
+    ...over,
+  });
+
+  async function findingRow(id: string): Promise<FindingRow> {
+    const [row] = await db.select().from(findings).where(eq(findings.id, id));
+    return row!;
+  }
+
+  describe("enqueueReview modes", () => {
+    it("passes no open findings for a fresh review", async () => {
+      const { number } = await reviewedPr();
+      const enqueued = await enqueue(number, "fresh");
+      expect(enqueued.status).toBe("enqueued");
+      if (enqueued.status !== "enqueued") return;
+      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      expect(payload.mode).toBe("fresh");
+      expect(payload.previousReview).toBeNull();
+    });
+
+    it("still passes open findings for a full review, without a previous head", async () => {
+      const { number } = await reviewedPr();
+      const enqueued = await enqueue(number, "full");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      expect(payload.mode).toBe("full");
+      expect(payload.previousReview).toEqual({
+        headSha: null,
+        openFindings: [{ path: "src/app.ts", startLine: 10, endLine: 12, category: "correctness" }],
+      });
+    });
+
+    it("keeps the previous head for an incremental (webhook) review", async () => {
+      const { number } = await reviewedPr();
+      const enqueued = await enqueue(number, "incremental");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      expect(payload.mode).toBe("incremental");
+      expect(payload.previousReview?.headSha).toBe(SHA(2));
+    });
+  });
+
+  describe("superseding after a fresh review", () => {
+    async function completeFresh(number: number, found: Finding[]) {
+      const enqueued = await enqueue(number, "fresh");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const job = await reviewJob(enqueued.reviewId);
+      await onReviewJobCompleted(db, { ...job, status: "completed", result: result(found) });
+      const rows = await db.select().from(findings).where(eq(findings.reviewId, enqueued.reviewId));
+      return { reviewId: enqueued.reviewId, rows };
+    }
+
+    it("supersedes a matching open finding, replies with a link and resolves its thread", async () => {
+      const { number, findings: prior } = await reviewedPr([
+        {},
+        // Another file: no match, stays open.
+        { path: "src/other.ts" },
+        // Same lines, other category: no match.
+        { category: "security" },
+      ]);
+      const { reviewId, rows } = await completeFresh(number, [newFinding()]);
+      expect(rows).toHaveLength(1);
+
+      expect(await findingRow(prior[0]!.id)).toMatchObject({
+        status: "superseded",
+        supersededByFindingId: rows[0]!.id,
+      });
+      expect((await findingRow(prior[1]!.id)).status).toBe("open");
+      expect((await findingRow(prior[2]!.id)).status).toBe("open");
+      expect((await findingRow(prior[2]!.id)).supersededByFindingId).toBeNull();
+
+      const thread = prior[0]!.scmCommentId!;
+      expect(state.scm.calls.replyToComment).toHaveLength(1);
+      expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
+      expect(state.scm.calls.replyToComment[0]!.body).toContain(
+        `https://omniralph.example.com/reviews/${reviewId}`,
+      );
+      expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
+    });
+
+    it("leaves unmatched open findings alone", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      const { rows } = await completeFresh(number, [newFinding({ startLine: 40, endLine: 41 })]);
+      expect(rows).toHaveLength(1);
+      expect((await findingRow(prior[0]!.id)).status).toBe("open");
+      expect(state.scm.calls.replyToComment).toHaveLength(0);
+      expect(state.scm.calls.resolveThread).toHaveLength(0);
+    });
+
+    it("logs a failed thread resolve as a warning without failing the review", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      state.scm.failResolve.add(prior[0]!.scmCommentId!);
+      const { reviewId } = await completeFresh(number, [newFinding()]);
+
+      expect((await findingRow(prior[0]!.id)).status).toBe("superseded");
+      const [review] = await db.select().from(reviews).where(eq(reviews.id, reviewId));
+      expect(review!.status).toBe("completed");
+      expect(review!.summaryCommentId).not.toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        "couldn't resolve a superseded finding's SCM thread",
+        expect.objectContaining({ findingId: prior[0]!.id, error: "GitHub said no" }),
+      );
+    });
+
+    it("doesn't supersede anything after a full review", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      const enqueued = await enqueue(number, "full");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const job = await reviewJob(enqueued.reviewId);
+      await onReviewJobCompleted(db, {
+        ...job,
+        status: "completed",
+        result: result([newFinding()]),
+      });
+      expect((await findingRow(prior[0]!.id)).status).toBe("open");
+    });
+
+    it("ends the summary comment with the re-run footer", async () => {
+      const { number } = await reviewedPr();
+      const { reviewId } = await completeFresh(number, []);
+      const summary = state.scm.calls.postReview.at(-1)!.summary;
+      expect(summary.trimEnd().split("\n").at(-1)).toBe(
+        `Re-run: comment \`@omniralph review\` (new issues only) or \`@omniralph review fresh\` (from scratch), or use **Re-run** on the [review page](https://omniralph.example.com/reviews/${reviewId}).`,
+      );
+    });
+  });
+
+  describe("Re-run server action", () => {
+    const prJobs = async (number: number) =>
+      (
+        await db
+          .select()
+          .from(jobs)
+          .where(and(eq(jobs.type, "review.run")))
+      ).filter((j) => (j.payload as { prNumber?: number }).prNumber === number);
+
+    it("enqueues a manual fresh review of the PR's current head", async () => {
+      const { number, review } = await reviewedPr();
+      const res = await rerunReview(review.id, { mode: "fresh", profileId: "deep" });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+
+      expect(state.scm.calls.getChangeRequest).toEqual([number]);
+      const payload = ReviewJobPayload.parse((await reviewJob(res.reviewId)).payload);
+      expect(payload).toMatchObject({ mode: "fresh", headSha: HEAD, previousReview: null });
+      expect(payload.reviewConfig.profile.id).toBe("deep");
+      const [created] = await db.select().from(reviews).where(eq(reviews.id, res.reviewId));
+      expect(created).toMatchObject({ trigger: "manual", headSha: HEAD, profileId: "deep" });
+    });
+
+    it("runs Incremental as a full review that keeps the repository's profile", async () => {
+      const { review } = await reviewedPr();
+      const res = await rerunReview(review.id, { mode: "incremental", profileId: null });
+      if (!res.ok) throw new Error(res.error);
+      const payload = ReviewJobPayload.parse((await reviewJob(res.reviewId)).payload);
+      expect(payload.mode).toBe("full");
+      expect(payload.previousReview?.openFindings).toHaveLength(1);
+      expect(payload.reviewConfig.profile.id).toBe("standard");
+    });
+
+    it("rejects members", async () => {
+      const { number, review } = await reviewedPr();
+      state.user = member;
+      const res = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      expect(res.ok).toBe(false);
+      expect(state.scm.calls.getChangeRequest).toHaveLength(0);
+      expect(await prJobs(number)).toHaveLength(0);
+    });
+
+    it("refuses a closed or merged PR without creating a job", async () => {
+      for (const prState of ["closed", "merged"] as const) {
+        const { number, review } = await reviewedPr();
+        state.scm.pr.state = prState;
+        const res = await rerunReview(review.id, { mode: "incremental", profileId: null });
+        expect(res).toEqual({
+          ok: false,
+          error: `This change request is ${prState}, so it can't be reviewed again.`,
+        });
+        expect(await prJobs(number)).toHaveLength(0);
+      }
+    });
+
+    it("reports an active review of the same head instead of enqueuing a second job", async () => {
+      const { number, review } = await reviewedPr();
+      const first = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      if (!first.ok) throw new Error(first.error);
+      const second = await rerunReview(review.id, { mode: "incremental", profileId: null });
+      expect(second).toEqual({
+        ok: false,
+        error: `A review of ${HEAD.slice(0, 12)} is already queued or running.`,
+        activeReviewId: first.reviewId,
+      });
+      expect(await prJobs(number)).toHaveLength(1);
+    });
+
+    it("rejects invalid options and unknown reviews", async () => {
+      const { review } = await reviewedPr();
+      const bad = await rerunReview(review.id, {
+        mode: "sideways" as "fresh",
+        profileId: null,
+      });
+      expect(bad.ok).toBe(false);
+      const missing = await rerunReview("00000000-0000-4000-8000-000000000000", {
+        mode: "fresh",
+        profileId: null,
+      });
+      expect(missing).toEqual({ ok: false, error: "That review doesn't exist." });
+    });
+  });
+});

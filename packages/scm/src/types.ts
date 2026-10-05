@@ -13,6 +13,8 @@ export interface RepoRef {
   externalId?: string;
 }
 
+export type ChangeRequestState = "open" | "closed" | "merged";
+
 /** A pull request (GitHub) or merge request (GitLab). */
 export interface ChangeRequest {
   number: number;
@@ -20,6 +22,8 @@ export interface ChangeRequest {
   description: string;
   author: string;
   draft: boolean;
+  /** `open` (GitLab `opened`/`locked`), `closed` or `merged`. */
+  state: ChangeRequestState;
   /** Merge base of the target branch and head (GitLab `diff_refs.base_sha`). */
   baseSha: string;
   /**

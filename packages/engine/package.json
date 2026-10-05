@@ -15,6 +15,11 @@
       "types": "./dist/summary.d.ts",
       "default": "./dist/summary.js"
     },
+    "./same-issue": {
+      "@omniralph/source": "./src/sameIssue.ts",
+      "types": "./dist/sameIssue.d.ts",
+      "default": "./dist/sameIssue.js"
+    },
     "./rules": {
       "@omniralph/source": "./src/ruleDedupe.ts",
       "types": "./dist/ruleDedupe.d.ts",

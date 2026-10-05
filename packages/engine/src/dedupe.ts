@@ -1,18 +1,9 @@
 import { FINDING_SEVERITIES, type Finding } from "@omniralph/shared";
 import { fence } from "./prompt.js";
+import { sameIssue, type FindingLocation } from "./sameIssue.js";
 import { assignedNames, variableReferences } from "./selfContained.js";
 
-type FindingLocation = Pick<Finding, "path" | "startLine" | "endLine" | "category">;
-
-/** Same path, same category and overlapping line ranges. */
-export function sameIssue(a: FindingLocation, b: FindingLocation): boolean {
-  return (
-    a.path === b.path &&
-    a.category === b.category &&
-    a.startLine <= b.endLine &&
-    b.startLine <= a.endLine
-  );
-}
+export { sameIssue, type FindingLocation };
 
 /**
  * Same path, same category and overlapping or adjacent line ranges: one

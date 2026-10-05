@@ -174,6 +174,8 @@ export interface ReviewDetail {
   findings: FindingRow[];
   /** Feedback on the findings (dismissals from the UI and `@bot dismiss`), oldest first. */
   feedback: FeedbackEntry[];
+  /** Review ID of each `supersededByFindingId` of the findings (by that finding's ID). */
+  supersedingReviewIds: Record<string, string>;
 }
 
 /** A review with its repository, profile, agent and findings; null if it doesn't exist. */
@@ -208,6 +210,16 @@ export async function getReviewDetail(
     .from(findings)
     .where(eq(findings.reviewId, reviewId))
     .orderBy(asc(findings.createdAt), asc(findings.id));
+  const supersedingIds = [
+    ...new Set(rows.flatMap((f) => (f.supersededByFindingId ? [f.supersededByFindingId] : []))),
+  ];
+  const superseding =
+    supersedingIds.length === 0
+      ? []
+      : await db
+          .select({ id: findings.id, reviewId: findings.reviewId })
+          .from(findings)
+          .where(inArray(findings.id, supersedingIds));
   return {
     review: row.review,
     repository: row.repository,
@@ -218,5 +230,6 @@ export async function getReviewDetail(
       db,
       rows.map((f) => f.id),
     ),
+    supersedingReviewIds: Object.fromEntries(superseding.map((f) => [f.id, f.reviewId])),
   };
 }

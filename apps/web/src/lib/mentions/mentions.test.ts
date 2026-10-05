@@ -47,6 +47,7 @@ function fakeAdapter() {
         description: "Please review",
         author: "octocat",
         draft: false,
+        state: "open",
         baseSha: "a".repeat(40),
         headSha: head.sha,
         baseRef: "main",
@@ -264,6 +265,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment).toHaveLength(1);
       expect(state.scm.calls.postComment[0]!.body).toContain("@maintainer");
       expect(state.scm.calls.postComment[0]!.body).toContain("full review");
+      expect(payload.mode).toBe("full");
     });
 
     it("applies a profile override", async () => {
@@ -302,6 +304,37 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(await prReviewJobs(number)).toHaveLength(0);
       expect(state.scm.calls.hasWriteAccess).toEqual(["drive-by"]);
       expect(state.scm.calls.postComment).toHaveLength(1);
+      expect(state.scm.calls.postComment[0]!.body).toMatch(
+        /^Sorry @drive-by, only people with write access/,
+      );
+    });
+  });
+
+  describe("@bot review fresh", () => {
+    it("enqueues a fresh mention review of the current head with no open findings to suppress", async () => {
+      const { number } = await reviewedPr();
+      const res = await conversationComment(number, "@OmniRalph   review  FRESH  quick");
+      expect(res).toEqual({ status: "accepted", command: "review" });
+
+      const [job] = await prReviewJobs(number);
+      const payload = ReviewJobPayload.parse(job!.payload);
+      expect(payload.mode).toBe("fresh");
+      expect(payload.headSha).toBe("f".repeat(40));
+      expect(payload.previousReview).toBeNull();
+      expect(payload.reviewConfig.profile.id).toBe("quick");
+      const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));
+      expect(review).toMatchObject({ trigger: "mention", profileId: "quick" });
+      expect(state.scm.calls.postComment[0]!.body).toContain("a fresh **Quick** review");
+
+      const [agent] = await db.insert(agents).values({ name: "agent-fresh" }).returning();
+      await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
+    });
+
+    it("politely refuses users without write access", async () => {
+      const { number } = await reviewedPr();
+      await conversationComment(number, "@omniralph review fresh", "drive-by");
+      expect(await prReviewJobs(number)).toHaveLength(0);
+      expect(state.scm.calls.hasWriteAccess).toEqual(["drive-by"]);
       expect(state.scm.calls.postComment[0]!.body).toMatch(
         /^Sorry @drive-by, only people with write access/,
       );

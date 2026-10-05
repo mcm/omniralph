@@ -30,11 +30,22 @@ function code(raw: string): string {
   return `${marks}${pad}${text}${pad}${marks}`;
 }
 
+export interface SummaryOptions {
+  /** The bot's `@` handle for the re-run footer (`BOT_HANDLE`); default `omniralph`. */
+  botHandle?: string;
+}
+
 /**
  * The PR/MR summary comment: profile, findings by severity, tokens used vs.
- * budget, skipped files with reasons and a link to the review page.
+ * budget, skipped files with reasons, a link to the review page and a footer
+ * on how to re-run the review.
  */
-export function renderSummary(result: ReviewResult, reviewUrl: string): string {
+export function renderSummary(
+  result: ReviewResult,
+  reviewUrl: string,
+  options: SummaryOptions = {},
+): string {
+  const handle = options.botHandle ?? "omniralph";
   const counts = FINDING_SEVERITIES.map(
     (severity) =>
       [severity, result.findings.filter((f) => f.severity === severity).length] as const,
@@ -76,6 +87,10 @@ export function renderSummary(result: ReviewResult, reviewUrl: string): string {
     );
   }
 
-  lines.push(`[View the full review](${reviewUrl})`);
+  lines.push(
+    `[View the full review](${reviewUrl})`,
+    "",
+    `Re-run: comment ${code(`@${handle} review`)} (new issues only) or ${code(`@${handle} review fresh`)} (from scratch), or use **Re-run** on the [review page](${reviewUrl}).`,
+  );
   return `${lines.join("\n")}\n`;
 }

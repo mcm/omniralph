@@ -41,7 +41,15 @@ describe("renderSummary", () => {
     expect(text).toContain("- **Findings:** none");
     expect(text).not.toContain("| Severity |");
     expect(text).not.toContain("Skipped files");
-    expect(text.trimEnd().endsWith(`[View the full review](${url})`)).toBe(true);
+    expect(text).toContain(`[View the full review](${url})`);
+  });
+
+  it("ends with a re-run footer using the bot handle", () => {
+    const text = renderSummary(base, url, { botHandle: "reviewbot" });
+    expect(text.trimEnd().split("\n").at(-1)).toBe(
+      `Re-run: comment \`@reviewbot review\` (new issues only) or \`@reviewbot review fresh\` (from scratch), or use **Re-run** on the [review page](${url}).`,
+    );
+    expect(renderSummary(base, url)).toContain("`@omniralph review fresh`");
   });
 
   it("keeps skipped paths with line breaks on one line", () => {

@@ -27,24 +27,53 @@ describe("parseBotCommand", () => {
 
   it("parses review with and without a profile override", () => {
     const cases: [string, BotCommand][] = [
-      ["@omniralph review", { kind: "review", profileId: null }],
-      ["@omniralph review quick", { kind: "review", profileId: "quick" }],
-      ["@omniralph review standard", { kind: "review", profileId: "standard" }],
-      ["@omniralph review deep", { kind: "review", profileId: "deep" }],
-      ["@omniralph review.", { kind: "review", profileId: null }],
-      ["@omniralph review deep!", { kind: "review", profileId: "deep" }],
-      ["Could you take another look? @omniralph review", { kind: "review", profileId: null }],
-      ["@omniralph review deep\n\nThanks!", { kind: "review", profileId: "deep" }],
+      ["@omniralph review", { kind: "review", fresh: false, profileId: null }],
+      ["@omniralph review quick", { kind: "review", fresh: false, profileId: "quick" }],
+      ["@omniralph review standard", { kind: "review", fresh: false, profileId: "standard" }],
+      ["@omniralph review deep", { kind: "review", fresh: false, profileId: "deep" }],
+      ["@omniralph review.", { kind: "review", fresh: false, profileId: null }],
+      ["@omniralph review deep!", { kind: "review", fresh: false, profileId: "deep" }],
+      [
+        "Could you take another look? @omniralph review",
+        { kind: "review", fresh: false, profileId: null },
+      ],
+      ["@omniralph review deep\n\nThanks!", { kind: "review", fresh: false, profileId: "deep" }],
     ];
     for (const [text, command] of cases) expect(parse(text), text).toEqual(command);
   });
 
+  it("parses review fresh with and without a profile override", () => {
+    const cases: [string, BotCommand][] = [
+      ["@omniralph review fresh", { kind: "review", fresh: true, profileId: null }],
+      ["@omniralph review fresh quick", { kind: "review", fresh: true, profileId: "quick" }],
+      ["@omniralph review fresh standard", { kind: "review", fresh: true, profileId: "standard" }],
+      ["@omniralph review fresh deep", { kind: "review", fresh: true, profileId: "deep" }],
+      ["@omniralph review fresh.", { kind: "review", fresh: true, profileId: null }],
+      ["@omniralph review fresh deep!", { kind: "review", fresh: true, profileId: "deep" }],
+      ["Rules changed. @omniralph review fresh", { kind: "review", fresh: true, profileId: null }],
+      ["@omniralph review fresh\n\nThanks!", { kind: "review", fresh: true, profileId: null }],
+      ["@OmniRalph REVIEW FRESH", { kind: "review", fresh: true, profileId: null }],
+      ["@omniralph Review Fresh DEEP", { kind: "review", fresh: true, profileId: "deep" }],
+      [
+        "  @omniralph   review \t fresh   quick  ",
+        { kind: "review", fresh: true, profileId: "quick" },
+      ],
+      ["\n@omniralph\treview\tfresh\r\n", { kind: "review", fresh: true, profileId: null }],
+      ["@omniralph[bot] review fresh", { kind: "review", fresh: true, profileId: null }],
+    ];
+    for (const [text, command] of cases) expect(parse(text), text).toEqual(command);
+    expect(parse("`@omniralph review fresh`")).toBeNull();
+  });
+
   it("is case-insensitive and tolerates extra whitespace", () => {
     const cases: [string, BotCommand][] = [
-      ["@OmniRalph REVIEW", { kind: "review", profileId: null }],
-      ["@omniralph Review DEEP", { kind: "review", profileId: "deep" }],
-      ["   @omniralph    review \t  quick   ", { kind: "review", profileId: "quick" }],
-      ["\n\n@omniralph\treview\r\n", { kind: "review", profileId: null }],
+      ["@OmniRalph REVIEW", { kind: "review", fresh: false, profileId: null }],
+      ["@omniralph Review DEEP", { kind: "review", fresh: false, profileId: "deep" }],
+      [
+        "   @omniralph    review \t  quick   ",
+        { kind: "review", fresh: false, profileId: "quick" },
+      ],
+      ["\n\n@omniralph\treview\r\n", { kind: "review", fresh: false, profileId: null }],
       ["@OMNIRALPH   DISMISS   ", { kind: "dismiss", reason: "false_positive", note: null }],
       ["@omniralph  HELP", { kind: "help" }],
     ];
@@ -101,7 +130,9 @@ describe("parseBotCommand", () => {
       "@omniralph why is this a problem?",
       "Why is this a problem? @omniralph",
       "@omniralph review this function again please",
-      "@omniralph review fresh",
+      "@omniralph review fresh please",
+      "@omniralph review fresh deep now",
+      "@omniralph review quick fresh",
       "@omniralph reviewing is slow",
       "@omniralph dismissal makes sense?",
     ]) {
@@ -127,19 +158,26 @@ describe("parseBotCommand", () => {
     }
     expect(parse("> @omniralph review\n@omniralph review deep")).toEqual({
       kind: "review",
+      fresh: false,
       profileId: "deep",
     });
   });
 
   it("accepts the GitHub App's [bot] login and handles with regex characters", () => {
-    expect(parse("@omniralph[bot] review")).toEqual({ kind: "review", profileId: null });
+    expect(parse("@omniralph[bot] review")).toEqual({
+      kind: "review",
+      fresh: false,
+      profileId: null,
+    });
     expect(parseBotCommand("@review.bot+1 review", "review.bot+1")).toEqual({
       kind: "review",
+      fresh: false,
       profileId: null,
     });
     expect(parseBotCommand("@reviewXbot review", "review.bot")).toBeNull();
     expect(parseBotCommand("@project_12_bot_ab12 review quick", "project_12_bot_ab12")).toEqual({
       kind: "review",
+      fresh: false,
       profileId: "quick",
     });
   });

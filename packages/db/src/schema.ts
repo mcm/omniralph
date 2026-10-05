@@ -7,6 +7,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -32,7 +33,7 @@ const updatedAt = () =>
 
 export const userRole = pgEnum("user_role", ["admin", "member"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
-export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention"]);
+export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
   "queued",
   "running",
@@ -48,7 +49,12 @@ export const findingSeverity = pgEnum("finding_severity", [
   "low",
   "info",
 ]);
-export const findingStatus = pgEnum("finding_status", ["open", "dismissed", "resolved"]);
+export const findingStatus = pgEnum("finding_status", [
+  "open",
+  "dismissed",
+  "resolved",
+  "superseded",
+]);
 export const feedbackSource = pgEnum("feedback_source", ["ui", "scm"]);
 export const feedbackReason = pgEnum("feedback_reason", [
   "false_positive",
@@ -422,6 +428,11 @@ export const findings = pgTable(
     confidence: real("confidence").notNull(),
     scmCommentId: text("scm_comment_id"),
     status: findingStatus("status").notNull().default("open"),
+    /** The finding of a later fresh review that replaced this one (`superseded`). */
+    supersededByFindingId: uuid("superseded_by_finding_id").references(
+      (): AnyPgColumn => findings.id,
+      { onDelete: "set null" },
+    ),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

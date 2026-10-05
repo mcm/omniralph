@@ -25,5 +25,7 @@ exports[`renderSummary > renders profile, severity counts, tokens, skipped files
 </details>
 
 [View the full review](https://omniralph.example.com/reviews/r-1)
+
+Re-run: comment \`@omniralph review\` (new issues only) or \`@omniralph review fresh\` (from scratch), or use **Re-run** on the [review page](https://omniralph.example.com/reviews/r-1).
 "
 `;

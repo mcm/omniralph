@@ -71,6 +71,13 @@
       "when": 1791180032701,
       "tag": "0009_job_scm_comment",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791182599617,
+      "tag": "0010_rerun_reviews",
+      "breakpoints": true
     }
   ]
 }

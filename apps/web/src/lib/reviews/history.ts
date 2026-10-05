@@ -94,6 +94,7 @@ export function feedbackView(entry: FeedbackEntry): FeedbackView {
 export function groupFindingsByFile(
   rows: FindingRow[],
   feedback: FeedbackEntry[] = [],
+  supersedingReviewIds: Record<string, string> = {},
 ): FileFindings[] {
   const feedbackByFinding = new Map<string, FeedbackView[]>();
   for (const entry of feedback) {
@@ -115,6 +116,13 @@ export function groupFindingsByFile(
       suggestion: row.suggestion,
       confidence: row.confidence,
       status: row.status,
+      supersededBy:
+        row.supersededByFindingId && supersedingReviewIds[row.supersededByFindingId]
+          ? {
+              reviewId: supersedingReviewIds[row.supersededByFindingId]!,
+              findingId: row.supersededByFindingId,
+            }
+          : null,
       feedback: feedbackByFinding.get(row.id) ?? [],
     });
     byPath.set(row.path, list);
@@ -157,7 +165,7 @@ export function reviewDetailView(detail: ReviewDetail): ReviewDetailView {
     stopReason: stopReason(review.status),
     error: review.error,
     skippedFiles: review.skippedFiles.map(({ path, reason }) => ({ path, reason })),
-    files: groupFindingsByFile(detail.findings, detail.feedback),
+    files: groupFindingsByFile(detail.findings, detail.feedback, detail.supersedingReviewIds),
     findingCount: detail.findings.length,
     createdAt: review.createdAt.toISOString(),
     updatedAt: review.updatedAt.toISOString(),

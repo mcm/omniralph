@@ -116,6 +116,7 @@ export class GitLabAdapter implements ScmAdapter {
       description: mr.description ?? "",
       author: mr.author.username,
       draft: Boolean(mr.draft ?? mr.work_in_progress),
+      state: mr.state === "merged" ? "merged" : mr.state === "closed" ? "closed" : "open",
       baseSha: refs.base_sha,
       startSha: refs.start_sha,
       headSha: refs.head_sha,

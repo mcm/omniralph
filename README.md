@@ -72,8 +72,10 @@ learned rules for later reviews.
 
 5. **Open a PR/MR** in a connected repository. The review shows up under **Jobs** and **Reviews**,
    and the bot posts inline findings plus a summary linking to the review. Comment
-   `@omniralph review [quick|standard|deep]` to re-review, `@omniralph dismiss [reason]` in a
-   finding's thread to dismiss it, or ask a question there.
+   `@omniralph review [quick|standard|deep]` to re-review for new issues,
+   `@omniralph review fresh [quick|standard|deep]` to re-review from scratch (matching open
+   findings are superseded), `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
+   or ask a question there. Admins can also use **Re-run** on a review's page or history row.
 6. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
    excludes, custom instructions, agent pinning) and rules (**Repository › Rules**).
 

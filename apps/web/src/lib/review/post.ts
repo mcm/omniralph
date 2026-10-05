@@ -11,6 +11,7 @@ import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
 import type { Finding, ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
 import { getAppUrl } from "@/lib/app-url";
+import { botHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -96,7 +97,9 @@ export async function postReview(
       discarded: input.result.discarded,
     };
     const posted = await adapter.postReview(repo, review.prNumber, {
-      summary: capSummary(renderSummary(summaryInput, reviewUrl(review.id))),
+      summary: capSummary(
+        renderSummary(summaryInput, reviewUrl(review.id), { botHandle: botHandle() }),
+      ),
       inlineComments: rows.map((row) => inlineComment(row, sanitize)),
       commitSha: review.headSha,
     });

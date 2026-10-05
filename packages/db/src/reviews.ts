@@ -290,3 +290,62 @@ export async function postReviewOnce(
     return { posted: true };
   });
 }
+
+export interface SupersededFinding {
+  /** The earlier finding, now `superseded`. */
+  finding: FindingRow;
+  /** The new review's finding that replaced it. */
+  by: FindingRow;
+}
+
+/**
+ * After a fresh review: sets every `open` finding of the PR's other reviews
+ * that `matches` one of this review's findings to `superseded` (pointing at
+ * the first match). Unmatched findings stay `open`. Runs once in effect: a
+ * replay finds nothing open left to supersede.
+ */
+export async function supersedeOpenFindings(
+  db: Database,
+  reviewId: string,
+  matches: (prior: FindingRow, next: FindingRow) => boolean,
+): Promise<SupersededFinding[]> {
+  return db.transaction(async (tx: Transaction) => {
+    const [review] = await tx
+      .select({ repositoryId: reviews.repositoryId, prNumber: reviews.prNumber })
+      .from(reviews)
+      .where(eq(reviews.id, reviewId));
+    if (!review) return [];
+    const next = await tx
+      .select()
+      .from(findings)
+      .where(eq(findings.reviewId, reviewId))
+      .orderBy(asc(findings.createdAt), asc(findings.id));
+    if (next.length === 0) return [];
+    const prior = await tx
+      .select({ finding: findings })
+      .from(findings)
+      .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+      .where(
+        and(
+          eq(reviews.repositoryId, review.repositoryId),
+          eq(reviews.prNumber, review.prNumber),
+          ne(reviews.id, reviewId),
+          eq(findings.status, "open"),
+        ),
+      )
+      .orderBy(asc(findings.createdAt), asc(findings.id))
+      .for("update", { of: findings });
+    const superseded: SupersededFinding[] = [];
+    for (const { finding } of prior) {
+      const by = next.find((candidate) => matches(finding, candidate));
+      if (!by) continue;
+      const [updated] = await tx
+        .update(findings)
+        .set({ status: "superseded", supersededByFindingId: by.id })
+        .where(and(eq(findings.id, finding.id), eq(findings.status, "open")))
+        .returning();
+      if (updated) superseded.push({ finding: updated, by });
+    }
+    return superseded;
+  });
+}
