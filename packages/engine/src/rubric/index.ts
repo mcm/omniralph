@@ -4,7 +4,9 @@ import { extname } from "node:path";
 /**
  * Review rubric, adapted from claude-skills' `code-reviewer` skill (MIT, see
  * THIRD_PARTY_NOTICES.md): `universal.md` is always included, plus one
- * `languages/<id>.md` per language present in the reviewed files.
+ * `languages/<id>.md` per language present in the reviewed files. CI
+ * workflow files (`ci`) get their own rubric, matched by path rather than by
+ * extension because `.yml` is not otherwise reviewed as a language.
  */
 
 export const RUBRIC_LANGUAGES = [
@@ -21,6 +23,7 @@ export const RUBRIC_LANGUAGES = [
   "dart",
   "c",
   "cpp",
+  "ci",
 ] as const;
 
 export type RubricLanguage = (typeof RUBRIC_LANGUAGES)[number];
@@ -69,7 +72,13 @@ const LANGUAGE_BY_FILENAME: Readonly<Record<string, RubricLanguage>> = {
   Gemfile: "ruby",
 };
 
+/** GitHub Actions workflows (only `.github/workflows/` at the repo root is read) and GitLab CI. */
+export function isCiWorkflowPath(path: string): boolean {
+  return /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path) || /(^|\/)\.gitlab-ci\.ya?ml$/.test(path);
+}
+
 export function languageForPath(path: string): RubricLanguage | undefined {
+  if (isCiWorkflowPath(path)) return "ci";
   const name = path.slice(path.lastIndexOf("/") + 1);
   return LANGUAGE_BY_FILENAME[name] ?? LANGUAGE_BY_EXTENSION[extname(name).toLowerCase()];
 }
