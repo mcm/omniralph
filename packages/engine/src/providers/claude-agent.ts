@@ -7,7 +7,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { FINDING_CATEGORIES, type Finding } from "@omniralph/shared";
-import { SUGGESTION_RULE } from "../prompt.js";
+import { ONE_FINDING_RULE, SUGGESTION_RULE } from "../prompt.js";
 import {
   extractPartialFindings,
   filterToDiff,
@@ -57,6 +57,7 @@ Answer with a single JSON object and nothing else:
 
 - path: the file's path as shown in the diff.
 - startLine/endLine: 1-based line numbers in the new version of the file (the old version for deleted files), inside one hunk of the diff.
+${ONE_FINDING_RULE}
 ${SUGGESTION_RULE}
 - confidence: 0 to 1.
 An empty list is a valid answer: {"findings": []}.`;

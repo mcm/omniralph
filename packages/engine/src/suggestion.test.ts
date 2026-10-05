@@ -3,7 +3,7 @@ import type { Finding } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
 import { parseDiff, type DiffFile } from "./diff.js";
 import { planReview } from "./plan.js";
-import { buildPrompt, SUGGESTION_RULE, type ReviewProfileConfig } from "./prompt.js";
+import { buildPrompt, ONE_FINDING_RULE, SUGGESTION_RULE, type ReviewProfileConfig } from "./prompt.js";
 import { REVIEW_SYSTEM_PROMPT } from "./providers/claude-agent.js";
 import { filterToDiff } from "./providers/findings-output.js";
 
@@ -71,10 +71,12 @@ describe("suggestions whose fix spans lines outside the finding", () => {
       changeRequest: { title: "Report coverage" },
     });
     expect(prompt.stablePrefix).toContain(SUGGESTION_RULE);
+    expect(prompt.stablePrefix).toContain(ONE_FINDING_RULE);
     expect(prompt.text).toContain(
       'run: echo "Coverage for: ${{ github.event.pull_request.title }}"',
     );
     expect(REVIEW_SYSTEM_PROMPT).toContain(SUGGESTION_RULE);
+    expect(REVIEW_SYSTEM_PROMPT).toContain(ONE_FINDING_RULE);
   });
 
   it("shows why a single-line suggestion is not a fix here", () => {

@@ -1,4 +1,5 @@
-import type { Finding } from "@omniralph/shared";
+import { FINDING_SEVERITIES, type Finding } from "@omniralph/shared";
+import { fence } from "./prompt.js";
 
 type FindingLocation = Pick<Finding, "path" | "startLine" | "endLine" | "category">;
 
@@ -12,15 +13,61 @@ export function sameIssue(a: FindingLocation, b: FindingLocation): boolean {
   );
 }
 
+/**
+ * Same path, same category and overlapping or adjacent line ranges: one
+ * problem the model split into several findings (e.g. an injection on a `run:`
+ * line plus "add the `env:` mapping" on the lines right above it).
+ */
+export function splitIssue(a: FindingLocation, b: FindingLocation): boolean {
+  return (
+    a.path === b.path &&
+    a.category === b.category &&
+    a.startLine <= b.endLine + 1 &&
+    b.startLine <= a.endLine + 1
+  );
+}
+
+const lineRange = (f: FindingLocation): string =>
+  f.startLine === f.endLine ? `line ${f.startLine}` : `lines ${f.startLine}-${f.endLine}`;
+
+const rank = (f: Finding): number => FINDING_SEVERITIES.indexOf(f.severity);
+
+/**
+ * Merges two findings about one problem into one. The more severe one (the
+ * first on a tie) leads. A finding inside the leader's range is a plain
+ * repeat and adds nothing. Otherwise the range widens to cover both, and the
+ * other finding's text is appended. Each suggestion only fixed its own range,
+ * so a widened finding carries them in the body instead.
+ */
+export function mergeFindings(first: Finding, second: Finding): Finding {
+  const [lead, other] = rank(second) < rank(first) ? [second, first] : [first, second];
+  const startLine = Math.min(lead.startLine, other.startLine);
+  const endLine = Math.max(lead.endLine, other.endLine);
+  const confidence = Math.max(lead.confidence, other.confidence);
+  if (startLine === lead.startLine && endLine === lead.endLine) return { ...lead, confidence };
+
+  const parts = [lead.body];
+  if (lead.suggestion !== undefined) {
+    parts.push(`Suggested change for ${lineRange(lead)}:\n${fence(lead.suggestion)}`);
+  }
+  parts.push(`Also (${lineRange(other)}): ${other.title}. ${other.body}`);
+  if (other.suggestion !== undefined) {
+    parts.push(`Suggested change for ${lineRange(other)}:\n${fence(other.suggestion)}`);
+  }
+  const { suggestion: _dropped, ...rest } = lead;
+  return { ...rest, startLine, endLine, confidence, body: parts.join("\n\n") };
+}
+
 export interface DedupeResult {
   findings: Finding[];
-  /** New findings dropped as duplicates of an open prior finding or of an earlier new one. */
+  /** New findings dropped as duplicates of an open prior finding or merged into an earlier new one. */
   suppressed: Finding[];
 }
 
 /**
  * Drops findings that repeat an open finding from a previous review of the
- * same PR, and repeats among the new findings (the first one wins).
+ * same PR, and merges new findings about one problem (same file and category,
+ * overlapping or adjacent lines) into the first of them.
  */
 export function dedupeFindings(
   findings: readonly Finding[],
@@ -29,10 +76,17 @@ export function dedupeFindings(
   const kept: Finding[] = [];
   const suppressed: Finding[] = [];
   for (const finding of findings) {
-    const duplicate =
-      openPrior.some((prior) => sameIssue(prior, finding)) ||
-      kept.some((other) => sameIssue(other, finding));
-    (duplicate ? suppressed : kept).push(finding);
+    if (openPrior.some((prior) => sameIssue(prior, finding))) {
+      suppressed.push(finding);
+      continue;
+    }
+    const index = kept.findIndex((other) => splitIssue(other, finding));
+    if (index === -1) {
+      kept.push(finding);
+    } else {
+      kept[index] = mergeFindings(kept[index]!, finding);
+      suppressed.push(finding);
+    }
   }
   return { findings: kept, suppressed };
 }
