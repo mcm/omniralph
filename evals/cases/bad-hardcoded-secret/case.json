@@ -1,0 +1,21 @@
+{
+  "description": "A JWT signing secret is hardcoded in source; anyone with repo access can mint partner tokens.",
+  "language": "typescript",
+  "tags": [
+    "security",
+    "secret",
+    "jwt"
+  ],
+  "pr": {
+    "title": "Issue tokens for partner integrations"
+  },
+  "expected": [
+    {
+      "path": "src/config.ts",
+      "startLine": 11,
+      "endLine": 11,
+      "category": "security",
+      "minSeverity": "high"
+    }
+  ]
+}

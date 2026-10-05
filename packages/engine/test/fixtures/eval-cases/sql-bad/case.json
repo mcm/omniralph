@@ -1,0 +1,20 @@
+{
+  "description": "Fixture: SQL built by concatenation.",
+  "language": "typescript",
+  "tags": [
+    "fixture",
+    "security"
+  ],
+  "pr": {
+    "title": "Find users by name"
+  },
+  "expected": [
+    {
+      "path": "src/users.ts",
+      "startLine": 9,
+      "endLine": 9,
+      "category": "security",
+      "minSeverity": "high"
+    }
+  ]
+}

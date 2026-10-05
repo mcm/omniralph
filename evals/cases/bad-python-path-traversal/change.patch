@@ -1,0 +1,26 @@
+diff --git a/app/reports.py b/app/reports.py
+index 65a79c0..d7034b7 100644
+--- a/app/reports.py
++++ b/app/reports.py
+@@ -1,6 +1,6 @@
+ import os
+ 
+-from flask import Blueprint, abort, jsonify
++from flask import Blueprint, abort, jsonify, request, send_file
+ 
+ from .auth import login_required
+ 
+@@ -14,3 +14,13 @@ reports = Blueprint("reports", __name__)
+ def list_reports():
+     names = sorted(n for n in os.listdir(REPORTS_DIR) if n.endswith(".csv"))
+     return jsonify(names)
++
++
++@reports.get("/reports/download")
++@login_required
++def download_report():
++    name = request.args.get("name", "")
++    path = os.path.join(REPORTS_DIR, name)
++    if not os.path.isfile(path):
++        abort(404)
++    return send_file(path, as_attachment=True)

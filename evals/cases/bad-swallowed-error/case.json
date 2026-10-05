@@ -1,0 +1,21 @@
+{
+  "description": "ledger.record errors are swallowed by an empty catch and the account is still marked synced, so failed invoices are never retried.",
+  "language": "typescript",
+  "tags": [
+    "error-handling",
+    "swallowed-error",
+    "node"
+  ],
+  "pr": {
+    "title": "Sync invoices into the ledger"
+  },
+  "expected": [
+    {
+      "path": "src/billing/sync.ts",
+      "startLine": 18,
+      "endLine": 19,
+      "category": "error-handling",
+      "minSeverity": "medium"
+    }
+  ]
+}

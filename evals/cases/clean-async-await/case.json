@@ -1,0 +1,27 @@
+{
+  "description": "Awaited calls in a for...of loop and an awaited, caught warehouse notification (correct counterpart of bad-floating-promise and bad-async-foreach).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "concurrency",
+    "node"
+  ],
+  "pr": {
+    "title": "Import contacts from CSV uploads and notify the warehouse"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/contacts/import.ts",
+      "startLine": 15,
+      "endLine": 18,
+      "note": "Sequential awaits are intended (rows must be applied in order)."
+    },
+    {
+      "path": "src/orders/service.ts",
+      "startLine": 16,
+      "endLine": 16,
+      "note": "The promise is awaited and failures are logged; reconciliation retries."
+    }
+  ]
+}

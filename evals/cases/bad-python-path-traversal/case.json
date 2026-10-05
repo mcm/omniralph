@@ -1,0 +1,21 @@
+{
+  "description": "A download endpoint joins a query parameter onto the reports directory; ../ (or an absolute path) reads any file the server can access.",
+  "language": "python",
+  "tags": [
+    "security",
+    "path-traversal",
+    "flask"
+  ],
+  "pr": {
+    "title": "Let users download reports"
+  },
+  "expected": [
+    {
+      "path": "app/reports.py",
+      "startLine": 22,
+      "endLine": 26,
+      "category": "security",
+      "minSeverity": "high"
+    }
+  ]
+}

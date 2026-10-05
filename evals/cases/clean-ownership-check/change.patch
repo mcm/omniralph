@@ -1,0 +1,17 @@
+diff --git a/src/documents/routes.ts b/src/documents/routes.ts
+index 73c0591..d3c9310 100644
+--- a/src/documents/routes.ts
++++ b/src/documents/routes.ts
+@@ -18,3 +18,12 @@ documentsRouter.patch("/documents/:id", async (req, res) => {
+   const title = typeof req.body?.title === "string" ? req.body.title.slice(0, 200) : doc.title;
+   res.json(await db.document.update({ where: { id: doc.id }, data: { title } }));
+ });
++
++documentsRouter.delete("/documents/:id", async (req, res) => {
++  // Scoping the delete to the owner makes it a no-op (and a 404) for anyone else.
++  const { count } = await db.document.deleteMany({
++    where: { id: req.params.id, ownerId: req.user.id },
++  });
++  if (count === 0) return res.status(404).end();
++  res.status(204).end();
++});

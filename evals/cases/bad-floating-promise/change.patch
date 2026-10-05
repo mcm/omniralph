@@ -1,0 +1,19 @@
+diff --git a/src/orders/service.ts b/src/orders/service.ts
+index 0122382..3beda49 100644
+--- a/src/orders/service.ts
++++ b/src/orders/service.ts
+@@ -1,5 +1,6 @@
+ import { db } from "../db.js";
+ import type { Cart, Order } from "./types.js";
++import { notifyWarehouse } from "./warehouse.js";
+ 
+ export async function placeOrder(cart: Cart): Promise<Order> {
+   if (cart.items.length === 0) throw new Error("Cart is empty");
+@@ -10,5 +11,7 @@ export async function placeOrder(cart: Cart): Promise<Order> {
+       items: { create: cart.items.map((i) => ({ sku: i.sku, quantity: i.quantity })) },
+     },
+   });
++  // Don't make the customer wait for the warehouse.
++  notifyWarehouse(order.id);
+   return order;
+ }

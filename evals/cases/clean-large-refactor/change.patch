@@ -1,0 +1,214 @@
+diff --git a/src/index.ts b/src/index.ts
+index 494e27d..7024579 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,92 +1,4 @@
+-const COMBINING_MARKS = /[̀-ͯ]/g;
+-
+-/** "Héllo, World!" → "hello-world". */
+-export function slugify(input: string, maxLength = 80): string {
+-  const slug = input
+-    .normalize("NFKD")
+-    .replace(COMBINING_MARKS, "")
+-    .toLowerCase()
+-    .replace(/[^a-z0-9]+/g, "-")
+-    .replace(/^-+|-+$/g, "");
+-  return slug.slice(0, maxLength).replace(/-+$/, "");
+-}
+-
+-/** Appends -2, -3, … until the slug is not in `taken`. */
+-export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
+-  if (!taken.has(base)) return base;
+-  for (let n = 2; ; n++) {
+-    const candidate = `${base}-${n}`;
+-    if (!taken.has(candidate)) return candidate;
+-  }
+-}
+-
+-/** Shortens text to at most `max` characters, cutting at a word boundary when possible. */
+-export function truncate(text: string, max: number, ellipsis = "…"): string {
+-  if (max <= 0) return "";
+-  if (text.length <= max) return text;
+-  const room = Math.max(0, max - ellipsis.length);
+-  const cut = text.slice(0, room);
+-  const lastSpace = cut.lastIndexOf(" ");
+-  const head = lastSpace > room * 0.6 ? cut.slice(0, lastSpace) : cut;
+-  return `${head.trimEnd()}${ellipsis}`.slice(0, max);
+-}
+-
+-/** Middle-truncates, e.g. long file paths: "src/…/index.ts". */
+-export function truncateMiddle(text: string, max: number, ellipsis = "…"): string {
+-  if (text.length <= max) return text;
+-  if (max <= ellipsis.length) return ellipsis.slice(0, max);
+-  const room = max - ellipsis.length;
+-  const start = Math.ceil(room / 2);
+-  const end = Math.floor(room / 2);
+-  return `${text.slice(0, start)}${ellipsis}${end > 0 ? text.slice(-end) : ""}`;
+-}
+-
+-function words(input: string): string[] {
+-  return input
+-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+-    .split(/[^A-Za-z0-9]+/)
+-    .filter(Boolean);
+-}
+-
+-/** "user id" / "user_id" / "UserID" → "userId". */
+-export function camelCase(input: string): string {
+-  return words(input)
+-    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0]!.toUpperCase() + w.slice(1).toLowerCase()))
+-    .join("");
+-}
+-
+-/** "userId" → "user_id". */
+-export function snakeCase(input: string): string {
+-  return words(input)
+-    .map((w) => w.toLowerCase())
+-    .join("_");
+-}
+-
+-/** "userId" → "User Id". */
+-export function titleCase(input: string): string {
+-  return words(input)
+-    .map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase())
+-    .join(" ");
+-}
+-
+-const IRREGULAR: Readonly<Record<string, string>> = {
+-  person: "people",
+-  child: "children",
+-  mouse: "mice",
+-};
+-
+-/** English plural for simple nouns: "box" → "boxes", "city" → "cities". */
+-export function pluralize(noun: string): string {
+-  const lower = noun.toLowerCase();
+-  const irregular = IRREGULAR[lower];
+-  if (irregular) return noun[0] === noun[0]?.toUpperCase() ? irregular[0]!.toUpperCase() + irregular.slice(1) : irregular;
+-  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
+-  if (/(s|x|z|ch|sh)$/i.test(noun)) return `${noun}es`;
+-  return `${noun}s`;
+-}
+-
+-/** "1 file", "3 files". */
+-export function countLabel(count: number, noun: string): string {
+-  return `${count} ${count === 1 ? noun : pluralize(noun)}`;
+-}
++export { camelCase, snakeCase, titleCase } from "./text/case.js";
++export { countLabel, pluralize } from "./text/plural.js";
++export { slugify, uniqueSlug } from "./text/slug.js";
++export { truncate, truncateMiddle } from "./text/truncate.js";
+diff --git a/src/text/case.ts b/src/text/case.ts
+new file mode 100644
+index 0000000..1e5879b
+--- /dev/null
++++ b/src/text/case.ts
+@@ -0,0 +1,28 @@
++function words(input: string): string[] {
++  return input
++    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
++    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
++    .split(/[^A-Za-z0-9]+/)
++    .filter(Boolean);
++}
++
++/** "user id" / "user_id" / "UserID" → "userId". */
++export function camelCase(input: string): string {
++  return words(input)
++    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0]!.toUpperCase() + w.slice(1).toLowerCase()))
++    .join("");
++}
++
++/** "userId" → "user_id". */
++export function snakeCase(input: string): string {
++  return words(input)
++    .map((w) => w.toLowerCase())
++    .join("_");
++}
++
++/** "userId" → "User Id". */
++export function titleCase(input: string): string {
++  return words(input)
++    .map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase())
++    .join(" ");
++}
+diff --git a/src/text/plural.ts b/src/text/plural.ts
+new file mode 100644
+index 0000000..8e21216
+--- /dev/null
++++ b/src/text/plural.ts
+@@ -0,0 +1,20 @@
++const IRREGULAR: Readonly<Record<string, string>> = {
++  person: "people",
++  child: "children",
++  mouse: "mice",
++};
++
++/** English plural for simple nouns: "box" → "boxes", "city" → "cities". */
++export function pluralize(noun: string): string {
++  const lower = noun.toLowerCase();
++  const irregular = IRREGULAR[lower];
++  if (irregular) return noun[0] === noun[0]?.toUpperCase() ? irregular[0]!.toUpperCase() + irregular.slice(1) : irregular;
++  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
++  if (/(s|x|z|ch|sh)$/i.test(noun)) return `${noun}es`;
++  return `${noun}s`;
++}
++
++/** "1 file", "3 files". */
++export function countLabel(count: number, noun: string): string {
++  return `${count} ${count === 1 ? noun : pluralize(noun)}`;
++}
+diff --git a/src/text/slug.ts b/src/text/slug.ts
+new file mode 100644
+index 0000000..fe9a746
+--- /dev/null
++++ b/src/text/slug.ts
+@@ -0,0 +1,21 @@
++const COMBINING_MARKS = /[̀-ͯ]/g;
++
++/** "Héllo, World!" → "hello-world". */
++export function slugify(input: string, maxLength = 80): string {
++  const slug = input
++    .normalize("NFKD")
++    .replace(COMBINING_MARKS, "")
++    .toLowerCase()
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "");
++  return slug.slice(0, maxLength).replace(/-+$/, "");
++}
++
++/** Appends -2, -3, … until the slug is not in `taken`. */
++export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
++  if (!taken.has(base)) return base;
++  for (let n = 2; ; n++) {
++    const candidate = `${base}-${n}`;
++    if (!taken.has(candidate)) return candidate;
++  }
++}
+diff --git a/src/text/truncate.ts b/src/text/truncate.ts
+new file mode 100644
+index 0000000..6e98a43
+--- /dev/null
++++ b/src/text/truncate.ts
+@@ -0,0 +1,20 @@
++/** Shortens text to at most `max` characters, cutting at a word boundary when possible. */
++export function truncate(text: string, max: number, ellipsis = "…"): string {
++  if (max <= 0) return "";
++  if (text.length <= max) return text;
++  const room = Math.max(0, max - ellipsis.length);
++  const cut = text.slice(0, room);
++  const lastSpace = cut.lastIndexOf(" ");
++  const head = lastSpace > room * 0.6 ? cut.slice(0, lastSpace) : cut;
++  return `${head.trimEnd()}${ellipsis}`.slice(0, max);
++}
++
++/** Middle-truncates, e.g. long file paths: "src/…/index.ts". */
++export function truncateMiddle(text: string, max: number, ellipsis = "…"): string {
++  if (text.length <= max) return text;
++  if (max <= ellipsis.length) return ellipsis.slice(0, max);
++  const room = max - ellipsis.length;
++  const start = Math.ceil(room / 2);
++  const end = Math.floor(room / 2);
++  return `${text.slice(0, start)}${ellipsis}${end > 0 ? text.slice(-end) : ""}`;
++}

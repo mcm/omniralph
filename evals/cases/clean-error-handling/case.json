@@ -1,0 +1,21 @@
+{
+  "description": "Invoice sync that wraps and rethrows ledger errors (with cause) before marking the account synced (correct counterpart of bad-swallowed-error).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "error-handling",
+    "node"
+  ],
+  "pr": {
+    "title": "Sync invoices into the ledger"
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/billing/sync.ts",
+      "startLine": 31,
+      "endLine": 32,
+      "note": "The error is rethrown with its cause; nothing is swallowed."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "useEffect starts a polling setInterval and never clears it: every jobId change or unmount leaks an interval that keeps fetching and setting state.",
+  "language": "typescript",
+  "tags": [
+    "resources",
+    "leak",
+    "react"
+  ],
+  "pr": {
+    "title": "Show live job progress on the dashboard"
+  },
+  "expected": [
+    {
+      "path": "src/hooks/useJobStatus.ts",
+      "startLine": 10,
+      "endLine": 18,
+      "category": "resources",
+      "minSeverity": "low"
+    }
+  ]
+}

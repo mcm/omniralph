@@ -1,0 +1,12 @@
+{
+  "description": "Formatting only: a narrower Prettier printWidth re-wraps two files.",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "formatting"
+  ],
+  "pr": {
+    "title": "Format with printWidth 80"
+  },
+  "expected": []
+}

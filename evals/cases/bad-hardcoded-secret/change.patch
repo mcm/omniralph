@@ -1,0 +1,36 @@
+diff --git a/src/config.ts b/src/config.ts
+index a998022..befd4ed 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -7,4 +7,6 @@ function required(name: string): string {
+ export const config = {
+   port: Number(process.env.PORT ?? 3000),
+   databaseUrl: required("DATABASE_URL"),
++  /** HS256 key for the tokens partners exchange with us. */
++  partnerTokenSecret: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+ };
+diff --git a/src/partnerTokens.ts b/src/partnerTokens.ts
+new file mode 100644
+index 0000000..8487794
+--- /dev/null
++++ b/src/partnerTokens.ts
+@@ -0,0 +1,19 @@
++import { jwtVerify, SignJWT } from "jose";
++import { config } from "./config.js";
++
++const key = new TextEncoder().encode(config.partnerTokenSecret);
++
++export async function issuePartnerToken(partnerId: string): Promise<string> {
++  return new SignJWT({ scope: "orders:read" })
++    .setProtectedHeader({ alg: "HS256" })
++    .setSubject(partnerId)
++    .setIssuedAt()
++    .setExpirationTime("15m")
++    .sign(key);
++}
++
++export async function verifyPartnerToken(token: string): Promise<string> {
++  const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
++  if (!payload.sub) throw new Error("Token has no subject");
++  return payload.sub;
++}

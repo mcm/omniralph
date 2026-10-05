@@ -1,0 +1,14 @@
+{
+  "description": "Large but safe refactor: one 100-line module split into four files with the same code, re-exported unchanged from the entry point; no new dependencies.",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "refactor",
+    "large"
+  ],
+  "pr": {
+    "title": "Split text helpers into modules",
+    "description": "No behavior change: the functions moved verbatim and src/index.ts re-exports the same names."
+  },
+  "expected": []
+}

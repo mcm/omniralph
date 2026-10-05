@@ -1,0 +1,50 @@
+diff --git a/src/cart/checkout.ts b/src/cart/checkout.ts
+index 462c1b6..f0be2ca 100644
+--- a/src/cart/checkout.ts
++++ b/src/cart/checkout.ts
+@@ -1,4 +1,4 @@
+-import { calcTotal } from "./total.js";
++import { calculateCartTotal } from "./total.js";
+ import type { CartLine, Discount } from "./types.js";
+ 
+ export interface PaymentIntent {
+@@ -7,7 +7,7 @@ export interface PaymentIntent {
+ }
+ 
+ export function paymentIntent(lines: readonly CartLine[], discount?: Discount): PaymentIntent {
+-  const amountCents = calcTotal(lines, discount);
++  const amountCents = calculateCartTotal(lines, discount);
+   if (amountCents <= 0) throw new Error("Nothing to pay");
+   return { amountCents, currency: "USD" };
+ }
+diff --git a/src/cart/summary.ts b/src/cart/summary.ts
+index 734a0fb..2229c42 100644
+--- a/src/cart/summary.ts
++++ b/src/cart/summary.ts
+@@ -1,4 +1,4 @@
+-import { calcTotal } from "./total.js";
++import { calculateCartTotal } from "./total.js";
+ import type { CartLine, Discount } from "./types.js";
+ 
+ export interface CartSummary {
+@@ -9,6 +9,6 @@ export interface CartSummary {
+ export function summarize(lines: readonly CartLine[], discount?: Discount): CartSummary {
+   return {
+     itemCount: lines.reduce((n, line) => n + line.quantity, 0),
+-    totalCents: calcTotal(lines, discount),
++    totalCents: calculateCartTotal(lines, discount),
+   };
+ }
+diff --git a/src/cart/total.ts b/src/cart/total.ts
+index 6406e4f..53d0549 100644
+--- a/src/cart/total.ts
++++ b/src/cart/total.ts
+@@ -6,7 +6,7 @@ export function lineTotal(line: CartLine): number {
+ }
+ 
+ /** Cart total in cents with an optional discount, rounded per line. */
+-export function calcTotal(lines: readonly CartLine[], discount?: Discount): number {
++export function calculateCartTotal(lines: readonly CartLine[], discount?: Discount): number {
+   let total = 0;
+   for (const line of lines) {
+     const amount = lineTotal(line);

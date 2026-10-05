@@ -1,0 +1,42 @@
+diff --git a/src/billing/sync.ts b/src/billing/sync.ts
+new file mode 100644
+index 0000000..19a8ac7
+--- /dev/null
++++ b/src/billing/sync.ts
+@@ -0,0 +1,36 @@
++import type { BillingApi, Ledger, SyncState } from "./types.js";
++
++export class InvoiceSyncError extends Error {
++  constructor(
++    readonly accountId: string,
++    readonly invoiceId: string,
++    cause: unknown,
++  ) {
++    super(`Recording invoice ${invoiceId} for account ${accountId} failed`, { cause });
++    this.name = "InvoiceSyncError";
++  }
++}
++
++/**
++ * Copies new invoices into the ledger. The next run only fetches invoices
++ * issued after the time recorded by markSynced, so a failure stops the run
++ * before markSynced and the next run retries from the same point
++ * (ledger.record is idempotent per invoice ID).
++ */
++export async function syncInvoices(
++  accountId: string,
++  deps: { billing: BillingApi; ledger: Ledger; state: SyncState },
++  now: () => Date = () => new Date(),
++): Promise<void> {
++  const startedAt = now().toISOString();
++  const since = await deps.state.lastSyncedAt(accountId);
++  const invoices = await deps.billing.listInvoicesSince(accountId, since);
++  for (const invoice of invoices) {
++    try {
++      await deps.ledger.record(invoice);
++    } catch (error) {
++      throw new InvoiceSyncError(accountId, invoice.id, error);
++    }
++  }
++  await deps.state.markSynced(accountId, startedAt);
++}

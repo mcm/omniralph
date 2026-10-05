@@ -1,0 +1,26 @@
+diff --git a/src/reports/recentOrders.ts b/src/reports/recentOrders.ts
+new file mode 100644
+index 0000000..d66b9c6
+--- /dev/null
++++ b/src/reports/recentOrders.ts
+@@ -0,0 +1,20 @@
++import { pool } from "../db.js";
++import type { Customer, Order, OrderWithCustomer } from "./types.js";
++
++/** The admin dashboard's "recent orders" table (up to 500 rows). */
++export async function recentOrdersWithCustomers(limit = 100): Promise<OrderWithCustomer[]> {
++  const { rows: orders } = await pool.query<Order>(
++    `SELECT id, customer_id AS "customerId", total_cents AS "totalCents", created_at AS "createdAt"
++     FROM orders ORDER BY created_at DESC LIMIT $1`,
++    [Math.min(limit, 500)],
++  );
++  const result: OrderWithCustomer[] = [];
++  for (const order of orders) {
++    const { rows } = await pool.query<Customer>(
++      "SELECT id, name, email FROM customers WHERE id = $1",
++      [order.customerId],
++    );
++    result.push({ ...order, customer: rows[0] ?? null });
++  }
++  return result;
++}

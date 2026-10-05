@@ -1,0 +1,5 @@
+{
+  "name": "billing-sync",
+  "private": true,
+  "type": "module"
+}

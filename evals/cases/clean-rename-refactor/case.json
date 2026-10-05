@@ -1,0 +1,13 @@
+{
+  "description": "Pure rename of an internal function and all its call sites.",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "refactor",
+    "rename"
+  ],
+  "pr": {
+    "title": "Rename calcTotal to calculateCartTotal"
+  },
+  "expected": []
+}

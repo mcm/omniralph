@@ -1,0 +1,23 @@
+{
+  "description": "The JWT signing secret is read from the environment and documented in .env.example (correct counterpart of bad-hardcoded-secret).",
+  "language": "typescript",
+  "tags": [
+    "clean",
+    "security",
+    "secret",
+    "jwt"
+  ],
+  "pr": {
+    "title": "Issue tokens for partner integrations",
+    "description": "Needs `PARTNER_TOKEN_SECRET` set in every environment before deploy (added to the secrets manager)."
+  },
+  "expected": [],
+  "mustNotFlag": [
+    {
+      "path": "src/config.ts",
+      "startLine": 17,
+      "endLine": 17,
+      "note": "The secret comes from the environment."
+    }
+  ]
+}

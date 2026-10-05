@@ -1,0 +1,47 @@
+diff --git a/src/components/JobPanel.tsx b/src/components/JobPanel.tsx
+new file mode 100644
+index 0000000..d66ffc1
+--- /dev/null
++++ b/src/components/JobPanel.tsx
+@@ -0,0 +1,7 @@
++import { useJobStatus } from "../hooks/useJobStatus.js";
++import { JobCard } from "./JobCard.js";
++
++export function JobPanel({ jobId }: { jobId: string }) {
++  const status = useJobStatus(jobId);
++  return <JobCard status={status} />;
++}
+diff --git a/src/hooks/useJobStatus.ts b/src/hooks/useJobStatus.ts
+new file mode 100644
+index 0000000..7522463
+--- /dev/null
++++ b/src/hooks/useJobStatus.ts
+@@ -0,0 +1,28 @@
++import { useEffect, useState } from "react";
++import { fetchJobStatus, type JobStatus } from "../api.js";
++
++const POLL_INTERVAL_MS = 2_000;
++
++/** Polls a job's status while the component is mounted. */
++export function useJobStatus(jobId: string): JobStatus | null {
++  const [status, setStatus] = useState<JobStatus | null>(null);
++
++  useEffect(() => {
++    const controller = new AbortController();
++    const poll = () => {
++      fetchJobStatus(jobId, controller.signal)
++        .then(setStatus)
++        .catch((error) => {
++          if (!controller.signal.aborted) console.warn("Job status poll failed", error);
++        });
++    };
++    poll();
++    const handle = setInterval(poll, POLL_INTERVAL_MS);
++    return () => {
++      clearInterval(handle);
++      controller.abort();
++    };
++  }, [jobId]);
++
++  return status;
++}

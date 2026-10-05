@@ -40,3 +40,6 @@ coverage/
 
 # vercel
 .vercel
+
+# eval reports (evals/baseline.json is committed)
+evals/reports/

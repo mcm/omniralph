@@ -1,0 +1,43 @@
+diff --git a/src/cart/total.test.ts b/src/cart/total.test.ts
+new file mode 100644
+index 0000000..c6f2eed
+--- /dev/null
++++ b/src/cart/total.test.ts
+@@ -0,0 +1,37 @@
++import { describe, expect, it } from "vitest";
++import { calcTotal, lineTotal } from "./total.js";
++import type { CartLine } from "./types.js";
++
++const lines: CartLine[] = [
++  { sku: "TEE", unitPriceCents: 1999, quantity: 2 },
++  { sku: "MUG", unitPriceCents: 1250, quantity: 1 },
++];
++
++describe("lineTotal", () => {
++  it("multiplies the unit price by the quantity", () => {
++    expect(lineTotal({ sku: "TEE", unitPriceCents: 1999, quantity: 3 })).toBe(5997);
++  });
++});
++
++describe("calcTotal", () => {
++  it("sums the lines without a discount", () => {
++    expect(calcTotal(lines)).toBe(5248);
++  });
++
++  it("returns 0 for an empty cart", () => {
++    expect(calcTotal([])).toBe(0);
++  });
++
++  it("discounts every line when the discount has no SKUs", () => {
++    expect(calcTotal(lines, { code: "ALL10", percent: 10, skus: [] })).toBe(3598 + 1125);
++  });
++
++  it("discounts only the listed SKUs", () => {
++    expect(calcTotal(lines, { code: "MUG50", percent: 50, skus: ["MUG"] })).toBe(3998 + 625);
++  });
++
++  it("rounds each discounted line to whole cents", () => {
++    const odd: CartLine[] = [{ sku: "PEN", unitPriceCents: 99, quantity: 1 }];
++    expect(calcTotal(odd, { code: "THIRD", percent: 33, skus: [] })).toBe(66);
++  });
++});

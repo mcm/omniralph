@@ -1,0 +1,21 @@
+{
+  "description": "notifyWarehouse() is called without await or .catch(); a warehouse failure becomes an unhandled rejection and the pick is silently lost.",
+  "language": "typescript",
+  "tags": [
+    "concurrency",
+    "floating-promise",
+    "node"
+  ],
+  "pr": {
+    "title": "Notify the warehouse when an order is placed"
+  },
+  "expected": [
+    {
+      "path": "src/orders/service.ts",
+      "startLine": 15,
+      "endLine": 15,
+      "category": "concurrency",
+      "minSeverity": "medium"
+    }
+  ]
+}

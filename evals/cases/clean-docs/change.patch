@@ -1,0 +1,32 @@
+diff --git a/README.md b/README.md
+index c9139e8..4095326 100644
+--- a/README.md
++++ b/README.md
+@@ -8,3 +8,11 @@ Cart and checkout logic for the Acme storefront.
+ pnpm install
+ pnpm test
+ ```
++
++## Concepts
++
++- **Cart lines** hold a SKU, a unit price in cents and a quantity.
++- **Discounts** take a percentage off every line, or only off the SKUs they
++  list. Each discounted line is rounded to whole cents.
++
++See [docs/checkout.md](docs/checkout.md) for how a cart becomes a payment.
+diff --git a/docs/checkout.md b/docs/checkout.md
+new file mode 100644
+index 0000000..3535b0a
+--- /dev/null
++++ b/docs/checkout.md
+@@ -0,0 +1,10 @@
++# Checkout
++
++1. The cart total is computed with `calcTotal` (see `src/cart/total.ts`).
++2. `paymentIntent` turns the total into a payment intent in USD. A cart that
++   totals zero or less is rejected with "Nothing to pay".
++3. The payment provider confirms the intent; the order is created only after
++   confirmation.
++
++Amounts are always integers in cents. Never convert to floating-point dollars
++before the final display step.

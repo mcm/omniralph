@@ -12,7 +12,8 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "eval": "tsx --conditions=@omniralph/source packages/engine/src/eval/cli.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -20,6 +21,7 @@
     "eslint": "^9.39.5",
     "globals": "^17.13.0",
     "prettier": "^3.6.2",
+    "tsx": "^4.23.15",
     "turbo": "^2.11.7",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.71.0",

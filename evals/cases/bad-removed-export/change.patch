@@ -1,0 +1,50 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d1e6d36..cbcb9ba 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 2.4.0
++
++- Added `convertCents`.
++
+ ## 2.3.0
+ 
+ - Added `formatCompact`.
+diff --git a/package.json b/package.json
+index f34841f..381b4fb 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@acme/money",
+-  "version": "2.3.0",
++  "version": "2.4.0",
+   "description": "Money formatting and parsing helpers shared by Acme's web and mobile apps.",
+   "type": "module",
+   "exports": "./dist/index.js",
+diff --git a/src/index.ts b/src/index.ts
+index f4a6c21..1288883 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -15,14 +15,12 @@ export function formatCompact(cents: number, currency: Currency = "USD", locale
+   }).format(cents / 100);
+ }
+ 
+-/** Parses user input such as "19.99" or "1,299.50" into minor units; null if invalid. */
+-export function parsePrice(input: string): number | null {
+-  const normalized = input.trim().replace(/,/g, "");
+-  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+-  return Math.round(Number(normalized) * 100);
+-}
+-
+ /** Sums amounts in minor units. */
+ export function sumCents(amounts: readonly number[]): number {
+   return amounts.reduce((total, cents) => total + cents, 0);
+ }
++
++/** Converts between currencies with a caller-supplied rate, rounding to whole cents. */
++export function convertCents(cents: number, rate: number): number {
++  return Math.round(cents * rate);
++}

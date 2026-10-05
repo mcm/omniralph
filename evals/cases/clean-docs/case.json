@@ -1,0 +1,12 @@
+{
+  "description": "Documentation only: README section and a new docs page.",
+  "language": "markdown",
+  "tags": [
+    "clean",
+    "docs"
+  ],
+  "pr": {
+    "title": "Document carts, discounts and checkout"
+  },
+  "expected": []
+}

@@ -1,0 +1,20 @@
+diff --git a/migrations/0042_users_last_login.sql b/migrations/0042_users_last_login.sql
+new file mode 100644
+index 0000000..956c436
+--- /dev/null
++++ b/migrations/0042_users_last_login.sql
+@@ -0,0 +1,2 @@
++-- Nullable with no default: a metadata-only change, safe while the old version serves.
++ALTER TABLE users ADD COLUMN last_login_at timestamptz;
+diff --git a/src/users.ts b/src/users.ts
+index 928b701..9fe8c08 100644
+--- a/src/users.ts
++++ b/src/users.ts
+@@ -7,3 +7,7 @@ export async function findUserByEmail(email: string) {
+   );
+   return rows[0];
+ }
++
++export async function recordLogin(userId: string, at: Date = new Date()): Promise<void> {
++  await pool.query("UPDATE users SET last_login_at = $2 WHERE id = $1", [userId, at]);
++}

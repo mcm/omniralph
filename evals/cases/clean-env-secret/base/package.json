@@ -1,0 +1,8 @@
+{
+  "name": "partner-gateway",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "jose": "^5.9.0"
+  }
+}
