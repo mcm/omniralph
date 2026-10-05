@@ -1,5 +1,6 @@
 import { FINDING_SEVERITIES, type Finding } from "@omniralph/shared";
 import { fence } from "./prompt.js";
+import { assignedNames, variableReferences } from "./selfContained.js";
 
 type FindingLocation = Pick<Finding, "path" | "startLine" | "endLine" | "category">;
 
@@ -58,6 +59,20 @@ export function mergeFindings(first: Finding, second: Finding): Finding {
   return { ...rest, startLine, endLine, confidence, body: parts.join("\n\n") };
 }
 
+const codeOf = (f: Finding): string =>
+  [...f.body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]).join("\n") + `\n${f.suggestion ?? ""}`;
+
+/**
+ * Whether `fragment` supplies a variable `finding` relies on: e.g. "add
+ * `env: PR_TITLE: …`" for an injection fix that uses `${PR_TITLE}`.
+ */
+export function completes(fragment: Finding, finding: Finding): boolean {
+  const supplied = assignedNames(codeOf(fragment));
+  const own = assignedNames(codeOf(finding));
+  const used = variableReferences(`${finding.body}\n${finding.suggestion ?? ""}`);
+  return [...used].some((name) => supplied.has(name) && !own.has(name));
+}
+
 export interface DedupeResult {
   findings: Finding[];
   /** New findings dropped as duplicates of an open prior finding or merged into an earlier new one. */
@@ -66,20 +81,39 @@ export interface DedupeResult {
 
 /**
  * Drops findings that repeat an open finding from a previous review of the
- * same PR, and merges new findings about one problem (same file and category,
- * overlapping or adjacent lines) into the first of them.
+ * same PR, and merges new findings about one problem into one: a fragment
+ * into the nearby finding it completes, then splits of one issue (same file
+ * and category, overlapping or adjacent lines) into the first of them.
  */
 export function dedupeFindings(
   findings: readonly Finding[],
   openPrior: readonly FindingLocation[] = [],
 ): DedupeResult {
-  const kept: Finding[] = [];
   const suppressed: Finding[] = [];
-  for (const finding of findings) {
-    if (openPrior.some((prior) => sameIssue(prior, finding))) {
-      suppressed.push(finding);
-      continue;
-    }
+  const fresh = findings.filter((finding) => {
+    const repeat = openPrior.some((prior) => sameIssue(prior, finding));
+    if (repeat) suppressed.push(finding);
+    return !repeat;
+  });
+
+  // A fragment that completes a nearby finding goes into it first, whatever
+  // its category, so the "add the env mapping" part of an injection fix
+  // can't be merged into another finding on the same step.
+  const near = (a: Finding, b: Finding) => splitIssue({ ...a, category: b.category }, b);
+  for (let i = 0; i < fresh.length; i++) {
+    const fragment = fresh[i]!;
+    const target = fresh.findIndex(
+      (other, j) => j !== i && near(other, fragment) && completes(fragment, other),
+    );
+    if (target === -1) continue;
+    fresh[target] = mergeFindings(fresh[target]!, fragment);
+    suppressed.push(fragment);
+    fresh.splice(i, 1);
+    i = -1;
+  }
+
+  const kept: Finding[] = [];
+  for (const finding of fresh) {
     const index = kept.findIndex((other) => splitIssue(other, finding));
     if (index === -1) {
       kept.push(finding);

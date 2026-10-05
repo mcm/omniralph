@@ -1,0 +1,24 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 3d2f93c..3806e7a 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -87,6 +87,19 @@ jobs:
+         env:
+           CI: true
+ 
++      - name: Publish coverage summary
++        if: github.event_name == 'pull_request'
++        run: |
++          echo "### Coverage for: ${{ github.event.pull_request.title }}" >> "$GITHUB_STEP_SUMMARY"
++          node -e 'const s = require("./coverage/coverage-summary.json").total; for (const [k, v] of Object.entries(s)) console.log(`- ${k}: ${v.pct}%`)' >> "$GITHUB_STEP_SUMMARY"
++
++      - name: Upload coverage report
++        uses: actions/upload-artifact@v4
++        with:
++          name: coverage-report
++          path: coverage/
++          retention-days: 7
++
+   build:
+     name: Build
+     runs-on: ubuntu-latest

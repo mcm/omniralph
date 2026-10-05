@@ -63,6 +63,10 @@ describe("suggestions whose fix spans lines outside the finding", () => {
     expect(SUGGESTION_RULE).toContain("complete, working fix");
     expect(SUGGESTION_RULE).toContain("widen startLine..endLine");
     expect(SUGGESTION_RULE).toContain("describe the whole fix in body");
+    expect(SUGGESTION_RULE).toContain("widens startLine..endLine to the whole step");
+    expect(SUGGESTION_RULE).toContain("must not use a variable that neither it nor the existing step");
+    expect(ONE_FINDING_RULE).toContain("never in another one");
+    expect(ONE_FINDING_RULE).toContain("never refers to other findings");
 
     const plan = planReview(files, standard);
     const prompt = buildPrompt({
