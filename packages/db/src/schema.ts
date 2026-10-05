@@ -376,6 +376,8 @@ export const reviews = pgTable(
       .references(() => repositories.id, { onDelete: "cascade" }),
     /** PR number (GitHub) or MR IID (GitLab). */
     prNumber: integer("pr_number").notNull(),
+    /** PR/MR title when the review was enqueued (null for reviews from before it was stored). */
+    prTitle: text("pr_title"),
     headSha: text("head_sha").notNull(),
     baseSha: text("base_sha").notNull(),
     trigger: reviewTrigger("trigger").notNull(),
@@ -395,7 +397,10 @@ export const reviews = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("reviews_repository_pr_idx").on(t.repositoryId, t.prNumber)],
+  (t) => [
+    index("reviews_repository_pr_idx").on(t.repositoryId, t.prNumber),
+    index("reviews_repository_created_at_idx").on(t.repositoryId, t.createdAt),
+  ],
 );
 
 export const findings = pgTable(

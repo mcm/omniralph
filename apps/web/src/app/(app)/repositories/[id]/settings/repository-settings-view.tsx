@@ -31,6 +31,7 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { useAction } from "@/components/use-action";
 import { ProviderIcon } from "../../repositories-view";
+import { RepositoryNav } from "../repository-nav";
 import { ProfileFacts, type ProfileSummary } from "../../../settings/profiles/profile-facts";
 import { updateRepositorySettings } from "./actions";
 
@@ -213,6 +214,8 @@ export function RepositorySettingsView({
             </a>
           </Button>
         </div>
+
+        <RepositoryNav repositoryId={repository.id} current="settings" />
 
         <form onSubmit={save} noValidate style={{ display: "contents" }}>
           <Card>

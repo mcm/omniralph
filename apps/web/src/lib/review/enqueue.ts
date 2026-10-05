@@ -86,6 +86,7 @@ export async function enqueueReview(
   const review = await createReview(db, {
     repositoryId: input.repositoryId,
     prNumber: input.prNumber,
+    prTitle: input.title,
     headSha: input.headSha,
     baseSha: input.baseSha,
     trigger: input.trigger,

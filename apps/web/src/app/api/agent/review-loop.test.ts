@@ -373,7 +373,10 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       previousReview: null,
     });
     expect(JSON.stringify(job.payload)).not.toMatch(/token"|password|secret"|ghs_|glpat/i);
-    expect((await reviewRow(reviewId)).status).toBe("queued");
+    expect(await reviewRow(reviewId)).toMatchObject({
+      status: "queued",
+      prTitle: "Add login logging",
+    });
 
     // Agent start → run.
     const { agentId, accessToken } = await newAgent();
