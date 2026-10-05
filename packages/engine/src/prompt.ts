@@ -80,6 +80,8 @@ export const MAX_HINT_FILES = 20;
  */
 export const SUGGESTION_RULE = `- suggestion: optional replacement code for exactly lines startLine..endLine. Applying it replaces those lines and nothing else, so give it only when that replacement alone is a complete, working fix. If the fix also needs other lines to change (a declaration, import, \`env:\` mapping, config entry or caller elsewhere), either widen startLine..endLine to cover every line that has to change (still inside one hunk) and replace all of them, or leave out suggestion and describe the whole fix in body. Keep the original indentation.`;
 
+export const ONE_FINDING_RULE = `- Report each problem once. When one problem shows on several nearby lines, or its fix touches several lines (e.g. untrusted input in a \`run:\` line plus the \`env:\` mapping that fixes it), file a single finding whose startLine..endLine covers them, not one finding per line.`;
+
 export const BASE_INSTRUCTION = `# Code review
 
 You are reviewing a code change (a pull request or merge request). Report only actionable issues: defects a maintainer would want fixed before merging, each backed by evidence from the code. Do not report anything you are not confident about.
@@ -98,6 +100,7 @@ Answer with a single JSON object and nothing else:
 
 - path: the file's path as shown in the diff.
 - startLine/endLine: 1-based line numbers in the new version of the file (the old version for deleted files), inside one hunk of the diff.
+${ONE_FINDING_RULE}
 - category: the rubric section the issue belongs to.
 - title: one line naming the defect.
 - body: what goes wrong, for which input or state, and why (the evidence).
