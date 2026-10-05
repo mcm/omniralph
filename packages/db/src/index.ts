@@ -139,3 +139,13 @@ export {
   setWebhookDeliveryJob,
   type WebhookDeliveryRef,
 } from "./webhooks.js";
+export {
+  filterActiveAgentIds,
+  listPinnableAgents,
+  listRepositoryPinnedAgentIds,
+  listReviewProfiles,
+  updateRepositorySettings,
+  updateReviewProfile,
+  type RepositorySettingsUpdate,
+  type ReviewProfileUpdate,
+} from "./settings.js";

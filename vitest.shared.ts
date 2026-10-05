@@ -16,5 +16,8 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.{ts,tsx}"],
+    // Stopping a Testcontainers Postgres in `afterAll` can take well over the default 10s
+    // when several packages' suites run containers at once under `pnpm test`.
+    hookTimeout: 60_000,
   },
 });

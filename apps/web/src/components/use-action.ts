@@ -8,7 +8,12 @@ import type { ActionResult } from "@/lib/action-result";
 export function useAction() {
   const [pending, startTransition] = React.useTransition();
   const run = React.useCallback(
-    (action: () => Promise<ActionResult>, success: string, onSuccess?: () => void) => {
+    (
+      action: () => Promise<ActionResult>,
+      success: string,
+      onSuccess?: () => void,
+      onError?: (result: Extract<ActionResult, { ok: false }>) => void,
+    ) => {
       startTransition(async () => {
         const result = await action();
         if (result.ok) {
@@ -17,6 +22,7 @@ export function useAction() {
           onSuccess?.();
         } else {
           toast.error(result.error);
+          onError?.(result);
         }
       });
     },

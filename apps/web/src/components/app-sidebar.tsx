@@ -14,7 +14,13 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@iamthemcmaster/ui";
-import { IconGitPullRequest, IconListCheck, IconServer, IconUsers } from "@tabler/icons-react";
+import {
+  IconAdjustments,
+  IconGitPullRequest,
+  IconListCheck,
+  IconServer,
+  IconUsers,
+} from "@tabler/icons-react";
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
@@ -24,6 +30,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   agents: IconServer,
   jobs: IconListCheck,
   users: IconUsers,
+  profiles: IconAdjustments,
 };
 
 export function AppSidebar() {
