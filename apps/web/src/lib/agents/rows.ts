@@ -1,0 +1,87 @@
+import type { AgentOverview, JobListEntry } from "@omniralph/db";
+import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { isAgentOnline, jobTarget, type JobTarget } from "./display";
+
+/** Serializable agent row for the Agents pages. */
+export interface AgentRow {
+  id: string;
+  name: string;
+  online: boolean;
+  revoked: boolean;
+  version: string | null;
+  reportedCapabilities: string[];
+  enabledCapabilities: string[];
+  maxConcurrency: number;
+  pollIntervalSeconds: number;
+  runningJobs: { id: string; capability: string; type: string; target: JobTarget | null }[];
+  pinnedRepositories: {
+    id: string;
+    provider: "github" | "gitlab";
+    fullPath: string;
+    webUrl: string;
+  }[];
+  /** ISO timestamps. */
+  lastHeartbeatAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export function agentRow(agent: AgentOverview, now: Date = new Date()): AgentRow {
+  return {
+    id: agent.id,
+    name: agent.name,
+    online: !agent.revokedAt && isAgentOnline(agent.lastHeartbeatAt, now),
+    revoked: agent.revokedAt !== null,
+    version: agent.reportedVersion,
+    reportedCapabilities: agent.reportedCapabilities ?? [],
+    enabledCapabilities: agent.enabledCapabilities,
+    maxConcurrency: agent.maxConcurrency,
+    pollIntervalSeconds: agent.pollIntervalSeconds,
+    runningJobs: agent.runningJobs.map((job) => ({
+      id: job.id,
+      capability: job.capability,
+      type: job.type,
+      target: jobTarget(job),
+    })),
+    pinnedRepositories: agent.pinnedRepositories.map((repo) => ({
+      id: repo.id,
+      provider: repo.provider,
+      fullPath: repo.fullPath,
+      webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
+    })),
+    lastHeartbeatAt: agent.lastHeartbeatAt?.toISOString() ?? null,
+    revokedAt: agent.revokedAt?.toISOString() ?? null,
+    createdAt: agent.createdAt.toISOString(),
+  };
+}
+
+/** Serializable job row for the Jobs page. */
+export interface JobRow {
+  id: string;
+  capability: string;
+  type: string;
+  status: JobListEntry["status"];
+  deliveryCount: number;
+  cancelRequested: boolean;
+  error: string | null;
+  agent: { id: string; name: string } | null;
+  target: JobTarget | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export function jobRow(job: JobListEntry): JobRow {
+  return {
+    id: job.id,
+    capability: job.capability,
+    type: job.type,
+    status: job.status,
+    deliveryCount: job.deliveryCount,
+    cancelRequested: job.cancelRequested,
+    error: job.error,
+    agent: job.agent,
+    target: jobTarget(job),
+    createdAt: job.createdAt.toISOString(),
+    finishedAt: job.finishedAt?.toISOString() ?? null,
+  };
+}

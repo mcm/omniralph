@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  getJob,
   insertJob,
   markJobPublished,
   pinnedAgentFor,
@@ -39,6 +40,11 @@ export interface JobDispatcher {
   createAndPublish(input: DispatchJobInput): Promise<DispatchedJob>;
   /** Requests cancellation (queued jobs are canceled at once, running ones via heartbeat). */
   cancel(jobId: string): Promise<CancelJobResult>;
+  /**
+   * Publishes a `queued` job again to the topic its repo's pins now resolve to
+   * (e.g. after the agent it was sent to was revoked). False if it isn't queued.
+   */
+  republish(jobId: string): Promise<boolean>;
 }
 
 /** The subset of `QueueClient` the dispatcher uses. */
@@ -72,6 +78,10 @@ export class VercelQueuesDispatcher implements JobDispatcher {
     // the idempotency key makes a duplicate publish harmless.
     if (!created && job.topic !== null) return { job, created };
 
+    return { job: await this.publish(job, targetAgentId), created };
+  }
+
+  private async publish(job: Job, targetAgentId: string | undefined): Promise<Job> {
     const topic = await this.topicFor(job, targetAgentId);
     const { messageId } = await this.getPublisher().send(
       topic,
@@ -79,11 +89,18 @@ export class VercelQueuesDispatcher implements JobDispatcher {
       { idempotencyKey: job.id, retentionSeconds: JOB_RETENTION_SECONDS },
     );
     await markJobPublished(this.db, job.id, { topic, messageId });
-    return { job: { ...job, topic, queueMessageId: messageId }, created };
+    return { ...job, topic, queueMessageId: messageId };
   }
 
   cancel(jobId: string): Promise<CancelJobResult> {
     return requestJobCancel(this.db, jobId);
+  }
+
+  async republish(jobId: string): Promise<boolean> {
+    const job = await getJob(this.db, jobId);
+    if (!job || job.status !== "queued") return false;
+    await this.publish(job, undefined);
+    return true;
   }
 
   private async topicFor(job: Job, targetAgentId: string | undefined): Promise<string> {

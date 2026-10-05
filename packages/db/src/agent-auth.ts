@@ -5,13 +5,15 @@
  * hashes (`hashToken()`).
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
+import type { Job } from "./jobs.js";
 import {
   agentAudit,
   agentEnrollments,
   agentRefreshTokens,
+  agentRepoPins,
   agents,
   jobs,
   rateLimits,
@@ -188,28 +190,72 @@ export async function rotateRefreshToken(
   });
 }
 
+export interface RevokeAgentResult {
+  /** Running jobs put back to `queued` (failed-retryable): the queue redelivers them. */
+  requeuedJobs: Job[];
+  /** Running jobs that had used up their deliveries and are now `failed`. */
+  failedJobs: Job[];
+  /** Running jobs with a cancel request, now `canceled`. */
+  canceledJobs: Job[];
+  /** Repositories that were pinned to the agent (the pins are removed). */
+  unpinnedRepositoryIds: string[];
+}
+
 /**
  * Revokes an agent: sets `revoked_at` and revokes every refresh-token family.
  * Outstanding access and job tokens stop working immediately because every
- * authenticated request checks `revoked_at`. Returns false for unknown agents.
+ * authenticated request checks `revoked_at`. Its running jobs are failed as
+ * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
+ * like `failJob`), so their queue messages are redelivered to other agents
+ * once the lease lapses, and its repository pins are removed. Returns null
+ * for unknown agents.
  */
 export async function revokeAgent(
   db: Database,
   agentId: string,
-  now: Date = new Date(),
-): Promise<boolean> {
+  options: { now?: Date; maxDeliveries?: number } = {},
+): Promise<RevokeAgentResult | null> {
+  const now = options.now ?? new Date();
+  const maxDeliveries = options.maxDeliveries ?? 3;
   return db.transaction(async (tx) => {
     const [agent] = await tx
       .update(agents)
       .set({ revokedAt: sql`coalesce(${agents.revokedAt}, ${now})` })
       .where(eq(agents.id, agentId))
       .returning({ id: agents.id });
-    if (!agent) return false;
+    if (!agent) return null;
     await tx
       .update(agentRefreshTokens)
       .set({ revokedAt: now })
       .where(and(eq(agentRefreshTokens.agentId, agentId), isNull(agentRefreshTokens.revokedAt)));
-    return true;
+
+    const error = "Agent revoked";
+    const running = and(eq(jobs.agentId, agentId), eq(jobs.status, "running"));
+    const canceledJobs = await tx
+      .update(jobs)
+      .set({ status: "canceled", error, finishedAt: now })
+      .where(and(running, eq(jobs.cancelRequested, true)))
+      .returning();
+    const failedJobs = await tx
+      .update(jobs)
+      .set({ status: "failed", error, finishedAt: now })
+      .where(and(running, gte(jobs.deliveryCount, maxDeliveries)))
+      .returning();
+    const requeuedJobs = await tx
+      .update(jobs)
+      .set({ status: "queued", agentId: null, error })
+      .where(running)
+      .returning();
+    const unpinned = await tx
+      .delete(agentRepoPins)
+      .where(eq(agentRepoPins.agentId, agentId))
+      .returning({ repositoryId: agentRepoPins.repositoryId });
+    return {
+      requeuedJobs,
+      failedJobs,
+      canceledJobs,
+      unpinnedRepositoryIds: unpinned.map((p) => p.repositoryId),
+    };
   });
 }
 
