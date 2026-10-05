@@ -323,7 +323,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
                 disabled={pending}
                 aria-label={`Disconnect ${repo.fullPath}`}
                 title={`Disconnect ${repo.fullPath}`}
-                style={{ color: "var(--error-text)" }}
+                style={{ color: "var(--error)" }}
               >
                 <IconUnlink size={14} />
               </Button>

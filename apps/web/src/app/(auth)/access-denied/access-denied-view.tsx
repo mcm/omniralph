@@ -30,7 +30,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
               display: "flex",
               alignItems: "center",
               gap: "var(--space-2)",
-              color: "var(--error-text)",
+              color: "var(--error)",
             }}
           >
             <IconLock size={18} />
