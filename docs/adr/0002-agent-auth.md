@@ -18,11 +18,43 @@ exchanges for installation tokens. `packages/scm` gets JWTs from an
 
 | Signer | Key | Used when |
 | -- | -- | -- |
-| `KmsAppJwtSigner` | The GitHub App private key imported into an **external-origin** Vercel KMS issuer. Calls `signJWT({ issuerId, claims: { iss: appId }, ttl: 540 })` from `@vercel/kms` (authenticated with the function's Vercel OIDC token). | `GITHUB_APP_KMS_ISSUER_ID` is set |
+| `KmsAppJwtSigner` | The GitHub App private key imported into an **external-origin**, **RS256** Vercel KMS issuer (see *KMS issuer setup* below). Calls `signJWT({ issuerId, claims: { iss: appId, iat: now - 60, exp: now + 540 }, ttl: 540 })` from `@vercel/kms` (authenticated with the function's Vercel OIDC token), then decodes and checks the token before use. | `GITHUB_APP_KMS_ISSUER_ID` is set |
 | `PemAppJwtSigner` | `GITHUB_APP_PRIVATE_KEY` (PKCS#1 or PKCS#8 PEM), signed locally with `jose`; `iat` is backdated 60s. | Local dev, tests, and as a fallback |
 
 `createAppJwtSigner(env)` picks KMS when the issuer ID is set, otherwise the PEM.
 The TTL is 540s (GitHub's maximum is 600s), leaving headroom for clock drift.
+
+### KMS issuer setup
+
+GitHub only accepts **RS256** app JWTs, but Vercel KMS issuers default to
+**RS512**, and an issuer's algorithm can't be changed after it's created. Import
+the App's private key (downloaded from the App's settings) into a new issuer
+with the algorithm set explicitly, then grant the project the environments that
+use it:
+
+```sh
+vercel kms import omniralph-github-app-<env> --key ./app.private-key.pem --algorithm RS256
+vercel kms add-grant <issuerId>   # project omniralph, environment(s) that set GITHUB_APP_KMS_ISSUER_ID
+```
+
+Set `GITHUB_APP_KMS_ISSUER_ID` to the issuer ID and `GITHUB_APP_ID` to the App ID
+(GitHub also accepts the `Iv…` Client ID as `iss`). `vercel kms inspect <issuerId>`
+must show `"algorithm": "RS256"` and `"origin": "external"`.
+
+KMS sets `iat`/`nbf`/`exp` itself; the signer also sends `iat` backdated 60s
+and `exp` = now + 540s (and retries with `iss` alone if KMS rejects caller-set
+registered claims). Every KMS token is decoded and rejected with a
+`KmsAppJwtError` naming the fix if its algorithm isn't RS256, its `iss` isn't
+the App ID, or it would be valid for more than 600s, instead of surfacing as an
+opaque 401 from GitHub.
+
+TOOL-50 (2026-10-05): during the TOOL-49 smoke test the installation callback
+failed with KMS and worked with the PEM. `vercel kms inspect` showed the
+preview's GitHub App issuer was external-origin but **RS512** (the CLI's
+`--algorithm` was required for the RSA key and RS512 was chosen, matching the
+KMS default). Signing with the preview issuer from outside a preview deployment
+isn't possible (a development OIDC token gets 403 `oidc_token_not_authorized`),
+so GitHub's exact response to that token wasn't captured.
 
 ### Installation tokens: direct exchange instead of `@octokit/auth-app`
 
@@ -52,7 +84,7 @@ exercises the production code path.
   leaked Vercel env dump doesn't expose it.
 - Each JWT signature is a network call to KMS, mitigated by JWT caching.
 - Rotating the GitHub App key means importing the new key into a new KMS issuer
-  and updating `GITHUB_APP_KMS_ISSUER_ID`.
+  (again with `--algorithm RS256`) and updating `GITHUB_APP_KMS_ISSUER_ID`.
 
 ## Decision: agent identity and token lifecycle
 

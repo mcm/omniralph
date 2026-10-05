@@ -7,6 +7,7 @@ export { capLength, fencedBlock, renderInlineComment, summaryWithFallbacks } fro
 export {
   APP_JWT_TTL_SECONDS,
   createAppJwtSigner,
+  KmsAppJwtError,
   KmsAppJwtSigner,
   PemAppJwtSigner,
 } from "./github/app-jwt.js";
