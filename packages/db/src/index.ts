@@ -149,3 +149,16 @@ export {
   type RepositorySettingsUpdate,
   type ReviewProfileUpdate,
 } from "./settings.js";
+export {
+  emptyFindingCounts,
+  getReviewDetail,
+  listReviews,
+  REVIEW_PAGE_SIZE,
+  type FindingSeverity,
+  type ReviewDetail,
+  type ReviewListEntry,
+  type ReviewListFilter,
+  type ReviewListPage,
+  type ReviewRepositoryRef,
+  type ReviewTrigger,
+} from "./review-history.js";

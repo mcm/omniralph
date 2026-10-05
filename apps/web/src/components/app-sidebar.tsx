@@ -17,6 +17,7 @@ import {
 import {
   IconAdjustments,
   IconGitPullRequest,
+  IconHistory,
   IconListCheck,
   IconServer,
   IconUsers,
@@ -27,6 +28,7 @@ import { useCurrentUser } from "./current-user";
 
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
+  reviews: IconHistory,
   agents: IconServer,
   jobs: IconListCheck,
   users: IconUsers,

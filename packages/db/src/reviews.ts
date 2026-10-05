@@ -32,6 +32,7 @@ const FINISHED_REVIEW_STATUSES: ReviewStatus[] = ["completed", "budget_exhausted
 export interface NewReviewInput {
   repositoryId: string;
   prNumber: number;
+  prTitle?: string | null;
   headSha: string;
   baseSha: string;
   trigger: Review["trigger"];
