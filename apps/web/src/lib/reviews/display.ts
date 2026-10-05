@@ -3,6 +3,7 @@
  * view-prop types and formatting. Server-side mapping lives in `./history`.
  */
 import type { FindingSeverity, ReviewStatus, ReviewTrigger } from "@omniralph/db";
+import type { FeedbackReasonValue } from "@omniralph/shared";
 
 /** Client-safe copies of the DB enums (the views can't import `@omniralph/db`). */
 export const REVIEW_STATUSES = [
@@ -90,6 +91,22 @@ export interface FindingView {
   suggestion: string | null;
   confidence: number;
   status: "open" | "dismissed" | "resolved";
+  /** Dismissals from the control panel and `@bot dismiss`, oldest first. */
+  feedback: FeedbackView[];
+}
+
+export interface FeedbackView {
+  id: string;
+  /** `ui`: control panel; `scm`: `@bot dismiss` in the PR/MR thread. */
+  source: "ui" | "scm";
+  reason: FeedbackReasonValue;
+  note: string | null;
+  /** Who dismissed it: a control panel user, or a code-host login (`@name`). */
+  actor: string;
+  /** ISO timestamps. */
+  createdAt: string;
+  restoredAt: string | null;
+  restoredBy: string | null;
 }
 
 export interface FileFindings {

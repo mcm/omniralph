@@ -49,6 +49,7 @@ import {
   type ReviewDetailView as ReviewDetail,
 } from "@/lib/reviews/display";
 import { ProviderIcon } from "../../repositories/repositories-view";
+import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;
@@ -112,6 +113,8 @@ function FindingItem({ finding }: { finding: FindingView }) {
           {finding.title}
         </span>
         <FindingStatusBadge status={finding.status} />
+        {finding.status === "open" && <DismissFindingDialog finding={finding} />}
+        {finding.status === "dismissed" && <RestoreFindingButton finding={finding} />}
       </div>
       <p style={prose}>{finding.body}</p>
       {finding.suggestion !== null && (
@@ -123,6 +126,7 @@ function FindingItem({ finding }: { finding: FindingView }) {
       <Muted style={{ fontSize: "var(--text-xs)" }}>
         {finding.category} · confidence {Math.round(finding.confidence * 100)}%
       </Muted>
+      <FeedbackHistory feedback={finding.feedback} />
     </div>
   );
 }

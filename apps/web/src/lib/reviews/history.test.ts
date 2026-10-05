@@ -148,6 +148,7 @@ describe("view mapping", () => {
       profile: { id: "deep", name: "Deep" },
       agent: null,
       findings: [finding({})],
+      feedback: [],
     };
     expect(reviewDetailView(detail)).toMatchObject({
       prUrl: "https://github.com/group/api/pull/3",

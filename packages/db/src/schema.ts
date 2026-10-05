@@ -436,9 +436,14 @@ export const feedback = pgTable(
       .notNull()
       .references(() => findings.id, { onDelete: "cascade" }),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Code-host login of the author of an `scm` (`@bot dismiss`) dismissal. */
+    scmUsername: text("scm_username"),
     source: feedbackSource("source").notNull(),
     reason: feedbackReason("reason").notNull(),
     note: text("note"),
+    /** Set when the finding was restored to `open`; the feedback row is kept. */
+    restoredAt: timestamp("restored_at", { withTimezone: true }),
+    restoredBy: text("restored_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [index("feedback_finding_id_idx").on(t.findingId)],

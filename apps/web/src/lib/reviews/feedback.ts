@@ -1,0 +1,75 @@
+import "server-only";
+import {
+  dismissFinding,
+  getRepositoryWithConnection,
+  restoreFinding,
+  type Database,
+  type DismissFindingInput,
+  type FindingRow,
+  type Review,
+} from "@omniralph/db";
+import { scmAdapterFor } from "@/lib/scm/adapters";
+
+export type FindingFeedbackResult =
+  | {
+      status: "ok";
+      finding: FindingRow;
+      /** Set when resolving the SCM thread failed. */ scmWarning?: string;
+    }
+  | { status: "not_found" }
+  | { status: "conflict"; finding: FindingRow };
+
+/** Resolves the finding's inline thread on the code host; returns a warning instead of throwing. */
+async function resolveFindingThread(
+  db: Database,
+  review: Review,
+  finding: FindingRow,
+): Promise<string | undefined> {
+  // Findings that fell back into the summary comment have no thread of their own.
+  if (!finding.scmCommentId) return undefined;
+  try {
+    const found = await getRepositoryWithConnection(db, review.repositoryId);
+    if (!found) throw new Error("the repository isn't connected");
+    const { repository, connection } = found;
+    await scmAdapterFor(db, connection).resolveThread(
+      { fullPath: repository.fullPath, externalId: repository.externalId },
+      review.prNumber,
+      finding.scmCommentId,
+    );
+    return undefined;
+  } catch (error) {
+    console.warn("couldn't resolve the finding's SCM thread", {
+      findingId: finding.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "The finding was dismissed, but its thread on the code host couldn't be resolved.";
+  }
+}
+
+/**
+ * Dismisses an open finding: sets it to `dismissed`, records the feedback
+ * (with its source and author) and resolves the SCM thread. A failure to
+ * resolve the thread doesn't undo the dismissal; it comes back as a warning.
+ * Used by the control panel (`ui`) and `@bot dismiss` (`scm`).
+ */
+export async function dismissFindingWithFeedback(
+  db: Database,
+  input: DismissFindingInput,
+): Promise<FindingFeedbackResult> {
+  const result = await dismissFinding(db, input);
+  if (result.status === "not_found") return result;
+  if (result.status === "not_open") return { status: "conflict", finding: result.finding };
+  const scmWarning = await resolveFindingThread(db, result.review, result.finding);
+  return { status: "ok", finding: result.finding, ...(scmWarning ? { scmWarning } : {}) };
+}
+
+/** Restores a dismissed finding to `open`; its feedback is kept and marked restored. */
+export async function restoreDismissedFinding(
+  db: Database,
+  input: { findingId: string; userId: string | null },
+): Promise<FindingFeedbackResult> {
+  const result = await restoreFinding(db, input);
+  if (result.status === "not_found") return result;
+  if (result.status === "not_dismissed") return { status: "conflict", finding: result.finding };
+  return { status: "ok", finding: result.finding };
+}

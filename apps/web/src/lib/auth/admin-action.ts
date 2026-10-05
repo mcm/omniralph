@@ -20,3 +20,20 @@ export async function runAdminAction(
   }
   return (await fn(admin)) ?? { ok: true };
 }
+
+/**
+ * Runs a mutating server action as any signed-in member (e.g. dismissing a
+ * finding); signed-out callers get an error result and `fn` never runs.
+ */
+export async function runMemberAction(
+  fn: (user: CurrentUser) => Promise<ActionResult | void>,
+): Promise<ActionResult> {
+  let user: CurrentUser;
+  try {
+    user = await requireUser("member");
+  } catch (error) {
+    if (error instanceof AuthorizationError) return { ok: false, error: error.message };
+    throw error;
+  }
+  return (await fn(user)) ?? { ok: true };
+}
