@@ -138,6 +138,7 @@ export type StartJobResult =
         | "completed"
         | "failed"
         | "expired"
+        | "skipped"
         | "max_deliveries"
         | "capability_disabled";
     };
@@ -169,6 +170,7 @@ export async function startJob(
       case "completed":
       case "failed":
       case "expired":
+      case "skipped":
         return { action: "skip", reason: job.status };
       case "queued":
       case "running":
@@ -291,6 +293,36 @@ export async function failJob(
       .where(eq(jobs.id, job.id));
     return { status: "retry" };
   });
+}
+
+/**
+ * Marks a queued or running job `skipped` (there was nothing to do). Returns
+ * false when the job had already finished.
+ */
+export async function skipJob(
+  db: Database,
+  jobId: string,
+  input: { reason: string; now?: Date },
+): Promise<boolean> {
+  const rows = await db
+    .update(jobs)
+    .set({ status: "skipped", error: input.reason, finishedAt: input.now ?? new Date() })
+    .where(and(eq(jobs.id, jobId), inArray(jobs.status, ["queued", "running"])))
+    .returning({ id: jobs.id });
+  return rows.length > 0;
+}
+
+/**
+ * Queued or running jobs whose dedupe key starts with `prefix`, e.g. every
+ * active review job of one PR (`review.run:<repositoryId>:<prNumber>:`).
+ */
+export async function listActiveJobsByDedupePrefix(db: Database, prefix: string): Promise<Job[]> {
+  const pattern = `${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return db
+    .select()
+    .from(jobs)
+    .where(and(sql`${jobs.dedupeKey} like ${pattern}`, inArray(jobs.status, ["queued", "running"])))
+    .orderBy(asc(jobs.createdAt));
 }
 
 /** Marks jobs still `queued` that were created before `createdBefore` as `expired`. */

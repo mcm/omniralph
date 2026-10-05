@@ -14,6 +14,7 @@
     "@auth/drizzle-adapter": "^1.11.3",
     "@iamthemcmaster/ui": "~1.0.0",
     "@omniralph/db": "workspace:*",
+    "@omniralph/engine": "workspace:*",
     "@omniralph/scm": "workspace:*",
     "@omniralph/shared": "workspace:*",
     "@tabler/icons-react": "^3.40.0",

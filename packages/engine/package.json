@@ -9,6 +9,11 @@
       "@omniralph/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./summary": {
+      "@omniralph/source": "./src/summary.ts",
+      "types": "./dist/summary.d.ts",
+      "default": "./dist/summary.js"
     }
   },
   "files": [

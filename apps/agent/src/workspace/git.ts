@@ -51,6 +51,29 @@ export function credentialConfigArgs(credentialHelper: string): string[] {
   ];
 }
 
+/**
+ * The same configuration as {@link credentialConfigArgs}, as environment
+ * variables (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`, which
+ * git treats like `-c`), for git commands the agent doesn't spawn itself
+ * (e.g. the engine's diffs, which fetch missing blobs of a partial clone).
+ */
+export function credentialConfigEnv(credentialHelper: string): NodeJS.ProcessEnv {
+  const entries: [string, string][] = [
+    ["credential.helper", ""],
+    ["credential.helper", credentialHelper],
+    ["core.askPass", ""],
+  ];
+  return {
+    GIT_CONFIG_COUNT: String(entries.length),
+    ...Object.fromEntries(
+      entries.flatMap(([key, value], i) => [
+        [`GIT_CONFIG_KEY_${i}`, key],
+        [`GIT_CONFIG_VALUE_${i}`, value],
+      ]),
+    ),
+  };
+}
+
 export interface RunGitOptions {
   cwd?: string;
   env: NodeJS.ProcessEnv;

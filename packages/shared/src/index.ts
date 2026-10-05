@@ -12,3 +12,4 @@ export function isCapability(value: string): value is Capability {
 export * from "./finding.js";
 export * from "./agent-protocol.js";
 export * from "./protocol.js";
+export * from "./review-job.js";
