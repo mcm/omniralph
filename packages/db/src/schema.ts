@@ -495,6 +495,11 @@ export const jobs = pgTable(
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     result: jsonb("result").$type<Record<string, unknown>>(),
     error: text("error"),
+    /**
+     * SCM comment the control panel posted for the job's outcome (a
+     * `review.reply` answer), so it is posted at most once.
+     */
+    scmCommentId: text("scm_comment_id"),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

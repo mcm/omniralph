@@ -6,6 +6,9 @@ import { pathToFileURL } from "node:url";
 import type {
   LearnRuleOutcome,
   LearnRuleRequest,
+  QuestionAnswerer,
+  ReplyOutcome,
+  ReplyRequest,
   ReviewProvider,
   ReviewRequest,
   RuleLearner,
@@ -14,6 +17,8 @@ import type {
 import {
   LearnRuleJobResult,
   ReviewJobResult,
+  ReviewReplyJobResult,
+  type ReviewReplyJobPayload,
   type LearnRuleJobPayload,
   type Finding,
   type JobPayload,
@@ -145,7 +150,7 @@ describe("review capability", () => {
 
   it("is read-only and runs review.run and review.learn-rule jobs", () => {
     const capability = createReviewCapability();
-    expect(capability.jobTypes).toEqual(["review.run", "review.learn-rule"]);
+    expect(capability.jobTypes).toEqual(["review.run", "review.learn-rule", "review.reply"]);
     expect(capability.toolPolicy).toBe(REVIEW_TOOL_POLICY);
     expect(REVIEW_TOOL_POLICY.allowedTools).toEqual(["Read", "Grep", "Glob"]);
     expect(REVIEW_TOOL_POLICY.disallowedTools).toEqual(
@@ -371,6 +376,120 @@ describe("review capability", () => {
           context(),
         ),
       ).rejects.toThrow("invalid review.learn-rule payload");
+    });
+  });
+
+  describe("review.reply", () => {
+    function fakeAnswerer(outcome: Partial<ReplyOutcome> = {}) {
+      const requests: (ReplyRequest & { worktreeFiles: string[] })[] = [];
+      const answerer: QuestionAnswerer = {
+        async answer(request) {
+          requests.push({ ...request, worktreeFiles: (await readdir(request.cwd)).sort() });
+          return {
+            status: "answered",
+            answer: "Yes: `xs.length + 1` is always out of range.",
+            usage: { inputTokens: 3000, outputTokens: 80 },
+            ...outcome,
+          };
+        },
+      };
+      return { answerer, requests };
+    }
+
+    function replyJob(overrides: Partial<ReviewReplyJobPayload> = {}): JobPayload {
+      const payload: ReviewReplyJobPayload = {
+        findingId: randomUUID(),
+        reviewId: randomUUID(),
+        repositoryId: randomUUID(),
+        repository,
+        prNumber: 1,
+        baseSha: base,
+        headSha: head,
+        model: "claude-sonnet-5-5",
+        maxTokens: 10_000,
+        finding: {
+          path: "src/list.ts",
+          startLine: 2,
+          endLine: 2,
+          severity: "high",
+          category: "correctness",
+          title: "Out-of-range read",
+          body: "xs[xs.length + 1] is always undefined.",
+        },
+        question: "Are you sure? Callers check the length.",
+        askedBy: "octocat",
+        threadCommentId: "555",
+        ...overrides,
+      };
+      return {
+        id: randomUUID(),
+        capability: "review",
+        type: "review.reply",
+        repositoryId: payload.repositoryId,
+        payload,
+        deliveryCount: 1,
+      };
+    }
+
+    it("answers in a worktree at head with the finding, hunk and question, under the token cap", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const { answerer, requests } = fakeAnswerer();
+      const output = await createReviewCapability({ answerer }).run(replyJob(), context());
+      expect(ReviewReplyJobResult.parse(output)).toMatchObject({
+        outcome: "answered",
+        answer: "Yes: `xs.length + 1` is always out of range.",
+        usage: { inputTokens: 3000, outputTokens: 80 },
+      });
+      const [request] = requests;
+      expect(request!.allowExploration).toBe(true);
+      expect(request!.maxTokens).toBe(10_000);
+      expect(request!.model).toBe("claude-sonnet-5-5");
+      expect(request!.worktreeFiles).toEqual([".git", "CLAUDE.md", "src"]);
+      expect(request!.prompt).toContain("Out-of-range read");
+      expect(request!.prompt).toContain("+  return xs[xs.length + 1];");
+      expect(request!.prompt).toContain("Are you sure? Callers check the length.");
+      // The worktree is removed afterwards.
+      expect(await readdir(path.join(workspaceRoot, ".worktrees")).catch(() => [])).toEqual([]);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
+    it("answers without tools or hunk when the commits can't be fetched", async () => {
+      const { answerer, requests } = fakeAnswerer();
+      await createReviewCapability({ answerer }).run(
+        replyJob({ headSha: "f".repeat(40) }),
+        context(),
+      );
+      expect(requests[0]!.allowExploration).toBe(false);
+      expect(requests[0]!.worktreeFiles).toEqual([]);
+      expect(requests[0]!.prompt).toContain("(not available)");
+    });
+
+    it("reports a budget-exhausted answer, retries rate limits and fails on errors", async () => {
+      const capped = fakeAnswerer({ status: "budget_exhausted", answer: null });
+      expect(
+        ReviewReplyJobResult.parse(
+          await createReviewCapability({ answerer: capped.answerer }).run(replyJob(), context()),
+        ),
+      ).toMatchObject({ outcome: "budget_exhausted", answer: null });
+
+      const limited = fakeAnswerer({ status: "rate_limited", answer: null, retryAfterMs: 5000 });
+      const error = await createReviewCapability({ answerer: limited.answerer })
+        .run(replyJob(), context())
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RetryableJobError);
+      expect((error as RetryableJobError).retryAfterSeconds).toBe(5);
+
+      const failing = fakeAnswerer({ status: "error", answer: null, error: "auth failed" });
+      await expect(
+        createReviewCapability({ answerer: failing.answerer }).run(replyJob(), context()),
+      ).rejects.toThrow("auth failed");
+      await expect(
+        createReviewCapability({ answerer: failing.answerer }).run(
+          { ...replyJob(), payload: { findingId: "x" } },
+          context(),
+        ),
+      ).rejects.toThrow("invalid review.reply payload");
     });
   });
 });

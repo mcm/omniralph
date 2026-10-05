@@ -163,6 +163,12 @@ export class GitLabAdapter implements ScmAdapter {
     return { reviewId: String(note.id), summaryCommentId: String(note.id), inlineCommentIds };
   }
 
+  /** Adds a top-level note to the MR. */
+  async postComment(repo: RepoRef, number: number, body: string): Promise<{ id: string }> {
+    const note = await this.api.MergeRequestNotes.create(projectId(repo), number, capLength(body, MAX_NOTE_LENGTH));
+    return { id: String(note.id) };
+  }
+
   /** Adds a note to the discussion (`commentId` = discussion ID or note ID). */
   async replyToComment(
     repo: RepoRef,

@@ -9,6 +9,7 @@ import {
 import { FINDING_CATEGORIES, type Finding } from "@omniralph/shared";
 import { LEARN_RULE_SYSTEM_PROMPT, parseLearnedRuleOutput } from "../learnRule.js";
 import { ONE_FINDING_RULE, SUGGESTION_RULE } from "../prompt.js";
+import { normalizeReplyAnswer, REPLY_SYSTEM_PROMPT } from "../reply.js";
 import {
   extractPartialFindings,
   filterToDiff,
@@ -19,6 +20,9 @@ import {
   consoleLogger,
   type LearnRuleOutcome,
   type LearnRuleRequest,
+  type QuestionAnswerer,
+  type ReplyOutcome,
+  type ReplyRequest,
   type ReviewLogger,
   type ReviewProvider,
   type ReviewRequest,
@@ -89,6 +93,8 @@ export interface ClaudeAgentProviderOptions {
   env?: Record<string, string | undefined>;
   /** Turn cap for the exploring review run. */
   maxTurns?: number;
+  /** Turn cap for a thread reply (default 10). */
+  maxReplyTurns?: number;
   /** Max characters of the invalid answer quoted in the repair prompt. */
   maxRepairQuoteChars?: number;
   pathToClaudeCodeExecutable?: string;
@@ -238,7 +244,7 @@ function classifyFailure(
  * uses on the host: the logged-in `claude`, or `ANTHROPIC_API_KEY` /
  * `CLAUDE_CODE_OAUTH_TOKEN` from the environment.
  */
-export class ClaudeAgentProvider implements ReviewProvider, RuleLearner {
+export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, QuestionAnswerer {
   private readonly query: QueryFn;
   private readonly logger: ReviewLogger;
 
@@ -412,6 +418,45 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner {
         this.logger.warn({ error: parsed.error }, "Rejected the generated rule");
         return { status: "rejected", rule: null, usage: usage.total, error: parsed.error };
     }
+  }
+
+  /**
+   * Answers a question from a finding's thread: the same read-only tools as a
+   * review (Read/Grep/Glob, confined to `cwd`) when `allowExploration`,
+   * capped at `maxTokens` (input + output). The answer is plain Markdown.
+   */
+  async answer(request: ReplyRequest): Promise<ReplyOutcome> {
+    const usage = new UsageTracker();
+    const outcome = await this.run(
+      {
+        taskId: "reply",
+        cwd: request.cwd,
+        model: request.model,
+        signal: request.signal,
+        systemPrompt: REPLY_SYSTEM_PROMPT,
+      },
+      request.prompt,
+      usage,
+      request.maxTokens,
+      {
+        allowExploration: request.allowExploration,
+        maxTurns: request.allowExploration ? (this.options.maxReplyTurns ?? 10) : 1,
+      },
+    );
+    if (outcome.stop !== "completed") {
+      return {
+        status: outcome.stop,
+        answer: null,
+        usage: usage.total,
+        ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+        ...(outcome.retryAfterMs !== undefined ? { retryAfterMs: outcome.retryAfterMs } : {}),
+      };
+    }
+    const answer = normalizeReplyAnswer(outcome.text);
+    if (answer === null) {
+      return { status: "error", answer: null, usage: usage.total, error: "The answer was empty." };
+    }
+    return { status: "answered", answer, usage: usage.total };
   }
 
   /** Keeps valid items (or salvageable objects) and logs the dropped ones. */

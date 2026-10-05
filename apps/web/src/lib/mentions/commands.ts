@@ -1,0 +1,149 @@
+/**
+ * `@bot` mention commands in PR/MR threads (`BOT_HANDLE`, default `omniralph`):
+ *
+ * - `@bot review [quick|standard|deep]`: a full review of the current head
+ *   (duplicates of the PR's open findings are still dropped), optionally with
+ *   another profile.
+ * - `@bot dismiss [reason]` in a finding's thread: dismisses the finding. The
+ *   reason may start with `false positive` (the default), `won't fix`,
+ *   `not relevant` or `other`; the rest is kept as the note.
+ * - `@bot help` (or a bare mention): lists the commands.
+ * - Anything else is a question; in a finding's thread the agent answers it.
+ *
+ * Commands are case-insensitive. Mentions inside code (fenced blocks or
+ * inline code), quoted lines (`>`) and HTML comments don't count, so quoting
+ * the bot or documenting the commands doesn't trigger them.
+ */
+import { MAX_REPLY_QUESTION_LENGTH } from "@omniralph/shared";
+
+export const DEFAULT_BOT_HANDLE = "omniralph";
+/** Built-in profiles a `review` command may name (their `review_profiles.id`). */
+export const COMMAND_PROFILES = ["quick", "standard", "deep"] as const;
+export type CommandProfile = (typeof COMMAND_PROFILES)[number];
+/** Longest dismissal note kept from `@bot dismiss` (the control panel's limit). */
+export const MAX_DISMISS_NOTE_LENGTH = 1000;
+
+export type DismissReason = "false_positive" | "wont_fix" | "not_relevant" | "other";
+
+export type BotCommand =
+  | { kind: "review"; profileId: CommandProfile | null }
+  | { kind: "dismiss"; reason: DismissReason; note: string | null }
+  | { kind: "help" }
+  | { kind: "question"; text: string };
+
+/** The bot's handle from `BOT_HANDLE` (a leading `@` is dropped), or `omniralph`. */
+export function botHandle(env: Record<string, string | undefined> = process.env): string {
+  const handle = env.BOT_HANDLE?.trim().replace(/^@/, "");
+  return handle || DEFAULT_BOT_HANDLE;
+}
+
+/**
+ * Whether a comment was written by the bot itself (or another bot account):
+ * those are never parsed for commands. GitHub App comments come from
+ * `<slug>[bot]` accounts of type `Bot`; on GitLab the bot is the user whose
+ * username is the handle.
+ */
+export function isOwnComment(
+  author: { username: string; isBot: boolean },
+  handle: string,
+): boolean {
+  if (author.isBot) return true;
+  const name = author.username.toLowerCase().replace(/\[bot\]$/, "");
+  return name === handle.toLowerCase();
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The comment's prose: without fenced code, inline code, quoted lines and HTML comments. */
+function prose(text: string): string {
+  const lines: string[] = [];
+  let fence: string | null = null;
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      lines.push("");
+      continue;
+    }
+    if (marker) {
+      fence = marker;
+      lines.push("");
+      continue;
+    }
+    lines.push(/^ {0,3}>/.test(line) ? "" : line);
+  }
+  return lines
+    .join("\n")
+    .replace(/<!--[\s\S]*?(-->|$)/g, " ")
+    .replace(/(`+)[\s\S]*?\1/g, " ");
+}
+
+/**
+ * The text before and after the first mention of `handle` (in the comment's
+ * prose), or null when it isn't mentioned.
+ */
+function splitAtMention(text: string, handle: string): { before: string; after: string } | null {
+  const mention = new RegExp(`(^|[^\\w@./-])@${escapeRegExp(handle)}(?:\\[bot\\])?(?![\\w-])`, "i");
+  const visible = prose(text);
+  const match = mention.exec(visible);
+  if (!match) return null;
+  return {
+    before: visible.slice(0, match.index),
+    after: visible.slice(match.index + match[0].length),
+  };
+}
+
+const DISMISS_REASONS: { pattern: RegExp; reason: DismissReason }[] = [
+  { pattern: /^(false[\s_-]*positive|fp)\b/i, reason: "false_positive" },
+  { pattern: /^(won'?t[\s_-]*fix|wont_fix)(?![\w])/i, reason: "wont_fix" },
+  { pattern: /^not[\s_-]*relevant\b/i, reason: "not_relevant" },
+  { pattern: /^other\b/i, reason: "other" },
+];
+
+function dismissCommand(args: string): BotCommand {
+  let rest = args.trim();
+  let reason: DismissReason = "false_positive";
+  for (const candidate of DISMISS_REASONS) {
+    const match = candidate.pattern.exec(rest);
+    if (match) {
+      reason = candidate.reason;
+      rest = rest.slice(match[0].length).replace(/^[\s:,.;—–-]+/, "");
+      break;
+    }
+  }
+  const note = rest.trim().slice(0, MAX_DISMISS_NOTE_LENGTH).trim();
+  return { kind: "dismiss", reason, note: note || null };
+}
+
+/** Splits off the first word, ignoring trailing punctuation (`review.`, `deep!`). */
+function firstWord(text: string): { word: string; rest: string } {
+  const match = /^(\S+)([\s\S]*)$/.exec(text.trimStart());
+  if (!match) return { word: "", rest: "" };
+  return { word: match[1]!.toLowerCase().replace(/[.,:;!?]+$/, ""), rest: match[2]! };
+}
+
+/**
+ * The command of a comment that mentions the bot, or null when it doesn't.
+ * See the module comment for the grammar.
+ */
+export function parseBotCommand(text: string, handle: string): BotCommand | null {
+  const parts = splitAtMention(text, handle);
+  if (parts === null) return null;
+  const { word, rest } = firstWord(parts.after);
+  const line = rest.split("\n")[0]!.trim();
+
+  const bare = word === "" && !/[\p{L}\p{N}]/u.test(parts.before + parts.after);
+  if (bare || word === "help") return { kind: "help" };
+  if (word === "review") {
+    const args = line.split(/\s+/).filter(Boolean);
+    const profile = args[0]?.toLowerCase().replace(/[.,:;!?]+$/, "");
+    if (args.length === 0) return { kind: "review", profileId: null };
+    if (args.length === 1 && (COMMAND_PROFILES as readonly string[]).includes(profile!)) {
+      return { kind: "review", profileId: profile as CommandProfile };
+    }
+  } else if (word === "dismiss") {
+    return dismissCommand(rest);
+  }
+  const question = text.trim().slice(0, MAX_REPLY_QUESTION_LENGTH);
+  return { kind: "question", text: question };
+}

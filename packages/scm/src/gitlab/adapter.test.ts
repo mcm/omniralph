@@ -323,6 +323,12 @@ describe("threads", () => {
     expect(requests.some((r) => r.method === "PUT" && r.url.includes(DISCUSSION))).toBe(true);
   });
 
+  it("posts a top-level MR note", async () => {
+    server.use(http.post(`${MR}/notes`, () => HttpResponse.json({ id: 78 }, { status: 201 })));
+    await expect(makeAdapter().postComment(REPO, 7, "Hello")).resolves.toEqual({ id: "78" });
+    expect((await posts(`/merge_requests/7/notes`))[0]?.body).toEqual({ body: "Hello" });
+  });
+
   it("replies in the discussion", async () => {
     server.use(
       http.post(`${MR}/discussions/${DISCUSSION}/notes`, () => HttpResponse.json({ id: 77 }, { status: 201 })),

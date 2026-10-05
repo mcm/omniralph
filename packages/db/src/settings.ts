@@ -111,3 +111,8 @@ export async function updateRepositorySettings(
     .returning();
   return row ?? null;
 }
+
+export async function getReviewProfile(db: Database, id: string): Promise<ReviewProfile | null> {
+  const [row] = await db.select().from(reviewProfiles).where(eq(reviewProfiles.id, id)).limit(1);
+  return row ?? null;
+}

@@ -21,10 +21,12 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
+  replies: [] as { number: number; commentId: string; body: string }[],
   sends: [] as { topic: string; payload: unknown; options: unknown }[],
   clients: [] as unknown[],
   sendError: null as Error | null,
@@ -42,6 +44,15 @@ vi.mock("@vercel/queue", () => ({
     }
   },
 }));
+vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  scmAdapterFor: () => ({
+    async replyToComment(_repo: unknown, number: number, commentId: string, body: string) {
+      state.replies.push({ number, commentId, body });
+      return { id: `reply-${state.replies.length}` };
+    },
+  }),
+}));
 vi.mock("@vercel/oidc", () => ({ getVercelOidcToken: async () => "control-panel-oidc" }));
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -51,6 +62,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .toString();
 process.env.QUEUE_REGIONS = "iad1";
 process.env.CRON_SECRET = "cron-secret";
+process.env.APP_URL = "https://omniralph.example.com";
 
 const { VercelQueuesDispatcher } = await import("@/lib/dispatch");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
@@ -597,6 +609,95 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
           sourceFindingId: finding!.id,
         },
       ]);
+    });
+
+    it("validates a review.reply result and posts the answer in the thread once", async () => {
+      const { accessToken } = await newAgent();
+      const sha = (n: number) => n.toString(16).padStart(40, "0");
+      const review = await createReview(db, {
+        repositoryId,
+        prNumber: 11,
+        headSha: sha(2),
+        baseSha: sha(1),
+        trigger: "webhook",
+        profileId: "standard",
+        model: null,
+        budget: 200_000,
+      });
+      const [finding] = await db
+        .insert(findings)
+        .values({
+          reviewId: review.id,
+          path: "src/a.ts",
+          startLine: 1,
+          endLine: 1,
+          severity: "low",
+          category: "correctness",
+          title: "Unused value",
+          body: "Never read.",
+          confidence: 0.5,
+          scmCommentId: "777",
+        })
+        .returning();
+      const { job } = await dispatcher().createAndPublish({
+        capability: "review",
+        type: "review.reply",
+        repositoryId,
+        dedupeKey: `review.reply:${repositoryId}:778`,
+        payload: {
+          findingId: finding!.id,
+          reviewId: review.id,
+          repositoryId,
+          repository: {
+            provider: "github",
+            fullPath: "acme/app",
+            cloneUrl: "https://github.com/acme/app.git",
+          },
+          prNumber: 11,
+          baseSha: sha(1),
+          headSha: sha(2),
+          model: null,
+          maxTokens: 20_000,
+          finding: {
+            path: "src/a.ts",
+            startLine: 1,
+            endLine: 1,
+            severity: "low",
+            category: "correctness",
+            title: "Unused value",
+            body: "Never read.",
+          },
+          question: "@omniralph is it really unused?",
+          askedBy: "octocat",
+          threadCommentId: "777",
+        },
+      });
+      await startAs(job.id, accessToken);
+      const submit = (body: unknown) =>
+        result(agentRequest(`jobs/${job.id}/result`, accessToken, { body }), ctx(job.id));
+
+      const valid = {
+        answer: "Yes, nothing reads it after line 1.",
+        outcome: "answered",
+        usage: { inputTokens: 4000, outputTokens: 50 },
+        durationMs: 900,
+      };
+      expect((await submit({ result: { ...valid, answer: null } })).status).toBe(400);
+      expect((await submit({ result: { ...valid, answer: "x".repeat(4001) } })).status).toBe(400);
+      state.replies.length = 0;
+      expect((await submit({ result: valid })).status).toBe(200);
+      // The agent's replay after a timeout posts nothing new.
+      expect((await submit({ result: valid })).status).toBe(200);
+
+      expect(await jobRow(job.id)).toMatchObject({
+        status: "completed",
+        result: valid,
+        scmCommentId: "reply-1",
+      });
+      expect(state.replies).toHaveLength(1);
+      expect(state.replies[0]).toMatchObject({ number: 11, commentId: "777" });
+      expect(state.replies[0]!.body).toContain("Yes, nothing reads it after line 1.");
+      expect(state.replies[0]!.body).toContain("@octocat");
     });
 
     it("returns 404 for unknown jobs", async () => {
