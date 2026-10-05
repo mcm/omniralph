@@ -13,3 +13,5 @@ export * from "./suggestionRange.js";
 export * from "./git.js";
 export * from "./runReview.js";
 export * from "./summary.js";
+export * from "./learnRule.js";
+export * from "./ruleDedupe.js";

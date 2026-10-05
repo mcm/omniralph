@@ -9,13 +9,16 @@ import {
   MAX_LEASE_SECONDS,
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
+  LEARN_RULE_JOB_TYPE,
   REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
   type Finding,
+  type LearnRuleJobResult,
   type ReviewJobResult,
 } from "@omniralph/shared";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
+import { runLearnRule, type LearnRuleOptions } from "./learn-rule.js";
 
 /** Review sessions only read the job's worktree (the engine's Claude provider enforces the same lists). */
 export const REVIEW_TOOL_POLICY: ToolPolicy = {
@@ -48,7 +51,7 @@ export function capFindings(findings: readonly Finding[], limit = MAX_REVIEW_FIN
   return findings.filter((_, index) => kept.has(index));
 }
 
-export interface ReviewCapabilityOptions {
+export interface ReviewCapabilityOptions extends Pick<LearnRuleOptions, "learner"> {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
   provider?: ReviewProvider;
   /** Retry delay for rate limits whose reset time is unknown. */
@@ -56,7 +59,8 @@ export interface ReviewCapabilityOptions {
 }
 
 /**
- * Code review (`review.run`). Makes sure the repo cache has the PR's base and
+ * Code review (`review.run`), plus learned-rule generation from false-positive
+ * dismissals (`review.learn-rule`, see `learn-rule.ts`). Makes sure the repo cache has the PR's base and
  * head (and the previous review's head, for incremental reviews), runs the
  * engine in a fresh worktree at head and returns the `ReviewJobResult`. It
  * calls no code-host API and holds no write credential: git authenticates
@@ -66,9 +70,10 @@ export interface ReviewCapabilityOptions {
 export function createReviewCapability(options: ReviewCapabilityOptions = {}): Capability {
   return {
     name: REVIEW_CAPABILITY,
-    jobTypes: [REVIEW_JOB_TYPE],
+    jobTypes: [REVIEW_JOB_TYPE, LEARN_RULE_JOB_TYPE],
     toolPolicy: REVIEW_TOOL_POLICY,
-    async run(job, ctx): Promise<ReviewJobResult> {
+    async run(job, ctx): Promise<ReviewJobResult | LearnRuleJobResult> {
+      if (job.type === LEARN_RULE_JOB_TYPE) return runLearnRule(job, ctx, options);
       const parsed = ReviewJobPayload.safeParse(job.payload);
       if (!parsed.success) throw new Error("invalid review.run payload");
       const payload = parsed.data;

@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -30,11 +31,21 @@ vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
-vi.mock("@/lib/scm/adapters", () => ({
+vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => ({ resolveThread: state.resolveThread }),
+}));
+// False-positive dismissals enqueue a `review.learn-rule` job (see rules/actions.test.ts).
+vi.mock("@vercel/queue", () => ({
+  QueueClient: class {
+    async send() {
+      return { messageId: "msg-1" };
+    }
+  },
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+process.env.QUEUE_REGIONS = "iad1";
 
 const { dismissFinding, restoreFinding } = await import("./actions");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");

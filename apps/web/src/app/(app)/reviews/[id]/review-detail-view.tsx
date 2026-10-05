@@ -91,6 +91,8 @@ function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
 function FindingItem({ finding }: { finding: FindingView }) {
   return (
     <div
+      // Target of the source-finding links on Repository › Rules.
+      id={`finding-${finding.id}`}
       style={{
         ...stack,
         padding: "var(--space-4)",

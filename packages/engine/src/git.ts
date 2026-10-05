@@ -65,8 +65,14 @@ export async function isAncestor(
  * Unified diff in a fixed format whatever the user's git config says
  * (prefixes, renames, external diff tools, colors).
  * `from...to` (three dots) diffs against the merge base; `from..to` diffs the two commits.
+ * `paths` limits the diff to those pathspecs (literal paths, no globbing).
  */
-export function diff(cwd: string, range: string, env?: NodeJS.ProcessEnv): Promise<string> {
+export function diff(
+  cwd: string,
+  range: string,
+  env?: NodeJS.ProcessEnv,
+  paths: readonly string[] = [],
+): Promise<string> {
   return git(
     cwd,
     [
@@ -81,6 +87,7 @@ export function diff(cwd: string, range: string, env?: NodeJS.ProcessEnv): Promi
       "--dst-prefix=b/",
       range,
       "--",
+      ...paths.map((p) => `:(literal)${p}`),
     ],
     env,
   );

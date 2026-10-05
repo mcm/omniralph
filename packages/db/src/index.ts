@@ -175,3 +175,14 @@ export {
   type FeedbackUserRef,
   type RestoreFindingResult,
 } from "./feedback.js";
+export {
+  createCustomRule,
+  deleteRule,
+  getFeedbackWithFinding,
+  insertLearnedRule,
+  listRepositoryRules,
+  updateRule,
+  type InsertLearnedRuleResult,
+  type RuleEntry,
+  type RuleKind,
+} from "./rules.js";

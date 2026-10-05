@@ -7,6 +7,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { FINDING_CATEGORIES, type Finding } from "@omniralph/shared";
+import { LEARN_RULE_SYSTEM_PROMPT, parseLearnedRuleOutput } from "../learnRule.js";
 import { ONE_FINDING_RULE, SUGGESTION_RULE } from "../prompt.js";
 import {
   extractPartialFindings,
@@ -16,9 +17,12 @@ import {
 } from "./findings-output.js";
 import {
   consoleLogger,
+  type LearnRuleOutcome,
+  type LearnRuleRequest,
   type ReviewLogger,
   type ReviewProvider,
   type ReviewRequest,
+  type RuleLearner,
   type TaskReviewResult,
   type ReviewStopReason,
   type TokenUsage,
@@ -88,6 +92,17 @@ export interface ClaudeAgentProviderOptions {
   /** Max characters of the invalid answer quoted in the repair prompt. */
   maxRepairQuoteChars?: number;
   pathToClaudeCodeExecutable?: string;
+}
+
+/** What one SDK run is for: a review task, or a rule generation. */
+interface RunTarget {
+  /** Logged with budget warnings. */
+  taskId: string;
+  cwd: string;
+  model?: string;
+  signal?: AbortSignal;
+  /** Defaults to `REVIEW_SYSTEM_PROMPT`. */
+  systemPrompt?: string;
 }
 
 interface RunOutcome {
@@ -223,7 +238,7 @@ function classifyFailure(
  * uses on the host: the logged-in `claude`, or `ANTHROPIC_API_KEY` /
  * `CLAUDE_CODE_OAUTH_TOKEN` from the environment.
  */
-export class ClaudeAgentProvider implements ReviewProvider {
+export class ClaudeAgentProvider implements ReviewProvider, RuleLearner {
   private readonly query: QueryFn;
   private readonly logger: ReviewLogger;
 
@@ -237,13 +252,14 @@ export class ClaudeAgentProvider implements ReviewProvider {
     request: Pick<ReviewRequest, "cwd" | "model" | "allowExploration">,
     abortController: AbortController,
     maxTurns: number,
+    systemPrompt: string = REVIEW_SYSTEM_PROMPT,
   ): Options {
     const tools = request.allowExploration ? [...EXPLORATION_TOOLS] : [];
     return {
       cwd: request.cwd,
       model: request.model,
       abortController,
-      systemPrompt: REVIEW_SYSTEM_PROMPT,
+      systemPrompt,
       tools,
       allowedTools: [...tools],
       disallowedTools: [...DISALLOWED_TOOLS],
@@ -299,7 +315,13 @@ export class ClaudeAgentProvider implements ReviewProvider {
       return { findings: inside, usage: usage.total, stopReason, discarded, ...extra };
     };
 
-    const first = await this.run(request, request.prompt, usage, budget, {
+    const target: RunTarget = {
+      taskId: request.task.id,
+      cwd: request.cwd,
+      model: request.model,
+      signal: request.signal,
+    };
+    const first = await this.run(target, request.prompt, usage, budget, {
       allowExploration: request.allowExploration,
       maxTurns: this.options.maxTurns ?? 50,
     });
@@ -325,7 +347,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
     }
 
     const repair = await this.run(
-      request,
+      target,
       this.repairPrompt(first.text, parsed.error),
       usage,
       budget,
@@ -349,6 +371,47 @@ export class ClaudeAgentProvider implements ReviewProvider {
       "Repaired review output is still invalid",
     );
     return finish("completed", this.dropInvalid(request, repair.text, repaired.items, discarded));
+  }
+
+  /**
+   * Generates a learned rule from a false-positive dismissal: one turn, no
+   * tools, capped at `maxTokens` (input + output). An unusable answer (not the
+   * expected JSON, or a rule over the length limit) is `rejected`.
+   */
+  async learnRule(request: LearnRuleRequest): Promise<LearnRuleOutcome> {
+    const usage = new UsageTracker();
+    const outcome = await this.run(
+      {
+        taskId: "learn-rule",
+        cwd: request.cwd,
+        model: request.model,
+        signal: request.signal,
+        systemPrompt: LEARN_RULE_SYSTEM_PROMPT,
+      },
+      request.prompt,
+      usage,
+      request.maxTokens,
+      { allowExploration: false, maxTurns: 1 },
+    );
+    if (outcome.stop !== "completed") {
+      return {
+        status: outcome.stop,
+        rule: null,
+        usage: usage.total,
+        ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+        ...(outcome.retryAfterMs !== undefined ? { retryAfterMs: outcome.retryAfterMs } : {}),
+      };
+    }
+    const parsed = parseLearnedRuleOutput(outcome.text);
+    switch (parsed.status) {
+      case "rule":
+        return { status: "rule", rule: parsed.rule, usage: usage.total };
+      case "none":
+        return { status: "none", rule: null, usage: usage.total };
+      case "rejected":
+        this.logger.warn({ error: parsed.error }, "Rejected the generated rule");
+        return { status: "rejected", rule: null, usage: usage.total, error: parsed.error };
+    }
   }
 
   /** Keeps valid items (or salvageable objects) and logs the dropped ones. */
@@ -391,7 +454,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
   }
 
   private async run(
-    request: ReviewRequest,
+    request: RunTarget,
     prompt: string,
     usage: UsageTracker,
     budget: number,
@@ -406,6 +469,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
       { cwd: request.cwd, model: request.model, allowExploration: run.allowExploration },
       controller,
       run.maxTurns,
+      request.systemPrompt,
     );
     const base = usage.total;
     let streamed = "";
@@ -451,7 +515,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
             ) {
               controller.abort();
               this.logger.warn(
-                { taskId: request.task.id, budget, usage: usage.total, nextTurn },
+                { taskId: request.taskId, budget, usage: usage.total, nextTurn },
                 "Review token budget exhausted: the next turn would exceed it; aborting",
               );
               return { stop: "budget_exhausted", text: streamed };
@@ -503,7 +567,7 @@ export class ClaudeAgentProvider implements ReviewProvider {
         if (sum(usage.total) >= budget) {
           controller.abort();
           this.logger.warn(
-            { taskId: request.task.id, budget, usage: usage.total },
+            { taskId: request.taskId, budget, usage: usage.total },
             "Review token budget exhausted; aborting",
           );
           return { stop: "budget_exhausted", text: streamed };

@@ -51,6 +51,7 @@ import {
   IconGitPullRequest,
   IconPlugConnected,
   IconHistory,
+  IconListCheck,
   IconSettings,
   IconUnlink,
 } from "@tabler/icons-react";
@@ -289,6 +290,17 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         >
           <Link href={`/repositories/${repo.id}/reviews`}>
             <IconHistory size={14} />
+          </Link>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          aria-label={`Rules of ${repo.fullPath}`}
+          title={`Rules of ${repo.fullPath}`}
+        >
+          <Link href={`/repositories/${repo.id}/rules`}>
+            <IconListCheck size={14} />
           </Link>
         </Button>
         <Button
