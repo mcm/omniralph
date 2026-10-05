@@ -16,6 +16,7 @@ import {
 } from "@iamthemcmaster/ui";
 import {
   IconAdjustments,
+  IconChartBar,
   IconGitPullRequest,
   IconHistory,
   IconListCheck,
@@ -31,6 +32,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   reviews: IconHistory,
   agents: IconServer,
   jobs: IconListCheck,
+  analytics: IconChartBar,
   users: IconUsers,
   profiles: IconAdjustments,
 };

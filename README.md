@@ -77,7 +77,8 @@ learned rules for later reviews.
    findings are superseded), `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
    or ask a question there. Admins can also use **Re-run** on a review's page or history row.
 6. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
-   excludes, custom instructions, agent pinning) and rules (**Repository › Rules**).
+   excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
+   shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days.
 
 ## Documentation
 
