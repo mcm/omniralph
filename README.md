@@ -51,9 +51,12 @@ compatible with the code that's still live.
    (one Vercel KMS issuer per environment), `QUEUE_REGIONS`, `CRON_SECRET` and `NPM_RC`. The first
    person to sign in becomes admin.
 2. **GitHub App** (one per control panel). Permissions: contents read, pull requests write, metadata
-   read. Events: pull request, issue comment, pull request review comment. Webhook URL
-   `<APP_URL>/api/webhooks/github` with a secret (`GITHUB_WEBHOOK_SECRET`). Setup URL
-   `<APP_URL>/repositories/github/callback` with "Redirect on update" on. Set `GITHUB_APP_ID` and
+   read, Issues: Read-only (required for the Issue comment event; GitHub won't let the App
+   subscribe to it otherwise). Events: pull request, issue comment, pull request review comment.
+   Webhook URL `<APP_URL>/api/webhooks/github` with a secret (`GITHUB_WEBHOOK_SECRET`). Setup URL
+   `<APP_URL>/repositories/github/callback` with "Redirect on update" on. Keep "Request user
+   authorization (OAuth) during installation" **off**: turning it on disables the Setup URL, and
+   the callback depends on it to record the installation. Set `GITHUB_APP_ID` and
    either `GITHUB_APP_KMS_ISSUER_ID` or `GITHUB_APP_PRIVATE_KEY`. For KMS, import the App's private
    key with `vercel kms import <name> --key <pem> --algorithm RS256`: GitHub only accepts RS256 and
    KMS issuers default to RS512 (see "KMS issuer setup" in `docs/adr/0002-agent-auth.md`).
