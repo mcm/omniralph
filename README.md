@@ -54,8 +54,9 @@ compatible with the code that's still live.
    read. Events: pull request, issue comment, pull request review comment. Webhook URL
    `<APP_URL>/api/webhooks/github` with a secret (`GITHUB_WEBHOOK_SECRET`). Setup URL
    `<APP_URL>/repositories/github/callback` with "Redirect on update" on. Set `GITHUB_APP_ID` and
-   either `GITHUB_APP_KMS_ISSUER_ID` (private key imported into Vercel KMS) or
-   `GITHUB_APP_PRIVATE_KEY`.
+   either `GITHUB_APP_KMS_ISSUER_ID` or `GITHUB_APP_PRIVATE_KEY`. For KMS, import the App's private
+   key with `vercel kms import <name> --key <pem> --algorithm RS256`: GitHub only accepts RS256 and
+   KMS issuers default to RS512 (see "KMS issuer setup" in `docs/adr/0002-agent-auth.md`).
 3. **Connect repositories** (admin) under **Repositories**: "Connect GitHub" installs the App and
    lets you pick repositories; "Connect GitLab" takes the base URL (gitlab.com or self-managed), a bot
    access token with the `api` scope and the projects, validates the token and creates each project's
