@@ -109,7 +109,7 @@ function ConfirmRemove({
           disabled={disabled}
           aria-label={label}
           title={label}
-          style={{ color: "var(--error-text)" }}
+          style={{ color: "var(--error)" }}
         >
           <IconTrash size={14} />
         </Button>
