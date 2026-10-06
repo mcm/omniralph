@@ -3,6 +3,7 @@ import {
   agents,
   completeJob,
   connectRepository,
+  closeDb,
   createDb,
   getJob,
   getMainLane,
@@ -108,7 +109,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

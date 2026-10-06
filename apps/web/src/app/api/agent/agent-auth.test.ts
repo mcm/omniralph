@@ -3,6 +3,7 @@ import {
   agentRefreshTokens,
   agents,
   createAgentEnrollment,
+  closeDb,
   createDb,
   jobs,
   listAgentAudit,
@@ -86,7 +87,7 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
 
   afterAll(async () => {
     vi.useRealTimers();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

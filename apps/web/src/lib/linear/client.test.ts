@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  closeDb,
   createDb,
   getIntegrationWithCredentials,
   integrations,
@@ -62,7 +63,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
 
   afterAll(async () => {
     server.close();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
@@ -144,7 +145,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
       ]);
       await Promise.all([a.getOrganization(), b.getOrganization()]);
     } finally {
-      await otherDb.$client.end();
+      await closeDb(otherDb);
     }
     // The second refresh saw the fresh token under the row lock: the rotated
     // refresh token is never overwritten by an older one.

@@ -3,7 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, type Database } from "./client.js";
+import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import { runMigrations } from "./migrate.js";
 import { repositories, scmConnections, scmCredentialCache } from "./schema.js";
@@ -27,7 +27,12 @@ describe.skipIf(!dockerAvailable)("scm credential cache", () => {
     db = createDb(container.getConnectionUri());
     const [connection] = await db
       .insert(scmConnections)
-      .values({ provider: "gitlab", name: "GitLab", baseUrl: "https://gitlab.example.com", encryptedCredentials: "x" })
+      .values({
+        provider: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+        encryptedCredentials: "x",
+      })
       .returning();
     connectionId = connection!.id;
     const [repo] = await db
@@ -38,7 +43,7 @@ describe.skipIf(!dockerAvailable)("scm credential cache", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
@@ -47,17 +52,28 @@ describe.skipIf(!dockerAvailable)("scm credential cache", () => {
     const repo = { fullPath: "acme/widgets", externalId: "99" };
     expect(await cache.get(repo, "read_repository")).toBeNull();
 
-    const first = { token: "glpat-1", expiresAt: new Date("2026-10-05T00:00:00Z"), externalId: "301" };
+    const first = {
+      token: "glpat-1",
+      expiresAt: new Date("2026-10-05T00:00:00Z"),
+      externalId: "301",
+    };
     await cache.set(repo, "read_repository", first);
     expect(await cache.get(repo, "read_repository")).toEqual(first);
     // Looked up by path when the project ID isn't known.
     expect(await cache.get({ fullPath: "acme/widgets" }, "read_repository")).toEqual(first);
 
-    const [row] = await db.select().from(scmCredentialCache).where(eq(scmCredentialCache.repositoryId, repositoryId));
+    const [row] = await db
+      .select()
+      .from(scmCredentialCache)
+      .where(eq(scmCredentialCache.repositoryId, repositoryId));
     expect(row?.encryptedToken).not.toContain("glpat-1");
     expect(decrypt(row!.encryptedToken, key)).toBe("glpat-1");
 
-    const second = { token: "glpat-2", expiresAt: new Date("2026-10-06T00:00:00Z"), externalId: "302" };
+    const second = {
+      token: "glpat-2",
+      expiresAt: new Date("2026-10-06T00:00:00Z"),
+      externalId: "302",
+    };
     await cache.set(repo, "read_repository", second);
     expect(await cache.get(repo, "read_repository")).toEqual(second);
     expect(await db.select().from(scmCredentialCache)).toHaveLength(1);

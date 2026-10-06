@@ -3,6 +3,7 @@ import {
   agentRepoPins,
   agents,
   connectRepository,
+  closeDb,
   createDb,
   getRepository,
   jobs,
@@ -137,7 +138,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
   });
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

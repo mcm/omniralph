@@ -4,6 +4,7 @@ import {
   agentRepoPins,
   agents,
   connectRepository,
+  closeDb,
   createDb,
   getAgentOverview,
   jobs,
@@ -146,7 +147,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
 
   afterAll(async () => {
     vi.useRealTimers();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

@@ -10,7 +10,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, type Database } from "./client.js";
+import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
 import { jobs, repositories, reviewProfiles, scmConnections } from "./schema.js";
 
@@ -30,7 +30,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

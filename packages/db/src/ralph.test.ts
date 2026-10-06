@@ -3,7 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb, type Database } from "./client.js";
+import { closeDb, createDb, type Database } from "./client.js";
 import { insertJob } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import {
@@ -100,7 +100,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

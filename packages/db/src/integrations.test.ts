@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb, type Database } from "./client.js";
+import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import {
   consumeOAuthState,
@@ -38,7 +38,7 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
@@ -49,19 +49,33 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
   const install = (externalId: string, name: string, accessToken: string) =>
     saveIntegration<Creds>(
       db,
-      { provider: "linear", externalId, name, credentials: { accessToken, version: 1 }, installedByUserId: "admin-1" },
+      {
+        provider: "linear",
+        externalId,
+        name,
+        credentials: { accessToken, version: 1 },
+        installedByUserId: "admin-1",
+      },
       key,
     );
 
   it("stores credentials encrypted and reads them back", async () => {
     expect(await getIntegration(db, "linear")).toBeNull();
     const saved = await install("org-1", "Acme", "lin_secret_1");
-    expect(saved).toMatchObject({ provider: "linear", externalId: "org-1", name: "Acme", installedByUserId: "admin-1" });
+    expect(saved).toMatchObject({
+      provider: "linear",
+      externalId: "org-1",
+      name: "Acme",
+      installedByUserId: "admin-1",
+    });
     expect(saved).not.toHaveProperty("encryptedCredentials");
 
     const [row] = await db.select().from(integrations);
     expect(row!.encryptedCredentials).not.toContain("lin_secret_1");
-    expect(JSON.parse(decrypt(row!.encryptedCredentials, key))).toEqual({ accessToken: "lin_secret_1", version: 1 });
+    expect(JSON.parse(decrypt(row!.encryptedCredentials, key))).toEqual({
+      accessToken: "lin_secret_1",
+      version: 1,
+    });
 
     expect(await getIntegration(db, "linear")).toMatchObject({ id: saved.id, name: "Acme" });
     expect((await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials).toEqual({
@@ -73,7 +87,14 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
   it("allows at most one integration per provider in the database", async () => {
     await install("org-1", "Acme", "t1");
     await expect(
-      db.insert(integrations).values({ provider: "linear", externalId: "org-2", name: "Other", encryptedCredentials: "x" }),
+      db
+        .insert(integrations)
+        .values({
+          provider: "linear",
+          externalId: "org-2",
+          name: "Other",
+          encryptedCredentials: "x",
+        }),
     ).rejects.toThrow();
     expect((await db.select().from(integrations)).map((r) => r.externalId)).toEqual(["org-1"]);
   });
@@ -89,7 +110,9 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     expect(rows).toHaveLength(1);
     const stored = await getIntegrationWithCredentials<Creds>(db, "linear", key);
     // The row and its credentials belong to the same install.
-    expect({ "org-1": "t1", "org-2": "t2", "org-3": "t3" }[stored!.externalId]).toBe(stored!.credentials.accessToken);
+    expect({ "org-1": "t1", "org-2": "t2", "org-3": "t3" }[stored!.externalId]).toBe(
+      stored!.credentials.accessToken,
+    );
   });
 
   it("consumes an OAuth state once and sweeps expired ones", async () => {
@@ -104,9 +127,14 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     expect(rows.map((r) => r.nonceHash)).not.toContain("nonce-1");
 
     // After both expire they are swept.
-    expect(await consumeOAuthState(db, "nonce-3", new Date(later.getTime() + 60_000), new Date(later.getTime() + 1))).toBe(
-      true,
-    );
+    expect(
+      await consumeOAuthState(
+        db,
+        "nonce-3",
+        new Date(later.getTime() + 60_000),
+        new Date(later.getTime() + 1),
+      ),
+    ).toBe(true);
     expect(await db.select().from(oauthStateUses)).toHaveLength(1);
   });
 
@@ -115,10 +143,19 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     const again = await install("org-1", "Acme Inc", "t2");
     expect(again.id).toBe(first.id);
     expect(again.name).toBe("Acme Inc");
-    expect((await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials.accessToken).toBe("t2");
+    expect(
+      (await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials.accessToken,
+    ).toBe("t2");
 
     await expect(
-      db.insert(integrations).values({ provider: "linear", externalId: "org-1", name: "dup", encryptedCredentials: "x" }),
+      db
+        .insert(integrations)
+        .values({
+          provider: "linear",
+          externalId: "org-1",
+          name: "dup",
+          encryptedCredentials: "x",
+        }),
     ).rejects.toThrow();
   });
 
@@ -165,6 +202,13 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
       accessToken: "t4",
       version: 4,
     });
-    expect(await updateIntegrationCredentials<Creds>(db, "00000000-0000-0000-0000-000000000000", async () => null, key)).toBeNull();
+    expect(
+      await updateIntegrationCredentials<Creds>(
+        db,
+        "00000000-0000-0000-0000-000000000000",
+        async () => null,
+        key,
+      ),
+    ).toBeNull();
   });
 });

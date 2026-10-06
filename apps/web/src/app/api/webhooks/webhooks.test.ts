@@ -1,6 +1,7 @@
 import { createHmac, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   connectRepository,
+  closeDb,
   createDb,
   jobs,
   repositories,
@@ -211,7 +212,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
 
   afterAll(async () => {
     server.close();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

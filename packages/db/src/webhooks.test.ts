@@ -2,10 +2,14 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { sql } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb, type Database } from "./client.js";
+import { closeDb, createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import { webhookDeliveries } from "./schema.js";
-import { claimWebhookDelivery, pruneWebhookDeliveries, releaseWebhookDelivery } from "./webhooks.js";
+import {
+  claimWebhookDelivery,
+  pruneWebhookDeliveries,
+  releaseWebhookDelivery,
+} from "./webhooks.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -25,7 +29,7 @@ describe.skipIf(!dockerAvailable)("webhook delivery queries", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
@@ -61,7 +65,9 @@ describe.skipIf(!dockerAvailable)("webhook delivery queries", () => {
     expect(await claimWebhookDelivery(db, ref)).toBe(true);
     expect(await claimWebhookDelivery(db, ref)).toBe(false);
     // Same delivery ID from another provider is a different delivery.
-    expect(await claimWebhookDelivery(db, { provider: "github", deliveryId: "linear-1" })).toBe(true);
+    expect(await claimWebhookDelivery(db, { provider: "github", deliveryId: "linear-1" })).toBe(
+      true,
+    );
     await releaseWebhookDelivery(db, ref);
     expect(await claimWebhookDelivery(db, ref)).toBe(true);
   });

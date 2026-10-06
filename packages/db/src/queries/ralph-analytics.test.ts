@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, type Database } from "../client.js";
+import { closeDb, createDb, type Database } from "../client.js";
 import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
 import { jobs, ralphRuns, ralphStories } from "../schema.js";
@@ -157,7 +157,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

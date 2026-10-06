@@ -1,4 +1,4 @@
-import { createDb, rateLimits, runMigrations, type Database } from "@omniralph/db";
+import { closeDb, createDb, rateLimits, runMigrations, type Database } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -47,7 +47,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-rate-limits", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

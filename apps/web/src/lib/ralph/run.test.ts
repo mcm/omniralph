@@ -4,6 +4,7 @@ import {
   agents,
   completeJob,
   connectRepository,
+  closeDb,
   createDb,
   failJob,
   getJob,
@@ -141,7 +142,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
