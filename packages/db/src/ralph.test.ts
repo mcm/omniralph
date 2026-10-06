@@ -553,7 +553,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         handledReviewIds: [],
         ciFixRounds: 0,
         handledCiShas: [],
-        pendingRequests: [],
         stashes: [],
         cleanup: null,
       });
@@ -641,7 +640,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
           prNumber: 1,
           prUrl: "https://github.com/acme/a-web/pull/1",
           reviewRounds: 2,
-          pendingRequests: ["push"],
         }))!;
         const api = await ensureLane(db, {
           runId: run.id,
@@ -649,7 +647,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
           branch: "eng-1",
           baseBranch: "develop",
         });
-        await updateLane(db, api.id, { pendingRequests: ["fix CI"] });
         const message = await insertMessage(db, { runId: run.id, kind: "request", text: "hi" });
         await db
           .update(ralphMessages)
@@ -671,7 +668,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
           baseBranch: "develop",
           prNumber: null,
           reviewRounds: 0,
-          pendingRequests: ["push", "fix CI"],
         });
         expect((await getRun(db, run.id))?.repositoryId).toBe(repoA);
         expect((await getMainLane(db, (await getRun(db, run.id))!))?.id).toBe(api.id);

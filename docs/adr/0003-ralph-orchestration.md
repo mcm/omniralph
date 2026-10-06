@@ -52,6 +52,21 @@ published with its own `ralph.describe-pr` job, one at a time (a run has at most
 `ralph_lanes.publish` records each lane's progress (`describing`, `published`, `failed`), so a
 reply after a failure retries only the lanes that failed, and a new story in a lane clears it.
 
+### Requests and run modes
+
+A run has a mode (`ralph_runs.mode`): `epic` (a delegation, or `/ralph`) builds the epic story by
+story; `request` (an @mention) only does what it is asked. Requests are `ralph_messages` of kind
+`request` without a job, per lane (none: the main lane). They run as `ralph.request` jobs, one per
+lane with requests, main lane first, under the same one-job-per-run rule; `ralph_runs.request_job_id`
+points at the one whose outcome isn't applied yet, and `request_output` collects what they said
+until the run's next response. In epic mode a reply is guidance and a request: the next story job
+consumes it, and when no story runs (all done, or waiting on blockers) it runs as a request. The
+agent never calls the code host: a request session returns the PR/MR change it wants
+(`pullRequest`) and the control panel makes it. Its Claude session is resumed by the lane's next
+request only on the agent holding its files (`request_agent_id`), which the job's target agent
+decides. A `pre-push` hook in the agent's repository cache keeps a branch worktree to its own
+branch: a guardrail, not a boundary, since sessions bypass permissions.
+
 ### The sticky agent
 
 A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the

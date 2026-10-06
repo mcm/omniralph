@@ -6,18 +6,22 @@
  * 1a. While the run asks which repository to use, the answer to that
  *     (`repository-selection.ts`); an unmatched reply asks again.
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").
- * 3. `rerun preparation`: the earliest open manual story's preparation is asked about again.
- * 4. "start anyway": outside blockers are ignored from now on.
- * 5. Anything else, while a `ralph.story` job runs, is a message for its live
- *    session (`messages.ts`): nothing else happens until the agent delivers it
- *    or it turns out it can't. A push/PR/MR request never goes to a story
- *    agent: it becomes a pending request.
- * 6. Otherwise it is guidance: stored (the latest ten), the attempts of the
- *    unfinished stories reset (exhausted ones get another go) and a waiting
- *    PR/MR step retried.
+ * 3. `rerun preparation` (epic mode): the earliest open manual story's preparation is asked about again.
+ * 4. "start anyway" (epic mode): outside blockers are ignored from now on.
+ * 5. Anything else, while a `ralph.story` or `ralph.request` job runs, is a
+ *    message for its live session (`messages.ts`): nothing else happens until
+ *    the agent delivers it or it turns out it can't. A push/PR/MR request
+ *    never goes to a story agent: it becomes a pending request.
+ * 6. Otherwise (`requests.ts`, without `/ralph` and a leading `@name`): in
+ *    epic mode it is guidance (stored, the attempts of the unfinished stories
+ *    reset, a waiting PR/MR step retried) and a pending request, which runs
+ *    directly when no story takes it (the epic is done, or blocked); in
+ *    request mode (a mention) only a pending request. `/ralph` switches a
+ *    request-mode run to epic mode.
  *
  * Every reply but stop, "Not yet" and a message for a running job advances
- * the run; one that asks for work (3 to 6) resumes a stopped run.
+ * the run; one that asks for work (3 to 6) resumes a stopped run, and reopens
+ * a completed one (cyralph runs a reply on a finished session as a request).
  */
 import {
   getRunByIssue,
@@ -36,6 +40,7 @@ import {
   isStartAnywayRequest,
   isStopRequest,
   matchPreparationAnswer,
+  parseInstruction,
   PREPARATION_LATER,
   PREPARATION_MYSELF,
   type PreparationAnswer,
@@ -43,10 +48,12 @@ import {
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { mainBranch } from "./lanes";
-import { applyGuidance, queueLiveReply } from "./messages";
+import { loadEpic, runEpicOptions } from "./epic-loader";
+import { applyGuidance, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
+import { addInstruction } from "./requests";
 import {
   advanceRun,
   FINISHED_RUN_STATUSES,
@@ -90,7 +97,7 @@ export async function handleReply(
 
   const text = event.body.trim();
   if (!text) return null;
-  if (run.status === "completed" || run.status === "failed") {
+  if (run.status === "failed") {
     await postActivity(deps.linear, run.linearAgentSessionId, {
       type: "response",
       body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.linearIdentifier}** to me again to start a new run.`,
@@ -108,24 +115,29 @@ export async function handleReply(
   }
 
   const answer = matchPreparationAnswer(text);
+  const instruction = parseInstruction(text);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
-    if (current.status === "completed" || current.status === "failed") return null;
+    if (current.status === "failed") return null;
     const request = preparationOf(current).request;
     if (answer && request && !request.jobId && current.status !== "stopped") {
       return answerPreparation(tx, current, answer);
     }
-    const resumed = current.status === "stopped" ? await resume(tx, current) : current;
+    // A stopped run resumes; a finished one takes the reply as a direct request (cyralph).
+    const resumed =
+      current.status === "stopped" || current.status === "completed"
+        ? await resume(tx, current)
+        : current;
     if (!resumed) {
       return {
         kind: "guidance" as const,
         advance: false,
         note: {
           type: "response" as const,
-          body: `A newer run of **${current.linearIdentifier}** is under way, so this stopped run stays stopped. Reply in that run's session instead.`,
+          body: `A newer run of **${current.linearIdentifier}** is under way, so this ${current.status} run stays ${current.status}. Reply in that run's session instead.`,
         },
       };
     }
-    if (isRerunPreparationRequest(text)) {
+    if (resumed.mode === "epic" && isRerunPreparationRequest(text)) {
       const state = preparationOf(resumed);
       await updateRun(tx, resumed.id, { preparation: { ...state, rerun: true } });
       return {
@@ -142,7 +154,7 @@ export async function handleReply(
         },
       };
     }
-    if (isStartAnywayRequest(text)) {
+    if (resumed.mode === "epic" && isStartAnywayRequest(text)) {
       await updateRun(tx, resumed.id, { ignoreBlockers: true, waitingOn: null });
       return {
         kind: "start_anyway" as const,
@@ -153,27 +165,60 @@ export async function handleReply(
         },
       };
     }
-    const live = await queueLiveReply(tx, resumed, text, event.authorName);
-    if (live) return { kind: live.kind, advance: false, note: live.note };
-    await applyGuidance(tx, resumed, text);
+    // Running: a message for the live session (push/PR requests stay away from a story agent).
+    if (instruction.text && !instruction.wantsLoop) {
+      const live = await queueLiveReply(tx, resumed, instruction.text, event.authorName);
+      if (live) return { kind: live.kind, advance: false, note: live.note };
+    }
+    const added = await addInstruction(
+      tx,
+      resumed,
+      {
+        text: instruction.text,
+        author: event.authorName ?? null,
+        wantsLoop: instruction.wantsLoop,
+      },
+      applyGuidance,
+    );
+    const busy = (await listActiveRunJobIds(tx, resumed.id)).length > 0;
+    if (added.run.mode === "request") {
+      return {
+        kind: "request" as const,
+        advance: true,
+        switched: false,
+        note: {
+          type: "thought" as const,
+          body: busy ? undeliveredNote("request") : "On it.",
+        },
+      };
+    }
     return {
       kind: "guidance" as const,
       advance: true,
+      switched: added.switched,
       note: {
         type: "thought" as const,
-        body: await whenFree(
-          tx,
-          resumed,
-          "Got it. I'll apply this from the next story attempt",
-          "Got it. Applying this from the next story attempt.",
-        ),
+        body: busy
+          ? "Got it. I'll apply this from the next story attempt once the current job finishes."
+          : "Got it. Applying this from the next story attempt.",
       },
     };
   });
   if (!handled) return null;
   if (handled.note) await postActivity(deps.linear, run.linearAgentSessionId, handled.note);
+  // `/ralph` on a mention's run: the story loop needs the epic's stories as sub-issues.
+  if ("switched" in handled && handled.switched) await materializeStories(deps, run);
   if (!handled.advance) return { kind: handled.kind };
   return { kind: handled.kind, advanced: await advanceRun(run.id, deps) };
+}
+
+/** Creates a PRD's missing stories as sub-issues (a request-mode run switched to the epic loop). */
+async function materializeStories(deps: RalphDeps, run: RalphRun): Promise<void> {
+  if (run.kind === "single") return;
+  await quietly(`Creating the stories of ${run.linearIdentifier}`, async () => {
+    const options = await runEpicOptions(deps.db, run);
+    await loadEpic(deps.linear, run.linearIssueId, { ...options, completePrd: true });
+  });
 }
 
 /** `busy` (with a note that it waits for the job) while one of the run's jobs runs, else `free`. */
@@ -215,6 +260,7 @@ export async function stopRun(
       waitingOn: null,
       pendingElicitation: null,
       prJobId: null,
+      requestJobId: null,
       preparation: { ...state, request: null },
       error: null,
     });

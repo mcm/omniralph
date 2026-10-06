@@ -19,6 +19,7 @@ import {
   upsertStories,
   type Database,
   type RalphLane,
+  type RalphMessage,
   type RalphRun,
   type RalphPreparationRequest,
   type RalphRunStatus,
@@ -49,6 +50,7 @@ import {
   RALPH_CAPABILITY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
 } from "@omniralph/shared";
 import type { ScmAdapter } from "@omniralph/scm";
@@ -60,7 +62,12 @@ import { postActivity, quietly, tail } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
 import { awaitRepository } from "./repository-selection";
-import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
+import {
+  buildDescribePrPayload,
+  buildPreparePayload,
+  buildRequestPayload,
+  buildStoryPayload,
+} from "./payload";
 import { planFor } from "./plan";
 import {
   applyPreparationJob,
@@ -76,8 +83,18 @@ import {
   lanesToPublish,
   moveCompletedEpic,
   openEarlyPullRequest,
+  withPullRequestLinks,
   type PublishedLane,
 } from "./publish";
+import {
+  applyRequestJob,
+  consumeStoryRequests,
+  NOTHING_TO_DO,
+  pendingRequestLanes,
+  runLanes,
+  takeRequestOutput,
+  workingOnRequestsNote,
+} from "./requests";
 
 export interface RalphDeps {
   db: Database;
@@ -189,6 +206,8 @@ export type AdvanceResult =
   | { action: "describing"; run: RalphRun; jobId: string }
   /** An approved manual-story preparation runs as a `ralph.prepare` job. */
   | { action: "preparing"; run: RalphRun; jobId: string }
+  /** A lane's pending requests run as a `ralph.request` job. */
+  | { action: "requesting"; run: RalphRun; jobId: string }
   | { action: "waiting"; run: RalphRun; waitingOn: RalphWaitingOn }
   | { action: "completed"; run: RalphRun }
   | { action: "failed"; run: RalphRun };
@@ -213,7 +232,8 @@ export async function advanceRun(runId: string, deps: RalphDeps): Promise<Advanc
     const stories = await applyJobOutcomes({ ...deps, tx, run });
     const pullRequest = await applyPullRequestJob(deps, tx, run);
     const preparation = await applyPreparationJob(deps, tx, run);
-    return { busy: stories.busy || pullRequest.busy || preparation.busy };
+    const request = await applyRequestJob(deps, tx, run);
+    return { busy: stories.busy || pullRequest.busy || preparation.busy || request.busy };
   });
   if (!applied) return { action: "gone" };
   const result = await lockRun(deps.db, runId, (tx, run) => step(deps, tx, run));
@@ -251,6 +271,12 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
   const rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
+  // A mention: only its requests run (no story loop, no Linear state changes, no blockers).
+  if (run.mode === "request") {
+    const [next] = await pendingRequestLanes(tx, run);
+    if (next) return enqueueRequest(deps, tx, run, { epic, stories, ...next });
+    return finishRequests(deps, tx, run);
+  }
   // An approved preparation ("Run it") goes first: it was asked for while nothing else could run.
   const approved = await approvedPreparation(deps, tx, run, stories);
   run = approved.run;
@@ -278,6 +304,11 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
       if (row) return enqueueStory(deps, tx, run, { epic, stories, story: next, row });
     }
   }
+
+  // No story runs now (every story is done, or the run waits): requests (e.g. "push and open
+  // a PR", or a reply on a blocked epic) run directly, lane by lane (cyralph's `runAllRequests`).
+  const [requests] = await pendingRequestLanes(tx, run);
+  if (requests) return enqueueRequest(deps, tx, run, { epic, stories, ...requests });
 
   if (rootBlockers.length === 0 && allDone) {
     // The PR/MR step failed: a reply (which clears the error) retries it.
@@ -401,6 +432,8 @@ async function enqueueStory(
       deps.linear.setIssueState(row.linearIssueId, { type: "started" }),
     );
   }
+  // The story's prompt carries the thread's requests as guidance: they're handled.
+  await consumeStoryRequests(tx, run);
   const running = (await updateStory(tx, row.id, { status: "running", lastJobId: job.id })) ?? row;
   const updated =
     (await updateRun(tx, run.id, {
@@ -576,6 +609,75 @@ async function enqueuePreparation(
   return { action: "preparing", run: updated, jobId: job.id };
 }
 
+/**
+ * Runs a lane's pending requests (cyralph's `runRequests`): a `ralph.request`
+ * job in the lane's branch worktree, on the run's sticky agent. It resumes
+ * the lane's last request conversation only when it goes to the agent that
+ * holds it. Its outcome is applied by `applyRequestJob`. Request jobs don't
+ * count towards the iteration cap.
+ */
+async function enqueueRequest(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: Epic; stories: Story[]; lane: RalphLane; requests: RalphMessage[] },
+): Promise<AdvanceResult> {
+  const found = await usableRepository(deps, tx, run, input.lane);
+  if ("action" in found) return found;
+  const { lane, repository, connection } = found;
+  const targetAgentId = await stickyAgentId(deps.db, run.agentId);
+  const resume =
+    lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
+      ? lane.requestClaudeSessionId
+      : null;
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    capability: RALPH_CAPABILITY,
+    type: RALPH_REQUEST_JOB_TYPE,
+    payload: buildRequestPayload({
+      run,
+      lane,
+      repository,
+      connection,
+      epic: input.epic,
+      stories: input.stories,
+      requests: input.requests,
+      resumeSessionId: resume,
+    }),
+    repositoryId: repository.id,
+    ralphRunId: run.id,
+    dedupeKey: runDedupeKey(run.id),
+    targetAgentId,
+  });
+  if (!created) return { action: "busy", run };
+  const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;
+  const other = lane.repositoryId !== run.repositoryId ? repository.fullPath : null;
+  await postActivity(deps.linear, run.linearAgentSessionId, {
+    type: "thought",
+    body: workingOnRequestsNote(input.requests.length, other),
+  });
+  return { action: "requesting", run: updated, jobId: job.id };
+}
+
+/**
+ * A request-mode run whose requests are all done completes with what they
+ * said and its PR/MR links (cyralph's `runRequestOnly`); one that had none
+ * says there was nothing to do.
+ */
+async function finishRequests(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+): Promise<AdvanceResult> {
+  const output = await takeRequestOutput(tx, run);
+  const completed =
+    (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
+  await postActivity(deps.linear, run.linearAgentSessionId, {
+    type: "response",
+    body: output ? withPullRequestLinks(output, await runLanes(deps, tx, run)) : NOTHING_TO_DO,
+  });
+  return { action: "completed", run: completed };
+}
+
 /** Every story is done and there is nothing to open a PR/MR for: the run completes. */
 async function complete(
   deps: RalphDeps,
@@ -583,9 +685,18 @@ async function complete(
   run: RalphRun,
   input: { epic: Epic; stories: Story[]; rows: RalphStory[] },
 ): Promise<AdvanceResult> {
+  const output = await takeRequestOutput(tx, run);
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
   await publishPlan(deps.linear, run, input.rows);
+  if (output) {
+    await postActivity(deps.linear, run.linearAgentSessionId, {
+      type: "response",
+      body: withPullRequestLinks(output, await runLanes(deps, tx, run)),
+    });
+    await moveCompletedEpic(deps, run);
+    return { action: "completed", run: completed };
+  }
   const what =
     run.kind === "single"
       ? `**${input.epic.identifier}**`
@@ -650,6 +761,11 @@ async function wait(
   },
 ): Promise<AdvanceResult> {
   const { epic, stories, rows, rootBlockers, hitCap } = input;
+  // What requests did while the run waits (e.g. on blockers) is told before what it waits on.
+  const output = await takeRequestOutput(tx, run);
+  if (output) {
+    await postActivity(deps.linear, run.linearAgentSessionId, { type: "thought", body: output });
+  }
   const found = waitingOnFor({ stories, externalIssues: epic.externalIssues ?? {} });
   const titles = new Map(stories.map((s) => [s.issueId ?? s.key, s.title]));
   const blockers = [

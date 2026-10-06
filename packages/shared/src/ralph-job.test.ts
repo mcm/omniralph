@@ -11,6 +11,8 @@ import {
   RalphDescribePrResult,
   RalphPreparePayload,
   RalphPrepareResult,
+  RalphRequestPayload,
+  RalphRequestResult,
   RalphStoryPayload,
   RalphStoryResult,
 } from "./ralph-job.js";
@@ -71,7 +73,44 @@ describe("ralph capability", () => {
     for (const scope of CAPABILITY_JOB_SCOPES.ralph) {
       expect(JobTokenScope.safeParse(scope).success).toBe(true);
     }
-    expect(RALPH_JOB_TYPES).toEqual(["ralph.story", "ralph.describe-pr", "ralph.prepare"]);
+    expect(RALPH_JOB_TYPES).toEqual([
+      "ralph.story",
+      "ralph.describe-pr",
+      "ralph.prepare",
+      "ralph.request",
+    ]);
+  });
+
+  it("validates ralph.request payloads and results", () => {
+    const { storyId: _s, attempt: _a, story: _t, commitMessage: _c, ...base } = storyPayload;
+    const payload = RalphRequestPayload.parse({
+      ...base,
+      requests: [{ id: "8b0b4a2e-7a0b-4f5e-9c43-2f1a5d1f2e3c", text: "push this" }],
+    });
+    expect(payload).toMatchObject({
+      prUrl: null,
+      historyRewrite: "when-asked",
+      resumeSessionId: null,
+    });
+    expect(RalphRequestPayload.safeParse({ ...base, requests: [] }).success).toBe(false);
+    expect(
+      RalphRequestResult.parse({
+        summary: "Opened it.",
+        sessionId: "claude-1",
+        pullRequest: { action: "open", title: "Add it" },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        durationMs: 5,
+      }),
+    ).toMatchObject({ error: null, pullRequest: { action: "open", title: "Add it" } });
+    expect(
+      RalphRequestResult.safeParse({
+        summary: "x",
+        sessionId: null,
+        pullRequest: { action: "merge" },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        durationMs: 5,
+      }).success,
+    ).toBe(false);
   });
 });
 

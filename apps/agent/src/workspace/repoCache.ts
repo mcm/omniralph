@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
@@ -26,6 +26,30 @@ const SETUP_PENDING = "omniralph-setup-pending";
 /** Clones are made here and renamed into place, so a crash never leaves a half clone. */
 const TMP_DIR = ".tmp";
 const PROVIDERS = ["github", "gitlab"] as const;
+
+/**
+ * The `pre-push` hook of the cached repositories (shared by their
+ * worktrees): in a branch worktree, a push may only update that worktree's
+ * own branch. A guardrail against mistakes (a request session pushing the
+ * base branch), not a security boundary: sessions run with
+ * `bypassPermissions` and could remove it.
+ */
+export const PUSH_GUARD_HOOK = `#!/bin/sh
+# Installed by the Omniralph agent: a branch worktree only pushes its own branch.
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+here=$(git rev-parse --path-format=absolute --git-dir 2>/dev/null) || exit 0
+# The bare repository itself (e.g. an empty repository's first commit) isn't a branch worktree.
+[ "$common" = "$here" ] && exit 0
+branch=$(git symbolic-ref --quiet HEAD) || exit 0
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" != "$branch" ]; then
+    echo "omniralph: this worktree may only push \${branch#refs/heads/}, not \${remote_ref#refs/heads/}." >&2
+    status=1
+  fi
+done
+exit $status
+`;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -135,6 +159,15 @@ export class BranchDivergedError extends Error {
         `${behind} remote commit(s) not local); reconcile the branch on the remote or remove the agent's worktree`,
     );
   }
+}
+
+/** Writes `PUSH_GUARD_HOOK` as the repository's `pre-push` hook (unless it's there already). */
+async function installPushGuard(repoDir: string): Promise<void> {
+  const hook = path.join(repoDir, "hooks", "pre-push");
+  if ((await readFile(hook, "utf8").catch(() => null)) === PUSH_GUARD_HOOK) return;
+  await mkdir(path.dirname(hook), { recursive: true });
+  await writeFile(hook, PUSH_GUARD_HOOK);
+  await chmod(hook, 0o755);
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -417,6 +450,7 @@ export class RepoCache {
     await this.withRepoLock(repo, options.signal, async () => {
       // Fetch every branch first: a reused worktree compares itself with the remote.
       await this.syncLocked(repo, [], job);
+      await installPushGuard(repoDir);
       if (await this.isBranchWorktree(worktreePath, branch, job)) return;
       await this.createBranchWorktree(repoDir, worktreePath, options);
       created = true;

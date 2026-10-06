@@ -5,7 +5,14 @@
  * aren't listed: the agent finds the ones left for this run and story by their
  * label in the worktree.
  */
-import type { RalphLane, RalphRun, RalphStory, Repository, ScmConnection } from "@omniralph/db";
+import type {
+  RalphLane,
+  RalphMessage,
+  RalphRun,
+  RalphStory,
+  Repository,
+  ScmConnection,
+} from "@omniralph/db";
 import {
   dependencyLabel,
   initialProgress,
@@ -17,6 +24,7 @@ import {
   parseRalphSettings,
   RalphDescribePrPayload,
   RalphPreparePayload,
+  RalphRequestPayload,
   RalphStoryPayload,
   type RalphJobSettings,
   type RalphStoryListItem,
@@ -210,5 +218,52 @@ export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePay
     commands: story.preparation ?? [],
     commandsHash: approved.commandsHash,
     approvedHeadSha: approved.headSha,
+  });
+}
+
+export interface RequestPayloadInput {
+  run: RalphRun;
+  /** The lane the requests are for (its branch, base branch and PR/MR). */
+  lane: Pick<RalphLane, "branch" | "baseBranch" | "prUrl">;
+  repository: Repository;
+  connection: ScmConnection;
+  epic: Epic;
+  /** The epic's stories with the run's state applied. */
+  stories: readonly Story[];
+  /** The lane's pending requests (`ralph_messages`), oldest first. */
+  requests: readonly Pick<RalphMessage, "id" | "text">[];
+  /** The lane's last request conversation, when the job goes to the agent holding it. */
+  resumeSessionId: string | null;
+}
+
+/**
+ * The payload of a `ralph.request` job: a lane's pending requests with the
+ * epic as context (status, stories, PR/MR, progress log, quality gates) and
+ * the repository's `historyRewrite`.
+ */
+export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPayload {
+  const { run, lane, repository, connection, epic } = input;
+  const settings = parseRalphSettings(repository.ralphSettings);
+  return RalphRequestPayload.parse({
+    runId: run.id,
+    repositoryId: repository.id,
+    repository: jobRepository(repository, connection),
+    branch: lane.branch,
+    baseBranch: lane.baseBranch,
+    settings: jobSettings(repository),
+    epic: {
+      identifier: epic.identifier,
+      title: epic.title.slice(0, 1000),
+      kind: run.kind,
+      url: url(epic.url),
+      prd: run.kind === "single" ? "" : headOf(epic.description),
+    },
+    stories: storyList(epic, input.stories).slice(0, 500),
+    requests: input.requests.slice(0, 50).map((r) => ({ id: r.id, text: r.text.slice(0, 20_000) })),
+    prUrl: url(lane.prUrl ?? undefined),
+    progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
+    qualityGates: storyQualityGates(run.kind, epic, repository),
+    historyRewrite: settings.historyRewrite,
+    resumeSessionId: input.resumeSessionId,
   });
 }

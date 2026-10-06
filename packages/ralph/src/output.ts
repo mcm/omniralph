@@ -119,3 +119,49 @@ export function readPullRequestDescription(
   const body = parsed.data.body.trim();
   return title && body ? { title: title.slice(0, 200), body } : undefined;
 }
+
+/** The structured result a request session ends with (cyralph's `RequestResultSchema`). */
+export const RequestAgentOutput = z.object({
+  summary: z
+    .string()
+    .describe(
+      "Posted to the Linear thread: what you did, with links (e.g. the pull/merge request URL).",
+    ),
+  pullRequest: z
+    .object({
+      action: z
+        .enum(["open", "update", "ready"])
+        .describe(
+          "open: open the branch's pull/merge request as a draft. update: change the title/body of the open one. ready: mark it ready for review.",
+        ),
+      title: z.string().optional().describe("One line, at most ~70 characters (open, update)."),
+      body: z.string().optional().describe("The markdown description (open, update)."),
+    })
+    .optional()
+    .describe(
+      "A change to the branch's pull/merge request for the orchestrator to make; push the branch first.",
+    ),
+});
+export type RequestAgentOutput = z.infer<typeof RequestAgentOutput>;
+
+/** `outputFormat` schema of a request session. */
+export const REQUEST_OUTPUT_SCHEMA = jsonSchema(RequestAgentOutput);
+
+/** A request session's result (summary trimmed), or the problem with it. */
+export function readRequestResult(
+  structured: unknown,
+): { result: RequestAgentOutput } | { problem: string } {
+  const parsed = structured === undefined ? undefined : RequestAgentOutput.safeParse(structured);
+  if (!parsed?.success) return { problem: problemWith(parsed?.error) };
+  const { pullRequest } = parsed.data;
+  const title = pullRequest?.title?.replace(/\s+/g, " ").trim();
+  const body = pullRequest?.body?.trim();
+  return {
+    result: {
+      summary: parsed.data.summary.trim(),
+      ...(pullRequest && {
+        pullRequest: { action: pullRequest.action, ...(title && { title }), ...(body && { body }) },
+      }),
+    },
+  };
+}

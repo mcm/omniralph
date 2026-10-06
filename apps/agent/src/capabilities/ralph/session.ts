@@ -50,6 +50,13 @@ export interface SessionRequest {
    * it was too late.
    */
   onInjector?: (inject: MessageInjector | undefined) => void;
+  /**
+   * Keep the session's files on this host, so a later session can `resume`
+   * it (request sessions); off by default.
+   */
+  persistSession?: boolean;
+  /** A persisted session to continue (its conversation so far is kept). */
+  resume?: string;
 }
 
 /** Delivers a message into a live session; false when the session takes no more input. */
@@ -68,6 +75,8 @@ export interface SessionResult {
   error?: string;
   retryAfterMs?: number;
   usage: TokenUsage;
+  /** The Claude session's ID, once the session reported one. */
+  sessionId?: string;
 }
 
 /** Runs one Claude session and returns how it ended. */
@@ -107,7 +116,8 @@ export function sessionOptions(request: SessionRequest, abortController: AbortCo
     ...(request.additionalDirectories?.length
       ? { additionalDirectories: request.additionalDirectories }
       : {}),
-    persistSession: false,
+    persistSession: request.persistSession === true,
+    ...(request.resume && { resume: request.resume }),
     env: { ...request.env, CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-agent" },
   };
 }
@@ -180,169 +190,181 @@ export function createSessionRunner(
   query: SessionQueryFn = sdkQuery as SessionQueryFn,
 ): SessionRunner {
   return async (request) => {
-    const controller = new AbortController();
-    const onAbort = () => controller.abort(request.signal.reason);
-    const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
-    if (request.signal.aborted) return { stop: "aborted", output: "", usage };
-    request.signal.addEventListener("abort", onAbort, { once: true });
-
-    let idle = false;
-    let idleTimer: NodeJS.Timeout | undefined;
-    const idleTimeoutMs = request.idleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
-    const injectionIdleTimeoutMs = request.injectionIdleTimeoutMs ?? INJECTION_IDLE_TIMEOUT_MS;
-    const resetIdle = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        idle = true;
-        controller.abort(new Error("the session was idle"));
-      }, idleTimeoutMs);
-    };
-
-    // Streaming input: the session stays open until every message sent has been answered.
-    const input = new InputQueue();
-    const outstanding = new Set<string>();
-    const send = (text: string, priority?: "next") => {
-      const id = randomUUID();
-      outstanding.add(id);
-      input.push(userMessage(text, id, priority));
-    };
-    let injectionTimer: NodeJS.Timeout | undefined;
-    const finishInput = () => {
-      clearTimeout(injectionTimer);
-      if (input.closed) return;
-      input.close();
-      request.onInjector?.(undefined);
-    };
-    send(request.prompt);
-    request.onInjector?.((text) => {
-      if (input.closed) return false;
-      send(text, "next");
-      return true;
-    });
-    controller.signal.addEventListener("abort", finishInput, { once: true });
-
-    const texts: string[] = [];
-    const last = () => texts.at(-1) ?? "";
-    let rateLimited = false;
-    let retryAfterMs: number | undefined;
-    /** A turn's successful result while an injected message is still unanswered. */
-    let answered: SessionResult | undefined;
-    const stopped = (): SessionResult | undefined => {
-      if (request.signal.aborted) return { stop: "aborted", output: last(), usage };
-      if (idle) {
-        return {
-          stop: "idle",
-          output: last(),
-          error: `the session sent nothing for ${Math.round(idleTimeoutMs / 1000)}s`,
-          usage,
-        };
-      }
-      return undefined;
-    };
-
-    resetIdle();
-    try {
-      const messages = query({ prompt: input, options: sessionOptions(request, controller) });
-      for await (const message of messages) {
-        clearTimeout(injectionTimer);
-        resetIdle();
-        switch (message.type) {
-          case "assistant": {
-            if (message.parent_tool_use_id !== null) break;
-            if (message.error === "rate_limit") {
-              controller.abort();
-              return {
-                stop: "rate_limited",
-                output: last(),
-                error: "Claude rate limit reached",
-                retryAfterMs,
-                usage,
-              };
-            }
-            for (const block of message.message.content) {
-              if (block.type === "text" && block.text.trim()) {
-                texts.push(block.text);
-                request.onEvent?.({ type: "text", text: block.text });
-              } else if (block.type === "tool_use") {
-                request.onEvent?.({ type: "tool", name: block.name, input: block.input });
-              }
-            }
-            break;
-          }
-          case "rate_limit_event":
-            if (message.rate_limit_info.status === "rejected") {
-              rateLimited = true;
-              retryAfterMs = retryAfter(message.rate_limit_info.resetsAt);
-            }
-            break;
-          case "result": {
-            Object.assign(usage, resultUsage(message));
-            if (message.subtype === "success" && !message.is_error) {
-              const result: SessionResult = {
-                stop: "completed",
-                structured: message.structured_output,
-                output: message.result || last(),
-                usage,
-              };
-              // Which of our messages this turn answered; older producers don't say, so assume all.
-              const ids =
-                message.user_message_uuids ??
-                (message.user_message_uuid ? [message.user_message_uuid] : [...outstanding]);
-              for (const id of ids) outstanding.delete(id);
-              if (outstanding.size === 0) return result;
-              // An injected message starts another turn; until it does, only the injection timeout runs.
-              answered = result;
-              clearTimeout(idleTimer);
-              injectionTimer = setTimeout(finishInput, injectionIdleTimeoutMs);
-              break;
-            }
-            const detail =
-              message.subtype === "success"
-                ? message.result
-                : [message.subtype, ...message.errors].join(": ");
-            if (rateLimited || RATE_LIMIT_TEXT.test(detail)) {
-              return {
-                stop: "rate_limited",
-                output: last(),
-                error: `Claude rate limit: ${detail}`,
-                retryAfterMs,
-                usage,
-              };
-            }
-            return { stop: "error", output: last(), error: detail || "the session failed", usage };
-          }
-          default:
-            break;
-        }
-      }
-      return (
-        stopped() ??
-        answered ?? {
-          stop: "error",
-          output: last(),
-          error: "the session ended without a result",
-          usage,
-        }
-      );
-    } catch (error) {
-      const stop = stopped();
-      if (stop) return stop;
-      const text = error instanceof Error ? error.message : String(error);
-      if (rateLimited || RATE_LIMIT_TEXT.test(text)) {
-        return {
-          stop: "rate_limited",
-          output: last(),
-          error: `Claude rate limit: ${text}`,
-          retryAfterMs,
-          usage,
-        };
-      }
-      return { stop: "error", output: last(), error: text, usage };
-    } finally {
-      clearTimeout(idleTimer);
-      finishInput();
-      request.signal.removeEventListener("abort", onAbort);
-      controller.signal.removeEventListener("abort", finishInput);
-    }
+    const seen: { sessionId?: string } = {};
+    const result = await runQuery(query, request, seen);
+    return seen.sessionId ? { ...result, sessionId: seen.sessionId } : result;
   };
+}
+
+/** One session of `createSessionRunner`; the session ID it reports goes into `seen`. */
+async function runQuery(
+  query: SessionQueryFn,
+  request: SessionRequest,
+  seen: { sessionId?: string },
+): Promise<SessionResult> {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(request.signal.reason);
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  if (request.signal.aborted) return { stop: "aborted", output: "", usage };
+  request.signal.addEventListener("abort", onAbort, { once: true });
+
+  let idle = false;
+  let idleTimer: NodeJS.Timeout | undefined;
+  const idleTimeoutMs = request.idleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
+  const injectionIdleTimeoutMs = request.injectionIdleTimeoutMs ?? INJECTION_IDLE_TIMEOUT_MS;
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idle = true;
+      controller.abort(new Error("the session was idle"));
+    }, idleTimeoutMs);
+  };
+
+  // Streaming input: the session stays open until every message sent has been answered.
+  const input = new InputQueue();
+  const outstanding = new Set<string>();
+  const send = (text: string, priority?: "next") => {
+    const id = randomUUID();
+    outstanding.add(id);
+    input.push(userMessage(text, id, priority));
+  };
+  let injectionTimer: NodeJS.Timeout | undefined;
+  const finishInput = () => {
+    clearTimeout(injectionTimer);
+    if (input.closed) return;
+    input.close();
+    request.onInjector?.(undefined);
+  };
+  send(request.prompt);
+  request.onInjector?.((text) => {
+    if (input.closed) return false;
+    send(text, "next");
+    return true;
+  });
+  controller.signal.addEventListener("abort", finishInput, { once: true });
+
+  const texts: string[] = [];
+  const last = () => texts.at(-1) ?? "";
+  let rateLimited = false;
+  let retryAfterMs: number | undefined;
+  /** A turn's successful result while an injected message is still unanswered. */
+  let answered: SessionResult | undefined;
+  const stopped = (): SessionResult | undefined => {
+    if (request.signal.aborted) return { stop: "aborted", output: last(), usage };
+    if (idle) {
+      return {
+        stop: "idle",
+        output: last(),
+        error: `the session sent nothing for ${Math.round(idleTimeoutMs / 1000)}s`,
+        usage,
+      };
+    }
+    return undefined;
+  };
+
+  resetIdle();
+  try {
+    const messages = query({ prompt: input, options: sessionOptions(request, controller) });
+    for await (const message of messages) {
+      clearTimeout(injectionTimer);
+      resetIdle();
+      if ("session_id" in message && message.session_id) seen.sessionId = message.session_id;
+      switch (message.type) {
+        case "assistant": {
+          if (message.parent_tool_use_id !== null) break;
+          if (message.error === "rate_limit") {
+            controller.abort();
+            return {
+              stop: "rate_limited",
+              output: last(),
+              error: "Claude rate limit reached",
+              retryAfterMs,
+              usage,
+            };
+          }
+          for (const block of message.message.content) {
+            if (block.type === "text" && block.text.trim()) {
+              texts.push(block.text);
+              request.onEvent?.({ type: "text", text: block.text });
+            } else if (block.type === "tool_use") {
+              request.onEvent?.({ type: "tool", name: block.name, input: block.input });
+            }
+          }
+          break;
+        }
+        case "rate_limit_event":
+          if (message.rate_limit_info.status === "rejected") {
+            rateLimited = true;
+            retryAfterMs = retryAfter(message.rate_limit_info.resetsAt);
+          }
+          break;
+        case "result": {
+          Object.assign(usage, resultUsage(message));
+          if (message.subtype === "success" && !message.is_error) {
+            const result: SessionResult = {
+              stop: "completed",
+              structured: message.structured_output,
+              output: message.result || last(),
+              usage,
+            };
+            // Which of our messages this turn answered; older producers don't say, so assume all.
+            const ids =
+              message.user_message_uuids ??
+              (message.user_message_uuid ? [message.user_message_uuid] : [...outstanding]);
+            for (const id of ids) outstanding.delete(id);
+            if (outstanding.size === 0) return result;
+            // An injected message starts another turn; until it does, only the injection timeout runs.
+            answered = result;
+            clearTimeout(idleTimer);
+            injectionTimer = setTimeout(finishInput, injectionIdleTimeoutMs);
+            break;
+          }
+          const detail =
+            message.subtype === "success"
+              ? message.result
+              : [message.subtype, ...message.errors].join(": ");
+          if (rateLimited || RATE_LIMIT_TEXT.test(detail)) {
+            return {
+              stop: "rate_limited",
+              output: last(),
+              error: `Claude rate limit: ${detail}`,
+              retryAfterMs,
+              usage,
+            };
+          }
+          return { stop: "error", output: last(), error: detail || "the session failed", usage };
+        }
+        default:
+          break;
+      }
+    }
+    return (
+      stopped() ??
+      answered ?? {
+        stop: "error",
+        output: last(),
+        error: "the session ended without a result",
+        usage,
+      }
+    );
+  } catch (error) {
+    const stop = stopped();
+    if (stop) return stop;
+    const text = error instanceof Error ? error.message : String(error);
+    if (rateLimited || RATE_LIMIT_TEXT.test(text)) {
+      return {
+        stop: "rate_limited",
+        output: last(),
+        error: `Claude rate limit: ${text}`,
+        retryAfterMs,
+        usage,
+      };
+    }
+    return { stop: "error", output: last(), error: text, usage };
+  } finally {
+    clearTimeout(idleTimer);
+    finishInput();
+    request.signal.removeEventListener("abort", onAbort);
+    controller.signal.removeEventListener("abort", finishInput);
+  }
 }
