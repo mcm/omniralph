@@ -91,9 +91,9 @@ which needs no variable either.
 
 ## Agent host (`omniralph-agent`)
 
-Set these in the agent's environment (the systemd unit or the tmux shell), never on Vercel. The
-agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its config file, and
-everything else comes from the control panel. See [deploy-agent.md](deploy-agent.md).
+Set these in the agent's environment (the systemd unit, or the shell that starts tmux or pm2), never
+on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
+config file, and everything else comes from the control panel. See [deploy-agent.md](deploy-agent.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |

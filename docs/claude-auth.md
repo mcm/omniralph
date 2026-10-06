@@ -24,9 +24,10 @@ Log in again as the agent's user; no restart is needed.
 
 ## Env-var overrides
 
-Set one of these in the agent's environment (the systemd unit's `EnvironmentFile`, or the tmux
-shell) to override the login. A set but invalid value **wins over** a working login, so remove
-stale ones.
+Set one of these in the agent's environment (the systemd unit's `EnvironmentFile`, or the shell
+you start tmux or pm2 from) to override the login. pm2 only picks up a change with
+`pm2 restart omniralph-agent --update-env`. A set but invalid value **wins over** a working login,
+so remove stale ones.
 
 | Variable | What it is |
 | -- | -- |

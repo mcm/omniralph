@@ -174,6 +174,36 @@ tmux doesn't restart the agent when it exits, and doesn't start it after a reboo
 restart: put the first command in the Coder template's startup script. Stop it with `Ctrl-c` in the
 session (SIGINT is handled like SIGTERM).
 
+### pm2 (no systemd)
+
+pm2 restarts the agent when it exits and keeps its logs. Install it as the agent's user
+(`npm install -g pm2`), enroll first (`start` exits at once without `agent.json`), then:
+
+```sh
+sudo -iu omniralph
+pm2 start "$(command -v omniralph-agent)" --name omniralph-agent \
+  --kill-timeout 90000 --restart-delay 30000 --max-restarts 5 \
+  -- start --healthz-port 9310
+pm2 save                                   # remember it for `pm2 resurrect`
+pm2 logs omniralph-agent                   # pino JSON logs
+curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…}
+```
+
+- `--kill-timeout 90000`: pm2 sends SIGINT (handled like SIGTERM) and by default kills the process
+  after 1.6s. The agent gives running jobs up to 60s, so allow 90s.
+- `--restart-delay 30000`: wait 30s between restarts, so a crashing agent doesn't hammer the
+  control panel.
+- `--max-restarts 5`: pm2 only counts restarts within `min_uptime` (default 1s; the CLI has no flag
+  for it). A "re-enrollment required" exit can take longer than that, so pm2 may keep restarting
+  the agent every 30s. That's harmless, but stop it (`pm2 stop omniralph-agent`) before enrolling
+  again.
+- After a reboot or workspace restart, run `pm2 resurrect`: put it in the Coder template's startup
+  script. On hosts with systemd, `pm2 startup` can do this instead.
+- pm2 captures the environment when the process is first started. After changing
+  `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
+  `pm2 restart omniralph-agent --update-env`.
+- To upgrade: `npm install -g @iamthemcmaster/omniralph-agent@latest && pm2 restart omniralph-agent`.
+
 ## Central config
 
 Everything except the four local settings is configured centrally and delivered in every heartbeat
@@ -237,7 +267,8 @@ again` when the control panel rejects its refresh token:
 
 What to do:
 
-1. Stop the agent (`sudo systemctl stop omniralph-agent`) so systemd stops restarting it.
+1. Stop the agent (`sudo systemctl stop omniralph-agent`, or `pm2 stop omniralph-agent`) so it
+   stops being restarted.
 2. For `refresh_reuse`, find out why before re-enrolling: check the agent's audit log (the IP the
    reused token came from), whether another host or process uses a copy of `agent.json`, and
    delete any copies. If you can't explain it, treat the host as compromised: rotate the Claude
