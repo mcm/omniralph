@@ -3,6 +3,7 @@ import {
   agents,
   completeJob,
   connectRepository,
+  closeDb,
   createDb,
   getJob,
   getLane,
@@ -122,7 +123,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

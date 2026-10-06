@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   connectRepository,
+  closeDb,
   createDb,
   createReview,
   findings,
@@ -189,7 +190,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
   });
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

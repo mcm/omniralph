@@ -3,6 +3,7 @@ import {
   agents,
   completeJob,
   connectRepository,
+  closeDb,
   createDb,
   createReview,
   findings,
@@ -116,7 +117,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

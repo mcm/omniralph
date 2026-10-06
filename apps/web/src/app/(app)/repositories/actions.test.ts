@@ -3,6 +3,7 @@ import {
   agentRepoPins,
   agents,
   connectionCredentials,
+  closeDb,
   createDb,
   repositories,
   reviews,
@@ -126,7 +127,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
   afterAll(async () => {
     server.close();
-    await state.db?.$client.end();
+    if (state.db) await closeDb(state.db);
     await container?.stop();
   });
 
@@ -221,16 +222,14 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     const [repo] = await state.db.select().from(repositories);
     const [agent] = await state.db.insert(agents).values({ name: "coder-1" }).returning();
     await state.db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo!.id });
-    await state.db
-      .insert(reviews)
-      .values({
-        repositoryId: repo!.id,
-        prNumber: 3,
-        headSha: "h",
-        baseSha: "b",
-        trigger: "webhook",
-        budget: 1,
-      });
+    await state.db.insert(reviews).values({
+      repositoryId: repo!.id,
+      prNumber: 3,
+      headSha: "h",
+      baseSha: "b",
+      trigger: "webhook",
+      budget: 1,
+    });
 
     expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
     expect(deletedHooks).toEqual([`101/${repo!.webhookId}`]);

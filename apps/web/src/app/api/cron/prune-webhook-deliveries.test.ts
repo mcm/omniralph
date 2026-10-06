@@ -1,4 +1,4 @@
-import { createDb, runMigrations, webhookDeliveries, type Database } from "@omniralph/db";
+import { closeDb, createDb, runMigrations, webhookDeliveries, type Database } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-webhook-deliveries", () =
   }, 120_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

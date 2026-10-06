@@ -2,6 +2,7 @@ import { generateKeyPairSync, randomUUID } from "node:crypto";
 import {
   agentRepoPins,
   agents,
+  closeDb,
   createDb,
   createReview,
   feedback,
@@ -155,7 +156,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
   afterAll(async () => {
     server.close();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

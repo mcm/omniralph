@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  closeDb,
   createDb,
   integrations,
   runMigrations,
@@ -93,7 +94,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await state.db?.$client.end();
+    if (state.db) await closeDb(state.db);
     await container?.stop();
   });
 

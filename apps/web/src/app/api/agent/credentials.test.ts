@@ -3,6 +3,7 @@ import {
   agentRepoPins,
   agents,
   connectRepository,
+  closeDb,
   createDb,
   jobs,
   listAgentAudit,
@@ -174,7 +175,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
   afterAll(async () => {
     server.close();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

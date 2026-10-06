@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import {
   agents,
   connectRepository,
+  closeDb,
   createDb,
   findings,
   jobs,
@@ -248,7 +249,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
 
   afterAll(async () => {
     server.close();
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
     rmSync(repo.dir, { recursive: true, force: true });
   });

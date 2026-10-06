@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   agents,
   connectRepository,
+  closeDb,
   createDb,
   createReview,
   createRun,
@@ -191,7 +192,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
   });
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

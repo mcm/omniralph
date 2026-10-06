@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   connectRepository,
+  closeDb,
   createDb,
   createReview,
   feedback,
@@ -128,7 +129,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
   });
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

@@ -2,6 +2,7 @@ import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   agents,
   connectRepository,
+  closeDb,
   createDb,
   createRun,
   jobs,
@@ -94,7 +95,7 @@ describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachm
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   agents,
   connectRepository,
+  closeDb,
   createDb,
   createRun,
   ensureLane,
@@ -175,7 +176,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   connectRepository,
+  closeDb,
   createDb,
   getMainLane,
   getRun,
@@ -178,7 +179,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
   }, 180_000);
 
   afterAll(async () => {
-    await db?.$client.end();
+    if (db) await closeDb(db);
     await container?.stop();
   });
 
