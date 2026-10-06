@@ -5,7 +5,8 @@ describe("parsePage", () => {
   it("accepts positive integers and falls back to page 1", () => {
     expect(parsePage("3")).toBe(3);
     expect(parsePage(["2", "5"])).toBe(2);
-    for (const bad of [undefined, "", "0", "-1", "1.5", "abc"]) expect(parsePage(bad)).toBe(1);
+    for (const bad of [undefined, "", "0", "-1", "1.5", "abc", "1e30", "99999999999999999999"])
+      expect(parsePage(bad)).toBe(1);
   });
 });
 
