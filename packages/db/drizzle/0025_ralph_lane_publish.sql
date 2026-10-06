@@ -1,0 +1,1 @@
+ALTER TABLE "ralph_lanes" ADD COLUMN "publish" jsonb;

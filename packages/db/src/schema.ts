@@ -823,6 +823,17 @@ export interface RalphLaneCleanup {
 }
 
 /**
+ * Where a lane is in the run's finish (cyralph's `publishLane`): its
+ * `ralph.describe-pr` job is writing the PR/MR, the PR/MR was opened or
+ * updated, or that failed (collected into the run's error once every lane is
+ * through). Null: not published since its last story.
+ */
+export type RalphLanePublish =
+  | { status: "describing"; jobId: string }
+  | { status: "published"; /** Opened now, rather than an open one updated. */ created: boolean }
+  | { status: "failed"; problem: string };
+
+/**
  * One repository a run works in (cyralph's `RepoLane`): its branch, PR/MR and
  * follow-up state. The lane of the run's `repository_id` is its main lane;
  * stories routed to other repositories get a lane each. All lanes of a run use
@@ -866,6 +877,7 @@ export const ralphLanes = pgTable(
     }),
     stashes: jsonb("stashes").$type<RalphStash[]>().notNull().default([]),
     cleanup: jsonb("cleanup").$type<RalphLaneCleanup>(),
+    publish: jsonb("publish").$type<RalphLanePublish>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

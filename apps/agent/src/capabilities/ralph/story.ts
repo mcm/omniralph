@@ -76,6 +76,10 @@ export function stashPrefix(payload: Pick<RalphStoryPayload, "runId" | "story">)
 /** The epic and story `buildStoryPrompt` expects, from the job's payload. */
 export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Story } {
   const body = parseStoryBody(payload.story.description);
+  // A story worked in another repository than the epic's main one (its lane's).
+  const repo = (name: string | null | undefined) =>
+    name ? { repo: { id: "", name, routedBy: "" } } : {};
+  const listed = payload.stories.find((s) => s.identifier === payload.story.identifier);
   const story: Story = {
     key: payload.story.identifier,
     storyId: payload.story.identifier,
@@ -86,9 +90,9 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     description: body.description,
     acceptanceCriteria: body.acceptanceCriteria,
     priority: 0,
-    dependsOn:
-      payload.stories.find((s) => s.identifier === payload.story.identifier)?.dependsOn ?? [],
+    dependsOn: listed?.dependsOn ?? [],
     status: "in_progress",
+    ...repo(listed?.repository),
   };
   const stories: Story[] = payload.stories.map((s) =>
     s.identifier === story.key
@@ -104,6 +108,7 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
           dependsOn: s.dependsOn,
           status: s.status,
           ...(s.manual && { manual: true }),
+          ...repo(s.repository),
         },
   );
   if (!stories.includes(story)) stories.push(story);

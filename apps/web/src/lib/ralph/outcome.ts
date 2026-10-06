@@ -6,6 +6,7 @@
  */
 import {
   getJob,
+  getRepository,
   listStories,
   updateRun,
   updateStory,
@@ -159,8 +160,15 @@ async function applyStoryResult(
     await quietly(`Completing ${story.identifier} in Linear`, () =>
       linear.setIssueState(story.linearIssueId, { type: "completed" }),
     );
+    const lane = await storyLane(tx, run, story);
+    // A story of another lane says which repository it was done in.
+    const repository =
+      lane && lane.repositoryId !== run.repositoryId
+        ? await getRepository(ctx.db, lane.repositoryId)
+        : null;
+    const where = repository ? ` in \`${repository.fullPath}\`` : "";
     const note = [
-      `✅ Completed by Omniralph${sha ? ` in \`${sha.slice(0, 10)}\`` : ""} on \`${(await storyLane(tx, run, story))?.branch ?? ""}\`.`,
+      `✅ Completed by Omniralph${sha ? ` in \`${sha.slice(0, 10)}\`` : ""} on \`${lane?.branch ?? ""}\`${where}.`,
       "",
       tail(result.summary.trim() || "Done.", 4000),
     ].join("\n");

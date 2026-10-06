@@ -717,6 +717,8 @@ export async function copyLanes(
       lanes.map(({ id: _id, runId: _runId, createdAt: _c, updatedAt: _u, ...lane }) => ({
         ...lane,
         runId: toRunId,
+        // The new run publishes its lanes itself.
+        publish: null,
       })),
     )
     .onConflictDoNothing()
