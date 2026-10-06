@@ -4,6 +4,10 @@ import {
   LEARN_RULE_CAPABILITY,
   LEARN_RULE_JOB_TYPE,
   LearnRuleJobPayload,
+  RALPH_CAPABILITY,
+  RALPH_STORY_JOB_TYPE,
+  RalphStoryPayload,
+  RalphStoryResult,
   REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   REVIEW_REPLY_CAPABILITY,
@@ -22,6 +26,7 @@ import {
   onReviewJobStarted,
   parseReviewResult,
 } from "@/lib/review/jobs";
+import { onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
 import { onLearnRuleJobCompleted, parseLearnRuleResult } from "@/lib/rules/learn";
 
 /**
@@ -99,4 +104,14 @@ registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
   isValidResult: (result) => parseReplyResult(result) !== null,
   onCompleted: onReplyJobCompleted,
   onFailed: (db, job) => onReplyJobFailed(db, job),
+});
+
+registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
+  capability: RALPH_CAPABILITY,
+  payload: RalphStoryPayload,
+  onStarted: onRalphJobStarted,
+  isValidResult: (result) => RalphStoryResult.safeParse(result).success,
+  onCompleted: (db, job) => onRalphJobFinished(db, job),
+  onFailed: (db, job) => onRalphJobFinished(db, job),
+  onCanceled: (db, job) => onRalphJobFinished(db, job),
 });

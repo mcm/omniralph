@@ -14,6 +14,8 @@ import {
   getRunByIssue,
   getRunBySession,
   listActiveRunJobIds,
+  listRunsAffectedByIssue,
+  listRunsToReconcile,
   listRalphRepositories,
   listRuns,
   listStories,
@@ -315,6 +317,50 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await job("completed");
     await insertJob(db, { capability: "ralph", type: "ralph.story" });
     expect(await listActiveRunJobIds(db, run.id)).toEqual([queued, running]);
+  });
+
+  it("finds the unfinished runs an issue change may move", async () => {
+    const ref = (id: string) => ({ id, identifier: id, title: id });
+    const { run: waiting } = await createRun(db, runInput());
+    await updateRun(db, waiting.id, {
+      status: "waiting",
+      waitingOn: { blockers: [ref("ext-1")], manual: [ref("manual-1")] },
+    });
+    const { run: running } = await createRun(db, runInput());
+    await updateRun(db, running.id, {
+      status: "running",
+      waitingOn: { blockers: [ref("ext-1")], manual: [] },
+    });
+    await upsertStories(db, running.id, [
+      { linearIssueId: "story-1", identifier: "S-1", title: "s" },
+    ]);
+    const { run: done } = await createRun(db, runInput());
+    await upsertStories(db, done.id, [{ linearIssueId: "story-1", identifier: "S-1", title: "s" }]);
+    await updateRun(db, done.id, { status: "completed" });
+
+    const ids = async (issue: string) =>
+      (await listRunsAffectedByIssue(db, issue)).map((r) => r.id);
+    expect(await ids("ext-1")).toEqual([waiting.id]);
+    expect(await ids("manual-1")).toEqual([waiting.id]);
+    expect(await ids("story-1")).toEqual([running.id]);
+    expect(await ids("other")).toEqual([]);
+  });
+
+  it("lists waiting runs and stale runs without an active job to reconcile", async () => {
+    const { run: waiting } = await createRun(db, runInput());
+    await updateRun(db, waiting.id, { status: "waiting" });
+    const { run: stale } = await createRun(db, runInput());
+    await updateRun(db, stale.id, { status: "running" });
+    const { run: busy } = await createRun(db, runInput());
+    await updateRun(db, busy.id, { status: "running" });
+    await insertJob(db, { capability: "ralph", type: "ralph.story", ralphRunId: busy.id });
+    const { run: finished } = await createRun(db, runInput());
+    await updateRun(db, finished.id, { status: "failed" });
+
+    const later = new Date(Date.now() + 60_000);
+    const ids = (runs: { id: string }[]) => runs.map((r) => r.id).sort();
+    expect(ids(await listRunsToReconcile(db, later))).toEqual([waiting.id, stale.id].sort());
+    expect(ids(await listRunsToReconcile(db, new Date(0)))).toEqual([waiting.id]);
   });
 
   it("lockRun serializes changes to a run", async () => {

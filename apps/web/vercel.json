@@ -4,6 +4,7 @@
   "crons": [
     { "path": "/api/cron/expire-jobs", "schedule": "0 * * * *" },
     { "path": "/api/cron/prune-rate-limits", "schedule": "30 * * * *" },
-    { "path": "/api/cron/prune-webhook-deliveries", "schedule": "15 3 * * *" }
+    { "path": "/api/cron/prune-webhook-deliveries", "schedule": "15 3 * * *" },
+    { "path": "/api/cron/ralph-reconcile", "schedule": "*/10 * * * *" }
   ]
 }

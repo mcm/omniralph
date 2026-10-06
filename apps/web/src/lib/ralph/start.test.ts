@@ -25,6 +25,8 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
+import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { acknowledgeLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { handleLinearWebhook } from "@/lib/linear/ingest";
@@ -89,7 +91,12 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     },
   } as unknown as ScmAdapter;
 
-  const deps = (): StartRunDeps => ({ db, linear, adapterFor: () => fakeAdapter });
+  const deps = (): StartRunDeps => ({
+    db,
+    linear,
+    dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+    adapterFor: () => fakeAdapter,
+  });
 
   const routing = (
     overrides: Partial<RepositoryRalphSettingsUpdate> = {},
@@ -193,13 +200,14 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       repositoryId: repoId,
       branch: "feat/prio",
       baseBranch: "develop",
-      status: "pending",
+      // The first story was enqueued right away.
+      status: "running",
     });
     expect(defaultBranchCalls).toEqual(["acme/api"]);
     expect(
       (await listStories(db, run!.id)).map((s) => [s.identifier, s.title, s.status, s.position]),
     ).toEqual([
-      ["ENG-2", "Store", "pending", 0],
+      ["ENG-2", "Store", "running", 0],
       ["ENG-3", "Access", "manual", 1],
       ["ENG-4", "Show", "completed", 2],
     ]);
@@ -209,7 +217,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(thought).toContain("`acme/api` (routed by team `ENG`) on branch `feat/prio`");
     expect(thought).toContain("Manual steps for a person: **ENG-3**");
     expect(linear.plan(event.sessionId)).toEqual([
-      { content: "ENG-2: Store", status: "pending" },
+      { content: "ENG-2: Store", status: "inProgress" },
       { content: "ENG-3: Access (manual)", status: "pending" },
       { content: "ENG-4: Show", status: "completed" },
     ]);
@@ -241,14 +249,18 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const run = await getRunBySession(db, event.sessionId);
     expect(run).toMatchObject({ kind: "prd", branch: "feat/priorities", baseBranch: "develop" });
     expect((await listStories(db, run!.id)).map((s) => [s.title, s.status])).toEqual([
-      ["Store priority", "pending"],
+      ["Store priority", "running"],
       ["Grant database access", "manual"],
       ["Show priority", "pending"],
     ]);
     expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
       "Created 3 story sub-issues from the PRD",
     );
-    expect(linear.plan(event.sessionId)).toHaveLength(3);
+    expect(linear.plan(event.sessionId)?.map((step) => step.status)).toEqual([
+      "inProgress",
+      "pending",
+      "pending",
+    ]);
   });
 
   it("treats a plain issue as a single story", async () => {
@@ -263,10 +275,10 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     });
     expect(
       (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
-    ).toEqual([[issue.id, "ENG-20", "pending"]]);
+    ).toEqual([[issue.id, "ENG-20", "running"]]);
     expect(linear.issues.get(issue.id)?.stateType).toBe("started");
     expect(linear.plan(event.sessionId)).toEqual([
-      { content: "ENG-20: Fix the login bug", status: "pending" },
+      { content: "ENG-20: Fix the login bug", status: "inProgress" },
     ]);
   });
 
@@ -350,7 +362,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       prUrl: "https://github.com/acme/api/pull/7",
       guidance: [{ text: "Use tabs", at: "2026-10-01T00:00:00.000Z" }],
       progress: "## Story ENG-61\nlearned things",
-      status: "pending",
+      status: "running",
     });
     expect(run!.id).not.toBe(previous.id);
     expect(linear.bodies(second.sessionId, "thought")[0]).toContain(
@@ -375,7 +387,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(linear.bodies(focused.sessionId, "response")[0]).toContain(
       "already being built in another session",
     );
-    expect((await getRun(db, previous.id))?.status).toBe("pending");
+    expect((await getRun(db, previous.id))?.status).toBe("running");
 
     const again = created(epic.id);
     await startRun(again, deps());
@@ -388,7 +400,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(linear.bodies(first.sessionId, "response")[0]).toContain("delegated to me again");
     expect(await getRunBySession(db, again.sessionId)).toMatchObject({
       branch: previous.branch,
-      status: "pending",
+      status: "running",
     });
   });
 
@@ -399,46 +411,58 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const again = await startRun(event, deps());
     expect(again).toMatchObject({ status: "started", created: false });
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
-    expect(linear.bodies(event.sessionId, "thought")).toHaveLength(1);
+    // The run's description and its first story; nothing new for the repeat.
+    expect(linear.bodies(event.sessionId, "thought")).toHaveLength(2);
+    expect(await db.select().from(jobs)).toHaveLength(1);
   });
 
   describe("advanceRun", () => {
     it("is idempotent, syncs stories from Linear and re-posts the plan on changes", async () => {
       const epic = linear.add({ identifier: "ENG-90", title: "Epic" });
-      const one = linear.add({ identifier: "ENG-91", title: "One", parentId: epic.id });
+      const one = linear.add({
+        identifier: "ENG-91",
+        title: "One",
+        parentId: epic.id,
+        labels: ["manual"],
+      });
       const event = created(epic.id);
       await startRun(event, deps());
       const run = (await getRunBySession(db, event.sessionId))!;
       const plans = () => linear.plans.get(event.sessionId) ?? [];
       const posted = plans().length;
+      const elicitations = linear.bodies(event.sessionId, "elicitation").length;
 
+      // Waiting on the manual story: nothing changes, nothing is asked again.
       const first = await advanceRun(run.id, deps());
       const second = await advanceRun(run.id, deps());
-      expect(first.action).toBe("planned");
-      expect(second).toMatchObject({ action: "planned" });
+      expect(first.action).toBe("waiting");
+      expect(second).toMatchObject({ action: "waiting" });
       expect(await listStories(db, run.id)).toHaveLength(1);
       expect(plans().slice(posted)).toEqual([
-        [{ content: "ENG-91: One", status: "pending" }],
-        [{ content: "ENG-91: One", status: "pending" }],
+        [{ content: "ENG-91: One (manual)", status: "pending" }],
+        [{ content: "ENG-91: One (manual)", status: "pending" }],
       ]);
+      expect(linear.bodies(event.sessionId, "elicitation")).toHaveLength(elicitations);
 
-      // A story added and one canceled in Linear.
+      // A story added and one canceled in Linear: the new one runs.
       linear.add({ identifier: "ENG-92", title: "Two", parentId: epic.id });
       await linear.setIssueState(one.id, { type: "canceled" });
-      await advanceRun(run.id, deps());
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "enqueued" });
       expect(linear.plan(event.sessionId)).toEqual([
         { content: "ENG-91: One", status: "canceled" },
-        { content: "ENG-92: Two", status: "pending" },
+        { content: "ENG-92: Two", status: "inProgress" },
       ]);
+      // A job is queued: nothing else happens until its outcome.
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "busy" });
 
       // A status change by the orchestrator updates the plan.
       await lockRun(db, run.id, async (tx, locked) => {
         const [, two] = await listStories(tx, run.id);
-        await updateStoryAndPlan(linear, tx, locked, two!, { status: "running" });
+        await updateStoryAndPlan(linear, tx, locked, two!, { status: "pending" });
       });
       expect(linear.plan(event.sessionId)?.[1]).toEqual({
         content: "ENG-92: Two",
-        status: "inProgress",
+        status: "pending",
       });
 
       await updateRun(db, run.id, { status: "stopped" });
@@ -538,9 +562,9 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       for (const task of deferred.splice(0)) await task();
 
       expect(await db.select().from(ralphRuns)).toHaveLength(1);
-      expect(linear.bodies("session-hook", "thought")).toHaveLength(2);
+      expect(linear.bodies("session-hook", "thought")).toHaveLength(3);
       expect(linear.plan("session-hook")).toEqual([
-        { content: "ENG-100: Hooked", status: "pending" },
+        { content: "ENG-100: Hooked", status: "inProgress" },
       ]);
     });
   });

@@ -4,7 +4,21 @@
  * control panel's orchestrator owns this state: every state change goes through
  * `lockRun`, because Linear webhooks and job outcomes race.
  */
-import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { Repository, ScmProvider } from "./repositories.js";
 import {
@@ -155,7 +169,7 @@ export async function getRunByIssue(
 }
 
 /**
- * Runs `fn` in a transaction holding the run's row lock (`SELECT … FOR UPDATE`),
+ * Runs `fn` in a transaction holding the run's row lock (`SELECT … FOR NO KEY UPDATE`),
  * so concurrent webhooks and job outcomes change a run one at a time. `fn`
  * gets the transaction (pass it to the queries here) and the locked run; its
  * result is returned. Returns null without calling `fn` if the run is gone.
@@ -166,7 +180,14 @@ export async function lockRun<T>(
   fn: (tx: RalphTransaction, run: RalphRun) => Promise<T>,
 ): Promise<T | null> {
   return db.transaction(async (tx) => {
-    const [run] = await tx.select().from(ralphRuns).where(eq(ralphRuns.id, runId)).for("update");
+    // `NO KEY UPDATE` serializes `lockRun` callers like `FOR UPDATE`, but lets
+    // other connections insert rows referencing the run (e.g. the jobs `fn`
+    // enqueues through the dispatcher's own connection) without deadlocking.
+    const [run] = await tx
+      .select()
+      .from(ralphRuns)
+      .where(eq(ralphRuns.id, runId))
+      .for("no key update");
     if (!run) return null;
     return fn(tx, run);
   });
@@ -364,6 +385,75 @@ export async function listActiveRunJobIds(db: Executor, runId: string): Promise<
     .where(and(eq(jobs.ralphRunId, runId), inArray(jobs.status, ["queued", "running"])))
     .orderBy(asc(jobs.createdAt), asc(jobs.id));
   return rows.map((r) => r.id);
+}
+
+/**
+ * Unfinished runs an `Issue` webhook for `linearIssueId` may move: waiting runs
+ * whose `waiting_on` lists it, and runs that have it as a story. Oldest first.
+ */
+export async function listRunsAffectedByIssue(
+  db: Executor,
+  linearIssueId: string,
+): Promise<RalphRun[]> {
+  const ref = JSON.stringify([{ id: linearIssueId }]);
+  return db
+    .select()
+    .from(ralphRuns)
+    .where(
+      and(
+        inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES),
+        or(
+          and(
+            eq(ralphRuns.status, "waiting"),
+            or(
+              sql`${ralphRuns.waitingOn} -> 'blockers' @> ${ref}::jsonb`,
+              sql`${ralphRuns.waitingOn} -> 'manual' @> ${ref}::jsonb`,
+            ),
+          ),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(ralphStories)
+              .where(
+                and(
+                  eq(ralphStories.runId, ralphRuns.id),
+                  eq(ralphStories.linearIssueId, linearIssueId),
+                ),
+              ),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(ralphRuns.createdAt), asc(ralphRuns.id));
+}
+
+/**
+ * Unfinished runs for the reconcile cron: every waiting run (its blockers are
+ * re-checked), and pending or running runs without a queued or running job
+ * that haven't changed since `staleBefore` (an outcome that was never applied).
+ */
+export async function listRunsToReconcile(db: Executor, staleBefore: Date): Promise<RalphRun[]> {
+  return db
+    .select()
+    .from(ralphRuns)
+    .where(
+      or(
+        eq(ralphRuns.status, "waiting"),
+        and(
+          inArray(ralphRuns.status, ["pending", "running"]),
+          lt(ralphRuns.updatedAt, staleBefore),
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(jobs)
+              .where(
+                and(eq(jobs.ralphRunId, ralphRuns.id), inArray(jobs.status, ["queued", "running"])),
+              ),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(ralphRuns.updatedAt), asc(ralphRuns.id));
 }
 
 // ── Stories ──────────────────────────────────────────────────────────────────
