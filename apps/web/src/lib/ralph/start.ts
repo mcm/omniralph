@@ -2,7 +2,8 @@
  * Starts a ralph run for a new Linear agent session (ported from cyralph's
  * `SessionManager.onCreated` and the start of `EpicEngine.run`): tells a
  * delegation from a mention, loads (and materializes) the epic, routes it to a
- * repository, creates the run and its stories (carrying over the branch, PR,
+ * repository (or, when routing finds none, asks which to use and waits for the
+ * answer), creates the run and its stories (carrying over the branch, PR,
  * guidance and progress of an earlier run of the same issue), moves the epic
  * to started and hands the run to `advanceRun`.
  */
@@ -18,9 +19,10 @@ import {
   updateRun,
   updateStory,
   type RalphRun,
+  type RalphTransaction,
   type Repository,
 } from "@omniralph/db";
-import { parseRepoTags, type Epic } from "@omniralph/ralph";
+import type { Epic } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import {
@@ -31,6 +33,13 @@ import {
 } from "./epic-loader";
 import { quietly } from "./notify";
 import { preparationOf } from "./preparation";
+import {
+  askForRepository,
+  leftBehind,
+  leftBehindNote,
+  repositoryQuestionFor,
+  ROUTED_BY_SELECTION,
+} from "./repository-selection";
 import { routeIssue, type RouteMatch } from "./routing";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
@@ -61,7 +70,10 @@ export function isMention(event: Pick<SessionCreatedEvent, "commentBody">): bool
 export type StartOutcome =
   | { status: "mention" }
   | { status: "load_failed"; error: string }
+  /** No ralph-enabled repository at all. */
   | { status: "unroutable" }
+  /** Routing found no repository: the run waits for a person to pick one. */
+  | { status: "selecting"; run: RalphRun }
   | { status: "already_running"; run: RalphRun }
   | { status: "failed"; error: string }
   | { status: "started"; run: RalphRun; created: boolean };
@@ -79,18 +91,13 @@ async function post(deps: RalphDeps, sessionId: string, content: ActivityContent
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The error explaining how to route an issue to a repository. */
-export function unroutableMessage(epic: Pick<Epic, "identifier" | "description">): string {
-  const tags = parseRepoTags(epic.description);
-  const why =
-    tags.length > 0
-      ? `its \`[repo=…]\` tag (${tags.map((t) => `\`${t}\``).join(", ")}) names no repository with ralph enabled`
-      : "no repository with ralph enabled is routed to it";
+/** The error for an issue no repository can build: none has ralph enabled. */
+export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   return [
-    `I can't build **${epic.identifier}**: ${why}.`,
-    "To route it, enable ralph on a repository under **Repository › Settings › Ralph** and add this " +
-      "issue's label, project or team to its Linear routing, or add a `[repo=<owner/name>]` tag " +
-      "to the issue description. Then delegate it to me again.",
+    `I can't build **${epic.identifier}**: no repository has ralph enabled.`,
+    "Enable ralph on a repository under **Repository › Settings › Ralph** (and add this issue's " +
+      "label, project or team to its Linear routing, or a `[repo=<owner/name>]` tag to the issue " +
+      "description). Then delegate it to me again.",
   ].join("\n\n");
 }
 
@@ -101,10 +108,44 @@ const RULE_LABEL: Record<RouteMatch<Repository>["rule"], string> = {
   team: "team",
 };
 
+/** How a route chose its repository, as `routed_by` stores it (e.g. "team `ENG`"). */
+export function describeRoute(route: RouteMatch<Repository>): string {
+  return `${RULE_LABEL[route.rule]} \`${route.value}\``;
+}
+
+/** The repository a run works in and how it was chosen. */
+export interface ChosenRepository {
+  repository: Repository;
+  routedBy: string;
+}
+
+/**
+ * The repository for a (re-)delegated issue (cyralph's `resolveRepo`): one a
+ * person picked for the previous run stays while it has ralph enabled; else
+ * routing decides; else (routing would have to ask) the previous run's
+ * repository stays. Null: nothing decides, so a person is asked.
+ */
+export function chooseRepository(
+  root: IssueSummary,
+  repositories: readonly Repository[],
+  previous: Pick<RalphRun, "repositoryId" | "routedBy"> | null,
+): ChosenRepository | null {
+  const current = previous?.repositoryId
+    ? repositories.find((r) => r.id === previous.repositoryId)
+    : undefined;
+  if (current && previous?.routedBy === ROUTED_BY_SELECTION) {
+    return { repository: current, routedBy: ROUTED_BY_SELECTION };
+  }
+  const route = routeIssue(root, repositories);
+  if (route) return { repository: route.repository, routedBy: describeRoute(route) };
+  if (current) return { repository: current, routedBy: previous?.routedBy ?? "the previous run" };
+  return null;
+}
+
 /** The thought describing what the run will do (cyralph's `describeEpic`). */
 export function describeRun(
   loaded: LoadedEpic,
-  route: RouteMatch<Repository>,
+  chosen: ChosenRepository,
   run: Pick<RalphRun, "branch" | "baseBranch" | "prUrl">,
   carriedOver: boolean,
 ): string {
@@ -115,8 +156,8 @@ export function describeRun(
       ? "a single issue, so I'll treat it as one story"
       : `an epic with ${epic.stories.length} ${epic.stories.length === 1 ? "story" : "stories"} (${done.length} already done)`;
   const lines = [
-    `**${epic.identifier}** is ${kind}. Building it in \`${route.repository.fullPath}\` ` +
-      `(routed by ${RULE_LABEL[route.rule]} \`${route.value}\`) on branch \`${run.branch}\`, ` +
+    `**${epic.identifier}** is ${kind}. Building it in \`${chosen.repository.fullPath}\` ` +
+      `(routed by ${chosen.routedBy}) on branch \`${run.branch}\`, ` +
       `based on \`${run.baseBranch}\`.`,
   ];
   if (loaded.materialized > 0) {
@@ -182,6 +223,81 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
   });
 }
 
+/** A new run takes over the previous run's guidance and progress, and its PR/MR in the same repository. */
+async function carryOver(
+  tx: RalphTransaction,
+  run: RalphRun,
+  previous: RalphRun | null,
+  sameRepository: boolean,
+): Promise<RalphRun> {
+  if (!previous) return run;
+  return (
+    (await updateRun(tx, run.id, {
+      guidance: previous.guidance,
+      progress: previous.progress,
+      ...(sameRepository && { prNumber: previous.prNumber, prUrl: previous.prUrl }),
+    })) ?? run
+  );
+}
+
+/**
+ * Routing found no repository (cyralph's repository question): the run is
+ * created waiting, without a repository, with the ralph-enabled repositories
+ * as its `pending_elicitation`, and a `select` elicitation asks which to use.
+ * The answer (`answerRepositorySelection`) starts it.
+ */
+async function askForRepositoryFirst(
+  deps: StartRunDeps,
+  input: {
+    event: SessionCreatedEvent;
+    loaded: LoadedEpic;
+    previous: RalphRun | null;
+    repositories: readonly Repository[];
+  },
+): Promise<StartOutcome> {
+  const { event, loaded, previous, repositories } = input;
+  const { epic, root } = loaded;
+  const { run, created } = await deps.db.transaction(async (tx) => {
+    const result = await createRun(tx, {
+      linearIssueId: root.id,
+      linearIdentifier: root.identifier,
+      linearTitle: root.title,
+      linearUrl: root.url,
+      linearAgentSessionId: event.sessionId,
+      kind: loaded.kind,
+      focusStoryId: loaded.focusStoryId ?? null,
+      repositoryId: null,
+      branch: previous?.branch ?? epic.branchName,
+      // Set with the repository.
+      baseBranch: "",
+      status: "waiting",
+      pendingElicitation: { kind: "repository", repositoryIds: repositories.map((r) => r.id) },
+    });
+    if (!result.created) return result;
+    const run = await carryOver(tx, result.run, previous, false);
+    await syncStories(tx, run.id, epic);
+    return { run, created: true };
+  });
+  if (!created) {
+    if (run.linearAgentSessionId === event.sessionId) await advanceRun(run.id, deps);
+    else {
+      await post(deps, event.sessionId, {
+        type: "response",
+        body: `**${root.identifier}** is already being built in another session.`,
+      });
+      return { status: "already_running", run };
+    }
+    return { status: "started", run, created: false };
+  }
+  await askForRepository(
+    deps.linear,
+    event.sessionId,
+    repositories,
+    repositoryQuestionFor(root.description),
+  );
+  return { status: "selecting", run };
+}
+
 /** Handles `AgentSessionEvent.created` (after the acknowledgement was posted). */
 export async function startRun(
   event: SessionCreatedEvent,
@@ -229,9 +345,7 @@ export async function startRun(
     return { status: "load_failed", error: message(error) };
   }
   const { epic, root } = loaded;
-
-  const route = routeIssue(root, repositories);
-  if (!route) {
+  if (repositories.length === 0) {
     await post(deps, sessionId, { type: "error", body: unroutableMessage(epic) });
     return { status: "unroutable" };
   }
@@ -250,10 +364,13 @@ export async function startRun(
     await supersede(deps, previous, sessionId);
   }
 
+  const chosen = chooseRepository(root, repositories, previous);
+  if (!chosen) return askForRepositoryFirst(deps, { event, loaded, previous, repositories });
+
   let baseBranch: string;
   try {
-    const found = await getRepositoryWithConnection(db, route.repository.id);
-    if (!found) throw new Error(`repository ${route.repository.fullPath} is gone`);
+    const found = await getRepositoryWithConnection(db, chosen.repository.id);
+    if (!found) throw new Error(`repository ${chosen.repository.fullPath} is gone`);
     baseBranch = await deps.adapterFor(db, found.connection).getDefaultBranch({
       fullPath: found.repository.fullPath,
       externalId: found.repository.externalId,
@@ -261,13 +378,15 @@ export async function startRun(
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",
-      body: `I couldn't read the default branch of \`${route.repository.fullPath}\`: ${message(error)}`,
+      body: `I couldn't read the default branch of \`${chosen.repository.fullPath}\`: ${message(error)}`,
     });
     return { status: "failed", error: message(error) };
   }
 
-  const sameRepository = previous?.repositoryId === route.repository.id;
-  const branch = previous?.branch ?? epic.branchName;
+  // Re-routing moved the issue to another repository: its earlier work there stays as it is.
+  const moved = !!previous?.repositoryId && previous.repositoryId !== chosen.repository.id;
+  const sameRepository = previous?.repositoryId === chosen.repository.id;
+  const branch = (sameRepository && previous?.branch) || epic.branchName;
   const { run, created } = await db.transaction(async (tx) => {
     const result = await createRun(tx, {
       linearIssueId: root.id,
@@ -277,20 +396,13 @@ export async function startRun(
       linearAgentSessionId: sessionId,
       kind: loaded.kind,
       focusStoryId: loaded.focusStoryId ?? null,
-      repositoryId: route.repository.id,
+      repositoryId: chosen.repository.id,
+      routedBy: chosen.routedBy,
       branch,
       baseBranch,
     });
     if (!result.created) return result;
-    let run = result.run;
-    if (previous) {
-      run =
-        (await updateRun(tx, run.id, {
-          guidance: previous.guidance,
-          progress: previous.progress,
-          ...(sameRepository && { prNumber: previous.prNumber, prUrl: previous.prUrl }),
-        })) ?? run;
-    }
+    const run = await carryOver(tx, result.run, previous, sameRepository);
     await syncStories(tx, run.id, epic);
     return { run, created: true };
   });
@@ -307,6 +419,15 @@ export async function startRun(
     return { status: "started", run, created: false };
   }
 
+  if (moved) {
+    const left = await leftBehind(deps, previous!);
+    if (left) {
+      await post(deps, sessionId, {
+        type: "thought",
+        body: leftBehindNote(left, chosen.repository.fullPath),
+      });
+    }
+  }
   if (!["started", "completed", "canceled"].includes(root.stateType)) {
     try {
       await linear.setIssueState(root.id, { type: "started" });
@@ -316,7 +437,7 @@ export async function startRun(
   }
   await post(deps, sessionId, {
     type: "thought",
-    body: describeRun(loaded, route, run, !!previous),
+    body: describeRun(loaded, chosen, run, !!previous),
   });
   await advanceRun(run.id, deps);
   return { status: "started", run, created: true };

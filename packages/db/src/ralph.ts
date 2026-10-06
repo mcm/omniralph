@@ -31,6 +31,7 @@ import {
   ralphStories,
   repositories,
   type RalphGuidance,
+  type RalphPendingElicitation,
   type RalphSettings,
 } from "./schema.js";
 
@@ -104,9 +105,13 @@ export interface NewRalphRunInput {
   linearAgentSessionId: string;
   kind: RalphRunKind;
   focusStoryId?: string | null;
-  repositoryId: string;
+  /** Null while a person is asked to pick the repository. */
+  repositoryId: string | null;
+  routedBy?: string | null;
   branch: string;
   baseBranch: string;
+  status?: RalphRunStatus;
+  pendingElicitation?: RalphPendingElicitation | null;
 }
 
 /**
@@ -198,17 +203,11 @@ export async function lockRun<T>(
   });
 }
 
-/** Run columns the orchestrator changes (identity, Linear IDs and repository are fixed). */
+/** Run columns the orchestrator changes (identity and Linear IDs are fixed). */
 export type RalphRunUpdate = Partial<
   Omit<
     typeof ralphRuns.$inferInsert,
-    | "id"
-    | "linearIssueId"
-    | "linearIdentifier"
-    | "linearAgentSessionId"
-    | "repositoryId"
-    | "createdAt"
-    | "updatedAt"
+    "id" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId" | "createdAt" | "updatedAt"
   >
 >;
 
@@ -302,7 +301,8 @@ export interface RalphRunListEntry {
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
-  repository: { id: string; provider: ScmProvider; fullPath: string };
+  /** Null while a person is asked to pick it. */
+  repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
   stories: { total: number; completed: number };
 }
@@ -355,7 +355,7 @@ export async function listRuns(
         agentName: agents.name,
       })
       .from(ralphRuns)
-      .innerJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
+      .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
       .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
       .where(where)
       .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
@@ -397,7 +397,8 @@ export async function listRuns(
 
 export interface RalphRunDetail {
   run: RalphRun;
-  repository: { id: string; provider: ScmProvider; fullPath: string };
+  /** Null while a person is asked to pick it. */
+  repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
   /** In sub-issue order. */
   stories: RalphStory[];
@@ -432,7 +433,7 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
       agentName: agents.name,
     })
     .from(ralphRuns)
-    .innerJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
+    .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
     .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
     .where(eq(ralphRuns.id, runId))
     .limit(1);

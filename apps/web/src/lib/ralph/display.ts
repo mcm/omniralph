@@ -87,7 +87,8 @@ export interface RalphRunRow {
   linearIdentifier: string;
   linearTitle: string | null;
   linearUrl: string | null;
-  repository: RalphRepositoryRef;
+  /** Null while a person is asked which repository to use. */
+  repository: RalphRepositoryRef | null;
   status: RalphRunStatus;
   stories: { total: number; completed: number };
   branch: string;

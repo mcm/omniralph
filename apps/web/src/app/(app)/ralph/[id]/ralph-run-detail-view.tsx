@@ -402,8 +402,14 @@ export function RalphRunDetailView({
                   gap: "var(--space-1)",
                 }}
               >
-                <ProviderIcon provider={run.repository.provider} size={14} />
-                {run.repository.fullPath}
+                {run.repository ? (
+                  <>
+                    <ProviderIcon provider={run.repository.provider} size={14} />
+                    {run.repository.fullPath}
+                  </>
+                ) : (
+                  "Repository not chosen yet"
+                )}
               </span>
               <RalphRunStatusBadge status={run.status} />
               <Badge variant="outline">{run.kind}</Badge>
@@ -456,18 +462,20 @@ export function RalphRunDetailView({
                 />
               </Fact>
               <Fact label="Repository">
-                <span style={mono}>{run.repository.fullPath}</span>
+                <span style={mono}>{run.repository?.fullPath ?? "Not chosen yet"}</span>
               </Fact>
               <Fact label="Branch">
                 <InlineCode>{run.branch}</InlineCode>
               </Fact>
               <Fact label="Base">
-                <InlineCode>{run.baseBranch}</InlineCode>
+                {run.baseBranch ? <InlineCode>{run.baseBranch}</InlineCode> : "—"}
               </Fact>
               <Fact label="Agent">
                 <AgentName agent={run.agent} isAdmin={isAdmin} />
               </Fact>
-              <Fact label={run.repository.provider === "gitlab" ? "Merge request" : "Pull request"}>
+              <Fact
+                label={run.repository?.provider === "gitlab" ? "Merge request" : "Pull request"}
+              >
                 <PullRequestLink pullRequest={run.pullRequest} />
               </Fact>
               <Fact label="Stories">

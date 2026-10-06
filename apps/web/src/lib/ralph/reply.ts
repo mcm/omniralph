@@ -3,6 +3,8 @@
  * `SessionManager.onPrompted`), handled in this order (FR-15):
  *
  * 1. Stop (Linear's Stop signal, or "stop"): the run is stopped, its job canceled.
+ * 1a. While the run asks which repository to use, the answer to that
+ *     (`repository-selection.ts`); an unmatched reply asks again.
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").
  * 3. `rerun preparation`: the earliest open manual story's preparation is asked about again.
  * 4. "start anyway": outside blockers are ignored from now on.
@@ -42,6 +44,7 @@ import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
+import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import {
   advanceRun,
   FINISHED_RUN_STATUSES,
@@ -55,6 +58,8 @@ export type SessionPromptedEvent = Extract<LinearWebhookEvent, { kind: "session_
 /** What a reply turned out to be. */
 export type ReplyKind =
   | "stop"
+  /** An answer (or a reply that matched nothing) to the repository question. */
+  | "repository_selection"
   | "preparation_answer"
   | "rerun_preparation"
   | "start_anyway"
@@ -89,6 +94,15 @@ export async function handleReply(
       body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.linearIdentifier}** to me again to start a new run.`,
     });
     return null;
+  }
+
+  const offered = repositorySelectionOf(run);
+  if (offered && !run.repositoryId && run.status !== "stopped") {
+    const answered = await answerRepositorySelection(deps, run, offered, text);
+    return {
+      kind: "repository_selection",
+      ...(answered.status === "selected" && { advanced: answered.advanced }),
+    };
   }
 
   const answer = matchPreparationAnswer(text);
