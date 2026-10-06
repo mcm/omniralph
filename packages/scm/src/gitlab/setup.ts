@@ -112,7 +112,10 @@ export class GitLabSetupClient {
     }
   }
 
-  /** Creates a project webhook for merge request and comment events. Returns its ID. */
+  /**
+   * Creates a project webhook for merge request, comment and pipeline events
+   * (pipelines: ralph's CI-fix loop). Returns its ID.
+   */
   async createProjectHook(projectId: number, options: GitLabHookOptions): Promise<number> {
     try {
       const hook = await this.api.ProjectHooks.add(projectId, options.url, {
@@ -123,7 +126,7 @@ export class GitLabSetupClient {
         issuesEvents: false,
         confidentialIssuesEvents: false,
         confidentialNoteEvents: false,
-        pipelineEvents: false,
+        pipelineEvents: true,
         jobEvents: false,
         wikiPageEvents: false,
         deploymentEvents: false,

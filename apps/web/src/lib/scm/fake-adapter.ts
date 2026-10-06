@@ -1,6 +1,8 @@
 import {
   ChangeRequestNotFoundError,
+  type ChangeRequestStatus,
   type ChangeRequestUpdate,
+  type CiStatus,
   type CreatedChangeRequest,
   type NewChangeRequest,
   type OpenChangeRequest,
@@ -19,7 +21,10 @@ export interface FakeChangeRequest {
   title: string;
   body: string;
   draft: boolean;
-  state: "open" | "closed";
+  state: "open" | "closed" | "merged";
+  /** Head commit reported by `getChangeRequestState` (default `"head"`). */
+  headSha?: string;
+  mergeSha?: string | null;
 }
 
 /**
@@ -34,6 +39,10 @@ export class FakeScmAdapter {
   defaultBranch = "develop";
   /** Usernames `hasWriteAccess` says yes to. */
   readonly members = new Set<string>();
+  /** `getCiStatus` answers, keyed by `fullPath#number`; `none` when missing. */
+  readonly ciStatuses = new Map<string, CiStatus>();
+  /** `getCiJobLog` answers by job ID; `""` when missing. */
+  readonly ciJobLogs = new Map<string, string>();
 
   constructor(readonly provider: ScmProvider = "github") {}
 
@@ -107,6 +116,33 @@ export class FakeScmAdapter {
   async markChangeRequestReady(repo: RepoRef, number: number): Promise<void> {
     this.call("markChangeRequestReady");
     this.find(repo, number).draft = false;
+  }
+
+  async getCiStatus(repo: RepoRef, number: number): Promise<CiStatus> {
+    this.call("getCiStatus");
+    const request = this.find(repo, number);
+    return (
+      this.ciStatuses.get(`${repo.fullPath}#${number}`) ?? {
+        state: "none",
+        headSha: request.headSha ?? "head",
+        failedJobs: [],
+      }
+    );
+  }
+
+  async getCiJobLog(_repo: RepoRef, jobId: string): Promise<string> {
+    this.call("getCiJobLog");
+    return this.ciJobLogs.get(jobId) ?? "";
+  }
+
+  async getChangeRequestState(repo: RepoRef, number: number): Promise<ChangeRequestStatus> {
+    this.call("getChangeRequestState");
+    const request = this.find(repo, number);
+    return {
+      state: request.state,
+      headSha: request.headSha ?? "head",
+      mergeSha: request.state === "merged" ? (request.mergeSha ?? null) : null,
+    };
   }
 
   /** As the `ScmAdapter` the orchestrator expects. */

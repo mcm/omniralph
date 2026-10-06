@@ -90,6 +90,15 @@ function fakeAdapter() {
     async markChangeRequestReady() {
       throw new Error("not used");
     },
+    async getCiStatus() {
+      throw new Error("not used");
+    },
+    async getCiJobLog() {
+      throw new Error("not used");
+    },
+    async getChangeRequestState() {
+      throw new Error("not used");
+    },
     async hasWriteAccess(_repo, username) {
       calls.hasWriteAccess.push(username);
       return writers.has(username);

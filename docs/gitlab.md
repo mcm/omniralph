@@ -42,8 +42,9 @@ in MR comments, e.g. `@group_42_bot_1a2b review`.
 2. Enter the base URL (`https://gitlab.com` or your instance, without `/api/v4`), the bot token and
    the project paths (`group/subgroup/project`).
 3. The control panel validates the token (user and `api` scope), resolves each project and creates
-   a project webhook at `<APP_URL>/api/webhooks/gitlab` for merge request and comment (note) events,
-   with SSL verification on and a generated secret (checked against `X-Gitlab-Token`).
+   a project webhook at `<APP_URL>/api/webhooks/gitlab` for merge request, comment (note) and
+   **Pipeline events**, with SSL verification on and a generated secret (checked against
+   `X-Gitlab-Token`).
 
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
 skipped unless the repository's settings include drafts) in enabled projects are then reviewed.
@@ -56,6 +57,12 @@ opened as drafts by the bot (titled `Draft: …`) and marked ready when the run 
 project protects the run's branch, or only allows Maintainers to push, the Developer-role write
 token can't push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by
 Developers.
+
+Ralph's CI-fix loop reads the MR's head pipeline, its failed jobs and their traces with the bot
+token (scope `api`), and learns that a pipeline finished from the webhook's **Pipeline events** (the
+reconcile cron is the fallback). Projects connected before then have webhooks without pipeline
+events: connect GitLab again (which replaces each project's webhook) or tick **Pipeline events** on
+the project's webhook (**Settings › Webhooks**).
 
 A bot token connected before ralph (scope `api` only) keeps working for reviews. Ralph pushes then
 fail until you connect GitLab again with a token that also has `write_repository`.

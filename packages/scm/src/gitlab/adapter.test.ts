@@ -651,3 +651,158 @@ describe("merge request operations", () => {
     expect(stripDraftPrefix("A Draft: B")).toBe("A Draft: B");
   });
 });
+
+describe("CI status and merge request state", () => {
+  const PIPELINE_URL = `${HOST}/acme/tools/widgets/-/pipelines/55`;
+
+  function mr(fields: Record<string, unknown>) {
+    return http.get(MR, () => HttpResponse.json({ ...mrJson, state: "opened", ...fields }));
+  }
+
+  function pipeline(status: string, fields: Record<string, unknown> = {}) {
+    return mr({ head_pipeline: { id: 55, sha: HEAD, status, web_url: PIPELINE_URL, ...fields } });
+  }
+
+  function failedJobs(list: Record<string, unknown>[], seen: URL[] = []) {
+    return http.get(`${API}/pipelines/55/jobs`, ({ request }) => {
+      seen.push(new URL(request.url));
+      return HttpResponse.json(list);
+    });
+  }
+
+  it("lists the failed jobs of a failed head pipeline, without jobs allowed to fail", async () => {
+    const seen: URL[] = [];
+    server.use(
+      pipeline("failed"),
+      failedJobs(
+        [
+          { id: 5, name: "unit", stage: "test", web_url: `${HOST}/j/5`, allow_failure: false },
+          { id: 6, name: "audit", stage: "test", web_url: `${HOST}/j/6`, allow_failure: true },
+        ],
+        seen,
+      ),
+    );
+    await expect(makeAdapter().getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "failed",
+      headSha: HEAD,
+      failedJobs: [{ id: "5", name: "test / unit", url: `${HOST}/j/5`, noLog: false }],
+    });
+    expect(seen[0]?.searchParams.get("scope")).toBe("failed");
+  });
+
+  it("lists the pipeline itself, without a log, when only a downstream pipeline failed", async () => {
+    server.use(
+      pipeline("failed"),
+      failedJobs([{ id: 6, name: "audit", stage: "test", allow_failure: true }]),
+    );
+    await expect(makeAdapter().getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "failed",
+      headSha: HEAD,
+      failedJobs: [{ id: "55", name: "pipeline", url: PIPELINE_URL, noLog: true }],
+    });
+  });
+
+  it.each(["created", "waiting_for_resource", "preparing", "pending", "running", "scheduled"])(
+    "is pending while the pipeline is %s",
+    async (status) => {
+      server.use(pipeline(status));
+      await expect(makeAdapter().getCiStatus(REPO, 7)).resolves.toEqual({
+        state: "pending",
+        headSha: HEAD,
+        failedJobs: [],
+      });
+    },
+  );
+
+  it("passes when the pipeline succeeded", async () => {
+    server.use(pipeline("success"));
+    await expect(makeAdapter().getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "passed",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it.each(["canceled", "skipped", "manual"])("treats a %s pipeline as none", async (status) => {
+    server.use(pipeline(status));
+    await expect(makeAdapter().getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it("is none without a head pipeline, or when it ran on another commit", async () => {
+    const adapter = makeAdapter();
+    server.use(mr({ head_pipeline: null }));
+    await expect(adapter.getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+    server.use(pipeline("failed", { sha: "o".repeat(40) }));
+    await expect(adapter.getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it("throws ChangeRequestNotFoundError for a missing merge request", async () => {
+    server.use(
+      http.get(`${API}/merge_requests/404`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
+    );
+    const adapter = makeAdapter();
+    await expect(adapter.getCiStatus(REPO, 404)).rejects.toBeInstanceOf(ChangeRequestNotFoundError);
+    await expect(adapter.getChangeRequestState(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+  });
+
+  it("reads a job's trace, cleaned and cut to its tail", async () => {
+    server.use(
+      http.get(`${API}/jobs/5/trace`, () =>
+        HttpResponse.text(
+          `${"x".repeat(5000)}\nsection_start:1:script\r\u001b[0K\u001b[31mboom\u001b[0m\r\n`,
+        ),
+      ),
+    );
+    const log = await makeAdapter().getCiJobLog(REPO, "5");
+    expect(log.startsWith("…")).toBe(true);
+    expect(log).toHaveLength(4001);
+    expect(log.endsWith("\nboom\n")).toBe(true);
+  });
+
+  it("reads open, closed and merged merge requests", async () => {
+    const adapter = makeAdapter();
+    server.use(mr({ state: "opened", merge_commit_sha: null }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "open",
+      headSha: HEAD,
+      mergeSha: null,
+    });
+    server.use(mr({ state: "locked" }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toMatchObject({ state: "open" });
+    server.use(mr({ state: "closed" }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "closed",
+      headSha: HEAD,
+      mergeSha: null,
+    });
+    server.use(mr({ state: "merged", merge_commit_sha: "m".repeat(40), squash_commit_sha: null }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "merged",
+      headSha: HEAD,
+      mergeSha: "m".repeat(40),
+    });
+    server.use(mr({ state: "merged", merge_commit_sha: null, squash_commit_sha: "q".repeat(40) }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toMatchObject({
+      mergeSha: "q".repeat(40),
+    });
+    // Fast-forward merges have no merge commit: the head landed as it is.
+    server.use(mr({ state: "merged", merge_commit_sha: null, squash_commit_sha: null }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toMatchObject({ mergeSha: HEAD });
+  });
+});

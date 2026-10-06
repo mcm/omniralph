@@ -619,3 +619,199 @@ describe("pull request operations", () => {
     );
   });
 });
+
+describe("CI status and pull request state", () => {
+  const PULLS = `${API}/repos/acme/widgets/pulls`;
+  const RUNS = `${API}/repos/acme/widgets/actions/runs`;
+
+  function pull(fields: Record<string, unknown> = {}) {
+    return http.get(`${PULLS}/7`, () =>
+      HttpResponse.json({
+        number: 7,
+        state: "open",
+        merged: false,
+        head: { sha: HEAD, ref: "feature" },
+        ...fields,
+      }),
+    );
+  }
+
+  function runs(workflowRuns: Record<string, unknown>[], seen: URL[] = []) {
+    return http.get(RUNS, ({ request }) => {
+      seen.push(new URL(request.url));
+      return HttpResponse.json({ total_count: workflowRuns.length, workflow_runs: workflowRuns });
+    });
+  }
+
+  function jobs(runId: number, list: Record<string, unknown>[]) {
+    return http.get(`${RUNS}/${runId}/jobs`, () =>
+      HttpResponse.json({ total_count: list.length, jobs: list }),
+    );
+  }
+
+  const run = (fields: Record<string, unknown>) => ({
+    workflow_id: 10,
+    event: "pull_request",
+    name: "CI",
+    status: "completed",
+    conclusion: "success",
+    html_url: `https://github.com/acme/widgets/actions/runs/${String(fields.id)}`,
+    ...fields,
+  });
+
+  it("reports the failed jobs of the head commit's newest run per workflow", async () => {
+    const seen: URL[] = [];
+    server.use(
+      pull(),
+      runs(
+        [
+          run({ id: 1, conclusion: "success" }),
+          run({ id: 2, conclusion: "failure" }),
+          run({ id: 3, workflow_id: 11, name: "Lint", conclusion: "success" }),
+          // The same workflow for another event counts separately.
+          run({ id: 4, event: "push", conclusion: "timed_out" }),
+        ],
+        seen,
+      ),
+      jobs(2, [
+        {
+          id: 20,
+          name: "test",
+          conclusion: "failure",
+          html_url: "https://github.com/acme/widgets/actions/runs/2/job/20",
+        },
+        { id: 21, name: "build", conclusion: "success", html_url: null },
+      ]),
+      jobs(4, [{ id: 40, name: "deploy", conclusion: "timed_out", html_url: "https://gh/job/40" }]),
+    );
+    const status = await makeAdapter({ installationId: 42 }).getCiStatus(REPO, 7);
+    expect(seen[0]?.searchParams.get("head_sha")).toBe(HEAD);
+    expect(status).toEqual({
+      state: "failed",
+      headSha: HEAD,
+      failedJobs: [
+        {
+          id: "20",
+          name: "CI / test",
+          url: "https://github.com/acme/widgets/actions/runs/2/job/20",
+          noLog: false,
+        },
+        { id: "40", name: "CI / deploy", url: "https://gh/job/40", noLog: false },
+      ],
+    });
+  });
+
+  it("lists a failed run without failed jobs (startup_failure) as the run itself, without a log", async () => {
+    server.use(pull(), runs([run({ id: 5, conclusion: "startup_failure" })]), jobs(5, []));
+    await expect(makeAdapter({ installationId: 42 }).getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "failed",
+      headSha: HEAD,
+      failedJobs: [
+        { id: "5", name: "CI", url: "https://github.com/acme/widgets/actions/runs/5", noLog: true },
+      ],
+    });
+  });
+
+  it("is pending while the newest run of a workflow is incomplete", async () => {
+    server.use(
+      pull(),
+      runs([
+        run({ id: 2, conclusion: "failure" }),
+        run({ id: 4, status: "in_progress", conclusion: null }),
+      ]),
+    );
+    await expect(makeAdapter({ installationId: 42 }).getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "pending",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it("passes when no newest run failed (cancelled and skipped runs don't fail it)", async () => {
+    server.use(
+      pull(),
+      runs([
+        run({ id: 1, conclusion: "failure" }),
+        run({ id: 2, conclusion: "success" }),
+        run({ id: 3, workflow_id: 11, conclusion: "cancelled" }),
+        run({ id: 4, workflow_id: 12, conclusion: "skipped" }),
+      ]),
+    );
+    await expect(makeAdapter({ installationId: 42 }).getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "passed",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it("is none when the head commit has no runs", async () => {
+    server.use(pull(), runs([]));
+    await expect(makeAdapter({ installationId: 42 }).getCiStatus(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      failedJobs: [],
+    });
+  });
+
+  it("throws ChangeRequestNotFoundError for a missing pull request", async () => {
+    server.use(
+      http.get(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })),
+    );
+    const adapter = makeAdapter({ installationId: 42 });
+    await expect(adapter.getCiStatus(REPO, 404)).rejects.toBeInstanceOf(ChangeRequestNotFoundError);
+    await expect(adapter.getChangeRequestState(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+  });
+
+  it("reads a job's log through the jobs log API redirect, cleaned and cut to its tail", async () => {
+    server.use(
+      http.get(
+        `${API}/repos/acme/widgets/actions/jobs/20/logs`,
+        () =>
+          new HttpResponse(null, {
+            status: 302,
+            headers: { location: "https://logs.example.com/job/20.txt" },
+          }),
+      ),
+      http.get("https://logs.example.com/job/20.txt", () =>
+        HttpResponse.text(
+          `${"x".repeat(5000)}\n2026-10-06T00:00:00Z \u001b[31mFAIL\u001b[0m a.test.ts\r\n`,
+        ),
+      ),
+    );
+    const log = await makeAdapter({ installationId: 42 }).getCiJobLog(REPO, "20");
+    expect(log.startsWith("…")).toBe(true);
+    expect(log).toHaveLength(4001);
+    expect(log.endsWith("\n2026-10-06T00:00:00Z FAIL a.test.ts\n")).toBe(true);
+  });
+
+  it("reads open, closed and merged pull requests", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    server.use(pull({ merge_commit_sha: "t".repeat(40) }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "open",
+      headSha: HEAD,
+      mergeSha: null,
+    });
+    server.use(pull({ state: "closed", merged_at: null, merge_commit_sha: "t".repeat(40) }));
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "closed",
+      headSha: HEAD,
+      mergeSha: null,
+    });
+    server.use(
+      pull({
+        state: "closed",
+        merged: true,
+        merged_at: "2026-10-06T00:00:00Z",
+        merge_commit_sha: "m".repeat(40),
+      }),
+    );
+    await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toEqual({
+      state: "merged",
+      headSha: HEAD,
+      mergeSha: "m".repeat(40),
+    });
+  });
+});

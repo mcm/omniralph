@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import { verify } from "@octokit/webhooks-methods";
+import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
 import { capLength, capTitle, renderInlineComment, summaryWithFallbacks } from "../comment-body.js";
 import { buildDiffLineIndex, isCommentInDiff } from "../diff-lines.js";
 import {
@@ -127,6 +128,9 @@ function isPullRequestExists(error: unknown): boolean {
   const messages = [data?.message, ...(data?.errors ?? []).map((e) => e.message)];
   return messages.some((m) => typeof m === "string" && /pull request already exists/i.test(m));
 }
+
+/** Workflow run and job conclusions that count as a CI failure. */
+const GITHUB_FAILED = new Set(["failure", "timed_out", "startup_failure"]);
 
 function commentKey(path: string, side: string, line: number | null | undefined): string {
   return JSON.stringify([path, side, line ?? null]);
@@ -417,6 +421,86 @@ export class GitHubAdapter implements ScmAdapter {
     await octokit.graphql(MARK_READY_MUTATION, { pullRequestId: pr.node_id });
   }
 
+  /**
+   * GitHub Actions runs of the head commit, the newest per workflow and
+   * event (a re-run or a second trigger counts once). Any incomplete run is
+   * `pending`; otherwise `failure`, `timed_out` and `startup_failure` runs
+   * fail it, listing their failed jobs (or the run itself, as `noLog`, when
+   * it has none).
+   */
+  async getCiStatus(repo: RepoRef, number: number): Promise<CiStatus> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const pr = await this.pullRequest(octokit, repo, number);
+    const headSha = pr.head.sha;
+    const { data } = await octokit.actions.listWorkflowRunsForRepo({
+      owner,
+      repo: name,
+      head_sha: headSha,
+      per_page: 100,
+    });
+    const latest = new Map<string, (typeof data.workflow_runs)[number]>();
+    for (const run of data.workflow_runs) {
+      const key = `${String(run.workflow_id ?? run.name)}:${run.event}`;
+      const seen = latest.get(key);
+      if (!seen || run.id > seen.id) latest.set(key, run);
+    }
+    const runs = [...latest.values()];
+    if (runs.length === 0) return { state: "none", headSha, failedJobs: [] };
+    if (runs.some((run) => run.status !== "completed"))
+      return { state: "pending", headSha, failedJobs: [] };
+    const failed = runs.filter((run) => GITHUB_FAILED.has(String(run.conclusion)));
+    if (failed.length === 0) return { state: "passed", headSha, failedJobs: [] };
+    const failedJobs: CiFailedJob[] = [];
+    for (const run of failed) {
+      const runName = run.name ?? "workflow";
+      const { data: jobs } = await octokit.actions.listJobsForWorkflowRun({
+        owner,
+        repo: name,
+        run_id: run.id,
+        filter: "latest",
+        per_page: 100,
+      });
+      const failedRunJobs = jobs.jobs.filter((job) => GITHUB_FAILED.has(String(job.conclusion)));
+      if (failedRunJobs.length === 0) {
+        failedJobs.push({ id: String(run.id), name: runName, url: run.html_url, noLog: true });
+      }
+      for (const job of failedRunJobs) {
+        failedJobs.push({
+          id: String(job.id),
+          name: `${runName} / ${job.name}`,
+          url: job.html_url,
+          noLog: false,
+        });
+      }
+    }
+    return { state: "failed", headSha, failedJobs };
+  }
+
+  /** The job's log from the jobs log API (a redirect to the plain-text log). */
+  async getCiJobLog(repo: RepoRef, jobId: string): Promise<string> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const { data } = await octokit.actions.downloadJobLogsForWorkflowRun({
+      owner,
+      repo: name,
+      job_id: Number(jobId),
+    });
+    const text = typeof data === "string" ? data : new TextDecoder().decode(data as ArrayBuffer);
+    return ciLogTail(text);
+  }
+
+  async getChangeRequestState(repo: RepoRef, number: number): Promise<ChangeRequestStatus> {
+    const octokit = await this.client(repo);
+    const pr = await this.pullRequest(octokit, repo, number);
+    const merged = pr.merged === true || Boolean(pr.merged_at);
+    return {
+      state: merged ? "merged" : pr.state === "closed" ? "closed" : "open",
+      headSha: pr.head.sha,
+      mergeSha: merged ? (pr.merge_commit_sha ?? null) : null,
+    };
+  }
+
   /** Verifies `X-Hub-Signature-256` (HMAC-SHA256 of the raw body). */
   async verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean> {
     const signature = getHeader(headers, "x-hub-signature-256");
@@ -439,6 +523,17 @@ export class GitHubAdapter implements ScmAdapter {
     const installationId = await this.resolveInstallationId(owner, name);
     const { token } = await this.auth.getInstallationToken(installationId);
     return this.auth.octokit(token);
+  }
+
+  private async pullRequest(octokit: Octokit, repo: RepoRef, number: number) {
+    const { owner, repo: name } = splitRepoPath(repo);
+    try {
+      return (await octokit.pulls.get({ owner, repo: name, pull_number: number })).data;
+    } catch (error) {
+      if (hasStatus(error, 404))
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      throw error;
+    }
   }
 
   /** Changed files with patches, at the PR head or an older reviewed commit. */
