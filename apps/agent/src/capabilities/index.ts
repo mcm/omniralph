@@ -2,7 +2,7 @@ import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { JobPayload } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
-import { ralphCapability } from "./ralph.js";
+import { ralphCapability } from "./ralph/index.js";
 import { reviewCapability } from "./review.js";
 import { systemCapability } from "./system.js";
 

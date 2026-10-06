@@ -13,7 +13,7 @@ import {
   RALPH_DESCRIBE_PR_TOOL_POLICY,
   RALPH_TOOL_POLICY,
   ralphCapability,
-} from "./ralph.js";
+} from "./ralph/index.js";
 import { REVIEW_TOOL_POLICY } from "./review.js";
 
 describe("capability registry", () => {
@@ -59,8 +59,8 @@ describe("capability registry", () => {
     }
   });
 
-  it("fails ralph jobs as not implemented yet, never as retryable", async () => {
-    for (const type of ralphCapability.jobTypes) {
+  it("fails the ralph jobs it can't run yet as not implemented, never as retryable", async () => {
+    for (const type of ["ralph.describe-pr", "ralph.prepare"]) {
       const job: JobPayload = {
         id: "00000000-0000-4000-8000-000000000001",
         capability: "ralph",
