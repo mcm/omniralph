@@ -16,6 +16,9 @@ function shellQuote(value: string): string {
   return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Installs the agent on a host (needs npm auth for the private `@iamthemcmaster` scope). */
+export const AGENT_INSTALL_COMMAND = "npm install -g @iamthemcmaster/omniralph-agent";
+
 /** The command an admin runs on the agent host to redeem an enrollment token. */
 export function enrollCommand(serverUrl: string, token: string): string {
   return `omniralph-agent enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;

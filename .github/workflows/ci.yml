@@ -32,3 +32,6 @@ jobs:
 
       - name: Install, typecheck, lint and test
         run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test
+
+      - name: Smoke-test the agent package
+        run: ./scripts/smoke-agent-package.sh

@@ -43,6 +43,7 @@ Commands:
 Options:
   --config <file> Agent config (default: ~/.config/omniralph/agent.json, or $OMNIRALPH_AGENT_CONFIG)
   -h, --help      Show this help
+  -v, --version   Print the agent version
 `;
 
 export interface Io {
@@ -76,6 +77,7 @@ const defaultDeps: MainDeps = {
 
 const OPTIONS = {
   help: { type: "boolean", short: "h" },
+  version: { type: "boolean", short: "v" },
   config: { type: "string" },
   server: { type: "string" },
   token: { type: "string" },
@@ -97,6 +99,10 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
   }
   const { values, positionals } = parsed;
   const [command] = positionals;
+  if (values.version) {
+    io.stdout(`${AGENT_VERSION}\n`);
+    return 0;
+  }
   if (values.help || command === undefined) {
     io.stdout(USAGE);
     return command === undefined && !values.help ? 1 : 0;

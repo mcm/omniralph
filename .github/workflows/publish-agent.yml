@@ -1,0 +1,72 @@
+name: Publish agent
+
+# Publishes @iamthemcmaster/omniralph-agent through npm trusted publishing (OIDC).
+# The trusted publisher on npmjs.com is registered against this filename: don't rename it.
+on:
+  push:
+    tags: ["agent-v*.*.*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-agent
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1 && npm --version
+
+      - name: Check the tag matches the package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#agent-v}"
+          package_version="$(node -p 'require("./apps/agent/package.json").version')"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match apps/agent/package.json version $package_version"
+            exit 1
+          fi
+
+      # @iamthemcmaster/ui is a private package on the public npm registry. The token is only
+      # for installing: it's removed before publishing, which authenticates through OIDC.
+      - name: Authenticate to npm for install
+        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install, typecheck, lint and test
+        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test
+
+      - name: Build
+        run: pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent
+
+      - name: Smoke-test the agent package
+        run: ./scripts/smoke-agent-package.sh
+
+      - name: Remove the install token
+        run: rm -f .npmrc
+
+      - name: Pack
+        id: pack
+        working-directory: apps/agent
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP"
+          echo "tarball=$(ls "$RUNNER_TEMP"/*.tgz)" >> "$GITHUB_OUTPUT"
+
+      # No NODE_AUTH_TOKEN/NPM_TOKEN here: npm exchanges the job's OIDC token for a short-lived one.
+      - name: Publish
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access restricted
