@@ -105,20 +105,21 @@ describe("ralph analytics", () => {
     tokensOut,
   });
 
-  it("puts ralph and review tokens of each day side by side with its runs", () => {
+  it("puts ralph and review tokens of each day side by side with its runs and stories", () => {
+    const stories = { firstAttempt: 2, afterRetries: 1, exhausted: 0, blocked: 1 };
     expect(
       ralphDailyRows(
         {
           daily: [
-            { ...day("2026-10-04", 100, 10), runs },
-            { ...day("2026-10-05", 0, 0), runs },
+            { ...day("2026-10-04", 100, 10), runs, stories },
+            { ...day("2026-10-05", 0, 0), runs, stories },
           ],
         },
         { daily: [{ ...day("2026-10-05", 400, 40), reviews: 2 }] },
       ),
     ).toEqual([
-      { day: "Oct 4", ralphTokens: 110, reviewTokens: 0, ...runs },
-      { day: "Oct 5", ralphTokens: 0, reviewTokens: 440, ...runs },
+      { day: "Oct 4", ralphTokens: 110, reviewTokens: 0, ...runs, ...stories },
+      { day: "Oct 5", ralphTokens: 0, reviewTokens: 440, ...runs, ...stories },
     ]);
   });
 

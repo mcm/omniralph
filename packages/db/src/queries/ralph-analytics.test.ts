@@ -211,6 +211,32 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
     });
     // (1 + 1 + 3 + 2 + 1) / 5
     expect(analytics.averageAttempts).toBe(1.6);
+    // Over time: each run's stories on the day the run started.
+    const day = (date: string) => analytics.daily.find((d) => d.date === date)!.stories;
+    expect(day("2026-10-05")).toEqual({
+      firstAttempt: 2,
+      afterRetries: 1,
+      exhausted: 0,
+      blocked: 1,
+    });
+    expect(day("2026-10-04")).toEqual({
+      firstAttempt: 0,
+      afterRetries: 1,
+      exhausted: 1,
+      blocked: 1,
+    });
+    expect(day("2026-10-02")).toEqual({
+      firstAttempt: 1,
+      afterRetries: 0,
+      exhausted: 1,
+      blocked: 0,
+    });
+    expect(day("2026-10-03")).toEqual({
+      firstAttempt: 0,
+      afterRetries: 0,
+      exhausted: 0,
+      blocked: 0,
+    });
   });
 
   it("filters by repository", async () => {

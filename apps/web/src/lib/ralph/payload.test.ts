@@ -12,8 +12,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { buildDescribePrPayload, buildStoryPayload, jobSettings, storyQualityGates } =
-  await import("./payload");
+const {
+  buildDescribePrPayload,
+  buildRequestPayload,
+  buildStoryPayload,
+  jobSettings,
+  storyQualityGates,
+} = await import("./payload");
 
 const story: Story = {
   key: "issue-2",
@@ -114,6 +119,30 @@ describe("story quality gates", () => {
       rows: [],
     });
     expect(payload.qualityGates).toEqual(["pnpm typecheck", "pnpm test", "pnpm lint"]);
+  });
+
+  it("are a request's gates too, with the repository's settings and history rule", () => {
+    const request = (kind: RalphRun["kind"]) =>
+      buildRequestPayload({
+        run: run(kind),
+        lane: { ...lane, prUrl: null },
+        repository: repository({
+          verifyCommands: ["pnpm typecheck"],
+          appendInstruction: "Be brief.",
+          historyRewrite: "never",
+        }),
+        connection,
+        epic: epic(kind === "single" ? "single" : "children"),
+        stories: [story],
+        requests: [{ id: randomUUID(), text: "push it" }],
+        resumeSessionId: null,
+      });
+    expect(request("children")).toMatchObject({
+      qualityGates: ["pnpm typecheck", "pnpm test", "pnpm lint"],
+      settings: { appendInstruction: "Be brief." },
+      historyRewrite: "never",
+    });
+    expect(request("single").qualityGates).toEqual(["pnpm typecheck"]);
   });
 });
 

@@ -215,6 +215,74 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     expect(git(worktreePath(), "stash", "list")).toBe("");
   });
 
+  it("passes the repository's model and tool settings to the session, which only narrow ralph's policy", async () => {
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ summary: "Done." });
+    });
+    await runRequest(
+      job({
+        settings: {
+          model: "sonnet",
+          setupCommand: null,
+          fallbackModel: "haiku",
+          appendInstruction: "Always write a changelog entry.",
+          allowedTools: ["Read", "Edit", "Bash(pnpm test:*)"],
+          disallowedTools: ["WebFetch"],
+        },
+        qualityGates: ["pnpm verify", "pnpm test"],
+      }),
+      context(),
+      options(query),
+    );
+    const [call] = calls;
+    expect(call!.prompt).toContain("Always write a changelog entry.");
+    expect(call!.prompt).toContain("- Quality gates: `pnpm verify`, `pnpm test`");
+    expect(call!.options).toMatchObject({
+      model: "sonnet",
+      fallbackModel: "haiku",
+      tools: ["Read", "Edit", "Bash"],
+      allowedTools: ["Read", "Edit", "Bash(pnpm test:*)"],
+      disallowedTools: ["WebFetch"],
+      permissionMode: "dontAsk",
+    });
+    expect(call!.options.allowDangerouslySkipPermissions).toBeUndefined();
+  });
+
+  it("takes replies into its live session and unregisters once the session ends", async () => {
+    let inject: ((text: string) => boolean) | undefined;
+    const registered: boolean[] = [];
+    const ctx: JobContext = {
+      ...context(),
+      setMessageInjector: (fn) => {
+        inject = fn;
+        registered.push(fn !== undefined);
+      },
+    };
+    const prompts: string[] = [];
+    const query: SessionQueryFn = ({ prompt }) =>
+      (async function* () {
+        const input = prompt[Symbol.asyncIterator]();
+        const first = await input.next();
+        prompts.push(first.value!.message.content as string);
+        expect(inject!("Also bump the version")).toBe(true);
+        yield { ...result({ summary: "Half." }), user_message_uuids: [first.value!.uuid] };
+        const reply = await input.next();
+        prompts.push(reply.value!.message.content as string);
+        expect(reply.value!.priority).toBe("next");
+        yield {
+          ...result({ summary: "Done, and bumped the version." }),
+          user_message_uuids: [reply.value!.uuid],
+        };
+      })() as AsyncGenerator<SDKMessage>;
+
+    const out = await runRequest(job(), ctx, options(query));
+
+    expect(prompts[1]).toBe("Also bump the version");
+    expect(out).toMatchObject({ summary: "Done, and bumped the version.", error: null });
+    expect(registered).toEqual([true, false]);
+    expect(inject).toBeUndefined();
+  });
+
   // cyralph: "includes images from an @mention and reports failed downloads instead of guessing"
   it("lists the request's attachments and reports failed downloads once instead of guessing", async () => {
     const shot = "1".repeat(32);

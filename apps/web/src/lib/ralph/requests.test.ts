@@ -42,7 +42,12 @@ import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
-import { exchangeJobMessages } from "./messages";
+import {
+  DELIVERED_NOTE,
+  exchangeJobMessages,
+  undeliveredNote,
+  type JobMessageAcks,
+} from "./messages";
 import { handleReply } from "./reply";
 import { NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps, type StartOutcome } from "./start";
@@ -496,6 +501,65 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
           rejectedMessageIds: [],
         }),
       ).toEqual([{ jobId: job.id, messageId: expect.any(String), text: "how is it going?" }]);
+    });
+
+    it("passes replies to a running request's live session; one it rejects or never takes runs as the next request", async () => {
+      const { epic } = threeStoryEpic();
+      const { sessionId, run } = await session(epic.id, "@omniralph summarise the PRD");
+      const job = await start(run!.id);
+      const exchange = (acks: JobMessageAcks) =>
+        exchangeJobMessages({ db, linear: async () => linear }, agentA, [job.id], acks);
+
+      expect(await reply(run!, "in French")).toEqual({ kind: "live" });
+      const [french] = await exchange({ deliveredMessageIds: [], rejectedMessageIds: [] });
+      expect(french).toMatchObject({ jobId: job.id, text: "in French" });
+
+      await reply(run!, "and in German");
+      const sent = await exchange({
+        deliveredMessageIds: [french!.messageId],
+        rejectedMessageIds: [],
+      });
+      expect(last(sessionId, "thought")).toBe(DELIVERED_NOTE);
+      expect(sent.map((m) => m.text)).toEqual(["and in German"]);
+      // The agent couldn't inject it (e.g. the session had ended): a pending request.
+      expect(
+        await exchange({ deliveredMessageIds: [], rejectedMessageIds: [sent[0]!.messageId] }),
+      ).toEqual([]);
+      expect(last(sessionId, "thought")).toBe(undeliveredNote("request"));
+      expect((await listPendingRequests(db, run!.id)).map((m) => m.text)).toContain(
+        "and in German",
+      );
+      // Still undelivered when the job ends: settled as a request when the run moves on.
+      await reply(run!, "and in Spanish");
+      await finish(job, requestResult({ summary: "Résumé en français." }));
+      const next = await request(run!.id, { summary: "Also in German and Spanish." });
+      expect(next.requests.map((r) => r.text)).toEqual(["and in German", "and in Spanish"]);
+      expect(next.resumeSessionId).toBe("claude-req-1");
+      expect(await listPendingRequests(db, run!.id)).toEqual([]);
+      expect((await getRun(db, run!.id))?.status).toBe("completed");
+    });
+
+    it("asks which repository when a mention matches none, then answers in the picked one (by URL)", async () => {
+      linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
+      const issue = [...linear.issues.values()].find((i) => i.identifier === "OPS-1")!;
+      const { outcome, sessionId, run } = await session(issue.id, "@omniralph what's this about?");
+      expect(outcome).toMatchObject({ status: "selecting" });
+      expect(run).toMatchObject({ mode: "request", status: "waiting", repositoryId: null });
+      expect(last(sessionId, "elicitation")).toContain(
+        "Which repository should I work in for this issue?",
+      );
+      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run!.id))).toEqual([]);
+
+      expect(await reply(run!, "https://github.com/acme/web")).toMatchObject({
+        kind: "repository_selection",
+        advanced: { action: "requesting" },
+      });
+      const payload = await request(run!.id, { summary: "It's about infra." });
+      expect(payload.repository.fullPath).toBe("acme/web");
+      expect(payload.requests.map((r) => r.text)).toEqual(["what's this about?"]);
+      expect(last(sessionId, "response")).toBe("It's about infra.");
+      // Request mode: no Linear state changes.
+      expect(linear.stateChanges).toEqual([]);
     });
 
     it("adds a mention to the issue's run when it is waiting, and that session answers", async () => {

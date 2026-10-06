@@ -48,6 +48,8 @@ import {
   overallAverageTokens,
   RALPH_RUN_OUTCOME_LABELS,
   RALPH_RUN_OUTCOMES,
+  RALPH_STORY_OUTCOME_LABELS,
+  RALPH_STORY_OUTCOMES,
   ralphDailyRows,
   type AnalyticsData,
   type AnalyticsParams,
@@ -74,6 +76,14 @@ const RUN_COLORS = {
   stopped: "var(--slate-500)",
   failed: "var(--aurora-rust)",
   running: "var(--glacier-500)",
+} as const;
+
+/** Story outcome colors, as design tokens. */
+const STORY_COLORS = {
+  firstAttempt: "var(--aurora-moss)",
+  afterRetries: "var(--glacier-500)",
+  exhausted: "var(--aurora-rust)",
+  blocked: "var(--aurora-amber)",
 } as const;
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
@@ -302,6 +312,33 @@ function RalphSection({
         </Card>
       </div>
 
+      <Card style={{ minWidth: 0 }}>
+        <CardHeader>
+          <CardTitle>Story outcomes per day</CardTitle>
+          <CardDescription>{period}, stories of the runs started each day</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {noRuns ? (
+            noRunsEmpty
+          ) : (
+            <ChartContainer>
+              <BarChart
+                height={240}
+                data={daily}
+                xKey="day"
+                stacked
+                showLegend
+                bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
+                  key: outcome,
+                  label: RALPH_STORY_OUTCOME_LABELS[outcome],
+                  color: STORY_COLORS[outcome],
+                }))}
+              />
+            </ChartContainer>
+          )}
+        </CardContent>
+      </Card>
+
       <div style={grid("repeat(2, minmax(0, 1fr))")}>
         <Card style={{ minWidth: 0 }}>
           <CardHeader>
@@ -313,12 +350,11 @@ function RalphSection({
               noRunsEmpty
             ) : (
               <CountRows
-                rows={[
-                  { key: "first", label: "First attempt", count: outcomes.firstAttempt },
-                  { key: "retries", label: "After retries", count: outcomes.afterRetries },
-                  { key: "exhausted", label: "Exhausted", count: outcomes.exhausted },
-                  { key: "blocked", label: "Blocked", count: outcomes.blocked },
-                ].map((row) => ({ ...row, label: <span style={cellText}>{row.label}</span> }))}
+                rows={RALPH_STORY_OUTCOMES.map((outcome) => ({
+                  key: outcome,
+                  label: <span style={cellText}>{RALPH_STORY_OUTCOME_LABELS[outcome]}</span>,
+                  count: outcomes[outcome],
+                }))}
               />
             )}
           </CardContent>

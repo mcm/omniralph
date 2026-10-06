@@ -49,7 +49,9 @@ const RULE_LABEL: Record<RoutingRule, string> = {
 };
 
 /** How a route chose its repository, as `routed_by` stores it (e.g. "team `ENG`"). */
-export function describeRoute(route: Pick<RouteMatch<RoutableRepository>, "rule" | "value">): string {
+export function describeRoute(
+  route: Pick<RouteMatch<RoutableRepository>, "rule" | "value">,
+): string {
   return `${RULE_LABEL[route.rule]} \`${route.value}\``;
 }
 
@@ -191,6 +193,27 @@ export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
   return (
     candidates.find((r) => r.fullPath.trim().toLowerCase() === said) ??
     candidates.find((r) => tagNamesRepository(text, r)) ??
-    candidates.find((r) => said.includes(normalizeRepoPath(r.fullPath)))
+    mentionedRepository(said, candidates)
   );
 }
+
+/**
+ * The repository whose full path a reply contains (e.g. its URL), as a whole
+ * path: `platform/api` doesn't match `platform/api-v2`, and the longest path
+ * wins, so the URL of `group/platform/api` picks it over `platform/api`.
+ */
+function mentionedRepository<R extends Pick<RoutableRepository, "fullPath">>(
+  said: string,
+  candidates: readonly R[],
+): R | undefined {
+  let best: { repository: R; length: number } | undefined;
+  for (const repository of candidates) {
+    const path = normalizeRepoPath(repository.fullPath);
+    if (!path || (best && path.length <= best.length)) continue;
+    const whole = new RegExp(`(?:^|[^\\w.-])${escapeRegExp(path)}(?![\\w-])`);
+    if (whole.test(said)) best = { repository, length: path.length };
+  }
+  return best?.repository;
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
