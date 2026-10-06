@@ -10,12 +10,7 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import {
-  REVIEW_CAPABILITY,
-  REVIEW_JOB_TYPE,
-  ReviewJobPayload,
-  ReviewJobResult,
-} from "@omniralph/shared";
+import { ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
 import { postFailureNote, postReview } from "./post";
 import { supersedeEarlierFindings } from "./supersede";
 
@@ -24,18 +19,6 @@ import { supersedeEarlierFindings } from "./supersede";
  * hooks for `review.run` jobs so that the `reviews` row follows its job, the
  * result is persisted and posted, and final failures get a note on the PR/MR.
  */
-
-/**
- * Whether a job is a review created by `enqueueReview`: a `review.run` job
- * with a valid payload (anything else gets the generic job lifecycle only).
- */
-export function isReviewJob(job: Pick<Job, "capability" | "type" | "payload">): boolean {
-  return (
-    job.capability === REVIEW_CAPABILITY &&
-    job.type === REVIEW_JOB_TYPE &&
-    ReviewJobPayload.safeParse(job.payload).success
-  );
-}
 
 function reviewPayload(job: Job): ReviewJobPayload {
   return ReviewJobPayload.parse(job.payload);

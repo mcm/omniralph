@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { agentTopics } from "./config";
 import { parseQueueRequest, proxyQueueRequest, type QueueProxyOptions } from "./queue-proxy";
 
 const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
@@ -180,6 +181,54 @@ describe("proxyQueueRequest", () => {
         options(),
       ),
     );
+  });
+
+  it("allows ralph topics only to agents with ralph enabled", async () => {
+    const ralphTopic = `ralph-jobs-agent-${AGENT_ID}`;
+    const reviewOnly = agentTopics({ id: AGENT_ID, enabledCapabilities: ["review"] });
+    const withRalph = agentTopics({ id: AGENT_ID, enabledCapabilities: ["review", "ralph"] });
+    expect(reviewOnly).not.toContain("ralph-jobs");
+    expect(reviewOnly).not.toContain(ralphTopic);
+    expect(withRalph).toEqual(expect.arrayContaining(["ralph-jobs", ralphTopic, "review-jobs"]));
+
+    for (const topic of ["ralph-jobs", ralphTopic]) {
+      await expectForbidden(
+        await proxyQueueRequest(
+          request(receivePath(topic)),
+          options({ allowedTopics: reviewOnly }),
+        ),
+      );
+      await expectForbidden(
+        await proxyQueueRequest(
+          request(leasePath("rh", topic), { method: "DELETE" }),
+          options({ allowedTopics: reviewOnly }),
+        ),
+      );
+    }
+    // Another agent's ralph topic stays off-limits.
+    await expectForbidden(
+      await proxyQueueRequest(
+        request(receivePath("ralph-jobs-agent-00000000-0000-4000-8000-000000000000")),
+        options({ allowedTopics: withRalph }),
+      ),
+    );
+    for (const topic of ["ralph-jobs", ralphTopic]) {
+      const received = await proxyQueueRequest(
+        request(receivePath(topic)),
+        options({ allowedTopics: withRalph }),
+      );
+      expect(received.status).toBe(200);
+    }
+    expect(upstreamCalls.map((c) => new URL(c.url).pathname)).toEqual([
+      "/api/v3/topic/ralph-jobs/consumer/agents",
+      `/api/v3/topic/${ralphTopic}/consumer/agents`,
+    ]);
+  });
+
+  it("derives no topics from unknown capabilities", () => {
+    expect(agentTopics({ id: AGENT_ID, enabledCapabilities: ["deploy"] })).toEqual([
+      `system-jobs-agent-${AGENT_ID}`,
+    ]);
   });
 
   it("denies consumer groups other than agents", async () => {

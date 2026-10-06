@@ -1,13 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  buildLearnRulePrompt,
-  ClaudeAgentProvider,
-  diff,
-  findingHunks,
-  type RuleLearner,
-} from "@omniralph/engine";
+import { buildLearnRulePrompt, diff, findingHunks, type RuleLearner } from "@omniralph/engine";
 import {
   LearnRuleJobPayload,
   MAX_LEASE_SECONDS,
@@ -15,6 +9,7 @@ import {
   type LearnRuleJobResult,
 } from "@omniralph/shared";
 import { RetryableJobError, type JobContext } from "./index.js";
+import { reviewSessionProvider } from "./review.js";
 
 export interface LearnRuleOptions {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
@@ -69,7 +64,7 @@ export async function runLearnRule(
   const payload = parsed.data;
   const started = Date.now();
   const hunk = await loadHunk(payload, ctx);
-  const learner = options.learner ?? new ClaudeAgentProvider({ logger: ctx.logger });
+  const learner = options.learner ?? reviewSessionProvider(ctx.logger);
 
   // No tools, so the session never reads it; empty so nothing in it can be loaded either.
   const cwd = await mkdtemp(path.join(tmpdir(), "omniralph-learn-rule-"));

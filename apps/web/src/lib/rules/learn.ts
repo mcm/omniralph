@@ -77,15 +77,6 @@ export async function enqueueLearnRule(
   return { status: created ? "enqueued" : "duplicate", jobId: job.id };
 }
 
-/** Whether a job is a rule generation created by `enqueueLearnRule`. */
-export function isLearnRuleJob(job: Pick<Job, "capability" | "type" | "payload">): boolean {
-  return (
-    job.capability === LEARN_RULE_CAPABILITY &&
-    job.type === LEARN_RULE_JOB_TYPE &&
-    LearnRuleJobPayload.safeParse(job.payload).success
-  );
-}
-
 /** Validates a rule generation's result before the job is completed. */
 export function parseLearnRuleResult(result: unknown): LearnRuleJobResult | null {
   const parsed = LearnRuleJobResult.safeParse(result);

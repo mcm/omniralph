@@ -255,6 +255,30 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
+    it("enabling ralph lets the agent read the ralph topics", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(before.topics).not.toContain("ralph-jobs");
+      expect(before.topics).not.toContain(`ralph-jobs-agent-${agentId}`);
+
+      expect(
+        await updateAgentConfig(agentId, {
+          maxConcurrency: 1,
+          pollIntervalSeconds: 5,
+          enabledCapabilities: ["review", "ralph"],
+        }),
+      ).toEqual({ ok: true });
+      const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(after.enabledCapabilities).toEqual(["review", "ralph"]);
+      expect(after.topics).toEqual([
+        `review-jobs-agent-${agentId}`,
+        `ralph-jobs-agent-${agentId}`,
+        "review-jobs",
+        "ralph-jobs",
+        `system-jobs-agent-${agentId}`,
+      ]);
+    });
+
     it("pinning enqueues a repo.sync job on the agent's topic", async () => {
       const { agentId } = await enrolledAgent();
       expect(await pinRepository(agentId, repoB)).toEqual({ ok: true });

@@ -1,7 +1,9 @@
 import {
+  ClaudeAgentProvider,
   DISALLOWED_TOOLS,
   EXPLORATION_TOOLS,
   runReview,
+  type ReviewLogger,
   type ReviewProvider,
 } from "@omniralph/engine";
 import {
@@ -22,15 +24,23 @@ import {
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
 import { runLearnRule, type LearnRuleOptions } from "./learn-rule.js";
 import { runReply, type ReplyOptions } from "./reply.js";
+import { sdkPermissions } from "./tool-policy.js";
 
-/** Review sessions only read the job's worktree (the engine's Claude provider enforces the same lists). */
+/** Review sessions (`review.run`, `review.reply`, `review.learn-rule`) only read the job's worktree. */
 export const REVIEW_TOOL_POLICY: ToolPolicy = {
+  tools: "allowed",
   allowedTools: EXPLORATION_TOOLS,
   disallowedTools: DISALLOWED_TOOLS,
   fileScope: "worktree",
   permissionMode: "dontAsk",
-  loadProjectSettings: false,
+  settingSources: [],
+  writable: false,
 };
+
+/** The Claude provider of review sessions, with permissions from `REVIEW_TOOL_POLICY`. */
+export function reviewSessionProvider(logger: ReviewLogger): ClaudeAgentProvider {
+  return new ClaudeAgentProvider({ logger, permissions: sdkPermissions(REVIEW_TOOL_POLICY) });
+}
 
 /**
  * The `limit` most severe (then most confident) findings, in their original
@@ -121,7 +131,11 @@ export function createReviewCapability(options: ReviewCapabilityOptions = {}): C
               previousReview: previousReview ?? undefined,
               gitEnv: ctx.repos.gitEnv(ctx.env()),
             },
-            { provider: options.provider, logger: log, signal: ctx.signal },
+            {
+              provider: options.provider ?? reviewSessionProvider(log),
+              logger: log,
+              signal: ctx.signal,
+            },
           ),
       );
 

@@ -157,7 +157,8 @@ describe("review capability", () => {
       expect.arrayContaining(["Bash", "Write", "Edit", "WebFetch", "WebSearch"]),
     );
     expect(REVIEW_TOOL_POLICY.permissionMode).not.toBe("bypassPermissions");
-    expect(REVIEW_TOOL_POLICY.loadProjectSettings).toBe(false);
+    expect(REVIEW_TOOL_POLICY.settingSources).toEqual([]);
+    expect(REVIEW_TOOL_POLICY.writable).toBe(false);
   });
 
   it("clones, runs runReview in a worktree at head and reports the ReviewResult", async () => {

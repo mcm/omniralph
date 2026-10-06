@@ -15,6 +15,7 @@ import {
   type JobContext,
 } from "./capabilities/index.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort } from "./daemon.js";
+import { ralphCapability } from "./capabilities/ralph.js";
 import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
 import type { MessageHandler, QueueReceiver, RetryDirective } from "./queue.js";
@@ -141,11 +142,13 @@ function capability(run: Capability["run"], overrides: Partial<Capability> = {})
     name: "review",
     jobTypes: ["review.run"],
     toolPolicy: {
+      tools: "allowed",
       allowedTools: ["Read"],
       disallowedTools: ["Bash"],
       fileScope: "worktree",
       permissionMode: "dontAsk",
-      loadProjectSettings: false,
+      settingSources: [],
+      writable: false,
     },
     run,
     ...overrides,
@@ -344,6 +347,40 @@ describe("AgentDaemon", () => {
     await settle();
     expect(api.submitFailure).toHaveBeenCalledWith(id, { retryable: false, error: "boom" });
     expect(queue.acked).toHaveLength(1);
+    expect(queue.rescheduled).toEqual([]);
+    await daemon.shutdown();
+  });
+
+  it("polls ralph topics only once ralph is enabled, and fails its jobs as not implemented", async () => {
+    const id = randomUUID();
+    const ralphTopic = `ralph-jobs-agent-${AGENT_ID}`;
+    const topics = ["review-jobs", "ralph-jobs", ralphTopic];
+    const { api, state, queue, daemon } = setup({
+      capabilities: [systemCapability, capability(async () => ({})), ralphCapability],
+      config: centralConfig({ enabledCapabilities: ["review"], topics }),
+    });
+    api.startJob.mockResolvedValueOnce({
+      action: "run",
+      job: job(id, { capability: "ralph", type: "ralph.story" }),
+      jobToken: { jobId: id, token: "t", expiresIn: 900 },
+    });
+    void daemon.run();
+    await settle();
+    expect(daemon.pollableTopics()).toEqual(["review-jobs"]);
+    expect(queue.receiveCalls).not.toContain("ralph-jobs");
+    expect(queue.receiveCalls).not.toContain(ralphTopic);
+
+    state.config = centralConfig({ enabledCapabilities: ["review", "ralph"], topics });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(daemon.pollableTopics()).toEqual([ralphTopic, "review-jobs", "ralph-jobs"]);
+    queue.push(ralphTopic, id);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settle();
+    expect(queue.receiveCalls).toContain(ralphTopic);
+    expect(api.submitFailure).toHaveBeenCalledWith(id, {
+      retryable: false,
+      error: "ralph.story jobs are not supported by this agent yet",
+    });
     expect(queue.rescheduled).toEqual([]);
     await daemon.shutdown();
   });

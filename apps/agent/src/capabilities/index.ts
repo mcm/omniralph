@@ -2,24 +2,38 @@ import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { JobPayload } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
+import { ralphCapability } from "./ralph.js";
 import { reviewCapability } from "./review.js";
 import { systemCapability } from "./system.js";
 
 /**
- * What a capability's sessions may do. The review capability is read-only:
- * `Read`/`Grep`/`Glob` inside the job's worktree, nothing else.
+ * What a capability's Claude sessions may do. The agent builds the SDK's
+ * permission options from it (`sdkPermissions` in `tool-policy.ts`). Review
+ * is read-only: `Read`/`Grep`/`Glob` inside the job's worktree, nothing else.
+ * Ralph edits and runs commands in its branch worktree.
  */
 export interface ToolPolicy {
-  /** Claude Code tools a session may use. */
+  /** The session's tools: exactly `allowedTools`, or Claude Code's whole default set. */
+  tools: "allowed" | "claude_code";
+  /** Tools a session may use without asking. */
   allowedTools: readonly string[];
   /** Tools that are always denied, even if a setting would allow them. */
   disallowedTools: readonly string[];
-  /** File tools are confined to the job's git worktree. */
-  fileScope: "worktree";
-  /** Never `bypassPermissions`. */
-  permissionMode: "default" | "dontAsk";
-  /** Whether sessions may load `.claude/` settings, skills, MCP config or `CLAUDE.md` from the checkout. */
-  loadProjectSettings: false;
+  /**
+   * `worktree`: file tools are denied outside the job's worktree (by a
+   * PreToolUse hook). `cwd`: the session runs in the worktree but nothing is
+   * enforced (write-capable sessions with a shell can't be confined).
+   */
+  fileScope: "worktree" | "cwd";
+  /** `bypassPermissions` only for write-capable policies. */
+  permissionMode: "default" | "dontAsk" | "bypassPermissions";
+  /**
+   * Which `.claude/` settings (and with them skills, MCP config, `CLAUDE.md`)
+   * sessions load. Empty: none, and no skills, plugins or MCP servers at all.
+   */
+  settingSources: readonly ("user" | "project" | "local")[];
+  /** Whether sessions may change the worktree (edit files, run commands). */
+  writable: boolean;
 }
 
 /** What a capability gets for running one job. */
@@ -50,6 +64,8 @@ export interface Capability {
   /** Job types (`jobs.type`) this capability runs, e.g. `review.run`. */
   jobTypes: readonly string[];
   toolPolicy: ToolPolicy;
+  /** Job types whose sessions run with a different policy than `toolPolicy`. */
+  jobToolPolicies?: Readonly<Record<string, ToolPolicy>>;
   run(job: JobPayload, ctx: JobContext): Promise<JobOutput>;
 }
 
@@ -95,7 +111,12 @@ export class CapabilityRegistry {
   }
 }
 
+/** The tool policy of `jobType`'s sessions. */
+export function toolPolicyFor(capability: Capability, jobType: string): ToolPolicy {
+  return capability.jobToolPolicies?.[jobType] ?? capability.toolPolicy;
+}
+
 /** The capabilities this build of the agent ships; `system` is built in and always enabled. */
 export function defaultCapabilities(): Capability[] {
-  return [systemCapability, reviewCapability];
+  return [systemCapability, reviewCapability, ralphCapability];
 }

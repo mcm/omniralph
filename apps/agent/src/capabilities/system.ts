@@ -3,11 +3,13 @@ import type { Capability, ToolPolicy } from "./index.js";
 
 /** System jobs run no Claude session at all. */
 export const SYSTEM_TOOL_POLICY: ToolPolicy = {
+  tools: "allowed",
   allowedTools: [],
   disallowedTools: [],
   fileScope: "worktree",
   permissionMode: "dontAsk",
-  loadProjectSettings: false,
+  settingSources: [],
+  writable: false,
 };
 
 /**

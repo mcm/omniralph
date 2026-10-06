@@ -4,13 +4,7 @@ import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { isReplyJob, onReplyJobFailed } from "@/lib/mentions/reply";
-import {
-  isReviewJob,
-  onReviewJobCanceled,
-  onReviewJobFailed,
-  onReviewJobRetry,
-} from "@/lib/review/jobs";
+import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /** Lease delay before a retryable failure is redelivered, when the agent doesn't name one. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
@@ -20,8 +14,9 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
  * last allowed delivery, fail the job (the agent acknowledges the message).
  * Otherwise the response is `retry`: the agent sets the message's lease to
  * `retryAfterSeconds` without acknowledging, so the queue redelivers it.
- * A review job's final failure fails its review and posts a failure note; a
- * `review.reply` job's final failure posts an apology in the finding's thread.
+ * The job type's outcome handler (`onFailed`, `onCanceled`, `onRetry`) then
+ * updates the capability's state, e.g. a review's final failure fails the
+ * review and posts a failure note.
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireAgent(req);
@@ -40,13 +35,12 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     maxDeliveries: MAX_JOB_DELIVERIES,
   });
   const job = outcome.status === "not_found" ? null : await getJob(db, jobId);
-  if (job && isReviewJob(job)) {
+  const handler = job && jobOutcomeHandler(job);
+  if (job && handler) {
     const error = body.data.error ?? null;
-    if (outcome.status === "failed") await onReviewJobFailed(db, job, error ?? "Review failed");
-    else if (outcome.status === "canceled") await onReviewJobCanceled(db, job);
-    else if (outcome.status === "retry") await onReviewJobRetry(db, job, error);
-  } else if (job && outcome.status === "failed" && isReplyJob(job)) {
-    await onReplyJobFailed(db, job);
+    if (outcome.status === "failed") await handler.onFailed?.(db, job, error);
+    else if (outcome.status === "canceled") await handler.onCanceled?.(db, job);
+    else if (outcome.status === "retry") await handler.onRetry?.(db, job, error);
   }
   switch (outcome.status) {
     case "not_found":

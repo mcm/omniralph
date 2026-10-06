@@ -98,6 +98,63 @@ export interface ClaudeAgentProviderOptions {
   /** Max characters of the invalid answer quoted in the repair prompt. */
   maxRepairQuoteChars?: number;
   pathToClaudeCodeExecutable?: string;
+  /**
+   * The permission options of every session (the agent derives them from its
+   * capability's tool policy). Defaults to `readOnlyPermissions`.
+   */
+  permissions?: SessionPermissionsBuilder;
+}
+
+/** The permission-related SDK options of one session. */
+export type SessionPermissions = Pick<
+  Options,
+  | "cwd"
+  | "tools"
+  | "allowedTools"
+  | "disallowedTools"
+  | "permissionMode"
+  | "allowDangerouslySkipPermissions"
+  | "settingSources"
+  | "skills"
+  | "plugins"
+  | "mcpServers"
+  | "strictMcpConfig"
+  | "hooks"
+>;
+
+/** What a session's permissions are built for. */
+export interface SessionScope {
+  /** The job's worktree; the session's working directory. */
+  cwd: string;
+  /** Whether this session may use tools at all (a repair turn or a no-tool generation may not). */
+  allowExploration: boolean;
+}
+
+export type SessionPermissionsBuilder = (scope: SessionScope) => SessionPermissions;
+
+/**
+ * The review permissions: `Read`/`Grep`/`Glob` confined to the worktree (when
+ * exploring), everything else denied, and no settings loaded from anywhere.
+ */
+export function readOnlyPermissions(scope: SessionScope): SessionPermissions {
+  const tools = scope.allowExploration ? [...EXPLORATION_TOOLS] : [];
+  return {
+    cwd: scope.cwd,
+    tools,
+    allowedTools: [...tools],
+    disallowedTools: [...DISALLOWED_TOOLS],
+    // Deny anything not pre-approved; never bypassPermissions.
+    permissionMode: "dontAsk",
+    // No user/project/local settings, CLAUDE.md, skills, plugins or MCP servers.
+    settingSources: [],
+    skills: [],
+    plugins: [],
+    mcpServers: {},
+    strictMcpConfig: true,
+    hooks: scope.allowExploration
+      ? { PreToolUse: [{ matcher: "Read|Grep|Glob", hooks: [worktreeGuard(scope.cwd)] }] }
+      : {},
+  };
 }
 
 /** What one SDK run is for: a review task, or a rule generation. */
@@ -260,28 +317,18 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
     maxTurns: number,
     systemPrompt: string = REVIEW_SYSTEM_PROMPT,
   ): Options {
-    const tools = request.allowExploration ? [...EXPLORATION_TOOLS] : [];
+    const permissions = (this.options.permissions ?? readOnlyPermissions)({
+      cwd: request.cwd,
+      allowExploration: request.allowExploration,
+    });
     return {
       cwd: request.cwd,
       model: request.model,
       abortController,
       systemPrompt,
-      tools,
-      allowedTools: [...tools],
-      disallowedTools: [...DISALLOWED_TOOLS],
-      // Deny anything not pre-approved; never bypassPermissions.
-      permissionMode: "dontAsk",
-      // No user/project/local settings, CLAUDE.md, skills, plugins or MCP servers.
-      settingSources: [],
-      skills: [],
-      plugins: [],
-      mcpServers: {},
-      strictMcpConfig: true,
+      ...permissions,
       persistSession: false,
       maxTurns,
-      hooks: request.allowExploration
-        ? { PreToolUse: [{ matcher: "Read|Grep|Glob", hooks: [worktreeGuard(request.cwd)] }] }
-        : {},
       env: {
         ...process.env,
         ...this.options.env,

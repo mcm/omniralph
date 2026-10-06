@@ -43,9 +43,13 @@ export type SystemCapability = typeof SYSTEM_CAPABILITY;
 /** `system` job that clones or fetches a repo into the agent's cache without running anything. */
 export const REPO_SYNC_JOB_TYPE = "repo.sync";
 
-/** The job token scopes each capability's jobs get. Review and repo sync are read-only. */
+/**
+ * The job token scopes each capability's jobs get. Review and repo sync are
+ * read-only; ralph jobs push their commits and relay session activities.
+ */
 export const CAPABILITY_JOB_SCOPES: Record<Capability | SystemCapability, JobTokenScope[]> = {
   review: ["credentials:read"],
+  ralph: ["credentials:read", "credentials:write", "ralph:activity"],
   system: ["credentials:read"],
 };
 

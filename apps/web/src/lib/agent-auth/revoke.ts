@@ -10,12 +10,7 @@ import {
 import { MAX_JOB_DELIVERIES, SYSTEM_CAPABILITY } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
-import {
-  isReviewJob,
-  onReviewJobCanceled,
-  onReviewJobFailed,
-  onReviewJobRetry,
-} from "@/lib/review/jobs";
+import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
 
 const REVOKED = "Agent revoked";
 
@@ -56,9 +51,9 @@ export async function revokeAgent(
     },
   });
 
-  await forEachReviewJob(revoked.requeuedJobs, (job) => onReviewJobRetry(db, job, REVOKED));
-  await forEachReviewJob(revoked.canceledJobs, (job) => onReviewJobCanceled(db, job));
-  await forEachReviewJob(revoked.failedJobs, (job) => onReviewJobFailed(db, job, REVOKED));
+  await forEachJob(revoked.requeuedJobs, (h, job) => h.onRetry?.(db, job, REVOKED));
+  await forEachJob(revoked.canceledJobs, (h, job) => h.onCanceled?.(db, job));
+  await forEachJob(revoked.failedJobs, (h, job) => h.onFailed?.(db, job, REVOKED));
 
   const dispatcher = options.dispatcher ?? getDispatcher();
   for (const job of await listQueuedJobsOnAgentTopics(db, agentId)) {
@@ -75,14 +70,18 @@ export async function revokeAgent(
   return true;
 }
 
-/** Runs a review hook per review job; a failing hook (e.g. a code-host call) doesn't stop the rest. */
-async function forEachReviewJob(jobs: Job[], hook: (job: Job) => Promise<void>): Promise<void> {
+/** Runs an outcome hook per job that has a handler; a failing hook (e.g. a code-host call) doesn't stop the rest. */
+async function forEachJob(
+  jobs: Job[],
+  hook: (handler: JobOutcomeHandler, job: Job) => Promise<unknown> | undefined,
+): Promise<void> {
   for (const job of jobs) {
-    if (!isReviewJob(job)) continue;
+    const handler = jobOutcomeHandler(job);
+    if (!handler) continue;
     try {
-      await hook(job);
+      await hook(handler, job);
     } catch (error) {
-      console.error(`Review hook failed for job ${job.id}`, error);
+      console.error(`Job outcome hook failed for job ${job.id}`, error);
     }
   }
 }

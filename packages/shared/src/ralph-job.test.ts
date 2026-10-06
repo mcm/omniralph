@@ -1,0 +1,212 @@
+import { describe, expect, it } from "vitest";
+import { CAPABILITIES, isCapability } from "./index.js";
+import { JobTokenScope } from "./agent-protocol.js";
+import { CAPABILITY_JOB_SCOPES } from "./protocol.js";
+import {
+  GitBranch,
+  RALPH_CAPABILITY,
+  RALPH_JOB_TYPES,
+  RalphActivity,
+  RalphDescribePrPayload,
+  RalphDescribePrResult,
+  RalphPreparePayload,
+  RalphPrepareResult,
+  RalphStoryPayload,
+  RalphStoryResult,
+} from "./ralph-job.js";
+
+const sha = "a".repeat(40);
+const base = {
+  runId: "00000000-0000-4000-8000-000000000001",
+  repositoryId: "00000000-0000-4000-8000-000000000002",
+  repository: {
+    provider: "github",
+    fullPath: "acme/widgets",
+    cloneUrl: "https://github.com/acme/widgets.git",
+  },
+  branch: "steve/tool-32-ralph",
+  baseBranch: "main",
+  settings: { model: null, setupCommand: "pnpm install" },
+};
+
+const storyPayload = {
+  ...base,
+  storyId: "00000000-0000-4000-8000-000000000003",
+  attempt: 1,
+  epic: { identifier: "TOOL-32", title: "Ralph core", prd: "# PRD" },
+  story: {
+    identifier: "TOOL-83",
+    title: "Add the ralph capability",
+    linearIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
+    description: "As a developer...",
+  },
+  commitMessage: "feat(TOOL-83): Add the ralph capability",
+  qualityGates: ["pnpm typecheck", "pnpm test"],
+  progress: "",
+  lastFeedback: null,
+  guidance: [],
+};
+
+const storyResult = {
+  status: "complete",
+  summary: "Added the capability.",
+  commitSha: sha,
+  followUps: [{ title: "Fix the flaky test", description: "- [ ] it passes", manual: false }],
+  feedback: null,
+  usage: { inputTokens: 1000, outputTokens: 200 },
+  durationMs: 60_000,
+};
+
+describe("ralph capability", () => {
+  it("is a capability whose jobs may push and relay activities", () => {
+    expect(CAPABILITIES).toContain(RALPH_CAPABILITY);
+    expect(isCapability("ralph")).toBe(true);
+    expect(CAPABILITY_JOB_SCOPES.ralph).toEqual([
+      "credentials:read",
+      "credentials:write",
+      "ralph:activity",
+    ]);
+    expect(CAPABILITY_JOB_SCOPES.review).toEqual(["credentials:read"]);
+    expect(CAPABILITY_JOB_SCOPES.system).toEqual(["credentials:read"]);
+    for (const scope of CAPABILITY_JOB_SCOPES.ralph) {
+      expect(JobTokenScope.safeParse(scope).success).toBe(true);
+    }
+    expect(RALPH_JOB_TYPES).toEqual(["ralph.story", "ralph.describe-pr", "ralph.prepare"]);
+  });
+});
+
+describe("GitBranch", () => {
+  it("accepts branch names and rejects unsafe refs", () => {
+    for (const ok of ["main", "steve/tool-83-x", "release/1.2", "a_b-c"]) {
+      expect(GitBranch.safeParse(ok).success, ok).toBe(true);
+    }
+    for (const bad of [
+      "",
+      "-x",
+      "/x",
+      "x/",
+      "a..b",
+      "a//b",
+      "x.lock",
+      "a/.hidden",
+      "a b",
+      "a@{1}",
+    ]) {
+      expect(GitBranch.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+});
+
+describe("RalphStoryPayload", () => {
+  it("accepts a story attempt and rejects an invalid branch or attempt", () => {
+    expect(RalphStoryPayload.safeParse(storyPayload).success).toBe(true);
+    expect(
+      RalphStoryPayload.safeParse({ ...storyPayload, lastFeedback: "gates failed", attempt: 2 })
+        .success,
+    ).toBe(true);
+    expect(RalphStoryPayload.safeParse({ ...storyPayload, branch: "../x" }).success).toBe(false);
+    expect(RalphStoryPayload.safeParse({ ...storyPayload, attempt: 0 }).success).toBe(false);
+    expect(RalphStoryPayload.safeParse({ ...storyPayload, storyId: "x" }).success).toBe(false);
+  });
+});
+
+describe("RalphStoryResult", () => {
+  it("accepts every status, with or without a commit", () => {
+    expect(RalphStoryResult.safeParse(storyResult).success).toBe(true);
+    for (const status of ["incomplete", "blocked", "failed"]) {
+      const { commitSha: _, ...rest } = storyResult;
+      expect(
+        RalphStoryResult.safeParse({ ...rest, status, feedback: "pnpm test failed" }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects unknown statuses, bad SHAs and incomplete follow-ups", () => {
+    expect(RalphStoryResult.safeParse({ ...storyResult, status: "done" }).success).toBe(false);
+    expect(RalphStoryResult.safeParse({ ...storyResult, commitSha: "abc" }).success).toBe(false);
+    expect(
+      RalphStoryResult.safeParse({ ...storyResult, followUps: [{ title: " ", description: "" }] })
+        .success,
+    ).toBe(false);
+    expect(
+      RalphStoryResult.safeParse({ ...storyResult, usage: { inputTokens: -1, outputTokens: 0 } })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("RalphDescribePrPayload / RalphDescribePrResult", () => {
+  const payload = {
+    ...base,
+    epic: { identifier: "TOOL-32", title: "Ralph core", url: null, prd: "# PRD" },
+    stories: [{ identifier: "TOOL-83", title: "Story", status: "completed", commitSha: sha }],
+    progress: "## TOOL-83\n- done",
+  };
+
+  it("accepts a finished run and a title and body", () => {
+    expect(RalphDescribePrPayload.safeParse(payload).success).toBe(true);
+    expect(
+      RalphDescribePrResult.safeParse({
+        title: "Ralph core",
+        body: "## Summary\n...",
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an empty title or body", () => {
+    const usage = { inputTokens: 1, outputTokens: 1 };
+    expect(RalphDescribePrResult.safeParse({ title: " ", body: "x", usage }).success).toBe(false);
+    expect(RalphDescribePrResult.safeParse({ title: "x", body: "", usage }).success).toBe(false);
+    expect(
+      RalphDescribePrResult.safeParse({ title: "x".repeat(256), body: "x", usage }).success,
+    ).toBe(false);
+  });
+});
+
+describe("RalphPreparePayload / RalphPrepareResult", () => {
+  const payload = {
+    ...base,
+    story: { identifier: "TOOL-90", title: "Create the bucket" },
+    commands: ["terraform apply"],
+    commandsHash: "f".repeat(64),
+    approvedHeadSha: sha,
+  };
+
+  it("accepts approved commands and their outcome", () => {
+    expect(RalphPreparePayload.safeParse(payload).success).toBe(true);
+    for (const status of ["completed", "failed", "stale"]) {
+      expect(
+        RalphPrepareResult.safeParse({
+          status,
+          commands: status === "stale" ? [] : [{ command: "x", exitCode: 0, output: "ok" }],
+          headSha: sha,
+          durationMs: 5,
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects no commands or a malformed hash", () => {
+    expect(RalphPreparePayload.safeParse({ ...payload, commands: [] }).success).toBe(false);
+    expect(RalphPreparePayload.safeParse({ ...payload, commandsHash: "abc" }).success).toBe(false);
+  });
+});
+
+describe("RalphActivity", () => {
+  it("accepts thoughts and actions, non-ephemeral by default", () => {
+    expect(RalphActivity.parse({ type: "thought", body: "Reading the PRD" })).toEqual({
+      type: "thought",
+      body: "Reading the PRD",
+      ephemeral: false,
+    });
+    expect(
+      RalphActivity.safeParse({ type: "action", body: "Bash: pnpm test", ephemeral: true }).success,
+    ).toBe(true);
+  });
+
+  it("rejects other types and empty bodies", () => {
+    expect(RalphActivity.safeParse({ type: "response", body: "Done" }).success).toBe(false);
+    expect(RalphActivity.safeParse({ type: "thought", body: "  " }).success).toBe(false);
+  });
+});
