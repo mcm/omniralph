@@ -8,10 +8,12 @@ const {
   authorizeUrl,
   createOAuthState,
   exchangeCode,
+  LINEAR_OAUTH_TIMEOUT_MS,
   LinearOAuthError,
   linearOAuthConfig,
   refreshCredentials,
   readOAuthState,
+  revokeToken,
   verifyOAuthState,
 } = await import("./oauth");
 
@@ -36,6 +38,7 @@ const server = setupServer(
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 afterEach(() => {
   tokenRequests.length = 0;
+  vi.restoreAllMocks();
 });
 afterAll(() => server.close());
 
@@ -145,5 +148,17 @@ describe("token endpoint", () => {
     await expect(
       exchangeCode(config, { code: "bad", redirectUri: "https://o.example.com/cb" }),
     ).rejects.toBeInstanceOf(LinearOAuthError);
+  });
+
+  it("times out token and revoke requests instead of hanging", async () => {
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation(() => AbortSignal.abort(new DOMException("timed out", "TimeoutError")));
+    await expect(
+      exchangeCode(config, { code: "code-1", redirectUri: "https://o.example.com/cb" }),
+    ).rejects.toThrow("timed out");
+    await expect(revokeToken("access-1")).rejects.toThrow("timed out");
+    expect(timeout).toHaveBeenCalledTimes(2);
+    expect(timeout).toHaveBeenCalledWith(LINEAR_OAUTH_TIMEOUT_MS);
   });
 });

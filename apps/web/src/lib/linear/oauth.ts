@@ -12,6 +12,8 @@ export const LINEAR_AUTHORIZE_URL = "https://linear.app/oauth/authorize";
 export const LINEAR_TOKEN_URL = "https://api.linear.app/oauth/token";
 export const LINEAR_REVOKE_URL = "https://api.linear.app/oauth/revoke";
 export const LINEAR_CALLBACK_PATH = "/api/integrations/linear/callback";
+/** Bounds token and revoke calls so a hung Linear endpoint can't stall a callback or run lock. */
+export const LINEAR_OAUTH_TIMEOUT_MS = 10_000;
 
 export interface LinearOAuthConfig {
   clientId: string;
@@ -75,6 +77,7 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(body),
+    signal: AbortSignal.timeout(LINEAR_OAUTH_TIMEOUT_MS),
   });
   if (!res.ok) {
     // The error body (`invalid_grant` etc.) never contains the secrets we sent.
@@ -137,6 +140,7 @@ export async function revokeToken(accessToken: string): Promise<void> {
   const res = await fetch(LINEAR_REVOKE_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(LINEAR_OAUTH_TIMEOUT_MS),
   });
   if (!res.ok && res.status !== 400 && res.status !== 401) {
     throw new LinearOAuthError(`Linear revoke returned ${res.status}`, res.status);
