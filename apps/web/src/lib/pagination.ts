@@ -3,10 +3,13 @@
  * repositories, GitHub installation repositories).
  */
 
-/** A 1-based page number from a URL search param; anything else is page 1. */
+/**
+ * A 1-based page number from a URL search param; anything else (including
+ * integers too large to turn into a safe query offset) is page 1.
+ */
 export function parsePage(value: string | string[] | undefined): number {
   const page = Number(Array.isArray(value) ? value[0] : value);
-  return Number.isInteger(page) && page > 0 ? page : 1;
+  return Number.isSafeInteger(page) && page > 0 ? page : 1;
 }
 
 /** Number of pages for `total` items (at least 1, so an empty list has one page). */
