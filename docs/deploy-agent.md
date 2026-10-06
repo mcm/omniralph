@@ -214,10 +214,17 @@ response (every 20s), so changes need no restart:
 | Setting | Where | Default |
 | -- | -- | -- |
 | Max concurrency (parallel jobs) | **Agents › <agent>** | 1 |
+| Concurrency per capability (1 to max concurrency) | **Agents › <agent>** | `ralph`: max concurrency − 1 (at least 1); others: max concurrency |
 | Poll interval | **Agents › <agent>** | 5s |
 | Enabled capabilities (`review`, `ralph`) | **Agents › <agent>** | `review` |
 | Pinned repositories | **Agents › <agent>**, or **Repository › Settings › Agents** | none (every agent is eligible for every repo) |
 | Job cancellations | **Jobs** (cancel) | — |
+
+Per-capability limits cap how many of an agent's slots one capability's jobs may take. A worker only
+receives from a capability's topics while that capability is under its limit, so with the default an
+agent with two or more slots always keeps one free for reviews while hours-long ralph stories run.
+Lowering a limit cancels nothing: the agent just takes no new jobs of that capability until it is
+under the new limit. The heartbeat's `freeSlots` counts only slots some enabled capability could use.
 
 Pinning a repository to an agent routes its jobs to that agent only and makes the agent pre-clone it
 (`repo.sync`). The **Agents** page shows each agent's last heartbeat, version, running jobs and its

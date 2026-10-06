@@ -61,6 +61,43 @@ export type JobMessage = z.infer<typeof JobMessage>;
 
 const capabilityName = z.string().min(1).max(64);
 
+/**
+ * Per-capability caps on concurrent jobs (`agents.capability_limits`), each
+ * within `maxConcurrency`. Unset capabilities use `defaultCapabilityLimit`.
+ */
+export const CapabilityLimits = z.record(capabilityName, z.int().min(1).max(1000));
+export type CapabilityLimits = z.infer<typeof CapabilityLimits>;
+
+/**
+ * A capability's limit when none is set: `ralph` jobs (hours-long stories)
+ * leave one slot free for other work on agents with two or more slots; other
+ * capabilities may use every slot.
+ */
+export function defaultCapabilityLimit(capability: string, maxConcurrency: number): number {
+  return capability === "ralph" ? Math.max(1, maxConcurrency - 1) : maxConcurrency;
+}
+
+/** A capability's effective limit: the stored one (or the default), clamped to 1…`maxConcurrency`. */
+export function effectiveCapabilityLimit(
+  capability: string,
+  limits: Partial<Record<string, number>>,
+  maxConcurrency: number,
+): number {
+  const limit = limits[capability] ?? defaultCapabilityLimit(capability, maxConcurrency);
+  return Math.max(1, Math.min(maxConcurrency, limit));
+}
+
+/** The effective limit of each capability in `capabilities`. */
+export function effectiveCapabilityLimits(
+  capabilities: readonly string[],
+  limits: Partial<Record<string, number>>,
+  maxConcurrency: number,
+): CapabilityLimits {
+  return Object.fromEntries(
+    capabilities.map((name) => [name, effectiveCapabilityLimit(name, limits, maxConcurrency)]),
+  );
+}
+
 /** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
@@ -86,6 +123,11 @@ export const HeartbeatResponse = z.object({
   maxConcurrency: z.int().min(1),
   pollIntervalSeconds: z.int().min(1),
   enabledCapabilities: z.array(capabilityName),
+  /**
+   * Effective per-capability concurrency limits of the enabled capabilities.
+   * The agent only receives a capability's jobs while it runs fewer than this.
+   */
+  capabilityLimits: CapabilityLimits.default({}),
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
   pinnedRepoIds: z.array(z.uuid()),
   /** Topics to poll, in consumer group `QUEUE_CONSUMER_GROUP`. */

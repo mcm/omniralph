@@ -148,6 +148,13 @@
       "when": 1791297360179,
       "tag": "0020_ralph_cyralph_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791298330956,
+      "tag": "0021_agent_capability_limits",
+      "breakpoints": true
     }
   ]
 }

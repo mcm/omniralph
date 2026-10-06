@@ -4,6 +4,7 @@ import {
   QUEUE_CONSUMER_GROUP,
   SYSTEM_CAPABILITY,
   capabilityTopic,
+  effectiveCapabilityLimit,
   type HeartbeatResponse,
   type JobFailure,
   type JobOutcomeResponse,
@@ -78,6 +79,7 @@ export interface DaemonOptions {
 }
 
 interface RunningJob {
+  capability: string;
   controller: AbortController;
   jobToken: string;
 }
@@ -103,6 +105,12 @@ export class AgentDaemon {
   private readonly handlers = new Set<Promise<unknown>>();
   /** Poll workers; each holds at most one message, so this is the number of used slots. */
   private workers = 0;
+  /**
+   * Workers receiving from (and so running a job of) each capability's topics.
+   * A worker only receives from a capability's topics while this is under the
+   * capability's limit.
+   */
+  private readonly capabilitySlots = new Map<string, number>();
   private stopping = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly sleepers = new Set<() => void>();
@@ -196,13 +204,12 @@ export class AgentDaemon {
 
   /** Sends one heartbeat and applies the response. */
   async heartbeat(): Promise<void> {
-    const maxConcurrency = this.config?.maxConcurrency ?? 0;
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
         capabilities: this.options.registry.names(),
         runningJobIds: [...this.running.keys()],
-        freeSlots: Math.max(0, maxConcurrency - this.running.size),
+        freeSlots: this.freeSlots(),
       });
       this.lastHeartbeatAt = new Date();
       this.applyConfig(response);
@@ -221,6 +228,7 @@ export class AgentDaemon {
       previous.pollIntervalSeconds !== config.pollIntervalSeconds ||
       previous.queueRegion !== config.queueRegion ||
       previous.topics.join() !== config.topics.join() ||
+      JSON.stringify(previous.capabilityLimits) !== JSON.stringify(config.capabilityLimits) ||
       previous.enabledCapabilities.join() !== config.enabledCapabilities.join()
     ) {
       this.options.logger.info(
@@ -228,6 +236,7 @@ export class AgentDaemon {
           maxConcurrency: config.maxConcurrency,
           pollIntervalSeconds: config.pollIntervalSeconds,
           enabledCapabilities: config.enabledCapabilities,
+          capabilityLimits: config.capabilityLimits,
           topics: this.pollableTopics(),
           queueRegion: config.queueRegion,
         },
@@ -266,19 +275,74 @@ export class AgentDaemon {
   pollableTopics(): string[] {
     const config = this.config;
     if (!config) return [];
-    const capabilities = this.options.registry
-      .names()
-      .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
-    const topics = config.topics.filter((topic) =>
-      capabilities.some((name) => {
-        const shared = capabilityTopic(name);
-        return topic === shared || topic.startsWith(`${shared}-agent-`);
-      }),
-    );
+    const topics = config.topics.filter((topic) => this.topicCapability(topic) !== undefined);
     return [
       ...topics.filter((topic) => topic.includes("-agent-")),
       ...topics.filter((topic) => !topic.includes("-agent-")),
     ];
+  }
+
+  /** Capabilities this host has registered and the control panel has enabled (plus `system`). */
+  private pollableCapabilities(): string[] {
+    const config = this.config;
+    if (!config) return [];
+    return this.options.registry
+      .names()
+      .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
+  }
+
+  /** The pollable capability whose jobs a topic carries, if any. */
+  private topicCapability(topic: string): string | undefined {
+    return this.pollableCapabilities().find((name) => {
+      const shared = capabilityTopic(name);
+      return topic === shared || topic.startsWith(`${shared}-agent-`);
+    });
+  }
+
+  /**
+   * How many of a capability's jobs may run at once: the heartbeat's limit, or
+   * the protocol default when the control panel sent none.
+   */
+  capabilityLimit(capability: string): number {
+    const config = this.config;
+    if (!config) return 0;
+    return effectiveCapabilityLimit(capability, config.capabilityLimits, config.maxConcurrency);
+  }
+
+  /**
+   * Jobs the agent could take right now: its free slots, but no more than the
+   * pollable capabilities still have room for under their limits.
+   */
+  freeSlots(): number {
+    const config = this.config;
+    if (!config) return 0;
+    const running = new Map<string, number>();
+    for (const job of this.running.values()) {
+      running.set(job.capability, (running.get(job.capability) ?? 0) + 1);
+    }
+    const room = this.pollableCapabilities().reduce(
+      (sum, name) => sum + Math.max(0, this.capabilityLimit(name) - (running.get(name) ?? 0)),
+      0,
+    );
+    return Math.max(0, Math.min(config.maxConcurrency - this.running.size, room));
+  }
+
+  /**
+   * Takes one of a capability's slots for a receive (and the job it may run).
+   * Synchronous, so two workers can't both take the last slot. A lowered
+   * limit cancels nothing: receives just stop until the count drops below it.
+   */
+  private takeCapabilitySlot(capability: string): boolean {
+    const used = this.capabilitySlots.get(capability) ?? 0;
+    if (used >= this.capabilityLimit(capability)) return false;
+    this.capabilitySlots.set(capability, used + 1);
+    return true;
+  }
+
+  private releaseCapabilitySlot(capability: string): void {
+    const used = (this.capabilitySlots.get(capability) ?? 1) - 1;
+    if (used > 0) this.capabilitySlots.set(capability, used);
+    else this.capabilitySlots.delete(capability);
   }
 
   private fillSlots(): void {
@@ -311,6 +375,8 @@ export class AgentDaemon {
       let received = false;
       for (const topic of topics) {
         if (this.stopping) break;
+        const capability = this.topicCapability(topic);
+        if (!capability || !this.takeCapabilitySlot(capability)) continue;
         try {
           const result = await this.receiver(config.queueRegion).receive(
             topic,
@@ -328,6 +394,8 @@ export class AgentDaemon {
           }
         } catch (error) {
           if (!(error instanceof Redeliver)) this.onApiError(error, `receive from ${topic} failed`);
+        } finally {
+          this.releaseCapabilitySlot(capability);
         }
       }
       if (!received) await this.sleep(config.pollIntervalSeconds * 1000);
@@ -397,7 +465,11 @@ export class AgentDaemon {
     }
 
     const controller = new AbortController();
-    const running: RunningJob = { controller, jobToken: start.jobToken.token };
+    const running: RunningJob = {
+      capability: job.capability,
+      controller,
+      jobToken: start.jobToken.token,
+    };
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
     let output: JobOutput | undefined;

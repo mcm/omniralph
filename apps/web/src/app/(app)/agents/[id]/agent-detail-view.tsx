@@ -28,6 +28,7 @@ import {
   NativeSelect,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconDeviceFloppy, IconPin, IconPinnedOff } from "@tabler/icons-react";
+import { defaultCapabilityLimit } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import type { AgentRow } from "@/lib/agents/rows";
@@ -75,7 +76,13 @@ function ConfigCard({
   const [capabilities, setCapabilities] = React.useState<string[]>(
     agent.enabledCapabilities.filter((c) => knownCapabilities.includes(c)),
   );
+  const [limits, setLimits] = React.useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(agent.capabilityLimits).map(([name, limit]) => [name, String(limit)]),
+    ),
+  );
   const disabled = agent.revoked || pending;
+  const slots = Number(maxConcurrency) >= 1 ? Math.floor(Number(maxConcurrency)) : 1;
 
   const toggle = (capability: string, on: boolean) =>
     setCapabilities((current) =>
@@ -90,6 +97,12 @@ function ConfigCard({
           maxConcurrency: Number(maxConcurrency),
           pollIntervalSeconds: Number(pollInterval),
           enabledCapabilities: capabilities,
+          // Blank limits use the default.
+          capabilityLimits: Object.fromEntries(
+            capabilities
+              .filter((capability) => limits[capability]?.trim())
+              .map((capability) => [capability, Number(limits[capability])]),
+          ),
         }),
       "Saved. The agent picks it up with its next heartbeat.",
     );
@@ -159,6 +172,40 @@ function ConfigCard({
               </div>
             ))}
           </div>
+          {capabilities.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              <span style={factLabel}>Concurrency per capability</span>
+              <Muted>
+                Caps how many of the agent&apos;s slots a capability&apos;s jobs may take (1 to the
+                max concurrency). Leave blank for the default: ralph leaves one slot free for other
+                work, the rest may use every slot. Lowering a limit doesn&apos;t cancel running
+                jobs; the agent takes no new ones until it is under the limit.
+              </Muted>
+              <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+                {capabilities.map((capability) => (
+                  <Field
+                    key={capability}
+                    label={capability}
+                    htmlFor={`limit-${capability}`}
+                    hint={`Effective now: ${agent.effectiveCapabilityLimits[capability] ?? "not enabled"}.`}
+                  >
+                    <Input
+                      id={`limit-${capability}`}
+                      type="number"
+                      min={1}
+                      max={slots}
+                      placeholder={`Default (${defaultCapabilityLimit(capability, slots)})`}
+                      disabled={disabled}
+                      value={limits[capability] ?? ""}
+                      onChange={(e) =>
+                        setLimits((current) => ({ ...current, [capability]: e.target.value }))
+                      }
+                    />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <Button type="submit" variant="primary" disabled={disabled}>
               <IconDeviceFloppy size={14} />
@@ -404,6 +451,13 @@ export function AgentDetailView({
                     <JobTargetLink key={job.id} job={job} />
                   ))}
                 </div>
+              </Fact>
+              <Fact label="Concurrency per capability">
+                {Object.keys(agent.effectiveCapabilityLimits).length === 0
+                  ? "No capabilities enabled"
+                  : Object.entries(agent.effectiveCapabilityLimits)
+                      .map(([capability, limit]) => `${capability}: ${limit}`)
+                      .join(", ")}
               </Fact>
               <Fact label="Enrolled">{formatDateTime(agent.createdAt)}</Fact>
             </div>

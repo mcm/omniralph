@@ -117,6 +117,8 @@ export interface AgentConfigInput {
   maxConcurrency: number;
   pollIntervalSeconds: number;
   enabledCapabilities: string[];
+  /** Per-capability concurrency limits; capabilities left out use the default. */
+  capabilityLimits?: Partial<Record<string, number>>;
 }
 
 /**
@@ -134,6 +136,7 @@ export async function updateAgentConfig(
       maxConcurrency: input.maxConcurrency,
       pollIntervalSeconds: input.pollIntervalSeconds,
       enabledCapabilities: [...new Set(input.enabledCapabilities)],
+      ...(input.capabilityLimits && { capabilityLimits: input.capabilityLimits }),
     })
     .where(and(eq(agents.id, agentId), isNull(agents.revokedAt)))
     .returning();

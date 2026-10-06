@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "capability_limits" jsonb DEFAULT '{}'::jsonb NOT NULL;

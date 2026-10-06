@@ -279,6 +279,52 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       ]);
     });
 
+    it("sends the effective per-capability limits and stores the edited ones", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const initial = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(initial.capabilityLimits).toEqual({ review: 1 });
+
+      // Unset: ralph leaves one slot for reviews.
+      const config = {
+        maxConcurrency: 3,
+        pollIntervalSeconds: 5,
+        enabledCapabilities: ["review", "ralph"],
+      };
+      expect(await updateAgentConfig(agentId, config)).toEqual({ ok: true });
+      const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(defaults.capabilityLimits).toEqual({ review: 3, ralph: 2 });
+
+      expect(
+        await updateAgentConfig(agentId, { ...config, capabilityLimits: { ralph: 1, review: 3 } }),
+      ).toEqual({ ok: true });
+      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(row!.capabilityLimits).toEqual({ ralph: 1, review: 3 });
+      const limited = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(limited.capabilityLimits).toEqual({ review: 3, ralph: 1 });
+
+      // Saving without limits keeps them; lowering maxConcurrency clamps the effective values.
+      expect(
+        await updateAgentConfig(agentId, {
+          ...config,
+          maxConcurrency: 2,
+          capabilityLimits: undefined,
+        }),
+      ).toEqual({ ok: true });
+      const clamped = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(clamped.capabilityLimits).toEqual({ review: 2, ralph: 1 });
+
+      // Disabled capabilities aren't sent.
+      expect(
+        await updateAgentConfig(agentId, {
+          ...config,
+          enabledCapabilities: ["review"],
+          capabilityLimits: {},
+        }),
+      ).toEqual({ ok: true });
+      const reviewOnly = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(reviewOnly.capabilityLimits).toEqual({ review: 3 });
+    });
+
     it("pinning enqueues a repo.sync job on the agent's topic", async () => {
       const { agentId } = await enrolledAgent();
       expect(await pinRepository(agentId, repoB)).toEqual({ ok: true });
@@ -297,12 +343,18 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     it("rejects invalid values, unknown capabilities and non-admins", async () => {
       const { agentId } = await enrolledAgent();
       const valid = { maxConcurrency: 2, pollIntervalSeconds: 10, enabledCapabilities: ["review"] };
-      for (const input of [
+      const invalid: Parameters<typeof updateAgentConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
         { ...valid, maxConcurrency: 1.5 },
         { ...valid, pollIntervalSeconds: 301 },
         { ...valid, enabledCapabilities: ["deploy"] },
-      ]) {
+        { ...valid, capabilityLimits: { review: 0 } },
+        { ...valid, capabilityLimits: { review: 3 } },
+        { ...valid, capabilityLimits: { review: 1.5 } },
+        { ...valid, capabilityLimits: { ralph: 1 } },
+        { ...valid, capabilityLimits: { deploy: 1 } },
+      ];
+      for (const input of invalid) {
         expect(await updateAgentConfig(agentId, input)).toMatchObject({ ok: false });
       }
       expect(await updateAgentConfig(randomUUID(), valid)).toMatchObject({ ok: false });

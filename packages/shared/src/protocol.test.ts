@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   agentTopic,
   capabilityTopic,
+  defaultCapabilityLimit,
+  effectiveCapabilityLimits,
   Heartbeat,
+  HeartbeatResponse,
   JobFailure,
   JobMessage,
   JobStartResponse,
@@ -47,5 +50,35 @@ describe("protocol", () => {
   it("caps retry delays at the maximum lease", () => {
     expect(JobFailure.safeParse({ retryable: true, retryAfterSeconds: 60 }).success).toBe(true);
     expect(JobFailure.safeParse({ retryable: true, retryAfterSeconds: 7200 }).success).toBe(false);
+  });
+
+  it("leaves a slot free of ralph jobs by default on agents with two or more slots", () => {
+    expect(defaultCapabilityLimit("ralph", 1)).toBe(1);
+    expect(defaultCapabilityLimit("ralph", 2)).toBe(1);
+    expect(defaultCapabilityLimit("ralph", 4)).toBe(3);
+    expect(defaultCapabilityLimit("review", 4)).toBe(4);
+  });
+
+  it("clamps stored capability limits to 1…maxConcurrency", () => {
+    expect(effectiveCapabilityLimits(["review", "ralph"], {}, 2)).toEqual({ review: 2, ralph: 1 });
+    expect(effectiveCapabilityLimits(["review", "ralph"], { ralph: 2, review: 9 }, 3)).toEqual({
+      review: 3,
+      ralph: 2,
+    });
+    expect(effectiveCapabilityLimits(["ralph"], { ralph: 0, review: 1 }, 3)).toEqual({ ralph: 1 });
+  });
+
+  it("defaults the heartbeat's capability limits for older control panels", () => {
+    const response = HeartbeatResponse.parse({
+      maxConcurrency: 1,
+      pollIntervalSeconds: 5,
+      enabledCapabilities: [],
+      pinnedRepoIds: [],
+      topics: [],
+      queueRegion: "iad1",
+      cancelJobIds: [],
+      jobTokens: [],
+    });
+    expect(response.capabilityLimits).toEqual({});
   });
 });

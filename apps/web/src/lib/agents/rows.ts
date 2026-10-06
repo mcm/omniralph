@@ -1,4 +1,5 @@
 import type { AgentOverview, JobListEntry } from "@omniralph/db";
+import { effectiveCapabilityLimits } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { isAgentOnline, jobTarget, type JobTarget } from "./display";
 
@@ -12,6 +13,10 @@ export interface AgentRow {
   reportedCapabilities: string[];
   enabledCapabilities: string[];
   maxConcurrency: number;
+  /** Per-capability limits as stored (unset ones use the default). */
+  capabilityLimits: Record<string, number>;
+  /** Effective per-capability limits of the enabled capabilities, as sent to the agent. */
+  effectiveCapabilityLimits: Record<string, number>;
   pollIntervalSeconds: number;
   runningJobs: { id: string; capability: string; type: string; target: JobTarget | null }[];
   pinnedRepositories: {
@@ -36,6 +41,12 @@ export function agentRow(agent: AgentOverview, now: Date = new Date()): AgentRow
     reportedCapabilities: agent.reportedCapabilities ?? [],
     enabledCapabilities: agent.enabledCapabilities,
     maxConcurrency: agent.maxConcurrency,
+    capabilityLimits: storedLimits(agent.capabilityLimits),
+    effectiveCapabilityLimits: effectiveCapabilityLimits(
+      agent.enabledCapabilities,
+      agent.capabilityLimits,
+      agent.maxConcurrency,
+    ),
     pollIntervalSeconds: agent.pollIntervalSeconds,
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
@@ -84,4 +95,10 @@ export function jobRow(job: JobListEntry): JobRow {
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
   };
+}
+
+function storedLimits(limits: Partial<Record<string, number>>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(limits).filter((entry): entry is [string, number] => entry[1] !== undefined),
+  );
 }
