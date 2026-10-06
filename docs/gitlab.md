@@ -3,7 +3,9 @@
 Omniralph talks to GitLab (gitlab.com or self-managed) as a **bot identity**: one access token per
 GitLab connection. The control panel uses it to read MRs, post reviews as MR discussions, reply to
 and resolve threads, check commenters' access for `@bot` commands, create the project webhooks and
-mint short-lived clone tokens for agents. Agents never see the bot token.
+mint short-lived clone tokens for agents. For `ralph` runs ([linear.md](linear.md)) it also mints
+the push tokens for running ralph jobs and opens, updates and marks ready the run's merge request.
+Agents never see the bot token.
 
 There are no GitLab env vars. The base URL and token are entered under **Repositories › Connect
 GitLab** and stored encrypted with `ENCRYPTION_KEY`. Sign-in with GitLab is a separate OAuth
@@ -45,6 +47,18 @@ in MR comments, e.g. `@group_42_bot_1a2b review`.
 
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
 skipped unless the repository's settings include drafts) in enabled projects are then reviewed.
+
+## Ralph
+
+Nothing beyond the requirements above: a bot token with `api` and `write_repository`, Maintainer
+on the project, and ralph enabled under **Repository › Settings › Ralph**. Merge requests are
+opened as drafts by the bot (titled `Draft: …`) and marked ready when the run finishes. If the
+project protects the run's branch, or only allows Maintainers to push, the Developer-role write
+token can't push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by
+Developers.
+
+A bot token connected before ralph (scope `api` only) keeps working for reviews. Ralph pushes then
+fail until you connect GitLab again with a token that also has `write_repository`.
 
 ## Self-managed GitLab
 

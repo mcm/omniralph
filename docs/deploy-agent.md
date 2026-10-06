@@ -2,8 +2,8 @@
 
 `omniralph-agent` is a Node 22 daemon that pulls jobs through the control panel and runs them with
 the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control panel (API and queue
-proxy) and to the code host (git clone/fetch with brokered, read-only tokens). It opens no port
-except an optional `/healthz` on `127.0.0.1`.
+proxy) and to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
+push with brokered write tokens). It opens no port except an optional `/healthz` on `127.0.0.1`.
 
 This guide sets one up on a Coder instance, running as a **dedicated Unix user** so the agent's
 refresh token and Claude login are kept away from your dev sessions and cyralph.
@@ -16,6 +16,8 @@ refresh token and Claude login are kept away from your dev sessions and cyralph.
   cached).
 - `sudo` on the instance (to create the user and install the unit).
 - An admin account on the control panel.
+- For the `ralph` capability, also a git identity and the target repositories' toolchains: see
+  [Ralph](#ralph).
 
 ### Coder specifics
 
@@ -213,13 +215,82 @@ response (every 20s), so changes need no restart:
 | -- | -- | -- |
 | Max concurrency (parallel jobs) | **Agents › <agent>** | 1 |
 | Poll interval | **Agents › <agent>** | 5s |
-| Enabled capabilities | **Agents › <agent>** | `review` |
+| Enabled capabilities (`review`, `ralph`) | **Agents › <agent>** | `review` |
 | Pinned repositories | **Agents › <agent>**, or **Repository › Settings › Agents** | none (every agent is eligible for every repo) |
 | Job cancellations | **Jobs** (cancel) | — |
 
 Pinning a repository to an agent routes its jobs to that agent only and makes the agent pre-clone it
 (`repo.sync`). The **Agents** page shows each agent's last heartbeat, version, running jobs and its
 audit log (enrollment, token refreshes, credential issuance, revocation).
+
+## Ralph
+
+The `ralph` capability builds delegated Linear issues story by story (see [linear.md](linear.md)
+for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). An agent
+runs three ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
+`ralph.describe-pr` (a read-only session writing the PR/MR description) and `ralph.prepare` (a
+manual story's approved preparation commands).
+
+### Enabling the capability
+
+New agents only run reviews. To let an agent run ralph jobs, open **Agents › <agent>**, tick
+`ralph` under **Enabled capabilities** and save; it applies with the next heartbeat (no restart).
+The agent then also polls the `ralph-jobs` topic and its own `ralph-jobs-agent-<id>` topic.
+
+- A run sticks to the agent that started it: all its later jobs go to that agent's topic, so keep
+  `ralph` enabled on it until its runs finish. If you disable `ralph` on it or revoke it, the run's
+  next job goes to any ralph-enabled agent, which recreates the branch worktree from the pushed
+  branch.
+- A repository pinned to agents (**Repository › Settings › Agents**) starts its runs on a pinned
+  agent, so at least one of them needs `ralph` enabled, or the run's jobs are never picked up.
+- Ralph sessions are long and write code: give ralph agents their own host (or keep **Max
+  concurrency** at 1) if you also develop on it.
+
+### Host prerequisites
+
+Unlike reviews, ralph sessions run the repository's own tools, with full permissions
+(`bypassPermissions`) inside the branch worktree, as the agent's user:
+
+- **A git identity for commits.** Story commits use the agent user's git identity. Set one, as the
+  agent's user:
+
+  ```sh
+  git config --global user.name "Omniralph"
+  git config --global user.email "omniralph@example.com"   # e.g. an address the code host links to the bot
+  ```
+
+  Without one, commits are made as `Omniralph <omniralph@localhost>`. With systemd's
+  `ProtectHome=tmpfs`, `~/.gitconfig` must be in the bound home (it is, at `/home/omniralph`).
+- **The target repositories' toolchains.** The PRD's quality gates (`pnpm typecheck`, `cargo test`,
+  …) and the repository's **Setup command** run on the host, so everything they need must be
+  installed for the agent's user and on the unit's `PATH`: Node/pnpm (e.g. `corepack enable` as the
+  agent's user), language runtimes, compilers, Docker if tests use Testcontainers (add the user to
+  the `docker` group), and anything else the gates call. The systemd hardening above
+  (`ProtectSystem=strict`, `PrivateTmp`, `ProtectHome=tmpfs`) applies to them too: tools that
+  write outside the agent's home and `/tmp` need extra `ReadWritePaths=`. A gate that can't run fails every attempt.
+- **Package registry access.** Private registries the setup command installs from need their
+  credentials in the agent user's home (e.g. `~/.npmrc`), since the agent can't read yours.
+- **No `gh` or `glab` login.** The agent never uses code-host CLIs or API tokens. It pushes with
+  the brokered, job-scoped `git-credential` helper (a write token for that one repository, only for
+  running `ralph` jobs), and the control panel opens and updates the PR/MR itself. Don't log the
+  agent's user in to `gh`/`glab`: sessions would be able to use those credentials.
+
+Claude Code sessions in a ralph job load the repository's `.claude/` settings and `CLAUDE.md`
+(`settingSources: ["project", "local"]`) like a local session would, but they never see the job
+token, so they can't fetch credentials themselves; only the job's own git commands can.
+
+### Branch worktrees
+
+Ralph jobs work in long-lived **branch worktrees** at
+`<workspaceRoot>/.branches/<provider>/<repo path>/<branch with / replaced by __>`. A worktree is
+created from the remote branch if it exists (otherwise from `origin/<base>`), runs the setup
+command once, is reused by every job of the run and is locked while a job uses it. Uncommitted
+leftovers of a failed attempt are stashed (labelled `omniralph ralph <run> <story> …`) and offered
+to the next attempt.
+
+Branch worktrees aren't removed automatically (cleanup after merge comes later). Delete
+`<workspaceRoot>/.branches/<provider>/<repo path>/<branch>` once a run's PR/MR is merged, while the
+agent isn't running a job for it, then `git -C <workspaceRoot>/<provider>/<repo path> worktree prune`.
 
 ## `workspaceRoot` and disk usage
 
@@ -229,6 +300,9 @@ audit log (enrollment, token refreshes, credential issuance, revocation).
 - Each job checks out a **git worktree** in `<repo>/.worktrees/<jobId>`, removed when the job ends
   and pruned on startup after a crash. Peak usage is roughly the cached clones plus one full
   checkout per concurrently running job.
+- Ralph runs also keep one **branch worktree** per run under `<workspaceRoot>/.branches/`,
+  including whatever the setup command installs (e.g. `node_modules`). They're never pruned
+  automatically; see [Branch worktrees](#branch-worktrees).
 - Clone, fetch and worktree bookkeeping are serialized per repository with a lock file
   (`.locks/`), so two agent processes may share a workspace root, but don't point a manual checkout
   or cyralph at it.
@@ -243,9 +317,19 @@ audit log (enrollment, token refreshes, credential issuance, revocation).
   separate from your manual checkouts and from cyralph's worktrees. Never point `--workspace-root`
   at a directory you or cyralph work in: worktrees there get pruned and repos fetched under you.
 - **Separate credentials.** Job git commands reset `credential.helper` and use
-  `omniralph-agent git-credential` (brokered, read-only, one repository, short-lived), never your
-  `gh`/`glab` logins or SSH keys. The dedicated user makes this structural: the agent can't read
-  `/home/coder`.
+  `omniralph-agent git-credential` (brokered, one repository, short-lived; read-only except for
+  running `ralph` jobs), never your `gh`/`glab` logins or SSH keys. The dedicated user makes this
+  structural: the agent can't read `/home/coder`.
+- **Don't route the same issues to both.** cyralph and Omniralph's ralph capability are separate
+  Linear apps with separate routing configuration, and neither knows about the other. If the same
+  Linear team, project or label is routed in both, an issue that ends up delegated to both apps
+  (or re-delegated from one to the other mid-run) gets two runs that push to the same branch and
+  fight over the sub-issues' states and the PR. Give each app disjoint teams, projects and labels (or tag issues with
+  `[repo=…]` for Omniralph), and move a team over by removing it from cyralph's config before adding
+  it to a repository's **Linear team keys**. Don't delegate one issue to both apps.
+- **Separate worktrees.** cyralph's worktrees and Omniralph's branch worktrees are separate
+  checkouts. Don't work on a branch Omniralph is building from a cyralph or manual checkout: the
+  next story's push would be rejected as diverged.
 - **Shared Claude rate limits.** If the agent's user is logged in to the same Claude subscription as
   you or cyralph, all of them share its rate limits. The agent backs off and retries on rate limits
   instead of failing, but busy reviews still slow your sessions down. Lower the agent's max
@@ -291,5 +375,10 @@ the newly enrolled one) picks them up.
   `OMNIRALPH_AGENT_CONFIG` than `enroll` used.
 - **`/healthz` says `"connected": false`**: the control panel is unreachable or rejected the access
   token. Check the logs for the HTTP status.
+- **Ralph stories fail every attempt on a quality gate** with `command not found` or similar: the
+  gate's toolchain isn't installed for the agent's user or isn't on the unit's `PATH`
+  ([Host prerequisites](#host-prerequisites)).
+- **Ralph jobs stay queued**: no agent has `ralph` enabled, or the run's sticky (or pinned) agent is
+  offline. Check **Jobs** for the job's topic.
 - **Reviews fail with a Claude login message**: log in again as the agent's user
   ([claude-auth.md](claude-auth.md)).
