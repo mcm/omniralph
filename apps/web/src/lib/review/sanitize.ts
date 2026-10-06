@@ -3,7 +3,7 @@
  * from untrusted PR content (prompt injection), so in prose:
  * - raw HTML and HTML comments are stripped and images dropped;
  * - links to any host but the repo's own code host become inline code (not clickable);
- * - `@mentions` other than the PR author's are neutralized (inline code);
+ * - `@mentions` other than the PR author's (and `allowedMentions`) are neutralized (inline code);
  * - lengths are capped.
  * Code (fenced blocks and inline code spans) is kept verbatim: code hosts render it
  * as text. Unterminated fences are closed. Suggestions are only ever posted as fenced
@@ -17,8 +17,10 @@ export const MAX_SUMMARY_CHARS = 20_000;
 export interface SanitizeContext {
   /** Hosts whose links stay clickable: the repo's code host, e.g. `github.com`. */
   allowedHosts: readonly string[];
-  /** The PR/MR author's username, the only mention left intact. */
+  /** The PR/MR author's username, a mention left intact. */
   author?: string | null;
+  /** Further usernames whose mentions are left intact (case-insensitive). */
+  allowedMentions?: readonly string[];
 }
 
 const TRUNCATED = "\n\n_…truncated_";
@@ -132,8 +134,24 @@ export function linkAllowed(target: string, ctx: SanitizeContext): boolean {
   }
 }
 
+/**
+ * `@user`, `@org/team`, `@group/subgroup`, with the preceding character in
+ * group 1 and the name in group 2. Emails and code spans don't match.
+ */
+const MENTION =
+  /(^|[^A-Za-z0-9_`/.@+-])@([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?(?:\/[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)*)/g;
+
+/** The distinct names (`user`, `org/team`) mentioned in `text`, lowercased. */
+export function mentionedNames(text: string): string[] {
+  return [...new Set([...text.matchAll(MENTION)].map((m) => m[2]!.toLowerCase()))];
+}
+
 function sanitizeProse(text: string, ctx: SanitizeContext, store: (code: string) => string) {
-  const author = ctx.author?.toLowerCase();
+  const allowed = new Set(
+    [ctx.author, ...(ctx.allowedMentions ?? [])]
+      .filter((n): n is string => !!n)
+      .map((n) => n.toLowerCase()),
+  );
   let out = protectCodeSpans(text, store);
 
   // HTML comments (also unterminated ones, which hide the rest of the text).
@@ -171,12 +189,8 @@ function sanitizeProse(text: string, ctx: SanitizeContext, store: (code: string)
     return (linkAllowed(url, ctx) ? store(url) : store(inlineCode(url))) + rest;
   });
   // Mentions (`@user`, `@org/team`, `@group/subgroup`); emails are left alone.
-  out = out.replace(
-    /(^|[^A-Za-z0-9_`/.@+-])@([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?(?:\/[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)*)/g,
-    (match, before: string, name: string) =>
-      author !== undefined && name.toLowerCase() === author
-        ? match
-        : `${before}${store(inlineCode(`@${name}`))}`,
+  out = out.replace(MENTION, (match, before: string, name: string) =>
+    allowed.has(name.toLowerCase()) ? match : `${before}${store(inlineCode(`@${name}`))}`,
   );
   return out;
 }

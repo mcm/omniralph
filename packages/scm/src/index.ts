@@ -3,7 +3,7 @@ export const packageName = "@omniralph/scm";
 export * from "./types.js";
 export { buildDiffLineIndex, isCommentInDiff, parsePatchLines } from "./diff-lines.js";
 export type { CommentableLines, DiffLineIndex } from "./diff-lines.js";
-export { capLength, fencedBlock, renderInlineComment, summaryWithFallbacks } from "./comment-body.js";
+export { capLength, capTitle, fencedBlock, renderInlineComment, summaryWithFallbacks } from "./comment-body.js";
 export {
   APP_JWT_TTL_SECONDS,
   createAppJwtSigner,
@@ -25,10 +25,12 @@ export { MemoryCredentialCache } from "./credential-cache.js";
 export type { CachedCredential, CredentialCache } from "./credential-cache.js";
 export {
   CLONE_TOKEN_ROTATE_MS,
+  DRAFT_PREFIX,
   GITLAB_URL,
   GitLabAdapter,
   READ_REPOSITORY_SCOPE,
   renderGitLabComment,
+  stripDraftPrefix,
   WRITE_REPOSITORY_SCOPE,
 } from "./gitlab/adapter.js";
 export type { GitLabAdapterOptions } from "./gitlab/adapter.js";

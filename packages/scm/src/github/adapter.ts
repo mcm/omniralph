@@ -1,11 +1,16 @@
 import type { Octokit } from "@octokit/rest";
 import { verify } from "@octokit/webhooks-methods";
-import { capLength, renderInlineComment, summaryWithFallbacks } from "../comment-body.js";
+import { capLength, capTitle, renderInlineComment, summaryWithFallbacks } from "../comment-body.js";
 import { buildDiffLineIndex, isCommentInDiff } from "../diff-lines.js";
 import {
+  ChangeRequestNotFoundError,
   getHeader,
   type ChangeRequest,
+  type ChangeRequestUpdate,
   type CloneCredential,
+  type CreatedChangeRequest,
+  type NewChangeRequest,
+  type OpenChangeRequest,
   type InlineComment,
   type PostedReview,
   type RepoRef,
@@ -16,8 +21,10 @@ import {
 import { GitHubAppAuth, GITHUB_API_URL } from "./app-auth.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
-/** GitHub rejects comment and review bodies longer than this. */
+/** GitHub rejects comment, review and PR bodies longer than this. */
 const MAX_BODY_LENGTH = 65_536;
+/** GitHub rejects PR titles longer than this. */
+const MAX_TITLE_LENGTH = 256;
 
 export interface GitHubAdapterOptions {
   appId: string;
@@ -85,6 +92,16 @@ const RESOLVE_THREAD_MUTATION = /* GraphQL */ `
   }
 `;
 
+const MARK_READY_MUTATION = /* GraphQL */ `
+  mutation ($pullRequestId: ID!) {
+    markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+      pullRequest {
+        isDraft
+      }
+    }
+  }
+`;
+
 export function splitRepoPath(repo: RepoRef): { owner: string; repo: string } {
   const [owner, name, ...rest] = repo.fullPath.split("/");
   if (!owner || !name || rest.length > 0) {
@@ -100,6 +117,15 @@ function deriveWebUrl(apiUrl: string): string {
 
 function hasStatus(error: unknown, status: number): boolean {
   return typeof error === "object" && error !== null && "status" in error && error.status === status;
+}
+
+/** The 422 GitHub returns when an open PR already exists for the head branch. */
+function isPullRequestExists(error: unknown): boolean {
+  if (!hasStatus(error, 422)) return false;
+  const data = (error as { response?: { data?: { message?: unknown; errors?: { message?: unknown }[] } } }).response
+    ?.data;
+  const messages = [data?.message, ...(data?.errors ?? []).map((e) => e.message)];
+  return messages.some((m) => typeof m === "string" && /pull request already exists/i.test(m));
 }
 
 function commentKey(path: string, side: string, line: number | null | undefined): string {
@@ -313,6 +339,82 @@ export class GitHubAdapter implements ScmAdapter {
       if (hasStatus(error, 404)) return false;
       throw error;
     }
+  }
+
+  async getDefaultBranch(repo: RepoRef): Promise<string> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const { data } = await octokit.repos.get({ owner, repo: name });
+    return data.default_branch;
+  }
+
+  async findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    // `head` is `owner:branch`, so PRs from forks with the same branch name don't match.
+    const { data } = await octokit.pulls.list({
+      owner,
+      repo: name,
+      state: "open",
+      head: `${owner}:${sourceBranch}`,
+      per_page: 1,
+    });
+    const pr = data[0];
+    return pr ? { number: pr.number, url: pr.html_url, draft: pr.draft ?? false } : null;
+  }
+
+  async createChangeRequest(repo: RepoRef, request: NewChangeRequest): Promise<CreatedChangeRequest> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    try {
+      const { data } = await octokit.pulls.create({
+        owner,
+        repo: name,
+        head: request.sourceBranch,
+        base: request.targetBranch,
+        title: capTitle(request.title, MAX_TITLE_LENGTH),
+        body: capLength(request.body, MAX_BODY_LENGTH),
+        draft: request.draft,
+      });
+      return { number: data.number, url: data.html_url, created: true };
+    } catch (error) {
+      if (!isPullRequestExists(error)) throw error;
+      const existing = await this.findOpenChangeRequest(repo, request.sourceBranch);
+      if (!existing) throw error;
+      return { number: existing.number, url: existing.url, created: false };
+    }
+  }
+
+  async updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    try {
+      await octokit.pulls.update({
+        owner,
+        repo: name,
+        pull_number: number,
+        ...(update.title !== undefined ? { title: capTitle(update.title, MAX_TITLE_LENGTH) } : {}),
+        ...(update.body !== undefined ? { body: capLength(update.body, MAX_BODY_LENGTH) } : {}),
+      });
+    } catch (error) {
+      if (hasStatus(error, 404)) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      throw error;
+    }
+  }
+
+  /** GraphQL `markPullRequestReadyForReview` (REST can't undraft a PR). */
+  async markChangeRequestReady(repo: RepoRef, number: number): Promise<void> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    let pr: { node_id: string; draft?: boolean };
+    try {
+      ({ data: pr } = await octokit.pulls.get({ owner, repo: name, pull_number: number }));
+    } catch (error) {
+      if (hasStatus(error, 404)) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      throw error;
+    }
+    if (!pr.draft) return;
+    await octokit.graphql(MARK_READY_MUTATION, { pullRequestId: pr.node_id });
   }
 
   /** Verifies `X-Hub-Signature-256` (HMAC-SHA256 of the raw body). */

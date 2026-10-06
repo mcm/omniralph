@@ -1,11 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AccessLevel, Gitlab } from "@gitbeaker/rest";
-import { capLength, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
+import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
 import { MemoryCredentialCache, type CachedCredential, type CredentialCache } from "../credential-cache.js";
 import {
+  ChangeRequestNotFoundError,
   getHeader,
   type ChangeRequest,
+  type ChangeRequestUpdate,
   type CloneCredential,
+  type CreatedChangeRequest,
+  type NewChangeRequest,
+  type OpenChangeRequest,
   type InlineComment,
   type PostedReview,
   type RepoRef,
@@ -25,6 +30,14 @@ export const GITLAB_URL = "https://gitlab.com";
 
 /** GitLab rejects note bodies longer than this. */
 const MAX_NOTE_LENGTH = 1_000_000;
+/** GitLab rejects MR titles longer than this. */
+const MAX_TITLE_LENGTH = 255;
+/** MR descriptions are capped like notes (GitLab's text limit). */
+const MAX_DESCRIPTION_LENGTH = 1_000_000;
+/** Title prefix that makes an MR a draft. */
+export const DRAFT_PREFIX = "Draft: ";
+/** Every title prefix GitLab treats as a draft marker (case-insensitive). */
+const DRAFT_MARKERS = /^\s*(?:\[draft\]|\(draft\)|draft:|draft\s+-|\[wip\]|wip:)\s*/i;
 /** Scope of the cached clone token (also its `scm_credential_cache.scope`). */
 export const READ_REPOSITORY_SCOPE = "read_repository";
 /** Scope of the cached push token (also its `scm_credential_cache.scope`). */
@@ -66,6 +79,27 @@ function statusOf(error: unknown): number | undefined {
 function projectId(repo: RepoRef): string | number {
   if (repo.externalId && /^\d+$/.test(repo.externalId)) return Number(repo.externalId);
   return repo.externalId ?? repo.fullPath;
+}
+
+/** A title without GitLab's draft markers. */
+export function stripDraftPrefix(title: string): string {
+  let out = title;
+  for (let match = DRAFT_MARKERS.exec(out); match; match = DRAFT_MARKERS.exec(out)) {
+    out = out.slice(match[0].length);
+  }
+  return out;
+}
+
+/** `title` capped to GitLab's limit, as a draft (`Draft: …`) when `draft`. */
+function mrTitle(title: string, draft: boolean): string {
+  const plain = stripDraftPrefix(capTitle(title, MAX_TITLE_LENGTH));
+  return draft ? capTitle(`${DRAFT_PREFIX}${plain}`, MAX_TITLE_LENGTH) : plain;
+}
+
+/** The 409 GitLab returns when an open MR already exists for the source branch. */
+function isMergeRequestExists(error: unknown): boolean {
+  // gitbeaker puts the response's `message` into the error message.
+  return statusOf(error) === 409 && error instanceof Error && /already exists/i.test(error.message);
 }
 
 /** Date (UTC, `YYYY-MM-DD`) of a timestamp. */
@@ -242,6 +276,78 @@ export class GitLabAdapter implements ScmAdapter {
       return member.access_level >= AccessLevel.DEVELOPER;
     } catch (error) {
       if (statusOf(error) === 404) return false;
+      throw error;
+    }
+  }
+
+  async getDefaultBranch(repo: RepoRef): Promise<string> {
+    const project = await this.api.Projects.show(projectId(repo));
+    if (!project.default_branch) throw new Error(`GitLab project ${repo.fullPath} has no default branch`);
+    return project.default_branch;
+  }
+
+  async findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null> {
+    const mrs = await this.api.MergeRequests.all({
+      projectId: projectId(repo),
+      sourceBranch,
+      state: "opened",
+      perPage: 20,
+      maxPages: 1,
+    });
+    // Only MRs from this project, not from forks that reuse the branch name.
+    const mr = mrs.find((m) => m.source_project_id === m.target_project_id);
+    if (!mr) return null;
+    return { number: mr.iid, url: mr.web_url, draft: Boolean(mr.draft ?? mr.work_in_progress) };
+  }
+
+  /** A draft MR is one whose title starts with `Draft: `. */
+  async createChangeRequest(repo: RepoRef, request: NewChangeRequest): Promise<CreatedChangeRequest> {
+    try {
+      const mr = await this.api.MergeRequests.create(
+        projectId(repo),
+        request.sourceBranch,
+        request.targetBranch,
+        mrTitle(request.title, request.draft),
+        { description: capLength(request.body, MAX_DESCRIPTION_LENGTH) },
+      );
+      return { number: mr.iid, url: mr.web_url, created: true };
+    } catch (error) {
+      if (!isMergeRequestExists(error)) throw error;
+      const existing = await this.findOpenChangeRequest(repo, request.sourceBranch);
+      if (!existing) throw error;
+      return { number: existing.number, url: existing.url, created: false };
+    }
+  }
+
+  /** A new title keeps the MR's draft state (its `Draft: ` prefix). */
+  async updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void> {
+    const project = projectId(repo);
+    try {
+      let title: string | undefined;
+      if (update.title !== undefined) {
+        const mr = await this.api.MergeRequests.show(project, number);
+        title = mrTitle(update.title, Boolean(mr.draft ?? mr.work_in_progress));
+      }
+      await this.api.MergeRequests.edit(project, number, {
+        ...(title !== undefined ? { title } : {}),
+        ...(update.body !== undefined ? { description: capLength(update.body, MAX_DESCRIPTION_LENGTH) } : {}),
+      });
+    } catch (error) {
+      if (statusOf(error) === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      throw error;
+    }
+  }
+
+  /** Removes the title's draft prefix. */
+  async markChangeRequestReady(repo: RepoRef, number: number): Promise<void> {
+    const project = projectId(repo);
+    try {
+      const mr = await this.api.MergeRequests.show(project, number);
+      const title = stripDraftPrefix(mr.title);
+      if (title === mr.title && !(mr.draft ?? mr.work_in_progress)) return;
+      await this.api.MergeRequests.edit(project, number, { title });
+    } catch (error) {
+      if (statusOf(error) === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
   }

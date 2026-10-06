@@ -87,6 +87,49 @@ export interface CloneCredential {
   expiresAt: Date;
 }
 
+/** An open PR/MR found by its source branch. */
+export interface OpenChangeRequest {
+  number: number;
+  url: string;
+  draft: boolean;
+}
+
+export interface NewChangeRequest {
+  sourceBranch: string;
+  targetBranch: string;
+  title: string;
+  /** Markdown description; sanitize model-written text before passing it. */
+  body: string;
+  draft: boolean;
+}
+
+export interface CreatedChangeRequest {
+  number: number;
+  url: string;
+  /**
+   * `false` when an open PR/MR already existed for the source branch and was
+   * returned instead (its title, body and draft state are left as they were).
+   */
+  created: boolean;
+}
+
+export interface ChangeRequestUpdate {
+  title?: string;
+  body?: string;
+}
+
+/** The PR/MR doesn't exist (or the bot can't see it). */
+export class ChangeRequestNotFoundError extends Error {
+  constructor(
+    readonly repo: RepoRef,
+    readonly number: number,
+    options?: { cause?: unknown },
+  ) {
+    super(`Change request ${repo.fullPath}#${number} not found`, options);
+    this.name = "ChangeRequestNotFoundError";
+  }
+}
+
 /** Webhook request headers, either a Fetch `Headers` or a plain record. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
@@ -108,6 +151,22 @@ export interface ScmAdapter {
    */
   getWriteCloneCredential(repo: RepoRef): Promise<CloneCredential>;
   hasWriteAccess(repo: RepoRef, username: string): Promise<boolean>;
+  /** The repository's default branch (the base of ralph runs). */
+  getDefaultBranch(repo: RepoRef): Promise<string>;
+  /** The open PR/MR whose source is `sourceBranch` (in this repository), if any. */
+  findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null>;
+  /**
+   * Opens a PR/MR (a draft when `draft`). When one is already open for the
+   * source branch, returns it with `created: false`.
+   */
+  createChangeRequest(repo: RepoRef, request: NewChangeRequest): Promise<CreatedChangeRequest>;
+  /**
+   * Updates the title and/or body. Keeps a GitLab draft a draft. Throws
+   * {@link ChangeRequestNotFoundError} when the PR/MR doesn't exist.
+   */
+  updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void>;
+  /** Takes the PR/MR out of draft; a no-op when it isn't one. */
+  markChangeRequestReady(repo: RepoRef, number: number): Promise<void>;
   /** Verifies a webhook delivery's signature against the raw request body. */
   verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean>;
 }

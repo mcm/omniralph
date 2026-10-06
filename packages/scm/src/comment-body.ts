@@ -49,3 +49,10 @@ export function capLength(body: string, max: number): string {
   const marker = "\n\n_…truncated_";
   return body.slice(0, max - marker.length) + marker;
 }
+
+/** Caps a one-line title at `max` characters, ending it with `…` when cut. */
+export function capTitle(title: string, max: number): string {
+  const line = title.replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+  return `${line.slice(0, max - 1).trimEnd()}…`;
+}
