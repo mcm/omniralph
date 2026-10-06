@@ -79,7 +79,7 @@ export interface PostedReview {
   inlineCommentIds: (string | null)[];
 }
 
-/** Short-lived credential for a read-only `git clone`/`fetch`. */
+/** Short-lived credential for `git clone`/`fetch` (and `push`, when write-scoped). */
 export interface CloneCredential {
   cloneUrl: string;
   username: string;
@@ -102,6 +102,11 @@ export interface ScmAdapter {
   /** Resolves the thread containing an inline comment. */
   resolveThread(repo: RepoRef, number: number, commentId: string): Promise<void>;
   getReadOnlyCloneCredential(repo: RepoRef): Promise<CloneCredential>;
+  /**
+   * A short-lived credential that can push to this one repository (ralph
+   * jobs). Never hand it to review jobs.
+   */
+  getWriteCloneCredential(repo: RepoRef): Promise<CloneCredential>;
   hasWriteAccess(repo: RepoRef, username: string): Promise<boolean>;
   /** Verifies a webhook delivery's signature against the raw request body. */
   verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean>;

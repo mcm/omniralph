@@ -22,9 +22,10 @@ Requirements:
 
 | Requirement | Why |
 | -- | -- |
-| Scope **`api`** | Post MR discussions and notes, resolve threads, read members, manage webhooks, create project access tokens. The connect dialog rejects a token without it. |
+| Scope **`api`** | Post MR discussions and notes, resolve threads, read members, manage webhooks, create project access tokens, and open/update ralph runs' merge requests. The connect dialog rejects a token without it. |
+| Scope **`write_repository`** | Ralph: the bot's token mints `write_repository` project access tokens for ralph jobs to push with, and can't grant more than it has. |
 | Role **Maintainer** (or Owner) on every project | Creating the project webhook and **creating project access tokens** both need Maintainer. |
-| Project access tokens allowed | The credential broker creates a `read_repository` project access token (Reporter role, named `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached encrypted and is replaced when it's within 2 hours of expiry. Make sure no instance or group setting blocks project access token creation. |
+| Project access tokens allowed | The credential broker creates a `read_repository` project access token (Reporter role, named `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached encrypted and is replaced when it's within 2 hours of expiry. For running `ralph` jobs only, it likewise creates a `write_repository` token (Developer role, named `omniralph-write-repository`), cached and rotated separately; review jobs never get it. Make sure no instance or group setting blocks project access token creation. |
 
 Pick a sensible expiry for the bot token itself and put a reminder in your calendar: when it expires,
 reviews and clones stop. To rotate it, create a new token and connect GitLab again with it.

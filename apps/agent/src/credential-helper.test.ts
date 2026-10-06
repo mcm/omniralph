@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
@@ -10,7 +10,7 @@ import type { FetchFn } from "./api.js";
 import { parseCredentialRequest } from "./credential-helper.js";
 import { jobProcessEnv } from "./job-env.js";
 import { main } from "./main.js";
-import { credentialConfigArgs, defaultCredentialHelper } from "./workspace/git.js";
+import { credentialConfigArgs, defaultCredentialHelper, gitEnv } from "./workspace/git.js";
 
 // Always in the future: git (≥ 2.41) ignores passwords whose password_expiry_utc has passed.
 const EXPIRES_AT = new Date(Math.floor(Date.now() / 1000 + 3600) * 1000).toISOString();
@@ -195,4 +195,153 @@ describe("git with the agent's credential helper", () => {
       { authorization: "Bearer the-job-token", url: "/api/agent/credentials" },
     ]);
   }, 40_000);
+});
+
+describe("pushing from a ralph job's worktree with the brokered credential", () => {
+  const WRITE_TOKEN = "ghs_contents_write";
+  let dir: string;
+  let origin: string;
+  let gitServer: Server;
+  let gitUrl: string;
+  let broker: Server;
+  let brokerUrl: string;
+  const brokerRequests: (string | undefined)[] = [];
+  const gitAuth: (string | undefined)[] = [];
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "omniralph-git-push-"));
+    origin = path.join(dir, "origin.git");
+    await git(["init", "--bare", "--initial-branch=main", origin], dir);
+
+    // A smart-HTTP git server (`git http-backend`) that only accepts the
+    // brokered write token, standing in for the code host.
+    gitServer = createServer((req, res) => {
+      const authorization = req.headers.authorization;
+      gitAuth.push(authorization);
+      const expected = `Basic ${Buffer.from(`x-access-token:${WRITE_TOKEN}`).toString("base64")}`;
+      if (authorization !== expected) {
+        res.writeHead(401, { "www-authenticate": 'Basic realm="git"' });
+        res.end();
+        return;
+      }
+      const url = new URL(req.url ?? "/", "http://git");
+      const child = spawn("git", ["http-backend"], {
+        env: {
+          PATH: process.env.PATH,
+          GIT_PROJECT_ROOT: dir,
+          GIT_HTTP_EXPORT_ALL: "1",
+          REMOTE_USER: "x-access-token",
+          REQUEST_METHOD: req.method,
+          PATH_INFO: url.pathname,
+          QUERY_STRING: url.search.slice(1),
+          CONTENT_TYPE: req.headers["content-type"] ?? "",
+          ...(req.headers["content-encoding"] && {
+            HTTP_CONTENT_ENCODING: req.headers["content-encoding"],
+          }),
+        },
+      });
+      req.pipe(child.stdin);
+      let head = Buffer.alloc(0);
+      let headersSent = false;
+      child.stdout.on("data", (chunk: Buffer) => {
+        if (headersSent) return void res.write(chunk);
+        head = Buffer.concat([head, chunk]);
+        const end = head.indexOf("\r\n\r\n");
+        if (end < 0) return;
+        let status = 200;
+        for (const line of head.subarray(0, end).toString("utf8").split("\r\n")) {
+          const colon = line.indexOf(":");
+          const name = line.slice(0, colon).trim();
+          const value = line.slice(colon + 1).trim();
+          if (name.toLowerCase() === "status") status = Number.parseInt(value, 10);
+          else res.setHeader(name, value);
+        }
+        res.writeHead(status);
+        headersSent = true;
+        res.write(head.subarray(end + 4));
+      });
+      child.on("close", () => res.end());
+    });
+    await new Promise<void>((resolve) => gitServer.listen(0, "127.0.0.1", resolve));
+    gitUrl = `http://127.0.0.1:${(gitServer.address() as AddressInfo).port}/origin.git`;
+
+    // The control panel's credential broker, as it answers a ralph job's token.
+    broker = createServer((req, res) => {
+      brokerRequests.push(req.headers.authorization);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ...CREDENTIAL, cloneUrl: gitUrl, password: WRITE_TOKEN }));
+    });
+    await new Promise<void>((resolve) => broker.listen(0, "127.0.0.1", resolve));
+    brokerUrl = `http://127.0.0.1:${(broker.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    gitServer.close();
+    broker.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  function git(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) {
+    return new Promise<string>((resolve, reject) => {
+      execFile("git", args, { cwd, env: gitEnv(env), timeout: 30_000 }, (error, stdout, stderr) =>
+        error ? reject(new Error(`${error.message}\n${stderr}`)) : resolve(stdout),
+      );
+    });
+  }
+
+  it("pushes a commit to the remote branch using the write credential", async () => {
+    const cli = fileURLToPath(new URL("./cli.ts", import.meta.url));
+    const tsx = import.meta.resolve("tsx");
+    const credentialHelper = defaultCredentialHelper(
+      process.execPath,
+      ["--import", tsx, "--conditions=@omniralph/source"],
+      cli,
+    );
+    const env = {
+      ...jobProcessEnv(
+        { jobId: "ralph-job-1", jobToken: "ralph-job-token", server: brokerUrl },
+        { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+      ),
+      GIT_AUTHOR_NAME: "Omniralph",
+      GIT_AUTHOR_EMAIL: "omniralph@example.com",
+      GIT_COMMITTER_NAME: "Omniralph",
+      GIT_COMMITTER_EMAIL: "omniralph@example.com",
+    };
+    const creds = credentialConfigArgs(credentialHelper);
+
+    // Seed the origin through a plain local clone (no credentials involved).
+    const seed = path.join(dir, "seed");
+    await git(["clone", origin, seed], dir, env);
+    await writeFile(path.join(seed, "README.md"), "hello\n");
+    await git(["add", "README.md"], seed, env);
+    await git(["commit", "-m", "init"], seed, env);
+    await git(["push", "origin", "HEAD:main"], seed, env);
+
+    // The job's clone and its branch worktree, talking to the HTTP remote.
+    const clone = path.join(dir, "clone");
+    await git([...creds, "clone", gitUrl, clone], dir, env);
+    const worktree = path.join(dir, "worktree");
+    await git(["worktree", "add", "-b", "feature/epic", worktree, "origin/main"], clone, env);
+    await writeFile(path.join(worktree, "story.txt"), "story\n");
+    await git(["add", "story.txt"], worktree, env);
+    await git(["commit", "-m", "feat(TOOL-1): Story"], worktree, env);
+    const head = (await git(["rev-parse", "HEAD"], worktree, env)).trim();
+
+    gitAuth.length = 0;
+    await git([...creds, "push", "origin", "HEAD:refs/heads/feature/epic"], worktree, env);
+
+    expect((await git(["rev-parse", "refs/heads/feature/epic"], origin)).trim()).toBe(head);
+    expect(brokerRequests.length).toBeGreaterThan(0);
+    expect(brokerRequests.every((auth) => auth === "Bearer ralph-job-token")).toBe(true);
+    // The push was refused without credentials, then made with the brokered token.
+    expect(gitAuth[0]).toBeUndefined();
+    expect(gitAuth.at(-1)).toBe(
+      `Basic ${Buffer.from(`x-access-token:${WRITE_TOKEN}`).toString("base64")}`,
+    );
+
+    // Without the helper, the push is refused.
+    await expect(
+      git(["-c", "credential.helper=", "push", "origin", "HEAD:refs/heads/other"], worktree, env),
+    ).rejects.toThrow();
+  }, 60_000);
 });

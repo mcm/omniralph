@@ -78,6 +78,9 @@ function fakeAdapter() {
     async getReadOnlyCloneCredential() {
       throw new Error("not used");
     },
+    async getWriteCloneCredential() {
+      throw new Error("not used");
+    },
     async hasWriteAccess() {
       return true;
     },

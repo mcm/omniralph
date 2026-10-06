@@ -27,11 +27,21 @@ export const GITLAB_URL = "https://gitlab.com";
 const MAX_NOTE_LENGTH = 1_000_000;
 /** Scope of the cached clone token (also its `scm_credential_cache.scope`). */
 export const READ_REPOSITORY_SCOPE = "read_repository";
+/** Scope of the cached push token (also its `scm_credential_cache.scope`). */
+export const WRITE_REPOSITORY_SCOPE = "write_repository";
 /** Cached clone tokens are rotated once they're this close to expiry. */
 export const CLONE_TOKEN_ROTATE_MS = 2 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type GitlabClient = Gitlab<false>;
+
+type RepositoryTokenScope = typeof READ_REPOSITORY_SCOPE | typeof WRITE_REPOSITORY_SCOPE;
+
+/** Name and role of the project access token minted for each scope. */
+const REPOSITORY_TOKENS = {
+  [READ_REPOSITORY_SCOPE]: { name: "omniralph-read-repository", accessLevel: AccessLevel.REPORTER },
+  [WRITE_REPOSITORY_SCOPE]: { name: "omniralph-write-repository", accessLevel: AccessLevel.DEVELOPER },
+} as const satisfies Record<RepositoryTokenScope, { name: string; accessLevel: number }>;
 
 export interface GitLabAdapterOptions {
   /** Group or project access token of the bot identity (`api` scope). */
@@ -201,7 +211,18 @@ export class GitLabAdapter implements ScmAdapter {
    * expires on its own within those 2 hours.
    */
   async getReadOnlyCloneCredential(repo: RepoRef): Promise<CloneCredential> {
-    const credential = await this.readRepositoryToken(repo);
+    return this.cloneCredential(repo, await this.repositoryToken(repo, READ_REPOSITORY_SCOPE));
+  }
+
+  /**
+   * A `write_repository` project access token (Developer role) for pushing,
+   * cached under its own scope and rotated like the read-only token.
+   */
+  async getWriteCloneCredential(repo: RepoRef): Promise<CloneCredential> {
+    return this.cloneCredential(repo, await this.repositoryToken(repo, WRITE_REPOSITORY_SCOPE));
+  }
+
+  private cloneCredential(repo: RepoRef, credential: CachedCredential): CloneCredential {
     return {
       cloneUrl: `${this.baseUrl}/${repo.fullPath}.git`,
       // Any non-empty username works with an access token.
@@ -233,19 +254,19 @@ export class GitLabAdapter implements ScmAdapter {
     return timingSafeEqual(sha256(token), sha256(this.webhookSecret));
   }
 
-  private async readRepositoryToken(repo: RepoRef): Promise<CachedCredential> {
-    const cached = await this.credentialCache.get(repo, READ_REPOSITORY_SCOPE);
+  private async repositoryToken(repo: RepoRef, scope: RepositoryTokenScope): Promise<CachedCredential> {
+    const cached = await this.credentialCache.get(repo, scope);
     if (cached && cached.expiresAt.getTime() - this.now() > CLONE_TOKEN_ROTATE_MS) return cached;
 
-    const key = String(projectId(repo));
+    const key = JSON.stringify([projectId(repo), scope]);
     const pending = this.pendingTokens.get(key);
     if (pending) return pending;
-    const created = this.createReadRepositoryToken(repo).finally(() => this.pendingTokens.delete(key));
+    const created = this.createRepositoryToken(repo, scope).finally(() => this.pendingTokens.delete(key));
     this.pendingTokens.set(key, created);
     return created;
   }
 
-  private async createReadRepositoryToken(repo: RepoRef): Promise<CachedCredential> {
+  private async createRepositoryToken(repo: RepoRef, scope: RepositoryTokenScope): Promise<CachedCredential> {
     const now = this.now();
     // Tokens expire at 00:00 UTC on `expires_at`. Use tomorrow, or the day
     // after when tomorrow would already be inside the rotation window.
@@ -253,19 +274,16 @@ export class GitLabAdapter implements ScmAdapter {
     if (Date.parse(`${expiresOn}T00:00:00Z`) - now <= CLONE_TOKEN_ROTATE_MS) {
       expiresOn = utcDate(now + 2 * DAY_MS);
     }
-    const created = await this.api.ProjectAccessTokens.create(
-      projectId(repo),
-      "omniralph-read-repository",
-      [READ_REPOSITORY_SCOPE],
-      expiresOn,
-      { accessLevel: AccessLevel.REPORTER },
-    );
+    const { name, accessLevel } = REPOSITORY_TOKENS[scope];
+    const created = await this.api.ProjectAccessTokens.create(projectId(repo), name, [scope], expiresOn, {
+      accessLevel,
+    });
     const credential: CachedCredential = {
       token: created.token,
       expiresAt: new Date(`${created.expires_at || expiresOn}T00:00:00Z`),
       externalId: String(created.id),
     };
-    await this.credentialCache.set(repo, READ_REPOSITORY_SCOPE, credential);
+    await this.credentialCache.set(repo, scope, credential);
     return credential;
   }
 

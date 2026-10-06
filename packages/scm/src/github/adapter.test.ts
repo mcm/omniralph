@@ -163,6 +163,36 @@ describe("getReadOnlyCloneCredential", () => {
   });
 });
 
+describe("getWriteCloneCredential", () => {
+  it("requests a token limited to contents: write on the one repository, expiring within an hour", async () => {
+    const adapter = makeAdapter();
+    const credential = await adapter.getWriteCloneCredential(REPO);
+
+    expect(tokenRequests).toHaveLength(1);
+    expect(tokenRequests[0]?.body).toEqual({
+      repositories: ["widgets"],
+      permissions: { contents: "write" },
+    });
+    expect(credential).toEqual({
+      cloneUrl: "https://github.com/acme/widgets.git",
+      username: "x-access-token",
+      token: "ghs_1",
+      expiresAt: new Date(now + 60 * 60 * 1000),
+    });
+    expect(credential.expiresAt.getTime() - now).toBeLessThanOrEqual(60 * 60 * 1000);
+
+    // Never served from (or into) the read-only token's cache entry.
+    const read = await adapter.getReadOnlyCloneCredential(REPO);
+    expect(read.token).toBe("ghs_2");
+    expect(tokenRequests[1]?.body).toEqual({
+      repositories: ["widgets"],
+      permissions: { contents: "read" },
+    });
+    await adapter.getWriteCloneCredential(REPO);
+    expect(tokenRequests).toHaveLength(2);
+  });
+});
+
 describe("getChangeRequest", () => {
   it("maps the pull request", async () => {
     server.use(pullHandler());
