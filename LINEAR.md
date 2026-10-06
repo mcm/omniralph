@@ -2,7 +2,7 @@
 
 Read by `/linear-prd` when planning epics and by anyone (including Cyralph) working them.
 
-## Staging and live smoke tests
+## Staging
 
 There is one staging environment, and it tests one epic at a time.
 
@@ -21,40 +21,19 @@ There is one staging environment, and it tests one epic at a time.
 - **Database.** `staging` has its own Neon branch. When moving `staging` to a new epic, reset
   that Neon branch from `main` first unless the previous epic has already been merged, so
   migrations from an abandoned epic don't linger.
-- **Fixes found while testing** go on the epic branch. Then `staging` is moved again: reply
-  `rerun preparation` in the epic's session and approve the push.
+- **Fixes found while testing** go on the epic branch. Then `staging` is moved again.
 - **Production** is unchanged: each epic ships through its own PR to `main`. Nothing merges
   from `staging` into `main`.
-- **Cyralph pushes to `staging` only through an approved preparation step** (see below). It
-  never moves `staging` on its own.
+- **Cyralph never moves `staging`.** Live testing on staging is done by a person, after the
+  epic's PR is open, and is not part of the epic.
 
 ## Planning an epic
 
-When an epic changes deployed behaviour (anything a live control panel, webhook or agent
-would exercise):
+Cyralph builds an epic end to end, unattended, and finishes with a PR to `main`.
 
-1. **Build stories are limited to checks Cyralph can run itself:** tests, typecheck, lint,
-   and migrations applying cleanly to a fresh database. No acceptance criterion may need a
-   deployment, a browser session or a person.
-2. **Add one `manual` live smoke-test story when the epic is planned,** not during
-   execution. It is blocked by every build story it exercises. Its description starts with
-   this preparation block, which Cyralph runs from the epic worktree once someone approves
-   it in the epic's session:
-
-   ````markdown
-   ```cyralph-prepare
-   git push --force origin HEAD:staging
-   ```
-   ````
-
-   Its checklist starts with:
-
-   - [ ] Before approving the preparation: if the previous epic on `staging` wasn't merged,
-     reset the staging Neon branch from `main` (the deploy migrates it)
-   - [ ] After the preparation runs: wait for the `staging` deploy, then rebuild the test
-     agent from the epic head
-
-   The rest of the story lists the end-to-end steps to perform against `mcm/omniralph-sandbox`
-   and what to record (review IDs, screenshots, links). Results are recorded on the smoke-test
-   story itself.
-3. **The epic's PR to `main` is not a story.** It follows the smoke test as usual.
+1. **Every story is one Cyralph can finish itself.** Acceptance criteria are limited to
+   checks it can run in the repo: tests, typecheck, lint, and migrations applying cleanly to
+   a fresh database. No criterion may need a deployment, a browser session or a person.
+2. **No manual stories for live or smoke testing,** and no `cyralph-prepare` steps that
+   deploy to `staging`. The epic must never stop to wait for a person.
+3. **The epic's PR to `main` is not a story.** Cyralph opens it once every story is done.
