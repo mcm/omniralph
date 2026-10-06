@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { isReviewJob, onReviewJobCanceled } from "@/lib/review/jobs";
+import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /**
  * Cancels a job: a queued job is canceled at once (its message is skipped at
@@ -20,7 +20,7 @@ export async function cancelJob(jobId: string): Promise<ActionResult> {
     if (result === "not_cancelable") return { ok: false, error: "That job has already finished." };
     if (result === "canceled") {
       const job = await getJob(db, jobId);
-      if (job && isReviewJob(job)) await onReviewJobCanceled(db, job);
+      if (job) await jobOutcomeHandler(job)?.onCanceled?.(db, job);
     }
     revalidatePath("/jobs");
     revalidatePath("/agents");

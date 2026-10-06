@@ -87,15 +87,6 @@ export async function enqueueReply(
   return { status: created ? "enqueued" : "duplicate", jobId: job.id };
 }
 
-/** Whether a job is a thread reply created by `enqueueReply`. */
-export function isReplyJob(job: Pick<Job, "capability" | "type" | "payload">): boolean {
-  return (
-    job.capability === REVIEW_REPLY_CAPABILITY &&
-    job.type === REVIEW_REPLY_JOB_TYPE &&
-    ReviewReplyJobPayload.safeParse(job.payload).success
-  );
-}
-
 /** Validates a thread reply's result before the job is completed. */
 export function parseReplyResult(result: unknown): ReviewReplyJobResult | null {
   const parsed = ReviewReplyJobResult.safeParse(result);

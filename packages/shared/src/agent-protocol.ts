@@ -6,8 +6,16 @@ export const AGENT_TOKEN_AUDIENCE = "omniralph-agent";
 /** Lifetime of access and job tokens, in seconds. */
 export const AGENT_TOKEN_TTL_SECONDS = 900;
 
-/** Scopes a job token can carry. Review jobs get `credentials:read` only. */
-export const JOB_TOKEN_SCOPES = ["credentials:read"] as const;
+/**
+ * Scopes a job token can carry. Review jobs get `credentials:read` only;
+ * ralph jobs may also push (`credentials:write`) and relay Linear session
+ * activities (`ralph:activity`).
+ */
+export const JOB_TOKEN_SCOPES = [
+  "credentials:read",
+  "credentials:write",
+  "ralph:activity",
+] as const;
 export const JobTokenScope = z.enum(JOB_TOKEN_SCOPES);
 export type JobTokenScope = z.infer<typeof JobTokenScope>;
 

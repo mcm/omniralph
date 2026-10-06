@@ -8,17 +8,15 @@ import {
   type JobRouteContext,
 } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import {
-  isReviewJob,
-  onReviewJobCanceled,
-  onReviewJobFailed,
-  onReviewJobStarted,
-} from "@/lib/review/jobs";
+import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /**
  * Called by an agent when it receives a job's queue message. Atomically marks
  * the job `running` on the agent and counts the delivery; returns `run` with
  * the job and a job token, or `skip` (the agent then acknowledges the message).
+ * The job type's outcome handler hears about the start (`onStarted`, which may
+ * still skip it), a delivery past the limit (`onFailed`) and a canceled job
+ * (`onCanceled`).
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireAgent(req);
@@ -39,21 +37,20 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     enabledCapabilities: runnableCapabilities(agent.enabledCapabilities),
     maxDeliveries: MAX_JOB_DELIVERIES,
   });
+  const handler = jobOutcomeHandler(job);
   if (started.action === "skip") {
-    if (isReviewJob(job)) {
-      if (started.reason === "max_deliveries") {
-        const failed = (await getJob(db, job.id)) ?? job;
-        await onReviewJobFailed(db, failed, failed.error ?? "Gave up after too many deliveries");
-      } else if (started.reason === "canceled") {
-        await onReviewJobCanceled(db, job);
-      }
+    if (handler && started.reason === "max_deliveries") {
+      const failed = (await getJob(db, job.id)) ?? job;
+      await handler.onFailed?.(db, failed, failed.error ?? "Gave up after too many deliveries");
+    } else if (handler && started.reason === "canceled") {
+      await handler.onCanceled?.(db, job);
     }
     return Response.json({ action: "skip", reason: started.reason } satisfies JobStartResponse);
   }
-  if (isReviewJob(started.job)) {
-    const review = await onReviewJobStarted(db, started.job, agentId);
-    if (review.skip) {
-      return Response.json({ action: "skip", reason: review.reason } satisfies JobStartResponse);
+  if (handler?.onStarted) {
+    const hook = await handler.onStarted(db, started.job, agentId);
+    if (hook.skip) {
+      return Response.json({ action: "skip", reason: hook.reason } satisfies JobStartResponse);
     }
   }
   const { id, capability, type, repositoryId, payload, deliveryCount } = started.job;

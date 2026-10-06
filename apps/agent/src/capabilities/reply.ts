@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   buildReplyPrompt,
-  ClaudeAgentProvider,
   diff,
   findingHunks,
   type QuestionAnswerer,
@@ -16,6 +15,7 @@ import {
   type ReviewReplyJobResult,
 } from "@omniralph/shared";
 import { RetryableJobError, type JobContext } from "./index.js";
+import { reviewSessionProvider } from "./review.js";
 
 export interface ReplyOptions {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
@@ -43,7 +43,7 @@ export async function runReply(
   const { repository, baseSha, headSha, finding } = payload;
   const started = Date.now();
   const git = { env: ctx.env(), signal: ctx.signal };
-  const answerer = options.answerer ?? new ClaudeAgentProvider({ logger: ctx.logger });
+  const answerer = options.answerer ?? reviewSessionProvider(ctx.logger);
   const request = {
     model: payload.model ?? undefined,
     maxTokens: payload.maxTokens,

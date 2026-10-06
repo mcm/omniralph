@@ -4,30 +4,19 @@ import { badRequest, clientIp, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import {
-  isReviewJob,
-  onReviewJobCanceled,
-  onReviewJobCompleted,
-  parseReviewResult,
-} from "@/lib/review/jobs";
-import { isReplyJob, onReplyJobCompleted, parseReplyResult } from "@/lib/mentions/reply";
-import { isLearnRuleJob, onLearnRuleJobCompleted, parseLearnRuleResult } from "@/lib/rules/learn";
+import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /**
  * Stores a job's result. Only the job's current agent may submit it: an agent
  * whose delivery was taken over by another one gets 409.
  *
- * A review job's result must be a `ReviewJobResult`; the review and its
- * findings are persisted and posted to the PR/MR. The agent that completed a
- * review job may submit its result again (e.g. after a timeout): that gets
- * `completed` and finishes persisting/posting if needed, never a second post.
- *
- * A `review.learn-rule` job's result must be a `LearnRuleJobResult` (its token
- * usage stays in the job's result); its rule is deduped and stored as a
- * learned rule. A replayed result stores nothing new.
- *
- * A `review.reply` job's result must be a `ReviewReplyJobResult`; the answer
- * is posted in the finding's thread, at most once.
+ * The job type's outcome handler validates the result (400 when invalid) and
+ * acts on it once the job completes (`onCompleted`, `onCanceled`): e.g. a
+ * review's findings are persisted and posted to the PR/MR, a learned rule is
+ * stored, a thread reply is posted. The agent that completed a job with a
+ * handler may submit its result again (e.g. after a timeout): that gets
+ * `completed` and reruns `onCompleted`, which is idempotent (never a second
+ * post).
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireAgent(req);
@@ -40,12 +29,8 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const db = getDb();
   const job = await getJob(db, jobId);
   if (!job) return notFound();
-  const review = isReviewJob(job);
-  if (review && !parseReviewResult(body.data.result)) return badRequest();
-  const learnRule = !review && isLearnRuleJob(job);
-  if (learnRule && !parseLearnRuleResult(body.data.result)) return badRequest();
-  const threadReply = !review && !learnRule && isReplyJob(job);
-  if (threadReply && !parseReplyResult(body.data.result)) return badRequest();
+  const handler = jobOutcomeHandler(job);
+  if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {
     jobId,
@@ -56,11 +41,9 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     case "not_found":
       return notFound();
     case "conflict": {
-      const current = review || learnRule || threadReply ? await getJob(db, jobId) : null;
+      const current = handler ? await getJob(db, jobId) : null;
       if (current?.status === "completed" && current.agentId === principal.agentId) {
-        if (review) await onReviewJobCompleted(db, current);
-        else if (learnRule) await onLearnRuleJobCompleted(db, current);
-        else await onReplyJobCompleted(db, current);
+        await handler?.onCompleted?.(db, current);
         return Response.json({ status: "completed" } satisfies JobOutcomeResponse);
       }
       return notCurrentAgent();
@@ -73,14 +56,10 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
         ip: clientIp(req),
         detail: { jobId, status: outcome.status },
       });
-      if (review) {
+      if (handler) {
         const finished = (await getJob(db, jobId))!;
-        if (outcome.status === "completed") await onReviewJobCompleted(db, finished);
-        else await onReviewJobCanceled(db, finished);
-      } else if (learnRule && outcome.status === "completed") {
-        await onLearnRuleJobCompleted(db, (await getJob(db, jobId))!);
-      } else if (threadReply && outcome.status === "completed") {
-        await onReplyJobCompleted(db, (await getJob(db, jobId))!);
+        if (outcome.status === "completed") await handler.onCompleted?.(db, finished);
+        else await handler.onCanceled?.(db, finished);
       }
       return Response.json({ status: outcome.status } satisfies JobOutcomeResponse);
     }
