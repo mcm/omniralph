@@ -6,6 +6,8 @@ import type { Database } from "./client.js";
 import { allowedEmails, users } from "./schema.js";
 
 export type UserRole = (typeof users.$inferSelect)["role"];
+/** Control panel color theme; a user's `null` theme follows the OS preference. */
+export type UiTheme = NonNullable<(typeof users.$inferSelect)["theme"]>;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AllowedEmail = typeof allowedEmails.$inferSelect;
@@ -68,6 +70,11 @@ export async function countAdmins(db: Database): Promise<number> {
 
 export async function setUserRole(db: Database, id: string, role: UserRole): Promise<void> {
   await db.update(users).set({ role }).where(eq(users.id, id));
+}
+
+/** Remembers the user's control panel theme. */
+export async function setUserTheme(db: Database, id: string, theme: UiTheme): Promise<void> {
+  await db.update(users).set({ theme }).where(eq(users.id, id));
 }
 
 /** Deletes a user (their accounts and sessions cascade) and any allowlist entry for their email. */
