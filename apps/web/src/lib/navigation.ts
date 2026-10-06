@@ -1,7 +1,14 @@
 import type { Role } from "@/lib/auth/roles";
 
 export type NavIcon =
-  "repositories" | "reviews" | "agents" | "jobs" | "analytics" | "users" | "profiles";
+  | "repositories"
+  | "reviews"
+  | "agents"
+  | "jobs"
+  | "analytics"
+  | "users"
+  | "profiles"
+  | "integrations";
 
 export interface NavItem {
   href: string;
@@ -33,6 +40,12 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: "users", adminOnly: true },
       { href: "/settings/profiles", label: "Profiles", icon: "profiles", adminOnly: true },
+      {
+        href: "/settings/integrations",
+        label: "Integrations",
+        icon: "integrations",
+        adminOnly: true,
+      },
     ],
   },
 ];

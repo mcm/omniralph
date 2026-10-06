@@ -64,6 +64,20 @@ See [github-app.md](github-app.md).
 GitLab has no env vars: the base URL, bot token and webhook secret are entered under
 **Repositories › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
 
+### Linear app (ralph)
+
+An OAuth application in Linear (**Settings › API › OAuth applications**) that admins install from
+**Settings › Integrations**. Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
+webhooks to `<APP_URL>/api/webhooks/linear` with the **Agent session events** and **Issues** events.
+The app is installed with `actor=app` and scopes `read,write,app:assignable,app:mentionable`; its
+tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
+
+| Variable | Required | Default | Description |
+| -- | -- | -- | -- |
+| `LINEAR_CLIENT_ID` | for ralph | — | The Linear OAuth application's client ID. Without it, **Connect Linear** is disabled. |
+| `LINEAR_CLIENT_SECRET` | for ralph | — | The Linear OAuth application's client secret (code exchange and token refresh). |
+| `LINEAR_WEBHOOK_SECRET` | for ralph | — | The Linear app's webhook signing secret; verifies the `Linear-Signature` HMAC-SHA256 header. Unset → Linear webhooks are rejected. |
+
 ### Agent tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).

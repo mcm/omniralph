@@ -4,11 +4,12 @@
  */
 import { and, eq, lt } from "drizzle-orm";
 import type { Database } from "./client.js";
-import type { ScmProvider } from "./repositories.js";
 import { webhookDeliveries } from "./schema.js";
 
+export type WebhookProvider = (typeof webhookDeliveries.$inferSelect)["provider"];
+
 export interface WebhookDeliveryRef {
-  provider: ScmProvider;
+  provider: WebhookProvider;
   deliveryId: string;
 }
 
@@ -18,11 +19,11 @@ const deliveryWhere = (ref: WebhookDeliveryRef) =>
 /** Records the delivery; false when it was already recorded (a redelivery). */
 export async function claimWebhookDelivery(
   db: Database,
-  ref: WebhookDeliveryRef & { repositoryId: string },
+  ref: WebhookDeliveryRef & { repositoryId?: string | null },
 ): Promise<boolean> {
   const rows = await db
     .insert(webhookDeliveries)
-    .values({ provider: ref.provider, deliveryId: ref.deliveryId, repositoryId: ref.repositoryId })
+    .values({ provider: ref.provider, deliveryId: ref.deliveryId, repositoryId: ref.repositoryId ?? null })
     .onConflictDoNothing()
     .returning({ deliveryId: webhookDeliveries.deliveryId });
   return rows.length > 0;

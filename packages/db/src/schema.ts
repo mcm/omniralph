@@ -34,6 +34,9 @@ const updatedAt = () =>
 export const userRole = pgEnum("user_role", ["admin", "member"]);
 export const uiTheme = pgEnum("ui_theme", ["light", "dark"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
+/** Sources of webhook deliveries: the code hosts plus Linear. */
+export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "linear"]);
+export const integrationProvider = pgEnum("integration_provider", ["linear"]);
 export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
   "queued",
@@ -173,6 +176,31 @@ export const scmConnections = pgTable(
       t.externalId,
     ),
   ],
+);
+
+// ── Integrations (issue trackers) ────────────────────────────────────────────
+
+/**
+ * An installed issue-tracker app, e.g. the Omniralph Linear app in one Linear
+ * workspace (`external_id` = the workspace/organization ID).
+ */
+export const integrations = pgTable(
+  "integrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: integrationProvider("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    /** Workspace name, for display. */
+    name: text("name").notNull(),
+    /** JSON credentials (OAuth tokens and expiry) encrypted with `encrypt()` (AES-256-GCM). */
+    encryptedCredentials: text("encrypted_credentials").notNull(),
+    installedByUserId: text("installed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("integrations_provider_external_id_uq").on(t.provider, t.externalId)],
 );
 
 export const reviewProfiles = pgTable("review_profiles", {
@@ -530,14 +558,14 @@ export const jobs = pgTable(
 // ── Webhooks ─────────────────────────────────────────────────────────────────
 
 /**
- * Code-host webhook deliveries that were acted on, keyed by the provider's
- * delivery ID (`X-GitHub-Delivery` / `X-Gitlab-Event-UUID`), so a redelivery
- * doesn't enqueue a second job.
+ * Webhook deliveries that were acted on, keyed by the provider's delivery ID
+ * (`X-GitHub-Delivery` / `X-Gitlab-Event-UUID` / `Linear-Delivery`), so a
+ * redelivery doesn't enqueue a second job.
  */
 export const webhookDeliveries = pgTable(
   "webhook_deliveries",
   {
-    provider: scmProvider("provider").notNull(),
+    provider: webhookProvider("provider").notNull(),
     deliveryId: text("delivery_id").notNull(),
     repositoryId: uuid("repository_id").references(() => repositories.id, {
       onDelete: "set null",

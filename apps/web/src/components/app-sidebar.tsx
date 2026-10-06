@@ -20,6 +20,7 @@ import {
   IconGitPullRequest,
   IconHistory,
   IconListCheck,
+  IconPlugConnected,
   IconServer,
   IconUsers,
 } from "@tabler/icons-react";
@@ -35,6 +36,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   analytics: IconChartBar,
   users: IconUsers,
   profiles: IconAdjustments,
+  integrations: IconPlugConnected,
 };
 
 export function AppSidebar() {

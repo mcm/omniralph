@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import { webhookDeliveries } from "./schema.js";
-import { pruneWebhookDeliveries } from "./webhooks.js";
+import { claimWebhookDelivery, pruneWebhookDeliveries, releaseWebhookDelivery } from "./webhooks.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -54,5 +54,15 @@ describe.skipIf(!dockerAvailable)("webhook delivery queries", () => {
       return result.rows.map((r) => String(Object.values(r)[0])).join("\n");
     });
     expect(plan).toContain("webhook_deliveries_created_at_idx");
+  });
+
+  it("claims Linear deliveries (no repository) once until released", async () => {
+    const ref = { provider: "linear" as const, deliveryId: "linear-1" };
+    expect(await claimWebhookDelivery(db, ref)).toBe(true);
+    expect(await claimWebhookDelivery(db, ref)).toBe(false);
+    // Same delivery ID from another provider is a different delivery.
+    expect(await claimWebhookDelivery(db, { provider: "github", deliveryId: "linear-1" })).toBe(true);
+    await releaseWebhookDelivery(db, ref);
+    expect(await claimWebhookDelivery(db, ref)).toBe(true);
   });
 });
