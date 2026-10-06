@@ -47,7 +47,7 @@ function resultFeedback(result: RalphStoryResult): string {
   const summary = quote(tail(result.summary || "(no summary)", 3000));
   switch (result.status) {
     case "blocked":
-      return `The previous session reported it was blocked. Its summary was:\n\n${summary}`;
+      return `${BLOCKED_FEEDBACK} Its summary was:\n\n${summary}`;
     case "incomplete":
       return `The previous session reported the story incomplete. Its summary was:\n\n${summary}`;
     default:
@@ -63,6 +63,23 @@ function progressEntry(story: RalphStory, summary: string, now: Date): string {
     "---",
   ].join("\n");
 }
+
+/** The progress log entry of a blocked story whose work so far was committed as `wip`. */
+function wipProgressEntry(story: RalphStory, sha: string, summary: string, now: Date): string {
+  return [
+    `## [${now.toISOString().slice(0, 10)}] - ${story.identifier}: ${story.title} (blocked)`,
+    `- Work so far committed as \`wip(${story.identifier})\` in \`${sha.slice(0, 10)}\`.`,
+    `- Blocked: ${tail(summary.trim() || "no summary", 1500)}`,
+    "---",
+  ].join("\n");
+}
+
+/** Whether a story's stored feedback says its session reported it blocked. */
+export function isBlockedFeedback(feedback: string | null | undefined): boolean {
+  return feedback?.startsWith(BLOCKED_FEEDBACK) === true;
+}
+
+const BLOCKED_FEEDBACK = "The previous session reported it was blocked.";
 
 export interface OutcomeContext extends RalphDeps {
   tx: RalphTransaction;
@@ -104,7 +121,20 @@ async function applyStoryResult(
     run = (await updateRun(tx, run.id, { progress: result.progress })) ?? run;
   }
   if (result.status !== "complete") {
-    await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result));
+    const blocked = result.status === "blocked";
+    const wipSha = blocked ? (result.commitSha ?? null) : null;
+    if (wipSha) {
+      // The blocked story's work so far, pushed as `wip(<ID>)`: it's on the branch now.
+      await updateStory(tx, story.id, { commitSha: wipSha });
+      const base = run.progress || initialProgress(run.linearIdentifier);
+      const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
+      run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
+    }
+    await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result), {
+      // Another attempt can't get past it; blocking follow-ups hold its retry instead.
+      setAside: blocked && result.followUps.length === 0,
+      wipSha,
+    });
     // Work the story turned up has to be done first (cyralph: follow-ups of an unfinished story block it).
     await fileFollowUps({ ...ctx, run }, story, result.followUps, { blocking: true });
     return;
@@ -150,16 +180,19 @@ async function applyStoryResult(
 /**
  * Counts a finished attempt that didn't complete the story (failed,
  * incomplete or blocked): stores the feedback and retries it, or, out of
- * attempts, sets it aside as `exhausted`. A blocked story's blocking
+ * attempts, sets it aside as `exhausted`. `setAside` (a blocked story) uses
+ * up the remaining attempts at once, as cyralph does: the run carries on with
+ * other stories and a reply gives it new ones. A blocked story's blocking
  * follow-ups hold its retry until they're done.
  */
 export async function recordFailedAttempt(
   ctx: OutcomeContext,
   story: RalphStory,
   feedback: string,
+  options: { setAside?: boolean; wipSha?: string | null } = {},
 ): Promise<void> {
   const max = MAX_ATTEMPTS_PER_STORY;
-  const attempt = story.attempts + 1;
+  const attempt = options.setAside ? Math.max(story.attempts + 1, max) : story.attempts + 1;
   const exhausted = attempt >= max;
   await updateStory(ctx.tx, story.id, {
     status: exhausted ? "exhausted" : "pending",
@@ -167,7 +200,15 @@ export async function recordFailedAttempt(
     lastFeedback: feedback,
   });
   const sessionId = ctx.run.linearAgentSessionId;
-  if (exhausted) {
+  const saved = options.wipSha
+    ? ` Its work so far is committed as \`${options.wipSha.slice(0, 10)}\`.`
+    : "";
+  if (options.setAside) {
+    await postActivity(ctx.linear, sessionId, {
+      type: "thought",
+      body: `🚧 **${story.identifier}** is blocked, so I'm setting it aside without retrying.${saved} Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
+    });
+  } else if (exhausted) {
     await postActivity(ctx.linear, sessionId, {
       type: "error",
       body: `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside. Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
@@ -175,7 +216,7 @@ export async function recordFailedAttempt(
   } else {
     await postActivity(ctx.linear, sessionId, {
       type: "thought",
-      body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.\n\n${tail(feedback, 1500)}`,
+      body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${tail(feedback, 1500)}`,
     });
   }
 }
