@@ -97,6 +97,11 @@ export const ralphStoryStatus = pgEnum("ralph_story_status", [
 ]);
 /** A live message's kind: story guidance, or a request (handled as one, not as guidance). */
 export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "request"]);
+/**
+ * How a run treats its session: `epic` builds the epic story by story (a
+ * delegation, or `/ralph`); `request` only does what a mention asks.
+ */
+export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -761,6 +766,7 @@ export const ralphRuns = pgTable(
     linearUrl: text("linear_url"),
     linearAgentSessionId: text("linear_agent_session_id").notNull(),
     kind: ralphRunKind("kind").notNull(),
+    mode: ralphRunMode("mode").notNull().default("epic"),
     /** Linear issue ID of the story to work on first (a delegated sub-issue). */
     focusStoryId: text("focus_story_id"),
     /** Null while the run waits for a person to pick one (`pending_elicitation`). */
@@ -771,6 +777,12 @@ export const ralphRuns = pgTable(
     agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
     prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
+    /** The `ralph.request` job whose outcome the run hasn't applied yet. */
+    requestJobId: uuid("request_job_id").references((): AnyPgColumn => jobs.id, {
+      onDelete: "set null",
+    }),
+    /** What the request jobs since the run's last response said, posted when the run gets to one. */
+    requestOutput: text("request_output"),
     status: ralphRunStatus("status").notNull().default("pending"),
     waitingOn: jsonb("waiting_on").$type<RalphWaitingOn>(),
     guidance: jsonb("guidance").$type<RalphGuidance[]>().notNull().default([]),
@@ -867,8 +879,6 @@ export const ralphLanes = pgTable(
     ciFixRounds: integer("ci_fix_rounds").notNull().default(0),
     /** PR/MR head commits whose failed CI was seen. */
     handledCiShas: jsonb("handled_ci_shas").$type<string[]>().notNull().default([]),
-    /** Requests not yet acted on, run as a request session on this lane's branch. */
-    pendingRequests: jsonb("pending_requests").$type<string[]>().notNull().default([]),
     /** Claude session of the last request, resumed for follow-ups on `request_agent_id`. */
     requestClaudeSessionId: text("request_claude_session_id"),
     /** The agent holding that session's files. */

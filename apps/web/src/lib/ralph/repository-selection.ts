@@ -133,7 +133,7 @@ export type RepositoryAnswer =
  * run's (`routed_by` "your selection"), with its main lane on the epic's
  * branch (or the lane the run already had there, carried over from an earlier
  * run) based on the repository's default branch; the issue moves to started
- * and the run advances. An unmatched reply asks again.
+ * (not for a mention's request mode) and the run advances. An unmatched reply asks again.
  */
 export async function answerRepositorySelection(
   deps: RalphDeps,
@@ -192,7 +192,9 @@ export async function answerRepositorySelection(
     type: "thought",
     body: `Using \`${repository.fullPath}\`. Building on branch \`${chosen.branch}\`, based on \`${baseBranch}\`.`,
   });
+  // Request mode (a mention) never changes the issue's state.
   await quietly(`Moving ${run.linearIdentifier} to started`, async () => {
+    if (run.mode === "request") return;
     const issue = await deps.linear.getIssue(run.linearIssueId);
     if (!["started", "completed", "canceled"].includes(issue.stateType)) {
       await deps.linear.setIssueState(issue.id, { type: "started" });

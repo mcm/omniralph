@@ -91,7 +91,7 @@ export function templatedPullRequest(
   };
 }
 
-interface LaneRepository {
+export interface LaneRepository {
   adapter: ScmAdapter;
   repo: RepoRef;
   repository: Repository;
@@ -100,7 +100,7 @@ interface LaneRepository {
   lane: RalphLane;
 }
 
-async function laneRepository(deps: RalphDeps, lane: RalphLane): Promise<LaneRepository> {
+export async function laneRepository(deps: RalphDeps, lane: RalphLane): Promise<LaneRepository> {
   const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
   if (!found || found.repository.disconnectedAt) {
     throw new Error("the repository is no longer connected");
@@ -115,7 +115,7 @@ async function laneRepository(deps: RalphDeps, lane: RalphLane): Promise<LaneRep
 }
 
 /** Agent- or Linear-written text, sanitized for the code host, with the Linear footer. */
-async function postableText(
+export async function postableText(
   target: LaneRepository,
   text: PullRequestText,
   epic: LinearLink,
@@ -199,7 +199,7 @@ export function lanesToPublish(
  * The label of a lane's PR/MR link in the agent session: with the repository
  * when the run works in more than one.
  */
-async function sessionLinkLabel(
+export async function sessionLinkLabel(
   tx: RalphTransaction,
   run: Pick<RalphRun, "id">,
   repository: Pick<Repository, "provider" | "fullPath">,
@@ -412,6 +412,8 @@ export async function finishPublishing(
   const many = lanes.length > 1;
   const failed = lanes.filter((l) => l.lane.publish?.status === "failed");
   const published = lanes.filter((l) => l.lane.publish?.status === "published" && l.lane.prUrl);
+  // What requests did since the last response leads it (cyralph's `requestOutput`).
+  const requestOutput = run.requestOutput?.trim() || null;
   if (failed.length > 0) {
     const problems = failed.map(({ lane, repository }) => {
       const problem = lane.publish?.status === "failed" ? lane.publish.problem : "";
@@ -433,6 +435,7 @@ export async function finishPublishing(
         status: "waiting",
         waitingOn: { blockers: [], manual: [] },
         prJobId: null,
+        requestOutput: null,
         error,
       })) ?? run;
     // A reply retries the lanes that failed; the published ones stay published.
@@ -440,7 +443,12 @@ export async function finishPublishing(
     const term = termOf(failed);
     await postActivity(deps.linear, run.linearAgentSessionId, {
       type: "elicitation",
-      body: `${error}\n\nReply with guidance (for example \`retry\`) and I'll try the ${term} step again, or say \`stop\`.`,
+      body: [
+        requestOutput,
+        `${error}\n\nReply with guidance (for example \`retry\`) and I'll try the ${term} step again, or say \`stop\`.`,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     });
     await moveCompletedEpic(deps, run);
     return waiting;
@@ -451,11 +459,14 @@ export async function finishPublishing(
       status: "completed",
       prJobId: null,
       waitingOn: null,
+      requestOutput: null,
       error: null,
     })) ?? run;
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "response",
-    body: finalResponse(completed, input.epic, input.rows, published),
+    body: requestOutput
+      ? withPullRequestLinks(requestOutput, published)
+      : finalResponse(completed, input.epic, input.rows, published),
   });
   await moveCompletedEpic(deps, run);
   return completed;
@@ -496,4 +507,20 @@ function finalResponse(
     return `- ${mark} **${s.identifier}**: ${s.title}${elsewhere}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`;
   });
   return [...head, "", ...lines].join("\n");
+}
+
+/**
+ * `text` with the PR/MR links of `lanes` it doesn't mention yet, one per line
+ * (named by repository when there are several), as cyralph's
+ * `withPullRequestLinks`.
+ */
+export function withPullRequestLinks(text: string, lanes: readonly PublishedLane[]): string {
+  const linked = lanes.filter((l) => l.lane.prUrl && l.lane.prNumber !== null);
+  const links = linked
+    .filter((l) => !text.includes(l.lane.prUrl!))
+    .map(
+      (l) =>
+        `${changeRequestLabel(l.repository.provider, l.lane.prNumber!)}${linked.length > 1 ? ` (${l.repository.fullPath})` : ""}: ${l.lane.prUrl}`,
+    );
+  return links.length > 0 ? `${text}\n\n${links.join("\n")}` : text;
 }

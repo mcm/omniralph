@@ -41,6 +41,7 @@ export type RalphLane = typeof ralphLanes.$inferSelect;
 export type RalphStory = typeof ralphStories.$inferSelect;
 export type RalphRunKind = RalphRun["kind"];
 export type RalphRunStatus = RalphRun["status"];
+export type RalphRunMode = RalphRun["mode"];
 export type RalphStoryStatus = RalphStory["status"];
 
 /** A transaction, as handed to `lockRun`'s callback. */
@@ -106,6 +107,8 @@ export interface NewRalphRunInput {
   linearUrl?: string | null;
   linearAgentSessionId: string;
   kind: RalphRunKind;
+  /** `request` for a mention (default `epic`). */
+  mode?: RalphRunMode;
   focusStoryId?: string | null;
   /** Null while a person is asked to pick the repository. */
   repositoryId: string | null;
@@ -719,6 +722,9 @@ export async function copyLanes(
         runId: toRunId,
         // The new run publishes its lanes itself.
         publish: null,
+        // Its requests start a new Claude conversation (cyralph keeps it per session).
+        requestClaudeSessionId: null,
+        requestAgentId: null,
       })),
     )
     .onConflictDoNothing()
@@ -728,8 +734,8 @@ export async function copyLanes(
 /**
  * Re-routing moved a run to `repositoryId` (cyralph's `moveToRepository`):
  * the old main lane is dropped (its branch, PR/MR and follow-up state stay
- * behind, and are returned for the note saying so; its pending requests come
- * along), the run's lane in the new repository becomes the main lane, or a
+ * behind, and are returned for the note saying so; its pending requests
+ * (messages without a lane) come along), the run's lane in the new repository becomes the main lane, or a
  * fresh one is started with `fresh`'s branches. The same repository changes
  * nothing (a missing main lane is created). Call it under the run's lock.
  */
@@ -747,25 +753,16 @@ export async function moveToRepository(
   const old = await getMainLane(db, run);
   if (old) await db.delete(ralphLanes).where(eq(ralphLanes.id, old.id));
   const existing = await getLaneByRepository(db, runId, repositoryId);
-  const carried = old?.pendingRequests ?? [];
   let lane: RalphLane;
   if (existing) {
-    lane =
-      (carried.length > 0
-        ? await updateLane(db, existing.id, {
-            pendingRequests: [...carried, ...existing.pendingRequests],
-          })
-        : existing) ?? existing;
-    // Its messages now belong to the main lane.
+    lane = existing;
+    // Its messages (pending requests) now belong to the main lane, like the old main lane's.
     await db
       .update(ralphMessages)
       .set({ laneId: null })
       .where(eq(ralphMessages.laneId, existing.id));
   } else {
     lane = await ensureLane(db, { runId, repositoryId, ...fresh });
-    if (carried.length > 0) {
-      lane = (await updateLane(db, lane.id, { pendingRequests: carried })) ?? lane;
-    }
   }
   await updateRun(db, runId, { repositoryId });
   return { lane, left: old };
@@ -881,6 +878,8 @@ export interface NewRalphMessageInput {
   text: string;
   /** The running job to deliver it to; omitted: a pending request (or guidance) as is. */
   jobId?: string | null;
+  /** The lane it's for; omitted: the run's main lane. */
+  laneId?: string | null;
   author?: string | null;
 }
 
@@ -895,6 +894,7 @@ export async function insertMessage(
       kind: input.kind,
       text: input.text,
       jobId: input.jobId ?? null,
+      laneId: input.laneId ?? null,
       author: input.author ?? null,
     })
     .returning();
@@ -1014,4 +1014,17 @@ export async function listPendingRequests(db: Executor, runId: string): Promise<
       ),
     )
     .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
+}
+
+/** Marks messages applied (e.g. the requests a `ralph.request` job handled). */
+export async function consumeMessages(
+  db: Executor,
+  ids: readonly string[],
+  now = new Date(),
+): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(ralphMessages)
+    .set({ consumedAt: now })
+    .where(and(inArray(ralphMessages.id, [...ids]), isNull(ralphMessages.consumedAt)));
 }

@@ -132,3 +132,24 @@ export function preparationQuestion(input: {
     .filter(Boolean)
     .join("\n\n");
 }
+
+/** In a mention or reply, opts into the epic's story loop (`/label-based-prompt` is Cyrus' spelling). */
+const LOOP_COMMAND = /(^|\s)\/(ralph|label-based-prompt)\b/i;
+
+/**
+ * A mention's or reply's instruction (cyralph's `parseInstruction`): the text
+ * without `/ralph` and a leading `@name`, and whether `/ralph` asked for the
+ * story loop.
+ */
+export function parseInstruction(body: string | undefined | null): {
+  text: string;
+  wantsLoop: boolean;
+} {
+  const raw = (body ?? "").trim();
+  const wantsLoop = LOOP_COMMAND.test(raw);
+  const text = raw
+    .replace(LOOP_COMMAND, " ")
+    .replace(/^\s*@[\w.-]+[,:]?\s*/, "")
+    .trim();
+  return { text, wantsLoop };
+}

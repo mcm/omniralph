@@ -17,6 +17,7 @@ import {
   DEFAULT_MANUAL_LABELS,
   materializationPlan,
   parsePrd,
+  prdEpic,
   singleIssueEpic,
   type Epic,
   type EpicOptions,
@@ -53,6 +54,12 @@ export interface LoadEpicOptions {
    * issue that was never run: a run's epic is what people curate afterwards.
    */
   completePrd?: boolean;
+  /**
+   * Create a PRD's stories as sub-issues (default). Off (a mention only reads
+   * the epic for context), a PRD without sub-issues loads as a `prd` epic of
+   * its PRD stories and nothing is created.
+   */
+  materialize?: boolean;
 }
 
 /**
@@ -202,6 +209,9 @@ export async function loadEpic(
   }
 
   const prd = parsePrd(issue.description);
+  if (prd && options.materialize === false) {
+    return { epic: prdEpic(issue, prd), root: issue, kind: "prd", materialized: 0 };
+  }
   if (prd) {
     const epicOptions = epicOptionsFor(options, issue);
     const created = await materializePrd(
@@ -223,16 +233,20 @@ export async function loadEpic(
 }
 
 /**
- * Re-reads a run's stories from Linear: the epic issue's sub-issues, or the
- * issue itself for a `single` run. Never creates issues.
+ * Re-reads a run's stories from Linear: the epic issue's sub-issues (in
+ * request mode, its PRD's stories while it has none), or the issue itself for
+ * a `single` run. Never creates issues.
  */
 export async function reloadEpic(
   linear: LinearGateway,
-  run: { linearIssueId: string; kind: "children" | "prd" | "single" },
+  run: { linearIssueId: string; kind: "children" | "prd" | "single"; mode?: "epic" | "request" },
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
   const issue = await linear.getIssue(run.linearIssueId);
   if (run.kind === "single") return singleIssueEpic(issue);
   const children = await linear.getChildren(issue.id);
+  // A mention's PRD whose stories were never created: its PRD stories, for context.
+  const prd = run.mode === "request" && children.length === 0 ? parsePrd(issue.description) : null;
+  if (prd) return prdEpic(issue, prd);
   return loadChildrenEpic(linear, issue, children, epicOptionsFor(options, issue));
 }

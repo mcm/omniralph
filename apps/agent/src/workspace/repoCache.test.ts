@@ -359,6 +359,39 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     expect(await exists(repos.branchWorktreePath(repo, "feat/TOOL-1"))).toBe(true);
   });
 
+  it("installs a pre-push hook that only lets a branch worktree push its own branch", async () => {
+    const base = await remote.commit({ "README.md": "base\n" });
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      await writeFile(path.join(wt.path, "story.txt"), "work\n");
+      git(wt.path, "add", "-A");
+      git(wt.path, "commit", "--quiet", "-m", "work");
+      const head = git(wt.path, "rev-parse", "HEAD");
+
+      // Its own branch: allowed.
+      git(wt.path, "push", "--quiet", "origin", "feat/TOOL-1");
+      expect(git(remote.bare, "rev-parse", "refs/heads/feat/TOOL-1")).toBe(head);
+
+      // The base branch (or any other ref): rejected by the hook, nothing pushed.
+      for (const ref of ["HEAD:main", "HEAD:refs/heads/other"]) {
+        let stderr = "";
+        try {
+          execFileSync("git", ["push", "--quiet", "origin", ref], {
+            cwd: wt.path,
+            env: ENV,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch (error) {
+          stderr = String((error as { stderr?: Buffer }).stderr ?? "");
+        }
+        expect(stderr).toContain("omniralph: this worktree may only push feat/TOOL-1");
+      }
+      expect(git(remote.bare, "rev-parse", "refs/heads/main")).toBe(base);
+      expect(() =>
+        git(remote.bare, "rev-parse", "--verify", "--quiet", "refs/heads/other"),
+      ).toThrow();
+    });
+  });
+
   it("creates the worktree from an existing remote branch pushed after the clone", async () => {
     await remote.commit({ "README.md": "base\n" });
     await repos.sync(repo, opts); // clone before the branch exists

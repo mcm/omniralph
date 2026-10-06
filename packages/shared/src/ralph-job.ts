@@ -6,19 +6,24 @@
  *   (Claude session, quality gates, commit, push).
  * - `ralph.describe-pr`: a read-only session that writes the PR/MR title and body.
  * - `ralph.prepare`: runs the approved `cyralph-prepare` commands of a manual story.
+ * - `ralph.request`: one Claude session doing what a request from the Linear
+ *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  */
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
 import { CommitSha } from "./review-job.js";
+import { RALPH_HISTORY_REWRITE_POLICIES } from "./settings.js";
 
 export const RALPH_CAPABILITY = "ralph";
 export const RALPH_STORY_JOB_TYPE = "ralph.story";
 export const RALPH_DESCRIBE_PR_JOB_TYPE = "ralph.describe-pr";
 export const RALPH_PREPARE_JOB_TYPE = "ralph.prepare";
+export const RALPH_REQUEST_JOB_TYPE = "ralph.request";
 export const RALPH_JOB_TYPES = [
   RALPH_STORY_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
 ] as const;
 
 /** Attempts (not queue deliveries) a story gets before it is marked exhausted. */
@@ -241,6 +246,63 @@ export const RalphPrepareResult = z.object({
   durationMs: z.int().min(0),
 });
 export type RalphPrepareResult = z.infer<typeof RalphPrepareResult>;
+
+/** Payload of a `ralph.request` job: a lane's pending requests, done in one Claude session. */
+export const RalphRequestPayload = RalphJobBase.extend({
+  epic: RalphIssue.extend({
+    kind: z.enum(RALPH_EPIC_KINDS).default("children"),
+    url: z.url().nullable().default(null),
+    /** The epic's PRD (its description); empty for a single issue. */
+    prd: z.string().max(MAX_DOCUMENT_LENGTH),
+  }),
+  /** Every story of the epic in order, for the status in the prompt. */
+  stories: z.array(RalphStoryListItem).max(500).default([]),
+  /** The requests (`ralph_messages`), oldest first. */
+  requests: z
+    .array(z.object({ id: z.uuid(), text: z.string().min(1).max(20_000) }))
+    .min(1)
+    .max(50),
+  /** The lane's open PR/MR, if any. */
+  prUrl: z.url().nullable().default(null),
+  /** The run's progress log so far. */
+  progress: z.string().max(MAX_DOCUMENT_LENGTH),
+  /** The repository's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's gates. */
+  qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
+  /** Whether an explicit request may rebase and `--force-with-lease` the branch. */
+  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES).default("when-asked"),
+  /**
+   * The lane's last request session, resumed for a follow-up. Only set when
+   * the job goes to the agent holding that session's files.
+   */
+  resumeSessionId: z.string().min(1).max(200).nullable().default(null),
+});
+export type RalphRequestPayload = z.infer<typeof RalphRequestPayload>;
+
+export const RALPH_PULL_REQUEST_ACTIONS = ["open", "update", "ready"] as const;
+
+/** A PR/MR change a request session asked for; the control panel makes it. */
+export const RalphPullRequestAction = z.object({
+  action: z.enum(RALPH_PULL_REQUEST_ACTIONS),
+  title: z.string().trim().min(1).max(500).optional(),
+  body: z.string().trim().min(1).max(60_000).optional(),
+});
+export type RalphPullRequestAction = z.infer<typeof RalphPullRequestAction>;
+
+/** Result of a `ralph.request` job. */
+export const RalphRequestResult = z.object({
+  /** For the Linear thread: what the session did, or why it couldn't (`error`). */
+  summary: z.string().max(20_000),
+  /** Set when the session failed or ended without a valid structured result. */
+  error: z.string().max(20_000).nullable().default(null),
+  /** The Claude session, resumed by the lane's next request on the same agent. */
+  sessionId: z.string().min(1).max(200).nullable(),
+  pullRequest: RalphPullRequestAction.optional(),
+  /** What the session left uncommitted, stashed. */
+  stashSha: CommitSha.optional(),
+  usage: TokenUsage,
+  durationMs: z.int().min(0),
+});
+export type RalphRequestResult = z.infer<typeof RalphRequestResult>;
 
 /**
  * An agent-session activity relayed by an agent (`POST /api/agent/jobs/{id}/activities`):

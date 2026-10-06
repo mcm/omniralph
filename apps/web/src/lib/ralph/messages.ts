@@ -1,7 +1,7 @@
 /**
  * Replies delivered into a running job's live Claude session (ported from
  * cyralph's injectors and `SessionManager.onPrompted`). A reply for a run
- * with a running `ralph.story` job is stored as a `ralph_messages` row for
+ * with a running `ralph.story` or `ralph.request` job is stored as a `ralph_messages` row for
  * that job; the agent gets it in its next heartbeat (`jobMessages`), injects
  * it and acknowledges it in the heartbeat after (`deliveredMessageIds`, or
  * `rejectedMessageIds` when the job has no live session). A message that
@@ -10,6 +10,7 @@
  */
 import {
   appendGuidance,
+  getLaneByRepository,
   getRunningRunJob,
   insertMessage,
   listAgentUndeliveredMessages,
@@ -21,24 +22,32 @@ import {
   updateRun,
   updateStory,
   type Database,
+  type Job,
   type RalphMessage,
   type RalphRun,
   type RalphTransaction,
 } from "@omniralph/db";
 import { asksForPushOrPullRequest } from "@omniralph/ralph";
-import { RALPH_STORY_JOB_TYPE, type JobMessageDelivery } from "@omniralph/shared";
+import {
+  RALPH_REQUEST_JOB_TYPE,
+  RALPH_STORY_JOB_TYPE,
+  type JobMessageDelivery,
+} from "@omniralph/shared";
 import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
 import { postActivity, quietly } from "./notify";
 
 /** Job types whose live Claude session takes replies. */
-export const LIVE_SESSION_JOB_TYPES: readonly string[] = [RALPH_STORY_JOB_TYPE];
+export const LIVE_SESSION_JOB_TYPES: readonly string[] = [
+  RALPH_STORY_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
+];
 
 /** How a run treats replies: as guidance for its stories (`epic`), or as requests. */
-export type RalphRunMode = "epic" | "request";
+export type RalphRunMode = RalphRun["mode"];
 
-/** A run's mode. Every run builds its epic until request mode exists. */
-export function runMode(_run: RalphRun): RalphRunMode {
-  return "epic";
+/** A run's mode: `request` for a mention (until `/ralph`), else `epic`. */
+export function runMode(run: Pick<RalphRun, "mode">): RalphRunMode {
+  return run.mode;
 }
 
 export const DELIVERED_NOTE = "Passed this to the agent that's working right now.";
@@ -108,11 +117,46 @@ export async function queueLiveReply(
   await insertMessage(tx, {
     runId: run.id,
     jobId: job.id,
+    // A request job's lane: should the message be stranded, it stays that lane's request.
+    laneId: await jobLaneId(tx, run, job),
     kind: mode === "epic" ? "guidance" : "request",
     text,
     author: author ?? null,
   });
   return { kind: "live", note: null };
+}
+
+/** The lane a running job works in, null for the main lane. */
+async function jobLaneId(
+  tx: RalphTransaction,
+  run: Pick<RalphRun, "id" | "repositoryId">,
+  job: Pick<Job, "repositoryId">,
+): Promise<string | null> {
+  if (!job.repositoryId || job.repositoryId === run.repositoryId) return null;
+  return (await getLaneByRepository(tx, run.id, job.repositoryId))?.id ?? null;
+}
+
+/**
+ * Hands a message to the run's running live-session job, if it has one: a
+ * mention on an issue whose run is working right now. Returns whether it did.
+ */
+export async function deliverToRunningJob(
+  tx: RalphTransaction,
+  run: RalphRun,
+  text: string,
+  author: string | undefined,
+): Promise<boolean> {
+  const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
+  if (!job) return false;
+  await insertMessage(tx, {
+    runId: run.id,
+    jobId: job.id,
+    laneId: await jobLaneId(tx, run, job),
+    kind: runMode(run) === "epic" ? "guidance" : "request",
+    text,
+    author: author ?? null,
+  });
+  return true;
 }
 
 /**

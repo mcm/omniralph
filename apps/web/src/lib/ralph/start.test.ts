@@ -41,7 +41,6 @@ import { advanceRun, updateStoryAndPlan } from "./run";
 import {
   ACKNOWLEDGEMENT,
   AGENT_SESSION_MARKER,
-  MENTION_RESPONSE,
   startRun,
   type SessionCreatedEvent,
   type StartRunDeps,
@@ -630,11 +629,13 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     });
   });
 
-  it("answers a mention that isn't a delegation without starting a run", async () => {
+  it("a bare mention with no instruction does nothing", async () => {
     const issue = linear.add({ identifier: "ENG-50", title: "Question" });
-    const event = created(issue.id, { commentBody: "@omniralph can you push this?" });
-    expect(await startRun(event, deps())).toEqual({ status: "mention" });
-    expect(linear.bodies(event.sessionId, "response")).toEqual([MENTION_RESPONSE]);
+    const event = created(issue.id, { commentBody: "@omniralph" });
+    expect(await startRun(event, deps())).toEqual({ status: "nothing" });
+    expect(linear.bodies(event.sessionId, "response")).toEqual([
+      "Nothing to do: the mention didn't include a request. Delegate the issue to me to work the epic.",
+    ]);
     expect(await db.select().from(ralphRuns)).toEqual([]);
     expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
   });

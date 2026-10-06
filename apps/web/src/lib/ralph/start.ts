@@ -24,10 +24,11 @@ import {
   updateStory,
   type RalphLane,
   type RalphRun,
+  type RalphRunMode,
   type RalphTransaction,
   type Repository,
 } from "@omniralph/db";
-import type { Epic } from "@omniralph/ralph";
+import { parseInstruction, type Epic } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import {
@@ -37,6 +38,7 @@ import {
   type LoadedEpic,
 } from "./epic-loader";
 import { routeStories } from "./lanes";
+import { applyGuidance, deliverToRunningJob } from "./messages";
 import { quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import {
@@ -46,6 +48,7 @@ import {
   repositoryQuestionFor,
   ROUTED_BY_SELECTION,
 } from "./repository-selection";
+import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
 import { describeRoute, routeIssue } from "./routing";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
@@ -63,10 +66,6 @@ export const AGENT_SESSION_MARKER = "This thread is for an agent session";
 /** The acknowledgement posted before the webhook responds. */
 export const ACKNOWLEDGEMENT = "On it…";
 
-export const MENTION_RESPONSE =
-  "I only build issues that are delegated to me for now: delegate this issue (or its epic) to me " +
-  "to build it story by story. Mentions aren't supported yet.";
-
 /** Whether a new agent session comes from a mention rather than a delegation. */
 export function isMention(event: Pick<SessionCreatedEvent, "commentBody">): boolean {
   const body = event.commentBody?.trim();
@@ -74,7 +73,10 @@ export function isMention(event: Pick<SessionCreatedEvent, "commentBody">): bool
 }
 
 export type StartOutcome =
-  | { status: "mention" }
+  /** A mention without a request: nothing to do. */
+  | { status: "nothing" }
+  /** A mention handed to the issue's run (its running job, or its pending requests). */
+  | { status: "delivered"; run: RalphRun; live: boolean }
   | { status: "load_failed"; error: string }
   /** No ralph-enabled repository at all. */
   | { status: "unroutable" }
@@ -207,6 +209,7 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
       waitingOn: null,
       pendingElicitation: null,
       prJobId: null,
+      requestJobId: null,
       preparation: { ...state, request: null },
       error: `Superseded by agent session ${sessionId}`,
     });
@@ -262,9 +265,10 @@ async function askForRepositoryFirst(
     loaded: LoadedEpic;
     previous: RalphRun | null;
     repositories: readonly Repository[];
+    start: StartOptions;
   },
 ): Promise<StartOutcome> {
-  const { event, loaded, previous, repositories } = input;
+  const { event, loaded, previous, repositories, start } = input;
   const { epic, root } = loaded;
   const { run, created } = await deps.db.transaction(async (tx) => {
     const result = await createRun(tx, {
@@ -274,6 +278,7 @@ async function askForRepositoryFirst(
       linearUrl: root.url,
       linearAgentSessionId: event.sessionId,
       kind: loaded.kind,
+      mode: start.mode,
       focusStoryId: loaded.focusStoryId ?? null,
       // The main lane is added with the repository.
       repositoryId: null,
@@ -284,6 +289,7 @@ async function askForRepositoryFirst(
     // Like v2a, the previous main lane's PR/MR isn't carried over to a repository a person picks.
     const run = await carryOver(tx, result.run, previous, previous?.repositoryId);
     await syncStories(tx, run.id, epic);
+    await addStartInstruction(tx, run, start);
     return { run, created: true };
   });
   if (!created) {
@@ -306,31 +312,112 @@ async function askForRepositoryFirst(
   return { status: "selecting", run };
 }
 
+/** How a new run starts: a delegation (or `/ralph`) builds the epic; a mention does what it asks. */
+interface StartOptions {
+  mode: RalphRunMode;
+  /** The mention's instruction (without `/ralph` and the leading `@name`). */
+  instruction?: { text: string; author: string | null; wantsLoop: boolean };
+}
+
+/** A mention's instruction becomes the new run's first pending request (and guidance with `/ralph`). */
+async function addStartInstruction(
+  tx: RalphTransaction,
+  run: RalphRun,
+  start: StartOptions,
+): Promise<void> {
+  if (!start.instruction?.text) return;
+  await addInstruction(tx, run, { ...start.instruction, wantsLoop: false }, applyGuidance);
+}
+
 /** Handles `AgentSessionEvent.created` (after the acknowledgement was posted). */
 export async function startRun(
   event: SessionCreatedEvent,
   deps: StartRunDeps,
 ): Promise<StartOutcome> {
-  const { db, linear } = deps;
-  const sessionId = event.sessionId;
+  const { db } = deps;
 
   // A redelivered or repeated event: the session already has its run.
-  const existing = await getRunBySession(db, sessionId);
+  const existing = await getRunBySession(db, event.sessionId);
   if (existing) {
     await advanceRun(existing.id, deps);
     return { status: "started", run: existing, created: false };
   }
+  if (isMention(event)) return startMention(event, deps);
+  return startNewRun(event, deps, { mode: "epic" });
+}
 
-  if (isMention(event)) {
-    await post(deps, sessionId, { type: "response", body: MENTION_RESPONSE });
-    return { status: "mention" };
+/**
+ * An @mention (cyralph's `onCreated`): like Cyrus, it addresses its comment.
+ * A bare mention does nothing. On an issue whose run is working right now,
+ * the text goes to that run: into its running job's live session, or else as
+ * a request (or `/ralph`) for it, and that session answers. Otherwise a new
+ * run starts in request mode (`/ralph`: epic mode, the text as guidance),
+ * carrying over the issue's earlier run.
+ */
+async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Promise<StartOutcome> {
+  const { text, wantsLoop } = parseInstruction(event.commentBody);
+  const author = event.creatorName ?? null;
+  if (!text && !wantsLoop) {
+    await post(deps, event.sessionId, { type: "response", body: NOTHING_TO_DO });
+    return { status: "nothing" };
   }
+  let root: IssueSummary;
+  try {
+    // Only to find the issue's run: a mention never creates story issues here.
+    root = (await loadEpic(deps.linear, event.issueId, { materialize: false })).root;
+  } catch (error) {
+    await post(deps, event.sessionId, {
+      type: "error",
+      body: `I couldn't load the issue from Linear: ${message(error)}`,
+    });
+    return { status: "load_failed", error: message(error) };
+  }
+  const active = await getRunByIssue(deps.db, root.id, { activeOnly: true });
+  if (active) {
+    const handed = await lockRun(deps.db, active.id, async (tx, run) => {
+      if (FINISHED_RUN_STATUSES.has(run.status)) return null;
+      // The epic is being worked right now: hand the mention to that live agent.
+      if (text && !wantsLoop && (await deliverToRunningJob(tx, run, text, author ?? undefined))) {
+        return { live: true };
+      }
+      await addInstruction(tx, run, { text, author, wantsLoop }, applyGuidance);
+      return { live: false };
+    });
+    if (handed) {
+      await post(deps, event.sessionId, {
+        type: "response",
+        body: handed.live
+          ? PASSED_TO_RUNNING_JOB
+          : `Added this to the run that's already working on **${root.identifier}**; it will answer in that session.`,
+      });
+      if (!handed.live) await advanceRun(active.id, deps);
+      return { status: "delivered", run: active, live: handed.live };
+    }
+  }
+  return startNewRun(event, deps, {
+    mode: wantsLoop ? "epic" : "request",
+    instruction: { text, author, wantsLoop },
+  });
+}
+
+/**
+ * Starts a run for a new agent session: a delegation, or a mention when the
+ * issue has no unfinished run.
+ */
+async function startNewRun(
+  event: SessionCreatedEvent,
+  deps: StartRunDeps,
+  start: StartOptions,
+): Promise<StartOutcome> {
+  const { db, linear } = deps;
+  const sessionId = event.sessionId;
+  const epicMode = start.mode === "epic";
 
   const repositories = await listRalphRepositories(db);
   let loaded: LoadedEpic;
   try {
     // An issue that was never run may hold a PRD whose materialization stopped half way.
-    const completePrd = !(await getRunByIssue(db, event.issueId));
+    const completePrd = epicMode && !(await getRunByIssue(db, event.issueId));
     // Which stories are manual depends on the repository the epic routes to.
     const manualLabels = (root: IssueSummary) => {
       const route = routeIssue(root, repositories);
@@ -344,6 +431,8 @@ export async function startRun(
       completePrd,
       manualLabels,
       allowPreparation,
+      // A mention only reads the epic for context; it never creates story issues.
+      materialize: epicMode,
     });
   } catch (error) {
     await post(deps, sessionId, {
@@ -373,7 +462,9 @@ export async function startRun(
   }
 
   const chosen = chooseRepository(root, repositories, previous);
-  if (!chosen) return askForRepositoryFirst(deps, { event, loaded, previous, repositories });
+  if (!chosen) {
+    return askForRepositoryFirst(deps, { event, loaded, previous, repositories, start });
+  }
 
   let baseBranch: string;
   try {
@@ -400,6 +491,7 @@ export async function startRun(
       linearUrl: root.url,
       linearAgentSessionId: sessionId,
       kind: loaded.kind,
+      mode: start.mode,
       focusStoryId: loaded.focusStoryId ?? null,
       repositoryId: previous?.repositoryId ?? null,
       routedBy: chosen.routedBy,
@@ -415,6 +507,7 @@ export async function startRun(
     const lane = (await updateLane(tx, moved.lane.id, { baseBranch })) ?? moved.lane;
     run = { ...run, repositoryId: chosen.repository.id };
     await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
+    await addStartInstruction(tx, run, start);
     return { run, created: true, lane, left: moved.left };
   });
   if (!created) {
@@ -437,17 +530,20 @@ export async function startRun(
       body: leftBehindNote(note, chosen.repository.fullPath),
     });
   }
-  if (!["started", "completed", "canceled"].includes(root.stateType)) {
+  // Request mode changes nothing in Linear; it just does what the mention asks.
+  if (epicMode && !["started", "completed", "canceled"].includes(root.stateType)) {
     try {
       await linear.setIssueState(root.id, { type: "started" });
     } catch (error) {
       console.warn(`Moving ${root.identifier} to started failed`, error);
     }
   }
-  await post(deps, sessionId, {
-    type: "thought",
-    body: describeRun(loaded, chosen, lane!, !!previous),
-  });
+  if (epicMode) {
+    await post(deps, sessionId, {
+      type: "thought",
+      body: describeRun(loaded, chosen, lane!, !!previous),
+    });
+  }
   await advanceRun(run.id, deps);
   return { status: "started", run, created: true };
 }

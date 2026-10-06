@@ -27,6 +27,7 @@ import { preparationHash } from "@omniralph/ralph";
 import {
   MAX_JOB_DELIVERIES,
   RalphPreparePayload,
+  RalphRequestPayload,
   RalphStoryPayload,
   type RalphPrepareResult,
   type RalphStoryResult,
@@ -209,6 +210,20 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     expect(job.type).toBe("ralph.story");
     await finish(job, "jobError" in outcome ? outcome : { ...storyResult(outcome) });
     return RalphStoryPayload.parse(job.payload);
+  }
+
+  /** Plays the run's queued `ralph.request` job (a summary). Returns its payload. */
+  async function request(runId: string, summary = "Done as asked."): Promise<RalphRequestPayload> {
+    const job = await start(runId);
+    expect(job.type).toBe("ralph.request");
+    await finish(job, {
+      summary,
+      error: null,
+      sessionId: "claude-req-1",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
+    });
+    return RalphRequestPayload.parse(job.payload);
   }
 
   /** Plays the run's queued `ralph.prepare` job. Returns its payload. */
@@ -715,6 +730,8 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       // No question is open: "Run it" is just guidance.
       expect((await reply(run, "Run it"))?.kind).toBe("guidance");
       await work(run.id, { commitSha: sha(7) });
+      // No story took it (the job was queued already), so it runs as a request (as in cyralph).
+      expect((await request(run.id)).requests.map((r) => r.text)).toEqual(["Run it"]);
       expect(selects(run)).toHaveLength(1);
 
       // An answer wins over start anyway's words only when it is an option…
@@ -729,6 +746,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect((await getRun(db, run.id))?.preparation?.request).toBeNull();
       // On a stopped run, an option is guidance (which resumes it and asks again).
       expect((await reply(run, "Not yet"))?.kind).toBe("guidance");
+      await request(run.id);
       expect((await getRun(db, run.id))?.status).toBe("waiting");
       expect(selects(run)).toHaveLength(3);
     });

@@ -214,12 +214,39 @@ Reply in the agent session to steer a run:
 | An answer to the preparation question | `Run it` / `I'll do it myself` / `Not yet` (or `1`–`3`). |
 | `rerun preparation` | Asks the preparation question again. |
 | `start anyway` | Ignores the open blockers and continues. |
-| Anything else, while a story runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt. A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
-| Anything else | Stored as guidance for the next story attempts; exhausted stories get fresh attempts. |
+| Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
+| Anything else | Stored as guidance for the next story attempts (exhausted stories get fresh attempts) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
+| `/ralph` | Switches a mention's run (request mode) to the story loop; its requests become guidance. |
 
 Live delivery needs an agent version that acknowledges `jobMessages`; with an older agent, the reply is applied from the next story attempt once the running job ends.
 
-An @mention of the app that isn't a delegation gets a response that only delegation is supported.
+A reply on a finished (completed) run reopens it: the reply runs as a request in that session.
+
+### @mentions (request mode)
+
+@mention the app in an issue's comments to ask for something specific ("push this and open the
+MR", "rebase on main", "what's left on this epic?"): like Cyrus, Omniralph does just that, with the
+epic as context. The mention's text (without a leading `@name`) is the request.
+
+- **No story loop.** A mention never builds stories, never changes the issue's state in Linear and
+  ignores blockers. Add `/ralph` to the mention (or a later reply) to build the epic instead, with
+  the rest of the comment as guidance.
+- **One session per request.** A `ralph.request` job runs one Claude session in the branch worktree
+  of the issue's run (the branch, lanes, PR/MR, stashes and guidance of an earlier run carry
+  over). Its prompt has the epic's status and stories, the PR/MR, the progress log, the quality
+  gates and the PRD. It may commit and push the run's branch (never another one: the agent's
+  `pre-push` hook rejects that), and rebase and `--force-with-lease` it when asked, unless the
+  repository's **History rewrites** setting is `never`.
+- **PRs/MRs.** The agent never runs `gh` or `glab`: it asks for a PR/MR change in its result, and
+  the control panel makes it (opens it as a draft, updates its title or description, or marks it
+  ready), sanitizing the agent's text. An open PR/MR for the branch is adopted.
+- **Follow-ups.** Replies in the mention's session are new requests; they continue the same Claude
+  conversation when they run on the same agent.
+- **Uncommitted changes** the session leaves are stashed, and the response says so.
+- **Busy issue.** A mention on an issue whose run is working right now is passed to that agent
+  ("Passed this to the agent that's working on this epic right now; it will answer in that
+  session."); one whose run waits is added to that run as a request.
+- A mention without a request does nothing.
 
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Ralph runs**,
 where admins can also stop a run.

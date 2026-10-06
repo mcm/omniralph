@@ -3,6 +3,7 @@ import {
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_JOB_TYPES,
   RALPH_PREPARE_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
 } from "@omniralph/shared";
 import type { Capability } from "../index.js";
@@ -13,6 +14,7 @@ import {
 } from "./policy.js";
 import { runDescribePr } from "./describe-pr.js";
 import { runPrepare } from "./prepare.js";
+import { runRequest } from "./request.js";
 import { runStory, type StoryOptions } from "./story.js";
 
 export {
@@ -29,7 +31,7 @@ export class NotImplementedJobError extends Error {
 /**
  * Builds a delegated Linear epic story by story (ported from cyralph). The
  * control panel orchestrates the run; this capability runs its jobs:
- * `ralph.story`, `ralph.describe-pr` and `ralph.prepare`.
+ * `ralph.story`, `ralph.describe-pr`, `ralph.prepare` and `ralph.request`.
  */
 export function createRalphCapability(options: StoryOptions = {}): Capability {
   return {
@@ -40,11 +42,13 @@ export function createRalphCapability(options: StoryOptions = {}): Capability {
       [RALPH_STORY_JOB_TYPE]: RALPH_TOOL_POLICY,
       [RALPH_DESCRIBE_PR_JOB_TYPE]: RALPH_DESCRIBE_PR_TOOL_POLICY,
       [RALPH_PREPARE_JOB_TYPE]: RALPH_PREPARE_TOOL_POLICY,
+      [RALPH_REQUEST_JOB_TYPE]: RALPH_TOOL_POLICY,
     },
     run(job, ctx) {
       if (job.type === RALPH_STORY_JOB_TYPE) return runStory(job, ctx, options);
       if (job.type === RALPH_DESCRIBE_PR_JOB_TYPE) return runDescribePr(job, ctx, options);
       if (job.type === RALPH_PREPARE_JOB_TYPE) return runPrepare(job, ctx, options);
+      if (job.type === RALPH_REQUEST_JOB_TYPE) return runRequest(job, ctx, options);
       return Promise.reject(
         new NotImplementedJobError(`${job.type} jobs are not supported by this agent yet`),
       );
