@@ -76,18 +76,18 @@ export function repositoryAllowsPreparation(repository: {
 /** The manual labels of a run's repository (`manual` when the repository is gone). */
 export async function runManualLabels(
   db: Database,
-  run: { repositoryId: string },
+  run: { repositoryId: string | null },
 ): Promise<string[]> {
-  const repository = await getRepository(db, run.repositoryId);
+  const repository = run.repositoryId ? await getRepository(db, run.repositoryId) : null;
   return repository ? repositoryManualLabels(repository) : [...DEFAULT_MANUAL_LABELS];
 }
 
 /** How a run's repository reads its epic: the manual labels and whether preparation is offered. */
 export async function runEpicOptions(
   db: Database,
-  run: { repositoryId: string },
+  run: { repositoryId: string | null },
 ): Promise<Pick<LoadEpicOptions, "manualLabels" | "allowPreparation">> {
-  const repository = await getRepository(db, run.repositoryId);
+  const repository = run.repositoryId ? await getRepository(db, run.repositoryId) : null;
   if (!repository) return { manualLabels: [...DEFAULT_MANUAL_LABELS] };
   return {
     manualLabels: repositoryManualLabels(repository),

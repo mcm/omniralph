@@ -166,8 +166,14 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
             gap: "var(--space-1)",
           }}
         >
-          <ProviderIcon provider={run.repository.provider} size={12} />
-          {run.repository.fullPath}
+          {run.repository ? (
+            <>
+              <ProviderIcon provider={run.repository.provider} size={12} />
+              {run.repository.fullPath}
+            </>
+          ) : (
+            "Not chosen yet"
+          )}
         </span>
       </TableCell>
       <TableCell>

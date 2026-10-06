@@ -699,6 +699,12 @@ export interface RalphWaitingOn {
   manual: RalphIssueRef[];
 }
 
+/**
+ * The open Linear elicitation of a run: `repository` asks which repository to
+ * work in (routing found none); `repositoryIds` are the offered options, in order.
+ */
+export type RalphPendingElicitation = { kind: "repository"; repositoryIds: string[] };
+
 /** A reply from the agent session, applied to the next story attempts. */
 export interface RalphGuidance {
   text: string;
@@ -757,9 +763,10 @@ export const ralphRuns = pgTable(
     kind: ralphRunKind("kind").notNull(),
     /** Linear issue ID of the story to work on first (a delegated sub-issue). */
     focusStoryId: text("focus_story_id"),
-    repositoryId: uuid("repository_id")
-      .notNull()
-      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** Null while the run waits for a person to pick one (`pending_elicitation`). */
+    repositoryId: uuid("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
+    /** How the repository was chosen, e.g. "team `ENG`" or "your selection" (kept on re-routing). */
+    routedBy: text("routed_by"),
     branch: text("branch").notNull(),
     baseBranch: text("base_branch").notNull(),
     /** The sticky agent: set by the run's first job, all later jobs go to its topic. */
@@ -777,7 +784,7 @@ export const ralphRuns = pgTable(
     /** The progress log (cyralph's `progress.md`), appended to per finished story. */
     progress: text("progress").notNull().default(""),
     /** The open Linear elicitation the run waits on an answer to. */
-    pendingElicitation: jsonb("pending_elicitation").$type<Record<string, unknown>>(),
+    pendingElicitation: jsonb("pending_elicitation").$type<RalphPendingElicitation>(),
     /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
     preparation: jsonb("preparation").$type<RalphPreparation>(),
     /** Jobs enqueued for the run so far. */

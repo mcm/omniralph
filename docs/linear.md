@@ -121,8 +121,23 @@ A delegated issue is routed to the first repository that matches, trying these r
 
 Matching ignores case, and only repositories with ralph enabled are candidates. When several
 repositories match the same rule, the one whose path sorts first wins, so avoid overlapping routes:
-use labels or tags for the exceptions and a team key for the default. An issue that routes nowhere
-gets an error response in its agent session explaining how to route it; nothing is built.
+use labels or tags for the exceptions and a team key for the default.
+
+An issue that routes nowhere gets a question in its agent session: "Which repository should I work
+in for this issue?", with every ralph-enabled repository as an option. Nothing is built until you
+answer. A reply matches the option number (`1`, `2`, …), a repository's full path, its last path
+segment (`web` for `acme/web`), or any text that contains a full path; anything else asks again.
+The run detail page shows the repository as "Not chosen yet" meanwhile.
+
+Routing runs again whenever the issue is delegated again:
+
+- A repository someone picked stays, even when routing would now choose another one.
+- When routing would have to ask, the previous run's repository stays.
+- When routing now chooses another repository (for example, a new `[repo=…]` tag), the new run
+  works there on a new branch, and the agent session says that the earlier branch and PR/MR stay
+  as they are.
+
+If no repository has ralph enabled at all, the session gets an error explaining how to enable one.
 
 Don't route the same team, project or label to both Omniralph and cyralph
 ([deploy-agent.md](deploy-agent.md#coexisting-with-cyralph-and-manual-dev-work)).
@@ -193,8 +208,11 @@ where admins can also stop a run.
   workspace is the connected one.
 - **Runs don't resume after a blocker is done.** **Issues** webhook events are disabled. The
   `/api/cron/ralph-reconcile` cron (every 10 minutes) still catches up waiting runs.
-- **"No repository with ralph enabled is routed to it".** Enable ralph on the repository and add the
-  issue's label, project or team to its routing, or tag the issue with `[repo=<path>]`.
+- **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
+  issue: add its label, project or team to a repository's routing, or tag the issue with
+  `[repo=<path>]`.
+- **"No repository has ralph enabled".** Enable ralph on a repository under
+  **Repository › Settings › Ralph**.
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
 - **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is

@@ -6,11 +6,11 @@ import type { RalphRunDetail, RalphRunListEntry, ScmProvider } from "@omniralph/
 import type { RalphPullRequest, RalphRunDetailView, RalphRunRow } from "./display";
 
 function pullRequest(
-  provider: ScmProvider,
+  provider: ScmProvider | undefined,
   number: number | null,
   url: string | null,
 ): RalphPullRequest | null {
-  if (number === null || !url) return null;
+  if (number === null || !url || !provider) return null;
   return { number, url, label: `${provider === "gitlab" ? "!" : "#"}${number}` };
 }
 
@@ -24,7 +24,7 @@ export function ralphRunRow(entry: RalphRunListEntry): RalphRunRow {
     status: entry.status,
     stories: entry.stories,
     branch: entry.branch,
-    pullRequest: pullRequest(entry.repository.provider, entry.prNumber, entry.prUrl),
+    pullRequest: pullRequest(entry.repository?.provider, entry.prNumber, entry.prUrl),
     agent: entry.agent,
     error: entry.error,
     updatedAt: entry.updatedAt.toISOString(),
@@ -47,7 +47,7 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
     status: run.status,
     branch: run.branch,
     baseBranch: run.baseBranch,
-    pullRequest: pullRequest(repository.provider, run.prNumber, run.prUrl),
+    pullRequest: pullRequest(repository?.provider, run.prNumber, run.prUrl),
     agent: detail.agent,
     error: run.error,
     waitingOn:

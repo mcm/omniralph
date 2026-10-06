@@ -231,7 +231,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       prNumber: 7,
       prUrl: "https://github.com/acme/b-api/pull/7",
       ignoreBlockers: true,
-      pendingElicitation: { kind: "prepare", storyId: "s" },
+      pendingElicitation: { kind: "repository", repositoryIds: ["r"] },
       iterations: 2,
     });
     expect(updated).toMatchObject({

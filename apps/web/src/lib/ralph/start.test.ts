@@ -32,6 +32,7 @@ import { acknowledgeLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { handleLinearWebhook } from "@/lib/linear/ingest";
 import { signBody, type LinearWebhookEvent } from "@/lib/linear/webhook";
+import { handleReply } from "./reply";
 import { advanceRun, updateStoryAndPlan } from "./run";
 import {
   ACKNOWLEDGEMENT,
@@ -378,34 +379,235 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(linear.bodies(event.sessionId, "thought")[0]).toContain("I'll start with ENG-32");
   });
 
-  it("routes by label before team, and explains how to route an unroutable issue", async () => {
+  it("routes by label before team; without any ralph-enabled repository explains how to enable one", async () => {
     const labelled = linear.add({ identifier: "ENG-40", title: "UI", labels: ["Frontend"] });
     const event = created(labelled.id);
     await startRun(event, deps());
     expect(await getRunBySession(db, event.sessionId)).toMatchObject({
       repositoryId: otherRepoId,
+      routedBy: "label `Frontend`",
     });
 
+    await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: false }));
+    await updateRepositoryRalphSettings(db, otherRepoId, routing({ ralphEnabled: false }));
     const elsewhere = linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
     const [error] = linear.bodies(unroutable.sessionId, "error");
-    expect(error).toContain("no repository with ralph enabled is routed to it");
+    expect(error).toContain("no repository has ralph enabled");
     expect(error).toContain("Repository › Settings › Ralph");
     expect(error).toContain("[repo=<owner/name>]");
 
-    const tagged = linear.add({
-      identifier: "ENG-41",
-      title: "Tagged",
-      description: "[repo=acme/unknown]",
-    });
-    const taggedEvent = created(tagged.id);
-    expect(await startRun(taggedEvent, deps())).toEqual({ status: "unroutable" });
-    expect(linear.bodies(taggedEvent.sessionId, "error")[0]).toContain("`acme/unknown`");
-
-    const runs = await db.select().from(ralphRuns);
-    expect(runs).toHaveLength(1);
+    expect(await db.select().from(ralphRuns)).toHaveLength(1);
     expect(linear.issues.get(elsewhere.id)?.stateType).toBe("unstarted");
+  });
+
+  describe("the repository question", () => {
+    const reply = (sessionId: string, body: string) =>
+      handleReply({ kind: "session_prompted", sessionId, body }, deps());
+    const selects = () => linear.activities.filter((a) => a.options?.signal === "select");
+
+    it("asks which repository when nothing matches, then continues with the reply", async () => {
+      const epic = linear.add({ identifier: "OPS-10", title: "Infra", teamKey: "OPS" });
+      linear.add({ identifier: "OPS-11", title: "One", teamKey: "OPS", parentId: epic.id });
+      const event = created(epic.id);
+      const outcome = await startRun(event, deps());
+      expect(outcome).toMatchObject({ status: "selecting" });
+
+      const run = (await getRunBySession(db, event.sessionId))!;
+      expect(run).toMatchObject({
+        status: "waiting",
+        repositoryId: null,
+        routedBy: null,
+        baseBranch: "",
+        pendingElicitation: { kind: "repository", repositoryIds: [repoId, otherRepoId] },
+      });
+      expect(await db.select().from(jobs)).toEqual([]);
+      expect(linear.issues.get(epic.id)?.stateType).toBe("unstarted");
+      const [ask] = selects();
+      expect(ask?.content).toMatchObject({ type: "elicitation" });
+      expect(ask?.options?.signalMetadata).toEqual({
+        options: [{ value: "acme/api" }, { value: "acme/web" }],
+      });
+      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
+        "Which repository should I work in for this issue?",
+      );
+      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain("`[repo=owner/name]`");
+      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
+        "Repository › Settings › Ralph",
+      );
+
+      // Advancing again (e.g. the reconcile cron) waits without asking twice.
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
+      expect(selects()).toHaveLength(1);
+
+      // An unmatched reply re-asks; a matching one picks the repository and starts.
+      expect(await reply(event.sessionId, "mobile")).toEqual({ kind: "repository_selection" });
+      expect(selects()).toHaveLength(2);
+      expect(linear.bodies(event.sessionId, "elicitation")[1]).toContain(
+        `I couldn't match "mobile" to a repository. Which one should I use?`,
+      );
+      expect((await getRun(db, run.id))?.repositoryId).toBeNull();
+
+      const picked = await reply(event.sessionId, "acme/web");
+      expect(picked).toMatchObject({
+        kind: "repository_selection",
+        advanced: { action: "enqueued" },
+      });
+      expect(await getRun(db, run.id)).toMatchObject({
+        repositoryId: otherRepoId,
+        routedBy: "your selection",
+        baseBranch: "develop",
+        pendingElicitation: null,
+        status: "running",
+        // The selection isn't story guidance.
+        guidance: [],
+      });
+      expect(defaultBranchCalls).toEqual(["acme/web"]);
+      expect(linear.bodies(event.sessionId, "thought")).toContainEqual(
+        expect.stringContaining("Using `acme/web`."),
+      );
+      expect(linear.issues.get(epic.id)?.stateType).toBe("started");
+      const [job] = await db.select().from(jobs);
+      expect(job).toMatchObject({ type: "ralph.story", repositoryId: otherRepoId });
+
+      // Re-delegating the same issue keeps the chosen repository without asking again.
+      await updateRun(db, run.id, { status: "failed" });
+      await db.delete(jobs);
+      const again = created(epic.id);
+      expect(await startRun(again, deps())).toMatchObject({ status: "started", created: true });
+      expect(await getRunBySession(db, again.sessionId)).toMatchObject({
+        repositoryId: otherRepoId,
+        routedBy: "your selection",
+      });
+      expect(linear.bodies(again.sessionId, "thought")[0]).toContain(
+        "Building it in `acme/web` (routed by your selection)",
+      );
+      expect(selects()).toHaveLength(2);
+    });
+
+    it("matches a reply by number, and asks again when a stopped run resumes", async () => {
+      const issue = linear.add({ identifier: "OPS-15", title: "Infra", teamKey: "OPS" });
+      const event = created(issue.id);
+      await startRun(event, deps());
+      const run = (await getRunBySession(db, event.sessionId))!;
+
+      // Stopped while asking: a later reply resumes it and the question comes back.
+      await reply(event.sessionId, "stop");
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "stopped",
+        pendingElicitation: null,
+      });
+      await reply(event.sessionId, "go on");
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "waiting",
+        repositoryId: null,
+        pendingElicitation: { kind: "repository" },
+      });
+      expect(selects()).toHaveLength(2);
+
+      await reply(event.sessionId, "1");
+      expect(await getRun(db, run.id)).toMatchObject({
+        repositoryId: repoId,
+        routedBy: "your selection",
+        status: "running",
+      });
+    });
+
+    it("keeps a repository a human picked, and the current one when routing would have to ask", async () => {
+      const epic = linear.add({ identifier: "OPS-20", title: "Infra", teamKey: "OPS" });
+      const first = created(epic.id);
+      await startRun(first, deps());
+      await reply(first.sessionId, "web");
+      const picked = (await getRunBySession(db, first.sessionId))!;
+      expect(picked).toMatchObject({ repositoryId: otherRepoId, status: "running" });
+
+      // Team routing to api now matches, but the human's pick wins.
+      await updateRun(db, picked.id, { status: "failed" });
+      await db.delete(jobs);
+      linear.issues.get(epic.id)!.teamKey = "ENG";
+      const second = created(epic.id);
+      await startRun(second, deps());
+      expect(await getRunBySession(db, second.sessionId)).toMatchObject({
+        repositoryId: otherRepoId,
+        routedBy: "your selection",
+      });
+
+      // Routed by label to web; once the label is gone routing can't decide, so it stays in web.
+      const other = linear.add({
+        identifier: "OPS-21",
+        title: "Other",
+        teamKey: "OPS",
+        labels: ["frontend"],
+      });
+      const third = created(other.id);
+      await startRun(third, deps());
+      const routed = (await getRunBySession(db, third.sessionId))!;
+      expect(routed).toMatchObject({ repositoryId: otherRepoId, routedBy: "label `frontend`" });
+      await updateRun(db, routed.id, { status: "failed" });
+      await db.delete(jobs);
+      linear.issues.get(other.id)!.labels = [];
+      const fourth = created(other.id);
+      expect(await startRun(fourth, deps())).toMatchObject({ status: "started", created: true });
+      expect(await getRunBySession(db, fourth.sessionId)).toMatchObject({
+        repositoryId: otherRepoId,
+        routedBy: "label `frontend`",
+      });
+      expect(selects()).toHaveLength(1);
+    });
+
+    it("says why a `[repo=…]` tag didn't route", async () => {
+      const tagged = linear.add({
+        identifier: "ENG-41",
+        title: "Tagged",
+        description: "[repo=acme/unknown]",
+      });
+      const event = created(tagged.id);
+      expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
+      const [question] = linear.bodies(event.sessionId, "elicitation");
+      expect(question).toContain("Its `[repo=…]` tag (`acme/unknown`) names no repository");
+      expect(question).toContain("Which repository should I work in for this issue?");
+    });
+  });
+
+  it("re-routing to another repository moves the run there and leaves the earlier work alone", async () => {
+    const epic = linear.add({ identifier: "ENG-45", title: "UI", labels: ["Frontend"] });
+    const first = created(epic.id);
+    await startRun(first, deps());
+    const previous = (await getRunBySession(db, first.sessionId))!;
+    expect(previous.repositoryId).toBe(otherRepoId);
+    await updateRun(db, previous.id, {
+      status: "failed",
+      branch: "custom/branch",
+      prNumber: 9,
+      prUrl: "https://github.com/acme/web/pull/9",
+    });
+    await db.delete(jobs);
+
+    // A new `[repo=…]` tag sends it to api.
+    linear.issues.get(epic.id)!.description = "Now \\[repo=acme/api\\]";
+    const second = created(epic.id);
+    await startRun(second, deps());
+    const moved = await getRunBySession(db, second.sessionId);
+    expect(moved).toMatchObject({
+      repositoryId: repoId,
+      routedBy: "`[repo=…]` tag `acme/api`",
+      prNumber: null,
+      prUrl: null,
+    });
+    expect(moved?.branch).not.toBe("custom/branch");
+    const [note] = linear.bodies(second.sessionId, "thought");
+    expect(note).toBe(
+      "Routing now sends this to `acme/api` instead of `acme/web`, so I'm working there. " +
+        "The earlier work in `acme/web` stays as it is (branch `custom/branch`, " +
+        "Pull request https://github.com/acme/web/pull/9); I won't touch it again.",
+    );
+    // The previous run is left alone.
+    expect(await getRun(db, previous.id)).toMatchObject({
+      repositoryId: otherRepoId,
+      branch: "custom/branch",
+      prNumber: 9,
+    });
   });
 
   it("answers a mention that isn't a delegation without starting a run", async () => {

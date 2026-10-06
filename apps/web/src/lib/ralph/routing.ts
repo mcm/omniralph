@@ -85,3 +85,35 @@ export function routeIssue<R extends RoutableRepository>(
 
   return null;
 }
+
+const lastSegment = (path: string) => normalizeRepoPath(path).split("/").pop() ?? "";
+
+/** Whether `tag` names the repository: its full path or the last segment of it. */
+function tagNamesRepository(
+  tag: string,
+  repository: Pick<RoutableRepository, "fullPath">,
+): boolean {
+  const t = normalizeRepoPath(tag);
+  return t === normalizeRepoPath(repository.fullPath) || t === lastSegment(repository.fullPath);
+}
+
+/**
+ * Matches a reply to the repository question (cyralph's `matchSelection`), in
+ * order: a 1-based option number, the option text (the full path), a
+ * tag-style name (the full path or its last segment), then a reply that
+ * contains a repository's full path.
+ */
+export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
+  reply: string,
+  candidates: readonly R[],
+): R | undefined {
+  const text = reply.trim();
+  const n = /^\d+$/.test(text) ? Number(text) : Number.NaN;
+  if (n >= 1 && n <= candidates.length) return candidates[n - 1];
+  const said = text.toLowerCase();
+  return (
+    candidates.find((r) => r.fullPath.trim().toLowerCase() === said) ??
+    candidates.find((r) => tagNamesRepository(text, r)) ??
+    candidates.find((r) => said.includes(normalizeRepoPath(r.fullPath)))
+  );
+}

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseRepoTags, routeIssue, type RoutableIssue, type RoutableRepository } from "./routing";
+import {
+  matchSelection,
+  parseRepoTags,
+  routeIssue,
+  type RoutableIssue,
+  type RoutableRepository,
+} from "./routing";
 
 const repo = (fullPath: string, routing: Partial<RoutableRepository> = {}): RoutableRepository => ({
   fullPath,
@@ -129,5 +135,33 @@ describe("routeIssue", () => {
     expect(
       routeIssue(issue({ description: "[repo=acme/elsewhere]", teamKey: "ENG" }), repos),
     ).toBeNull();
+  });
+});
+
+describe("matchSelection", () => {
+  const api = repo("platform/api");
+  const web = repo("group/platform/web");
+
+  it("matches the option value, name, id, or number", () => {
+    // The option text (the full path), ignoring case.
+    expect(matchSelection("Platform/API", [api, web])).toBe(api);
+    expect(matchSelection("group/platform/web", [api, web])).toBe(web);
+    // Tag-style: the last segment, or the path with a trailing slash or `.git`.
+    expect(matchSelection("web", [api, web])).toBe(web);
+    expect(matchSelection("platform/api.git", [api, web])).toBe(api);
+    // A 1-based option number.
+    expect(matchSelection("2", [api, web])).toBe(web);
+    expect(matchSelection(" 1 ", [api, web])).toBe(api);
+    // A reply that contains a repository's path.
+    expect(matchSelection("the platform/api one please", [api, web])).toBe(api);
+    expect(matchSelection("mobile", [api, web])).toBeUndefined();
+    expect(matchSelection("3", [api, web])).toBeUndefined();
+    expect(matchSelection("0", [api, web])).toBeUndefined();
+  });
+
+  it("prefers a number over a repository named like one", () => {
+    const numbered = repo("acme/2");
+    expect(matchSelection("2", [numbered, api])).toBe(api);
+    expect(matchSelection("acme/2", [numbered, api])).toBe(numbered);
   });
 });

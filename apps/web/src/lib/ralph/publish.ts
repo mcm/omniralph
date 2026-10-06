@@ -95,7 +95,9 @@ interface RunRepository {
 }
 
 async function runRepository(deps: RalphDeps, run: RalphRun): Promise<RunRepository> {
-  const found = await getRepositoryWithConnection(deps.db, run.repositoryId);
+  const found = run.repositoryId
+    ? await getRepositoryWithConnection(deps.db, run.repositoryId)
+    : null;
   if (!found || found.repository.disconnectedAt) {
     throw new Error("the run's repository is no longer connected");
   }
@@ -179,6 +181,7 @@ export async function openEarlyPullRequest(
   if (run.prNumber !== null || !input.rows.some((r) => r.status === "completed" && r.commitSha)) {
     return run;
   }
+  if (!run.repositoryId) return run;
   const found = await getRepositoryWithConnection(deps.db, run.repositoryId);
   if (!found?.repository.ralphSettings.openPullRequestEarly) return run;
   const provider = found.repository.provider;
@@ -237,7 +240,7 @@ export async function moveCompletedEpic(
 ): Promise<void> {
   if (run.kind === "single") return;
   await quietly(`Moving epic ${run.linearIssueId} to its completed state`, async () => {
-    const repository = await getRepository(deps.db, run.repositoryId);
+    const repository = run.repositoryId ? await getRepository(deps.db, run.repositoryId) : null;
     const target = epicCompletedTarget(
       repository && parseRalphSettings(repository.ralphSettings).epicCompletedState,
     );

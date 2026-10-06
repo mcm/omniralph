@@ -54,6 +54,7 @@ import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
+import { awaitRepository } from "./repository-selection";
 import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
 import { planFor } from "./plan";
 import {
@@ -227,6 +228,12 @@ function storiesWithRunState(
 async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promise<AdvanceResult> {
   if (FINISHED_RUN_STATUSES.has(run.status)) return { action: "finished", run };
   if ((await listActiveRunJobIds(tx, run.id)).length > 0) return { action: "busy", run };
+  // Routing found no repository: the run waits until a person picks one.
+  if (!run.repositoryId) {
+    const asked = await awaitRepository(deps, tx, run);
+    if ("failed" in asked) return failRun(deps, tx, run, asked.failed);
+    return { action: "waiting", run: asked, waitingOn: { blockers: [], manual: [] } };
+  }
 
   const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
   const rows = await syncStories(tx, run.id, epic);
@@ -297,7 +304,9 @@ async function usableRepository(
   tx: RalphTransaction,
   run: RalphRun,
 ): Promise<{ repository: Repository; connection: ScmConnection } | AdvanceResult> {
-  const found = await getRepositoryWithConnection(deps.db, run.repositoryId);
+  const found = run.repositoryId
+    ? await getRepositoryWithConnection(deps.db, run.repositoryId)
+    : null;
   if (!found || found.repository.disconnectedAt) {
     return failRun(deps, tx, run, "The run's repository is no longer connected, so I stopped.");
   }
