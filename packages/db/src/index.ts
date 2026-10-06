@@ -146,7 +146,19 @@ export {
   releaseWebhookDelivery,
   setWebhookDeliveryJob,
   type WebhookDeliveryRef,
+  type WebhookProvider,
 } from "./webhooks.js";
+export {
+  deleteIntegration,
+  getIntegration,
+  getIntegrationWithCredentials,
+  saveIntegration,
+  updateIntegrationCredentials,
+  type Integration,
+  type IntegrationProvider,
+  type IntegrationWithCredentials,
+  type SaveIntegrationInput,
+} from "./integrations.js";
 export {
   filterActiveAgentIds,
   listPinnableAgents,
