@@ -149,13 +149,13 @@ function gitlabPayload(
 
 function gitlabRequest(
   payload: unknown,
-  opts: { delivery?: string; token?: string } = {},
+  opts: { delivery?: string; token?: string; event?: string } = {},
 ): Request {
   return new Request("http://localhost/api/webhooks/gitlab", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-gitlab-event": "Merge Request Hook",
+      "x-gitlab-event": opts.event ?? "Merge Request Hook",
       "x-gitlab-event-uuid": opts.delivery ?? randomUUID(),
       "x-gitlab-token": opts.token ?? GITLAB_SECRET,
     },
@@ -289,6 +289,29 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       unsigned.headers.delete("x-hub-signature-256");
       expect((await github(unsigned)).status).toBe(401);
       expect(await prJobs(githubRepoId, number)).toHaveLength(0);
+      expect(state.sends).toHaveLength(0);
+    });
+
+    it("verifies workflow_run deliveries and ignores them without ralph", async () => {
+      const payload = (conclusion: string) => ({
+        action: "completed",
+        installation: { id: 4242 },
+        repository: { id: 100, full_name: "acme/app" },
+        workflow_run: {
+          head_sha: nextSha(),
+          head_branch: "feature",
+          conclusion,
+          pull_requests: [{ number: 1 }],
+        },
+      });
+      const forged = await github(
+        githubRequest(payload("failure"), { event: "workflow_run", secret: "wrong-secret" }),
+      );
+      expect(forged.status).toBe(401);
+      const passed = await github(githubRequest(payload("success"), { event: "workflow_run" }));
+      expect(await passed.json()).toEqual({ status: "ignored", reason: "ci_not_failed" });
+      const failed = await github(githubRequest(payload("failure"), { event: "workflow_run" }));
+      expect(await failed.json()).toEqual({ status: "ignored", reason: "ralph_disabled" });
       expect(state.sends).toHaveLength(0);
     });
 
@@ -459,6 +482,24 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       );
       expect(await res.json()).toEqual({ status: "ignored", reason: "unsupported_event" });
       expect(await prJobs(gitlabRepoId, iid)).toHaveLength(0);
+    });
+
+    it("verifies Pipeline Hook deliveries and ignores them without ralph", async () => {
+      const payload = (status: string) => ({
+        object_kind: "pipeline",
+        project: { id: 200, path_with_namespace: "acme/app" },
+        object_attributes: { id: 9, ref: "feature", sha: nextSha(), status },
+        merge_request: { iid: 1 },
+      });
+      const event = "Pipeline Hook";
+      expect(
+        (await gitlab(gitlabRequest(payload("failed"), { event, token: "nope" }))).status,
+      ).toBe(401);
+      const passed = await gitlab(gitlabRequest(payload("success"), { event }));
+      expect(await passed.json()).toEqual({ status: "ignored", reason: "ci_not_failed" });
+      const failed = await gitlab(gitlabRequest(payload("failed"), { event }));
+      expect(await failed.json()).toEqual({ status: "ignored", reason: "ralph_disabled" });
+      expect(gitlabMr.lookups).toBe(0);
     });
 
     it("rejects a wrong X-Gitlab-Token with 401", async () => {

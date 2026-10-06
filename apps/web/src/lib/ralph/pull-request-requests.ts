@@ -33,6 +33,7 @@ import {
   type RalphTransaction,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
+import type { ChangeRequestStatus } from "@omniralph/scm";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
 import { postActivity } from "./notify";
 import { changeRequestTerm } from "./publish";
@@ -65,7 +66,7 @@ export type ReviewResponse =
   | { status: "round_limit"; rounds: number }
   | { status: PullRequestRequestDelivery; runId: string; findings: number };
 
-const OVER: ReadonlySet<RalphRun["status"]> = new Set(["stopped", "failed"]);
+export const OVER: ReadonlySet<RalphRun["status"]> = new Set(["stopped", "failed"]);
 
 /** The lane's request target in `ralph_messages`: null for the main lane. */
 const messageLaneId = (run: Pick<RalphRun, "repositoryId">, lane: RalphLane) =>
@@ -78,7 +79,7 @@ const messageLaneId = (run: Pick<RalphRun, "repositoryId">, lane: RalphLane) =>
  * null). Returns how it went and the note for the session, `<what>.` plus
  * cyralph's wording.
  */
-async function addLaneRequest(
+export async function addLaneRequest(
   tx: RalphTransaction,
   run: RalphRun,
   lane: RalphLane,
@@ -124,8 +125,27 @@ async function addLaneRequest(
   return { delivery: "started", run: current, note: `${input.what}. Working through it.` };
 }
 
+/**
+ * Records that a lane's PR/MR was closed or merged: it is no longer followed
+ * up (reviews, CI). This is where the merge cleanup takes over.
+ */
+export async function recordClosedPullRequest(
+  deps: Pick<RalphDeps, "db">,
+  lane: RalphLane,
+  state: ChangeRequestStatus,
+): Promise<void> {
+  await updateLane(deps.db, lane.id, {
+    prClosed: true,
+    prMerged: state.state === "merged",
+    mergeSha: state.mergeSha,
+  });
+}
+
 /** Advances a run after a request was added, logging (not throwing) a failure: the reconcile cron retries. */
-async function advanceQuietly(deps: RalphDeps, runId: string): Promise<AdvanceResult | null> {
+export async function advanceQuietly(
+  deps: RalphDeps,
+  runId: string,
+): Promise<AdvanceResult | null> {
   try {
     return await advanceRun(runId, deps);
   } catch (error) {
@@ -165,11 +185,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     .adapterFor(deps.db, connection)
     .getChangeRequestState(repo, review.prNumber);
   if (state.state !== "open") {
-    await updateLane(deps.db, found.lane.id, {
-      prClosed: true,
-      prMerged: state.state === "merged",
-      mergeSha: state.mergeSha,
-    });
+    await recordClosedPullRequest(deps, found.lane, state);
     return ignored("closed");
   }
   const findings = (await listReviewFindings(deps.db, review.id))

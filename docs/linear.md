@@ -274,6 +274,19 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   finished run resumes. The bot replies in the thread with a link to the Linear issue.
   `review`, `review fresh`, `dismiss`, `help` and questions in finding threads work as before. On
   PRs/MRs ralph didn't open, `@omniralph fix` replies that it only works on ralph PRs/MRs.
+- **Failed CI.** When the CI of a ralph PR/MR's head commit finishes and fails (GitHub Actions
+  workflow runs, GitLab pipelines), the failed jobs and the last 4,000 characters of each log
+  (at most 5 jobs, then "(N more failed jobs not shown.)"; "(no log available)" when a log can't
+  be read) become a request on that lane, and the session says "CI failed on the pull request
+  (`<sha7>`: `a`, `b`, `c` and N more). Working on a fix." The agent fixes the cause (not by
+  weakening tests or checks; a flaky or infrastructure failure is reported, not "fixed"), runs
+  the quality gates and pushes. It's noticed from GitHub `workflow_run` and GitLab **Pipeline
+  events** webhooks, and by `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR.
+  Each head commit is acted on once; after **Max CI fix rounds** (`maxFixRounds`, default 3) the
+  session says "CI failed again on `<url>` (`<sha7>`). I've already tried to fix CI N time(s) on
+  this pull request, so I'm leaving this one for a person." A run with a job queued or running is
+  checked again later (it may push again); stopped runs and repositories with **Fix failed CI**
+  (`respondToCiFailures`) off are skipped, and a closed or merged PR/MR is no longer followed up.
 
 ### Attachments
 
@@ -307,6 +320,9 @@ where admins can also stop a run.
   workspace is the connected one.
 - **Runs don't resume after a blocker is done.** **Issues** webhook events are disabled. The
   `/api/cron/ralph-reconcile` cron (every 10 minutes) still catches up waiting runs.
+- **Failed CI on a ralph PR/MR isn't picked up until the cron runs.** The GitHub App lacks
+  **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
+  events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
   issue: add its label, project or team to a repository's routing, or tag the issue with
   `[repo=<path>]`.

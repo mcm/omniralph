@@ -78,6 +78,14 @@ comments on a ralph PR/MR add a request to that lane. Either goes to the lane's 
 `ralph.request` job through the live-message path, or stays pending for the next request job;
 story jobs never get them, because story agents don't push.
 
+Failed CI is the one follow-up that needs its own trigger: GitHub `workflow_run` (completed) and
+GitLab Pipeline Hook webhooks (verified and deduped like the others, ignored unless they name a
+ralph lane's PR/MR or branch) and the reconcile cron, which checks every open ralph PR/MR, all call
+`respondToCi`. It reads the CI status and the failed jobs' log tails from the code host (outside the
+run lock), skips runs with an active job (they may push again; the next check catches up), and
+acts once per head SHA (`handled_ci_shas`), capped by `ci_fix_rounds`, by adding a pending request
+on the lane and advancing the run.
+
 ### The sticky agent
 
 A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the

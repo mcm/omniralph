@@ -238,6 +238,71 @@ export function parseGitLabCommentEvent(
   };
 }
 
+/**
+ * A finished CI run (GitHub `workflow_run` completed, GitLab Pipeline Hook)
+ * that may need fixing on a ralph PR/MR.
+ */
+export interface CiEvent {
+  /** PRs (GitHub) or the MR (GitLab) it ran for; empty when it names none. */
+  prNumbers: number[];
+  /** The branch it ran on (`null` for tag pipelines). */
+  branch: string | null;
+  headSha: string;
+  /** Whether it failed; only failures are acted on. */
+  failed: boolean;
+}
+
+const GITHUB_FAILED_CONCLUSIONS = new Set(["failure", "timed_out", "startup_failure"]);
+
+const GitHubWorkflowRunEvent = z.object({
+  action: z.string(),
+  workflow_run: z.object({
+    head_sha: z.string().min(1),
+    head_branch: z.string().nullish(),
+    conclusion: z.string().nullish(),
+    pull_requests: z.array(z.object({ number: z.number().int().positive() })).nullish(),
+  }),
+});
+
+/** A completed workflow run of a GitHub delivery (`X-GitHub-Event: workflow_run`), or null. */
+export function parseGitHubCiEvent(eventName: string | null, body: unknown): CiEvent | null {
+  if (eventName !== "workflow_run") return null;
+  const parsed = GitHubWorkflowRunEvent.safeParse(body);
+  if (!parsed.success || parsed.data.action !== "completed") return null;
+  const run = parsed.data.workflow_run;
+  return {
+    prNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+    branch: run.head_branch ?? null,
+    headSha: run.head_sha,
+    failed: GITHUB_FAILED_CONCLUSIONS.has(run.conclusion ?? ""),
+  };
+}
+
+const GitLabPipelineEvent = z.object({
+  object_kind: z.literal("pipeline"),
+  object_attributes: z.object({
+    ref: z.string().nullish(),
+    tag: z.boolean().nullish(),
+    sha: z.string().min(1),
+    status: z.string(),
+  }),
+  merge_request: z.object({ iid: z.number().int().positive() }).nullish(),
+});
+
+/** A pipeline of a GitLab delivery (`X-Gitlab-Event: Pipeline Hook`), or null. */
+export function parseGitLabCiEvent(eventName: string | null, body: unknown): CiEvent | null {
+  if (eventName !== "Pipeline Hook") return null;
+  const parsed = GitLabPipelineEvent.safeParse(body);
+  if (!parsed.success) return null;
+  const { object_attributes: pipeline, merge_request: mr } = parsed.data;
+  return {
+    prNumbers: mr ? [mr.iid] : [],
+    branch: pipeline.tag ? null : (pipeline.ref ?? null),
+    headSha: pipeline.sha,
+    failed: pipeline.status === "failed",
+  };
+}
+
 /** Provider repository/project ID of a delivery body, if any. */
 export function webhookRepositoryId(provider: "github" | "gitlab", body: unknown): string | null {
   const schema =

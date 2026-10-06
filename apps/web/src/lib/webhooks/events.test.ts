@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseGitHubCommentEvent, parseGitLabCommentEvent } from "./events";
+import {
+  parseGitHubCiEvent,
+  parseGitHubCommentEvent,
+  parseGitLabCiEvent,
+  parseGitLabCommentEvent,
+} from "./events";
 
 const user = { login: "octocat", type: "User" };
 
@@ -115,5 +120,59 @@ describe("parseGitLabCommentEvent", () => {
     expect(parseGitLabCommentEvent("Merge Request Hook", note())).toBeNull();
     // Older GitLab versions send no action.
     expect(parseGitLabCommentEvent("Note Hook", note({ action: undefined }))).not.toBeNull();
+  });
+});
+
+describe("CI events", () => {
+  const workflowRun = (action: string, conclusion: string | null, prs: number[] = [7]) => ({
+    action,
+    workflow_run: {
+      head_sha: "abc",
+      head_branch: "eng-1-x",
+      conclusion,
+      pull_requests: prs.map((number) => ({ number })),
+    },
+  });
+
+  it("parses completed GitHub workflow runs", () => {
+    expect(parseGitHubCiEvent("workflow_run", workflowRun("completed", "failure"))).toEqual({
+      prNumbers: [7],
+      branch: "eng-1-x",
+      headSha: "abc",
+      failed: true,
+    });
+    for (const conclusion of ["timed_out", "startup_failure"]) {
+      expect(parseGitHubCiEvent("workflow_run", workflowRun("completed", conclusion))?.failed).toBe(
+        true,
+      );
+    }
+    for (const conclusion of ["success", "cancelled", "skipped"]) {
+      expect(parseGitHubCiEvent("workflow_run", workflowRun("completed", conclusion))?.failed).toBe(
+        false,
+      );
+    }
+    expect(parseGitHubCiEvent("workflow_run", workflowRun("requested", null))).toBeNull();
+    expect(parseGitHubCiEvent("pull_request", workflowRun("completed", "failure"))).toBeNull();
+  });
+
+  it("parses GitLab pipeline events", () => {
+    const pipeline = (status: string, mr: { iid: number } | null, tag = false) => ({
+      object_kind: "pipeline",
+      object_attributes: { id: 1, ref: "eng-1-x", tag, sha: "abc", status },
+      merge_request: mr,
+    });
+    expect(parseGitLabCiEvent("Pipeline Hook", pipeline("failed", { iid: 3 }))).toEqual({
+      prNumbers: [3],
+      branch: "eng-1-x",
+      headSha: "abc",
+      failed: true,
+    });
+    expect(parseGitLabCiEvent("Pipeline Hook", pipeline("failed", null))).toMatchObject({
+      prNumbers: [],
+      branch: "eng-1-x",
+    });
+    expect(parseGitLabCiEvent("Pipeline Hook", pipeline("failed", null, true))?.branch).toBeNull();
+    expect(parseGitLabCiEvent("Pipeline Hook", pipeline("running", null))?.failed).toBe(false);
+    expect(parseGitLabCiEvent("Note Hook", pipeline("failed", null))).toBeNull();
   });
 });
