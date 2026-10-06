@@ -91,7 +91,8 @@ export interface RalphRunRow {
   repository: RalphRepositoryRef | null;
   status: RalphRunStatus;
   stories: { total: number; completed: number };
-  branch: string;
+  /** The main lane's branch and PR/MR (null while the run has no repository). */
+  branch: string | null;
   pullRequest: RalphPullRequest | null;
   agent: { id: string; name: string } | null;
   error: string | null;
@@ -108,6 +109,21 @@ export interface RalphStoryView {
   lastFeedback: string | null;
   commitSha: string | null;
   lastJobId: string | null;
+  /** The lane the story runs in (null: none, e.g. it belongs in a repository Omniralph doesn't have). */
+  laneId: string | null;
+  /** Why it's treated as manual: it belongs in a repository Omniralph doesn't have. */
+  elsewhere: string | null;
+}
+
+/** One repository the run works in, with its branch and PR/MR. */
+export interface RalphLaneView {
+  id: string;
+  repository: RalphRepositoryRef;
+  /** The lane of the run's own repository. */
+  main: boolean;
+  branch: string;
+  baseBranch: string;
+  pullRequest: RalphPullRequest | null;
 }
 
 export interface RalphJobView {
@@ -125,7 +141,9 @@ export interface RalphJobView {
 
 export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   kind: "children" | "prd" | "single";
-  baseBranch: string;
+  baseBranch: string | null;
+  /** The main lane first. */
+  lanes: RalphLaneView[];
   /** What a waiting run waits on (outside blockers and manual stories). */
   waitingOn: {
     blockers: { identifier: string; title: string }[];

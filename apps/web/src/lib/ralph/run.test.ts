@@ -7,8 +7,11 @@ import {
   createDb,
   failJob,
   getJob,
+  getMainLane,
   getRun,
   getRunBySession,
+  getRunDetail,
+  listLanes,
   jobs,
   listStories,
   pinRepositoryToAgent,
@@ -131,7 +134,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await updateRepositoryRalphSettings(db, gitlabRepoId, {
       ralphEnabled: true,
       linearTeamKeys: ["GL"],
-      linearProjectNames: [],
+      linearProjectNames: ["Web"],
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
@@ -279,6 +282,13 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     return RalphDescribePrPayload.parse(job.payload);
   }
 
+  /** The run with its main lane's PR/MR (where v2a kept them on the run). */
+  const withPullRequest = async (runId: string) => {
+    const run = await getRun(db, runId);
+    const lane = run && (await getMainLane(db, run));
+    return run && { ...run, prNumber: lane?.prNumber ?? null, prUrl: lane?.prUrl ?? null };
+  };
+
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);
 
@@ -398,7 +408,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       qualityGates: ["pnpm test", "pnpm lint"],
     });
 
-    const done = (await getRun(db, run.id))!;
+    const done = (await withPullRequest(run.id))!;
     expect(done).toMatchObject({
       status: "completed",
       iterations: 3,
@@ -931,7 +941,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       linear.issues.set(after.id, { ...after, labels: ["Ops"] });
       await advanceRun(run.id, deps());
       expect(await activeJobs(run.id)).toEqual([]);
-      const waiting = (await getRun(db, run.id))!;
+      const waiting = (await withPullRequest(run.id))!;
       expect(waiting.status).toBe("waiting");
       expect(waiting.waitingOn?.blockers).toEqual([]);
       expect(waiting.waitingOn?.manual.map((m) => m.identifier).sort()).toEqual(
@@ -970,7 +980,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(linear.comments).toEqual([]);
     const described = await describePr(run.id);
     expect(described.epic).toMatchObject({ identifier: "ENG-80", title: "Fix the login bug" });
-    expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+    expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
     expect(await storyStates(run.id)).toEqual([["ENG-80", "completed", 1]]);
     expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
       `Finished **ENG-80** on \`${issue.branchName}\`. Opened [Pull request #1]`,
@@ -1048,6 +1058,125 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(await storyStates(run.id)).toEqual([["ENG-95", "running", 0]]);
   });
 
+  describe("lanes", () => {
+    /** An epic in project API (team ENG): ENG-2, then ENG-3 in `project`, then ENG-4 (needs ENG-3). */
+    function crossRepo(project: string) {
+      const epic = linear.add({ identifier: "ENG-1", title: "Task priority", projectName: "API" });
+      const s1 = linear.add({
+        identifier: "ENG-2",
+        title: "Add priority field",
+        parentId: epic.id,
+        projectName: "API",
+        priority: 1,
+      });
+      const s2 = linear.add({
+        identifier: "ENG-3",
+        title: "Show badge",
+        parentId: epic.id,
+        projectName: project,
+        priority: 2,
+      });
+      const s3 = linear.add({
+        identifier: "ENG-4",
+        title: "Sort by priority",
+        parentId: epic.id,
+        projectName: "API",
+        priority: 3,
+      });
+      return { epic, s1, s2, s3 };
+    }
+
+    it("treats a story whose project no repository here covers like a manual step", async () => {
+      const t = crossRepo("Docs");
+      await linear.createBlocksRelation(t.s2.id, t.s3.id); // ENG-4 needs ENG-3
+      const run = await delegate(t.epic.id);
+
+      expect((await work(run.id)).story.identifier).toBe("ENG-2");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "waiting",
+        waitingOn: { blockers: [], manual: [expect.objectContaining({ identifier: "ENG-3" })] },
+      });
+      // Only the main lane: nothing is built for the story that belongs elsewhere.
+      const lanes = await listLanes(db, run.id);
+      expect(lanes.map((l) => l.repositoryId)).toEqual([repoId]);
+      expect(
+        (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId, s.elsewhere]),
+      ).toEqual([
+        ["ENG-2", "completed", lanes[0]!.id, null],
+        ["ENG-3", "manual", null, "it's in project Docs, which no repository here is set up for"],
+        ["ENG-4", "pending", lanes[0]!.id, null],
+      ]);
+      expect(linear.issues.get(t.s2.id)?.stateType).toBe("unstarted");
+      expect(
+        linear
+          .bodies(run.linearAgentSessionId, "thought")
+          .some((b) =>
+            b.includes(
+              "**ENG-3** isn't in a repository I have (it's in project Docs, which no repository here is set up for), so I'll treat it like a manual step: I won't work it, and stories that depend on it wait until it's done.",
+            ),
+          ),
+      ).toBe(true);
+      expect(linear.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
+        "ENG-3: Show badge (manual: no repository here)",
+      );
+      expect(scm.changeRequests).toEqual([]);
+
+      // Someone does ENG-3 elsewhere: its dependent runs and the epic finishes.
+      await linear.setIssueState(t.s2.id, { type: "completed" });
+      await handleLinearEvent(
+        { kind: "issue_state", issueId: t.s2.id, removed: false },
+        { db, organizationId: "org-1" },
+        { linear, dispatcher },
+      );
+      expect((await work(run.id, { commitSha: sha(4) })).story.identifier).toBe("ENG-4");
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(scm.changeRequests).toHaveLength(1);
+    });
+
+    it("gives a story whose project routes to another repository a lane there", async () => {
+      const t = crossRepo("Web");
+      const run = await delegate(t.epic.id);
+
+      const lanes = await listLanes(db, run.id);
+      const main = lanes.find((l) => l.repositoryId === repoId)!;
+      const web = lanes.find((l) => l.repositoryId === gitlabRepoId)!;
+      expect(lanes).toHaveLength(2);
+      // The same branch, based on that repository's default branch.
+      expect(web).toMatchObject({ branch: main.branch, baseBranch: "develop", prNumber: null });
+      expect((await listStories(db, run.id)).map((s) => [s.identifier, s.laneId])).toEqual([
+        ["ENG-2", main.id],
+        ["ENG-3", web.id],
+        ["ENG-4", main.id],
+      ]);
+      expect(
+        linear
+          .bodies(run.linearAgentSessionId, "thought")
+          .some((b) =>
+            b.includes(
+              "**ENG-3** belongs in `group/app` (routed by project `Web`), so I'll work it there, on its own branch",
+            ),
+          ),
+      ).toBe(true);
+
+      // Advancing again keeps the lanes (no second default-branch lookup).
+      const lookups = scm.calls.filter((c) => c === "getDefaultBranch").length;
+      await advanceRun(run.id, deps());
+      expect((await listLanes(db, run.id)).map((l) => l.id).sort()).toEqual(
+        [main.id, web.id].sort(),
+      );
+      expect(scm.calls.filter((c) => c === "getDefaultBranch")).toHaveLength(lookups);
+
+      // The run detail has one section per lane.
+      const detail = await getRunDetail(db, run.id);
+      expect(detail!.lanes.map((l) => [l.repository.fullPath, l.main])).toEqual([
+        ["acme/api", true],
+        ["group/app", false],
+      ]);
+    });
+  });
+
   describe("the pull/merge request", () => {
     /** A one-story epic whose story is done: the run is describing its PR/MR. */
     async function finishedRun(teamKey = "ENG"): Promise<RalphRun> {
@@ -1089,7 +1218,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       });
       expect(payload.repository.provider).toBe("gitlab");
       const url = "https://gitlab.example.com/group/app/-/merge_requests/1";
-      expect(await getRun(db, run.id)).toMatchObject({
+      expect(await withPullRequest(run.id)).toMatchObject({
         status: "completed",
         prNumber: 1,
         prUrl: url,
@@ -1141,7 +1270,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         draft: false,
       });
       expect(scm.calls).not.toContain("createChangeRequest");
-      expect(await getRun(db, run.id)).toMatchObject({
+      expect(await withPullRequest(run.id)).toMatchObject({
         status: "completed",
         prNumber: 7,
         prUrl: "https://github.com/acme/api/pull/7",
@@ -1184,7 +1313,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         expect(draft).toContain("Implements **Gadgets**, story by story.");
         expect(draft).toContain("- [x] ENG-111: First\n- [ ] ENG-112: Second");
         expect(draft).toContain("Linear: [ENG-110](https://linear.app/acme/issue/ENG-110)");
-        expect(await getRun(db, run.id)).toMatchObject({
+        expect(await withPullRequest(run.id)).toMatchObject({
           status: "running",
           prNumber: 1,
           prUrl: "https://github.com/acme/api/pull/1",
@@ -1206,7 +1335,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           expect.objectContaining({ number: 1, title: "Add gadgets", draft: false }),
         ]);
         expect(scm.changeRequests[0]!.body).toMatch(/^Adds gadgets\.\n\n---\nLinear: /);
-        expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+        expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
         expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
           "Updated [Pull request #1]",
         );
@@ -1242,13 +1371,13 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
           "I couldn't open a draft pull request yet (I'll try again after the next story): Validation failed",
         );
-        expect(await getRun(db, run.id)).toMatchObject({ status: "running", prNumber: null });
+        expect(await withPullRequest(run.id)).toMatchObject({ status: "running", prNumber: null });
         expect((await activeJob(run.id)).type).toBe("ralph.story");
 
         scm.failures.delete("createChangeRequest");
         await work(run.id, { commitSha: sha(24) });
         expect(scm.changeRequests).toEqual([expect.objectContaining({ number: 1, draft: true })]);
-        expect((await getRun(db, run.id))?.prNumber).toBe(1);
+        expect((await withPullRequest(run.id))?.prNumber).toBe(1);
         await work(run.id, { commitSha: sha(25) });
         await describePr(run.id);
         expect(scm.changeRequests).toEqual([expect.objectContaining({ number: 1, draft: false })]);
@@ -1300,7 +1429,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           const run = await finishedRun();
           expect(epicOf(run).stateName).not.toBe("In Review");
           await describePr(run.id);
-          expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+          expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
           expect(epicOf(run)).toMatchObject({ stateName: "In Review", stateType: "started" });
         });
       });
@@ -1337,7 +1466,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
             linear.failures.delete("setIssueState");
             warn.mockRestore();
           }
-          expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+          expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
           expect(epicOf(run).stateName).not.toBe("In Review");
         });
       });
@@ -1363,7 +1492,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     it("waits with an error when the describe job fails, and a reply retries the PR step", async () => {
       const run = await finishedRun();
       await describePr(run.id, { jobError: "the session ended without a valid title and body" });
-      const waiting = (await getRun(db, run.id))!;
+      const waiting = (await withPullRequest(run.id))!;
       expect(waiting).toMatchObject({
         status: "waiting",
         prJobId: null,
@@ -1387,7 +1516,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       await reply(run, "retry please");
       expect((await getRun(db, run.id))?.guidance.map((g) => g.text)).toEqual(["retry please"]);
       await describePr(run.id);
-      expect(await getRun(db, run.id)).toMatchObject({
+      expect(await withPullRequest(run.id)).toMatchObject({
         status: "completed",
         prNumber: 1,
         error: null,
@@ -1398,7 +1527,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       scm.failures.set("createChangeRequest", "Resource not accessible by integration");
       const run = await finishedRun();
       await describePr(run.id);
-      expect(await getRun(db, run.id)).toMatchObject({ status: "waiting", prNumber: null });
+      expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
       expect(linear.bodies(run.linearAgentSessionId, "error")[0]).toContain(
         "couldn't open the pull request: Resource not accessible by integration.",
       );
@@ -1406,7 +1535,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       scm.failures.clear();
       await reply(run, "I fixed the app permissions");
       await describePr(run.id);
-      expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+      expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
       expect(scm.changeRequests).toHaveLength(1);
     });
 
@@ -1414,7 +1543,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       const issue = linear.add({ identifier: "ENG-120", title: "Nothing to change" });
       const run = await delegate(issue.id);
       await work(run.id, {});
-      expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: null });
+      expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: null });
       expect(await activeJobs(run.id)).toEqual([]);
       expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Nothing was committed",

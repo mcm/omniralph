@@ -17,6 +17,7 @@ import {
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
 import { runManualLabels } from "./epic-loader";
+import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
 import type { RalphDeps } from "./run";
 
@@ -159,7 +160,7 @@ async function applyStoryResult(
       linear.setIssueState(story.linearIssueId, { type: "completed" }),
     );
     const note = [
-      `✅ Completed by Omniralph${sha ? ` in \`${sha.slice(0, 10)}\`` : ""} on \`${run.branch}\`.`,
+      `✅ Completed by Omniralph${sha ? ` in \`${sha.slice(0, 10)}\`` : ""} on \`${(await storyLane(tx, run, story))?.branch ?? ""}\`.`,
       "",
       tail(result.summary.trim() || "Done.", 4000),
     ].join("\n");

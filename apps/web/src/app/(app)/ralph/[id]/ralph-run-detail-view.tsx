@@ -181,7 +181,151 @@ function StopRunButton({ run }: { run: RalphRunDetail }) {
   );
 }
 
+type RalphStoryRow = RalphRunDetail["stories"][number];
+type RalphLane = RalphRunDetail["lanes"][number];
+
+function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphStoryRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Story</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Attempts</TableHead>
+          <TableHead>Commit</TableHead>
+          <TableHead>Last feedback</TableHead>
+          <TableHead>Last job</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {stories.map((story) => (
+          <TableRow key={story.id}>
+            <TableCell>
+              <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />
+            </TableCell>
+            <TableCell>
+              <RalphStoryStatusBadge status={story.status} />
+            </TableCell>
+            <TableCell>
+              <span style={cellText}>{story.attempts}</span>
+            </TableCell>
+            <TableCell>
+              {story.commitSha ? (
+                <InlineCode title={story.commitSha}>{shortSha(story.commitSha)}</InlineCode>
+              ) : (
+                <Muted>—</Muted>
+              )}
+            </TableCell>
+            <TableCell>
+              {story.lastFeedback ? (
+                <Muted
+                  title={story.lastFeedback}
+                  style={{ maxWidth: "calc(var(--space-6) * 12)", overflowWrap: "anywhere" }}
+                >
+                  {truncate(story.lastFeedback, FEEDBACK_PREVIEW)}
+                </Muted>
+              ) : (
+                <Muted>—</Muted>
+              )}
+            </TableCell>
+            <TableCell>
+              {story.lastJobId ? (
+                <Link
+                  href={jobHref(story.lastJobId)}
+                  style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
+                >
+                  {story.lastJobId.slice(0, 8)}
+                </Link>
+              ) : (
+                <Muted>—</Muted>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** The stories of a lane: its own, plus (main lane) those without a lane that aren't elsewhere. */
+function laneStories(run: RalphRunDetail, lane: RalphLane): RalphStoryRow[] {
+  const known = new Set(run.lanes.map((l) => l.id));
+  return run.stories.filter((s) =>
+    s.laneId && known.has(s.laneId) ? s.laneId === lane.id : lane.main && !s.elsewhere,
+  );
+}
+
+function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
+  const stories = laneStories(run, lane);
+  const done = stories.filter((s) => s.status === "completed").length;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <ProviderIcon provider={lane.repository.provider} />
+          <span style={{ ...mono, fontSize: "var(--text-sm)" }}>{lane.repository.fullPath}</span>
+          {lane.main && run.lanes.length > 1 ? <Badge variant="neutral">Main</Badge> : null}
+        </CardTitle>
+        <CardDescription>
+          <InlineCode>{lane.branch}</InlineCode> based on{" "}
+          {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : "—"}
+          {" · "}
+          {lane.repository.provider === "gitlab" ? "Merge request" : "Pull request"}{" "}
+          <PullRequestLink pullRequest={lane.pullRequest} />
+          {" · "}
+          {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {stories.length === 0 ? (
+          <Muted>No stories in this repository yet.</Muted>
+        ) : (
+          <StoriesTable run={run} stories={stories} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Stories that belong in a repository Omniralph doesn't have: manual steps for a person. */
+function ElsewhereCard({ run }: { run: RalphRunDetail }) {
+  const stories = run.stories.filter((s) => s.elsewhere);
+  if (stories.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Not in a repository here</CardTitle>
+        <CardDescription>
+          Treated like manual steps: nothing is run for them, and stories that depend on them wait
+          until a person finishes them.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul style={{ margin: 0, paddingLeft: "var(--space-5)", ...stack }}>
+          {stories.map((story) => (
+            <li key={story.id} style={{ fontSize: "var(--text-sm)" }}>
+              <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />{" "}
+              <Muted>({story.elsewhere})</Muted>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One section per lane (repository), or a single stories table before the run has one. */
 function StoriesCard({ run }: { run: RalphRunDetail }) {
+  if (run.lanes.length > 0) {
+    return (
+      <>
+        {run.lanes.map((lane) => (
+          <LaneCard key={lane.id} run={run} lane={lane} />
+        ))}
+        <ElsewhereCard run={run} />
+      </>
+    );
+  }
   return (
     <Card>
       <CardHeader>
@@ -198,68 +342,7 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
             description="Stories appear once the run has loaded the epic from Linear."
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Story</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Attempts</TableHead>
-                <TableHead>Commit</TableHead>
-                <TableHead>Last feedback</TableHead>
-                <TableHead>Last job</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {run.stories.map((story) => (
-                <TableRow key={story.id}>
-                  <TableCell>
-                    <IssueRef
-                      identifier={story.identifier}
-                      title={story.title}
-                      runUrl={run.linearUrl}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <RalphStoryStatusBadge status={story.status} />
-                  </TableCell>
-                  <TableCell>
-                    <span style={cellText}>{story.attempts}</span>
-                  </TableCell>
-                  <TableCell>
-                    {story.commitSha ? (
-                      <InlineCode title={story.commitSha}>{shortSha(story.commitSha)}</InlineCode>
-                    ) : (
-                      <Muted>—</Muted>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {story.lastFeedback ? (
-                      <Muted
-                        title={story.lastFeedback}
-                        style={{ maxWidth: "calc(var(--space-6) * 12)", overflowWrap: "anywhere" }}
-                      >
-                        {truncate(story.lastFeedback, FEEDBACK_PREVIEW)}
-                      </Muted>
-                    ) : (
-                      <Muted>—</Muted>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {story.lastJobId ? (
-                      <Link
-                        href={jobHref(story.lastJobId)}
-                        style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
-                      >
-                        {story.lastJobId.slice(0, 8)}
-                      </Link>
-                    ) : (
-                      <Muted>—</Muted>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <StoriesTable run={run} stories={run.stories} />
         )}
       </CardContent>
     </Card>
@@ -464,9 +547,7 @@ export function RalphRunDetailView({
               <Fact label="Repository">
                 <span style={mono}>{run.repository?.fullPath ?? "Not chosen yet"}</span>
               </Fact>
-              <Fact label="Branch">
-                <InlineCode>{run.branch}</InlineCode>
-              </Fact>
+              <Fact label="Branch">{run.branch ? <InlineCode>{run.branch}</InlineCode> : "—"}</Fact>
               <Fact label="Base">
                 {run.baseBranch ? <InlineCode>{run.baseBranch}</InlineCode> : "—"}
               </Fact>

@@ -139,6 +139,18 @@ Routing runs again whenever the issue is delegated again:
 
 If no repository has ralph enabled at all, the session gets an error explaining how to enable one.
 
+**Stories in other repositories.** In an epic with sub-issues, each story is also routed on the
+signals it doesn't share with the epic, in the same order: its own `[repo=…]` tag, a routing
+label, a project other than the epic's, a team other than the epic's. A story without any stays
+in the epic's repository. A story routed to another ralph-enabled repository gets a lane there:
+its own branch (the epic's branch name, based on that repository's default branch) and its own
+PR/MR, and the run's start message says so. A story whose tag or project matches no
+ralph-enabled repository is treated like a manual step ("isn't in a repository I have"), shown as
+"(manual: no repository here)" in the plan: nothing is built for it, and stories that depend on it
+wait until a person completes it. Teams and labels often span repositories, so an unknown one
+never makes a story manual. The run detail page shows one section per repository with its branch,
+PR/MR and stories.
+
 Don't route the same team, project or label to both Omniralph and cyralph
 ([deploy-agent.md](deploy-agent.md#coexisting-with-cyralph-and-manual-dev-work)).
 

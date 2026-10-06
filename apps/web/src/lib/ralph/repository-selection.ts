@@ -11,13 +11,16 @@ import {
   getRepositoryWithConnection,
   listRalphRepositories,
   lockRun,
+  moveToRepository,
+  updateLane,
   updateRun,
+  type RalphLane,
   type RalphRun,
   type RalphTransaction,
   type Repository,
   type ScmProvider,
 } from "@omniralph/db";
-import { parseRepoTags } from "@omniralph/ralph";
+import { epicBranchName, parseRepoTags } from "@omniralph/ralph";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { errorMessage, postActivity, quietly } from "./notify";
 import { changeRequestTerm } from "./publish";
@@ -89,19 +92,19 @@ export function leftBehindNote(left: LeftBehind, newPath: string): string {
   );
 }
 
-/** The work an earlier run left in its repository, for `leftBehindNote` (null if it's gone). */
+/** The work a run left in its old main lane (`moveToRepository`), for `leftBehindNote` (null if it's gone). */
 export async function leftBehind(
   deps: Pick<RalphDeps, "db">,
-  previous: Pick<RalphRun, "repositoryId" | "branch" | "prUrl">,
+  lane: Pick<RalphLane, "repositoryId" | "branch" | "prUrl"> | null,
 ): Promise<LeftBehind | null> {
-  if (!previous.repositoryId) return null;
-  const repository = await getRepository(deps.db, previous.repositoryId);
+  if (!lane) return null;
+  const repository = await getRepository(deps.db, lane.repositoryId);
   if (!repository) return null;
   return {
     fullPath: repository.fullPath,
     provider: repository.provider,
-    branch: previous.branch,
-    prUrl: previous.prUrl,
+    branch: lane.branch,
+    prUrl: lane.prUrl,
   };
 }
 
@@ -127,8 +130,10 @@ export type RepositoryAnswer =
 
 /**
  * A reply to the repository question: the matched repository becomes the
- * run's (`routed_by` "your selection", base branch its default branch), the
- * issue moves to started and the run advances. An unmatched reply asks again.
+ * run's (`routed_by` "your selection"), with its main lane on the epic's
+ * branch (or the lane the run already had there, carried over from an earlier
+ * run) based on the repository's default branch; the issue moves to started
+ * and the run advances. An unmatched reply asks again.
  */
 export async function answerRepositorySelection(
   deps: RalphDeps,
@@ -149,7 +154,10 @@ export async function answerRepositorySelection(
   }
 
   let baseBranch: string;
+  let branch: string;
   try {
+    const issue = await deps.linear.getIssue(run.linearIssueId);
+    branch = epicBranchName(issue, run.kind === "single" ? null : undefined);
     const found = await getRepositoryWithConnection(deps.db, repository.id);
     if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
     baseBranch = await deps.adapterFor(deps.db, found.connection).getDefaultBranch({
@@ -166,15 +174,17 @@ export async function answerRepositorySelection(
 
   const chosen = await lockRun(deps.db, run.id, async (tx, current) => {
     if (current.repositoryId || !repositorySelectionOf(current)) return null;
-    return updateRun(tx, current.id, {
-      repositoryId: repository.id,
+    const moved = await moveToRepository(tx, current.id, repository.id, { branch, baseBranch });
+    if (!moved) return null;
+    await updateLane(tx, moved.lane.id, { baseBranch });
+    await updateRun(tx, current.id, {
       routedBy: ROUTED_BY_SELECTION,
-      baseBranch,
       pendingElicitation: null,
       waitingOn: null,
       status: "pending",
       error: null,
     });
+    return moved.lane;
   });
   if (!chosen) return { status: "ignored" };
 

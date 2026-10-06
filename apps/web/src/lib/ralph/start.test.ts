@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   connectRepository,
   createDb,
+  getMainLane,
   getRun,
   getRunBySession,
   insertJob,
@@ -12,6 +13,7 @@ import {
   ralphRuns,
   runMigrations,
   saveIntegration,
+  updateLane,
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
@@ -19,6 +21,8 @@ import {
   webhookDeliveries,
   DEFAULT_RALPH_SETTINGS,
   type Database,
+  type RalphLaneUpdate,
+  type RalphRun,
   type RepositoryRalphSettingsUpdate,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
@@ -111,6 +115,22 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     ...overrides,
   });
 
+  /** A run with its main lane's branches and PR/MR (where v2a kept them on the run). */
+  const withLane = async (run: RalphRun | null) => {
+    const lane = run && (await getMainLane(db, run));
+    return (
+      run && {
+        ...run,
+        branch: lane?.branch ?? null,
+        baseBranch: lane?.baseBranch ?? null,
+        prNumber: lane?.prNumber ?? null,
+        prUrl: lane?.prUrl ?? null,
+      }
+    );
+  };
+  const updateMainLane = async (run: RalphRun, update: RalphLaneUpdate) =>
+    updateLane(db, (await getMainLane(db, run))!.id, update);
+
   const created = (
     issueId: string,
     overrides: Partial<SessionCreatedEvent> = {},
@@ -193,7 +213,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const outcome = await startRun(event, deps());
     expect(outcome).toMatchObject({ status: "started", created: true });
 
-    const run = await getRunBySession(db, event.sessionId);
+    const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({
       linearIssueId: epic.id,
       linearIdentifier: "ENG-1",
@@ -248,7 +268,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const [store, , show] = children;
     expect(linear.blocks.get(show!.id)).toEqual([store!.id]);
 
-    const run = await getRunBySession(db, event.sessionId);
+    const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({ kind: "prd", branch: "feat/priorities", baseBranch: "develop" });
     expect((await listStories(db, run!.id)).map((s) => [s.title, s.status])).toEqual([
       ["Store priority", "running"],
@@ -347,7 +367,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const issue = linear.add({ identifier: "ENG-20", title: "Fix the login bug" });
     const event = created(issue.id);
     await startRun(event, deps());
-    const run = await getRunBySession(db, event.sessionId);
+    const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({
       kind: "single",
       linearIssueId: issue.id,
@@ -419,7 +439,6 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
         status: "waiting",
         repositoryId: null,
         routedBy: null,
-        baseBranch: "",
         pendingElicitation: { kind: "repository", repositoryIds: [repoId, otherRepoId] },
       });
       expect(await db.select().from(jobs)).toEqual([]);
@@ -454,9 +473,10 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
         kind: "repository_selection",
         advanced: { action: "enqueued" },
       });
-      expect(await getRun(db, run.id)).toMatchObject({
+      expect(await withLane(await getRun(db, run.id))).toMatchObject({
         repositoryId: otherRepoId,
         routedBy: "your selection",
+        branch: epic.branchName,
         baseBranch: "develop",
         pendingElicitation: null,
         status: "running",
@@ -576,8 +596,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
     expect(previous.repositoryId).toBe(otherRepoId);
-    await updateRun(db, previous.id, {
-      status: "failed",
+    await updateRun(db, previous.id, { status: "failed" });
+    await updateMainLane(previous, {
       branch: "custom/branch",
       prNumber: 9,
       prUrl: "https://github.com/acme/web/pull/9",
@@ -588,7 +608,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     linear.issues.get(epic.id)!.description = "Now \\[repo=acme/api\\]";
     const second = created(epic.id);
     await startRun(second, deps());
-    const moved = await getRunBySession(db, second.sessionId);
+    const moved = await withLane(await getRunBySession(db, second.sessionId));
     expect(moved).toMatchObject({
       repositoryId: repoId,
       routedBy: "`[repo=…]` tag `acme/api`",
@@ -603,7 +623,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
         "Pull request https://github.com/acme/web/pull/9); I won't touch it again.",
     );
     // The previous run is left alone.
-    expect(await getRun(db, previous.id)).toMatchObject({
+    expect(await withLane(await getRun(db, previous.id))).toMatchObject({
       repositoryId: otherRepoId,
       branch: "custom/branch",
       prNumber: 9,
@@ -625,18 +645,20 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const first = created(epic.id);
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
-    await updateRun(db, previous.id, {
-      status: "failed",
+    await updateMainLane(previous, {
       branch: "custom/branch",
       prNumber: 7,
       prUrl: "https://github.com/acme/api/pull/7",
+    });
+    await updateRun(db, previous.id, {
+      status: "failed",
       guidance: [{ text: "Use tabs", at: "2026-10-01T00:00:00.000Z" }],
       progress: "## Story ENG-61\nlearned things",
     });
 
     const second = created(epic.id);
     expect(await startRun(second, deps())).toMatchObject({ status: "started", created: true });
-    const run = await getRunBySession(db, second.sessionId);
+    const run = await withLane(await getRunBySession(db, second.sessionId));
     expect(run).toMatchObject({
       branch: "custom/branch",
       prNumber: 7,
@@ -673,11 +695,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     // It was running the story with an early draft open.
     const [running] = await listStories(db, previous.id);
     await updateStory(db, running!.id, { status: "running", lastJobId: job.id });
-    await updateRun(db, previous.id, {
-      prNumber: 7,
-      prUrl: "https://github.com/acme/api/pull/7",
-      prJobId: job.id,
-    });
+    await updateRun(db, previous.id, { prJobId: job.id });
+    await updateMainLane(previous, { prNumber: 7, prUrl: "https://github.com/acme/api/pull/7" });
 
     const again = created(epic.id);
     await startRun(again, deps());
@@ -693,8 +712,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(linear.bodies(first.sessionId, "response")[0]).toContain(
       "https://github.com/acme/api/pull/7",
     );
-    expect(await getRunBySession(db, again.sessionId)).toMatchObject({
-      branch: previous.branch,
+    expect(await withLane(await getRunBySession(db, again.sessionId))).toMatchObject({
+      branch: (await getMainLane(db, previous))!.branch,
       status: "running",
     });
   });

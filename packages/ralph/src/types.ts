@@ -37,10 +37,17 @@ export interface Story {
    */
   elsewhere?: string;
   /**
+   * Set when the story's own routing signals send it to another repository than the epic's: it's
+   * worked in that repository's lane. `name` is the repository's path, `routedBy` how it matched.
+   */
+  repo?: { id: string; name: string; routedBy: string };
+  /**
    * Preparation commands from the ```cyralph-prepare blocks of a manual story's description, one per
    * command, in order. Run only with a person's approval; never set on non-manual stories.
    */
   preparation?: string[];
+  /** The story issue's full description as written (its `[repo=…]` tags route it). */
+  sourceText?: string;
   /** The story issue's routing fields: its Linear project, team and labels. */
   projectName?: string;
   teamKey?: string;

@@ -15,12 +15,20 @@ const PLAN_STATUS: Record<RalphStoryStatus, PlanStep["status"]> = {
   canceled: "canceled",
 };
 
+/** How a step marks a manual story: one that belongs in a repository Omniralph doesn't have says so. */
+function manualNote(story: Pick<RalphStory, "status"> & { elsewhere?: string | null }): string {
+  if (story.status !== "manual") return "";
+  return story.elsewhere ? " (manual: no repository here)" : " (manual)";
+}
+
 /** Every story of the run with its status, in order. */
 export function planFor(
-  stories: readonly Pick<RalphStory, "identifier" | "title" | "status">[],
+  stories: readonly (Pick<RalphStory, "identifier" | "title" | "status"> & {
+    elsewhere?: string | null;
+  })[],
 ): PlanStep[] {
   return stories.map((story) => ({
-    content: `${story.identifier}: ${story.title}${story.status === "manual" ? " (manual)" : ""}`,
+    content: `${story.identifier}: ${story.title}${manualNote(story)}`,
     status: PLAN_STATUS[story.status],
   }));
 }

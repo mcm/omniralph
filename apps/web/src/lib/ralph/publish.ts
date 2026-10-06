@@ -11,10 +11,13 @@
 import {
   getJob,
   getRepository,
+  getMainLane,
   getRepositoryWithConnection,
   listStories,
+  updateLane,
   updateRun,
   type Job,
+  type RalphLane,
   type RalphRun,
   type RalphStory,
   type RalphTransaction,
@@ -92,16 +95,25 @@ interface RunRepository {
   repo: RepoRef;
   repository: Repository;
   connection: ScmConnection;
+  /** The run's main lane (its branch and PR/MR). */
+  lane: RalphLane;
 }
 
-async function runRepository(deps: RalphDeps, run: RalphRun): Promise<RunRepository> {
+async function runRepository(
+  deps: RalphDeps,
+  run: RalphRun,
+  tx: RalphTransaction,
+): Promise<RunRepository> {
   const found = run.repositoryId
     ? await getRepositoryWithConnection(deps.db, run.repositoryId)
     : null;
   if (!found || found.repository.disconnectedAt) {
     throw new Error("the run's repository is no longer connected");
   }
+  const lane = await getMainLane(tx, run);
+  if (!lane) throw new Error("the run has no branch in its repository");
   return {
+    lane,
     adapter: deps.adapterFor(deps.db, found.connection),
     repo: { fullPath: found.repository.fullPath, externalId: found.repository.externalId },
     repository: found.repository,
@@ -137,22 +149,23 @@ export interface PublishedPullRequest {
  */
 export async function publishPullRequest(
   deps: RalphDeps,
+  tx: RalphTransaction,
   run: RalphRun,
   text: PullRequestText,
   epic: LinearLink,
-): Promise<PublishedPullRequest> {
-  const target = await runRepository(deps, run);
-  const { adapter, repo } = target;
+): Promise<PublishedPullRequest & { lane: RalphLane }> {
+  const target = await runRepository(deps, run, tx);
+  const { adapter, repo, lane } = target;
   const { title, body } = await postableText(target, text, epic);
   let pr: PublishedPullRequest;
-  const open = await adapter.findOpenChangeRequest(repo, run.branch);
+  const open = await adapter.findOpenChangeRequest(repo, lane.branch);
   if (open) {
     await adapter.updateChangeRequest(repo, open.number, { title, body });
     pr = { number: open.number, url: open.url, created: false };
   } else {
     const opened = await adapter.createChangeRequest(repo, {
-      sourceBranch: run.branch,
-      targetBranch: run.baseBranch,
+      sourceBranch: lane.branch,
+      targetBranch: lane.baseBranch,
       title,
       body,
       draft: true,
@@ -162,7 +175,7 @@ export async function publishPullRequest(
     pr = opened;
   }
   await adapter.markChangeRequestReady(repo, pr.number);
-  return pr;
+  return { ...pr, lane };
 }
 
 /**
@@ -178,19 +191,18 @@ export async function openEarlyPullRequest(
   run: RalphRun,
   input: { epic: Epic; rows: readonly RalphStory[] },
 ): Promise<RalphRun> {
-  if (run.prNumber !== null || !input.rows.some((r) => r.status === "completed" && r.commitSha)) {
-    return run;
-  }
-  if (!run.repositoryId) return run;
-  const found = await getRepositoryWithConnection(deps.db, run.repositoryId);
+  if (!input.rows.some((r) => r.status === "completed" && r.commitSha)) return run;
+  const main = await getMainLane(tx, run);
+  if (!main || main.prNumber !== null) return run;
+  const found = await getRepositoryWithConnection(deps.db, main.repositoryId);
   if (!found?.repository.ralphSettings.openPullRequestEarly) return run;
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
   const epic = { identifier: input.epic.identifier, title: input.epic.title, url: input.epic.url };
   let pr: PublishedPullRequest;
   try {
-    const target = await runRepository(deps, run);
-    const open = await target.adapter.findOpenChangeRequest(target.repo, run.branch);
+    const target = await runRepository(deps, run, tx);
+    const open = await target.adapter.findOpenChangeRequest(target.repo, main.branch);
     if (open) pr = { number: open.number, url: open.url, created: false };
     else {
       const text = await postableText(
@@ -199,8 +211,8 @@ export async function openEarlyPullRequest(
         epic,
       );
       pr = await target.adapter.createChangeRequest(target.repo, {
-        sourceBranch: run.branch,
-        targetBranch: run.baseBranch,
+        sourceBranch: main.branch,
+        targetBranch: main.baseBranch,
         ...text,
         draft: true,
       });
@@ -212,7 +224,7 @@ export async function openEarlyPullRequest(
     });
     return run;
   }
-  const updated = (await updateRun(tx, run.id, { prNumber: pr.number, prUrl: pr.url })) ?? run;
+  await updateLane(tx, main.id, { prNumber: pr.number, prUrl: pr.url });
   await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
     deps.linear.addSessionExternalUrl(
       run.linearAgentSessionId,
@@ -222,9 +234,9 @@ export async function openEarlyPullRequest(
   );
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "thought",
-    body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${run.branch}\`: ${pr.url}`,
+    body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${main.branch}\`: ${pr.url}`,
   });
-  return updated;
+  return run;
 }
 
 /**
@@ -274,7 +286,7 @@ function finalResponse(
   run: RalphRun,
   epic: LinearLink,
   stories: readonly RalphStory[],
-  pr: PublishedPullRequest,
+  pr: PublishedPullRequest & { lane: RalphLane },
   provider: Provider,
 ): string {
   const what =
@@ -287,7 +299,7 @@ function finalResponse(
     return `- ${mark} **${s.identifier}**: ${s.title}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`;
   });
   return [
-    `Finished ${what} on \`${run.branch}\`. ${pr.created ? "Opened" : "Updated"} ${link}, ready for review.`,
+    `Finished ${what} on \`${pr.lane.branch}\`. ${pr.created ? "Opened" : "Updated"} ${link}, ready for review.`,
     "",
     ...lines,
   ].join("\n");
@@ -326,9 +338,9 @@ export async function applyPullRequestJob(
     title: payload.data.epic.title,
     url: payload.data.epic.url,
   };
-  let pr: PublishedPullRequest;
+  let pr: PublishedPullRequest & { lane: RalphLane };
   try {
-    pr = await publishPullRequest(deps, run, parsed.data, epic);
+    pr = await publishPullRequest(deps, tx, run, parsed.data, epic);
   } catch (error) {
     await pullRequestFailed(deps, tx, run, term, `${errorMessage(error)}.`);
     await moveCompletedEpic(deps, run);
@@ -338,12 +350,11 @@ export async function applyPullRequestJob(
   const completed =
     (await updateRun(tx, run.id, {
       status: "completed",
-      prNumber: pr.number,
-      prUrl: pr.url,
       prJobId: null,
       waitingOn: null,
       error: null,
     })) ?? run;
+  await updateLane(tx, pr.lane.id, { prNumber: pr.number, prUrl: pr.url });
   const stories = await listStories(tx, run.id);
   await quietly(`Posting the plan of session ${run.linearAgentSessionId}`, () =>
     deps.linear.updateSessionPlan(run.linearAgentSessionId, planFor(stories)),

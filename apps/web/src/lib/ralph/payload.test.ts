@@ -53,17 +53,18 @@ const run = (kind: RalphRun["kind"] = "children") =>
   ({
     id: randomUUID(),
     kind,
-    branch: "feat/epic",
-    baseBranch: "main",
     progress: "",
     guidance: [],
   }) as unknown as RalphRun;
+
+const lane = { branch: "feat/epic", baseBranch: "main" };
 
 const row = { id: randomUUID(), linearIssueId: "issue-2", attempts: 0, lastFeedback: null };
 
 function payloadFor(kind: RalphRun["kind"], settings: Partial<RalphSettings>) {
   return buildStoryPayload({
     run: run(kind),
+    lane,
     repository: repository(settings),
     connection,
     epic: epic(kind === "single" ? "single" : "children"),
@@ -106,6 +107,7 @@ describe("story quality gates", () => {
   it("are what the describe-pr job reports as the verification", () => {
     const payload = buildDescribePrPayload({
       run: run(),
+      lane,
       repository: repository({ verifyCommands: ["pnpm typecheck"] }),
       connection,
       epic: epic(),

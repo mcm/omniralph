@@ -128,6 +128,7 @@ function linearStory(issue: EpicIssue, body = parseStoryBody(issue.description))
     issueId: issue.id,
     identifier: issue.identifier,
     ...(issue.url !== undefined && { url: issue.url }),
+    sourceText: issue.description,
     ...(issue.projectName !== undefined && { projectName: issue.projectName }),
     ...(issue.teamKey !== undefined && { teamKey: issue.teamKey }),
     labels: issue.labels,
@@ -180,6 +181,14 @@ function storyFromIssue(
   };
 }
 
+/** The branch an epic builds on: the PRD's branch name, else a `Branch:` line, else Linear's suggestion. */
+export function epicBranchName(
+  issue: Pick<EpicIssue, "description" | "branchName">,
+  prd: ParsedPrd | null = parsePrd(issue.description),
+): string {
+  return prd?.branchName || parseBranchLine(issue.description) || issue.branchName;
+}
+
 function epicBase(issue: EpicIssue, prd: ParsedPrd | null): Omit<Epic, "kind" | "stories"> {
   return {
     issueId: issue.id,
@@ -191,7 +200,7 @@ function epicBase(issue: EpicIssue, prd: ParsedPrd | null): Omit<Epic, "kind" | 
     ...(issue.teamId !== undefined && { teamId: issue.teamId }),
     ...(issue.projectName !== undefined && { projectName: issue.projectName }),
     ...(issue.teamKey !== undefined && { teamKey: issue.teamKey }),
-    branchName: prd?.branchName || parseBranchLine(issue.description) || issue.branchName,
+    branchName: epicBranchName(issue, prd),
     qualityGates: prd?.qualityGates.length
       ? prd.qualityGates
       : parseQualityGates(issue.description),
