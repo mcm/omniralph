@@ -1,6 +1,7 @@
 "use server";
 
-import { fieldErrors, RepositorySettingsInput } from "@omniralph/shared";
+import { updateRepositoryRalphSettings } from "@omniralph/db";
+import { fieldErrors, RalphSettingsInput, RepositorySettingsInput } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
@@ -50,5 +51,40 @@ export async function updateRepositorySettings(
     revalidatePath(`/repositories/${repositoryId}/settings`);
     revalidatePath("/repositories");
     revalidatePath("/agents", "layout");
+  });
+}
+
+/**
+ * Saves a repository's Ralph section: whether Linear delegations may build in
+ * it, which Linear issues route to it, and how its runs work. New runs pick it up.
+ */
+export async function updateRalphSettings(
+  repositoryId: string,
+  input: RalphSettingsInput,
+): Promise<ActionResult> {
+  return runAdminAction(async () => {
+    const parsed = RalphSettingsInput.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "Fix the highlighted fields.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+    const { ralphEnabled, linearTeamKeys, linearProjectNames, linearLabels, ...settings } =
+      parsed.data;
+    const saved = await updateRepositoryRalphSettings(getDb(), repositoryId, {
+      ralphEnabled,
+      linearTeamKeys: linearTeamKeys.map((key) => key.toUpperCase()),
+      linearProjectNames,
+      linearLabels,
+      ralphSettings: {
+        openPullRequestEarly: settings.openPullRequestEarly,
+        setupCommand: settings.setupCommand.trim() || null,
+        model: settings.model,
+      },
+    });
+    if (!saved) return { ok: false, error: "That repository isn't connected." };
+    revalidatePath(`/repositories/${repositoryId}/settings`);
   });
 }

@@ -34,6 +34,7 @@ import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
 import { ProfileFacts, type ProfileSummary } from "../../../settings/profiles/profile-facts";
 import { updateRepositorySettings } from "./actions";
+import { RalphSettingsSection, type RalphSettingsValues } from "./ralph-settings-section";
 
 interface RepositorySettingsViewProps {
   repository: {
@@ -52,6 +53,8 @@ interface RepositorySettingsViewProps {
   profiles: ProfileSummary[];
   /** Agents that can be pinned (not revoked). */
   agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
+  /** The Ralph section's settings; only passed to admins. */
+  ralph: RalphSettingsValues | null;
 }
 
 const stack: React.CSSProperties = {
@@ -120,6 +123,7 @@ export function RepositorySettingsView({
   settings,
   profiles,
   agents,
+  ralph,
 }: RepositorySettingsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const { pending, run } = useAction();
@@ -426,6 +430,8 @@ export function RepositorySettingsView({
             <Muted>Only admins can change repository settings.</Muted>
           )}
         </form>
+
+        {isAdmin && ralph && <RalphSettingsSection repositoryId={repository.id} settings={ralph} />}
       </main>
     </>
   );

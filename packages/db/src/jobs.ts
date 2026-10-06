@@ -19,6 +19,8 @@ export interface NewJobInput {
   repositoryId?: string | null;
   /** At most one queued/running job per key; a second insert returns the active job. */
   dedupeKey?: string | null;
+  /** The ralph run a `ralph.*` job belongs to. */
+  ralphRunId?: string | null;
 }
 
 /**
@@ -39,6 +41,7 @@ export async function insertJob(
         payload: input.payload ?? {},
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
+        ralphRunId: input.ralphRunId ?? null,
       })
       .onConflictDoNothing({
         target: jobs.dedupeKey,

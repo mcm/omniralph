@@ -76,6 +76,23 @@ export const agentAuditEvent = pgEnum("agent_audit_event", [
   "result_submitted",
   "auth_failed",
 ]);
+export const ralphRunKind = pgEnum("ralph_run_kind", ["children", "prd", "single"]);
+export const ralphRunStatus = pgEnum("ralph_run_status", [
+  "pending",
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "stopped",
+]);
+export const ralphStoryStatus = pgEnum("ralph_story_status", [
+  "pending",
+  "running",
+  "completed",
+  "blocked",
+  "exhausted",
+  "manual",
+]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -231,6 +248,22 @@ export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
 
 export const DEFAULT_PROFILE_ID = "standard";
 
+/** Per-repository settings of the `ralph` capability (`repositories.ralph_settings`). */
+export interface RalphSettings {
+  /** Open a draft PR/MR after the first pushed story (updated and marked ready at the end). */
+  openPullRequestEarly: boolean;
+  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
+  setupCommand: string | null;
+  /** Claude model (alias or ID) the story sessions use. */
+  model: string;
+}
+
+export const DEFAULT_RALPH_SETTINGS: RalphSettings = {
+  openPullRequestEarly: false,
+  setupCommand: null,
+  model: "opus",
+};
+
 export const repositories = pgTable(
   "repositories",
   {
@@ -257,6 +290,25 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
+    /** Linear delegations may build in this repository (`ralph` capability). */
+    ralphEnabled: boolean("ralph_enabled").notNull().default(false),
+    /** Linear routing: team keys (e.g. `ENG`), project names and labels routed here. */
+    linearTeamKeys: text("linear_team_keys")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    linearProjectNames: text("linear_project_names")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    linearLabels: text("linear_labels")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    ralphSettings: jsonb("ralph_settings")
+      .$type<RalphSettings>()
+      .notNull()
+      .default(DEFAULT_RALPH_SETTINGS),
     /** GitLab project webhook ID created on connect (deleted on disconnect). */
     webhookId: text("webhook_id"),
     /**
@@ -542,6 +594,10 @@ export const jobs = pgTable(
      * `review.reply` answer), so it is posted at most once.
      */
     scmCommentId: text("scm_comment_id"),
+    /** The ralph run a `ralph.*` job belongs to. */
+    ralphRunId: uuid("ralph_run_id").references((): AnyPgColumn => ralphRuns.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -552,7 +608,115 @@ export const jobs = pgTable(
       .where(sql`status in ('queued', 'running')`),
     index("jobs_status_created_at_idx").on(t.status, t.createdAt),
     index("jobs_agent_id_idx").on(t.agentId),
+    index("jobs_ralph_run_id_idx").on(t.ralphRunId),
   ],
+);
+
+// ── Ralph runs ───────────────────────────────────────────────────────────────
+
+/** A Linear issue a run refers to (a story, or an external blocker). */
+export interface RalphIssueRef {
+  /** Linear issue ID. */
+  id: string;
+  /** e.g. `TOOL-83`. */
+  identifier: string;
+  title: string;
+}
+
+/** What a `waiting` run waits for; an `Issue` webhook completing one of them wakes it. */
+export interface RalphWaitingOn {
+  /** Open issues outside the epic that block its remaining stories. */
+  blockers: RalphIssueRef[];
+  /** Manual stories a person has to finish. */
+  manual: RalphIssueRef[];
+}
+
+/** A reply from the agent session, applied to the next story attempts. */
+export interface RalphGuidance {
+  text: string;
+  /** ISO timestamp. */
+  at: string;
+}
+
+/**
+ * A delegated Linear issue being built story by story (the ralph loop). The
+ * control panel owns this state; every change goes through a row lock
+ * (`lockRun`) because webhooks and job outcomes race.
+ */
+export const ralphRuns = pgTable(
+  "ralph_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** The delegated issue (the epic, or the single issue). */
+    linearIssueId: text("linear_issue_id").notNull(),
+    linearIdentifier: text("linear_identifier").notNull(),
+    linearAgentSessionId: text("linear_agent_session_id").notNull(),
+    kind: ralphRunKind("kind").notNull(),
+    /** Linear issue ID of the story to work on first (a delegated sub-issue). */
+    focusStoryId: text("focus_story_id"),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    branch: text("branch").notNull(),
+    baseBranch: text("base_branch").notNull(),
+    /** The sticky agent: set by the run's first job, all later jobs go to its topic. */
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    status: ralphRunStatus("status").notNull().default("pending"),
+    waitingOn: jsonb("waiting_on").$type<RalphWaitingOn>(),
+    guidance: jsonb("guidance").$type<RalphGuidance[]>().notNull().default([]),
+    /** "Start anyway": stories run even when they have open blockers. */
+    ignoreBlockers: boolean("ignore_blockers").notNull().default(false),
+    /** The progress log (cyralph's `progress.md`), appended to per finished story. */
+    progress: text("progress").notNull().default(""),
+    /** The open Linear elicitation the run waits on an answer to. */
+    pendingElicitation: jsonb("pending_elicitation").$type<Record<string, unknown>>(),
+    /** An approved or running `cyralph-prepare` preparation. */
+    preparation: jsonb("preparation").$type<Record<string, unknown>>(),
+    /** Jobs enqueued for the run so far. */
+    iterations: integer("iterations").notNull().default(0),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("ralph_runs_agent_session_uq").on(t.linearAgentSessionId),
+    /** At most one unfinished run per delegated issue. */
+    uniqueIndex("ralph_runs_issue_active_uq")
+      .on(t.linearIssueId)
+      .where(sql`status in ('pending', 'running', 'waiting')`),
+    index("ralph_runs_linear_issue_id_idx").on(t.linearIssueId, t.createdAt),
+    index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),
+    index("ralph_runs_repository_created_at_idx").on(t.repositoryId, t.createdAt),
+  ],
+);
+
+/** One story (Linear sub-issue, or the single issue) of a run. */
+export const ralphStories = pgTable(
+  "ralph_stories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => ralphRuns.id, { onDelete: "cascade" }),
+    linearIssueId: text("linear_issue_id").notNull(),
+    identifier: text("identifier").notNull(),
+    title: text("title").notNull(),
+    /** Sub-issue order in the epic (for display; selection re-reads Linear). */
+    position: integer("position").notNull().default(0),
+    status: ralphStoryStatus("status").notNull().default("pending"),
+    /** Finished attempts (queue redeliveries don't count). */
+    attempts: integer("attempts").notNull().default(0),
+    /** Why the last attempt didn't complete, passed to the next one. */
+    lastFeedback: text("last_feedback"),
+    commitSha: text("commit_sha"),
+    lastJobId: uuid("last_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("ralph_stories_run_issue_uq").on(t.runId, t.linearIssueId)],
 );
 
 // ── Webhooks ─────────────────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ export default async function RepositorySettingsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const db = getDb();
@@ -61,6 +61,19 @@ export default async function RepositorySettingsPage({
         name: a.name,
         lastHeartbeatAt: a.lastHeartbeatAt?.toISOString() ?? null,
       }))}
+      ralph={
+        user.role === "admin"
+          ? {
+              ralphEnabled: repository.ralphEnabled,
+              linearTeamKeys: repository.linearTeamKeys,
+              linearProjectNames: repository.linearProjectNames,
+              linearLabels: repository.linearLabels,
+              openPullRequestEarly: repository.ralphSettings.openPullRequestEarly,
+              setupCommand: repository.ralphSettings.setupCommand ?? "",
+              model: repository.ralphSettings.model,
+            }
+          : null
+      }
     />
   );
 }

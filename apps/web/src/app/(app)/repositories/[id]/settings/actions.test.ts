@@ -12,7 +12,11 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
-import { ReviewJobPayload, type RepositorySettingsInput } from "@omniralph/shared";
+import {
+  ReviewJobPayload,
+  type RalphSettingsInput,
+  type RepositorySettingsInput,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -43,7 +47,7 @@ vi.mock("@vercel/queue", () => ({
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.QUEUE_REGIONS = "iad1";
 
-const { updateRepositorySettings } = await import("./actions");
+const { updateRalphSettings, updateRepositorySettings } = await import("./actions");
 const { updateReviewProfile } = await import("../../../settings/profiles/actions");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
@@ -61,6 +65,16 @@ const baseSettings: RepositorySettingsInput = {
   pathExcludes: [],
   customInstructions: "",
   pinnedAgentIds: [],
+};
+
+const baseRalph: RalphSettingsInput = {
+  ralphEnabled: false,
+  linearTeamKeys: [],
+  linearProjectNames: [],
+  linearLabels: [],
+  openPullRequestEarly: false,
+  setupCommand: "",
+  model: "opus",
 };
 
 const standardProfile = {
@@ -339,5 +353,88 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     // The earlier job keeps the config it was created with.
     expect(before.reviewConfig.profile.id).toBe("standard");
     await updateRepositorySettings(repoId, baseSettings);
+  });
+
+  it("saves the Ralph section: enabled, Linear routing, openPullRequestEarly, setup command and model", async () => {
+    expect(await getRepository(db, repoId)).toMatchObject({
+      ralphEnabled: false,
+      linearTeamKeys: [],
+      ralphSettings: { openPullRequestEarly: false, setupCommand: null, model: "opus" },
+    });
+    expect(
+      await updateRalphSettings(repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["tool", "ENG"],
+        linearProjectNames: ["Omniralph"],
+        linearLabels: ["backend", "api"],
+        openPullRequestEarly: true,
+        setupCommand: "  pnpm install --frozen-lockfile  ",
+        model: "claude-opus-5-5",
+      }),
+    ).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      ralphEnabled: true,
+      linearTeamKeys: ["TOOL", "ENG"],
+      linearProjectNames: ["Omniralph"],
+      linearLabels: ["backend", "api"],
+      ralphSettings: {
+        openPullRequestEarly: true,
+        setupCommand: "pnpm install --frozen-lockfile",
+        model: "claude-opus-5-5",
+      },
+    });
+    // Saving the review settings leaves the Ralph section alone, and the other way round.
+    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(true);
+
+    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      ralphEnabled: false,
+      linearTeamKeys: [],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: { openPullRequestEarly: false, setupCommand: null, model: "opus" },
+      profileId: "standard",
+    });
+  });
+
+  it("rejects invalid Ralph settings with field errors without saving", async () => {
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        ralphEnabled: true,
+        linearTeamKeys: ["E N G"],
+        linearLabels: ["a,b"],
+        model: "",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Fix the highlighted fields.",
+      fieldErrors: {
+        "linearTeamKeys.0": "Team keys are letters and digits, e.g. ENG.",
+        "linearLabels.0": "Names can't contain commas or control characters.",
+        model: "Enter a model.",
+      },
+    });
+    // Not a valid input shape at all.
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        ralphEnabled: "yes",
+      } as unknown as RalphSettingsInput),
+    ).toMatchObject({ ok: false, fieldErrors: { ralphEnabled: expect.any(String) } });
+    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(false);
+  });
+
+  it("rejects Ralph settings for unknown repositories and from non-admins", async () => {
+    expect(await updateRalphSettings(randomUUID(), baseRalph)).toEqual({
+      ok: false,
+      error: "That repository isn't connected.",
+    });
+    state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+    expect(await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true })).toMatchObject({
+      ok: false,
+    });
+    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(false);
   });
 });

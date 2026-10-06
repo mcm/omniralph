@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   fieldErrors,
+  parseCommaList,
   parsePathExcludes,
   pathExcludeGlobError,
+  RalphSettingsInput,
   RepositorySettingsInput,
   ReviewProfileInput,
 } from "./settings.js";
@@ -130,5 +132,60 @@ describe("ReviewProfileInput", () => {
       maxTokensPerReview: "Enter a whole number.",
       maxFiles: "Max files must be at least 1.",
     });
+  });
+});
+
+const validRalph: RalphSettingsInput = {
+  ralphEnabled: true,
+  linearTeamKeys: ["TOOL", "eng_2"],
+  linearProjectNames: ["Omniralph v2"],
+  linearLabels: ["backend", "needs: api"],
+  openPullRequestEarly: false,
+  setupCommand: "pnpm install --frozen-lockfile",
+  model: "opus",
+};
+
+describe("parseCommaList", () => {
+  it("trims, drops blanks and removes duplicates ignoring case", () => {
+    expect(parseCommaList(" TOOL, eng,,tool , ENG ,Ops ")).toEqual(["TOOL", "eng", "Ops"]);
+    expect(parseCommaList("  ")).toEqual([]);
+  });
+});
+
+describe("RalphSettingsInput", () => {
+  it("accepts valid settings", () => {
+    expect(RalphSettingsInput.parse(validRalph)).toEqual(validRalph);
+    expect(
+      RalphSettingsInput.parse({ ...validRalph, setupCommand: "", model: " claude-opus-5-5 " }),
+    ).toMatchObject({
+      setupCommand: "",
+      model: "claude-opus-5-5",
+    });
+  });
+
+  it("rejects bad team keys, names with commas, bad models and long setup commands", () => {
+    const result = RalphSettingsInput.safeParse({
+      ...validRalph,
+      linearTeamKeys: ["TOOL", "EN G"],
+      linearProjectNames: ["a,b"],
+      linearLabels: [" "],
+      setupCommand: "x".repeat(4001),
+      model: "opus; rm -rf /",
+    });
+    expect(fieldErrors(result.error!)).toEqual({
+      "linearTeamKeys.1": "Team keys are letters and digits, e.g. ENG.",
+      "linearProjectNames.0": "Names can't contain commas or control characters.",
+      "linearLabels.0": "Enter a name.",
+      setupCommand: "The setup command can be at most 4,000 characters.",
+      model: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
+    });
+  });
+
+  it("caps the number of routing values", () => {
+    const result = RalphSettingsInput.safeParse({
+      ...validRalph,
+      linearLabels: Array.from({ length: 51 }, (_, i) => `l${i}`),
+    });
+    expect(fieldErrors(result.error!)).toEqual({ linearLabels: "At most 50 labels." });
   });
 });
