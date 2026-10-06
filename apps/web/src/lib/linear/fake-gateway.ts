@@ -33,6 +33,16 @@ export class FakeLinearGateway implements LinearGateway {
   plans = new Map<string, PlanStep[][]>();
   urls: Array<{ sessionId: string; label: string; url: string }> = [];
   labels: IssueLabel[] = [];
+  /** Every team's workflow states, in position order. */
+  workflowStates: WorkflowState[] = [
+    "backlog",
+    "unstarted",
+    "started",
+    "completed",
+    "canceled",
+  ].map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
+  /** Every `setIssueState` call, in order. */
+  stateChanges: Array<{ issueId: string; target: { type?: string; name?: string } }> = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
   failures = new Map<string, Error>();
 
@@ -90,12 +100,7 @@ export class FakeLinearGateway implements LinearGateway {
     });
   }
   async getWorkflowStates(_teamId: string): Promise<WorkflowState[]> {
-    return ["backlog", "unstarted", "started", "completed", "canceled"].map((type, position) => ({
-      id: `state-${type}`,
-      name: type,
-      type,
-      position,
-    }));
+    return this.workflowStates.map((s) => ({ ...s }));
   }
   async findLabel(teamId: string, name: string) {
     return this.labels.find((l) => l.name.toLowerCase() === name.toLowerCase()) ?? null;
@@ -123,10 +128,18 @@ export class FakeLinearGateway implements LinearGateway {
   async createBlocksRelation(blockerId: string, blockedId: string) {
     this.blocks.set(blockedId, [...(this.blocks.get(blockedId) ?? []), blockerId]);
   }
+  /** Like Linear's: a state with `target.name` (ignoring case), else the first of `target.type`. */
   async setIssueState(issueId: string, target: { type?: string; name?: string }) {
+    this.fail("setIssueState");
+    this.stateChanges.push({ issueId, target });
     const issue = this.find(issueId);
-    if (target.type) issue.stateType = target.type;
-    if (target.name) issue.stateName = target.name;
+    const name = target.name?.toLowerCase();
+    const state =
+      (name && this.workflowStates.find((s) => s.name.toLowerCase() === name)) ||
+      (target.type && this.workflowStates.find((s) => s.type === target.type));
+    if (!state) return;
+    issue.stateType = state.type;
+    issue.stateName = state.name;
   }
   async addComment(issueId: string, body: string) {
     this.comments.push({ issueId, body });

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_RALPH_SETTINGS,
+  epicCompletedTarget,
   fieldErrors,
   parseCommaList,
+  parseLines,
+  parseRalphSettings,
+  RalphSettings,
+  ralphSettingsFromInput,
   parsePathExcludes,
   pathExcludeGlobError,
   RalphSettingsInput,
@@ -140,10 +146,25 @@ const validRalph: RalphSettingsInput = {
   linearTeamKeys: ["TOOL", "eng_2"],
   linearProjectNames: ["Omniralph v2"],
   linearLabels: ["backend", "needs: api"],
-  openPullRequestEarly: false,
+  verifyCommands: ["pnpm typecheck", "pnpm test"],
+  runPrdQualityGates: true,
   setupCommand: "pnpm install --frozen-lockfile",
+  appendInstruction: "Keep commits small.",
   model: "opus",
+  fallbackModel: "",
+  allowedTools: [],
+  disallowedTools: ["WebFetch"],
+  openPullRequestEarly: false,
+  historyRewrite: "when-asked",
+  respondToReviews: true,
+  maxReviewRounds: 3,
+  respondToCiFailures: true,
+  maxFixRounds: 3,
+  cleanupMergedWorktrees: true,
+  unmergedBranchTimeoutMinutes: 60,
   manualLabels: ["manual", "needs a person"],
+  allowPreparation: true,
+  epicCompletedState: "",
 };
 
 describe("parseCommaList", () => {
@@ -199,5 +220,139 @@ describe("RalphSettingsInput", () => {
         RalphSettingsInput.safeParse({ ...validRalph, manualLabels: ["ok", "a,b"] }).error!,
       ),
     ).toEqual({ "manualLabels.1": "Names can't contain commas or control characters." });
+  });
+});
+
+describe("RalphSettings", () => {
+  it("has the epic's defaults", () => {
+    expect(DEFAULT_RALPH_SETTINGS).toEqual({
+      verifyCommands: [],
+      runPrdQualityGates: true,
+      appendInstruction: null,
+      allowedTools: null,
+      disallowedTools: null,
+      model: "opus",
+      fallbackModel: null,
+      allowPreparation: true,
+      manualLabels: ["manual"],
+      historyRewrite: "when-asked",
+      respondToReviews: true,
+      maxReviewRounds: 3,
+      respondToCiFailures: true,
+      maxFixRounds: 3,
+      cleanupMergedWorktrees: true,
+      unmergedBranchTimeoutMinutes: 60,
+      epicCompletedState: null,
+      openPullRequestEarly: false,
+      setupCommand: null,
+    });
+  });
+
+  it("rejects invalid stored settings", () => {
+    const result = RalphSettings.safeParse({
+      verifyCommands: ["pnpm test\nrm -rf /"],
+      allowedTools: ["Bash(git log:*", "rm -rf"],
+      historyRewrite: "always",
+      maxReviewRounds: -1,
+      unmergedBranchTimeoutMinutes: 0,
+    });
+    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual([
+      "allowedTools.0",
+      "allowedTools.1",
+      "historyRewrite",
+      "maxReviewRounds",
+      "unmergedBranchTimeoutMinutes",
+      "verifyCommands.0",
+    ]);
+  });
+
+  it("reads older rows with the defaults for missing or invalid fields", () => {
+    expect(
+      parseRalphSettings({
+        openPullRequestEarly: true,
+        setupCommand: "pnpm i",
+        model: "sonnet",
+        manualLabels: [],
+      }),
+    ).toEqual({
+      ...DEFAULT_RALPH_SETTINGS,
+      openPullRequestEarly: true,
+      setupCommand: "pnpm i",
+      model: "sonnet",
+    });
+    expect(parseRalphSettings(null)).toEqual(DEFAULT_RALPH_SETTINGS);
+  });
+});
+
+describe("ralphSettingsFromInput", () => {
+  it("stores empty text and lists as none", () => {
+    expect(ralphSettingsFromInput(RalphSettingsInput.parse(validRalph))).toEqual({
+      ...DEFAULT_RALPH_SETTINGS,
+      verifyCommands: ["pnpm typecheck", "pnpm test"],
+      appendInstruction: "Keep commits small.",
+      disallowedTools: ["WebFetch"],
+      manualLabels: ["manual", "needs a person"],
+      setupCommand: "pnpm install --frozen-lockfile",
+    });
+    expect(
+      ralphSettingsFromInput(
+        RalphSettingsInput.parse({
+          ...validRalph,
+          fallbackModel: " sonnet ",
+          allowedTools: ["Read", "Bash(pnpm test:*)"],
+          epicCompletedState: "In Review",
+          historyRewrite: "never",
+        }),
+      ),
+    ).toMatchObject({
+      fallbackModel: "sonnet",
+      allowedTools: ["Read", "Bash(pnpm test:*)"],
+      epicCompletedState: "In Review",
+      historyRewrite: "never",
+    });
+  });
+});
+
+describe("RalphSettingsInput (cyralph settings)", () => {
+  it("rejects bad commands, tools, models, rounds and states", () => {
+    const result = RalphSettingsInput.safeParse({
+      ...validRalph,
+      verifyCommands: [" "],
+      fallbackModel: "not a model",
+      allowedTools: ["Read", "bad tool"],
+      maxReviewRounds: 21,
+      maxFixRounds: 1.5,
+      unmergedBranchTimeoutMinutes: 0,
+      historyRewrite: "sometimes",
+      epicCompletedState: "a,b",
+      appendInstruction: "x".repeat(10_001),
+    });
+    expect(fieldErrors(result.error!)).toEqual({
+      "verifyCommands.0": "Enter a command.",
+      fallbackModel: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
+      "allowedTools.1": "Enter a tool name or rule, e.g. Read or Bash(pnpm test:*).",
+      maxReviewRounds: "At most 20.",
+      maxFixRounds: "Enter a whole number.",
+      unmergedBranchTimeoutMinutes: "Enter at least 1 minute.",
+      historyRewrite: "Choose a policy.",
+      epicCompletedState: "Names can't contain commas or control characters.",
+      appendInstruction: "The instruction can be at most 10,000 characters.",
+    });
+  });
+});
+
+describe("epicCompletedTarget", () => {
+  it("names a state, and a state type falls back to the first state of that type", () => {
+    expect(epicCompletedTarget(null)).toBeNull();
+    expect(epicCompletedTarget(" ")).toBeNull();
+    expect(epicCompletedTarget("In Review")).toEqual({ name: "In Review" });
+    expect(epicCompletedTarget("Completed")).toEqual({ name: "Completed", type: "completed" });
+    expect(epicCompletedTarget("started")).toEqual({ name: "started", type: "started" });
+  });
+});
+
+describe("parseLines", () => {
+  it("splits lines, trimming and dropping blanks", () => {
+    expect(parseLines(" pnpm test \r\n\n pnpm lint")).toEqual(["pnpm test", "pnpm lint"]);
   });
 });

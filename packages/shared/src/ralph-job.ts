@@ -55,6 +55,14 @@ export const RalphJobSettings = z.object({
   model: z.string().min(1).max(200).nullable(),
   /** Run once in a fresh branch worktree (e.g. `pnpm install`). */
   setupCommand: z.string().min(1).max(4000).nullable(),
+  /** Used when `model` is overloaded; null for none. */
+  fallbackModel: z.string().min(1).max(200).nullable().default(null),
+  /** Appended to every story and request prompt; null for none. */
+  appendInstruction: z.string().min(1).max(10_000).nullable().default(null),
+  /** Agent SDK tools (or rules) the sessions are narrowed to; null: ralph's whole policy. */
+  allowedTools: z.array(z.string().min(1).max(500)).max(100).nullable().default(null),
+  /** Agent SDK tools (or rules) denied on top of ralph's policy; null for none. */
+  disallowedTools: z.array(z.string().min(1).max(500)).max(100).nullable().default(null),
 });
 export type RalphJobSettings = z.infer<typeof RalphJobSettings>;
 
@@ -112,8 +120,13 @@ export const RalphStoryPayload = RalphJobBase.extend({
   stories: z.array(RalphStoryListItem).max(500).default([]),
   /** The commit message, e.g. `feat(TOOL-83): <title>` (or `TOOL-83: <title>` for a single issue). */
   commitMessage: z.string().min(1).max(2000),
-  /** The PRD's `## Quality Gates` commands, run after the session. */
-  qualityGates: z.array(z.string().min(1).max(4000)).max(50),
+  /**
+   * The story's quality gates, run by the job after the session: the
+   * repository's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's.
+   */
+  qualityGates: z.array(z.string().min(1).max(4000)).max(100),
+  /** The PRD's `## Quality Gates` commands, shown in the prompt (those the job runs aren't repeated). */
+  prdQualityGates: z.array(z.string().min(1).max(4000)).max(50).default([]),
   /** The run's progress log so far. */
   progress: z.string().max(MAX_DOCUMENT_LENGTH),
   /** Why the previous attempt didn't complete; null on the first attempt. */
@@ -167,8 +180,8 @@ export const RalphDescribePrPayload = RalphJobBase.extend({
     )
     .max(500),
   progress: z.string().max(MAX_DOCUMENT_LENGTH),
-  /** The PRD's `## Quality Gates` commands every story passed (how the work was verified). */
-  qualityGates: z.array(z.string().min(1).max(4000)).max(50).default([]),
+  /** The quality gates every story passed (how the work was verified). */
+  qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
 });
 export type RalphDescribePrPayload = z.infer<typeof RalphDescribePrPayload>;
 

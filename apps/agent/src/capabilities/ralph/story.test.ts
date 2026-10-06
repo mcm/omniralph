@@ -134,7 +134,14 @@ describe("ralph.story", { timeout: 60_000 }, () => {
       repository: repo,
       branch,
       baseBranch: "main",
-      settings: { model: null, setupCommand: null },
+      settings: {
+        model: null,
+        setupCommand: null,
+        fallbackModel: null,
+        appendInstruction: null,
+        allowedTools: null,
+        disallowedTools: null,
+      },
       storyId: randomUUID(),
       attempt: 1,
       epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: PRD },
@@ -163,6 +170,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
       ],
       commitMessage: "feat(TOOL-91): Run a story",
       qualityGates: ["test -f feature.txt", "true"],
+      prdQualityGates: ["true"],
       progress: "# Ralph Progress Log\n",
       lastFeedback: null,
       guidance: [],
@@ -267,7 +275,14 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     });
     const out = await runStory(
       job({
-        settings: { model: "sonnet", setupCommand: null },
+        settings: {
+          model: "sonnet",
+          setupCommand: null,
+          fallbackModel: null,
+          appendInstruction: null,
+          allowedTools: null,
+          disallowedTools: null,
+        },
         epic: { identifier: "TOOL-91", title: "Run a story", kind: "single", url: null, prd: "" },
         commitMessage: "TOOL-91: Run a story",
       }),
@@ -279,6 +294,65 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(git(remote.bare, "log", "-1", "--format=%B", `refs/heads/${branch}`)).toBe(
       "TOOL-91: Run a story",
     );
+  });
+
+  it("passes the repository's prompt, model and tool settings to the session, which only narrow ralph's policy", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const out = await runStory(
+      job({
+        settings: {
+          model: "sonnet",
+          setupCommand: null,
+          fallbackModel: "haiku",
+          appendInstruction: "Always write a changelog entry.",
+          allowedTools: [
+            "Read",
+            "Edit",
+            "Bash(pnpm test:*)",
+            "Bash(pnpm lint)",
+            "mcp__docs__search",
+          ],
+          disallowedTools: ["WebFetch"],
+        },
+      }),
+      context(),
+      options(query),
+    );
+    expect(out.status).toBe("complete");
+    const [call] = calls;
+    expect(call!.prompt).toContain("Always write a changelog entry.");
+    // The job's gates are the orchestrator's checks; the PRD's own gate isn't repeated as the agent's.
+    expect(call!.prompt).toContain("### Checked by the Orchestrator");
+    expect(call!.prompt).toContain("- `test -f feature.txt`");
+    expect(call!.prompt).not.toContain("### Quality Gates");
+    expect(call!.options).toMatchObject({
+      model: "sonnet",
+      fallbackModel: "haiku",
+      tools: ["Read", "Edit", "Bash"],
+      allowedTools: ["Read", "Edit", "Bash(pnpm test:*)", "Bash(pnpm lint)", "mcp__docs__search"],
+      disallowedTools: ["WebFetch"],
+      // Only the listed calls run: nothing else is approved without asking, and nobody can be asked.
+      permissionMode: "dontAsk",
+      settingSources: ["project", "local"],
+    });
+    expect(call!.options.allowDangerouslySkipPermissions).toBeUndefined();
+  });
+
+  it("keeps ralph's whole policy when the repository restricts no tools", async () => {
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ status: "complete", summary: "Nothing to change.", followUps: [] });
+    });
+    await runStory(job(), context(), options(query));
+    expect(calls[0]!.options).toMatchObject({
+      tools: { type: "preset", preset: "claude_code" },
+      allowedTools: [],
+      disallowedTools: [],
+      permissionMode: "bypassPermissions",
+    });
+    expect(calls[0]!.options.fallbackModel).toBeUndefined();
   });
 
   it("fails the attempt with the gate's output and stashes the work when a gate fails", async () => {

@@ -167,6 +167,18 @@ describe("preparation blocks", () => {
     expect(epic.stories[0]?.status).toBe("open");
   });
 
+  it("treats the blocks as plain text with allowPreparation off", () => {
+    const description = `Deploy it.\n\n${fence}cyralph-prepare\ngit push origin HEAD:staging\n${fence}`;
+    const epic = childrenEpic(
+      issue(),
+      [child({ title: "Deploy", identifier: "ENG-41", labels: ["manual"], description })],
+      { manualLabels: ["manual"], allowPreparation: false },
+    );
+    expect(epic.stories[0]?.manual).toBe(true);
+    expect(epic.stories[0]).not.toHaveProperty("preparation");
+    expect(epic.stories[0]?.description).toContain("cyralph-prepare");
+  });
+
   it("leaves preparation unset for a manual story without a block", () => {
     const { manual } = manualStory(`Check the site by hand.\n\n${fence}sh\necho hi\n${fence}`);
     expect(manual?.manual).toBe(true);

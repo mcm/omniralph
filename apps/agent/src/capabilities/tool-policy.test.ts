@@ -8,7 +8,7 @@ import type { ToolPolicy } from "./index.js";
 import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph/index.js";
 import { DESCRIBE_PR_GIT_COMMANDS } from "./ralph/policy.js";
 import { REVIEW_TOOL_POLICY, reviewSessionProvider } from "./review.js";
-import { isReadOnlyCommand, sdkPermissions } from "./tool-policy.js";
+import { isReadOnlyCommand, narrowPermissions, ruleTool, sdkPermissions } from "./tool-policy.js";
 
 const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "omniralph-policy-")));
 const controller = new AbortController();
@@ -194,5 +194,59 @@ describe("sdkPermissions", () => {
   it("refuses to bypass permissions for a read-only policy", () => {
     const policy: ToolPolicy = { ...REVIEW_TOOL_POLICY, permissionMode: "bypassPermissions" };
     expect(() => sdkPermissions(policy)).toThrow(/write-capable/);
+  });
+});
+
+describe("narrowPermissions", () => {
+  const story = () => sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: true });
+  const describePr = () =>
+    sdkPermissions(RALPH_DESCRIBE_PR_TOOL_POLICY)({ cwd, allowExploration: true });
+
+  it("reads the tool of a permission rule", () => {
+    expect(ruleTool("Read")).toBe("Read");
+    expect(ruleTool("Bash(pnpm test:*)")).toBe("Bash");
+  });
+
+  it("leaves the permissions alone without repository tool settings", () => {
+    expect(narrowPermissions(story(), undefined)).toEqual(story());
+    expect(narrowPermissions(story(), { allowedTools: null, disallowedTools: [] })).toEqual(
+      story(),
+    );
+  });
+
+  it("adds the repository's disallowed tools to the policy's", () => {
+    const narrowed = narrowPermissions(describePr(), { disallowedTools: ["WebFetch", "Task"] });
+    expect(narrowed.disallowedTools).toEqual(
+      expect.arrayContaining([...describePr().disallowedTools!, "WebFetch", "Task"]),
+    );
+  });
+
+  it("can only take tools away from a policy with an explicit tool list", () => {
+    const base = describePr();
+    const narrowed = narrowPermissions(base, {
+      allowedTools: ["Read", "Write", "Edit", "Bash(rm -rf:*)", "Bash(git log:*)"],
+    });
+    // Write and Edit aren't the policy's, so they stay unavailable; Grep and Glob are taken away.
+    expect(narrowed.tools).toEqual(["Read", "Bash"]);
+    expect(narrowed.allowedTools).toEqual(["Read", "Bash(git log:*)"]);
+    expect(narrowed.permissionMode).toBe(base.permissionMode);
+    for (const tool of narrowed.tools as string[]) expect(base.tools).toContain(tool);
+    for (const rule of narrowed.allowedTools!) expect(base.allowedTools).toContain(rule);
+    expect(narrowed.hooks).toEqual(base.hooks);
+  });
+
+  it("stops a bypassing policy from approving anything the repository doesn't list", () => {
+    const narrowed = narrowPermissions(story(), { allowedTools: ["Read", "Bash(pnpm test:*)"] });
+    expect(narrowed).toMatchObject({
+      tools: ["Read", "Bash"],
+      allowedTools: ["Read", "Bash(pnpm test:*)"],
+      permissionMode: "dontAsk",
+    });
+    expect(narrowed.allowDangerouslySkipPermissions).toBeUndefined();
+  });
+
+  it("gives a session without tools none", () => {
+    const none = sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: false });
+    expect(narrowPermissions(none, { allowedTools: ["Read"] }).tools).toEqual([]);
   });
 });

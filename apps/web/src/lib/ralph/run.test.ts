@@ -1222,6 +1222,103 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       }
     });
 
+    describe("epicCompletedState", () => {
+      /** Runs `body` with the GitHub repository's `epicCompletedState` set. */
+      async function withEpicCompletedState(state: string | null, body: () => Promise<void>) {
+        const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
+          updateRepositoryRalphSettings(db, repoId, {
+            ralphEnabled: true,
+            linearTeamKeys: ["ENG"],
+            linearProjectNames: [],
+            linearLabels: [],
+            ralphSettings,
+          });
+        await settings({
+          ...DEFAULT_RALPH_SETTINGS,
+          setupCommand: "pnpm install",
+          epicCompletedState: state,
+        });
+        linear.workflowStates = [
+          { id: "s-todo", name: "Todo", type: "unstarted", position: 0 },
+          { id: "s-progress", name: "In Progress", type: "started", position: 1 },
+          { id: "s-review", name: "In Review", type: "started", position: 2 },
+          { id: "s-done", name: "Done", type: "completed", position: 3 },
+          { id: "s-shipped", name: "Shipped", type: "completed", position: 4 },
+        ];
+        try {
+          await body();
+        } finally {
+          await settings({ ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" });
+        }
+      }
+
+      const epicOf = (run: RalphRun) => linear.issues.get(run.linearIssueId)!;
+
+      it("moves the epic to the named state once the pull request is opened", async () => {
+        await withEpicCompletedState("in review", async () => {
+          const run = await finishedRun();
+          expect(epicOf(run).stateName).not.toBe("In Review");
+          await describePr(run.id);
+          expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+          expect(epicOf(run)).toMatchObject({ stateName: "In Review", stateType: "started" });
+        });
+      });
+
+      it("moves it to the first state of a type, even when the PR step failed", async () => {
+        await withEpicCompletedState("completed", async () => {
+          const run = await finishedRun();
+          await describePr(run.id, { jobError: "no title" });
+          expect((await getRun(db, run.id))?.status).toBe("waiting");
+          expect(epicOf(run)).toMatchObject({ stateName: "Done", stateType: "completed" });
+        });
+      });
+
+      it("moves it when nothing was committed and there is no pull request", async () => {
+        await withEpicCompletedState("Shipped", async () => {
+          const epic = linear.add({ identifier: "ENG-130", title: "Nothing to do" });
+          linear.add({ identifier: "ENG-131", title: "Already done", parentId: epic.id });
+          const run = await delegate(epic.id);
+          await work(run.id, {});
+          expect((await getRun(db, run.id))?.status).toBe("completed");
+          expect(epicOf(run)).toMatchObject({ stateName: "Shipped", stateType: "completed" });
+        });
+      });
+
+      it("logs a Linear failure without failing the run", async () => {
+        await withEpicCompletedState("In Review", async () => {
+          const run = await finishedRun();
+          linear.failures.set("setIssueState", new Error("Linear is down"));
+          const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+          try {
+            await describePr(run.id);
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining("Linear is down"));
+          } finally {
+            linear.failures.delete("setIssueState");
+            warn.mockRestore();
+          }
+          expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+          expect(epicOf(run).stateName).not.toBe("In Review");
+        });
+      });
+
+      it("leaves a single issue and an unset state alone", async () => {
+        await withEpicCompletedState("In Review", async () => {
+          const issue = linear.add({ identifier: "ENG-132", title: "One fix" });
+          const run = await delegate(issue.id);
+          await work(run.id, { commitSha: sha(30) });
+          await describePr(run.id);
+          expect((await getRun(db, run.id))?.status).toBe("completed");
+          expect(linear.stateChanges.filter((c) => c.target.name === "In Review")).toEqual([]);
+        });
+        await withEpicCompletedState(null, async () => {
+          const run = await finishedRun();
+          linear.stateChanges = [];
+          await describePr(run.id);
+          expect(linear.stateChanges).toEqual([]);
+        });
+      });
+    });
+
     it("waits with an error when the describe job fails, and a reply retries the PR step", async () => {
       const run = await finishedRun();
       await describePr(run.id, { jobError: "the session ended without a valid title and body" });

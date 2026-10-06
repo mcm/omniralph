@@ -141,6 +141,13 @@
       "when": 1791272369451,
       "tag": "0019_integration_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791297360179,
+      "tag": "0020_ralph_cyralph_settings",
+      "breakpoints": true
     }
   ]
 }

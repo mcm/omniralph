@@ -6,6 +6,7 @@ import {
   listRepositoryPinnedAgentIds,
   listReviewProfiles,
 } from "@omniralph/db";
+import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { z } from "zod";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -69,9 +70,7 @@ export default async function RepositorySettingsPage({
               linearTeamKeys: repository.linearTeamKeys,
               linearProjectNames: repository.linearProjectNames,
               linearLabels: repository.linearLabels,
-              openPullRequestEarly: repository.ralphSettings.openPullRequestEarly,
-              setupCommand: repository.ralphSettings.setupCommand ?? "",
-              model: repository.ralphSettings.model,
+              ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
               manualLabels: repositoryManualLabels(repository),
             }
           : null

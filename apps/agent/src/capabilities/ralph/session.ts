@@ -1,7 +1,7 @@
 import { query as sdkQuery, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryFn, TokenUsage } from "@omniralph/engine";
 import type { ToolPolicy } from "../index.js";
-import { sdkPermissions } from "../tool-policy.js";
+import { narrowPermissions, sdkPermissions, type ToolRestrictions } from "../tool-policy.js";
 
 /** A session that sends nothing (no message at all) for this long is aborted. */
 export const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;
@@ -22,6 +22,10 @@ export interface SessionRequest {
   /** JSON schema of the structured result (`outputFormat`). */
   outputSchema: Record<string, unknown>;
   model?: string;
+  /** Model used when `model` is overloaded. */
+  fallbackModel?: string;
+  /** The repository's `allowedTools`/`disallowedTools`: they only narrow `policy`. */
+  tools?: ToolRestrictions;
   /** Directories outside `cwd` the session may use (e.g. the progress log's). */
   additionalDirectories?: string[];
   /** Environment of the Claude Code process. */
@@ -71,8 +75,12 @@ function resultUsage(message: Extract<SDKMessage, { type: "result" }>): TokenUsa
 /** The SDK options of a ralph session; exported for tests. */
 export function sessionOptions(request: SessionRequest, abortController: AbortController): Options {
   return {
-    ...sdkPermissions(request.policy)({ cwd: request.cwd, allowExploration: true }),
+    ...narrowPermissions(
+      sdkPermissions(request.policy)({ cwd: request.cwd, allowExploration: true }),
+      request.tools,
+    ),
     model: request.model,
+    ...(request.fallbackModel && { fallbackModel: request.fallbackModel }),
     abortController,
     systemPrompt: { type: "preset", preset: "claude_code", append: request.systemAppend },
     outputFormat: { type: "json_schema", schema: request.outputSchema },

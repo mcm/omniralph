@@ -122,6 +122,9 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect(await listRalphRepositories(db)).toEqual([]);
 
     const settings = {
+      ...DEFAULT_RALPH_SETTINGS,
+      verifyCommands: ["pnpm test"],
+      epicCompletedState: "In Review",
       openPullRequestEarly: true,
       setupCommand: "pnpm install",
       model: "sonnet",

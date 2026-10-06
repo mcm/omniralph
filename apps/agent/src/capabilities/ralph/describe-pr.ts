@@ -112,6 +112,7 @@ export async function runDescribePr(
           systemAppend: PR_DESCRIPTION_SYSTEM_APPEND,
           outputSchema: PR_DESCRIPTION_SCHEMA,
           model: payload.settings.model ?? DEFAULT_STORY_MODEL,
+          ...(payload.settings.fallbackModel && { fallbackModel: payload.settings.fallbackModel }),
           env: sessionEnv(env),
           signal: ctx.signal,
           ...(options.idleTimeoutMs !== undefined && { idleTimeoutMs: options.idleTimeoutMs }),

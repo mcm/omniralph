@@ -19,6 +19,7 @@ import {
   parsePrd,
   singleIssueEpic,
   type Epic,
+  type EpicOptions,
   type ParsedPrd,
 } from "@omniralph/ralph";
 import { getRepository, type Database } from "@omniralph/db";
@@ -43,6 +44,11 @@ export interface LoadEpicOptions {
    */
   manualLabels?: readonly string[] | ((root: IssueSummary) => readonly string[]);
   /**
+   * Read manual stories' ```cyralph-prepare blocks (default); off, they're
+   * plain text. A function gets the epic's root issue.
+   */
+  allowPreparation?: boolean | ((root: IssueSummary) => boolean);
+  /**
    * Create the PRD stories a PRD issue with sub-issues is missing. Only for an
    * issue that was never run: a run's epic is what people curate afterwards.
    */
@@ -60,6 +66,13 @@ export function repositoryManualLabels(repository: {
   return labels.length > 0 ? [...labels] : [...DEFAULT_MANUAL_LABELS];
 }
 
+/** Whether a repository offers manual stories' preparation (`ralph_settings.allowPreparation`). */
+export function repositoryAllowsPreparation(repository: {
+  ralphSettings: { allowPreparation?: boolean | null };
+}): boolean {
+  return repository.ralphSettings.allowPreparation !== false;
+}
+
 /** The manual labels of a run's repository (`manual` when the repository is gone). */
 export async function runManualLabels(
   db: Database,
@@ -69,10 +82,30 @@ export async function runManualLabels(
   return repository ? repositoryManualLabels(repository) : [...DEFAULT_MANUAL_LABELS];
 }
 
-function manualLabelsFor(options: LoadEpicOptions, root: IssueSummary): readonly string[] {
+/** How a run's repository reads its epic: the manual labels and whether preparation is offered. */
+export async function runEpicOptions(
+  db: Database,
+  run: { repositoryId: string },
+): Promise<Pick<LoadEpicOptions, "manualLabels" | "allowPreparation">> {
+  const repository = await getRepository(db, run.repositoryId);
+  if (!repository) return { manualLabels: [...DEFAULT_MANUAL_LABELS] };
+  return {
+    manualLabels: repositoryManualLabels(repository),
+    allowPreparation: repositoryAllowsPreparation(repository),
+  };
+}
+
+function epicOptionsFor(options: LoadEpicOptions, root: IssueSummary): Required<EpicOptions> {
   const labels =
     typeof options.manualLabels === "function" ? options.manualLabels(root) : options.manualLabels;
-  return labels?.length ? labels : DEFAULT_MANUAL_LABELS;
+  const allowPreparation =
+    typeof options.allowPreparation === "function"
+      ? options.allowPreparation(root)
+      : options.allowPreparation;
+  return {
+    manualLabels: labels?.length ? labels : DEFAULT_MANUAL_LABELS,
+    allowPreparation: allowPreparation !== false,
+  };
 }
 
 /** The children epic of `parent`: its sub-issues with their blockers. */
@@ -80,12 +113,12 @@ async function loadChildrenEpic(
   linear: LinearGateway,
   parent: IssueSummary,
   children: readonly IssueSummary[],
-  manualLabels: readonly string[],
+  options: EpicOptions,
 ): Promise<Epic> {
   const stories = await Promise.all(
     children.map(async (issue) => ({ issue, blockers: await linear.getBlockers(issue.id) })),
   );
-  return childrenEpic(parent, stories, { manualLabels });
+  return childrenEpic(parent, stories, options);
 }
 
 /**
@@ -146,17 +179,17 @@ export async function loadEpic(
 
   const children = await linear.getChildren(issue.id);
   if (children.length > 0) {
-    const manualLabels = manualLabelsFor(options, issue);
+    const epicOptions = epicOptionsFor(options, issue);
     const prd = options.completePrd ? parsePrd(issue.description) : null;
     const created = prd
-      ? await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual", children)
+      ? await materializePrd(linear, issue, prd, epicOptions.manualLabels[0] ?? "manual", children)
       : [];
     if (created.length > 0) {
       const all = await linear.getChildren(issue.id);
-      const epic = await loadChildrenEpic(linear, issue, all, manualLabels);
+      const epic = await loadChildrenEpic(linear, issue, all, epicOptions);
       return { epic, root: issue, kind: "prd", materialized: created.length };
     }
-    const epic = await loadChildrenEpic(linear, issue, children, manualLabels);
+    const epic = await loadChildrenEpic(linear, issue, children, epicOptions);
     return { epic, root: issue, kind: "children", materialized: 0 };
   }
 
@@ -164,19 +197,24 @@ export async function loadEpic(
   if (issue.parentId) {
     const parent = await linear.getIssue(issue.parentId);
     const siblings = await linear.getChildren(parent.id);
-    const epic = await loadChildrenEpic(linear, parent, siblings, manualLabelsFor(options, parent));
+    const epic = await loadChildrenEpic(linear, parent, siblings, epicOptionsFor(options, parent));
     return { epic, root: parent, kind: "children", focusStoryId: issue.id, materialized: 0 };
   }
 
   const prd = parsePrd(issue.description);
   if (prd) {
-    const manualLabels = manualLabelsFor(options, issue);
-    const created = await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual");
+    const epicOptions = epicOptionsFor(options, issue);
+    const created = await materializePrd(
+      linear,
+      issue,
+      prd,
+      epicOptions.manualLabels[0] ?? "manual",
+    );
     const epic = await loadChildrenEpic(
       linear,
       issue,
       await linear.getChildren(issue.id),
-      manualLabels,
+      epicOptions,
     );
     return { epic, root: issue, kind: "prd", materialized: created.length };
   }
@@ -196,5 +234,5 @@ export async function reloadEpic(
   const issue = await linear.getIssue(run.linearIssueId);
   if (run.kind === "single") return singleIssueEpic(issue);
   const children = await linear.getChildren(issue.id);
-  return loadChildrenEpic(linear, issue, children, manualLabelsFor(options, issue));
+  return loadChildrenEpic(linear, issue, children, epicOptionsFor(options, issue));
 }
