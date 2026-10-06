@@ -221,7 +221,13 @@ export async function updateRun(
   return row ?? null;
 }
 
-/** Appends a reply from the agent session to the run's guidance. Returns null if the run is gone. */
+/** Replies kept as a run's guidance (the latest). */
+export const MAX_RUN_GUIDANCE = 10;
+
+/**
+ * Appends a reply from the agent session to the run's guidance, keeping the
+ * latest `MAX_RUN_GUIDANCE`. Returns null if the run is gone.
+ */
 export async function appendGuidance(
   db: Executor,
   runId: string,
@@ -229,10 +235,13 @@ export async function appendGuidance(
   at = new Date(),
 ): Promise<RalphRun | null> {
   const entry: RalphGuidance = { text, at: at.toISOString() };
+  const appended = sql`(${ralphRuns.guidance} || ${JSON.stringify([entry])}::jsonb)`;
   const [row] = await db
     .update(ralphRuns)
     .set({
-      guidance: sql`${ralphRuns.guidance} || ${JSON.stringify([entry])}::jsonb`,
+      guidance: sql`(select coalesce(jsonb_agg(t.e order by t.i), '[]'::jsonb)
+        from jsonb_array_elements(${appended}) with ordinality as t(e, i)
+        where t.i > jsonb_array_length(${appended}) - ${MAX_RUN_GUIDANCE}::int)`,
       updatedAt: new Date(),
     })
     .where(eq(ralphRuns.id, runId))

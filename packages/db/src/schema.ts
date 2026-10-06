@@ -640,6 +640,38 @@ export interface RalphGuidance {
   at: string;
 }
 
+/** The `cyralph-prepare` question about one manual story (one at a time). */
+export interface RalphPreparationRequest {
+  /** Linear issue ID of the manual story. */
+  storyIssueId: string;
+  identifier: string;
+  title: string;
+  /** SHA-256 of the commands shown; the job runs nothing if they changed. */
+  commandsHash: string;
+  /** The branch's last story commit shown (null: none yet); the job runs nothing if HEAD moved. */
+  headSha: string | null;
+  /** ISO timestamp. */
+  askedAt: string;
+  /** "Run it" (approved) or "Not yet" (the question stays open); unset until answered. */
+  answer?: "run" | "later";
+  answeredAt?: string;
+  /** The `ralph.prepare` job running the approved commands, until its outcome is applied. */
+  jobId?: string;
+}
+
+/** Preparation of a run's manual stories (cyralph's `preparation*` session fields). */
+export interface RalphPreparation {
+  request: RalphPreparationRequest | null;
+  /** Story issue ID -> how its preparation was settled; such stories aren't asked about again. */
+  handled: Record<string, { how: "prepared" | "myself"; at: string; headSha?: string }>;
+  /** `rerun preparation`: the next question is about the earliest open one, even if handled. */
+  rerun?: boolean;
+  /** The branch HEAD a `ralph.prepare` job last reported (ISO `at` orders it against story commits). */
+  head?: { sha: string; at: string };
+  /** Leads the next question (why it's asked again: a failure, or a stale approval). */
+  lead?: string;
+}
+
 /**
  * A delegated Linear issue being built story by story (the ralph loop). The
  * control panel owns this state; every change goes through a row lock
@@ -677,8 +709,8 @@ export const ralphRuns = pgTable(
     progress: text("progress").notNull().default(""),
     /** The open Linear elicitation the run waits on an answer to. */
     pendingElicitation: jsonb("pending_elicitation").$type<Record<string, unknown>>(),
-    /** An approved or running `cyralph-prepare` preparation. */
-    preparation: jsonb("preparation").$type<Record<string, unknown>>(),
+    /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
+    preparation: jsonb("preparation").$type<RalphPreparation>(),
     /** Jobs enqueued for the run so far. */
     iterations: integer("iterations").notNull().default(0),
     error: text("error"),

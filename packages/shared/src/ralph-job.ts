@@ -190,8 +190,12 @@ export const RalphPreparePayload = RalphJobBase.extend({
   commands: z.array(z.string().min(1).max(4000)).min(1).max(50),
   /** SHA-256 (hex) of the commands as approved. */
   commandsHash: z.string().regex(/^[0-9a-f]{64}$/),
-  /** Worktree HEAD when they were approved; nothing runs if HEAD moved since. */
-  approvedHeadSha: CommitSha,
+  /**
+   * The branch's HEAD (its last story commit) the approval is bound to; nothing
+   * runs if the worktree HEAD differs. Null: no story was committed yet, so
+   * HEAD must have no commits on top of `origin/<baseBranch>`.
+   */
+  approvedHeadSha: CommitSha.nullable(),
 });
 export type RalphPreparePayload = z.infer<typeof RalphPreparePayload>;
 

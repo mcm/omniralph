@@ -225,6 +225,7 @@ export {
 export {
   ACTIVE_RALPH_RUN_STATUSES,
   appendGuidance,
+  MAX_RUN_GUIDANCE,
   appendProgress,
   createRun,
   getRun,
