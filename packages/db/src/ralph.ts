@@ -681,6 +681,32 @@ export async function listLanes(db: Executor, runId: string): Promise<RalphLane[
     .orderBy(asc(ralphLanes.createdAt), asc(ralphLanes.id));
 }
 
+/**
+ * The ralph lane whose PR/MR is `prNumber` in `repositoryId`, with its run:
+ * the newest run's, since a re-delegation copies the lanes (cyralph keeps the
+ * newest session of a PR). Lanes whose PR/MR was seen closed are left out.
+ */
+export async function findLaneByPullRequest(
+  db: Executor,
+  repositoryId: string,
+  prNumber: number,
+): Promise<{ lane: RalphLane; run: RalphRun } | null> {
+  const [row] = await db
+    .select({ lane: ralphLanes, run: ralphRuns })
+    .from(ralphLanes)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
+    .where(
+      and(
+        eq(ralphLanes.repositoryId, repositoryId),
+        eq(ralphLanes.prNumber, prNumber),
+        eq(ralphLanes.prClosed, false),
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
 /** Lane columns the orchestrator changes (the run and repository are fixed). */
 export type RalphLaneUpdate = Partial<
   Omit<typeof ralphLanes.$inferInsert, "id" | "runId" | "repositoryId" | "createdAt" | "updatedAt">

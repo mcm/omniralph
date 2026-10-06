@@ -2,12 +2,25 @@ import "server-only";
 import {
   findFindingByScmComment,
   type Database,
+  type FindingRow,
+  type RalphLane,
+  type RalphRun,
   type Repository,
   type ScmConnection,
 } from "@omniralph/db";
+import { buildPullRequestCommentRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
+import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import type { LinearGateway } from "@/lib/linear/gateway";
+import {
+  addPullRequestCommentRequest,
+  findRalphPullRequest,
+  type PullRequestRequestDelivery,
+} from "@/lib/ralph/pull-request-requests";
+import type { RalphDeps } from "@/lib/ralph/run";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
@@ -25,6 +38,10 @@ export interface BotCommandContext {
   handle: string;
   comment: CommentEvent;
   command: BotCommand;
+  /** The code-host adapter of a connection (ralph lanes); default `scmAdapterFor`. */
+  adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
+  /** The Linear workspace (ralph requests); default: the connected one. */
+  linear?: () => Promise<LinearGateway>;
 }
 
 export type BotCommandOutcome =
@@ -35,13 +52,19 @@ export type BotCommandOutcome =
   | { status: "dismiss_conflict"; findingId: string }
   | { status: "reply_enqueued"; jobId: string }
   | { status: "not_in_finding_thread" }
+  /** `@bot fix` or a request on a ralph PR/MR, added to its run. */
+  | { status: "ralph_request"; runId: string; delivery: PullRequestRequestDelivery }
+  /** The ralph run is over (failed, or a newer run of the issue is under way). */
+  | { status: "ralph_unavailable"; runId: string }
+  /** `@bot fix` on a PR/MR ralph didn't open. */
+  | { status: "not_ralph" }
   | { status: "help" };
 
 /**
  * Commands that change state need write access to the repository. Questions
  * in a finding's thread (which spend tokens) are checked where they're handled.
  */
-const PRIVILEGED: ReadonlySet<BotCommand["kind"]> = new Set(["review", "dismiss"]);
+const PRIVILEGED: ReadonlySet<BotCommand["kind"]> = new Set(["review", "dismiss", "fix"]);
 
 /** The command list, in code spans so posting it can't trigger a command. */
 function helpText(handle: string): string {
@@ -52,6 +75,7 @@ function helpText(handle: string): string {
     `- ${cmd("review")}: review the whole diff again for new issues (optionally ${cmd("review quick")}, ${cmd("review standard")} or ${cmd("review deep")}).`,
     `- ${cmd("review fresh")}: review the whole diff from scratch, raising issues again even if they're already open (also with a profile, e.g. ${cmd("review fresh deep")}).`,
     `- ${cmd("dismiss [reason]")} in one of my finding's threads: dismiss the finding (reasons: false positive, won't fix, not relevant, other).`,
+    `- ${cmd("fix [what to change]")} on a pull/merge request ralph opened: ralph makes the change and pushes it (in one of my finding's threads, it fixes that finding).`,
     `- Mention me with a question in a finding's thread and I'll answer it.`,
   ].join("\n");
 }
@@ -64,8 +88,10 @@ const PROFILE_NAMES: Record<string, string> = {
 
 /**
  * Runs a `@bot` command from a PR/MR comment and replies in the comment's
- * thread (or the conversation). `review`, `dismiss` and questions in a
- * finding's thread need write access to the repository
+ * thread (or the conversation). On a PR/MR ralph opened, `@bot fix [text]`
+ * and other text outside finding threads become requests for its ralph run
+ * (`requestRalph`). `review`, `dismiss`, `fix`, questions in a finding's
+ * thread and ralph requests need write access to the repository
  * (`ScmAdapter.hasWriteAccess`); others get a polite refusal.
  * Every reply goes through the output sanitizer.
  */
@@ -74,10 +100,10 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
   const repo: RepoRef = { fullPath: repository.fullPath, externalId: repository.externalId };
   const author = comment.author.username;
   const webUrl = repositoryWebUrl(repository.provider, connection.baseUrl, repository.fullPath);
-  const respond = async (text: string) => {
+  const respond = async (text: string, linkHosts: readonly string[] = []) => {
     const body = sanitizeCapped(
       text,
-      { allowedHosts: [new URL(webUrl).hostname], author },
+      { allowedHosts: [new URL(webUrl).hostname, ...linkHosts], author },
       MAX_BODY_CHARS,
     );
     if (comment.replyTo.kind === "thread") {
@@ -105,7 +131,74 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       commentIds: comment.threadIds,
     });
 
+  const ralphLane = () => findRalphPullRequest({ db }, repository.id, comment.number);
+  const term = (
+    repository.provider === "gitlab" ? "merge request" : "pull request"
+  ) satisfies ChangeRequestWord;
+
+  /** Hands a request to the PR/MR's ralph run and says so in the thread, with a link to the Linear issue. */
+  const requestRalph = async (
+    found: { lane: RalphLane; run: RalphRun },
+    text: string | null,
+    finding: FindingRow | null,
+  ): Promise<BotCommandOutcome> => {
+    const deps: RalphDeps = {
+      db,
+      dispatcher,
+      linear: await (ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db })))(),
+      adapterFor: ctx.adapterFor ?? scmAdapterFor,
+    };
+    const request = buildPullRequestCommentRequest({
+      author,
+      text,
+      finding,
+      prNumber: comment.number,
+      prUrl: found.lane.prUrl ?? "",
+      branch: found.lane.branch,
+      term,
+    });
+    const result = await addPullRequestCommentRequest(deps, found, {
+      text: request,
+      author,
+      term,
+    });
+    const { run } = result;
+    const issue = run.linearUrl
+      ? `[${run.linearIdentifier}](${run.linearUrl})`
+      : `**${run.linearIdentifier}**`;
+    const hosts = run.linearUrl ? [new URL(run.linearUrl).hostname] : [];
+    if (result.status === "run_over") {
+      await respond(
+        `Sorry @${author}, ralph's run of ${issue} is over, so I can't work on this ${term}. Delegate ${run.linearIdentifier} to me in Linear again to pick it back up.`,
+        hosts,
+      );
+      return { status: "ralph_unavailable", runId: run.id };
+    }
+    const when =
+      result.status === "queued"
+        ? " once its current step finishes"
+        : result.status === "live"
+          ? " right away"
+          : "";
+    await respond(
+      `On it, @${author}: I passed this to ralph's run of ${issue}, which will work on it${when} and push the changes here. Follow along in Linear.`,
+      hosts,
+    );
+    return { status: "ralph_request", runId: run.id, delivery: result.status };
+  };
+
   switch (command.kind) {
+    case "fix": {
+      const found = await ralphLane();
+      if (!found || !repository.ralphEnabled) {
+        await respond(
+          `Sorry @${author}, ${inlineCode(`@${handle} fix`)} only works on ${term}s that ralph opened.`,
+        );
+        return { status: "not_ralph" };
+      }
+      const thread = await inThread();
+      return requestRalph(found, command.text, thread?.finding ?? null);
+    }
     case "review": {
       const cr = await adapter.getChangeRequest(repo, comment.number);
       if (cr.state !== "open") {
@@ -186,6 +279,14 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     case "question": {
       const found = await inThread();
       if (!found) {
+        // Outside finding threads on a ralph PR/MR: a request for ralph.
+        const ralph = repository.ralphEnabled ? await ralphLane() : null;
+        if (ralph) {
+          if (!(await adapter.hasWriteAccess(repo, author))) {
+            return refuse("ask ralph for changes");
+          }
+          return requestRalph(ralph, command.text, null);
+        }
         await respond(helpText(handle));
         return { status: "help" };
       }

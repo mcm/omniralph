@@ -258,6 +258,7 @@ export {
   upsertStories,
   copyLanes,
   ensureLane,
+  findLaneByPullRequest,
   getLane,
   getLaneByRepository,
   getMainLane,

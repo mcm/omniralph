@@ -11,6 +11,7 @@ import {
   type Job,
 } from "@omniralph/db";
 import { ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
+import { onReviewForRalph } from "@/lib/ralph/jobs";
 import { postFailureNote, postReview } from "./post";
 import { supersedeEarlierFindings } from "./supersede";
 
@@ -64,7 +65,8 @@ export function parseReviewResult(result: unknown): ReviewJobResult | null {
 /**
  * For a `completed` review job: persists the review and its findings (once),
  * then posts it to the PR/MR (once). A `fresh` review then supersedes the
- * earlier open findings it raised again. Safe to call again for a replayed
+ * earlier open findings it raised again, and a ralph PR/MR's open findings
+ * go back to its run (`onReviewForRalph`, at most once per review). Safe to call again for a replayed
  * result; that also retries a post that failed before.
  */
 export async function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
@@ -90,6 +92,8 @@ export async function onReviewJobCompleted(db: Database, job: Job): Promise<void
   });
   await postReview(db, { reviewId: payload.reviewId, payload, result });
   if (payload.mode === "fresh") await supersedeEarlierFindings(db, payload.reviewId);
+  // A ralph PR/MR: the open findings may go back to its run as a request.
+  await onReviewForRalph(db, payload.reviewId);
 }
 
 /** A review job that ended `canceled` (e.g. superseded by a newer push). */

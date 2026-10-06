@@ -95,7 +95,8 @@ code-host and Linear API call for both.
    `@omniralph review [quick|standard|deep]` to re-review for new issues,
    `@omniralph review fresh [quick|standard|deep]` to re-review from scratch (matching open
    findings are superseded), `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
-   or ask a question there. Admins can also use **Re-run** on a review's page or history row.
+   or ask a question there. On PRs/MRs ralph opened, `@omniralph fix [text]` (or any other
+   request outside finding threads) has ralph make the change. Admins can also use **Re-run** on a review's page or history row.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
    Integrations**, enable ralph and its Linear routing on a repository and the `ralph` capability
    on an agent, then delegate an epic to the app → [docs/linear.md](docs/linear.md). Runs show up

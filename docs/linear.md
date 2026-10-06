@@ -249,6 +249,32 @@ epic as context. The mention's text (without a leading `@name`) is the request.
   session."); one whose run waits is added to that run as a request.
 - A mention without a request does nothing.
 
+### Reviews and `@bot` requests on ralph PRs/MRs
+
+Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop):
+
+- **Its own reviews.** When an Omniralph review (`review.run`) of a run's PR/MR completes against
+  the PR/MR's current head, its open findings (not dismissed) become one request on that lane:
+  each finding's `path:line`, severity, title, body (up to 1,500 characters) and suggested
+  change, at most 25 of them. The agent fixes the ones that are right, runs the quality gates,
+  commits and pushes the branch, and never replies to or resolves the threads. Each review is
+  acted on at most once; a review of an older head is recorded and skipped, and one without open
+  findings does nothing. After **Max review rounds** (`maxReviewRounds`, default 3) the session
+  says "Omniralph reviewed `<url>` again. I've already worked through N of its reviews on this
+  pull request, so I'm leaving this one for a person." Turn it off with **Fix review findings**
+  (`respondToReviews`). A stopped or failed run is left alone; a completed one reopens.
+- **Delivery.** If a `ralph.request` job is working in that lane right now, the request is passed
+  to its live session ("… Passing it to the agent that's working right now."). Otherwise it's a
+  pending request ("… Working through it.", or "… I'll work through it as soon as the current
+  step finishes."), run as a `ralph.request` job once nothing else runs. A running story agent
+  never gets it: story agents don't push, so it waits for the story loop to finish.
+- **People's requests.** On a ralph PR/MR, from users with write access, `@omniralph fix [text]`
+  (anywhere; in a finding's thread it includes that finding) and any other `@omniralph` text
+  outside finding threads become requests on that lane, delivered the same way; a stopped or
+  finished run resumes. The bot replies in the thread with a link to the Linear issue.
+  `review`, `review fresh`, `dismiss`, `help` and questions in finding threads work as before. On
+  PRs/MRs ralph didn't open, `@omniralph fix` replies that it only works on ralph PRs/MRs.
+
 ### Attachments
 
 Files uploaded to Linear (pasted screenshots, mockups, PDFs: `https://uploads.linear.app/...`

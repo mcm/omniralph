@@ -71,6 +71,13 @@ request only on the agent holding its files (`request_agent_id`), which the job'
 decides. A `pre-push` hook in the agent's repository cache keeps a branch worktree to its own
 branch: a guardrail, not a boundary, since sessions bypass permissions.
 
+PR/MR follow-up adds requests from the code host without new triggers: the `review.run` outcome
+handler hands a completed review of a ralph lane's PR/MR to `respondToReview` (at most once per
+review, via `ralph_lanes.handled_review_ids`, capped by `review_rounds`), and `@bot fix` / `@bot`
+comments on a ralph PR/MR add a request to that lane. Either goes to the lane's running
+`ralph.request` job through the live-message path, or stays pending for the next request job;
+story jobs never get them, because story agents don't push.
+
 ### The sticky agent
 
 A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the

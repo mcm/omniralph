@@ -9,8 +9,11 @@
  * - `@bot dismiss [reason]` in a finding's thread: dismisses the finding. The
  *   reason may start with `false positive` (the default), `won't fix`,
  *   `not relevant` or `other`; the rest is kept as the note.
+ * - `@bot fix [text]` on a PR/MR ralph opened: ralph makes the change (in a
+ *   finding's thread, fixes that finding) and pushes it.
  * - `@bot help` (or a bare mention): lists the commands.
  * - Anything else is a question; in a finding's thread the agent answers it.
+ *   Outside finding threads on a ralph PR/MR it is a request for ralph.
  *
  * Commands are case-insensitive. Mentions inside code (fenced blocks or
  * inline code), quoted lines (`>`) and HTML comments don't count, so quoting
@@ -24,12 +27,15 @@ export const COMMAND_PROFILES = ["quick", "standard", "deep"] as const;
 export type CommandProfile = (typeof COMMAND_PROFILES)[number];
 /** Longest dismissal note kept from `@bot dismiss` (the control panel's limit). */
 export const MAX_DISMISS_NOTE_LENGTH = 1000;
+/** Longest request kept from `@bot fix [text]`. */
+export const MAX_FIX_TEXT_LENGTH = 4000;
 
 export type DismissReason = "false_positive" | "wont_fix" | "not_relevant" | "other";
 
 export type BotCommand =
   | { kind: "review"; fresh: boolean; profileId: CommandProfile | null }
   | { kind: "dismiss"; reason: DismissReason; note: string | null }
+  | { kind: "fix"; text: string | null }
   | { kind: "help" }
   | { kind: "question"; text: string };
 
@@ -117,6 +123,20 @@ function dismissCommand(args: string): BotCommand {
   return { kind: "dismiss", reason, note: note || null };
 }
 
+/**
+ * `@bot fix [text]`: the text after `fix`, taken from the comment as written
+ * (code included) when the command is found there, else from its prose.
+ */
+function fixCommand(text: string, handle: string, proseRest: string): BotCommand {
+  const raw = new RegExp(
+    `(^|[^\\w@./-])@${escapeRegExp(handle)}(?:\\[bot\\])?\\s+fix(?![\\w-])[.,:;!?]*`,
+    "i",
+  ).exec(text.replace(/\r\n?/g, "\n"));
+  const after = raw ? text.replace(/\r\n?/g, "\n").slice(raw.index + raw[0].length) : proseRest;
+  const request = after.trim().slice(0, MAX_FIX_TEXT_LENGTH).trim();
+  return { kind: "fix", text: request || null };
+}
+
 /** Splits off the first word, ignoring trailing punctuation (`review.`, `deep!`). */
 function firstWord(text: string): { word: string; rest: string } {
   const match = /^(\S+)([\s\S]*)$/.exec(text.trimStart());
@@ -150,6 +170,8 @@ export function parseBotCommand(text: string, handle: string): BotCommand | null
     }
   } else if (word === "dismiss") {
     return dismissCommand(rest);
+  } else if (word === "fix") {
+    return fixCommand(text, handle, rest);
   }
   const question = text.trim().slice(0, MAX_REPLY_QUESTION_LENGTH);
   return { kind: "question", text: question };

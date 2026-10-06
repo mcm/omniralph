@@ -4,6 +4,7 @@ import {
   botHandle,
   isOwnComment,
   MAX_DISMISS_NOTE_LENGTH,
+  MAX_FIX_TEXT_LENGTH,
   parseBotCommand,
   type BotCommand,
 } from "./commands";
@@ -118,6 +119,32 @@ describe("parseBotCommand", () => {
     const command = parse(`@omniralph dismiss ${"x".repeat(MAX_DISMISS_NOTE_LENGTH + 100)}`);
     expect(command).toMatchObject({ kind: "dismiss" });
     expect((command as { note: string }).note).toHaveLength(MAX_DISMISS_NOTE_LENGTH);
+  });
+
+  it("parses fix with and without a request, keeping code in the request", () => {
+    const cases: [string, BotCommand][] = [
+      ["@omniralph fix", { kind: "fix", text: null }],
+      ["@omniralph fix.", { kind: "fix", text: null }],
+      ["@OmniRalph FIX this please", { kind: "fix", text: "this please" }],
+      ["@omniralph fix: rename it", { kind: "fix", text: "rename it" }],
+      [
+        "Hmm. @omniralph fix rename `foo()` to `bar()`\n\n```ts\nbar();\n```",
+        { kind: "fix", text: "rename `foo()` to `bar()`\n\n```ts\nbar();\n```" },
+      ],
+      ["@omniralph[bot] fix the typo", { kind: "fix", text: "the typo" }],
+    ];
+    for (const [text, expected] of cases) expect(parse(text), text).toEqual(expected);
+    // `fixes` and `fix-up` aren't the command.
+    expect(parse("@omniralph fixes are welcome")).toMatchObject({ kind: "question" });
+    expect(parse("@omniralph fix-up commits")).toMatchObject({ kind: "question" });
+    // A quoted or code `@omniralph fix` isn't one.
+    expect(parse("> @omniralph fix\nok")).toBeNull();
+    expect(parse("`@omniralph fix`")).toBeNull();
+  });
+
+  it("caps the fix request", () => {
+    const command = parse(`@omniralph fix ${"x".repeat(MAX_FIX_TEXT_LENGTH + 50)}`);
+    expect(command).toEqual({ kind: "fix", text: "x".repeat(MAX_FIX_TEXT_LENGTH) });
   });
 
   it("treats a bare mention as help", () => {
