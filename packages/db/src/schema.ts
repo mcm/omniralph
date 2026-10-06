@@ -888,7 +888,7 @@ export const ralphLanes = pgTable(
     mergeSha: text("merge_sha"),
     /** Omniralph reviews acted on for this PR/MR (capped by `maxReviewRounds`). */
     reviewRounds: integer("review_rounds").notNull().default(0),
-    /** Reviews (job IDs) already seen: acted on, skipped as stale, or over the round limit. */
+    /** Reviews (`reviews.id`) already seen: acted on, skipped as stale, or over the round limit. */
     handledReviewIds: jsonb("handled_review_ids").$type<string[]>().notNull().default([]),
     /** Failed CI runs acted on for this PR/MR (capped by `maxFixRounds`). */
     ciFixRounds: integer("ci_fix_rounds").notNull().default(0),

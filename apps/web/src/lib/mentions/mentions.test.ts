@@ -4,13 +4,20 @@ import {
   connectRepository,
   createDb,
   createReview,
+  createRun,
   feedback,
   findings,
   getJob,
+  getMainLane,
   jobs,
+  listPendingRequests,
+  ralphRuns,
   reviews,
   runMigrations,
+  updateLane,
+  updateRepositoryRalphSettings,
   upsertScmConnection,
+  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
 } from "@omniralph/db";
@@ -24,6 +31,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
@@ -114,6 +122,7 @@ const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   sends: [] as { topic: string; payload: unknown }[],
   scm: undefined as unknown as ReturnType<typeof fakeAdapter>,
+  linear: undefined as unknown as FakeLinearGateway,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
@@ -176,6 +185,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
 
   beforeEach(() => {
     state.scm = fakeAdapter();
+    state.linear = new FakeLinearGateway();
     state.sends.length = 0;
     deferred = [];
   });
@@ -204,6 +214,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         deferred.push(task());
       },
       handle: "omniralph",
+      linear: async () => state.linear,
     });
     await Promise.all(deferred);
     return (await res.json()) as Record<string, unknown>;
@@ -562,6 +573,155 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         .returning();
       await onReplyJobCompleted(db, completed!);
       expect(state.scm.calls.replyToComment[0]!.body).toContain("reply budget (20,000 tokens)");
+    });
+  });
+
+  describe("on ralph pull requests", () => {
+    let runSeq = 0;
+
+    /**
+     * PR `number` opened by a ralph run of ENG-1 whose story job is queued
+     * (so requests wait for it, and nothing else runs).
+     */
+    async function ralphPr(number: number) {
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: DEFAULT_RALPH_SETTINGS,
+      });
+      runSeq += 1;
+      const { run } = await createRun(db, {
+        linearIssueId: `issue-ralph-${runSeq}`,
+        linearIdentifier: "ENG-1",
+        linearUrl: "https://linear.app/acme/issue/ENG-1",
+        linearAgentSessionId: `session-ralph-${runSeq}`,
+        kind: "children",
+        repositoryId: repoId,
+        branch: "eng-1-epic",
+        baseBranch: "main",
+        status: "running",
+      });
+      const lane = (await getMainLane(db, run))!;
+      await updateLane(db, lane.id, {
+        prNumber: number,
+        prUrl: `https://github.com/acme/app/pull/${number}`,
+      });
+      await db.insert(jobs).values({
+        capability: "ralph",
+        type: "ralph.story",
+        ralphRunId: run.id,
+        repositoryId: repoId,
+      });
+      return run;
+    }
+
+    const pending = async (runId: string) =>
+      (await listPendingRequests(db, runId)).map((r) => ({ text: r.text, author: r.author }));
+
+    it("@bot fix [text] becomes a request on the lane, with a link to the Linear issue", async () => {
+      const { number } = await reviewedPr();
+      const run = await ralphPr(number);
+      const res = await conversationComment(number, "@omniralph fix rename `load` to `fetch`");
+      expect(res).toEqual({ status: "accepted", command: "fix" });
+      expect(state.scm.calls.hasWriteAccess).toEqual(["maintainer"]);
+      const [request, ...more] = await pending(run.id);
+      expect(more).toEqual([]);
+      expect(request!.author).toBe("maintainer");
+      expect(request!.text).toContain(
+        `@maintainer asked on pull request #${number} (https://github.com/acme/app/pull/${number}):`,
+      );
+      expect(request!.text).toContain("rename `load` to `fetch`");
+      expect(request!.text).toContain("push `eng-1-epic`");
+      expect(request!.text).not.toContain("The finding:");
+      expect(state.scm.calls.postComment).toHaveLength(1);
+      expect(state.scm.calls.postComment[0]!.body).toContain(
+        "On it, @maintainer: I passed this to ralph's run of [ENG-1](<https://linear.app/acme/issue/ENG-1>), which will work on it once its current step finishes",
+      );
+      expect(state.linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+        "@maintainer asked for changes on the pull request. I'll work through it as soon as the current step finishes.",
+      ]);
+    });
+
+    it("@bot fix in a finding's thread includes the finding", async () => {
+      const { number, commentId } = await reviewedPr();
+      const run = await ralphPr(number);
+      await threadComment(number, commentId, "@omniralph fix");
+      const [request] = await pending(run.id);
+      expect(request!.text).toContain("Fix this finding.");
+      expect(request!.text).toContain("`src/app.ts:3` (high): **Missing null check**");
+      expect(state.scm.calls.replyToComment).toHaveLength(1);
+      expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId });
+      expect(state.scm.calls.replyToComment[0]!.body).toContain("linear.app/acme/issue/ENG-1");
+    });
+
+    it("other @bot text outside finding threads becomes a request", async () => {
+      const { number } = await reviewedPr();
+      const run = await ralphPr(number);
+      const res = await conversationComment(number, "@omniralph please also update the README");
+      expect(res).toEqual({ status: "accepted", command: "question" });
+      const [request] = await pending(run.id);
+      expect(request!.text).toContain("please also update the README");
+      expect(state.scm.calls.postComment[0]!.body).toContain("I passed this to ralph's run");
+    });
+
+    it("questions in a finding's thread, review, dismiss and help keep their v1 behaviour", async () => {
+      const { number, commentId, finding } = await reviewedPr();
+      const run = await ralphPr(number);
+      await threadComment(number, commentId, "@omniralph is this reachable?");
+      const replies = await db.select().from(jobs).where(eq(jobs.type, "review.reply"));
+      expect(
+        replies.some(
+          (j) => (j.payload as { threadCommentId: string }).threadCommentId === commentId,
+        ),
+      ).toBe(true);
+      await conversationComment(number, "@omniralph review");
+      expect(await prReviewJobs(number)).toHaveLength(1);
+      await conversationComment(number, "@omniralph help");
+      expect(state.scm.calls.postComment.at(-1)!.body).toContain(
+        "`@omniralph fix [what to change]`",
+      );
+      await threadComment(number, commentId, "@omniralph dismiss");
+      const [row] = await db.select().from(findings).where(eq(findings.id, finding.id));
+      expect(row!.status).toBe("dismissed");
+      expect(await pending(run.id)).toEqual([]);
+    });
+
+    it("refuses users without write access", async () => {
+      const { number } = await reviewedPr();
+      const run = await ralphPr(number);
+      await conversationComment(number, "@omniralph fix it", "drive-by");
+      await conversationComment(number, "@omniralph update the README", "drive-by");
+      expect(await pending(run.id)).toEqual([]);
+      expect(state.scm.calls.postComment.map((c) => c.body)).toEqual([
+        expect.stringMatching(
+          /^Sorry @drive-by, only people with write access to this repository can use `@omniralph fix`/,
+        ),
+        expect.stringMatching(
+          /^Sorry @drive-by, only people with write access to this repository can ask ralph for changes/,
+        ),
+      ]);
+    });
+
+    it("@bot fix on a pull request ralph didn't open says it only works on ralph PRs", async () => {
+      const { number } = await reviewedPr();
+      const res = await conversationComment(number, "@omniralph fix the typo");
+      expect(res).toEqual({ status: "accepted", command: "fix" });
+      expect(state.scm.calls.postComment[0]!.body).toBe(
+        "Sorry @maintainer, `@omniralph fix` only works on pull requests that ralph opened.",
+      );
+    });
+
+    it("says so when the ralph run is over", async () => {
+      const { number } = await reviewedPr();
+      const run = await ralphPr(number);
+      await db.update(jobs).set({ status: "canceled" }).where(eq(jobs.ralphRunId, run.id));
+      await db.update(ralphRuns).set({ status: "failed" }).where(eq(ralphRuns.id, run.id));
+      await conversationComment(number, "@omniralph fix the typo");
+      expect(await pending(run.id)).toEqual([]);
+      expect(state.scm.calls.postComment[0]!.body).toContain("ralph's run of [ENG-1]");
+      expect(state.scm.calls.postComment[0]!.body).toContain("is over");
     });
   });
 

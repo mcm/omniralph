@@ -1,8 +1,18 @@
 import "server-only";
-import { getRun, lockRun, skipJob, updateRun, type Database, type Job } from "@omniralph/db";
+import {
+  findLaneByPullRequest,
+  getReview,
+  getRun,
+  lockRun,
+  skipJob,
+  updateRun,
+  type Database,
+  type Job,
+} from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGateway } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
 /**
@@ -34,7 +44,8 @@ export async function onRalphJobStarted(
   return { skip: false };
 }
 
-async function defaultDeps(db: Database): Promise<RalphDeps> {
+/** The orchestrator's dependencies: the connected Linear workspace, the dispatcher and the SCM adapters. */
+export async function defaultDeps(db: Database): Promise<RalphDeps> {
   return {
     db,
     linear: await getLinearGateway({ db }),
@@ -56,5 +67,24 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
     await advanceRun(run.id, deps ?? (await defaultDeps(db)));
   } catch (error) {
     console.error(`Advancing ralph run ${job.ralphRunId} after job ${job.id} failed`, error);
+  }
+}
+
+/**
+ * A `review.run` job completed: when it reviewed a ralph PR/MR, its open
+ * findings may become a request on that lane (`respondToReview`). Errors are
+ * logged, not thrown: the review itself is saved and posted already.
+ */
+export async function onReviewForRalph(
+  db: Database,
+  reviewId: string,
+  deps?: RalphDeps,
+): Promise<void> {
+  try {
+    const review = await getReview(db, reviewId);
+    if (!review || !(await findLaneByPullRequest(db, review.repositoryId, review.prNumber))) return;
+    await respondToReview(deps ?? (await defaultDeps(db)), reviewId);
+  } catch (error) {
+    console.error(`Handing review ${reviewId} to its ralph run failed`, error);
   }
 }

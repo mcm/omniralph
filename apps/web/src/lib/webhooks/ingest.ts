@@ -14,6 +14,7 @@ import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { botHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand } from "@/lib/mentions/handle";
+import type { LinearGateway } from "@/lib/linear/gateway";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -64,6 +65,8 @@ export interface WebhookDeps {
   defer?: (task: () => Promise<void>) => void | Promise<void>;
   /** `BOT_HANDLE` (default `omniralph`). */
   handle?: string;
+  /** The Linear workspace, for `@bot` requests to ralph runs; default: the connected one. */
+  linear?: () => Promise<LinearGateway>;
 }
 
 type Outcome =
