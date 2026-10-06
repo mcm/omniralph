@@ -75,6 +75,7 @@ const baseRalph: RalphSettingsInput = {
   openPullRequestEarly: false,
   setupCommand: "",
   model: "opus",
+  manualLabels: ["manual"],
 };
 
 const standardProfile = {
@@ -355,11 +356,16 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     await updateRepositorySettings(repoId, baseSettings);
   });
 
-  it("saves the Ralph section: enabled, Linear routing, openPullRequestEarly, setup command and model", async () => {
+  it("saves the Ralph section: enabled, Linear routing, openPullRequestEarly, setup command, model and manual labels", async () => {
     expect(await getRepository(db, repoId)).toMatchObject({
       ralphEnabled: false,
       linearTeamKeys: [],
-      ralphSettings: { openPullRequestEarly: false, setupCommand: null, model: "opus" },
+      ralphSettings: {
+        openPullRequestEarly: false,
+        setupCommand: null,
+        model: "opus",
+        manualLabels: ["manual"],
+      },
     });
     expect(
       await updateRalphSettings(repoId, {
@@ -370,6 +376,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         openPullRequestEarly: true,
         setupCommand: "  pnpm install --frozen-lockfile  ",
         model: "claude-opus-5-5",
+        manualLabels: ["by hand", "manual"],
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
@@ -381,6 +388,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         openPullRequestEarly: true,
         setupCommand: "pnpm install --frozen-lockfile",
         model: "claude-opus-5-5",
+        manualLabels: ["by hand", "manual"],
       },
     });
     // Saving the review settings leaves the Ralph section alone, and the other way round.
@@ -393,7 +401,12 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       linearTeamKeys: [],
       linearProjectNames: [],
       linearLabels: [],
-      ralphSettings: { openPullRequestEarly: false, setupCommand: null, model: "opus" },
+      ralphSettings: {
+        openPullRequestEarly: false,
+        setupCommand: null,
+        model: "opus",
+        manualLabels: ["manual"],
+      },
       profileId: "standard",
     });
   });
@@ -406,6 +419,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         linearTeamKeys: ["E N G"],
         linearLabels: ["a,b"],
         model: "",
+        manualLabels: [],
       }),
     ).toEqual({
       ok: false,
@@ -414,6 +428,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         "linearTeamKeys.0": "Team keys are letters and digits, e.g. ENG.",
         "linearLabels.0": "Names can't contain commas or control characters.",
         model: "Enter a model.",
+        manualLabels: "Enter at least one manual label.",
       },
     });
     // Not a valid input shape at all.

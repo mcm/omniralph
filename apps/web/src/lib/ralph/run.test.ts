@@ -839,6 +839,82 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
   });
 
+  it("uses the repository's manual labels for selection, waiting and follow-ups", async () => {
+    const settings = { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" };
+    const withLabels = (manualLabels: string[]) =>
+      updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: { ...settings, manualLabels },
+      });
+    await withLabels(["by hand"]);
+    try {
+      const epic = linear.add({ identifier: "ENG-150", title: "Epic" });
+      const dns = linear.add({
+        identifier: "ENG-151",
+        title: "Configure DNS",
+        parentId: epic.id,
+        labels: ["By Hand"],
+        subIssueSortOrder: 0,
+      });
+      linear.add({
+        identifier: "ENG-152",
+        title: "Code",
+        parentId: epic.id,
+        labels: ["manual"],
+        subIssueSortOrder: 1,
+      });
+      const after = linear.add({
+        identifier: "ENG-153",
+        title: "Use DNS",
+        parentId: epic.id,
+        subIssueSortOrder: 2,
+      });
+      await linear.createBlocksRelation(dns.id, after.id);
+      const run = await delegate(epic.id);
+
+      // `manual` isn't a manual label here; `by hand` is (ignoring case).
+      const unfinished = await work(run.id, {
+        status: "incomplete",
+        summary: "Needs a key.",
+        followUps: [{ title: "Create the API key", description: "In the console.", manual: true }],
+      });
+      expect(unfinished.story.identifier).toBe("ENG-152");
+      const key = [...linear.issues.values()].find((i) => i.title === "Create the API key")!;
+      expect(key.labels).toEqual(["by hand"]);
+
+      // The labels are read again on every advance: a label added in Linear counts.
+      await withLabels(["by hand", "ops"]);
+      linear.issues.set(after.id, { ...after, labels: ["Ops"] });
+      await advanceRun(run.id, deps());
+      expect(await activeJobs(run.id)).toEqual([]);
+      const waiting = (await getRun(db, run.id))!;
+      expect(waiting.status).toBe("waiting");
+      expect(waiting.waitingOn?.blockers).toEqual([]);
+      expect(waiting.waitingOn?.manual.map((m) => m.identifier).sort()).toEqual(
+        ["ENG-151", "ENG-153", key.identifier].sort(),
+      );
+      expect(await storyStates(run.id)).toEqual(
+        expect.arrayContaining([
+          ["ENG-151", "manual", 0],
+          ["ENG-152", "pending", 1],
+          ["ENG-153", "manual", 0],
+          [key.identifier, "manual", 0],
+        ]),
+      );
+    } finally {
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: settings,
+      });
+    }
+  });
+
   it("builds a single issue as one story", async () => {
     const issue = linear.add({ identifier: "ENG-80", title: "Fix the login bug" });
     const run = await delegate(issue.id);

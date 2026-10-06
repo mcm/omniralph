@@ -264,6 +264,58 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     ]);
   });
 
+  it("marks and materializes manual stories with the routed repository's manual labels", async () => {
+    await updateRepositoryRalphSettings(
+      db,
+      repoId,
+      routing({
+        linearTeamKeys: ["ENG"],
+        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, manualLabels: ["by hand", "ops"] },
+      }),
+    );
+    // A children epic: the custom labels (any case) mark manual stories, `manual` no longer does.
+    const epic = linear.add({ identifier: "ENG-20", title: "Epic" });
+    linear.add({ identifier: "ENG-21", title: "Code", parentId: epic.id, labels: ["manual"] });
+    linear.add({ identifier: "ENG-22", title: "DNS", parentId: epic.id, labels: ["By Hand"] });
+    linear.add({ identifier: "ENG-23", title: "Keys", parentId: epic.id, labels: ["OPS"] });
+    const event = created(epic.id);
+    await startRun(event, deps());
+    const run = await getRunBySession(db, event.sessionId);
+    expect((await listStories(db, run!.id)).map((s) => [s.identifier, s.status])).toEqual([
+      ["ENG-21", "running"],
+      ["ENG-22", "manual"],
+      ["ENG-23", "manual"],
+    ]);
+
+    // A delegated sub-issue loads its parent's epic with the same labels.
+    const parent = linear.add({ identifier: "ENG-30", title: "Epic" });
+    const story = linear.add({ identifier: "ENG-31", title: "Code", parentId: parent.id });
+    linear.add({ identifier: "ENG-32", title: "DNS", parentId: parent.id, labels: ["by hand"] });
+    const focused = created(story.id);
+    await startRun(focused, deps());
+    const focusedRun = await getRunBySession(db, focused.sessionId);
+    expect((await listStories(db, focusedRun!.id)).map((s) => [s.identifier, s.status])).toEqual([
+      ["ENG-31", "running"],
+      ["ENG-32", "manual"],
+    ]);
+
+    // A PRD's manual story is created with the first label.
+    const prd = linear.add({ identifier: "ENG-40", title: "PRD", description: PRD });
+    const prdEvent = created(prd.id);
+    await startRun(prdEvent, deps());
+    expect((await linear.getChildren(prd.id)).map((c) => [c.title, c.labels])).toEqual([
+      ["Store priority", []],
+      ["Grant database access", ["by hand"]],
+      ["Show priority", []],
+    ]);
+    const prdRun = await getRunBySession(db, prdEvent.sessionId);
+    expect((await listStories(db, prdRun!.id)).map((s) => [s.title, s.status])).toEqual([
+      ["Store priority", "running"],
+      ["Grant database access", "manual"],
+      ["Show priority", "pending"],
+    ]);
+  });
+
   it("creates the PRD stories an interrupted materialization left out, once", async () => {
     const epic = linear.add({ identifier: "ENG-15", title: "PRD", description: PRD });
     // The first try created one sub-issue, then failed.

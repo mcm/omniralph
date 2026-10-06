@@ -171,6 +171,11 @@ export const RalphSettingsInput = z.object({
     ),
   /** Claude model (alias or ID) the story sessions use. */
   model: ClaudeModel,
+  /** Linear labels marking a story as manual; the first labels the manual stories ralph files. */
+  manualLabels: routingValues(RoutingName, "manual labels").min(
+    1,
+    "Enter at least one manual label.",
+  ),
 });
 export type RalphSettingsInput = z.infer<typeof RalphSettingsInput>;
 

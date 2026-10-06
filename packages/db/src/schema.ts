@@ -258,12 +258,18 @@ export interface RalphSettings {
   setupCommand: string | null;
   /** Claude model (alias or ID) the story sessions use. */
   model: string;
+  /**
+   * Linear labels marking a story as a manual step (matched ignoring case); the
+   * first one labels the manual stories and follow-ups ralph files.
+   */
+  manualLabels: string[];
 }
 
 export const DEFAULT_RALPH_SETTINGS: RalphSettings = {
   openPullRequestEarly: false,
   setupCommand: null,
   model: "opus",
+  manualLabels: ["manual"],
 };
 
 export const repositories = pgTable(

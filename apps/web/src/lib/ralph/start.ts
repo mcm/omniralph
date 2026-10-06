@@ -21,9 +21,9 @@ import {
   type Repository,
 } from "@omniralph/db";
 import { parseRepoTags, type Epic } from "@omniralph/ralph";
-import type { ActivityContent } from "@/lib/linear/gateway";
+import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
-import { loadEpic, type LoadedEpic } from "./epic-loader";
+import { loadEpic, repositoryManualLabels, type LoadedEpic } from "./epic-loader";
 import { quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import { routeIssue, type RouteMatch } from "./routing";
@@ -197,11 +197,17 @@ export async function startRun(
     return { status: "mention" };
   }
 
+  const repositories = await listRalphRepositories(db);
   let loaded: LoadedEpic;
   try {
     // An issue that was never run may hold a PRD whose materialization stopped half way.
     const completePrd = !(await getRunByIssue(db, event.issueId));
-    loaded = await loadEpic(linear, event.issueId, { completePrd });
+    // Which stories are manual depends on the repository the epic routes to.
+    const manualLabels = (root: IssueSummary) => {
+      const route = routeIssue(root, repositories);
+      return route ? repositoryManualLabels(route.repository) : [];
+    };
+    loaded = await loadEpic(linear, event.issueId, { completePrd, manualLabels });
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",
@@ -211,7 +217,7 @@ export async function startRun(
   }
   const { epic, root } = loaded;
 
-  const route = routeIssue(root, await listRalphRepositories(db));
+  const route = routeIssue(root, repositories);
   if (!route) {
     await post(deps, sessionId, { type: "error", body: unroutableMessage(epic) });
     return { status: "unroutable" };

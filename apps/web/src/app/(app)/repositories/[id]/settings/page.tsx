@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { RepositorySettingsView } from "./repository-settings-view";
 
@@ -71,6 +72,7 @@ export default async function RepositorySettingsPage({
               openPullRequestEarly: repository.ralphSettings.openPullRequestEarly,
               setupCommand: repository.ralphSettings.setupCommand ?? "",
               model: repository.ralphSettings.model,
+              manualLabels: repositoryManualLabels(repository),
             }
           : null
       }

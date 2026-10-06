@@ -82,6 +82,7 @@ export async function updateRalphSettings(
         openPullRequestEarly: settings.openPullRequestEarly,
         setupCommand: settings.setupCommand.trim() || null,
         model: settings.model,
+        manualLabels: settings.manualLabels,
       },
     });
     if (!saved) return { ok: false, error: "That repository isn't connected." };
