@@ -16,6 +16,7 @@
     "@linear/sdk": "^97.0.0",
     "@omniralph/db": "workspace:*",
     "@omniralph/engine": "workspace:*",
+    "@omniralph/ralph": "workspace:*",
     "@omniralph/scm": "workspace:*",
     "@omniralph/shared": "workspace:*",
     "@tabler/icons-react": "^3.40.0",
