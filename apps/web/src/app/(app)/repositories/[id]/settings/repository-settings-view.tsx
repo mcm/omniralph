@@ -193,7 +193,7 @@ export function RepositorySettingsView({
               style={{
                 margin: 0,
                 fontSize: "var(--text-2xl)",
-                fontWeight: 600,
+                fontWeight: "var(--font-weight-semibold)",
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--space-2)",
@@ -271,7 +271,7 @@ export function RepositorySettingsView({
                             display: "flex",
                             alignItems: "center",
                             gap: "var(--space-2)",
-                            fontWeight: 600,
+                            fontWeight: "var(--font-weight-semibold)",
                             color: "var(--text-primary)",
                           }}
                         >

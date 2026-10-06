@@ -112,7 +112,7 @@ function FindingItem({ finding }: { finding: FindingView }) {
       >
         <SeverityBadge severity={finding.severity} />
         <span style={{ ...mono, color: "var(--text-secondary)" }}>{lineRange(finding)}</span>
-        <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-semibold)", flex: 1, minWidth: 0 }}>
           {finding.title}
         </span>
         <FindingStatusBadge status={finding.status} />
@@ -218,7 +218,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               style={{
                 margin: 0,
                 fontSize: "var(--text-2xl)",
-                fontWeight: 600,
+                fontWeight: "var(--font-weight-semibold)",
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--space-2)",
@@ -408,7 +408,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               flexWrap: "wrap",
             }}
           >
-            <h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 600 }}>
+            <h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: "var(--font-weight-semibold)" }}>
               Findings ({review.findingCount})
             </h2>
             {severityCounts.map(({ severity, count }) => (

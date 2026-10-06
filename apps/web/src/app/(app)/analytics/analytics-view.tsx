@@ -206,7 +206,7 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Analytics</h1>
+            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: "var(--font-weight-semibold)" }}>Analytics</h1>
             <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
               Token usage and review quality for {scope}, by UTC day.
             </Muted>
