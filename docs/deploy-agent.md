@@ -6,7 +6,8 @@ proxy) and to the code host (git clone/fetch with brokered, read-only tokens; `r
 push with brokered write tokens). It opens no port except an optional `/healthz` on `127.0.0.1`.
 
 This guide sets one up on a Coder instance, running as a **dedicated Unix user** so the agent's
-refresh token and Claude login are kept away from your dev sessions and cyralph.
+refresh token and Claude login are kept away from your dev sessions (and cyralph, if it still runs
+there).
 
 ## Prerequisites
 
@@ -284,9 +285,14 @@ audit log (enrollment, token refreshes, credential issuance, revocation).
 
 The `ralph` capability builds delegated Linear issues story by story (see [linear.md](linear.md)
 for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). An agent
-runs three ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
-`ralph.describe-pr` (a read-only session writing the PR/MR description) and `ralph.prepare` (a
-manual story's approved preparation commands).
+runs five ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
+`ralph.describe-pr` (a read-only session writing the PR/MR description), `ralph.prepare` (a
+manual story's approved preparation commands), `ralph.request` (one Claude session for an
+@mention, a reply, review findings or a failed CI run, on the run's branch) and `ralph.cleanup`
+(removes a merged PR/MR's worktree and local branch, no session). Running `ralph.story` and
+`ralph.request` sessions also take Linear replies live: the heartbeat response carries them
+(`jobMessages`) and the agent acknowledges them in its next heartbeat. Jobs download the run's
+Linear attachments through the control panel and cache them in `<workspaceRoot>/.attachments/`.
 
 ### Enabling the capability
 
@@ -345,8 +351,14 @@ command once, is reused by every job of the run and is locked while a job uses i
 leftovers of a failed attempt are stashed (labelled `omniralph ralph <run> <story> …`) and offered
 to the next attempt.
 
-Branch worktrees aren't removed automatically (cleanup after merge comes later). Delete
-`<workspaceRoot>/.branches/<provider>/<repo path>/<branch>` once a run's PR/MR is merged, while the
+Every branch worktree gets a `pre-push` hook that rejects pushes to any branch but its own (a
+guardrail against mistakes, not a security boundary).
+
+After the run's PR/MR merges, a `ralph.cleanup` job on the run's agent removes the branch worktree
+and deletes the local branch (keeping a branch with unmerged commits until someone answers in
+Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). Worktrees of PRs/MRs
+closed without merging, of repositories with **Clean up after the merge** off, and of an agent that
+was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<repo path>/<branch>` while the
 agent isn't running a job for it, then `git -C <workspaceRoot>/<provider>/<repo path> worktree prune`.
 
 ## `workspaceRoot` and disk usage
@@ -358,39 +370,39 @@ agent isn't running a job for it, then `git -C <workspaceRoot>/<provider>/<repo 
   and pruned on startup after a crash. Peak usage is roughly the cached clones plus one full
   checkout per concurrently running job.
 - Ralph runs also keep one **branch worktree** per run under `<workspaceRoot>/.branches/`,
-  including whatever the setup command installs (e.g. `node_modules`). They're never pruned
-  automatically; see [Branch worktrees](#branch-worktrees).
+  including whatever the setup command installs (e.g. `node_modules`). They're removed after the
+  PR/MR merges; see [Branch worktrees](#branch-worktrees). Linear attachments are cached in
+  `<workspaceRoot>/.attachments/<EPIC>/` and not evicted.
 - Clone, fetch and worktree bookkeeping are serialized per repository with a lock file
   (`.locks/`), so two agent processes may share a workspace root, but don't point a manual checkout
-  or cyralph at it.
+  at it.
 - There's no automatic eviction yet. To reclaim space, stop the agent and delete a repository's
   directory (it's re-cloned on the next job), or the whole workspace root.
 - Rough sizing: the sum of your repositories' blobless clone sizes, plus `max concurrency` × your
   largest checkout, plus headroom. Watch it with `du -sh ~omniralph/.omniralph/repos/*`.
 
-## Coexisting with cyralph and manual dev work
+## Coexisting with cyralph
+
+Moving from cyralph to Omniralph, and running both while you do, is covered step by step in
+[cutover-from-cyralph.md](cutover-from-cyralph.md). In short: never route the same Linear team,
+project or label in both, and don't point the agent's `--workspace-root` at cyralph's directories.
+
+## Coexisting with manual dev work
 
 - **Separate workspace root.** The agent's cache lives in the agent user's `~/.omniralph/repos`,
-  separate from your manual checkouts and from cyralph's worktrees. Never point `--workspace-root`
-  at a directory you or cyralph work in: worktrees there get pruned and repos fetched under you.
+  separate from your manual checkouts. Never point `--workspace-root` at a directory you work in:
+  worktrees there get pruned and repos fetched under you.
 - **Separate credentials.** Job git commands reset `credential.helper` and use
   `omniralph-agent git-credential` (brokered, one repository, short-lived; read-only except for
   running `ralph` jobs), never your `gh`/`glab` logins or SSH keys. The dedicated user makes this
   structural: the agent can't read `/home/coder`.
-- **Don't route the same issues to both.** cyralph and Omniralph's ralph capability are separate
-  Linear apps with separate routing configuration, and neither knows about the other. If the same
-  Linear team, project or label is routed in both, an issue that ends up delegated to both apps
-  (or re-delegated from one to the other mid-run) gets two runs that push to the same branch and
-  fight over the sub-issues' states and the PR. Give each app disjoint teams, projects and labels (or tag issues with
-  `[repo=…]` for Omniralph), and move a team over by removing it from cyralph's config before adding
-  it to a repository's **Linear team keys**. Don't delegate one issue to both apps.
-- **Separate worktrees.** cyralph's worktrees and Omniralph's branch worktrees are separate
-  checkouts. Don't work on a branch Omniralph is building from a cyralph or manual checkout: the
-  next story's push would be rejected as diverged.
+- **Separate worktrees.** Don't work on a branch Omniralph is building from a manual checkout: the
+  next story's push would be rejected as diverged. Ask for changes with an @mention or a reply
+  instead.
 - **Shared Claude rate limits.** If the agent's user is logged in to the same Claude subscription as
-  you or cyralph, all of them share its rate limits. The agent backs off and retries on rate limits
-  instead of failing, but busy reviews still slow your sessions down. Lower the agent's max
-  concurrency, or give it its own API key or subscription. See [claude-auth.md](claude-auth.md).
+  you, you share its rate limits. The agent backs off and retries on rate limits instead of failing,
+  but busy reviews still slow your sessions down. Lower the agent's max concurrency, or give it its
+  own API key or subscription. See [claude-auth.md](claude-auth.md).
 - **CPU and memory.** Each running job is a Claude Code process plus git. Keep max concurrency at 1
   or 2 on a workspace you also develop in.
 

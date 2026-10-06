@@ -12,6 +12,9 @@ their activities through the control panel (`POST /api/agent/jobs/{id}/activitie
 [Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
 and never see a Linear token.
 
+Coming from cyralph? [cutover-from-cyralph.md](cutover-from-cyralph.md) maps its `config.json` to
+the settings below and lists the steps to switch over.
+
 Setting ralph up takes five steps:
 
 1. [Create the Linear OAuth app](#1-create-the-linear-oauth-app).
@@ -160,8 +163,8 @@ setting. If a lane's PR/MR step fails, the others still go ahead; the problems, 
 a reply retries the lanes that failed. The final response lists every PR/MR, labelled by repository
 when there is more than one, and each is added to the agent session's links.
 
-Don't route the same team, project or label to both Omniralph and cyralph
-([deploy-agent.md](deploy-agent.md#coexisting-with-cyralph-and-manual-dev-work)).
+Don't route the same team, project or label to both Omniralph and cyralph: move them over one at
+a time as described in [cutover-from-cyralph.md](cutover-from-cyralph.md).
 
 ## 5. Delegate an issue
 
@@ -181,8 +184,9 @@ How the run behaves:
 - **Branch.** A `> Branch: <name>` line in the epic's description, else Linear's branch name for the
   issue. The base is the repository's default branch. Every finished story is committed as
   `feat(<STORY-ID>): <title>` (`<ISSUE-ID>: <title>` for a single issue) and pushed.
-- **Quality gates.** The commands under the epic description's `## Quality Gates` heading run after
-  every story; a failing gate fails the attempt.
+- **Quality gates.** The repository's **Verify commands**, then (with **Run the PRD's quality
+  gates** on) the commands under the epic description's `## Quality Gates` heading, run after
+  every story; a failing gate fails the attempt. A single issue runs the verify commands only.
 - **Order.** Stories in progress first, then by Linear priority, then sub-issue order. A story waits
   while it's blocked by an open issue. A failed or incomplete attempt is retried with feedback up
   to 3 times, then the story is marked exhausted and later independent stories still run.
@@ -331,7 +335,19 @@ links) reach the agent, as in cyralph:
   such ("Don't guess what it shows"), and the agent says so once in the session as a thought.
 
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Ralph runs**,
-where admins can also stop a run.
+where admins can also stop a run. A run's page has one section per repository (lane) with its
+branch, PR/MR, stories and cleanup state, plus the run's guidance and progress log. **Analytics**
+has a Ralph section: runs started, ralph tokens per day next to reviews, runs per day by status
+and story outcomes (first attempt, after retries, blocked, exhausted).
+
+## Agents and concurrency
+
+Ralph jobs run on agents with the `ralph` capability ([deploy-agent.md](deploy-agent.md#ralph)).
+An agent's **Concurrency per capability** caps how many of its slots ralph may take; by default
+that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
+reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent. Agents
+under pm2 update themselves to the version chosen on **Settings › Agents**
+([deploy-agent.md](deploy-agent.md#self-update-pm2)).
 
 ## Troubleshooting
 
