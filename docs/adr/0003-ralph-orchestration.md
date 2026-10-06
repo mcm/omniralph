@@ -25,7 +25,7 @@ Workflows first". This ADR is that evaluation and the decision.
 
 The control panel (`apps/web/src/lib/ralph/`) owns the loop. It receives Linear webhooks, loads and
 materializes the epic, routes it to a repository, keeps run and story state in Postgres
-(`ralph_runs`, `ralph_stories`), selects the next story, enqueues jobs through the existing
+(`ralph_runs`, `ralph_lanes`, `ralph_stories`), selects the next story, enqueues jobs through the existing
 `JobDispatcher`, applies their outcomes, talks to Linear and opens the PR/MR through typed
 `ScmAdapter` operations.
 
@@ -40,6 +40,13 @@ topics, using the v1 job lifecycle, repo cache and credential broker unchanged:
 A job's payload carries everything the session needs (PRD, story, progress log, feedback,
 guidance), so an agent keeps no run state. Every completed story is pushed, so the remote branch
 is the only state that matters between jobs.
+
+### Lanes
+
+A run works in one or more repositories. Each has a lane (`ralph_lanes`): its branch, base branch,
+PR/MR and follow-up state. The lane of the run's own repository is its main lane; stories of an
+epic routed to another repository by their own signals get a lane there (`ralph_stories.lane_id`).
+All lanes of a run use the run's sticky agent.
 
 ### The sticky agent
 

@@ -767,13 +767,8 @@ export const ralphRuns = pgTable(
     repositoryId: uuid("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
     /** How the repository was chosen, e.g. "team `ENG`" or "your selection" (kept on re-routing). */
     routedBy: text("routed_by"),
-    branch: text("branch").notNull(),
-    baseBranch: text("base_branch").notNull(),
-    /** The sticky agent: set by the run's first job, all later jobs go to its topic. */
+    /** The sticky agent: set by the run's first job, all later jobs (of every lane) go to its topic. */
     agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
-    /** PR number (GitHub) or MR IID (GitLab). */
-    prNumber: integer("pr_number"),
-    prUrl: text("pr_url"),
     /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
     prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
     status: ralphRunStatus("status").notNull().default("pending"),
@@ -805,6 +800,81 @@ export const ralphRuns = pgTable(
   ],
 );
 
+/** Uncommitted work ralph stashed in a lane's repository and hasn't dropped or pushed yet. */
+export interface RalphStash {
+  sha: string;
+  /** The story (identifier) whose attempt left it, if any. */
+  storyId?: string;
+  reason?: string;
+  /** ISO timestamp. */
+  at: string;
+}
+
+/** Cleanup of a lane after its PR/MR merged (cyralph's merged-worktree cleanup). */
+export interface RalphLaneCleanup {
+  status: "pending" | "running" | "asked" | "done" | "failed";
+  /** ISO timestamp of the last change. */
+  at: string;
+  /** The `ralph.cleanup` job doing it. */
+  jobId?: string;
+  /** When unmerged commits were offered: the branch is deleted after the timeout without an answer. */
+  askedAt?: string;
+  error?: string;
+}
+
+/**
+ * One repository a run works in (cyralph's `RepoLane`): its branch, PR/MR and
+ * follow-up state. The lane of the run's `repository_id` is its main lane;
+ * stories routed to other repositories get a lane each. All lanes of a run use
+ * the run's sticky agent.
+ */
+export const ralphLanes = pgTable(
+  "ralph_lanes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references((): AnyPgColumn => ralphRuns.id, { onDelete: "cascade" }),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    branch: text("branch").notNull(),
+    baseBranch: text("base_branch").notNull(),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    /** The PR/MR was seen closed or merged; it is no longer followed up. */
+    prClosed: boolean("pr_closed").notNull().default(false),
+    /** Whether the closed PR/MR was merged (false: closed without merging). */
+    prMerged: boolean("pr_merged").notNull().default(false),
+    mergeSha: text("merge_sha"),
+    /** Omniralph reviews acted on for this PR/MR (capped by `maxReviewRounds`). */
+    reviewRounds: integer("review_rounds").notNull().default(0),
+    /** Reviews (job IDs) already seen: acted on, skipped as stale, or over the round limit. */
+    handledReviewIds: jsonb("handled_review_ids").$type<string[]>().notNull().default([]),
+    /** Failed CI runs acted on for this PR/MR (capped by `maxFixRounds`). */
+    ciFixRounds: integer("ci_fix_rounds").notNull().default(0),
+    /** PR/MR head commits whose failed CI was seen. */
+    handledCiShas: jsonb("handled_ci_shas").$type<string[]>().notNull().default([]),
+    /** Requests not yet acted on, run as a request session on this lane's branch. */
+    pendingRequests: jsonb("pending_requests").$type<string[]>().notNull().default([]),
+    /** Claude session of the last request, resumed for follow-ups on `request_agent_id`. */
+    requestClaudeSessionId: text("request_claude_session_id"),
+    /** The agent holding that session's files. */
+    requestAgentId: uuid("request_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+    stashes: jsonb("stashes").$type<RalphStash[]>().notNull().default([]),
+    cleanup: jsonb("cleanup").$type<RalphLaneCleanup>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("ralph_lanes_run_repository_uq").on(t.runId, t.repositoryId),
+    index("ralph_lanes_repository_pr_idx").on(t.repositoryId, t.prNumber),
+  ],
+);
+
 /** One story (Linear sub-issue, or the single issue) of a run. */
 export const ralphStories = pgTable(
   "ralph_stories",
@@ -825,6 +895,13 @@ export const ralphStories = pgTable(
     lastFeedback: text("last_feedback"),
     commitSha: text("commit_sha"),
     lastJobId: uuid("last_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    /** The lane (repository) the story runs in; null until the run has a repository. */
+    laneId: uuid("lane_id").references(() => ralphLanes.id, { onDelete: "set null" }),
+    /**
+     * Why the story is treated as manual although it isn't labelled so: it
+     * belongs in a repository Omniralph doesn't have (cyralph's `elsewhere`).
+     */
+    elsewhere: text("elsewhere"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -846,7 +923,7 @@ export const ralphMessages = pgTable(
       .notNull()
       .references(() => ralphRuns.id, { onDelete: "cascade" }),
     /** The lane (repository) the message is for; null: the run's main lane. */
-    laneId: uuid("lane_id"),
+    laneId: uuid("lane_id").references(() => ralphLanes.id, { onDelete: "set null" }),
     /** The running job to deliver it to; null once that's no longer possible (or never was). */
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
     kind: ralphMessageKind("kind").notNull(),

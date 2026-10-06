@@ -6,6 +6,7 @@ import {
   createDb,
   failJob,
   getJob,
+  getMainLane,
   getRun,
   getRunBySession,
   jobs,
@@ -14,8 +15,8 @@ import {
   ralphRuns,
   runMigrations,
   startJob,
+  updateLane,
   updateRepositoryRalphSettings,
-  updateRun,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
   type Database,
@@ -141,6 +142,8 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     );
     return (await getRunBySession(db, sessionId))!;
   }
+
+  const branchOf = async (run: RalphRun) => (await getMainLane(db, run))!.branch;
 
   const activeJobs = (runId: string) =>
     db
@@ -338,7 +341,10 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     it("links an early draft in the stop response", async () => {
       twoStoryEpic();
       const run = await delegate("issue-1");
-      await updateRun(db, run.id, { prNumber: 4, prUrl: "https://github.com/acme/api/pull/4" });
+      await updateLane(db, (await getMainLane(db, run))!.id, {
+        prNumber: 4,
+        prUrl: "https://github.com/acme/api/pull/4",
+      });
       await reply(run, "stop");
       expect(last(run, "response")).toContain(
         "The draft stays open: https://github.com/acme/api/pull/4",
@@ -589,7 +595,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       const body = (question!.content as { body: string }).body;
       expect(body).toContain("1/2 stories are done; the rest are waiting on **ENG-3**.");
       expect(body).toContain("**ENG-3: Create the bucket** is a manual step");
-      expect(body).toContain(`\`${run.branch}\` at \`${sha(7).slice(0, 10)}\``);
+      expect(body).toContain(`\`${await branchOf(run)}\` at \`${sha(7).slice(0, 10)}\``);
       expect(body).toContain("```sh\nterraform init\nterraform apply -auto-approve\n```");
       expect((await getRun(db, run.id))?.preparation?.request).toMatchObject({
         storyIssueId: bucket.id,
@@ -648,7 +654,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       await prepare(run.id, { status: "stale", commands: [], headSha: sha(9) });
 
       expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
-        `\`${run.branch}\` (now at \`${sha(9).slice(0, 10)}\`) changed since I asked about the preparation of **ENG-3**, so I ran nothing. Here it is again as it is now.`,
+        `\`${await branchOf(run)}\` (now at \`${sha(9).slice(0, 10)}\`) changed since I asked about the preparation of **ENG-3**, so I ran nothing. Here it is again as it is now.`,
       );
       const asks = selects(run);
       expect(asks).toHaveLength(2);

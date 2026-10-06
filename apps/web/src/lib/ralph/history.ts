@@ -33,6 +33,7 @@ export function ralphRunRow(entry: RalphRunListEntry): RalphRunRow {
 
 export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
   const { run, repository } = detail;
+  const main = detail.lanes.find((l) => l.main);
   const ref = ({ identifier, title }: { identifier: string; title: string }) => ({
     identifier,
     title,
@@ -45,9 +46,21 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
     kind: run.kind,
     repository,
     status: run.status,
-    branch: run.branch,
-    baseBranch: run.baseBranch,
-    pullRequest: pullRequest(repository?.provider, run.prNumber, run.prUrl),
+    branch: main?.lane.branch ?? null,
+    baseBranch: main?.lane.baseBranch ?? null,
+    pullRequest: pullRequest(
+      repository?.provider,
+      main?.lane.prNumber ?? null,
+      main?.lane.prUrl ?? null,
+    ),
+    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain }) => ({
+      id: lane.id,
+      repository: laneRepository,
+      main: isMain,
+      branch: lane.branch,
+      baseBranch: lane.baseBranch,
+      pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
+    })),
     agent: detail.agent,
     error: run.error,
     waitingOn:
@@ -70,6 +83,8 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       lastFeedback: story.lastFeedback,
       commitSha: story.commitSha,
       lastJobId: story.lastJobId,
+      laneId: story.laneId,
+      elsewhere: story.elsewhere,
     })),
     jobs: detail.jobs.map((job) => ({
       id: job.id,

@@ -26,6 +26,7 @@ import {
   type Story,
 } from "@omniralph/ralph";
 import { RalphPreparePayload, RalphPrepareResult } from "@omniralph/shared";
+import { mainBranch } from "./lanes";
 import { postActivity, tail } from "./notify";
 import { jobFailure } from "./outcome";
 import type { RalphDeps } from "./run";
@@ -125,7 +126,7 @@ export async function offerPreparation(
       type: "elicitation",
       body: preparationQuestion({
         story: { storyId: nameOf(next), title: next.title },
-        branch: run.branch,
+        branch: await mainBranch(tx, run),
         headSha,
         commands,
         lead,
@@ -232,7 +233,7 @@ export async function applyPreparationJob(
     } else {
       const changed = [
         payload?.success && payload.data.approvedHeadSha !== result.headSha
-          ? `\`${run.branch}\` (now at ${at})`
+          ? `\`${await mainBranch(tx, run)}\` (now at ${at})`
           : "",
         payload?.success && preparationHash(payload.data.commands) !== request.commandsHash
           ? "its commands"

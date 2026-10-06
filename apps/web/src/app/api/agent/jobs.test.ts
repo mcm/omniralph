@@ -782,8 +782,6 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
           linearAgentSessionId: `session-${randomUUID()}`,
           kind: "prd",
           repositoryId,
-          branch: "ralph/eng-1",
-          baseBranch: "main",
           status: "running",
           agentId,
         })

@@ -26,6 +26,16 @@ import {
   updateRun,
   updateStory,
   upsertStories,
+  copyLanes,
+  ensureLane,
+  getLane,
+  getLaneByRepository,
+  getMainLane,
+  insertMessage,
+  listLanes,
+  listMessages,
+  moveToRepository,
+  updateLane,
   type NewRalphRunInput,
 } from "./ralph.js";
 import {
@@ -34,7 +44,7 @@ import {
   getRepository,
   upsertScmConnection,
 } from "./repositories.js";
-import { agents, DEFAULT_RALPH_SETTINGS, jobs, ralphRuns } from "./schema.js";
+import { agents, DEFAULT_RALPH_SETTINGS, jobs, ralphMessages, ralphRuns } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -170,8 +180,9 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const input = runInput({ kind: "prd", focusStoryId: "story-issue" });
     const { run, created } = await createRun(db, input);
     expect(created).toBe(true);
+    const { branch, baseBranch, ...columns } = input;
     expect(run).toMatchObject({
-      ...input,
+      ...columns,
       status: "pending",
       agentId: null,
       guidance: [],
@@ -185,6 +196,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect(await getRunByIssue(db, input.linearIssueId)).toEqual(run);
     expect(await getRunBySession(db, "unknown")).toBeNull();
     expect(await getRunByIssue(db, "unknown")).toBeNull();
+    // The branches are the main lane's.
+    expect(await getMainLane(db, run)).toMatchObject({ repositoryId: repoA, branch, baseBranch });
   });
 
   it("returns the existing run for the same session, or an unfinished run of the same issue", async () => {
@@ -228,8 +241,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       status: "waiting",
       waitingOn,
       agentId,
-      prNumber: 7,
-      prUrl: "https://github.com/acme/b-api/pull/7",
       ignoreBlockers: true,
       pendingElicitation: { kind: "repository", repositoryIds: ["r"] },
       iterations: 2,
@@ -238,7 +249,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       status: "waiting",
       waitingOn,
       agentId,
-      prNumber: 7,
       iterations: 2,
     });
     expect(updated!.updatedAt.getTime()).toBeGreaterThanOrEqual(run.updatedAt.getTime());
@@ -433,9 +443,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     ).run;
     const a2 = (await createRun(db, runInput())).run;
     const b1 = (await createRun(db, runInput({ repositoryId: repoB }))).run;
-    await updateRun(db, a1.id, {
-      status: "completed",
-      agentId,
+    await updateRun(db, a1.id, { status: "completed", agentId });
+    await updateLane(db, (await getMainLane(db, a1))!.id, {
       prNumber: 3,
       prUrl: "https://example.com/3",
     });
@@ -527,6 +536,177 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     ]);
 
     expect(await getRunDetail(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+
+  describe("lanes", () => {
+    it("gives a run with a repository its main lane, and other repositories a lane each", async () => {
+      const { run } = await createRun(db, runInput({ branch: "eng-1", baseBranch: "develop" }));
+      const main = await getMainLane(db, run);
+      expect(main).toMatchObject({
+        runId: run.id,
+        repositoryId: repoA,
+        branch: "eng-1",
+        baseBranch: "develop",
+        prNumber: null,
+        prClosed: false,
+        reviewRounds: 0,
+        handledReviewIds: [],
+        ciFixRounds: 0,
+        handledCiShas: [],
+        pendingRequests: [],
+        stashes: [],
+        cleanup: null,
+      });
+
+      const web = await ensureLane(db, {
+        runId: run.id,
+        repositoryId: repoB,
+        branch: "eng-1",
+        baseBranch: "main",
+      });
+      // Ensuring it again returns the lane as it is.
+      expect(
+        await ensureLane(db, { runId: run.id, repositoryId: repoB, branch: "x", baseBranch: "y" }),
+      ).toEqual(web);
+      expect(await getLaneByRepository(db, run.id, repoB)).toEqual(web);
+      expect((await listLanes(db, run.id)).map((l) => l.id)).toEqual([main!.id, web.id]);
+
+      const updated = await updateLane(db, web.id, {
+        prNumber: 8,
+        prUrl: "https://github.com/acme/a-web/pull/8",
+        handledReviewIds: ["r1"],
+        stashes: [{ sha: "s".repeat(40), storyId: "ENG-3", at: "2026-10-06T00:00:00.000Z" }],
+      });
+      expect(updated).toMatchObject({ prNumber: 8, handledReviewIds: ["r1"] });
+      expect(await getLane(db, web.id)).toEqual(updated);
+
+      // Stories record their lane (and why one is manual) on every upsert.
+      const stories = await upsertStories(db, run.id, [
+        { linearIssueId: "l-1", identifier: "L-1", title: "Api", laneId: main!.id },
+        { linearIssueId: "l-2", identifier: "L-2", title: "Web", laneId: web.id },
+        {
+          linearIssueId: "l-3",
+          identifier: "L-3",
+          title: "Docs",
+          elsewhere: "it's in project Docs",
+        },
+      ]);
+      expect(stories.map((s) => [s.identifier, s.laneId, s.elsewhere])).toEqual([
+        ["L-1", main!.id, null],
+        ["L-2", web.id, null],
+        ["L-3", null, "it's in project Docs"],
+      ]);
+
+      const detail = await getRunDetail(db, run.id);
+      expect(detail!.lanes.map((l) => [l.repository.fullPath, l.main, l.lane.prNumber])).toEqual([
+        ["acme/b-api", true, null],
+        ["acme/a-web", false, 8],
+      ]);
+      expect((await listRuns(db)).runs[0]).toMatchObject({
+        branch: "eng-1",
+        baseBranch: "develop",
+      });
+    });
+
+    it("has no lane without a repository", async () => {
+      const { run } = await createRun(db, runInput({ repositoryId: null, status: "waiting" }));
+      expect(await getMainLane(db, run)).toBeNull();
+      expect(await listLanes(db, run.id)).toEqual([]);
+      expect((await listRuns(db)).runs[0]).toMatchObject({ branch: null, prNumber: null });
+    });
+
+    it("copies a run's lanes to another run, except one repository", async () => {
+      const previous = (await createRun(db, runInput())).run;
+      await updateLane(db, (await getMainLane(db, previous))!.id, { prNumber: 1 });
+      await ensureLane(db, {
+        runId: previous.id,
+        repositoryId: repoB,
+        branch: "b",
+        baseBranch: "main",
+      });
+      await updateRun(db, previous.id, { status: "stopped" });
+
+      const next = (await createRun(db, runInput({ repositoryId: null }))).run;
+      const copied = await copyLanes(db, previous.id, next.id, { exceptRepositoryId: repoA });
+      expect(copied.map((l) => [l.runId, l.repositoryId, l.branch])).toEqual([
+        [next.id, repoB, "b"],
+      ]);
+      expect(await listLanes(db, previous.id)).toHaveLength(2);
+    });
+
+    describe("moveToRepository", () => {
+      it("drops the old main lane and promotes the epic's lane in the new repository", async () => {
+        const { run } = await createRun(db, runInput({ repositoryId: repoB, branch: "eng-1" }));
+        const old = (await updateLane(db, (await getMainLane(db, run))!.id, {
+          prNumber: 1,
+          prUrl: "https://github.com/acme/a-web/pull/1",
+          reviewRounds: 2,
+          pendingRequests: ["push"],
+        }))!;
+        const api = await ensureLane(db, {
+          runId: run.id,
+          repositoryId: repoA,
+          branch: "eng-1",
+          baseBranch: "develop",
+        });
+        await updateLane(db, api.id, { pendingRequests: ["fix CI"] });
+        const message = await insertMessage(db, { runId: run.id, kind: "request", text: "hi" });
+        await db
+          .update(ralphMessages)
+          .set({ laneId: api.id })
+          .where(eq(ralphMessages.id, message.id));
+        const [story] = await upsertStories(db, run.id, [
+          { linearIssueId: "m-1", identifier: "M-1", title: "Web", laneId: old.id },
+        ]);
+
+        const moved = await moveToRepository(db, run.id, repoA, {
+          branch: "new",
+          baseBranch: "main",
+        });
+        expect(moved?.left).toEqual(old);
+        expect(moved?.lane).toMatchObject({
+          id: api.id,
+          repositoryId: repoA,
+          branch: "eng-1",
+          baseBranch: "develop",
+          prNumber: null,
+          reviewRounds: 0,
+          pendingRequests: ["push", "fix CI"],
+        });
+        expect((await getRun(db, run.id))?.repositoryId).toBe(repoA);
+        expect((await getMainLane(db, (await getRun(db, run.id))!))?.id).toBe(api.id);
+        expect((await listLanes(db, run.id)).map((l) => l.id)).toEqual([api.id]);
+        // The messages of the promoted lane are the main lane's now; the old lane's story has none.
+        expect((await listMessages(db, run.id))[0]?.laneId).toBeNull();
+        expect((await listStories(db, run.id)).find((s) => s.id === story!.id)?.laneId).toBeNull();
+      });
+
+      it("does nothing for the same repository, and starts clean without one", async () => {
+        const { run } = await createRun(db, runInput({ repositoryId: null }));
+        const started = await moveToRepository(db, run.id, repoA, {
+          branch: "b",
+          baseBranch: "main",
+        });
+        expect(started?.left).toBeNull();
+        expect(started?.lane).toMatchObject({
+          repositoryId: repoA,
+          branch: "b",
+          baseBranch: "main",
+        });
+        expect((await getRun(db, run.id))?.repositoryId).toBe(repoA);
+
+        await updateLane(db, started!.lane.id, { branch: "kept" });
+        const same = await moveToRepository(db, run.id, repoA, { branch: "x", baseBranch: "y" });
+        expect(same).toMatchObject({ left: null, lane: { id: started!.lane.id, branch: "kept" } });
+
+        expect(
+          await moveToRepository(db, "00000000-0000-4000-8000-000000000000", repoA, {
+            branch: "b",
+            baseBranch: "main",
+          }),
+        ).toBeNull();
+      });
+    });
   });
 
   it("lists the repositories runs can be filtered by: ralph enabled or with runs", async () => {

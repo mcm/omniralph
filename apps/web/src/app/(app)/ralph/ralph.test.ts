@@ -4,7 +4,9 @@ import {
   connectRepository,
   createDb,
   createRun,
+  ensureLane,
   getJob,
+  getMainLane,
   getRun,
   insertJob,
   integrations,
@@ -13,6 +15,7 @@ import {
   ralphRuns,
   runMigrations,
   saveIntegration,
+  updateLane,
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
@@ -213,13 +216,16 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   it("lists runs newest first with their row facts, filtered by status and repository", async () => {
     const first = await newRun();
     const second = await newRun({ repositoryId: repoB });
-    await updateRun(db, first.id, {
-      status: "completed",
-      agentId,
+    await updateRun(db, first.id, { status: "completed", agentId });
+    await updateLane(db, (await getMainLane(db, first))!.id, {
       prNumber: 7,
       prUrl: "https://github.com/acme/api/pull/7",
     });
-    await updateRun(db, second.id, { status: "waiting", prNumber: 3, prUrl: "https://gl/mr/3" });
+    await updateRun(db, second.id, { status: "waiting" });
+    await updateLane(db, (await getMainLane(db, second))!.id, {
+      prNumber: 3,
+      prUrl: "https://gl/mr/3",
+    });
     for (const [i, id] of [first.id, second.id].entries()) {
       await db
         .update(ralphRuns)
@@ -245,7 +251,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       repository: { id: repoA, provider: "github", fullPath: "acme/api" },
       status: "completed",
       stories: { total: 2, completed: 1 },
-      branch: first.branch,
+      branch: `eng-${session - 1}`,
       pullRequest: { number: 7, url: "https://github.com/acme/api/pull/7", label: "#7" },
       agent: { id: agentId, name: "agent-a" },
     });
@@ -318,7 +324,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       linearUrl: run.linearUrl,
       status: "waiting",
       repository: { id: repoA, fullPath: "acme/api" },
-      branch: run.branch,
+      branch: `eng-${session}`,
       baseBranch: "main",
       agent: { id: agentId, name: "agent-a" },
       pullRequest: null,
@@ -337,6 +343,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
         lastFeedback: null,
         commitSha: "a".repeat(40),
         lastJobId: job.id,
+        laneId: null,
+        elsewhere: null,
       },
       {
         id: s2!.id,
@@ -347,10 +355,63 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
         lastFeedback: "Gates failed.",
         commitSha: null,
         lastJobId: null,
+        laneId: null,
+        elsewhere: null,
       },
     ]);
     expect(view.jobs).toMatchObject([
       { id: job.id, type: "ralph.story", status: "completed", agent: { name: "agent-a" } },
+    ]);
+
+    // One section per lane: the main lane first, each with its branch, PR/MR and stories.
+    const main = (await getMainLane(db, run))!;
+    const web = await ensureLane(db, {
+      runId: run.id,
+      repositoryId: repoB,
+      branch: main.branch,
+      baseBranch: "develop",
+    });
+    await updateLane(db, web.id, {
+      prNumber: 8,
+      prUrl: "https://gitlab.com/acme/web/-/merge_requests/8",
+    });
+    await upsertStories(db, run.id, [
+      { linearIssueId: "d-1", identifier: "ENG-21", title: "First", laneId: main.id },
+      { linearIssueId: "d-2", identifier: "ENG-22", title: "Second", laneId: web.id },
+      {
+        linearIssueId: "d-3",
+        identifier: "ENG-23",
+        title: "Docs",
+        elsewhere: "it's in project Docs",
+      },
+    ]);
+    const laned = (await detailPage(run.id)).run;
+    expect(laned.lanes).toEqual([
+      {
+        id: main.id,
+        repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+        main: true,
+        branch: main.branch,
+        baseBranch: "main",
+        pullRequest: null,
+      },
+      {
+        id: web.id,
+        repository: { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+        main: false,
+        branch: main.branch,
+        baseBranch: "develop",
+        pullRequest: {
+          number: 8,
+          url: "https://gitlab.com/acme/web/-/merge_requests/8",
+          label: "!8",
+        },
+      },
+    ]);
+    expect(laned.stories.map((s) => [s.identifier, s.laneId, s.elsewhere])).toEqual([
+      ["ENG-21", main.id, null],
+      ["ENG-22", web.id, null],
+      ["ENG-23", null, "it's in project Docs"],
     ]);
 
     // waiting_on is only shown while waiting.

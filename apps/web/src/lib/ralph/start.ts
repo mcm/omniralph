@@ -8,7 +8,9 @@
  * to started and hands the run to `advanceRun`.
  */
 import {
+  copyLanes,
   createRun,
+  getMainLane,
   getRepositoryWithConnection,
   getRunByIssue,
   getRunBySession,
@@ -16,8 +18,11 @@ import {
   listRalphRepositories,
   listStories,
   lockRun,
+  moveToRepository,
+  updateLane,
   updateRun,
   updateStory,
+  type RalphLane,
   type RalphRun,
   type RalphTransaction,
   type Repository,
@@ -31,6 +36,7 @@ import {
   repositoryManualLabels,
   type LoadedEpic,
 } from "./epic-loader";
+import { routeStories } from "./lanes";
 import { quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import {
@@ -40,7 +46,7 @@ import {
   repositoryQuestionFor,
   ROUTED_BY_SELECTION,
 } from "./repository-selection";
-import { routeIssue, type RouteMatch } from "./routing";
+import { describeRoute, routeIssue } from "./routing";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
@@ -101,18 +107,6 @@ export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   ].join("\n\n");
 }
 
-const RULE_LABEL: Record<RouteMatch<Repository>["rule"], string> = {
-  tag: "`[repo=…]` tag",
-  label: "label",
-  project: "project",
-  team: "team",
-};
-
-/** How a route chose its repository, as `routed_by` stores it (e.g. "team `ENG`"). */
-export function describeRoute(route: RouteMatch<Repository>): string {
-  return `${RULE_LABEL[route.rule]} \`${route.value}\``;
-}
-
 /** The repository a run works in and how it was chosen. */
 export interface ChosenRepository {
   repository: Repository;
@@ -146,7 +140,7 @@ export function chooseRepository(
 export function describeRun(
   loaded: LoadedEpic,
   chosen: ChosenRepository,
-  run: Pick<RalphRun, "branch" | "baseBranch" | "prUrl">,
+  lane: Pick<RalphLane, "branch" | "baseBranch" | "prUrl">,
   carriedOver: boolean,
 ): string {
   const { epic } = loaded;
@@ -157,8 +151,8 @@ export function describeRun(
       : `an epic with ${epic.stories.length} ${epic.stories.length === 1 ? "story" : "stories"} (${done.length} already done)`;
   const lines = [
     `**${epic.identifier}** is ${kind}. Building it in \`${chosen.repository.fullPath}\` ` +
-      `(routed by ${chosen.routedBy}) on branch \`${run.branch}\`, ` +
-      `based on \`${run.baseBranch}\`.`,
+      `(routed by ${chosen.routedBy}) on branch \`${lane.branch}\`, ` +
+      `based on \`${lane.baseBranch}\`.`,
   ];
   if (loaded.materialized > 0) {
     lines.push(`Created ${loaded.materialized} story sub-issues from the PRD in the description.`);
@@ -172,12 +166,23 @@ export function describeRun(
   if (carriedOver) {
     lines.push(
       `Picking up where the previous session for this issue left off` +
-        `${run.prUrl ? ` (${run.prUrl})` : ""}, with its guidance.`,
+        `${lane.prUrl ? ` (${lane.prUrl})` : ""}, with its guidance.`,
     );
   }
-  const manual = epic.stories.filter(
-    (s) => s.manual && s.status !== "completed" && s.status !== "cancelled",
-  );
+  const open = epic.stories.filter((s) => s.status !== "completed" && s.status !== "cancelled");
+  for (const s of open.filter((x) => x.repo)) {
+    lines.push(
+      `**${s.storyId}** belongs in \`${s.repo?.name}\` (routed by ${s.repo?.routedBy}), so I'll ` +
+        "work it there, on its own branch and its own pull/merge request.",
+    );
+  }
+  for (const s of open.filter((x) => x.elsewhere)) {
+    lines.push(
+      `**${s.storyId}** isn't in a repository I have (${s.elsewhere}), so I'll treat it like a ` +
+        "manual step: I won't work it, and stories that depend on it wait until it's done.",
+    );
+  }
+  const manual = open.filter((s) => s.manual && !s.elsewhere);
   if (manual.length > 0) {
     lines.push(
       `Manual steps for a person: ${manual.map((s) => `**${s.storyId}**`).join(", ")}. ` +
@@ -216,26 +221,30 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
       deps.dispatcher.cancel(jobId),
     );
   }
-  const pr = previous.prUrl ? ` The open draft stays where it is: ${previous.prUrl}` : "";
+  const prUrl = (await getMainLane(deps.db, previous))?.prUrl;
+  const pr = prUrl ? ` The open draft stays where it is: ${prUrl}` : "";
   await post(deps, previous.linearAgentSessionId, {
     type: "response",
     body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
   });
 }
 
-/** A new run takes over the previous run's guidance and progress, and its PR/MR in the same repository. */
+/**
+ * A new run takes over the previous run's guidance, progress and lanes (its
+ * branches and PRs/MRs), except the lane in `exceptRepositoryId`.
+ */
 async function carryOver(
   tx: RalphTransaction,
   run: RalphRun,
   previous: RalphRun | null,
-  sameRepository: boolean,
+  exceptRepositoryId?: string | null,
 ): Promise<RalphRun> {
   if (!previous) return run;
+  await copyLanes(tx, previous.id, run.id, { exceptRepositoryId });
   return (
     (await updateRun(tx, run.id, {
       guidance: previous.guidance,
       progress: previous.progress,
-      ...(sameRepository && { prNumber: previous.prNumber, prUrl: previous.prUrl }),
     })) ?? run
   );
 }
@@ -266,15 +275,14 @@ async function askForRepositoryFirst(
       linearAgentSessionId: event.sessionId,
       kind: loaded.kind,
       focusStoryId: loaded.focusStoryId ?? null,
+      // The main lane is added with the repository.
       repositoryId: null,
-      branch: previous?.branch ?? epic.branchName,
-      // Set with the repository.
-      baseBranch: "",
       status: "waiting",
       pendingElicitation: { kind: "repository", repositoryIds: repositories.map((r) => r.id) },
     });
     if (!result.created) return result;
-    const run = await carryOver(tx, result.run, previous, false);
+    // Like v2a, the previous main lane's PR/MR isn't carried over to a repository a person picks.
+    const run = await carryOver(tx, result.run, previous, previous?.repositoryId);
     await syncStories(tx, run.id, epic);
     return { run, created: true };
   });
@@ -383,11 +391,8 @@ export async function startRun(
     return { status: "failed", error: message(error) };
   }
 
-  // Re-routing moved the issue to another repository: its earlier work there stays as it is.
-  const moved = !!previous?.repositoryId && previous.repositoryId !== chosen.repository.id;
-  const sameRepository = previous?.repositoryId === chosen.repository.id;
-  const branch = (sameRepository && previous?.branch) || epic.branchName;
-  const { run, created } = await db.transaction(async (tx) => {
+  const { run, created, lane, left } = await db.transaction(async (tx) => {
+    // The run continues the previous one (in its repository, with its lanes), then moves to the chosen repository.
     const result = await createRun(tx, {
       linearIssueId: root.id,
       linearIdentifier: root.identifier,
@@ -396,15 +401,21 @@ export async function startRun(
       linearAgentSessionId: sessionId,
       kind: loaded.kind,
       focusStoryId: loaded.focusStoryId ?? null,
-      repositoryId: chosen.repository.id,
+      repositoryId: previous?.repositoryId ?? null,
       routedBy: chosen.routedBy,
-      branch,
+    });
+    if (!result.created) return { ...result, lane: null, left: null };
+    let run = await carryOver(tx, result.run, previous);
+    // Re-routing moved the issue to another repository: its earlier work there stays as it is.
+    const moved = await moveToRepository(tx, run.id, chosen.repository.id, {
+      branch: epic.branchName,
       baseBranch,
     });
-    if (!result.created) return result;
-    const run = await carryOver(tx, result.run, previous, sameRepository);
-    await syncStories(tx, run.id, epic);
-    return { run, created: true };
+    if (!moved) throw new Error(`Ralph run ${run.id} is gone`);
+    const lane = (await updateLane(tx, moved.lane.id, { baseBranch })) ?? moved.lane;
+    run = { ...run, repositoryId: chosen.repository.id };
+    await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
+    return { run, created: true, lane, left: moved.left };
   });
   if (!created) {
     // Another delivery started this session's (or this issue's) run first.
@@ -419,14 +430,12 @@ export async function startRun(
     return { status: "started", run, created: false };
   }
 
-  if (moved) {
-    const left = await leftBehind(deps, previous!);
-    if (left) {
-      await post(deps, sessionId, {
-        type: "thought",
-        body: leftBehindNote(left, chosen.repository.fullPath),
-      });
-    }
+  const note = await leftBehind(deps, left);
+  if (note) {
+    await post(deps, sessionId, {
+      type: "thought",
+      body: leftBehindNote(note, chosen.repository.fullPath),
+    });
   }
   if (!["started", "completed", "canceled"].includes(root.stateType)) {
     try {
@@ -437,7 +446,7 @@ export async function startRun(
   }
   await post(deps, sessionId, {
     type: "thought",
-    body: describeRun(loaded, chosen, run, !!previous),
+    body: describeRun(loaded, chosen, lane!, !!previous),
   });
   await advanceRun(run.id, deps);
   return { status: "started", run, created: true };

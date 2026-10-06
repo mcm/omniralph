@@ -5,7 +5,7 @@
  * aren't listed: the agent finds the ones left for this run and story by their
  * label in the worktree.
  */
-import type { RalphRun, RalphStory, Repository, ScmConnection } from "@omniralph/db";
+import type { RalphLane, RalphRun, RalphStory, Repository, ScmConnection } from "@omniralph/db";
 import {
   dependencyLabel,
   initialProgress,
@@ -90,6 +90,8 @@ export function storyList(epic: Epic, stories: readonly Story[]): RalphStoryList
 
 export interface StoryPayloadInput {
   run: RalphRun;
+  /** The lane the job works in (its branch and base branch). */
+  lane: Pick<RalphLane, "branch" | "baseBranch">;
   repository: Repository;
   connection: ScmConnection;
   epic: Epic;
@@ -100,14 +102,14 @@ export interface StoryPayloadInput {
 }
 
 export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
-  const { run, repository, connection, epic, story, row } = input;
+  const { run, lane, repository, connection, epic, story, row } = input;
   const identifier = story.identifier ?? story.storyId;
   return RalphStoryPayload.parse({
     runId: run.id,
     repositoryId: repository.id,
     repository: jobRepository(repository, connection),
-    branch: run.branch,
-    baseBranch: run.baseBranch,
+    branch: lane.branch,
+    baseBranch: lane.baseBranch,
     settings: jobSettings(repository),
     storyId: row.id,
     attempt: row.attempts + 1,
@@ -137,6 +139,8 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
 
 export interface DescribePrPayloadInput {
   run: RalphRun;
+  /** The lane the job works in (its branch and base branch). */
+  lane: Pick<RalphLane, "branch" | "baseBranch">;
   repository: Repository;
   connection: ScmConnection;
   epic: Epic;
@@ -150,13 +154,13 @@ export interface DescribePrPayloadInput {
  * writes the PR/MR title and body.
  */
 export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDescribePrPayload {
-  const { run, repository, connection, epic, rows } = input;
+  const { run, lane, repository, connection, epic, rows } = input;
   return RalphDescribePrPayload.parse({
     runId: run.id,
     repositoryId: repository.id,
     repository: jobRepository(repository, connection),
-    branch: run.branch,
-    baseBranch: run.baseBranch,
+    branch: lane.branch,
+    baseBranch: lane.baseBranch,
     settings: jobSettings(repository),
     epic: {
       identifier: epic.identifier,
@@ -177,6 +181,8 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
 
 export interface PreparePayloadInput {
   run: RalphRun;
+  /** The lane the job works in (its branch and base branch). */
+  lane: Pick<RalphLane, "branch" | "baseBranch">;
   repository: Repository;
   connection: ScmConnection;
   /** The manual story, as just re-read from Linear (its commands as they are now). */
@@ -191,13 +197,13 @@ export interface PreparePayloadInput {
  * otherwise).
  */
 export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePayload {
-  const { run, repository, connection, story, approved } = input;
+  const { run, lane, repository, connection, story, approved } = input;
   return RalphPreparePayload.parse({
     runId: run.id,
     repositoryId: repository.id,
     repository: jobRepository(repository, connection),
-    branch: run.branch,
-    baseBranch: run.baseBranch,
+    branch: lane.branch,
+    baseBranch: lane.baseBranch,
     settings: jobSettings(repository),
     story: { identifier: story.identifier ?? story.storyId, title: story.title.slice(0, 1000) },
     commands: story.preparation ?? [],

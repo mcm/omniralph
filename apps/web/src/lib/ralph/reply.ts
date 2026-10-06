@@ -29,6 +29,7 @@ import {
   updateStory,
   type RalphRun,
   type RalphTransaction,
+  getMainLane,
 } from "@omniralph/db";
 import {
   isRerunPreparationRequest,
@@ -41,6 +42,7 @@ import {
 } from "@omniralph/ralph";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { mainBranch } from "./lanes";
 import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
@@ -222,7 +224,7 @@ export async function stopRun(
     return {
       jobIds: await listActiveRunJobIds(tx, current.id),
       stories: await listStories(tx, current.id),
-      prUrl: current.prUrl,
+      prUrl: (await getMainLane(tx, current))?.prUrl ?? null,
     };
   });
   if (!stopped) return { status: "gone" };
@@ -326,7 +328,7 @@ async function answerPreparation(
     advance: true,
     note: {
       type: "thought",
-      body: `I'll run the preparation of ${story}${busy ? " once the current job finishes" : ""}, if its commands and \`${run.branch}\` haven't changed.`,
+      body: `I'll run the preparation of ${story}${busy ? " once the current job finishes" : ""}, if its commands and \`${await mainBranch(tx, run)}\` haven't changed.`,
     },
   };
 }

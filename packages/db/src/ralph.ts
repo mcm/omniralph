@@ -26,6 +26,7 @@ import type { Repository, ScmProvider } from "./repositories.js";
 import {
   agents,
   jobs,
+  ralphLanes,
   ralphMessages,
   ralphRuns,
   ralphStories,
@@ -36,6 +37,7 @@ import {
 } from "./schema.js";
 
 export type RalphRun = typeof ralphRuns.$inferSelect;
+export type RalphLane = typeof ralphLanes.$inferSelect;
 export type RalphStory = typeof ralphStories.$inferSelect;
 export type RalphRunKind = RalphRun["kind"];
 export type RalphRunStatus = RalphRun["status"];
@@ -108,16 +110,17 @@ export interface NewRalphRunInput {
   /** Null while a person is asked to pick the repository. */
   repositoryId: string | null;
   routedBy?: string | null;
-  branch: string;
-  baseBranch: string;
+  /** The main lane's branch and base branch: given with a repository, the main lane is created. */
+  branch?: string;
+  baseBranch?: string;
   status?: RalphRunStatus;
   pendingElicitation?: RalphPendingElicitation | null;
 }
 
 /**
- * Creates a `pending` run, unless the agent session already has a run or the
- * issue already has an unfinished one: then that run is returned with
- * `created: false`.
+ * Creates a `pending` run (and, given a repository and branch, its main lane),
+ * unless the agent session already has a run or the issue already has an
+ * unfinished one: then that run is returned with `created: false`.
  */
 export async function createRun(
   db: Executor,
@@ -125,12 +128,23 @@ export async function createRun(
 ): Promise<{ run: RalphRun; created: boolean }> {
   // A conflicting run can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
+    const { branch, baseBranch, ...values } = input;
     const [row] = await db
       .insert(ralphRuns)
-      .values({ ...input, focusStoryId: input.focusStoryId ?? null })
+      .values({ ...values, focusStoryId: input.focusStoryId ?? null })
       .onConflictDoNothing()
       .returning();
-    if (row) return { run: row, created: true };
+    if (row) {
+      if (row.repositoryId && branch !== undefined) {
+        await ensureLane(db, {
+          runId: row.id,
+          repositoryId: row.repositoryId,
+          branch,
+          baseBranch: baseBranch ?? "",
+        });
+      }
+      return { run: row, created: true };
+    }
 
     const existing =
       (await getRunBySession(db, input.linearAgentSessionId)) ??
@@ -294,8 +308,9 @@ export interface RalphRunListEntry {
   linearUrl: string | null;
   kind: RalphRunKind;
   status: RalphRunStatus;
-  branch: string;
-  baseBranch: string;
+  /** The main lane's branch and PR/MR (null while the run has no repository). */
+  branch: string | null;
+  baseBranch: string | null;
   prNumber: number | null;
   prUrl: string | null;
   error: string | null;
@@ -339,10 +354,10 @@ export async function listRuns(
         linearUrl: ralphRuns.linearUrl,
         kind: ralphRuns.kind,
         status: ralphRuns.status,
-        branch: ralphRuns.branch,
-        baseBranch: ralphRuns.baseBranch,
-        prNumber: ralphRuns.prNumber,
-        prUrl: ralphRuns.prUrl,
+        branch: ralphLanes.branch,
+        baseBranch: ralphLanes.baseBranch,
+        prNumber: ralphLanes.prNumber,
+        prUrl: ralphLanes.prUrl,
         error: ralphRuns.error,
         createdAt: ralphRuns.createdAt,
         updatedAt: ralphRuns.updatedAt,
@@ -357,6 +372,7 @@ export async function listRuns(
       .from(ralphRuns)
       .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
       .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+      .leftJoin(ralphLanes, mainLaneOf(ralphRuns))
       .where(where)
       .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
       .limit(pageSize)
@@ -400,10 +416,19 @@ export interface RalphRunDetail {
   /** Null while a person is asked to pick it. */
   repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
+  /** The main lane first, then the others in the order they were added. */
+  lanes: RalphLaneDetail[];
   /** In sub-issue order. */
   stories: RalphStory[];
   /** Every job of the run, newest first. */
   jobs: RalphRunJob[];
+}
+
+export interface RalphLaneDetail {
+  lane: RalphLane;
+  repository: { id: string; provider: ScmProvider; fullPath: string };
+  /** The lane of the run's own repository. */
+  main: boolean;
 }
 
 export type RalphRunJob = Pick<
@@ -438,7 +463,20 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
     .where(eq(ralphRuns.id, runId))
     .limit(1);
   if (!row) return null;
-  const [stories, jobRows] = await Promise.all([
+  const [lanes, stories, jobRows] = await Promise.all([
+    db
+      .select({
+        lane: ralphLanes,
+        repository: {
+          id: repositories.id,
+          provider: repositories.provider,
+          fullPath: repositories.fullPath,
+        },
+      })
+      .from(ralphLanes)
+      .innerJoin(repositories, eq(repositories.id, ralphLanes.repositoryId))
+      .where(eq(ralphLanes.runId, runId))
+      .orderBy(asc(ralphLanes.createdAt), asc(ralphLanes.id)),
     listStories(db, runId),
     db
       .select({
@@ -463,6 +501,9 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
     run: row.run,
     repository: row.repository,
     agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
+    lanes: lanes
+      .map((l) => ({ ...l, main: l.lane.repositoryId === row.run.repositoryId }))
+      .sort((a, b) => Number(b.main) - Number(a.main)),
     stories,
     jobs: jobRows.map(({ agentId, agentName, ...job }) => ({
       ...job,
@@ -578,17 +619,171 @@ export async function listRunsToReconcile(db: Executor, staleBefore: Date): Prom
     .orderBy(asc(ralphRuns.updatedAt), asc(ralphRuns.id));
 }
 
+// ── Lanes ────────────────────────────────────────────────────────────────────
+
+/** Joins a run (`ralph_runs` or an alias) to its main lane: the lane of its repository. */
+function mainLaneOf(runs: typeof ralphRuns) {
+  return and(eq(ralphLanes.runId, runs.id), eq(ralphLanes.repositoryId, runs.repositoryId));
+}
+
+export interface NewRalphLaneInput {
+  runId: string;
+  repositoryId: string;
+  branch: string;
+  baseBranch: string;
+}
+
+/** The run's lane in `repositoryId`, created with `input`'s branches if it has none yet. */
+export async function ensureLane(db: Executor, input: NewRalphLaneInput): Promise<RalphLane> {
+  const [row] = await db.insert(ralphLanes).values(input).onConflictDoNothing().returning();
+  if (row) return row;
+  const existing = await getLaneByRepository(db, input.runId, input.repositoryId);
+  if (!existing) throw new Error(`Failed to create a lane of ralph run ${input.runId}`);
+  return existing;
+}
+
+export async function getLane(db: Executor, id: string): Promise<RalphLane | null> {
+  const [row] = await db.select().from(ralphLanes).where(eq(ralphLanes.id, id)).limit(1);
+  return row ?? null;
+}
+
+/** The run's lane in a repository, or null. */
+export async function getLaneByRepository(
+  db: Executor,
+  runId: string,
+  repositoryId: string,
+): Promise<RalphLane | null> {
+  const [row] = await db
+    .select()
+    .from(ralphLanes)
+    .where(and(eq(ralphLanes.runId, runId), eq(ralphLanes.repositoryId, repositoryId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The run's main lane (of its repository); null while it has no repository. */
+export async function getMainLane(
+  db: Executor,
+  run: Pick<RalphRun, "id" | "repositoryId">,
+): Promise<RalphLane | null> {
+  return run.repositoryId ? getLaneByRepository(db, run.id, run.repositoryId) : null;
+}
+
+/** The run's lanes in the order they were added. */
+export async function listLanes(db: Executor, runId: string): Promise<RalphLane[]> {
+  return db
+    .select()
+    .from(ralphLanes)
+    .where(eq(ralphLanes.runId, runId))
+    .orderBy(asc(ralphLanes.createdAt), asc(ralphLanes.id));
+}
+
+/** Lane columns the orchestrator changes (the run and repository are fixed). */
+export type RalphLaneUpdate = Partial<
+  Omit<typeof ralphLanes.$inferInsert, "id" | "runId" | "repositoryId" | "createdAt" | "updatedAt">
+>;
+
+/** Updates a lane (e.g. its PR/MR once opened). Returns null if it's gone. */
+export async function updateLane(
+  db: Executor,
+  id: string,
+  update: RalphLaneUpdate,
+): Promise<RalphLane | null> {
+  const [row] = await db
+    .update(ralphLanes)
+    .set({ ...update, updatedAt: new Date() })
+    .where(eq(ralphLanes.id, id))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Copies a run's lanes to another run (a re-delegation picking up where the
+ * previous session left off), except the one in `exceptRepositoryId`.
+ */
+export async function copyLanes(
+  db: Executor,
+  fromRunId: string,
+  toRunId: string,
+  options: { exceptRepositoryId?: string | null } = {},
+): Promise<RalphLane[]> {
+  const lanes = (await listLanes(db, fromRunId)).filter(
+    (l) => l.repositoryId !== options.exceptRepositoryId,
+  );
+  if (lanes.length === 0) return [];
+  return db
+    .insert(ralphLanes)
+    .values(
+      lanes.map(({ id: _id, runId: _runId, createdAt: _c, updatedAt: _u, ...lane }) => ({
+        ...lane,
+        runId: toRunId,
+      })),
+    )
+    .onConflictDoNothing()
+    .returning();
+}
+
+/**
+ * Re-routing moved a run to `repositoryId` (cyralph's `moveToRepository`):
+ * the old main lane is dropped (its branch, PR/MR and follow-up state stay
+ * behind, and are returned for the note saying so; its pending requests come
+ * along), the run's lane in the new repository becomes the main lane, or a
+ * fresh one is started with `fresh`'s branches. The same repository changes
+ * nothing (a missing main lane is created). Call it under the run's lock.
+ */
+export async function moveToRepository(
+  db: Executor,
+  runId: string,
+  repositoryId: string,
+  fresh: { branch: string; baseBranch: string },
+): Promise<{ lane: RalphLane; left: RalphLane | null } | null> {
+  const run = await getRun(db, runId);
+  if (!run) return null;
+  if (run.repositoryId === repositoryId) {
+    return { lane: await ensureLane(db, { runId, repositoryId, ...fresh }), left: null };
+  }
+  const old = await getMainLane(db, run);
+  if (old) await db.delete(ralphLanes).where(eq(ralphLanes.id, old.id));
+  const existing = await getLaneByRepository(db, runId, repositoryId);
+  const carried = old?.pendingRequests ?? [];
+  let lane: RalphLane;
+  if (existing) {
+    lane =
+      (carried.length > 0
+        ? await updateLane(db, existing.id, {
+            pendingRequests: [...carried, ...existing.pendingRequests],
+          })
+        : existing) ?? existing;
+    // Its messages now belong to the main lane.
+    await db
+      .update(ralphMessages)
+      .set({ laneId: null })
+      .where(eq(ralphMessages.laneId, existing.id));
+  } else {
+    lane = await ensureLane(db, { runId, repositoryId, ...fresh });
+    if (carried.length > 0) {
+      lane = (await updateLane(db, lane.id, { pendingRequests: carried })) ?? lane;
+    }
+  }
+  await updateRun(db, runId, { repositoryId });
+  return { lane, left: old };
+}
+
 // ── Stories ──────────────────────────────────────────────────────────────────
 
 export interface RalphStoryInput {
   linearIssueId: string;
   identifier: string;
   title: string;
+  /** The lane the story runs in (null: none yet). */
+  laneId?: string | null;
+  /** Why it's treated as manual: it belongs in a repository Omniralph doesn't have. */
+  elsewhere?: string | null;
 }
 
 /**
- * Inserts the run's stories, or refreshes the identifier, title and order of
- * known ones (status, attempts and the rest are kept). `stories` is in sub-issue
+ * Inserts the run's stories, or refreshes the identifier, title, order, lane
+ * and `elsewhere` of known ones (status, attempts and the rest are kept). `stories` is in sub-issue
  * order. Returns all of the run's stories in order.
  */
 export async function upsertStories(
@@ -599,13 +794,23 @@ export async function upsertStories(
   if (stories.length > 0) {
     await db
       .insert(ralphStories)
-      .values(stories.map((story, position) => ({ ...story, runId, position })))
+      .values(
+        stories.map((story, position) => ({
+          ...story,
+          laneId: story.laneId ?? null,
+          elsewhere: story.elsewhere ?? null,
+          runId,
+          position,
+        })),
+      )
       .onConflictDoUpdate({
         target: [ralphStories.runId, ralphStories.linearIssueId],
         set: {
           identifier: sql`excluded.identifier`,
           title: sql`excluded.title`,
           position: sql`excluded.position`,
+          laneId: sql`excluded.lane_id`,
+          elsewhere: sql`excluded.elsewhere`,
           updatedAt: new Date(),
         },
       });

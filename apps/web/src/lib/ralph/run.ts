@@ -7,6 +7,7 @@
  */
 import {
   getAgent,
+  getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
   listStories,
@@ -15,6 +16,7 @@ import {
   updateStory,
   upsertStories,
   type Database,
+  type RalphLane,
   type RalphRun,
   type RalphPreparationRequest,
   type RalphRunStatus,
@@ -51,6 +53,7 @@ import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
+import { mainBranch, routeStories, type StoryLanes } from "./lanes";
 import { postActivity, quietly, tail } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
@@ -109,13 +112,15 @@ export function syncedStoryStatus(current: RalphStoryStatus, story: Story): Ralp
 }
 
 /**
- * Stores the epic's stories (new ones are added, known ones refreshed) and
- * syncs their status with Linear. Returns the run's stories in order.
+ * Stores the epic's stories (new ones are added, known ones refreshed, with
+ * their lane from `routeStories`) and syncs their status with Linear. Returns
+ * the run's stories in order.
  */
 export async function syncStories(
   tx: RalphTransaction | Database,
   runId: string,
   epic: Epic,
+  lanes?: StoryLanes,
 ): Promise<RalphStory[]> {
   const byIssue = new Map(epic.stories.map((s) => [s.issueId ?? s.key, s]));
   const stored = await upsertStories(
@@ -125,6 +130,7 @@ export async function syncStories(
       linearIssueId: s.issueId ?? s.key,
       identifier: s.identifier ?? s.storyId,
       title: s.title,
+      ...lanes?.get(s.issueId ?? s.key),
     })),
   );
   let changed = false;
@@ -236,7 +242,8 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   }
 
   const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
-  const rows = await syncStories(tx, run.id, epic);
+  // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
+  const rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
   // An approved preparation ("Run it") goes first: it was asked for while nothing else could run.
   const approved = await approvedPreparation(deps, tx, run, stories);
@@ -298,12 +305,12 @@ async function failRun(
   return { action: "failed", run: failed };
 }
 
-/** The run's repository while it may run ralph jobs; else the run fails. */
+/** The run's repository (with its main lane) while it may run ralph jobs; else the run fails. */
 async function usableRepository(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
-): Promise<{ repository: Repository; connection: ScmConnection } | AdvanceResult> {
+): Promise<{ repository: Repository; connection: ScmConnection; lane: RalphLane } | AdvanceResult> {
   const found = run.repositoryId
     ? await getRepositoryWithConnection(deps.db, run.repositoryId)
     : null;
@@ -319,7 +326,11 @@ async function usableRepository(
         "**Repository › Settings › Ralph** and delegate the issue again to continue.",
     );
   }
-  return found;
+  const lane = await getMainLane(tx, run);
+  if (!lane) {
+    return failRun(deps, tx, run, "The run has no branch in its repository, so I stopped.");
+  }
+  return { ...found, lane };
 }
 
 /**
@@ -339,6 +350,7 @@ async function enqueueStory(
 
   const payload = buildStoryPayload({
     run,
+    lane: found.lane,
     repository: found.repository,
     connection: found.connection,
     epic,
@@ -390,7 +402,8 @@ async function describePullRequest(
   run: RalphRun,
   input: { epic: Epic; stories: Story[]; rows: RalphStory[] },
 ): Promise<AdvanceResult> {
-  if (run.prNumber === null && !input.rows.some((r) => r.commitSha)) {
+  const main = await getMainLane(tx, run);
+  if ((main?.prNumber ?? null) === null && !input.rows.some((r) => r.commitSha)) {
     return complete(deps, tx, run, input);
   }
   const found = await usableRepository(deps, tx, run);
@@ -463,7 +476,7 @@ async function enqueuePreparation(
     })) ?? run;
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "thought",
-    body: `Running the preparation of **${request.identifier}: ${request.title}** on \`${run.branch}\`.`,
+    body: `Running the preparation of **${request.identifier}: ${request.title}** on \`${found.lane.branch}\`.`,
   });
   return { action: "preparing", run: updated, jobId: job.id };
 }
@@ -484,7 +497,7 @@ async function complete(
       : `all ${input.stories.length} ${input.stories.length === 1 ? "story" : "stories"} of **${input.epic.identifier}**`;
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "response",
-    body: `Finished ${what} on \`${run.branch}\`. Nothing was committed, so there is no pull/merge request.`,
+    body: `Finished ${what} on \`${await mainBranch(tx, run)}\`. Nothing was committed, so there is no pull/merge request.`,
   });
   await moveCompletedEpic(deps, run);
   return { action: "completed", run: completed };
@@ -591,7 +604,9 @@ async function wait(
     ].join("\n\n");
   } else {
     const feedback = new Map(rows.map((r) => [r.linearIssueId, r]));
-    const lines = [`Paused with ${done}/${stories.length} stories complete on \`${run.branch}\`.`];
+    const lines = [
+      `Paused with ${done}/${stories.length} stories complete on \`${await mainBranch(tx, run)}\`.`,
+    ];
     if (hitCap) {
       lines.push(`I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`);
     }
