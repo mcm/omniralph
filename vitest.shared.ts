@@ -19,5 +19,8 @@ export default defineConfig({
     // Stopping a Testcontainers Postgres in `afterAll` can take well over the default 10s
     // when several packages' suites run containers at once under `pnpm test`.
     hookTimeout: 60_000,
+    // Testcontainers-backed tests (web ralph/agent API, db) take up to ~3s alone and two to
+    // three times that when every package's suite runs at once, past the default 5s.
+    testTimeout: 20_000,
   },
 });
