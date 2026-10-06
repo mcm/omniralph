@@ -389,6 +389,26 @@ export const repositories = pgTable(
 
 // ── Agents ───────────────────────────────────────────────────────────────────
 
+/** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
+export interface AgentUpdateState {
+  state: "idle" | "draining" | "installing" | "confirming";
+  version: string | null;
+  previous: string | null;
+  startsSincePending: number;
+  error: string | null;
+}
+
+/**
+ * Instance-wide settings edited by admins, one JSON value per key (e.g.
+ * `agent.desiredVersion`).
+ */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});
+
 export const agents = pgTable("agents", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -406,8 +426,16 @@ export const agents = pgTable("agents", {
     .$type<Partial<Record<string, number>>>()
     .notNull()
     .default({}),
+  /** Overrides the global desired agent version (`app_settings` `agent.desiredVersion`). */
+  desiredVersion: text("desired_version"),
   reportedVersion: text("reported_version"),
   reportedCapabilities: text("reported_capabilities").array(),
+  /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
+  selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
+  /** The agent's self-update progress, as last reported. */
+  updateState: jsonb("update_state").$type<AgentUpdateState>(),
+  /** Versions the agent failed to install or keep running; it never retries them. */
+  failedVersions: text("failed_versions").array().notNull().default(sql`'{}'::text[]`),
   lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),

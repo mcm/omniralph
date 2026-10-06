@@ -7,7 +7,7 @@
  */
 import { and, asc, count, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { agentRepoPins, agents, jobs } from "./schema.js";
+import { agentRepoPins, agents, jobs, type AgentUpdateState } from "./schema.js";
 
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
@@ -346,13 +346,24 @@ export async function expireQueuedJobs(
 export async function recordAgentHeartbeat(
   db: Database,
   agentId: string,
-  input: { version: string; capabilities: string[]; now?: Date },
+  input: {
+    version: string;
+    capabilities: string[];
+    /** Self-update reporting; older agents send none, which clears it. */
+    selfUpdate?: "supported" | "unsupported";
+    update?: AgentUpdateState;
+    failedVersions?: string[];
+    now?: Date;
+  },
 ): Promise<typeof agents.$inferSelect | null> {
   const [row] = await db
     .update(agents)
     .set({
       reportedVersion: input.version,
       reportedCapabilities: input.capabilities,
+      selfUpdate: input.selfUpdate ?? null,
+      updateState: input.update ?? null,
+      failedVersions: input.failedVersions ?? [],
       lastHeartbeatAt: input.now ?? new Date(),
     })
     .where(eq(agents.id, agentId))

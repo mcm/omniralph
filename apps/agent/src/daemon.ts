@@ -19,6 +19,7 @@ import {
 } from "./capabilities/index.js";
 import { jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
+import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import type {
   MessageMetadata,
   QueueReceiver,
@@ -76,6 +77,8 @@ export interface DaemonOptions {
   shutdownGraceMs?: number;
   /** Delay between attempts to report a job's outcome. */
   reportRetryDelayMs?: number;
+  /** Self-update: reported in every heartbeat and told about each response. */
+  updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
 }
 
 interface RunningJob {
@@ -93,6 +96,8 @@ const ACKED_MESSAGES_KEPT = 1000;
 
 export interface DaemonStatus {
   stopping: boolean;
+  /** Taking no new jobs while running ones finish (for a self-update). */
+  draining: boolean;
   connected: boolean;
   lastHeartbeatAt: string | null;
   runningJobIds: string[];
@@ -104,7 +109,7 @@ export interface DaemonStatus {
  * tokens), one poll worker per free slot, and the job lifecycle
  * (start → run → result/fail → acknowledge) inside the queue's receive handler.
  */
-export class AgentDaemon {
+export class AgentDaemon implements DrainableDaemon {
   private config: HeartbeatResponse | null = null;
   private lastHeartbeatAt: Date | null = null;
   private readonly running = new Map<string, RunningJob>();
@@ -119,6 +124,8 @@ export class AgentDaemon {
    */
   private readonly capabilitySlots = new Map<string, number>();
   private stopping = false;
+  /** Set by `drain()`: no new receives until `resume()`. */
+  private draining = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly sleepers = new Set<() => void>();
   private readonly receivers = new Map<string, QueueReceiver>();
@@ -149,6 +156,7 @@ export class AgentDaemon {
   status(): DaemonStatus {
     return {
       stopping: this.stopping,
+      draining: this.draining,
       connected: this.config !== null,
       lastHeartbeatAt: this.lastHeartbeatAt?.toISOString() ?? null,
       runningJobIds: [...this.running.keys()],
@@ -170,15 +178,7 @@ export class AgentDaemon {
         { runningJobs: this.running.size, graceMs: this.shutdownGraceMs },
         "shutting down; waiting for running jobs",
       );
-      let timer: NodeJS.Timeout | undefined;
-      const timedOut = await Promise.race([
-        Promise.allSettled([...this.handlers]).then(() => false),
-        new Promise<boolean>(
-          (resolve) => (timer = setTimeout(() => resolve(true), this.shutdownGraceMs)),
-        ),
-      ]);
-      clearTimeout(timer);
-      if (timedOut) {
+      if (!(await this.waitForHandlers(this.shutdownGraceMs))) {
         this.options.logger.warn(
           { unfinishedJobIds: [...this.running.keys()] },
           "exiting with unfinished jobs; their messages will be redelivered",
@@ -186,6 +186,63 @@ export class AgentDaemon {
       }
     }
     this.resolveExit(0);
+  }
+
+  /**
+   * Stops taking jobs (for a self-update) and waits up to `timeoutMs` for the
+   * running ones, then aborts the rest: their messages aren't acknowledged,
+   * so they're redelivered. Heartbeats go on, so running jobs keep their
+   * tokens and messages. Port of cyralph's `SessionManager.drain`.
+   */
+  async drain(timeoutMs: number): Promise<void> {
+    this.draining = true;
+    for (const wake of this.sleepers) wake();
+    if (this.handlers.size === 0) return;
+    const log = this.options.logger;
+    log.info({ runningJobs: this.running.size, timeoutMs }, "draining; waiting for running jobs");
+    if (await this.waitForHandlers(timeoutMs)) return;
+    if (this.stopping) return;
+    log.warn(
+      { abortedJobIds: [...this.running.keys()] },
+      "drain timed out; aborting the running jobs, which will be redelivered",
+    );
+    for (const job of this.running.values()) job.controller.abort(new ShutdownAbort());
+    if (!(await this.waitForHandlers(this.shutdownGraceMs))) {
+      log.warn(
+        { unfinishedJobIds: [...this.running.keys()] },
+        "aborted jobs didn't finish in time; their messages will be redelivered",
+      );
+    }
+  }
+
+  /** Takes jobs again after `drain()`. */
+  resume(): void {
+    if (!this.draining) return;
+    this.draining = false;
+    this.options.logger.info("taking jobs again");
+    this.fillSlots();
+  }
+
+  /** Stops with exit code 0 after a self-update, so pm2 starts the new version. */
+  exitForUpdate(): void {
+    this.stop();
+    for (const job of this.running.values()) job.controller.abort(new ShutdownAbort());
+    this.resolveExit(0);
+  }
+
+  isStopping(): boolean {
+    return this.stopping;
+  }
+
+  /** Waits for the running receive handlers; false when `timeoutMs` passed first. */
+  private async waitForHandlers(timeoutMs: number): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    const finished = await Promise.race([
+      Promise.allSettled([...this.handlers]).then(() => true),
+      new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))),
+    ]);
+    clearTimeout(timer);
+    return finished;
   }
 
   /** Immediate stop with a non-zero exit code (e.g. re-enrollment required). */
@@ -231,6 +288,8 @@ export class AgentDaemon {
         freeSlots: this.freeSlots(),
         deliveredMessageIds,
         rejectedMessageIds,
+        failedVersions: [],
+        ...this.options.updater?.report(),
       });
       this.lastHeartbeatAt = new Date();
       for (const id of [...deliveredMessageIds, ...rejectedMessageIds]) {
@@ -242,9 +301,20 @@ export class AgentDaemon {
         this.ackedMessageIds.delete(id);
       }
       this.applyConfig(response);
+      this.notifyUpdater(response);
     } catch (error) {
       this.onApiError(error, "heartbeat failed");
+      this.notifyUpdater(null);
     }
+  }
+
+  private notifyUpdater(response: HeartbeatResponse | null): void {
+    const updater = this.options.updater;
+    if (!updater || this.stopping) return;
+    updater.onHeartbeat(response, this).catch((error: unknown) => {
+      this.options.logger.error({ err: error }, "self-update failed");
+      this.resume();
+    });
   }
 
   /** Applies a heartbeat response without restarting anything. */
@@ -362,7 +432,7 @@ export class AgentDaemon {
    */
   freeSlots(): number {
     const config = this.config;
-    if (!config) return 0;
+    if (!config || this.draining) return 0;
     const running = new Map<string, number>();
     for (const job of this.running.values()) {
       running.set(job.capability, (running.get(job.capability) ?? 0) + 1);
@@ -393,7 +463,9 @@ export class AgentDaemon {
   }
 
   private fillSlots(): void {
-    if (this.stopping || !this.config || this.pollableTopics().length === 0) return;
+    if (this.stopping || this.draining || !this.config || this.pollableTopics().length === 0) {
+      return;
+    }
     while (this.workers < this.config.maxConcurrency) {
       this.workers++;
       void this.worker();
@@ -415,13 +487,19 @@ export class AgentDaemon {
       const topics = this.pollableTopics();
       // Leave synchronously (check and decrement together) so a lowered maxConcurrency
       // retires exactly the surplus workers.
-      if (this.stopping || !config || this.workers > config.maxConcurrency || topics.length === 0) {
+      if (
+        this.stopping ||
+        this.draining ||
+        !config ||
+        this.workers > config.maxConcurrency ||
+        topics.length === 0
+      ) {
         this.workers--;
         return;
       }
       let received = false;
       for (const topic of topics) {
-        if (this.stopping) break;
+        if (this.stopping || this.draining) break;
         const capability = this.topicCapability(topic);
         if (!capability || !this.takeCapabilitySlot(capability)) continue;
         try {
@@ -477,7 +555,7 @@ export class AgentDaemon {
    */
   private async handleMessage(message: unknown, metadata: MessageMetadata): Promise<void> {
     const log = this.options.logger.child({ messageId: metadata.messageId });
-    if (this.stopping) throw new Redeliver({ afterSeconds: 0 });
+    if (this.stopping || this.draining) throw new Redeliver({ afterSeconds: 0 });
     const parsed = JobMessage.safeParse(message);
     if (!parsed.success) {
       log.warn("dropping a malformed queue message");

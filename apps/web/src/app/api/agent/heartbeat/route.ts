@@ -1,5 +1,6 @@
 import {
   classifyAgentRunningJobs,
+  getDesiredAgentVersion,
   listAgentPinnedRepositoryIds,
   recordAgentHeartbeat,
 } from "@omniralph/db";
@@ -18,10 +19,11 @@ import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
 
 /**
- * Agent heartbeat (every 20s). Records the reported version and capabilities,
- * applies the acknowledged job messages and returns the central
+ * Agent heartbeat (every 20s). Records the reported version, capabilities and
+ * self-update state, applies the acknowledged job messages and returns the central
  * configuration, the running jobs the agent must cancel, fresh job tokens and
- * undelivered messages (`jobMessages`) for the ones it keeps running.
+ * undelivered messages (`jobMessages`) for the ones it keeps running, and the
+ * version it should run (its override, else the global setting).
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireAgent(req);
@@ -34,11 +36,15 @@ export async function POST(req: Request): Promise<Response> {
   const agent = await recordAgentHeartbeat(db, agentId, {
     version: body.data.version,
     capabilities: body.data.capabilities,
+    selfUpdate: body.data.selfUpdate,
+    update: body.data.update,
+    failedVersions: body.data.failedVersions,
   });
   if (!agent) return badRequest("unknown_agent");
-  const [pinnedRepoIds, running] = await Promise.all([
+  const [pinnedRepoIds, running, globalVersion] = await Promise.all([
     listAgentPinnedRepositoryIds(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
+    agent.desiredVersion ? null : getDesiredAgentVersion(db),
   ]);
   const jobTokens = await Promise.all(running.keep.map((job) => signJobToken(job, agentId)));
   let jobMessages: JobMessageDelivery[] = [];
@@ -69,5 +75,6 @@ export async function POST(req: Request): Promise<Response> {
     cancelJobIds: running.cancel,
     jobTokens,
     jobMessages,
+    desiredVersion: agent.desiredVersion ?? globalVersion,
   } satisfies HeartbeatResponse);
 }

@@ -60,8 +60,9 @@ npm install -g @iamthemcmaster/omniralph-agent
 omniralph-agent --version
 ```
 
-To upgrade: stop the agent, run `npm install -g @iamthemcmaster/omniralph-agent@latest`, then start
-it again. See [apps/agent/README.md](../apps/agent/README.md) for the release procedure.
+To upgrade by hand: stop the agent, run `npm install -g @iamthemcmaster/omniralph-agent@latest`,
+then start it again. Agents run under pm2 can update themselves instead (see
+[Self-update](#self-update-pm2)). See [apps/agent/README.md](../apps/agent/README.md) for the release procedure.
 
 ## 3. Give the agent's user its own Claude login
 
@@ -204,7 +205,55 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
 - pm2 captures the environment when the process is first started. After changing
   `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
   `pm2 restart omniralph-agent --update-env`.
-- To upgrade: `npm install -g @iamthemcmaster/omniralph-agent@latest && pm2 restart omniralph-agent`.
+- To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below).
+  By hand: `npm install -g @iamthemcmaster/omniralph-agent@latest && pm2 restart omniralph-agent`.
+- Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
+  self-update and relies on pm2 to start it again.
+
+### Self-update (pm2)
+
+An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates itself to the
+**desired version**, so upgrades need no SSH:
+
+1. When the heartbeat's desired version differs from the running one and isn't in the agent's
+   failed list, the agent stops taking new jobs and lets running ones finish, for up to 2 hours.
+   Heartbeats go on meanwhile (jobs keep their tokens and Linear replies). Jobs still running after
+   2 hours are aborted; their queue messages aren't acknowledged, so they're redelivered.
+2. It runs `npm i -g @iamthemcmaster/omniralph-agent@<version>` as the agent's user, with the same
+   `~/.npmrc` as the [install](#2-install): the npm auth the host needs is unchanged.
+3. It writes `update-state.json` next to `agent.json` (mode 0600):
+   `{ previous, pending, startsSincePending, failed }`.
+4. It exits with code 0 and pm2 starts the new version.
+
+If the install fails, the version is added to `failed` and the agent keeps running (and taking jobs
+on) the current version.
+
+**Rollback.** Each start with a `pending` version counts in `startsSincePending`. Once the new version
+has heartbeated successfully for 60 seconds it's confirmed (`pending` is cleared). If it starts a
+fourth time without that (it crashes, or can't reach the control panel), the agent reinstalls
+`previous`, adds the pending version to `failed` and exits, so pm2 starts the previous version.
+Failed versions are reported in the heartbeat, shown on the agent's page and never retried by that
+agent; to try one again after fixing the host, remove it from `failed` in `update-state.json` and
+`pm2 restart omniralph-agent`. With `--max-restarts 5`, pm2 still allows the four starts a rollback
+needs.
+
+**Choosing the version.**
+
+- **Settings › Agents** (admins) holds the global desired version, e.g. `1.4.0` (semver). Blank means
+  versions aren't managed: agents keep whatever they run. **Use latest on npm** sets it to the
+  package's `latest` dist-tag; it's shown only when the control panel has `NPM_TOKEN` (an npm token
+  that can read the restricted package; see [env.md](env.md)).
+- **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
+  or to pin a host to an older version. Clear the override to follow the global version again.
+- To pin every agent, set the global version to an exact version and don't use **Use latest on
+  npm**; agents never move on their own.
+
+The **Agents** list and each agent's page show the reported version, the desired version, the
+update status (**Up to date**, **Updating** with the step, **Failed** when the desired version
+failed on that agent, **Update manually**) and the failed versions.
+
+Agents not run by pm2 (systemd, tmux) report `selfUpdate: "unsupported"`, never install anything
+and show **Update manually**: upgrade them by hand as in [Install](#2-install).
 
 ## Central config
 
@@ -218,6 +267,7 @@ response (every 20s), so changes need no restart:
 | Poll interval | **Agents › <agent>** | 5s |
 | Enabled capabilities (`review`, `ralph`) | **Agents › <agent>** | `review` |
 | Pinned repositories | **Agents › <agent>**, or **Repository › Settings › Agents** | none (every agent is eligible for every repo) |
+| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Settings › Agents**; per-agent override on **Agents › <agent>** | none (not managed) |
 | Job cancellations | **Jobs** (cancel) | — |
 
 Per-capability limits cap how many of an agent's slots one capability's jobs may take. A worker only

@@ -90,13 +90,21 @@ export async function readConfig(file: string): Promise<AgentConfig> {
  * the old or the new file, never a truncated one.
  */
 export async function writeConfig(file: string, config: AgentConfig): Promise<void> {
+  await writePrivateJson(file, config);
+}
+
+/**
+ * Writes a JSON file only the owner can read (0600), atomically (see
+ * `writeConfig`).
+ */
+export async function writePrivateJson(file: string, value: unknown): Promise<void> {
   const dir = path.dirname(file);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const tmp = path.join(dir, `.${path.basename(file)}.${randomBytes(6).toString("hex")}.tmp`);
   try {
     const handle = await open(tmp, "wx", 0o600);
     try {
-      await handle.writeFile(`${JSON.stringify(config, null, 2)}\n`);
+      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
       await handle.sync();
     } finally {
       await handle.close();

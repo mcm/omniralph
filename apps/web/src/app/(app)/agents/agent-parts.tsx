@@ -3,6 +3,7 @@
 import { Badge, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
 import type { AgentRow } from "@/lib/agents/rows";
+import { UPDATE_STATUS_LABELS } from "@/lib/agents/update";
 import { ProviderIcon } from "../repositories/repositories-view";
 
 export function AgentStatusBadge({ agent }: { agent: Pick<AgentRow, "online" | "revoked"> }) {
@@ -87,6 +88,68 @@ export function RepositoryBadges({
           {repo.fullPath}
         </Badge>
       ))}
+    </div>
+  );
+}
+
+const UPDATE_STATUS_VARIANTS = {
+  up_to_date: "success",
+  updating: "info",
+  failed: "danger",
+  manual: "warning",
+} as const;
+
+const UPDATE_STATE_LABELS: Record<NonNullable<AgentRow["update"]>["state"], string | null> = {
+  idle: null,
+  draining: "waiting for running jobs",
+  installing: "installing",
+  confirming: "confirming",
+};
+
+/** Up to date / Updating (with the step) / Failed / Update manually. */
+export function UpdateStatusBadge({
+  agent,
+}: {
+  agent: Pick<AgentRow, "updateStatus" | "update" | "desiredVersion" | "selfUpdate">;
+}) {
+  const step = agent.update ? UPDATE_STATE_LABELS[agent.update.state] : null;
+  const title =
+    agent.updateStatus === "manual"
+      ? agent.selfUpdate === null
+        ? "This agent version can't update itself; install the desired version on the host."
+        : "Not running under pm2, so it can't update itself; install the desired version on the host."
+      : agent.updateStatus === "failed"
+        ? `${agent.desiredVersion} failed on this agent, so it won't try it again.`
+        : undefined;
+  return (
+    <Badge variant={UPDATE_STATUS_VARIANTS[agent.updateStatus]} title={title}>
+      {UPDATE_STATUS_LABELS[agent.updateStatus]}
+      {agent.updateStatus === "updating" && step && ` (${step})`}
+    </Badge>
+  );
+}
+
+/** The reported version, and the desired one when it differs. */
+export function AgentVersionCell({ agent }: { agent: AgentRow }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+      {agent.version ? (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-sm)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {agent.version}
+          {agent.desiredVersion && agent.desiredVersion !== agent.version && (
+            <span style={{ color: "var(--text-tertiary)" }}> → {agent.desiredVersion}</span>
+          )}
+        </span>
+      ) : (
+        <Muted>Unknown</Muted>
+      )}
+      {!agent.revoked && <UpdateStatusBadge agent={agent} />}
     </div>
   );
 }

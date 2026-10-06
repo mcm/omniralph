@@ -5,10 +5,12 @@ import {
   agents,
   connectRepository,
   createDb,
+  getAgentOverview,
   jobs,
   listAgentAudit,
   listRecentAgentAudit,
   runMigrations,
+  setDesiredAgentVersion,
   upsertScmConnection,
   users,
   writeAgentAudit,
@@ -54,8 +56,15 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.QUEUE_REGIONS = "iad1";
 process.env.APP_URL = "https://omniralph.example.com/";
 
-const { createEnrollment, pinRepository, revokeAgent, unpinRepository, updateAgentConfig } =
-  await import("./actions");
+const {
+  createEnrollment,
+  pinRepository,
+  revokeAgent,
+  setAgentDesiredVersion,
+  unpinRepository,
+  updateAgentConfig,
+} = await import("./actions");
+const { agentRow } = await import("@/lib/agents/rows");
 const { cancelJob } = await import("../jobs/actions");
 const { POST: enroll } = await import("@/app/api/agent/enroll/route");
 const { POST: token } = await import("@/app/api/agent/token/route");
@@ -323,6 +332,66 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       ).toEqual({ ok: true });
       const reviewOnly = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(reviewOnly.capabilityLimits).toEqual({ review: 3 });
+    });
+
+    it("sends the desired version (override, else global) and stores the reported update state", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const other = await enrolledAgent();
+      const desired = async (token: string) =>
+        ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
+      expect(await desired(accessToken)).toBeNull();
+
+      await setDesiredAgentVersion(db, "1.4.0", adminId);
+      expect(await desired(accessToken)).toBe("1.4.0");
+      expect(await setAgentDesiredVersion(agentId, "v1.5.0")).toEqual({ ok: true });
+      expect(await setAgentDesiredVersion(agentId, "latest")).toEqual({
+        ok: false,
+        error: expect.any(String),
+      });
+      expect(await desired(accessToken)).toBe("1.5.0");
+      expect(await desired(other.accessToken)).toBe("1.4.0");
+
+      // The agent reports where it is; the Agents pages show it.
+      const update = {
+        state: "draining",
+        version: "1.5.0",
+        previous: "0.2.0",
+        startsSincePending: 0,
+        error: null,
+      };
+      await sendHeartbeat(accessToken, {
+        ...HEARTBEAT,
+        selfUpdate: "supported",
+        update,
+        failedVersions: ["1.3.0"],
+      });
+      const overview = (await getAgentOverview(db, agentId))!;
+      expect(overview).toMatchObject({
+        selfUpdate: "supported",
+        updateState: update,
+        failedVersions: ["1.3.0"],
+      });
+      expect(agentRow(overview, new Date(), "1.4.0")).toMatchObject({
+        version: "0.2.0",
+        desiredVersion: "1.5.0",
+        desiredVersionOverride: "1.5.0",
+        updateStatus: "updating",
+        failedVersions: ["1.3.0"],
+      });
+
+      // Cleared override: the global version again. Older agents report nothing.
+      expect(await setAgentDesiredVersion(agentId, "")).toEqual({ ok: true });
+      expect(await desired(accessToken)).toBe("1.4.0");
+      const legacy = (await getAgentOverview(db, agentId))!;
+      expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
+      expect(agentRow(legacy, new Date(), "1.4.0").updateStatus).toBe("manual");
+
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await setAgentDesiredVersion(agentId, "1.6.0")).toEqual({
+        ok: false,
+        error: expect.any(String),
+      });
+      await setDesiredAgentVersion(db, null, adminId);
     });
 
     it("pinning enqueues a repo.sync job on the agent's topic", async () => {

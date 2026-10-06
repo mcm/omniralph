@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getAgentOverview, listRecentAgentAudit, listRepositoryOverview } from "@omniralph/db";
+import {
+  getAgentOverview,
+  getDesiredAgentVersion,
+  listRecentAgentAudit,
+  listRepositoryOverview,
+} from "@omniralph/db";
 import { CAPABILITIES } from "@omniralph/shared";
 import { agentRow } from "@/lib/agents/rows";
 import { requirePageUser } from "@/lib/auth/session";
@@ -20,17 +25,19 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!UUID.test(id)) notFound();
   const db = getDb();
-  const [agent, audit, repositories] = await Promise.all([
+  const [agent, audit, repositories, globalVersion] = await Promise.all([
     getAgentOverview(db, id),
     listRecentAgentAudit(db, id, AUDIT_LIMIT),
     listRepositoryOverview(db),
+    getDesiredAgentVersion(db),
   ]);
   if (!agent) notFound();
   const now = new Date();
 
   return (
     <AgentDetailView
-      agent={agentRow(agent, now)}
+      agent={agentRow(agent, now, globalVersion)}
+      globalDesiredVersion={globalVersion}
       now={now.getTime()}
       knownCapabilities={[...CAPABILITIES]}
       repositories={repositories.map((repo) => ({

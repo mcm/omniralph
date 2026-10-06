@@ -14,6 +14,7 @@ describe("navGroups", () => {
       "Users",
       "Profiles",
       "Integrations",
+      "Agent settings",
     ]);
   });
 });
@@ -25,7 +26,7 @@ describe("navGroupsForRole", () => {
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Agents", "Jobs", "Analytics"]],
-      ["Admin", ["Users", "Profiles", "Integrations"]],
+      ["Admin", ["Users", "Profiles", "Integrations", "Agent settings"]],
     ]);
   });
 

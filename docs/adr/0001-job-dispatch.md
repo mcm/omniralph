@@ -107,6 +107,11 @@ delivers jobs.**
   `deliveredMessageIds`, or `rejectedMessageIds` when the job has no live
   session to take it; the control panel applies a rejected or never
   acknowledged message another way (as guidance, or a pending request).
+  For self-update the agent also reports `selfUpdate` (`supported` under pm2,
+  else `unsupported`), its `update` progress (`idle`/`draining`/`installing`/
+  `confirming`) and `failedVersions`; the response carries `desiredVersion`
+  (the agent's override, else the global Settings › Agents version). See
+  docs/deploy-agent.md "Self-update".
 - **Expiry:** Vercel Cron calls `GET /api/cron/expire-jobs` hourly
   (`apps/web/vercel.json`, `Authorization: Bearer $CRON_SECRET`). It marks jobs
   still `queued` 24h after creation as `expired`; by then their messages have

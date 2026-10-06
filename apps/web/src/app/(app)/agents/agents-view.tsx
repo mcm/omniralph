@@ -22,7 +22,13 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import type { AgentRow } from "@/lib/agents/rows";
 import { formatRelative } from "@/lib/format-date";
-import { AgentStatusBadge, CapabilityBadges, JobTargetLink, RepositoryBadges } from "./agent-parts";
+import {
+  AgentStatusBadge,
+  AgentVersionCell,
+  CapabilityBadges,
+  JobTargetLink,
+  RepositoryBadges,
+} from "./agent-parts";
 import { EnrollAgentDialog } from "./enroll-agent-dialog";
 
 interface AgentsViewProps {
@@ -60,11 +66,7 @@ function AgentTableRow({
         </div>
       </TableCell>
       <TableCell>
-        {agent.version ? (
-          <span style={{ ...cellText, fontFamily: "var(--font-mono)" }}>{agent.version}</span>
-        ) : (
-          <Muted>Unknown</Muted>
-        )}
+        <AgentVersionCell agent={agent} />
       </TableCell>
       <TableCell>
         <CapabilityBadges

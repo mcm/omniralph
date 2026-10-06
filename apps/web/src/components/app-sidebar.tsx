@@ -23,6 +23,7 @@ import {
   IconPlugConnected,
   IconRepeat,
   IconServer,
+  IconServerCog,
   IconUsers,
 } from "@tabler/icons-react";
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
@@ -39,6 +40,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   users: IconUsers,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
+  agentSettings: IconServerCog,
 };
 
 export function AppSidebar() {
