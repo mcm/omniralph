@@ -277,8 +277,9 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
               <CardDescription>{period}, input and output stacked</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartContainer style={{ height: 240 }}>
+              <ChartContainer>
                 <AreaChart
+                  height={240}
                   data={daily}
                   xKey="day"
                   stacked
@@ -297,8 +298,9 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
               <CardDescription>{period}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartContainer style={{ height: 240 }}>
+              <ChartContainer>
                 <BarChart
+                  height={240}
                   data={daily}
                   xKey="day"
                   bars={[{ key: "reviews", label: "Reviews", color: SERIES.primary }]}
@@ -321,8 +323,9 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
                 <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" />
               ) : (
                 <>
-                  <ChartContainer style={{ height: 160 }}>
+                  <ChartContainer>
                     <BarChart
+                      height={160}
                       data={profiles}
                       xKey="profile"
                       bars={[
