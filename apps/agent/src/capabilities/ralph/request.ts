@@ -18,6 +18,7 @@ import {
 import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { ActivityRelay } from "./activities.js";
+import { controlPanelFetcher, jobAttachments } from "./attachments.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import { createSessionRunner, type SessionRequest, type SessionResult } from "./session.js";
 import { DEFAULT_STORY_MODEL, sessionEnv, type StoryOptions } from "./story.js";
@@ -133,6 +134,21 @@ export async function runRequest(
             ephemeral: false,
           });
         }
+        // Files attached in Linear, downloaded through the control panel (which holds the token).
+        const attachments = await jobAttachments({
+          attachments: payload.attachments,
+          epicIdentifier: payload.epic.identifier,
+          workspaceRoot: ctx.workspaceRoot,
+          fetcher: controlPanelFetcher({
+            server: ctx.server,
+            jobId: job.id,
+            jobToken: ctx.jobToken,
+            signal: ctx.signal,
+            ...(options.fetch && { fetch: options.fetch }),
+          }),
+          logger: log,
+          report: (body) => relay.post({ type: "thought", body, ephemeral: false }),
+        });
         const progressDir = await mkdtemp(path.join(tmpdir(), "omniralph-progress-"));
         const progressFile = path.join(progressDir, "progress.md");
         try {
@@ -148,6 +164,7 @@ export async function runRequest(
             qualityGates: payload.qualityGates,
             prTerm: payload.repository.provider === "gitlab" ? "merge request" : "pull request",
             historyRewrite: payload.historyRewrite,
+            ...(attachments.prompt && { attachments: attachments.prompt }),
             ...(payload.settings.appendInstruction && {
               appendInstruction: payload.settings.appendInstruction,
             }),
@@ -166,7 +183,10 @@ export async function runRequest(
               allowedTools: payload.settings.allowedTools,
               disallowedTools: payload.settings.disallowedTools,
             },
-            additionalDirectories: [progressDir],
+            additionalDirectories: [
+              progressDir,
+              ...(attachments.files.length > 0 ? [attachments.dir] : []),
+            ],
             env: plainEnv,
             signal: ctx.signal,
             ...(options.idleTimeoutMs !== undefined && { idleTimeoutMs: options.idleTimeoutMs }),

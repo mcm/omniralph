@@ -13,6 +13,7 @@ import type {
   IssueSummary,
   LinearGateway,
   PlanStep,
+  UploadDownload,
   WorkflowState,
 } from "./gateway";
 
@@ -43,6 +44,15 @@ export class FakeLinearGateway implements LinearGateway {
   ].map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
   /** Every `setIssueState` call, in order. */
   stateChanges: Array<{ issueId: string; target: { type?: string; name?: string } }> = [];
+  /** Issue ID -> its comments, oldest first. */
+  commentsByIssue = new Map<string, IssueComment[]>();
+  /** Upload URL -> the file `downloadUpload` returns (any other URL: 404). */
+  uploads = new Map<
+    string,
+    { contentType: string; body: string | Uint8Array<ArrayBuffer>; status?: number }
+  >();
+  /** Every `downloadUpload` URL, in order. */
+  downloads: string[] = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
   failures = new Map<string, Error>();
 
@@ -90,8 +100,9 @@ export class FakeLinearGateway implements LinearGateway {
   async getChildren(issueId: string) {
     return [...this.issues.values()].filter((i) => i.parentId === issueId).map((i) => ({ ...i }));
   }
-  async getComments(_issueId: string): Promise<IssueComment[]> {
-    return [];
+  async getComments(issueId: string): Promise<IssueComment[]> {
+    this.fail("getComments");
+    return (this.commentsByIssue.get(issueId) ?? []).map((c) => ({ ...c }));
   }
   async getBlockers(issueId: string): Promise<Blocker[]> {
     return (this.blocks.get(issueId) ?? []).map((id) => {
@@ -152,6 +163,25 @@ export class FakeLinearGateway implements LinearGateway {
   }
   async addSessionExternalUrl(sessionId: string, label: string, url: string) {
     this.urls.push({ sessionId, label, url });
+  }
+
+  async downloadUpload(url: string): Promise<UploadDownload> {
+    this.fail("downloadUpload");
+    this.downloads.push(url);
+    const upload = this.uploads.get(url);
+    if (!upload)
+      return { ok: false, status: 404, contentType: "", contentLength: null, body: null };
+    const bytes =
+      typeof upload.body === "string" ? new TextEncoder().encode(upload.body) : upload.body;
+    const status = upload.status ?? 200;
+    const ok = status >= 200 && status < 300;
+    return {
+      ok,
+      status,
+      contentType: upload.contentType,
+      contentLength: bytes.byteLength,
+      body: ok ? new Response(bytes).body : null,
+    };
   }
 
   /** Bodies of the session's activities of one type, in order. */

@@ -67,6 +67,7 @@ describe("ralph capability", () => {
       "credentials:read",
       "credentials:write",
       "ralph:activity",
+      "ralph:attachments",
     ]);
     expect(CAPABILITY_JOB_SCOPES.review).toEqual(["credentials:read"]);
     expect(CAPABILITY_JOB_SCOPES.system).toEqual(["credentials:read"]);

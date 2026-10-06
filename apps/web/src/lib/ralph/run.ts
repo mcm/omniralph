@@ -56,6 +56,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
+import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
 import { postActivity, quietly, tail } from "./notify";
@@ -404,6 +405,7 @@ async function enqueueStory(
   const found = await usableRepository(deps, tx, run, lane ?? undefined);
   if ("action" in found) return found;
 
+  const attachments = await gatherRunAttachments(deps.linear, tx, run, epic);
   const payload = buildStoryPayload({
     run,
     lane: found.lane,
@@ -413,6 +415,7 @@ async function enqueueStory(
     stories: input.stories,
     story,
     row,
+    attachments: payloadAttachments(attachments, story.key),
   });
   const { job, created } = await deps.dispatcher.createAndPublish({
     capability: RALPH_CAPABILITY,
@@ -630,6 +633,7 @@ async function enqueueRequest(
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId
       : null;
+  const attachments = await gatherRunAttachments(deps.linear, tx, run, input.epic);
   const { job, created } = await deps.dispatcher.createAndPublish({
     capability: RALPH_CAPABILITY,
     type: RALPH_REQUEST_JOB_TYPE,
@@ -642,6 +646,7 @@ async function enqueueRequest(
       stories: input.stories,
       requests: input.requests,
       resumeSessionId: resume,
+      attachments: payloadAttachments(attachments),
     }),
     repositoryId: repository.id,
     ralphRunId: run.id,

@@ -750,6 +750,16 @@ export interface RalphPreparation {
 }
 
 /**
+ * A file uploaded to Linear (`uploads.linear.app`) that the run's jobs may
+ * download through the control panel, by its attachment ID.
+ */
+export interface RalphAttachmentLink {
+  /** The upload URL without its signed query. */
+  url: string;
+  title: string | null;
+}
+
+/**
  * A delegated Linear issue being built story by story (the ralph loop). The
  * control panel owns this state; every change goes through a row lock
  * (`lockRun`) because webhooks and job outcomes race.
@@ -794,6 +804,11 @@ export const ralphRuns = pgTable(
     pendingElicitation: jsonb("pending_elicitation").$type<RalphPendingElicitation>(),
     /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
     preparation: jsonb("preparation").$type<RalphPreparation>(),
+    /** Attachment ID -> Linear upload, for every attachment listed in the run's job payloads. */
+    attachments: jsonb("attachments")
+      .$type<Record<string, RalphAttachmentLink>>()
+      .notNull()
+      .default({}),
     /** Jobs enqueued for the run so far. */
     iterations: integer("iterations").notNull().default(0),
     error: text("error"),

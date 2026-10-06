@@ -110,7 +110,8 @@ long-lived code-host or Vercel credentials. Their identity is:
   environment), so no signing key ever sits in an env var. Access tokens:
   `typ: "agent"`, `sub: agentId`, `aud: "omniralph-agent"`. Job tokens (issued
   when a job starts): `typ: "job"`, `sub: jobId`, `agentId`, `scopes` (review:
-  `["credentials:read"]`). Processes inside a job (the `git-credential` helper)
+  `["credentials:read"]`; ralph adds `credentials:write`, `ralph:activity` and
+  `ralph:attachments`). Processes inside a job (the `git-credential` helper)
   only see the job token. `LocalTokenSigner` (`jose`, `LOCAL_AGENT_SIGNING_KEY`
   or an in-memory key) exists for local dev and tests and refuses to run with
   `VERCEL_ENV=production`.

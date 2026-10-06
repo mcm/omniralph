@@ -93,6 +93,29 @@ const RalphIssue = z.object({
 export const RALPH_EPIC_KINDS = ["children", "prd", "single"] as const;
 export const RALPH_STORY_LIST_STATUSES = ["open", "in_progress", "completed", "cancelled"] as const;
 
+/** Longest Linear attachment a ralph job downloads. */
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+/** Attachments a ralph job downloads at most (not counting those its agent has cached). */
+export const MAX_ATTACHMENT_DOWNLOADS_PER_JOB = 20;
+
+/** An attachment ID: hex, derived from the upload URL. */
+export const RalphAttachmentId = z.string().regex(/^[0-9a-f]{32}$/);
+
+/**
+ * A file uploaded to Linear (a pasted screenshot, a mockup, a PDF) that the
+ * job may download through `GET /api/agent/jobs/{id}/attachments/{attachmentId}`.
+ */
+export const RalphAttachment = z.object({
+  id: RalphAttachmentId,
+  /** The name Linear stores with the upload (e.g. `mockup.png`), when known. */
+  title: z.string().min(1).max(500).nullable(),
+  /** Where it was referenced, e.g. `TOOL-83 description`, `comment on TOOL-84 by Ana`, `Linear thread`. */
+  sources: z.array(z.string().min(1).max(500)).min(1).max(50),
+});
+export type RalphAttachment = z.infer<typeof RalphAttachment>;
+
+const RalphAttachments = z.array(RalphAttachment).max(200).default([]);
+
 /** One of the epic's stories, for the story list in the prompt. */
 export const RalphStoryListItem = RalphIssue.extend({
   status: z.enum(RALPH_STORY_LIST_STATUSES),
@@ -140,6 +163,8 @@ export const RalphStoryPayload = RalphJobBase.extend({
   lastFeedback: z.string().max(20_000).nullable(),
   /** Replies from the agent session, oldest first. */
   guidance: z.array(z.string().max(20_000)).max(100),
+  /** The Linear attachments in the story's scope: its own, and those of the epic and thread. */
+  attachments: RalphAttachments,
 });
 export type RalphStoryPayload = z.infer<typeof RalphStoryPayload>;
 
@@ -275,6 +300,8 @@ export const RalphRequestPayload = RalphJobBase.extend({
    * the job goes to the agent holding that session's files.
    */
   resumeSessionId: z.string().min(1).max(200).nullable().default(null),
+  /** Every Linear attachment of the run (the epic, its stories and the thread). */
+  attachments: RalphAttachments,
 });
 export type RalphRequestPayload = z.infer<typeof RalphRequestPayload>;
 
