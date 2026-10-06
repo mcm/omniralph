@@ -50,6 +50,15 @@ export function isRerunPreparationRequest(reply: string): boolean {
   return norm(reply) === "rerun preparation";
 }
 
+/**
+ * Does a reply ask to push the branch or open/update the PR/MR (cyralph's
+ * `asksForPushOrPullRequest`)? Story agents may not do that (the orchestrator
+ * owns git), so such requests are kept away from them.
+ */
+export function asksForPushOrPullRequest(reply: string): boolean {
+  return /\b(push|pull[- ]request|merge[- ]request|PR|MR|glab|gh)\b/i.test(reply);
+}
+
 /** SHA-256 (hex) of a story's commands, so an approval is bound to the commands that were shown. */
 export function preparationHash(commands: readonly string[]): string {
   return createHash("sha256").update(JSON.stringify(commands)).digest("hex");

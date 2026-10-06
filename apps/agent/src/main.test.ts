@@ -50,6 +50,7 @@ const HEARTBEAT: HeartbeatResponse = {
   queueRegion: "iad1",
   cancelJobIds: [],
   jobTokens: [],
+  jobMessages: [],
 };
 
 describe("omniralph-agent CLI", () => {

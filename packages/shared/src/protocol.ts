@@ -106,6 +106,10 @@ export const Heartbeat = z.object({
   runningJobIds: z.array(z.uuid()).max(100),
   /** Job slots the agent has free right now. */
   freeSlots: z.int().min(0).max(1000),
+  /** `jobMessages` injected into their job's live session since the last heartbeat. */
+  deliveredMessageIds: z.array(z.uuid()).max(500).default([]),
+  /** `jobMessages` that had no live session to go to (e.g. the job was running its gates). */
+  rejectedMessageIds: z.array(z.uuid()).max(500).default([]),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -117,6 +121,17 @@ export const JobToken = z.object({
   expiresIn: z.number(),
 });
 export type JobToken = z.infer<typeof JobToken>;
+
+/**
+ * A message for a running job's live Claude session (a Linear reply to a ralph
+ * run): the agent injects it and acknowledges it in its next heartbeat.
+ */
+export const JobMessageDelivery = z.object({
+  jobId: z.uuid(),
+  messageId: z.uuid(),
+  text: z.string(),
+});
+export type JobMessageDelivery = z.infer<typeof JobMessageDelivery>;
 
 /** Central configuration, returned on every heartbeat. */
 export const HeartbeatResponse = z.object({
@@ -138,6 +153,8 @@ export const HeartbeatResponse = z.object({
   cancelJobIds: z.array(z.uuid()),
   /** New job tokens for the agent's still-running jobs. */
   jobTokens: z.array(JobToken),
+  /** Undelivered messages for the agent's running jobs, oldest first. */
+  jobMessages: z.array(JobMessageDelivery).default([]),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

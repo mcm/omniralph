@@ -15,15 +15,18 @@ import {
   isNull,
   lt,
   notExists,
+  notInArray,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
 import type { Database } from "./client.js";
+import type { Job } from "./jobs.js";
 import type { Repository, ScmProvider } from "./repositories.js";
 import {
   agents,
   jobs,
+  ralphMessages,
   ralphRuns,
   ralphStories,
   repositories,
@@ -640,4 +643,167 @@ export async function updateStory(
     .where(eq(ralphStories.id, id))
     .returning();
   return row ?? null;
+}
+
+// ── Live messages ────────────────────────────────────────────────────────────
+
+export type RalphMessage = typeof ralphMessages.$inferSelect;
+export type RalphMessageKind = RalphMessage["kind"];
+
+/** The run's job of one of `types` that an agent is running right now (the newest), if any. */
+export async function getRunningRunJob(
+  db: Executor,
+  runId: string,
+  types: readonly string[],
+): Promise<Job | null> {
+  const [row] = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(eq(jobs.ralphRunId, runId), eq(jobs.status, "running"), inArray(jobs.type, [...types])),
+    )
+    .orderBy(desc(jobs.startedAt), desc(jobs.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export interface NewRalphMessageInput {
+  runId: string;
+  kind: RalphMessageKind;
+  text: string;
+  /** The running job to deliver it to; omitted: a pending request (or guidance) as is. */
+  jobId?: string | null;
+  author?: string | null;
+}
+
+export async function insertMessage(
+  db: Executor,
+  input: NewRalphMessageInput,
+): Promise<RalphMessage> {
+  const [row] = await db
+    .insert(ralphMessages)
+    .values({
+      runId: input.runId,
+      kind: input.kind,
+      text: input.text,
+      jobId: input.jobId ?? null,
+      author: input.author ?? null,
+    })
+    .returning();
+  return row!;
+}
+
+/** Message columns the orchestrator changes. */
+export type RalphMessageUpdate = Partial<
+  Pick<RalphMessage, "jobId" | "deliveredAt" | "consumedAt">
+>;
+
+export async function updateMessage(
+  db: Executor,
+  id: string,
+  update: RalphMessageUpdate,
+): Promise<RalphMessage | null> {
+  const [row] = await db
+    .update(ralphMessages)
+    .set(update)
+    .where(eq(ralphMessages.id, id))
+    .returning();
+  return row ?? null;
+}
+
+/** The run's messages, oldest first. */
+export async function listMessages(db: Executor, runId: string): Promise<RalphMessage[]> {
+  return db
+    .select()
+    .from(ralphMessages)
+    .where(eq(ralphMessages.runId, runId))
+    .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
+}
+
+/** Messages still to deliver to the jobs `jobIds` (oldest first). */
+export async function listUndeliveredJobMessages(
+  db: Executor,
+  jobIds: readonly string[],
+): Promise<RalphMessage[]> {
+  if (jobIds.length === 0) return [];
+  return db
+    .select()
+    .from(ralphMessages)
+    .where(
+      and(
+        inArray(ralphMessages.jobId, [...jobIds]),
+        isNull(ralphMessages.deliveredAt),
+        isNull(ralphMessages.consumedAt),
+      ),
+    )
+    .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
+}
+
+/**
+ * The messages among `ids` still waiting for delivery to a job `agentId` runs
+ * (or ran): what an agent may acknowledge. Others' are ignored.
+ */
+export async function listAgentUndeliveredMessages(
+  db: Executor,
+  agentId: string,
+  ids: readonly string[],
+): Promise<RalphMessage[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ message: ralphMessages })
+    .from(ralphMessages)
+    .innerJoin(jobs, eq(jobs.id, ralphMessages.jobId))
+    .where(
+      and(
+        inArray(ralphMessages.id, [...ids]),
+        eq(jobs.agentId, agentId),
+        isNull(ralphMessages.deliveredAt),
+        isNull(ralphMessages.consumedAt),
+      ),
+    )
+    .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
+  return rows.map((r) => r.message);
+}
+
+/**
+ * The run's messages that were meant for a job but can no longer reach it:
+ * undelivered, and the job finished (or is gone). Oldest first.
+ */
+export async function listStrandedMessages(db: Executor, runId: string): Promise<RalphMessage[]> {
+  const rows = await db
+    .select({ message: ralphMessages })
+    .from(ralphMessages)
+    .leftJoin(jobs, eq(jobs.id, ralphMessages.jobId))
+    .where(
+      and(
+        eq(ralphMessages.runId, runId),
+        isNull(ralphMessages.deliveredAt),
+        isNull(ralphMessages.consumedAt),
+        or(
+          and(eq(ralphMessages.kind, "guidance"), isNull(ralphMessages.jobId)),
+          and(
+            sql`${ralphMessages.jobId} is not null`,
+            or(isNull(jobs.id), notInArray(jobs.status, ["queued", "running"])),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
+  return rows.map((r) => r.message);
+}
+
+/** The run's pending requests (not handled yet, not waiting for a live session), oldest first. */
+export async function listPendingRequests(db: Executor, runId: string): Promise<RalphMessage[]> {
+  return db
+    .select()
+    .from(ralphMessages)
+    .where(
+      and(
+        eq(ralphMessages.runId, runId),
+        eq(ralphMessages.kind, "request"),
+        isNull(ralphMessages.jobId),
+        isNull(ralphMessages.consumedAt),
+      ),
+    )
+    .orderBy(asc(ralphMessages.createdAt), asc(ralphMessages.id));
 }

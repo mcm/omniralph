@@ -101,7 +101,12 @@ delivers jobs.**
   while it runs fewer of its jobs), `pinnedRepoIds`, `topics`, `queueRegion` and
   `cancelJobIds`. It also carries **freshly signed job tokens** for the jobs
   that are still running on this agent, so a long job never holds an expired
-  15-minute job token.
+  15-minute job token, and `jobMessages`: undelivered messages (Linear replies
+  to a ralph run) for those jobs. The agent injects each into the job's live
+  Claude session and acknowledges it in its next heartbeat as
+  `deliveredMessageIds`, or `rejectedMessageIds` when the job has no live
+  session to take it; the control panel applies a rejected or never
+  acknowledged message another way (as guidance, or a pending request).
 - **Expiry:** Vercel Cron calls `GET /api/cron/expire-jobs` hourly
   (`apps/web/vercel.json`, `Authorization: Bearer $CRON_SECRET`). It marks jobs
   still `queued` 24h after creation as `expired`; by then their messages have

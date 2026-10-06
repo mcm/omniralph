@@ -7,7 +7,10 @@ import {
   feedback,
   findings,
   jobs,
+  insertMessage,
   listAgentAudit,
+  listMessages,
+  ralphRuns,
   repositories,
   rules,
   runMigrations,
@@ -767,6 +770,68 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       });
       expect(agent!.lastHeartbeatAt).toBeInstanceOf(Date);
       await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, agentId));
+    });
+
+    it("sends undelivered messages for the agent's running ralph jobs and applies its acknowledgements", async () => {
+      const { agentId, accessToken } = await newAgent({ enabledCapabilities: ["ralph"] });
+      const [run] = await db
+        .insert(ralphRuns)
+        .values({
+          linearIssueId: `issue-${randomUUID()}`,
+          linearIdentifier: "ENG-1",
+          linearAgentSessionId: `session-${randomUUID()}`,
+          kind: "prd",
+          repositoryId,
+          branch: "ralph/eng-1",
+          baseBranch: "main",
+          status: "running",
+          agentId,
+        })
+        .returning();
+      const [job] = await db
+        .insert(jobs)
+        .values({
+          capability: "ralph",
+          type: "ralph.story",
+          status: "running",
+          agentId,
+          ralphRunId: run!.id,
+          deliveryCount: 1,
+          startedAt: new Date(),
+        })
+        .returning();
+      const message = await insertMessage(db, {
+        runId: run!.id,
+        jobId: job!.id,
+        kind: "guidance",
+        text: "Use a smallint column",
+      });
+      const beat = async (acks: { deliveredMessageIds?: string[] } = {}) => {
+        const res = await heartbeat(
+          agentRequest("heartbeat", accessToken, {
+            body: {
+              version: "0.2.0",
+              capabilities: ["ralph"],
+              runningJobIds: [job!.id],
+              freeSlots: 0,
+              ...acks,
+            },
+          }),
+        );
+        expect(res.status).toBe(200);
+        return (await res.json()) as HeartbeatResponse;
+      };
+
+      expect((await beat()).jobMessages).toEqual([
+        { jobId: job!.id, messageId: message.id, text: "Use a smallint column" },
+      ]);
+      // Old agents don't acknowledge: the message is sent again.
+      expect((await beat()).jobMessages).toHaveLength(1);
+      expect((await beat({ deliveredMessageIds: [message.id] })).jobMessages).toEqual([]);
+      const [stored] = await listMessages(db, run!.id);
+      expect(stored?.deliveredAt).toBeInstanceOf(Date);
+      const [updated] = await db.select().from(ralphRuns).where(eq(ralphRuns.id, run!.id));
+      expect(updated!.guidance.map((g) => g.text)).toEqual(["Use a smallint column"]);
     });
 
     it("rejects invalid heartbeats and revoked agents", async () => {

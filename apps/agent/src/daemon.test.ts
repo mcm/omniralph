@@ -35,6 +35,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     queueRegion: "iad1",
     cancelJobIds: [],
     jobTokens: [],
+    jobMessages: [],
     ...overrides,
   };
 }
@@ -209,6 +210,8 @@ describe("AgentDaemon", () => {
       capabilities: ["review"],
       runningJobIds: [],
       freeSlots: 0,
+      deliveredMessageIds: [],
+      rejectedMessageIds: [],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
@@ -728,6 +731,116 @@ describe("AgentDaemon", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ctx?.jobToken()).toBe("fresh");
     expect(ctx?.env().OMNIRALPH_JOB_TOKEN).toBe("fresh");
+    gate.resolve();
+    await settle();
+    await daemon.shutdown();
+  });
+
+  it("injects jobMessages into the job's live session and acknowledges them in the next heartbeat", async () => {
+    const id = randomUUID();
+    const [first, second, unknown, late] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const injected: string[] = [];
+    const sessionOpen = deferred();
+    const sessionEnd = deferred();
+    const gate = deferred();
+    const { api, state, queue, daemon } = setup({
+      run: async (_job, ctx) => {
+        ctx.setMessageInjector?.((text) => {
+          injected.push(text);
+          return true;
+        });
+        sessionOpen.resolve();
+        await sessionEnd.promise;
+        // Past the session (e.g. running the quality gates): nothing can be injected.
+        ctx.setMessageInjector?.(undefined);
+        await gate.promise;
+        return {};
+      },
+    });
+    queue.push("review-jobs", id);
+    void daemon.run();
+    await settle();
+    await sessionOpen.promise;
+
+    state.config = {
+      ...state.config,
+      jobMessages: [
+        { jobId: id, messageId: first, text: "Use a smallint column" },
+        { jobId: randomUUID(), messageId: unknown, text: "not ours" },
+      ],
+    };
+    await daemon.heartbeat();
+    expect(injected).toEqual(["Use a smallint column"]);
+
+    // The control panel resends a message until it sees the acknowledgement: injected once.
+    state.config = {
+      ...state.config,
+      jobMessages: [
+        { jobId: id, messageId: first, text: "Use a smallint column" },
+        { jobId: id, messageId: second, text: "how is it going?" },
+      ],
+    };
+    await daemon.heartbeat();
+    expect(injected).toEqual(["Use a smallint column", "how is it going?"]);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveredMessageIds: [first], rejectedMessageIds: [unknown] }),
+    );
+    state.config = { ...state.config, jobMessages: [] };
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveredMessageIds: [second], rejectedMessageIds: [] }),
+    );
+
+    // No live session: rejected, and acknowledged before the job's outcome is reported.
+    sessionEnd.resolve();
+    await settle();
+    state.config = {
+      ...state.config,
+      jobMessages: [{ jobId: id, messageId: late, text: "too late" }],
+    };
+    await daemon.heartbeat();
+    state.config = { ...state.config, jobMessages: [] };
+    expect(injected).toHaveLength(2);
+    const before = api.heartbeat.mock.calls.length;
+    gate.resolve();
+    await settle();
+    expect(api.heartbeat.mock.calls.length).toBe(before + 1);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveredMessageIds: [], rejectedMessageIds: [late] }),
+    );
+    expect(api.heartbeat.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      api.submitResult.mock.invocationCallOrder.at(-1)!,
+    );
+    await daemon.shutdown();
+  });
+
+  it("keeps acknowledgements whose heartbeat failed for the next one", async () => {
+    const id = randomUUID();
+    const messageId = randomUUID();
+    const gate = deferred();
+    const { api, state, queue, daemon } = setup({
+      run: async (_job, ctx) => {
+        ctx.setMessageInjector?.(() => true);
+        await gate.promise;
+        return {};
+      },
+    });
+    queue.push("review-jobs", id);
+    void daemon.run();
+    await settle();
+    state.config = { ...state.config, jobMessages: [{ jobId: id, messageId, text: "hi" }] };
+    await daemon.heartbeat();
+    state.config = { ...state.config, jobMessages: [] };
+    api.heartbeat.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
+    await daemon.heartbeat();
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveredMessageIds: [messageId] }),
+    );
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveredMessageIds: [] }),
+    );
     gate.resolve();
     await settle();
     await daemon.shutdown();

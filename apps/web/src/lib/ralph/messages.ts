@@ -1,0 +1,207 @@
+/**
+ * Replies delivered into a running job's live Claude session (ported from
+ * cyralph's injectors and `SessionManager.onPrompted`). A reply for a run
+ * with a running `ralph.story` job is stored as a `ralph_messages` row for
+ * that job; the agent gets it in its next heartbeat (`jobMessages`), injects
+ * it and acknowledges it in the heartbeat after (`deliveredMessageIds`, or
+ * `rejectedMessageIds` when the job has no live session). A message that
+ * can't be delivered becomes guidance (epic mode) or a pending request, and
+ * the run is advanced again when the job ends (`advanceRun` settles them).
+ */
+import {
+  appendGuidance,
+  getRunningRunJob,
+  insertMessage,
+  listAgentUndeliveredMessages,
+  listStories,
+  listStrandedMessages,
+  listUndeliveredJobMessages,
+  lockRun,
+  updateMessage,
+  updateRun,
+  updateStory,
+  type Database,
+  type RalphMessage,
+  type RalphRun,
+  type RalphTransaction,
+} from "@omniralph/db";
+import { asksForPushOrPullRequest } from "@omniralph/ralph";
+import { RALPH_STORY_JOB_TYPE, type JobMessageDelivery } from "@omniralph/shared";
+import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
+import { postActivity, quietly } from "./notify";
+
+/** Job types whose live Claude session takes replies. */
+export const LIVE_SESSION_JOB_TYPES: readonly string[] = [RALPH_STORY_JOB_TYPE];
+
+/** How a run treats replies: as guidance for its stories (`epic`), or as requests. */
+export type RalphRunMode = "epic" | "request";
+
+/** A run's mode. Every run builds its epic until request mode exists. */
+export function runMode(_run: RalphRun): RalphRunMode {
+  return "epic";
+}
+
+export const DELIVERED_NOTE = "Passed this to the agent that's working right now.";
+
+/** The note for a reply that waits for the running job to finish (cyralph's wording). */
+export function undeliveredNote(mode: RalphRunMode): string {
+  return mode === "epic"
+    ? "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done."
+    : "Got it. I'll handle this as soon as the current step finishes.";
+}
+
+/** Story statuses guidance doesn't touch: done, or a person's to do. */
+const SETTLED_STORY_STATUSES = new Set(["completed", "canceled", "manual"]);
+
+/**
+ * Stores a reply as guidance for the next story attempts: the attempts of
+ * the unfinished stories reset (exhausted ones get another go, as cyralph
+ * resets `attempts`) and a waiting PR/MR step is retried.
+ */
+export async function applyGuidance(
+  tx: RalphTransaction,
+  run: RalphRun,
+  text: string,
+): Promise<void> {
+  await appendGuidance(tx, run.id, text);
+  for (const story of await listStories(tx, run.id)) {
+    if (SETTLED_STORY_STATUSES.has(story.status)) continue;
+    if (story.status === "exhausted") {
+      await updateStory(tx, story.id, { status: "pending", attempts: 0 });
+    } else if (story.attempts !== 0) {
+      await updateStory(tx, story.id, { attempts: 0 });
+    }
+  }
+  // A waiting run's error is a failed PR/MR step: clearing it retries the step.
+  if (run.status === "waiting" && run.error) {
+    await updateRun(tx, run.id, { error: null });
+  }
+}
+
+/** What happened to a reply for a run with a running job. */
+export type LiveReply =
+  /** Stored for the running job's live session; the agent gets it in its next heartbeat. */
+  | { kind: "live"; note: null }
+  /** Push/PR text kept away from the story agent: a pending request. */
+  | { kind: "request"; note: ActivityContent };
+
+/**
+ * The reply handling's last step while one of the run's `LIVE_SESSION_JOB_TYPES`
+ * jobs runs (inside `lockRun`): the reply is stored as a message for that job,
+ * and nothing else happens yet. In epic mode, a push/PR/MR request never goes
+ * to a story agent (it may not push): it becomes a pending request. Null
+ * when no such job runs.
+ */
+export async function queueLiveReply(
+  tx: RalphTransaction,
+  run: RalphRun,
+  text: string,
+  author: string | undefined,
+): Promise<LiveReply | null> {
+  const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
+  if (!job) return null;
+  const mode = runMode(run);
+  if (mode === "epic" && asksForPushOrPullRequest(text)) {
+    await insertMessage(tx, { runId: run.id, kind: "request", text, author: author ?? null });
+    return { kind: "request", note: { type: "thought", body: undeliveredNote(mode) } };
+  }
+  await insertMessage(tx, {
+    runId: run.id,
+    jobId: job.id,
+    kind: mode === "epic" ? "guidance" : "request",
+    text,
+    author: author ?? null,
+  });
+  return { kind: "live", note: null };
+}
+
+/**
+ * A message that can no longer reach its job (rejected, or the job ended):
+ * guidance is stored for the next story attempts, a request stays pending
+ * (detached from the job). Returns the note telling the session.
+ */
+async function strand(
+  tx: RalphTransaction,
+  run: RalphRun,
+  message: RalphMessage,
+  now: Date,
+): Promise<ActivityContent> {
+  if (message.kind === "guidance") {
+    await appendGuidance(tx, run.id, message.text, now);
+    await updateMessage(tx, message.id, { consumedAt: now });
+  } else {
+    await updateMessage(tx, message.id, { jobId: null });
+  }
+  return { type: "thought", body: undeliveredNote(runMode(run)) };
+}
+
+/**
+ * Settles the run's messages whose job ended before they were delivered
+ * (inside `advanceRun`'s lock, so late messages are never lost), posting the
+ * note for each.
+ */
+export async function settleStrandedMessages(
+  linear: LinearGateway,
+  tx: RalphTransaction,
+  run: RalphRun,
+  now = new Date(),
+): Promise<void> {
+  for (const message of await listStrandedMessages(tx, run.id)) {
+    const note = await strand(tx, run, message, now);
+    await postActivity(linear, run.linearAgentSessionId, note);
+  }
+}
+
+export interface JobMessageAcks {
+  deliveredMessageIds: readonly string[];
+  rejectedMessageIds: readonly string[];
+}
+
+/**
+ * The heartbeat's part: applies the agent's acknowledgements, then returns
+ * the undelivered messages of the jobs it keeps running. Delivered: the
+ * session is told and, in epic mode, the text is kept as guidance for later
+ * stories too. Rejected: stranded (guidance, or a pending request).
+ * Acknowledgements of messages that aren't the agent's, or were settled
+ * already, are ignored.
+ */
+export async function exchangeJobMessages(
+  deps: { db: Database; linear: () => Promise<LinearGateway> },
+  agentId: string,
+  runningJobIds: readonly string[],
+  acks: JobMessageAcks,
+): Promise<JobMessageDelivery[]> {
+  const delivered = new Set(acks.deliveredMessageIds);
+  const ids = [...delivered, ...acks.rejectedMessageIds];
+  const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
+  const runIds = [...new Set(acked.map((m) => m.runId))];
+  const notes: { sessionId: string; content: ActivityContent }[] = [];
+  for (const runId of runIds) {
+    await lockRun(deps.db, runId, async (tx, run) => {
+      const now = new Date();
+      // Re-read under the lock: the job's end may have settled them meanwhile.
+      const messages = await listAgentUndeliveredMessages(tx, agentId, ids);
+      for (const message of messages.filter((m) => m.runId === runId)) {
+        if (delivered.has(message.id)) {
+          if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);
+          await updateMessage(tx, message.id, { deliveredAt: now, consumedAt: now });
+          notes.push({
+            sessionId: run.linearAgentSessionId,
+            content: { type: "thought", body: DELIVERED_NOTE },
+          });
+        } else {
+          const content = await strand(tx, run, message, now);
+          notes.push({ sessionId: run.linearAgentSessionId, content });
+        }
+      }
+    });
+  }
+  if (notes.length > 0) {
+    await quietly("Telling Linear about delivered job messages", async () => {
+      const linear = await deps.linear();
+      for (const note of notes) await postActivity(linear, note.sessionId, note.content);
+    });
+  }
+  const pending = await listUndeliveredJobMessages(deps.db, runningJobIds);
+  return pending.map((m) => ({ jobId: m.jobId!, messageId: m.id, text: m.text }));
+}

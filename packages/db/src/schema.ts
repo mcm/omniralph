@@ -95,6 +95,8 @@ export const ralphStoryStatus = pgEnum("ralph_story_status", [
   /** Canceled in Linear: done without work. */
   "canceled",
 ]);
+/** A live message's kind: story guidance, or a request (handled as one, not as guidance). */
+export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "request"]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -820,6 +822,40 @@ export const ralphStories = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("ralph_stories_run_issue_uq").on(t.runId, t.linearIssueId)],
+);
+
+/**
+ * A reply from the run's agent session for a running `ralph.*` job's live
+ * Claude session (cyralph's live injection), or a pending request. The agent
+ * gets undelivered ones in its heartbeat (`jobMessages`) and acknowledges them
+ * in the next. A message that can't be delivered becomes guidance (`kind`
+ * `guidance`) or stays a pending request (`kind` `request`, no `job_id`).
+ */
+export const ralphMessages = pgTable(
+  "ralph_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => ralphRuns.id, { onDelete: "cascade" }),
+    /** The lane (repository) the message is for; null: the run's main lane. */
+    laneId: uuid("lane_id"),
+    /** The running job to deliver it to; null once that's no longer possible (or never was). */
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    kind: ralphMessageKind("kind").notNull(),
+    text: text("text").notNull(),
+    /** Who wrote it in Linear, when known. */
+    author: text("author"),
+    createdAt: createdAt(),
+    /** The agent injected it into the job's live session. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /** Applied: stored as guidance, or handled as a request. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("ralph_messages_run_id_idx").on(t.runId, t.createdAt),
+    index("ralph_messages_job_id_idx").on(t.jobId),
+  ],
 );
 
 // ── Webhooks ─────────────────────────────────────────────────────────────────

@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryFn } from "@omniralph/engine";
 import type { JobPayload, JobRepository, RalphStoryPayload } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentLogger } from "../../logger.js";
+import { firstPrompt } from "../../test/fake-query.js";
 import { ENV, git, Remote } from "../../test/git-remote.js";
 import { RepoCache } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { createRalphCapability } from "./index.js";
-import { createSessionRunner } from "./session.js";
+import { createSessionRunner, type SessionQueryFn } from "./session.js";
 import { runStory, stashPrefix, type StoryOptions } from "./story.js";
 
 interface Call {
@@ -23,15 +23,16 @@ interface Call {
 
 /** A fake Agent SDK `query()`: `script` does the session's work and yields its messages. */
 function fakeQuery(script: (call: Call) => AsyncGenerator<unknown>): {
-  query: QueryFn;
+  query: SessionQueryFn;
   calls: Call[];
 } {
   const calls: Call[] = [];
-  const query = ((params: { prompt: string; options?: Options }) => {
-    const call = { prompt: params.prompt, options: params.options ?? {} };
-    calls.push(call);
-    return script(call) as AsyncGenerator<SDKMessage>;
-  }) as QueryFn;
+  const query: SessionQueryFn = (params) =>
+    (async function* () {
+      const call = { prompt: await firstPrompt(params.prompt), options: params.options ?? {} };
+      calls.push(call);
+      yield* script(call) as AsyncGenerator<SDKMessage>;
+    })();
   return { query, calls };
 }
 
@@ -186,7 +187,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     };
   }
 
-  function options(query: QueryFn, extra: StoryOptions = {}): StoryOptions {
+  function options(query: SessionQueryFn, extra: StoryOptions = {}): StoryOptions {
     return { runSession: createSessionRunner(query), fetch: fetchFn, ...extra };
   }
 
@@ -294,6 +295,46 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(git(remote.bare, "log", "-1", "--format=%B", `refs/heads/${branch}`)).toBe(
       "TOOL-91: Run a story",
     );
+  });
+
+  it("takes replies into its live session and uses the answer to the last one", async () => {
+    let inject: ((text: string) => boolean) | undefined;
+    const registered: boolean[] = [];
+    const ctx: JobContext = {
+      ...context(),
+      setMessageInjector: (fn) => {
+        inject = fn;
+        registered.push(fn !== undefined);
+      },
+    };
+    const prompts: string[] = [];
+    const query: SessionQueryFn = ({ prompt, options }) =>
+      (async function* () {
+        const input = prompt[Symbol.asyncIterator]();
+        const first = await input.next();
+        prompts.push(first.value!.message.content as string);
+        expect(inject!("Use a smallint column")).toBe(true);
+        yield {
+          ...result({ status: "incomplete", summary: "Half.", followUps: [] }),
+          user_message_uuids: [first.value!.uuid],
+        };
+        const reply = await input.next();
+        prompts.push(reply.value!.message.content as string);
+        expect(reply.value!.priority).toBe("next");
+        await writeFile(path.join(options!.cwd!, "feature.txt"), "built\n");
+        yield {
+          ...result({ status: "complete", summary: "Built it.", followUps: [] }),
+          user_message_uuids: [reply.value!.uuid],
+        };
+      })() as AsyncGenerator<SDKMessage>;
+
+    const out = await runStory(job(), ctx, options(query));
+
+    expect(prompts[1]).toBe("Use a smallint column");
+    expect(out).toMatchObject({ status: "complete", summary: "Built it." });
+    // Registered for the session, then unregistered before the gates run.
+    expect(registered).toEqual([true, false]);
+    expect(inject).toBeUndefined();
   });
 
   it("passes the repository's prompt, model and tool settings to the session, which only narrow ralph's policy", async () => {

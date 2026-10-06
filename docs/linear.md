@@ -176,9 +176,10 @@ Reply in the agent session to steer a run:
 | An answer to the preparation question | `Run it` / `I'll do it myself` / `Not yet` (or `1`–`3`). |
 | `rerun preparation` | Asks the preparation question again. |
 | `start anyway` | Ignores the open blockers and continues. |
+| Anything else, while a story runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt. A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
 | Anything else | Stored as guidance for the next story attempts; exhausted stories get fresh attempts. |
 
-A reply is applied from the next story attempt; it doesn't reach a session that's already running.
+Live delivery needs an agent version that acknowledges `jobMessages`; with an older agent, the reply is applied from the next story attempt once the running job ends.
 
 An @mention of the app that isn't a delegation gets a response that only delegation is supported.
 

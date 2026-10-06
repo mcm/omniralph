@@ -6,15 +6,18 @@
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").
  * 3. `rerun preparation`: the earliest open manual story's preparation is asked about again.
  * 4. "start anyway": outside blockers are ignored from now on.
- * 5. Anything else is guidance: stored (the latest ten), the attempts of the
+ * 5. Anything else, while a `ralph.story` job runs, is a message for its live
+ *    session (`messages.ts`): nothing else happens until the agent delivers it
+ *    or it turns out it can't. A push/PR/MR request never goes to a story
+ *    agent: it becomes a pending request.
+ * 6. Otherwise it is guidance: stored (the latest ten), the attempts of the
  *    unfinished stories reset (exhausted ones get another go) and a waiting
  *    PR/MR step retried.
  *
- * Every reply but stop and "Not yet" advances the run; one that asks for
- * work (3 to 5) resumes a stopped run.
+ * Every reply but stop, "Not yet" and a message for a running job advances
+ * the run; one that asks for work (3 to 6) resumes a stopped run.
  */
 import {
-  appendGuidance,
   getRunByIssue,
   getRunBySession,
   listActiveRunJobIds,
@@ -36,6 +39,7 @@ import {
 } from "@omniralph/ralph";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import {
@@ -50,16 +54,21 @@ export type SessionPromptedEvent = Extract<LinearWebhookEvent, { kind: "session_
 
 /** What a reply turned out to be. */
 export type ReplyKind =
-  "stop" | "preparation_answer" | "rerun_preparation" | "start_anyway" | "guidance";
+  | "stop"
+  | "preparation_answer"
+  | "rerun_preparation"
+  | "start_anyway"
+  /** Stored for the running job's live session. */
+  | "live"
+  /** A push/PR/MR request kept away from a running story agent. */
+  | "request"
+  | "guidance";
 
 export interface ReplyResult {
   kind: ReplyKind;
   /** The run's advance, when the reply moved it. */
   advanced?: AdvanceResult;
 }
-
-/** Story statuses guidance doesn't touch: done, or a person's to do. */
-const SETTLED_STORY_STATUSES = new Set(["completed", "canceled", "manual"]);
 
 export async function handleReply(
   event: SessionPromptedEvent,
@@ -128,12 +137,9 @@ export async function handleReply(
         },
       };
     }
-    await appendGuidance(tx, resumed.id, text);
-    await resetAttempts(tx, resumed.id);
-    // A waiting run's error is a failed PR/MR step: clearing it retries the step.
-    if (resumed.status === "waiting" && resumed.error) {
-      await updateRun(tx, resumed.id, { error: null });
-    }
+    const live = await queueLiveReply(tx, resumed, text, event.authorName);
+    if (live) return { kind: live.kind, advance: false, note: live.note };
+    await applyGuidance(tx, resumed, text);
     return {
       kind: "guidance" as const,
       advance: true,
@@ -149,7 +155,7 @@ export async function handleReply(
     };
   });
   if (!handled) return null;
-  await postActivity(deps.linear, run.linearAgentSessionId, handled.note);
+  if (handled.note) await postActivity(deps.linear, run.linearAgentSessionId, handled.note);
   if (!handled.advance) return { kind: handled.kind };
   return { kind: handled.kind, advanced: await advanceRun(run.id, deps) };
 }
@@ -250,21 +256,6 @@ async function resume(tx: RalphTransaction, run: RalphRun): Promise<RalphRun | n
   const other = await getRunByIssue(tx, run.linearIssueId, { activeOnly: true });
   if (other && other.id !== run.id) return null;
   return updateRun(tx, run.id, { status: "pending", error: null });
-}
-
-/**
- * Guidance gives every unfinished story a fresh set of attempts (cyralph
- * resets `attempts`): exhausted stories become pending again.
- */
-async function resetAttempts(tx: RalphTransaction, runId: string): Promise<void> {
-  for (const story of await listStories(tx, runId)) {
-    if (SETTLED_STORY_STATUSES.has(story.status)) continue;
-    if (story.status === "exhausted") {
-      await updateStory(tx, story.id, { status: "pending", attempts: 0 });
-    } else if (story.attempts !== 0) {
-      await updateStory(tx, story.id, { attempts: 0 });
-    }
-  }
 }
 
 /** An answer to the open preparation question. */
