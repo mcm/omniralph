@@ -96,6 +96,8 @@ export async function listRalphRepositories(db: Executor): Promise<Repository[]>
 export interface NewRalphRunInput {
   linearIssueId: string;
   linearIdentifier: string;
+  linearTitle?: string | null;
+  linearUrl?: string | null;
   linearAgentSessionId: string;
   kind: RalphRunKind;
   focusStoryId?: string | null;
@@ -286,6 +288,8 @@ export interface RalphRunListEntry {
   id: string;
   linearIssueId: string;
   linearIdentifier: string;
+  linearTitle: string | null;
+  linearUrl: string | null;
   kind: RalphRunKind;
   status: RalphRunStatus;
   branch: string;
@@ -328,6 +332,8 @@ export async function listRuns(
         id: ralphRuns.id,
         linearIssueId: ralphRuns.linearIssueId,
         linearIdentifier: ralphRuns.linearIdentifier,
+        linearTitle: ralphRuns.linearTitle,
+        linearUrl: ralphRuns.linearUrl,
         kind: ralphRuns.kind,
         status: ralphRuns.status,
         branch: ralphRuns.branch,
@@ -384,6 +390,109 @@ export async function listRuns(
     page,
     pageSize,
   };
+}
+
+export interface RalphRunDetail {
+  run: RalphRun;
+  repository: { id: string; provider: ScmProvider; fullPath: string };
+  agent: { id: string; name: string } | null;
+  /** In sub-issue order. */
+  stories: RalphStory[];
+  /** Every job of the run, newest first. */
+  jobs: RalphRunJob[];
+}
+
+export type RalphRunJob = Pick<
+  typeof jobs.$inferSelect,
+  | "id"
+  | "type"
+  | "status"
+  | "cancelRequested"
+  | "deliveryCount"
+  | "error"
+  | "createdAt"
+  | "startedAt"
+  | "finishedAt"
+> & { agent: { id: string; name: string } | null };
+
+/** A run with its repository, sticky agent, stories and jobs; null if it doesn't exist. */
+export async function getRunDetail(db: Executor, runId: string): Promise<RalphRunDetail | null> {
+  const [row] = await db
+    .select({
+      run: ralphRuns,
+      repository: {
+        id: repositories.id,
+        provider: repositories.provider,
+        fullPath: repositories.fullPath,
+      },
+      agentId: agents.id,
+      agentName: agents.name,
+    })
+    .from(ralphRuns)
+    .innerJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
+    .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+    .where(eq(ralphRuns.id, runId))
+    .limit(1);
+  if (!row) return null;
+  const [stories, jobRows] = await Promise.all([
+    listStories(db, runId),
+    db
+      .select({
+        id: jobs.id,
+        type: jobs.type,
+        status: jobs.status,
+        cancelRequested: jobs.cancelRequested,
+        deliveryCount: jobs.deliveryCount,
+        error: jobs.error,
+        createdAt: jobs.createdAt,
+        startedAt: jobs.startedAt,
+        finishedAt: jobs.finishedAt,
+        agentId: agents.id,
+        agentName: agents.name,
+      })
+      .from(jobs)
+      .leftJoin(agents, eq(agents.id, jobs.agentId))
+      .where(eq(jobs.ralphRunId, runId))
+      .orderBy(desc(jobs.createdAt), desc(jobs.id)),
+  ]);
+  return {
+    run: row.run,
+    repository: row.repository,
+    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
+    stories,
+    jobs: jobRows.map(({ agentId, agentName, ...job }) => ({
+      ...job,
+      agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
+    })),
+  };
+}
+
+/**
+ * Repositories the Ralph runs list can be filtered by: those with ralph
+ * enabled or with runs, by full path.
+ */
+export async function listRalphRunRepositories(
+  db: Executor,
+): Promise<{ id: string; provider: ScmProvider; fullPath: string }[]> {
+  return db
+    .select({
+      id: repositories.id,
+      provider: repositories.provider,
+      fullPath: repositories.fullPath,
+    })
+    .from(repositories)
+    .where(
+      or(
+        eq(repositories.ralphEnabled, true),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(ralphRuns)
+            .where(eq(ralphRuns.repositoryId, repositories.id)),
+        ),
+      ),
+    )
+    .orderBy(asc(repositories.fullPath), asc(repositories.id));
 }
 
 /** IDs of the run's jobs that are still queued or running (oldest first). */

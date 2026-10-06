@@ -47,7 +47,10 @@ interface JobsViewProps {
   limit: number;
 }
 
-const STATUS_BADGES: Record<JobStatus, "success" | "warning" | "info" | "danger" | "neutral"> = {
+export const STATUS_BADGES: Record<
+  JobStatus,
+  "success" | "warning" | "info" | "danger" | "neutral"
+> = {
   queued: "neutral",
   running: "info",
   completed: "success",
@@ -67,7 +70,8 @@ export function isCancelable(job: Pick<JobRow, "status" | "cancelRequested">): b
 function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
   const { pending, run } = useAction();
   return (
-    <TableRow>
+    // Target of the job links on the Ralph run pages.
+    <TableRow id={`job-${job.id}`}>
       <TableCell>
         <Badge variant="outline">{job.capability}</Badge>
       </TableCell>

@@ -16,7 +16,9 @@ import {
   listActiveRunJobIds,
   listRunsAffectedByIssue,
   listRunsToReconcile,
+  getRunDetail,
   listRalphRepositories,
+  listRalphRunRepositories,
   listRuns,
   listStories,
   lockRun,
@@ -415,7 +417,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   });
 
   it("lists runs newest first, paginated and filtered by status and repository", async () => {
-    const a1 = (await createRun(db, runInput())).run;
+    const a1 = (
+      await createRun(
+        db,
+        runInput({ linearTitle: "Epic A", linearUrl: "https://linear.app/acme/issue/A-1" }),
+      )
+    ).run;
     const a2 = (await createRun(db, runInput())).run;
     const b1 = (await createRun(db, runInput({ repositoryId: repoB }))).run;
     await updateRun(db, a1.id, {
@@ -445,6 +452,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect(all.runs.map((r) => r.id)).toEqual([b1.id, a2.id, a1.id]);
     expect(all.runs[2]).toMatchObject({
       linearIdentifier: a1.linearIdentifier,
+      linearTitle: "Epic A",
+      linearUrl: "https://linear.app/acme/issue/A-1",
       status: "completed",
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
       agent: { id: agentId, name: "coder-1" },
@@ -466,5 +475,72 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect(page2).toMatchObject({ total: 3, page: 2, pageSize: 2 });
     expect(page2.runs.map((r) => r.id)).toEqual([a1.id]);
     expect((await listRuns(db, { page: 9, pageSize: 2 })).runs).toEqual([]);
+  });
+
+  it("loads a run's detail: repository, agent, stories in order and jobs newest first", async () => {
+    const run = (await createRun(db, runInput({ linearTitle: "Epic" }))).run;
+    await updateRun(db, run.id, { agentId, status: "running" });
+    const stories = await upsertStories(db, run.id, [
+      { linearIssueId: "d-1", identifier: "D-1", title: "One" },
+      { linearIssueId: "d-2", identifier: "D-2", title: "Two" },
+    ]);
+    const { job: first } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: run.id,
+    });
+    const { job: second } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.describe-pr",
+      ralphRunId: run.id,
+    });
+    await db
+      .update(jobs)
+      .set({ createdAt: new Date(Date.UTC(2026, 9, 1)), status: "completed", agentId })
+      .where(eq(jobs.id, first.id));
+    await updateStory(db, stories[0]!.id, { lastJobId: first.id, commitSha: "c".repeat(40) });
+    // Another run's job isn't listed.
+    const other = (await createRun(db, runInput())).run;
+    await insertJob(db, { capability: "ralph", type: "ralph.story", ralphRunId: other.id });
+
+    const detail = await getRunDetail(db, run.id);
+    expect(detail).toMatchObject({
+      run: { id: run.id, status: "running", linearTitle: "Epic" },
+      repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
+      agent: { id: agentId, name: "coder-1" },
+    });
+    expect(detail!.stories.map((s) => [s.identifier, s.commitSha, s.lastJobId])).toEqual([
+      ["D-1", "c".repeat(40), first.id],
+      ["D-2", null, null],
+    ]);
+    expect(detail!.jobs.map((j) => [j.id, j.type, j.status, j.agent?.name ?? null])).toEqual([
+      [second.id, "ralph.describe-pr", "queued", null],
+      [first.id, "ralph.story", "completed", "coder-1"],
+    ]);
+
+    expect(await getRunDetail(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+
+  it("lists the repositories runs can be filtered by: ralph enabled or with runs", async () => {
+    const off = {
+      ralphEnabled: false,
+      linearTeamKeys: [],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: DEFAULT_RALPH_SETTINGS,
+    };
+    await updateRepositoryRalphSettings(db, repoA, off);
+    await updateRepositoryRalphSettings(db, repoB, off);
+    expect(await listRalphRunRepositories(db)).toEqual([]);
+
+    await updateRepositoryRalphSettings(db, repoB, { ...off, ralphEnabled: true });
+    expect((await listRalphRunRepositories(db)).map((r) => r.id)).toEqual([repoB]);
+
+    // repoA has a run (its ralph setting was turned off later).
+    await createRun(db, runInput({ repositoryId: repoA }));
+    expect(await listRalphRunRepositories(db)).toEqual([
+      { id: repoB, provider: "github", fullPath: "acme/a-web" },
+      { id: repoA, provider: "github", fullPath: "acme/b-api" },
+    ]);
   });
 });

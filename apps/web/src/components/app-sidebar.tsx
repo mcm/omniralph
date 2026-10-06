@@ -21,6 +21,7 @@ import {
   IconHistory,
   IconListCheck,
   IconPlugConnected,
+  IconRepeat,
   IconServer,
   IconUsers,
 } from "@tabler/icons-react";
@@ -31,6 +32,7 @@ import { useCurrentUser } from "./current-user";
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
   reviews: IconHistory,
+  ralph: IconRepeat,
   agents: IconServer,
   jobs: IconListCheck,
   analytics: IconChartBar,

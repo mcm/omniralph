@@ -684,6 +684,9 @@ export const ralphRuns = pgTable(
     /** The delegated issue (the epic, or the single issue). */
     linearIssueId: text("linear_issue_id").notNull(),
     linearIdentifier: text("linear_identifier").notNull(),
+    /** The delegated issue's title and Linear URL when the run started (for the Ralph runs pages). */
+    linearTitle: text("linear_title"),
+    linearUrl: text("linear_url"),
     linearAgentSessionId: text("linear_agent_session_id").notNull(),
     kind: ralphRunKind("kind").notNull(),
     /** Linear issue ID of the story to work on first (a delegated sub-issue). */
