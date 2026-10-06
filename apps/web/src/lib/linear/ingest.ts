@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import {
   claimWebhookDelivery,
   getIntegration,
@@ -23,7 +24,27 @@ export interface LinearWebhookDeps {
    * `after`). Defaults to running it before responding.
    */
   defer?: (task: () => Promise<void>) => void | Promise<void>;
+  /** Overrides `ACKNOWLEDGE_TIMEOUT_MS` (tests). */
+  acknowledgeTimeoutMs?: number;
   now?: () => number;
+}
+
+/**
+ * The longest the response waits for `acknowledge`, well inside Linear's
+ * 10 seconds: past it the webhook responds and the acknowledgement finishes
+ * (or fails) on its own.
+ */
+export const ACKNOWLEDGE_TIMEOUT_MS = 6_000;
+
+/**
+ * The delivery's dedupe key: Linear's delivery ID, or a hash of the signed
+ * body for a delivery without one (the body carries `webhookTimestamp`, so
+ * only a replay of the same delivery matches).
+ */
+export function linearDeliveryKey(deliveryId: string | null | undefined, rawBody: string): string {
+  const id = deliveryId?.trim();
+  if (id) return id;
+  return `sha256:${createHash("sha256").update(rawBody).digest("hex")}`;
 }
 
 type Outcome =
@@ -36,8 +57,9 @@ const reply = (outcome: Outcome) => Response.json(outcome);
 /**
  * `POST /api/webhooks/linear`: verifies the signature and timestamp (401),
  * classifies the event, drops events from workspaces other than the
- * connected one, claims the delivery ID (a redelivery is a no-op), runs
- * `acknowledge` and hands the event to `handle` via `defer`.
+ * connected one, claims the delivery ID (or body hash without one; a
+ * redelivery is a no-op), runs `acknowledge` (within
+ * `ACKNOWLEDGE_TIMEOUT_MS`) and hands the event to `handle` via `defer`.
  */
 export async function handleLinearWebhook(
   req: Request,
@@ -67,10 +89,10 @@ export async function handleLinearWebhook(
     return reply({ status: "ignored", reason: "unknown_workspace" });
   }
 
-  const deliveryId = req.headers.get(DELIVERY_HEADER)?.trim() || null;
-  const delivery = deliveryId ? { provider: "linear" as const, deliveryId } : null;
+  const deliveryId = linearDeliveryKey(req.headers.get(DELIVERY_HEADER), rawBody);
+  const delivery = { provider: "linear" as const, deliveryId };
   try {
-    if (delivery && !(await claimWebhookDelivery(db, delivery))) {
+    if (!(await claimWebhookDelivery(db, delivery))) {
       return reply({ status: "duplicate" });
     }
   } catch (error) {
@@ -79,23 +101,34 @@ export async function handleLinearWebhook(
   }
 
   const context: LinearEventContext = { db, organizationId: integration.externalId };
+  let acknowledging: Promise<void> | undefined;
   if (deps.acknowledge) {
-    try {
-      await deps.acknowledge(event, context);
-    } catch (error) {
+    acknowledging = deps.acknowledge(event, context).catch((error: unknown) => {
       console.error(`Acknowledging Linear ${event.kind} webhook failed`, error);
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = await Promise.race([
+      acknowledging.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(
+          () => resolve(true),
+          deps.acknowledgeTimeoutMs ?? ACKNOWLEDGE_TIMEOUT_MS,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (timedOut) {
+      console.error(`Acknowledging Linear ${event.kind} webhook timed out; responding anyway`);
     }
   }
   const task = async () => {
     try {
+      // A slow acknowledgement still lands before the handler's own activities.
+      await acknowledging;
       await deps.handle(event, context);
     } catch (error) {
-      console.error(
-        `Linear ${event.kind} webhook ${deliveryId ?? "(no delivery ID)"} failed`,
-        error,
-      );
+      console.error(`Linear ${event.kind} webhook ${deliveryId} failed`, error);
       // Let a redelivery of the same event try again.
-      if (delivery) await releaseWebhookDelivery(db, delivery).catch(() => undefined);
+      await releaseWebhookDelivery(db, delivery).catch(() => undefined);
     }
   };
   const defer = deps.defer ?? ((run: () => Promise<void>) => run());

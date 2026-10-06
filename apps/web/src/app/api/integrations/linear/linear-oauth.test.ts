@@ -9,12 +9,18 @@ vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   saved: [] as Array<Record<string, unknown>>,
+  consumed: new Map<string, Date>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
 vi.mock("@omniralph/db", () => ({
+  consumeOAuthState: async (_db: unknown, nonce: string, expiresAt: Date) => {
+    if (state.consumed.has(nonce)) return false;
+    state.consumed.set(nonce, expiresAt);
+    return true;
+  },
   saveIntegration: async (_db: unknown, values: Record<string, unknown>) => {
     state.saved.push(values);
     return { id: "integration-1", ...values };
@@ -73,6 +79,7 @@ async function callbackWith(query: string, cookie?: string) {
 beforeEach(() => {
   state.user = user("admin");
   state.saved = [];
+  state.consumed.clear();
   tokenRequests.length = 0;
   tokenStatus = 200;
 });
@@ -151,6 +158,36 @@ describe("GET /api/integrations/linear/callback", () => {
     expect(res.cookies.get(STATE_COOKIE)?.value).toBe("");
   });
 
+  it("consumes the state on first use and rejects a replayed callback", async () => {
+    const { state: signed, nonce } = await createOAuthState("admin-1");
+    const query = `code=code-1&state=${encodeURIComponent(signed)}`;
+    expect(location(await callbackWith(query, nonce))).toBe(
+      "/settings/integrations?linear=connected",
+    );
+    // Consumed until the state would have expired.
+    const expiresAt = state.consumed.get(nonce)!;
+    expect(expiresAt.getTime() - Date.now()).toBeGreaterThan(9 * 60_000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(10 * 60_000);
+
+    expect(location(await callbackWith(query, nonce))).toBe(
+      "/settings/integrations?linear=invalid_state",
+    );
+    expect(tokenRequests).toHaveLength(1);
+    expect(state.saved).toHaveLength(1);
+
+    // A declined consent uses the state up as well.
+    const declined = await createOAuthState("admin-1");
+    const declinedQuery = `error=access_denied&state=${encodeURIComponent(declined.state)}`;
+    expect(location(await callbackWith(declinedQuery, declined.nonce))).toBe(
+      "/settings/integrations?linear=denied",
+    );
+    expect(
+      location(
+        await callbackWith(`code=c&state=${encodeURIComponent(declined.state)}`, declined.nonce),
+      ),
+    ).toBe("/settings/integrations?linear=invalid_state");
+  });
+
   it("rejects a missing, forged, foreign or cookie-less state without exchanging the code", async () => {
     const { state: signed, nonce } = await createOAuthState("admin-1");
     const { state: otherAdmins } = await createOAuthState("admin-2");
@@ -172,16 +209,21 @@ describe("GET /api/integrations/linear/callback", () => {
   });
 
   it("handles a declined consent, a missing code and token errors", async () => {
-    const { state: signed, nonce } = await createOAuthState("admin-1");
-    const s = encodeURIComponent(signed);
+    const fresh = async () => {
+      const { state: signed, nonce } = await createOAuthState("admin-1");
+      return { s: encodeURIComponent(signed), nonce };
+    };
+    let { s, nonce } = await fresh();
     expect(location(await callbackWith(`error=access_denied&state=${s}`, nonce))).toBe(
       "/settings/integrations?linear=denied",
     );
+    ({ s, nonce } = await fresh());
     expect(location(await callbackWith(`state=${s}`, nonce))).toBe(
       "/settings/integrations?linear=invalid",
     );
     tokenStatus = 400;
     vi.spyOn(console, "error").mockImplementation(() => {});
+    ({ s, nonce } = await fresh());
     expect(location(await callbackWith(`code=bad&state=${s}`, nonce))).toBe(
       "/settings/integrations?linear=error",
     );

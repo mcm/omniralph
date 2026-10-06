@@ -3,10 +3,11 @@
  * in one Linear workspace). Credentials are JSON encrypted at rest with
  * `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, eq, ne } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, eq, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { integrations } from "./schema.js";
+import { integrations, oauthStateUses } from "./schema.js";
 
 export type IntegrationProvider = (typeof integrations.$inferSelect)["provider"];
 
@@ -62,7 +63,8 @@ export async function getIntegrationWithCredentials<C>(
 
 /**
  * Installs (or reinstalls) the provider's integration for a workspace. Only one
- * workspace per provider is connected: any other workspace's row is removed.
+ * workspace per provider is connected (`integrations_provider_uq`): any other
+ * workspace's row is removed, and concurrent installs end with the last one.
  */
 export async function saveIntegration<C>(
   db: Database,
@@ -78,8 +80,9 @@ export async function saveIntegration<C>(
       .insert(integrations)
       .values({ ...input, encryptedCredentials })
       .onConflictDoUpdate({
-        target: [integrations.provider, integrations.externalId],
+        target: integrations.provider,
         set: {
+          externalId: input.externalId,
           name: input.name,
           encryptedCredentials,
           installedByUserId: input.installedByUserId,
@@ -126,4 +129,25 @@ export async function updateIntegrationCredentials<C>(
       .where(eq(integrations.id, id));
     return next;
   });
+}
+
+/**
+ * Marks an OAuth `state` nonce as used; false when it was used before (a
+ * replayed callback). `expiresAt` is when the state expires: the record is
+ * kept until then, and expired records are swept on the way.
+ */
+export async function consumeOAuthState(
+  db: Database,
+  nonce: string,
+  expiresAt: Date,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const nonceHash = createHash("sha256").update(nonce).digest("hex");
+  await db.delete(oauthStateUses).where(lt(oauthStateUses.expiresAt, now));
+  const rows = await db
+    .insert(oauthStateUses)
+    .values({ nonceHash, expiresAt })
+    .onConflictDoNothing()
+    .returning({ nonceHash: oauthStateUses.nonceHash });
+  return rows.length > 0;
 }

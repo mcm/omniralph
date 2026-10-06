@@ -153,6 +153,49 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
     expect(await stored()).toMatchObject({ accessToken: "access-2", refreshToken: "refresh-2" });
   });
 
+  it("with a refresh budget, uses the still-valid token when the refresh is slow", async () => {
+    await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(4) });
+    token.delayMs = 500;
+    const started = Date.now();
+    const fast = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 50 });
+    expect(Date.now() - started).toBeLessThan(400);
+    await fast.getOrganization();
+    expect(graphqlAuth).toEqual(["Bearer access-1"]);
+    // The refresh finishes in the background, and later callers share it.
+    const later = await gateway();
+    await later.getOrganization();
+    expect(token.requests).toHaveLength(1);
+    expect(graphqlAuth).toEqual(["Bearer access-1", "Bearer access-2"]);
+    expect(await stored()).toMatchObject({ accessToken: "access-2", refreshToken: "refresh-2" });
+  });
+
+  it("with a refresh budget, uses a fast refresh's token", async () => {
+    await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(4) });
+    await (
+      await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 5_000 })
+    ).getOrganization();
+    expect(graphqlAuth).toEqual(["Bearer access-2"]);
+  });
+
+  it("with a refresh budget, uses the still-valid token when the refresh fails", async () => {
+    const before = { accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(1) };
+    await install(before);
+    token.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const g = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 5_000 });
+    await g.getOrganization();
+    expect(graphqlAuth).toEqual(["Bearer access-1"]);
+    expect(await stored()).toEqual(before);
+  });
+
+  it("with a refresh budget, still waits for the refresh of an expired token", async () => {
+    await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(-1) });
+    token.delayMs = 200;
+    const g = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 10 });
+    await g.getOrganization();
+    expect(graphqlAuth).toEqual(["Bearer access-2"]);
+  });
+
   it("keeps the stored credentials when the refresh fails", async () => {
     const before = { accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(1) };
     await install(before);

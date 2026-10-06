@@ -43,6 +43,7 @@ const SECRET = "linear-webhook-secret";
 process.env.LINEAR_WEBHOOK_SECRET = SECRET;
 
 const { POST } = await import("./route");
+const { handleLinearWebhook, linearDeliveryKey } = await import("@/lib/linear/ingest");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -212,6 +213,96 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
     expect(state.acknowledged).toEqual(["session_created"]);
     const rows = await state.db.select().from(webhookDeliveries);
     expect(rows).toMatchObject([{ provider: "linear", deliveryId: id, repositoryId: null }]);
+  });
+
+  it("dedupes a delivery without Linear-Delivery by a hash of its body", async () => {
+    const payload = createdPayload();
+    const raw = JSON.stringify(payload);
+    expect(await (await deliver(payload, { deliveryId: null })).json()).toMatchObject({
+      status: "accepted",
+    });
+    expect(await (await deliver(payload, { deliveryId: null })).json()).toEqual({
+      status: "duplicate",
+    });
+    // A different body (e.g. a later timestamp) is a different delivery.
+    const other = createdPayload({ webhookTimestamp: payload.webhookTimestamp + 1 });
+    expect(await (await deliver(other, { deliveryId: null })).json()).toMatchObject({
+      status: "accepted",
+    });
+    // A blank header counts as missing.
+    expect(await (await deliver(payload, { deliveryId: "  " })).json()).toEqual({
+      status: "duplicate",
+    });
+    await flush();
+    expect(state.handled).toHaveLength(2);
+    const rows = await state.db.select().from(webhookDeliveries);
+    expect(rows.map((r) => r.deliveryId)).toContain(linearDeliveryKey(null, raw));
+    expect(linearDeliveryKey(null, raw)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(linearDeliveryKey(" id-1 ", raw)).toBe("id-1");
+  });
+
+  it("releases a body-hash delivery when the handler fails, so a replay is handled", async () => {
+    const payload = createdPayload();
+    state.fail = true;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await deliver(payload, { deliveryId: null });
+      await flush();
+    } finally {
+      consoleError.mockRestore();
+    }
+    state.fail = false;
+    expect(await (await deliver(payload, { deliveryId: null })).json()).toMatchObject({
+      status: "accepted",
+    });
+  });
+
+  it("responds within the acknowledgement budget and handles the event after the slow ack", async () => {
+    const order: string[] = [];
+    let finishAck!: () => void;
+    const deferred: Array<() => Promise<void>> = [];
+    const body = JSON.stringify(createdPayload());
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const started = Date.now();
+      const res = await handleLinearWebhook(
+        new Request("https://omniralph.example.com/api/webhooks/linear", {
+          method: "POST",
+          headers: { "linear-signature": signBody(body, SECRET), "linear-delivery": randomUUID() },
+          body,
+        }),
+        {
+          db: state.db,
+          secret: SECRET,
+          acknowledgeTimeoutMs: 50,
+          acknowledge: () =>
+            new Promise<void>((resolve) => {
+              finishAck = () => {
+                order.push("acknowledged");
+                resolve();
+              };
+            }),
+          handle: async () => {
+            order.push("handled");
+          },
+          defer: (task) => {
+            deferred.push(task);
+          },
+        },
+      );
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(await res.json()).toEqual({ status: "accepted", kind: "session_created" });
+      expect(consoleError).toHaveBeenCalledWith(expect.stringMatching(/timed out/));
+
+      const running = Promise.all(deferred.map((task) => task()));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(order).toEqual([]);
+      finishAck();
+      await running;
+      expect(order).toEqual(["acknowledged", "handled"]);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("releases the delivery when the handler fails, so a redelivery is handled", async () => {

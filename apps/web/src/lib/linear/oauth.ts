@@ -174,23 +174,35 @@ export async function createOAuthState(
 }
 
 /**
- * True when `state` was signed by us within its lifetime, for this `userId`,
- * and carries the nonce from the browser's cookie.
+ * The state's nonce and expiry when `state` was signed by us within its
+ * lifetime, for this `userId`, and carries the nonce from the browser's
+ * cookie; otherwise null. Callers consume the nonce (`consumeOAuthState`) so
+ * the state works once.
  */
-export async function verifyOAuthState(
+export async function readOAuthState(
   state: string | null | undefined,
   expected: { userId: string; nonce: string | null | undefined },
   env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
-  if (!state || !expected.nonce) return false;
+): Promise<{ nonce: string; expiresAt: Date } | null> {
+  if (!state || !expected.nonce) return null;
   try {
     const { payload } = await jwtVerify(state, stateKey(env), {
       algorithms: ["HS256"],
       audience: STATE_AUDIENCE,
       subject: expected.userId,
     });
-    return payload.nonce === expected.nonce;
+    if (payload.nonce !== expected.nonce || typeof payload.exp !== "number") return null;
+    return { nonce: expected.nonce, expiresAt: new Date(payload.exp * 1000) };
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** True when `readOAuthState` accepts `state`. */
+export async function verifyOAuthState(
+  state: string | null | undefined,
+  expected: { userId: string; nonce: string | null | undefined },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  return (await readOAuthState(state, expected, env)) !== null;
 }

@@ -11,6 +11,7 @@ const {
   LinearOAuthError,
   linearOAuthConfig,
   refreshCredentials,
+  readOAuthState,
   verifyOAuthState,
 } = await import("./oauth");
 
@@ -70,6 +71,10 @@ describe("OAuth state", () => {
   it("verifies for the same user and nonce only", async () => {
     const { state, nonce } = await createOAuthState("admin-1", env);
     expect(await verifyOAuthState(state, { userId: "admin-1", nonce }, env)).toBe(true);
+    const read = await readOAuthState(state, { userId: "admin-1", nonce }, env);
+    expect(read?.nonce).toBe(nonce);
+    expect(read!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
+    expect(await readOAuthState(state, { userId: "admin-2", nonce }, env)).toBeNull();
     expect(await verifyOAuthState(state, { userId: "admin-2", nonce }, env)).toBe(false);
     expect(await verifyOAuthState(state, { userId: "admin-1", nonce: "other" }, env)).toBe(false);
     expect(await verifyOAuthState(state, { userId: "admin-1", nonce: undefined }, env)).toBe(false);

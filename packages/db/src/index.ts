@@ -152,6 +152,7 @@ export {
   deleteIntegration,
   getIntegration,
   getIntegrationWithCredentials,
+  consumeOAuthState,
   saveIntegration,
   updateIntegrationCredentials,
   type Integration,
