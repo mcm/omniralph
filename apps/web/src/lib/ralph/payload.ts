@@ -15,6 +15,7 @@ import {
 } from "@omniralph/ralph";
 import {
   RalphDescribePrPayload,
+  RalphPreparePayload,
   RalphStoryPayload,
   type RalphStoryListItem,
 } from "@omniralph/shared";
@@ -145,5 +146,39 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
     })),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     qualityGates: uniqueCommands(epic.qualityGates).slice(0, 50),
+  });
+}
+
+export interface PreparePayloadInput {
+  run: RalphRun;
+  repository: Repository;
+  connection: ScmConnection;
+  /** The manual story, as just re-read from Linear (its commands as they are now). */
+  story: Story;
+  /** The approval: the commands hash and branch HEAD that were shown. */
+  approved: { commandsHash: string; headSha: string | null };
+}
+
+/**
+ * The payload of a `ralph.prepare` job: the manual story's commands as they
+ * are now and the approval they must still match (the agent runs nothing
+ * otherwise).
+ */
+export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePayload {
+  const { run, repository, connection, story, approved } = input;
+  return RalphPreparePayload.parse({
+    runId: run.id,
+    repositoryId: repository.id,
+    repository: jobRepository(repository, connection),
+    branch: run.branch,
+    baseBranch: run.baseBranch,
+    settings: {
+      model: repository.ralphSettings.model || null,
+      setupCommand: repository.ralphSettings.setupCommand || null,
+    },
+    story: { identifier: story.identifier ?? story.storyId, title: story.title.slice(0, 1000) },
+    commands: (story.preparation ?? []).slice(0, 50),
+    commandsHash: approved.commandsHash,
+    approvedHeadSha: approved.headSha,
   });
 }

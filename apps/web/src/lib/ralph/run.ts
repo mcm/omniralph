@@ -16,6 +16,7 @@ import {
   upsertStories,
   type Database,
   type RalphRun,
+  type RalphPreparationRequest,
   type RalphRunStatus,
   type RalphStory,
   type RalphStoryStatus,
@@ -43,6 +44,7 @@ import {
   MAX_ATTEMPTS_PER_STORY,
   RALPH_CAPABILITY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
+  RALPH_PREPARE_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
 } from "@omniralph/shared";
 import type { ScmAdapter } from "@omniralph/scm";
@@ -51,8 +53,14 @@ import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
 import { applyJobOutcomes } from "./outcome";
-import { buildDescribePrPayload, buildStoryPayload } from "./payload";
+import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
 import { planFor } from "./plan";
+import {
+  applyPreparationJob,
+  approvedPreparation,
+  offerPreparation,
+  preparationOf,
+} from "./preparation";
 import { applyPullRequestJob, changeRequestTerm, openEarlyPullRequest } from "./publish";
 
 export interface RalphDeps {
@@ -160,6 +168,8 @@ export type AdvanceResult =
   | { action: "enqueued"; run: RalphRun; story: RalphStory; jobId: string }
   /** Every story is done: a `ralph.describe-pr` job writes the PR/MR. */
   | { action: "describing"; run: RalphRun; jobId: string }
+  /** An approved manual-story preparation runs as a `ralph.prepare` job. */
+  | { action: "preparing"; run: RalphRun; jobId: string }
   | { action: "waiting"; run: RalphRun; waitingOn: RalphWaitingOn }
   | { action: "completed"; run: RalphRun }
   | { action: "failed"; run: RalphRun };
@@ -180,7 +190,8 @@ export async function advanceRun(runId: string, deps: RalphDeps): Promise<Advanc
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };
     const stories = await applyJobOutcomes({ ...deps, tx, run });
     const pullRequest = await applyPullRequestJob(deps, tx, run);
-    return { busy: stories.busy || pullRequest.busy };
+    const preparation = await applyPreparationJob(deps, tx, run);
+    return { busy: stories.busy || pullRequest.busy || preparation.busy };
   });
   if (!applied) return { action: "gone" };
   const result = await lockRun(deps.db, runId, (tx, run) => step(deps, tx, run));
@@ -211,6 +222,12 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const epic = await reloadEpic(deps.linear, run);
   const rows = await syncStories(tx, run.id, epic);
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
+  // An approved preparation ("Run it") goes first: it was asked for while nothing else could run.
+  const approved = await approvedPreparation(deps, tx, run, stories);
+  run = approved.run;
+  if (approved.story && approved.request) {
+    return enqueuePreparation(deps, tx, run, { story: approved.story, request: approved.request });
+  }
   const allDone = isEpicComplete(stories);
   // openPullRequestEarly: a draft PR/MR once the first story is pushed.
   if (!allDone) run = await openEarlyPullRequest(deps, tx, run, { epic, rows });
@@ -390,6 +407,49 @@ async function describePullRequest(
   return { action: "describing", run: updated, jobId: job.id };
 }
 
+/**
+ * Runs an approved manual-story preparation: a `ralph.prepare` job (the run's
+ * one job, on its sticky agent) with the story's commands as they are now and
+ * the approval they must match. Its outcome is applied by `applyPreparationJob`.
+ */
+async function enqueuePreparation(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { story: Story; request: RalphPreparationRequest },
+): Promise<AdvanceResult> {
+  const { story, request } = input;
+  const found = await usableRepository(deps, tx, run);
+  if ("action" in found) return found;
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    capability: RALPH_CAPABILITY,
+    type: RALPH_PREPARE_JOB_TYPE,
+    payload: buildPreparePayload({
+      run,
+      ...found,
+      story,
+      approved: { commandsHash: request.commandsHash, headSha: request.headSha },
+    }),
+    repositoryId: run.repositoryId,
+    ralphRunId: run.id,
+    dedupeKey: runDedupeKey(run.id),
+    targetAgentId: await stickyAgentId(deps.db, run.agentId),
+  });
+  if (!created) return { action: "busy", run };
+  const state = preparationOf(run);
+  const updated =
+    (await updateRun(tx, run.id, {
+      status: "running",
+      waitingOn: null,
+      preparation: { ...state, request: { ...request, jobId: job.id } },
+    })) ?? run;
+  await postActivity(deps.linear, run.linearAgentSessionId, {
+    type: "thought",
+    body: `Running the preparation of **${request.identifier}: ${request.title}** on \`${run.branch}\`.`,
+  });
+  return { action: "preparing", run: updated, jobId: job.id };
+}
+
 /** Every story is done and there is nothing to open a PR/MR for: the run completes. */
 async function complete(
   deps: RalphDeps,
@@ -474,16 +534,30 @@ async function wait(
     manual: await waitingRefs(deps.linear, found.manual, titles),
   };
   await publishPlan(deps.linear, run, rows);
+  const all = [...waitingOn.blockers, ...waitingOn.manual];
+  const done = stories.filter(isStoryDone).length;
+  // A manual story whose preparation can run now: the question is the run's elicitation.
+  const asked =
+    rootBlockers.length === 0 &&
+    (await offerPreparation(deps, tx, run, {
+      stories,
+      rows,
+      ...(all.length > 0 && {
+        waiting: `${done}/${stories.length} stories are done; the rest are waiting on ${bold(all)}.`,
+      }),
+    }));
+  if (asked) {
+    const updated = (await updateRun(tx, run.id, { status: "waiting", waitingOn })) ?? run;
+    return { action: "waiting", run: updated, waitingOn };
+  }
   if (run.status === "waiting" && sameWaitingOn(run.waitingOn, waitingOn)) {
     return { action: "waiting", run, waitingOn };
   }
   const updated = (await updateRun(tx, run.id, { status: "waiting", waitingOn })) ?? run;
 
-  const all = [...waitingOn.blockers, ...waitingOn.manual];
   const startAnyway = "Reply `start anyway` to ignore the blockers, or `stop` to cancel.";
   const automatic = (issues: readonly WaitingIssue[]) =>
     `I'll start automatically when ${issues.length > 1 ? "any of them is" : "it's"} done or canceled.`;
-  const done = stories.filter(isStoryDone).length;
   const stuck = stories.filter((s) => s.exhausted && !isStoryDone(s));
   let body: string;
   if (rootBlockers.length > 0) {
@@ -526,6 +600,13 @@ async function wait(
       "Reply with guidance (it will be added to every story prompt) and I'll retry, or say `stop`.",
     );
     body = lines.join("\n\n");
+  }
+  const preparable = stories.filter(
+    (s) => s.manual && (s.preparation?.length ?? 0) > 0 && !isStoryDone(s),
+  );
+  if (preparable.length > 0) {
+    const names = preparable.map((s) => `**${s.identifier ?? s.storyId}**`).join(", ");
+    body += `\n\nReply \`rerun preparation\` to be asked again about running the preparation commands of ${names}.`;
   }
   await postActivity(deps.linear, run.linearAgentSessionId, { type: "elicitation", body });
   return { action: "waiting", run: updated, waitingOn };

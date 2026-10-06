@@ -351,7 +351,7 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("polls ralph topics only once ralph is enabled, and fails its jobs as not implemented", async () => {
+  it("polls ralph topics only once ralph is enabled, and runs its jobs", async () => {
     const id = randomUUID();
     const ralphTopic = `ralph-jobs-agent-${AGENT_ID}`;
     const topics = ["review-jobs", "ralph-jobs", ralphTopic];
@@ -379,7 +379,7 @@ describe("AgentDaemon", () => {
     expect(queue.receiveCalls).toContain(ralphTopic);
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
-      error: "ralph.prepare jobs are not supported by this agent yet",
+      error: "invalid ralph.prepare payload",
     });
     expect(queue.rescheduled).toEqual([]);
     await daemon.shutdown();

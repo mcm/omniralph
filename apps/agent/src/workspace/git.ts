@@ -116,12 +116,13 @@ export class CommandError extends Error {
 }
 
 /**
- * Runs `command` with `bash -lc` and resolves with its stdout; rejects with
- * `CommandError` (whose output is stdout and stderr), or the signal's reason on abort.
+ * Runs `command` with `bash -lc` and resolves with its stdout (with
+ * `mergeOutput`, stdout and stderr as they came); rejects with `CommandError`
+ * (whose output is stdout and stderr), or the signal's reason on abort.
  */
 export function runShell(
   command: string,
-  options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
+  options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal; mergeOutput?: boolean },
 ): Promise<string> {
   return runProcess("bash", ["-lc", command], {
     ...options,
@@ -136,6 +137,8 @@ function runProcess(
     cwd?: string;
     env: NodeJS.ProcessEnv;
     signal?: AbortSignal;
+    /** stderr goes into stdout (in order), for the resolved value and the error. */
+    mergeOutput?: boolean;
     error: (exitCode: number | null, stderr: string, stdout: string) => Error;
   },
 ): Promise<string> {
@@ -150,7 +153,7 @@ function runProcess(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => (options.mergeOutput ? stdout : stderr).push(chunk));
     const onAbort = () => child.kill("SIGTERM");
     signal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (error) => {

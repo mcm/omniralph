@@ -59,8 +59,8 @@ describe("capability registry", () => {
     }
   });
 
-  it("fails the ralph jobs it can't run yet as not implemented, never as retryable", async () => {
-    for (const type of ["ralph.prepare"]) {
+  it("fails ralph job types it doesn't know as not implemented, never as retryable", async () => {
+    for (const type of ["ralph.frobnicate"]) {
       const job: JobPayload = {
         id: "00000000-0000-4000-8000-000000000001",
         capability: "ralph",

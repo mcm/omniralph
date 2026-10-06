@@ -244,6 +244,10 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const guidance = (await getRun(db, run.id))!.guidance;
     expect(guidance.map((g) => g.text).sort()).toEqual(["one", "three", "two"]);
     expect(guidance[0]!.at).toBe(at.toISOString());
+    for (let i = 0; i < 12; i++) await appendGuidance(db, run.id, `g${i}`, at);
+    expect((await getRun(db, run.id))!.guidance.map((g) => g.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `g${i + 2}`),
+    );
 
     await appendProgress(db, run.id, "## TOOL-1\n- did it");
     await appendProgress(db, run.id, "---\n");
