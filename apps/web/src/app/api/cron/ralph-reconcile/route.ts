@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import { reconcileRuns } from "@/lib/ralph/reconcile";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 
 /**
  * Vercel Cron (`vercel.json`, every 10 minutes): advances waiting ralph runs,
@@ -21,5 +22,7 @@ export async function GET(req: Request): Promise<Response> {
     }
     throw error;
   }
-  return Response.json(await reconcileRuns({ db, linear, dispatcher: getDispatcher() }));
+  return Response.json(
+    await reconcileRuns({ db, linear, dispatcher: getDispatcher(), adapterFor: scmAdapterFor }),
+  );
 }

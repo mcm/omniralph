@@ -23,8 +23,13 @@ import {
   type Job,
   type RalphRun,
 } from "@omniralph/db";
-import type { ScmAdapter } from "@omniralph/scm";
-import { MAX_JOB_DELIVERIES, RalphStoryPayload, type RalphStoryResult } from "@omniralph/shared";
+import {
+  MAX_JOB_DELIVERIES,
+  RalphDescribePrPayload,
+  RalphStoryPayload,
+  type RalphDescribePrResult,
+  type RalphStoryResult,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -34,6 +39,7 @@ import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
@@ -62,6 +68,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let repoId: string;
+  let gitlabRepoId: string;
   let agentA: string;
   let agentB: string;
   let linear: FakeLinearGateway;
@@ -69,8 +76,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   let dispatcher: VercelQueuesDispatcher;
   let sessionSeq = 0;
 
-  const fakeAdapter = { getDefaultBranch: async () => "develop" } as unknown as ScmAdapter;
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => fakeAdapter });
+  let scm: FakeScmAdapter;
+  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -102,6 +109,32 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
     });
+    const gitlab = await upsertScmConnection(
+      db,
+      {
+        provider: "gitlab",
+        name: "gitlab",
+        baseUrl: "https://gitlab.example.com",
+        externalId: "gitlab.example.com",
+        credentials: { token: "t", webhookSecret: "s" },
+      },
+      randomBytes(32),
+    );
+    gitlabRepoId = (
+      await connectRepository(db, {
+        connectionId: gitlab.id,
+        provider: "gitlab",
+        externalId: "42",
+        fullPath: "group/app",
+      })
+    ).id;
+    await updateRepositoryRalphSettings(db, gitlabRepoId, {
+      ralphEnabled: true,
+      linearTeamKeys: ["GL"],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: DEFAULT_RALPH_SETTINGS,
+    });
   }, 180_000);
 
   afterAll(async () => {
@@ -122,6 +155,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       ])
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();
+    scm = new FakeScmAdapter();
     publisher = new RecordingPublisher();
     dispatcher = new VercelQueuesDispatcher({ db, publisher });
   });
@@ -203,6 +237,46 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     return RalphStoryPayload.parse(job.payload);
+  }
+
+  const description = (overrides: Partial<RalphDescribePrResult> = {}): RalphDescribePrResult => ({
+    title: "Build the epic",
+    body: "Builds it.\n\n**Stories**\n- ENG-2: Alpha\n\n**Verification**\n- `pnpm test`",
+    usage: { inputTokens: 5, outputTokens: 5 },
+    ...overrides,
+  });
+
+  /**
+   * Plays the agent's part for the run's queued `ralph.describe-pr` job (a
+   * description, or a failure). Returns the payload.
+   */
+  async function describePr(
+    runId: string,
+    outcome: Partial<RalphDescribePrResult> | { jobError: string } = {},
+    agentId = agentA,
+  ): Promise<RalphDescribePrPayload> {
+    const job = await activeJob(runId);
+    expect(job.type).toBe("ralph.describe-pr");
+    await startJob(db, {
+      jobId: job.id,
+      agentId,
+      enabledCapabilities: ["ralph"],
+      maxDeliveries: MAX_JOB_DELIVERIES,
+    });
+    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+    if ("jobError" in outcome) {
+      await failJob(db, {
+        jobId: job.id,
+        agentId,
+        retryable: false,
+        error: outcome.jobError,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+    } else {
+      await completeJob(db, { jobId: job.id, agentId, result: description(outcome) });
+    }
+    await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    return RalphDescribePrPayload.parse(job.payload);
   }
 
   const storyStates = async (runId: string) =>
@@ -296,8 +370,43 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(alphaPayload.story.identifier).toBe("ENG-2");
     expect(alphaPayload.progress).toBe("# Log\n\n## Beta learnings\n");
 
+    // Every story is done: one describe job on the sticky agent, then the PR.
+    expect((await getRun(db, run.id))?.status).toBe("running");
+    const describeJob = await activeJob(run.id);
+    expect(describeJob).toMatchObject({
+      capability: "ralph",
+      type: "ralph.describe-pr",
+      topic: `ralph-jobs-agent-${agentA}`,
+      ralphRunId: run.id,
+    });
+    const describePayload = await describePr(run.id);
+    expect(describePayload).toMatchObject({
+      runId: run.id,
+      branch: "feat/epic",
+      baseBranch: "develop",
+      epic: {
+        identifier: "ENG-1",
+        title: "Epic",
+        prd: expect.stringContaining("Build the thing."),
+      },
+      stories: [
+        { identifier: "ENG-2", title: "Alpha", status: "completed", commitSha: sha(3) },
+        { identifier: "ENG-3", title: "Beta", status: "completed", commitSha: sha(2) },
+        { identifier: "ENG-4", title: "Gamma", status: "completed", commitSha: sha(1) },
+      ],
+      progress: expect.stringContaining("## Beta learnings\n\n## [") as string,
+      qualityGates: ["pnpm test", "pnpm lint"],
+    });
+
     const done = (await getRun(db, run.id))!;
-    expect(done).toMatchObject({ status: "completed", iterations: 3, waitingOn: null });
+    expect(done).toMatchObject({
+      status: "completed",
+      iterations: 3,
+      waitingOn: null,
+      prNumber: 1,
+      prUrl: "https://github.com/acme/api/pull/1",
+      prJobId: null,
+    });
     expect(await storyStates(run.id)).toEqual([
       ["ENG-2", "completed", 1],
       ["ENG-3", "completed", 1],
@@ -315,9 +424,41 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       "completed",
     ]);
     expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([
-      "Finished all 3 stories of **ENG-1** on `feat/epic`.",
+      [
+        "Finished all 3 stories of **ENG-1** on `feat/epic`. Opened [Pull request #1](https://github.com/acme/api/pull/1), ready for review.",
+        "",
+        `- ✅ **ENG-2**: Alpha (\`${sha(3).slice(0, 10)}\`)`,
+        `- ✅ **ENG-3**: Beta (\`${sha(2).slice(0, 10)}\`)`,
+        `- ✅ **ENG-4**: Gamma (\`${sha(1).slice(0, 10)}\`)`,
+      ].join("\n"),
     ]);
-    expect(publisher.sent).toHaveLength(3);
+    expect(scm.changeRequests).toEqual([
+      expect.objectContaining({
+        number: 1,
+        sourceBranch: "feat/epic",
+        targetBranch: "develop",
+        title: "Build the epic",
+        body: expect.stringMatching(
+          /^Builds it\.\n\n\*\*Stories\*\*\n- ENG-2: Alpha[\s\S]*\n\n---\nLinear: \[ENG-1\]\(https:\/\/linear\.app\/.+\) · _Opened by Omniralph\._$/,
+        ),
+        draft: false,
+      }),
+    ]);
+    expect(scm.calls).toEqual([
+      "getDefaultBranch",
+      "findOpenChangeRequest",
+      "createChangeRequest",
+      "findOpenChangeRequest",
+      "markChangeRequestReady",
+    ]);
+    expect(linear.urls).toEqual([
+      {
+        sessionId: run.linearAgentSessionId,
+        label: "Pull request #1",
+        url: "https://github.com/acme/api/pull/1",
+      },
+    ]);
+    expect(publisher.sent).toHaveLength(4);
     expect(linear.bodies(run.linearAgentSessionId, "error")).toEqual([]);
   });
 
@@ -387,6 +528,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       lastFeedback: null,
       commitSha: sha(9),
     });
+    await describePr(run.id);
     expect((await getRun(db, run.id))?.status).toBe("completed");
   });
 
@@ -601,11 +743,13 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     // The issue stays open for review; no story comment.
     expect(linear.issues.get(issue.id)?.stateType).toBe("started");
     expect(linear.comments).toEqual([]);
-    expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+    const described = await describePr(run.id);
+    expect(described.epic).toMatchObject({ identifier: "ENG-80", title: "Fix the login bug" });
+    expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
     expect(await storyStates(run.id)).toEqual([["ENG-80", "completed", 1]]);
-    expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([
-      `Finished **ENG-80** on \`${issue.branchName}\`.`,
-    ]);
+    expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      `Finished **ENG-80** on \`${issue.branchName}\`. Opened [Pull request #1]`,
+    );
   });
 
   /** A run waiting on an outside blocker that was just completed (without a webhook). */
@@ -662,6 +806,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(await reconcileRuns(deps())).toEqual({ reconciled: 0, failed: 0 });
     const later = new Date(Date.now() + RECONCILE_STALE_MS + 60_000);
     expect(await reconcileRuns(deps(), later)).toEqual({ reconciled: 1, failed: 0 });
+    expect(await getRun(db, waiting.id)).toMatchObject({ status: "running" });
+    await describePr(waiting.id);
     expect(await getRun(db, waiting.id)).toMatchObject({ status: "completed" });
     expect((await listStories(db, waiting.id))[0]).toMatchObject({ commitSha: sha(7) });
   });
@@ -675,6 +821,241 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await getJob(db, job.id))?.status).toBe("skipped");
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     expect(await storyStates(run.id)).toEqual([["ENG-95", "running", 0]]);
+  });
+
+  describe("the pull/merge request", () => {
+    /** A one-story epic whose story is done: the run is describing its PR/MR. */
+    async function finishedRun(teamKey = "ENG"): Promise<RalphRun> {
+      const epic = linear.add({
+        identifier: `${teamKey}-100`,
+        title: "Widgets",
+        teamKey,
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/widgets`,
+      });
+      linear.add({
+        identifier: `${teamKey}-101`,
+        title: "Add widgets",
+        teamKey,
+        parentId: epic.id,
+      });
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(11) });
+      expect((await getRun(db, run.id))?.status).toBe("running");
+      expect(linear.bodies(run.linearAgentSessionId, "thought").at(-1)).toMatch(
+        /^All 1 story is done\. Writing the (pull|merge) request description\.$/,
+      );
+      return (await getRun(db, run.id))!;
+    }
+
+    const reply = (run: RalphRun, body: string) =>
+      handleLinearEvent(
+        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { db, organizationId: "org-1" },
+        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      );
+
+    it("opens a merge request on GitLab", async () => {
+      scm = new FakeScmAdapter("gitlab");
+      const run = await finishedRun("GL");
+      expect(run.repositoryId).toBe(gitlabRepoId);
+      const payload = await describePr(run.id, {
+        title: "Add widgets",
+        body: "Adds widgets. See [docs](https://gitlab.example.com/group/app/-/wikis/x) and [spam](https://evil.example.com).",
+      });
+      expect(payload.repository.provider).toBe("gitlab");
+      const url = "https://gitlab.example.com/group/app/-/merge_requests/1";
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 1,
+        prUrl: url,
+      });
+      const [mr] = scm.changeRequests;
+      expect(mr).toMatchObject({
+        title: "Add widgets",
+        sourceBranch: "feat/widgets",
+        targetBranch: "develop",
+        draft: false,
+      });
+      // Sanitized: links to the code host stay, others don't; the Linear footer is added after.
+      expect(mr!.body).toContain("(<https://gitlab.example.com/group/app/-/wikis/x>)");
+      expect(mr!.body).toContain("spam (`https://evil.example.com`)");
+      expect(mr!.body).toMatch(
+        /\n\n---\nLinear: \[GL-100\]\(https:\/\/linear\.app\/acme\/issue\/GL-100\) · _Opened by Omniralph\._$/,
+      );
+      expect(linear.urls).toEqual([
+        { sessionId: run.linearAgentSessionId, label: "Merge request !1", url },
+      ]);
+      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([
+        [
+          `Finished all 1 story of **GL-100** on \`feat/widgets\`. Opened [Merge request !1](${url}), ready for review.`,
+          "",
+          `- ✅ **GL-101**: Add widgets (\`${sha(11).slice(0, 10)}\`)`,
+        ].join("\n"),
+      ]);
+    });
+
+    it("updates the open pull request for the branch instead of opening another", async () => {
+      scm.changeRequests.push({
+        number: 7,
+        url: "https://github.com/acme/api/pull/7",
+        fullPath: "acme/api",
+        sourceBranch: "feat/widgets",
+        targetBranch: "develop",
+        title: "WIP",
+        body: "old",
+        draft: true,
+        state: "open",
+      });
+      const run = await finishedRun();
+      await describePr(run.id);
+      expect(scm.changeRequests).toHaveLength(1);
+      expect(scm.changeRequests[0]).toMatchObject({
+        number: 7,
+        title: "Build the epic",
+        body: expect.stringContaining("Builds it.") as string,
+        draft: false,
+      });
+      expect(scm.calls).not.toContain("createChangeRequest");
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 7,
+        prUrl: "https://github.com/acme/api/pull/7",
+      });
+      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+        "Updated [Pull request #7](https://github.com/acme/api/pull/7), ready for review.",
+      );
+    });
+
+    it("opens a draft with a templated body after the first story with openPullRequestEarly", async () => {
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
+      });
+      try {
+        const epic = linear.add({
+          identifier: "ENG-110",
+          title: "Gadgets",
+          description: `${EPIC_DESCRIPTION}\n> Branch: feat/gadgets`,
+        });
+        linear.add({ identifier: "ENG-111", title: "First", parentId: epic.id, priority: 1 });
+        linear.add({ identifier: "ENG-112", title: "Second", parentId: epic.id, priority: 2 });
+        const run = await delegate(epic.id);
+        expect(scm.changeRequests).toEqual([]);
+
+        await work(run.id, { commitSha: sha(21) });
+        expect(scm.changeRequests).toEqual([
+          expect.objectContaining({
+            number: 1,
+            sourceBranch: "feat/gadgets",
+            targetBranch: "develop",
+            title: "Gadgets",
+            draft: true,
+          }),
+        ]);
+        const draft = scm.changeRequests[0]!.body;
+        expect(draft).toContain("Implements **Gadgets**, story by story.");
+        expect(draft).toContain("- [x] ENG-111: First\n- [ ] ENG-112: Second");
+        expect(draft).toContain("Linear: [ENG-110](https://linear.app/acme/issue/ENG-110)");
+        expect(await getRun(db, run.id)).toMatchObject({
+          status: "running",
+          prNumber: 1,
+          prUrl: "https://github.com/acme/api/pull/1",
+        });
+        expect(linear.urls).toEqual([
+          {
+            sessionId: run.linearAgentSessionId,
+            label: "Pull request #1",
+            url: "https://github.com/acme/api/pull/1",
+          },
+        ]);
+        expect((await activeJob(run.id)).type).toBe("ralph.story");
+
+        await work(run.id, { commitSha: sha(22) });
+        expect(scm.changeRequests).toHaveLength(1);
+        expect(scm.changeRequests[0]!.draft).toBe(true);
+        await describePr(run.id, { title: "Add gadgets", body: "Adds gadgets." });
+        expect(scm.changeRequests).toEqual([
+          expect.objectContaining({ number: 1, title: "Add gadgets", draft: false }),
+        ]);
+        expect(scm.changeRequests[0]!.body).toMatch(/^Adds gadgets\.\n\n---\nLinear: /);
+        expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+        expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+          "Updated [Pull request #1]",
+        );
+      } finally {
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+        });
+      }
+    });
+
+    it("waits with an error when the describe job fails, and a reply retries the PR step", async () => {
+      const run = await finishedRun();
+      await describePr(run.id, { jobError: "the session ended without a valid title and body" });
+      const waiting = (await getRun(db, run.id))!;
+      expect(waiting).toMatchObject({
+        status: "waiting",
+        prJobId: null,
+        prNumber: null,
+        waitingOn: { blockers: [], manual: [] },
+      });
+      expect(waiting.error).toContain("the session ended without a valid title and body");
+      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      expect(error).toContain(
+        "Every story is done, but I couldn't open the pull request: writing its description failed: the session ended without a valid title and body.",
+      );
+      expect(error).toContain("Reply with guidance");
+      expect(scm.changeRequests).toEqual([]);
+      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+
+      // Nothing happens until someone replies.
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
+      expect(await reconcileRuns(deps())).toEqual({ reconciled: 1, failed: 0 });
+      expect(await activeJobs(run.id)).toEqual([]);
+
+      await reply(run, "retry please");
+      expect((await getRun(db, run.id))?.guidance.map((g) => g.text)).toEqual(["retry please"]);
+      await describePr(run.id);
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 1,
+        error: null,
+      });
+    });
+
+    it("waits with an error when opening the pull request fails", async () => {
+      scm.failures.set("createChangeRequest", "Resource not accessible by integration");
+      const run = await finishedRun();
+      await describePr(run.id);
+      expect(await getRun(db, run.id)).toMatchObject({ status: "waiting", prNumber: null });
+      expect(linear.bodies(run.linearAgentSessionId, "error")[0]).toContain(
+        "couldn't open the pull request: Resource not accessible by integration.",
+      );
+
+      scm.failures.clear();
+      await reply(run, "I fixed the app permissions");
+      await describePr(run.id);
+      expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+      expect(scm.changeRequests).toHaveLength(1);
+    });
+
+    it("completes without a pull request when no story committed anything", async () => {
+      const issue = linear.add({ identifier: "ENG-120", title: "Nothing to change" });
+      const run = await delegate(issue.id);
+      await work(run.id, {});
+      expect(await getRun(db, run.id)).toMatchObject({ status: "completed", prNumber: null });
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+        "Nothing was committed",
+      );
+    });
   });
 
   it("the reconcile cron requires the cron secret", async () => {

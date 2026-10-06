@@ -5,7 +5,10 @@ import {
   LEARN_RULE_JOB_TYPE,
   LearnRuleJobPayload,
   RALPH_CAPABILITY,
+  RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
+  RalphDescribePrPayload,
+  RalphDescribePrResult,
   RalphStoryPayload,
   RalphStoryResult,
   REVIEW_CAPABILITY,
@@ -104,6 +107,16 @@ registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
   isValidResult: (result) => parseReplyResult(result) !== null,
   onCompleted: onReplyJobCompleted,
   onFailed: (db, job) => onReplyJobFailed(db, job),
+});
+
+registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
+  capability: RALPH_CAPABILITY,
+  payload: RalphDescribePrPayload,
+  onStarted: onRalphJobStarted,
+  isValidResult: (result) => RalphDescribePrResult.safeParse(result).success,
+  onCompleted: (db, job) => onRalphJobFinished(db, job),
+  onFailed: (db, job) => onRalphJobFinished(db, job),
+  onCanceled: (db, job) => onRalphJobFinished(db, job),
 });
 
 registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {

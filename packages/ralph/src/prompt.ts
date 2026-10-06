@@ -289,27 +289,45 @@ export interface DescribePrPromptContext {
   baseBranch: string;
   /** "pull request" or "merge request". */
   prTerm: string;
-  progressFile: string;
+  /** A file with the progress log, if the session can read one. */
+  progressFile?: string;
+  /** The progress log itself, quoted into the prompt (for sessions that can't read files outside the repository). */
+  progress?: string;
+  /** The stories the branch implements, in order (defaults to the epic's). */
+  stories?: readonly { identifier: string; title: string; commitSha?: string | null }[];
 }
+
+/** Longest PR/MR title the describe session may write. */
+export const PR_TITLE_MAX_LENGTH = 72;
 
 /** Marks a describe-the-PR session (tests and logs tell it apart from story/request sessions by this). */
 export const PR_DESCRIPTION_HEADING = "## Write the title and description";
 
 /** System prompt addition for the read-only session that writes a PR/MR title and description. */
 export const PR_DESCRIPTION_SYSTEM_APPEND = `You are "Omniralph", writing the title and description of a pull/merge request for work that is already committed.
-- Only read: inspect the repository and git history. Don't edit files, commit, push, or run gh/glab.
+- Only read: inspect the repository and git history (\`git log\`, \`git diff\`, \`git show\`). Don't edit files, commit, push, or run gh/glab.
 - Report the title and description in your structured result (\`title\`, \`body\`).`;
+
+/** The end of a long text, marked as cut. */
+function lastPart(text: string, max: number): string {
+  return text.length > max ? `…\n${text.slice(-max)}` : text;
+}
 
 /**
  * Prompt for a short session that reads the branch's changes and writes the PR/MR title and
- * description. Readers of the PR/MR may not have access to Linear, and the story breakdown is
- * workflow structure, so the agent describes the deliverable itself.
+ * description: a summary of the deliverable a reviewer without access to Linear can follow, the
+ * stories it implements (with their Linear identifiers) and how it was verified.
  */
 export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
   const { epic, baseBranch, prTerm } = ctx;
   const background = epic.description.trim();
+  const stories: NonNullable<DescribePrPromptContext["stories"]> =
+    ctx.stories ??
+    epic.stories.map((s) => ({ identifier: s.identifier ?? s.storyId, title: s.title }));
+  const gates = uniqueCommands(epic.qualityGates);
+  const progress = ctx.progress?.trim();
   return [
-    `The branch \`${ctx.branch}\` in this git worktree is ready for a ${prTerm} into \`${baseBranch}\`. It implements "${epic.title}".`,
+    `The branch \`${ctx.branch}\` in this git worktree is ready for a ${prTerm} into \`${baseBranch}\`. It implements "${epic.title}" (${epic.identifier}).`,
     "",
     ...(background
       ? [
@@ -320,16 +338,47 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
           "",
         ]
       : []),
-    `Notes from the sessions that did the work (decisions, gotchas) are in \`${ctx.progressFile}\`, if it exists.`,
-    "",
+    ...(stories.length > 0
+      ? [
+          "The stories the branch implements, one commit each (Linear identifier, title, commit):",
+          ...stories.map(
+            (s) =>
+              `- ${s.identifier}: ${s.title}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`,
+          ),
+          "",
+        ]
+      : []),
+    ...(gates.length > 0
+      ? [
+          "Every story passed these quality gates before it was committed:",
+          ...gates.map((g) => `- \`${g}\``),
+          "",
+        ]
+      : []),
+    ...(progress
+      ? [
+          "Notes from the sessions that did the work (decisions, gotchas):",
+          "<progress-log>",
+          lastPart(progress, 12_000),
+          "</progress-log>",
+          "",
+        ]
+      : ctx.progressFile
+        ? [
+            `Notes from the sessions that did the work (decisions, gotchas) are in \`${ctx.progressFile}\`, if it exists.`,
+            "",
+          ]
+        : []),
     PR_DESCRIPTION_HEADING,
     `1. Study what actually changed: \`git log --reverse --format='%s%n%b' origin/${baseBranch}..HEAD\` and \`git diff origin/${baseBranch}...HEAD\` (use \`${baseBranch}\` instead of \`origin/${baseBranch}\` if that ref doesn't exist), reading files where the diff alone isn't clear.`,
     `2. Write a title and description for the ${prTerm} that a reviewer with no access to the issue tracker can follow:`,
-    "   - Title: one line, imperative mood, at most ~70 characters, summarising the change itself. No issue identifiers or prefixes.",
+    `   - Title: one line, imperative mood, at most ${PR_TITLE_MAX_LENGTH} characters, summarising the change itself. No issue identifiers or prefixes.`,
     "   - Description (markdown): open with a short summary of what the change delivers and why. Then the notable changes, grouped by area, in a few bullets.",
+    "   - Add a **Stories** section listing every story above as `- <identifier>: <title>`, with the identifier exactly as given.",
+    `   - Add a **Verification** section saying how the change was verified (the quality gates above${gates.length > 0 ? "" : ", if any"}, tests the stories added), without claiming checks that didn't run.`,
     "   - Add a **Breaking changes** section if behaviour, configuration, APIs or data formats change incompatibly, saying what users must do. Omit it otherwise.",
     "   - Add a **Decisions** section for judgement calls, trade-offs or deviations from the request that a reviewer should know about. Omit it if there were none.",
-    "   - Do NOT list the user stories, story IDs, progress or the development process. They are workflow structure, not part of the deliverable. Don't link the issue tracker; that is added for you.",
+    "   - Don't describe the development process or the progress log, and don't link the issue tracker; that is added for you.",
     "   - Be concrete and concise; don't pad with generic statements or restate the diff line by line.",
     "3. Don't change any files.",
     "",

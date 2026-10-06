@@ -16,13 +16,10 @@ import {
   lockRun,
   requestJobCancel,
   updateRun,
-  type Database,
   type RalphRun,
   type Repository,
-  type ScmConnection,
 } from "@omniralph/db";
 import { parseRepoTags, type Epic } from "@omniralph/ralph";
-import type { ScmAdapter } from "@omniralph/scm";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { loadEpic, type LoadedEpic } from "./epic-loader";
@@ -31,10 +28,7 @@ import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
 
-export interface StartRunDeps extends RalphDeps {
-  /** The code-host adapter of a repository's connection (for its default branch). */
-  adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
-}
+export type StartRunDeps = RalphDeps;
 
 /**
  * Linear always fills `agentSession.comment.body`; for a delegation (not an
@@ -226,12 +220,10 @@ export async function startRun(
   try {
     const found = await getRepositoryWithConnection(db, route.repository.id);
     if (!found) throw new Error(`repository ${route.repository.fullPath} is gone`);
-    baseBranch = await deps
-      .adapterFor(db, found.connection)
-      .getDefaultBranch({
-        fullPath: found.repository.fullPath,
-        externalId: found.repository.externalId,
-      });
+    baseBranch = await deps.adapterFor(db, found.connection).getDefaultBranch({
+      fullPath: found.repository.fullPath,
+      externalId: found.repository.externalId,
+    });
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",

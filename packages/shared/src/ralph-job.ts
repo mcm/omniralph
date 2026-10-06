@@ -167,12 +167,17 @@ export const RalphDescribePrPayload = RalphJobBase.extend({
     )
     .max(500),
   progress: z.string().max(MAX_DOCUMENT_LENGTH),
+  /** The PRD's `## Quality Gates` commands every story passed (how the work was verified). */
+  qualityGates: z.array(z.string().min(1).max(4000)).max(50).default([]),
 });
 export type RalphDescribePrPayload = z.infer<typeof RalphDescribePrPayload>;
 
+/** Longest PR/MR title a `ralph.describe-pr` job returns. */
+export const MAX_PULL_REQUEST_TITLE_LENGTH = 72;
+
 /** Result of a `ralph.describe-pr` job: the PR/MR the control panel opens or updates. */
 export const RalphDescribePrResult = z.object({
-  title: z.string().trim().min(1).max(255),
+  title: z.string().trim().min(1).max(MAX_PULL_REQUEST_TITLE_LENGTH),
   body: z.string().trim().min(1).max(60_000),
   usage: TokenUsage,
 });

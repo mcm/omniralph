@@ -17,7 +17,22 @@ export const RALPH_TOOL_POLICY: ToolPolicy = {
   writable: true,
 };
 
-/** `ralph.describe-pr` only reads the branch worktree to describe it: no Write, Edit or shell. */
+/** Read-only git commands a `ralph.describe-pr` session may run to study the branch. */
+export const DESCRIBE_PR_GIT_COMMANDS: readonly string[] = [
+  "git log",
+  "git diff",
+  "git show",
+  "git status",
+  "git rev-parse",
+  "git merge-base",
+  "git ls-files",
+];
+
+/**
+ * `ralph.describe-pr` only reads the branch worktree to describe it: Read,
+ * Grep and Glob confined to the worktree, plus read-only git commands. No
+ * Write, Edit or other shell use.
+ */
 export const RALPH_DESCRIBE_PR_TOOL_POLICY: ToolPolicy = {
   tools: "allowed",
   allowedTools: EXPLORATION_TOOLS,
@@ -26,6 +41,7 @@ export const RALPH_DESCRIBE_PR_TOOL_POLICY: ToolPolicy = {
   permissionMode: "dontAsk",
   settingSources: [],
   writable: false,
+  readOnlyCommands: DESCRIBE_PR_GIT_COMMANDS,
 };
 
 /** `ralph.prepare` runs approved commands and no Claude session at all. */

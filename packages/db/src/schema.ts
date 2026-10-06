@@ -666,6 +666,8 @@ export const ralphRuns = pgTable(
     /** PR number (GitHub) or MR IID (GitLab). */
     prNumber: integer("pr_number"),
     prUrl: text("pr_url"),
+    /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
+    prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
     status: ralphRunStatus("status").notNull().default("pending"),
     waitingOn: jsonb("waiting_on").$type<RalphWaitingOn>(),
     guidance: jsonb("guidance").$type<RalphGuidance[]>().notNull().default([]),

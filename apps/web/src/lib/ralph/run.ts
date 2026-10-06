@@ -22,6 +22,8 @@ import {
   type RalphStoryUpdate,
   type RalphTransaction,
   type RalphWaitingOn,
+  type Repository,
+  type ScmConnection,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -37,19 +39,28 @@ import {
   type Story,
   type WaitingIssue,
 } from "@omniralph/ralph";
-import { MAX_ATTEMPTS_PER_STORY, RALPH_CAPABILITY, RALPH_STORY_JOB_TYPE } from "@omniralph/shared";
+import {
+  MAX_ATTEMPTS_PER_STORY,
+  RALPH_CAPABILITY,
+  RALPH_DESCRIBE_PR_JOB_TYPE,
+  RALPH_STORY_JOB_TYPE,
+} from "@omniralph/shared";
+import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
 import { applyJobOutcomes } from "./outcome";
-import { buildStoryPayload } from "./payload";
+import { buildDescribePrPayload, buildStoryPayload } from "./payload";
 import { planFor } from "./plan";
+import { applyPullRequestJob, changeRequestTerm, openEarlyPullRequest } from "./publish";
 
 export interface RalphDeps {
   db: Database;
   linear: LinearGateway;
   dispatcher: JobDispatcher;
+  /** The code-host adapter of a repository's connection (default branch, PRs/MRs). */
+  adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
 }
 
 /** Story jobs a run may enqueue in total (cyralph's `maxIterationsPerRun`). */
@@ -147,24 +158,29 @@ export type AdvanceResult =
   /** One of the run's jobs is queued or running: its outcome advances the run. */
   | { action: "busy"; run: RalphRun }
   | { action: "enqueued"; run: RalphRun; story: RalphStory; jobId: string }
+  /** Every story is done: a `ralph.describe-pr` job writes the PR/MR. */
+  | { action: "describing"; run: RalphRun; jobId: string }
   | { action: "waiting"; run: RalphRun; waitingOn: RalphWaitingOn }
   | { action: "completed"; run: RalphRun }
   | { action: "failed"; run: RalphRun };
 
 /**
  * Moves a run forward. First, under the run's row lock, the outcome of every
- * story job that finished is applied (completed, retried or exhausted). Then,
+ * story job that finished is applied (completed, retried or exhausted), and
+ * that of the describe job (the PR/MR is opened and the run completes). Then,
  * under the lock again, the stories are re-read from Linear (new sub-issues,
  * relations and states), synced and the plan posted, and the run either
- * enqueues the next ready story as a `ralph.story` job, completes (every story
- * done) or waits (on blockers, manual stories or a person). Nothing is enqueued
+ * enqueues the next ready story as a `ralph.story` job, enqueues the
+ * `ralph.describe-pr` job (every story done) or waits (on blockers, manual stories or a person). Nothing is enqueued
  * while one of the run's jobs is queued or running.
  */
 export async function advanceRun(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
   // Outcomes commit on their own, so a Linear failure while selecting can't undo them.
   const applied = await lockRun(deps.db, runId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };
-    return applyJobOutcomes({ ...deps, tx, run });
+    const stories = await applyJobOutcomes({ ...deps, tx, run });
+    const pullRequest = await applyPullRequestJob(deps, tx, run);
+    return { busy: stories.busy || pullRequest.busy };
   });
   if (!applied) return { action: "gone" };
   const result = await lockRun(deps.db, runId, (tx, run) => step(deps, tx, run));
@@ -195,6 +211,9 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const epic = await reloadEpic(deps.linear, run);
   const rows = await syncStories(tx, run.id, epic);
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
+  const allDone = isEpicComplete(stories);
+  // openPullRequestEarly: a draft PR/MR once the first story is pushed.
+  if (!allDone) run = await openEarlyPullRequest(deps, tx, run, { epic, rows });
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
     ? []
@@ -214,8 +233,12 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     }
   }
 
-  if (rootBlockers.length === 0 && isEpicComplete(stories)) {
-    return complete(deps, tx, run, { epic, stories, rows });
+  if (rootBlockers.length === 0 && allDone) {
+    // The PR/MR step failed: a reply (which clears the error) retries it.
+    if (run.status === "waiting" && run.error) {
+      return { action: "waiting", run, waitingOn: run.waitingOn ?? { blockers: [], manual: [] } };
+    }
+    return describePullRequest(deps, tx, run, { epic, stories, rows });
   }
   return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: false });
 }
@@ -242,18 +265,12 @@ async function failRun(
   return { action: "failed", run: failed };
 }
 
-/**
- * Enqueues one attempt at `story`: its sub-issue moves to started and a
- * `ralph.story` job goes to the run's sticky agent (the agent that started
- * its first job), else to the repository's pinned agent, else to `ralph-jobs`.
- */
-async function enqueueStory(
+/** The run's repository while it may run ralph jobs; else the run fails. */
+async function usableRepository(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
-  input: { epic: Epic; stories: Story[]; story: Story; row: RalphStory },
-): Promise<AdvanceResult> {
-  const { epic, story, row } = input;
+): Promise<{ repository: Repository; connection: ScmConnection } | AdvanceResult> {
   const found = await getRepositoryWithConnection(deps.db, run.repositoryId);
   if (!found || found.repository.disconnectedAt) {
     return failRun(deps, tx, run, "The run's repository is no longer connected, so I stopped.");
@@ -267,6 +284,23 @@ async function enqueueStory(
         "**Repository › Settings › Ralph** and delegate the issue again to continue.",
     );
   }
+  return found;
+}
+
+/**
+ * Enqueues one attempt at `story`: its sub-issue moves to started and a
+ * `ralph.story` job goes to the run's sticky agent (the agent that started
+ * its first job), else to the repository's pinned agent, else to `ralph-jobs`.
+ */
+async function enqueueStory(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: Epic; stories: Story[]; story: Story; row: RalphStory },
+): Promise<AdvanceResult> {
+  const { epic, story, row } = input;
+  const found = await usableRepository(deps, tx, run);
+  if ("action" in found) return found;
 
   const payload = buildStoryPayload({
     run,
@@ -310,9 +344,53 @@ async function enqueueStory(
 }
 
 /**
- * Every story is done. The PR/MR step (describe, open or update, mark ready)
- * hangs off here; until it exists the run simply completes.
+ * Every story is done: one `ralph.describe-pr` job (on the run's sticky
+ * agent) writes the PR/MR title and body, and its outcome opens the PR/MR and
+ * completes the run (`applyPullRequestJob`). A run none of whose stories
+ * committed anything, and without a PR/MR, has nothing to open: it completes.
  */
+async function describePullRequest(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: Epic; stories: Story[]; rows: RalphStory[] },
+): Promise<AdvanceResult> {
+  if (run.prNumber === null && !input.rows.some((r) => r.commitSha)) {
+    return complete(deps, tx, run, input);
+  }
+  const found = await usableRepository(deps, tx, run);
+  if ("action" in found) return found;
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    capability: RALPH_CAPABILITY,
+    type: RALPH_DESCRIBE_PR_JOB_TYPE,
+    payload: buildDescribePrPayload({ run, ...found, epic: input.epic, rows: input.rows }),
+    repositoryId: run.repositoryId,
+    ralphRunId: run.id,
+    dedupeKey: runDedupeKey(run.id),
+    targetAgentId: await stickyAgentId(deps.db, run.agentId),
+  });
+  if (!created) return { action: "busy", run };
+  const updated =
+    (await updateRun(tx, run.id, {
+      status: "running",
+      prJobId: job.id,
+      waitingOn: null,
+      error: null,
+    })) ?? run;
+  await publishPlan(deps.linear, run, input.rows);
+  const term = changeRequestTerm(found.repository.provider);
+  const what =
+    run.kind === "single"
+      ? `**${input.epic.identifier}** is done`
+      : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
+  await postActivity(deps.linear, run.linearAgentSessionId, {
+    type: "thought",
+    body: `${what}. Writing the ${term} description.`,
+  });
+  return { action: "describing", run: updated, jobId: job.id };
+}
+
+/** Every story is done and there is nothing to open a PR/MR for: the run completes. */
 async function complete(
   deps: RalphDeps,
   tx: RalphTransaction,
@@ -328,7 +406,7 @@ async function complete(
       : `all ${input.stories.length} ${input.stories.length === 1 ? "story" : "stories"} of **${input.epic.identifier}**`;
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "response",
-    body: `Finished ${what} on \`${run.branch}\`.`,
+    body: `Finished ${what} on \`${run.branch}\`. Nothing was committed, so there is no pull/merge request.`,
   });
   return { action: "completed", run: completed };
 }

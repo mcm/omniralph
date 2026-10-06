@@ -1,3 +1,4 @@
+import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import {
   worktreeGuard,
   type SessionPermissions,
@@ -18,19 +19,32 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
   if (policy.permissionMode === "bypassPermissions" && !policy.writable) {
     throw new Error("only write-capable tool policies may bypass permissions");
   }
+  const commands = policy.readOnlyCommands ?? [];
+  if (commands.length > 0 && (policy.writable || policy.tools !== "allowed")) {
+    throw new Error(
+      "read-only commands are only for read-only policies with an explicit tool list",
+    );
+  }
   return ({ cwd, allowExploration }): SessionPermissions => {
     const allowed = allowExploration ? [...policy.allowedTools] : [];
+    const shell = allowExploration && commands.length > 0;
     const tools: SessionPermissions["tools"] = !allowExploration
       ? []
       : policy.tools === "claude_code"
         ? { type: "preset", preset: "claude_code" }
-        : [...policy.allowedTools];
+        : [...policy.allowedTools, ...(shell ? ["Bash"] : [])];
     const guarded = policy.fileScope === "worktree" && allowed.length > 0;
+    const preToolUse = [
+      ...(guarded ? [{ matcher: allowed.join("|"), hooks: [worktreeGuard(cwd)] }] : []),
+      ...(shell ? [{ matcher: "Bash", hooks: [readOnlyCommandGuard(commands)] }] : []),
+    ];
     return {
       cwd,
       tools,
-      allowedTools: allowed,
-      disallowedTools: [...policy.disallowedTools],
+      allowedTools: [...allowed, ...(shell ? commands.map((c) => `Bash(${c}:*)`) : [])],
+      disallowedTools: shell
+        ? policy.disallowedTools.filter((t) => t !== "Bash")
+        : [...policy.disallowedTools],
       permissionMode: policy.permissionMode,
       ...(policy.permissionMode === "bypassPermissions"
         ? { allowDangerouslySkipPermissions: true }
@@ -40,9 +54,41 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
       ...(policy.settingSources.length === 0
         ? { skills: [], plugins: [], mcpServers: {}, strictMcpConfig: true }
         : {}),
-      hooks: guarded
-        ? { PreToolUse: [{ matcher: allowed.join("|"), hooks: [worktreeGuard(cwd)] }] }
-        : {},
+      hooks: preToolUse.length > 0 ? { PreToolUse: preToolUse } : {},
+    };
+  };
+}
+
+/** Shell syntax beyond one plain command (chaining, pipes, redirection, substitution, globbing). */
+const SHELL_SYNTAX = /[;&|<>`$(){}[\]*?!\\\n\r]/;
+/** git options that write files, run other programs or read outside the repository. */
+const UNSAFE_GIT_OPTIONS =
+  /(^|\s)(--output(=|\s|$)|-o(\s|$)|--ext-diff|--textconv|--no-index|--exec|--upload-pack|-c\s|--git-dir|--work-tree|-C\s)/;
+
+/** Whether a Bash command is exactly one of `commands` with plain arguments. */
+export function isReadOnlyCommand(command: string, commands: readonly string[]): boolean {
+  if (SHELL_SYNTAX.test(command)) return false;
+  const cmd = command.trim().replace(/\s+/g, " ");
+  if (!cmd || UNSAFE_GIT_OPTIONS.test(cmd)) return false;
+  return commands.some((c) => cmd === c || cmd.startsWith(`${c} `));
+}
+
+/**
+ * Denies every Bash call that isn't one of `commands` with plain arguments.
+ * The `Bash(<command>:*)` permission rules already do most of this; the hook
+ * also refuses options that would write files or run other programs.
+ */
+export function readOnlyCommandGuard(commands: readonly string[]): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") return {};
+    const command = (input.tool_input as { command?: unknown } | undefined)?.command;
+    if (typeof command === "string" && isReadOnlyCommand(command, commands)) return {};
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: `Only these read-only commands may run, without shell syntax: ${commands.join(", ")}.`,
+      },
     };
   };
 }
