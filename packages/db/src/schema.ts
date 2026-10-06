@@ -219,7 +219,23 @@ export const integrations = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("integrations_provider_external_id_uq").on(t.provider, t.externalId)],
+  /** At most one connected workspace per provider (e.g. one Linear workspace). */
+  (t) => [uniqueIndex("integrations_provider_uq").on(t.provider)],
+);
+
+/**
+ * OAuth `state` nonces already used by an integration callback, so a replayed
+ * callback is rejected. Rows are kept until the state would have expired.
+ */
+export const oauthStateUses = pgTable(
+  "oauth_state_uses",
+  {
+    /** SHA-256 (hex) of the state's nonce. */
+    nonceHash: text("nonce_hash").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("oauth_state_uses_expires_at_idx").on(t.expiresAt)],
 );
 
 export const reviewProfiles = pgTable("review_profiles", {

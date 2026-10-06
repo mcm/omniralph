@@ -19,9 +19,17 @@ export interface LinearEventContext {
 }
 
 /**
+ * How long the acknowledgement waits for a token refresh before using the
+ * current (still valid) token; the webhook also caps the whole
+ * acknowledgement (`ACKNOWLEDGE_TIMEOUT_MS` in `ingest.ts`).
+ */
+export const ACKNOWLEDGE_REFRESH_TIMEOUT_MS = 2_000;
+
+/**
  * Posts what Linear needs before the webhook responds: a new agent session
  * must get an activity within 10 seconds, so it is acknowledged with a
- * thought right away. Failures are logged; the event is still handled.
+ * thought right away (without waiting long for a token refresh). Failures
+ * are logged; the event is still handled.
  */
 export async function acknowledgeLinearEvent(
   event: HandledLinearEvent,
@@ -30,7 +38,12 @@ export async function acknowledgeLinearEvent(
 ): Promise<void> {
   if (event.kind !== "session_created") return;
   try {
-    const gateway = linear ?? (await getLinearGateway({ db: context.db }));
+    const gateway =
+      linear ??
+      (await getLinearGateway({
+        db: context.db,
+        refreshTimeoutMs: ACKNOWLEDGE_REFRESH_TIMEOUT_MS,
+      }));
     await gateway.createActivity(
       event.sessionId,
       { type: "thought", body: ACKNOWLEDGEMENT },

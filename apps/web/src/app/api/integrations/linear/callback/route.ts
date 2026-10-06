@@ -1,4 +1,4 @@
-import { saveIntegration } from "@omniralph/db";
+import { consumeOAuthState, saveIntegration } from "@omniralph/db";
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
@@ -10,13 +10,13 @@ import {
   LINEAR_CALLBACK_PATH,
   linearOAuthConfig,
   linearRedirectUri,
+  readOAuthState,
   STATE_COOKIE,
-  verifyOAuthState,
 } from "@/lib/linear/oauth";
 
 /**
  * Linear's OAuth redirect: checks the signed `state` (same admin, same
- * browser, not expired), exchanges the code and stores the workspace and its
+ * browser, not expired, not used before) and consumes it, exchanges the code and stores the workspace and its
  * tokens as the Linear integration.
  */
 export async function GET(request: NextRequest) {
@@ -36,11 +36,14 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
-  const validState = await verifyOAuthState(params.get("state"), {
+  const validState = await readOAuthState(params.get("state"), {
     userId: admin.id,
     nonce: request.cookies.get(STATE_COOKIE)?.value,
   });
-  if (!validState) return to("/settings/integrations?linear=invalid_state");
+  // A state works once: a replayed callback is rejected.
+  if (!validState || !(await consumeOAuthState(getDb(), validState.nonce, validState.expiresAt))) {
+    return to("/settings/integrations?linear=invalid_state");
+  }
   // The admin declined on Linear's consent screen.
   if (params.get("error")) return to("/settings/integrations?linear=denied");
   const code = params.get("code");

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import {
+  consumeOAuthState,
   deleteIntegration,
   getIntegration,
   getIntegrationWithCredentials,
@@ -12,7 +13,7 @@ import {
   updateIntegrationCredentials,
 } from "./integrations.js";
 import { runMigrations } from "./migrate.js";
-import { integrations, users } from "./schema.js";
+import { integrations, oauthStateUses, users } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -67,6 +68,46 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
       accessToken: "lin_secret_1",
       version: 1,
     });
+  });
+
+  it("allows at most one integration per provider in the database", async () => {
+    await install("org-1", "Acme", "t1");
+    await expect(
+      db.insert(integrations).values({ provider: "linear", externalId: "org-2", name: "Other", encryptedCredentials: "x" }),
+    ).rejects.toThrow();
+    expect((await db.select().from(integrations)).map((r) => r.externalId)).toEqual(["org-1"]);
+  });
+
+  it("ends concurrent installs of different workspaces with one row", async () => {
+    const results = await Promise.allSettled([
+      install("org-1", "Acme", "t1"),
+      install("org-2", "Other", "t2"),
+      install("org-3", "Third", "t3"),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+    const rows = await db.select().from(integrations);
+    expect(rows).toHaveLength(1);
+    const stored = await getIntegrationWithCredentials<Creds>(db, "linear", key);
+    // The row and its credentials belong to the same install.
+    expect({ "org-1": "t1", "org-2": "t2", "org-3": "t3" }[stored!.externalId]).toBe(stored!.credentials.accessToken);
+  });
+
+  it("consumes an OAuth state once and sweeps expired ones", async () => {
+    await db.delete(oauthStateUses);
+    const now = new Date("2026-10-06T12:00:00Z");
+    const later = new Date(now.getTime() + 10 * 60_000);
+    expect(await consumeOAuthState(db, "nonce-1", later, now)).toBe(true);
+    expect(await consumeOAuthState(db, "nonce-1", later, now)).toBe(false);
+    expect(await consumeOAuthState(db, "nonce-2", later, now)).toBe(true);
+    const rows = await db.select().from(oauthStateUses);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.nonceHash)).not.toContain("nonce-1");
+
+    // After both expire they are swept.
+    expect(await consumeOAuthState(db, "nonce-3", new Date(later.getTime() + 60_000), new Date(later.getTime() + 1))).toBe(
+      true,
+    );
+    expect(await db.select().from(oauthStateUses)).toHaveLength(1);
   });
 
   it("is unique per provider and workspace; reinstalling updates the row", async () => {

@@ -34,6 +34,22 @@ export interface LinearGatewayOptions {
   /** Encryption key override (tests). */
   key?: string | Buffer;
   createGateway?: (accessToken: string) => LinearGateway;
+  /**
+   * Longest wait for a token refresh while the current token hasn't expired
+   * yet: past it (or when the refresh fails) the current token is used and
+   * the refresh carries on in the background. Unset waits for the refresh.
+   */
+  refreshTimeoutMs?: number;
+}
+
+/** Resolves to `fallback` after `ms` unless `promise` settles first (its rejection propagates). */
+function settleWithin<T, F>(promise: Promise<T>, ms: number, fallback: F): Promise<T | F> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<F>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** In-process refreshes in flight, by integration ID (the DB row lock covers other processes). */
@@ -44,7 +60,8 @@ const refreshing = new Map<string, Promise<LinearCredentials | null>>();
  * token that expires within 5 minutes is refreshed first and persisted; the
  * refresh runs under the integration's row lock and re-checks the stored
  * token, so concurrent callers (in any process) refresh once and never
- * overwrite a newer token with an older one.
+ * overwrite a newer token with an older one. With `refreshTimeoutMs`, a
+ * still-valid token is used when the refresh is slow or fails.
  */
 export async function getLinearGateway(options: LinearGatewayOptions): Promise<LinearGateway> {
   const { db, key } = options;
@@ -67,7 +84,25 @@ export async function getLinearGateway(options: LinearGatewayOptions): Promise<L
       ).finally(() => refreshing.delete(integration.id));
       refreshing.set(integration.id, pending);
     }
-    credentials = await pending;
+    const current = credentials;
+    const stillValid = !!current.expiresAt && Date.parse(current.expiresAt) > now();
+    if (options.refreshTimeoutMs !== undefined && stillValid) {
+      const TIMED_OUT = "timed out" as const;
+      const refreshed = await settleWithin(pending, options.refreshTimeoutMs, TIMED_OUT).catch(
+        (error: unknown) => {
+          console.error("Refreshing the Linear token failed; using the current token", error);
+          return TIMED_OUT;
+        },
+      );
+      if (refreshed === TIMED_OUT) {
+        // The refresh carries on for later callers; don't leave its failure unhandled.
+        pending.catch(() => undefined);
+        return createGateway(current.accessToken);
+      }
+      credentials = refreshed;
+    } else {
+      credentials = await pending;
+    }
     if (!credentials) throw new LinearNotConnectedError();
   }
   return createGateway(credentials.accessToken);
