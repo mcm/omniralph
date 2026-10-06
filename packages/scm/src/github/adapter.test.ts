@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { ChangeRequestNotFoundError } from "../types.js";
 import { GitHubAdapter } from "./adapter.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
@@ -435,5 +436,186 @@ describe("verifyWebhook", () => {
     await expect(adapter.verifyWebhook({ "x-hub-signature-256": "sha256=zz" }, body)).resolves.toBe(false);
     await expect(adapter.verifyWebhook({ "x-hub-signature-256": "garbage" }, body)).resolves.toBe(false);
     await expect(adapter.verifyWebhook({}, body)).resolves.toBe(false);
+  });
+});
+
+describe("pull request operations", () => {
+  const PULLS = `${API}/repos/acme/widgets/pulls`;
+  const PR_URL = "https://github.com/acme/widgets/pull/12";
+
+  async function jsonBody(request: Request): Promise<Record<string, unknown>> {
+    return (await request.json()) as Record<string, unknown>;
+  }
+
+  it("reads the default branch", async () => {
+    server.use(http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json({ default_branch: "trunk" })));
+    await expect(makeAdapter({ installationId: 42 }).getDefaultBranch(REPO)).resolves.toBe("trunk");
+  });
+
+  it("finds the open pull request for a branch of this repository", async () => {
+    const queries: URLSearchParams[] = [];
+    server.use(
+      http.get(PULLS, ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        queries.push(query);
+        if (query.get("head") !== "acme:ralph/epic") return HttpResponse.json([]);
+        return HttpResponse.json([{ number: 12, html_url: PR_URL, draft: true }]);
+      }),
+    );
+    const adapter = makeAdapter({ installationId: 42 });
+    await expect(adapter.findOpenChangeRequest(REPO, "ralph/epic")).resolves.toEqual({
+      number: 12,
+      url: PR_URL,
+      draft: true,
+    });
+    expect(queries[0]?.get("state")).toBe("open");
+    await expect(adapter.findOpenChangeRequest(REPO, "other")).resolves.toBeNull();
+  });
+
+  it("creates a draft pull request", async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post(PULLS, async ({ request }) => {
+        body = await jsonBody(request);
+        return HttpResponse.json({ number: 12, html_url: PR_URL }, { status: 201 });
+      }),
+    );
+    const created = await makeAdapter({ installationId: 42 }).createChangeRequest(REPO, {
+      sourceBranch: "ralph/epic",
+      targetBranch: "main",
+      title: "Build the epic",
+      body: "## Summary\n\nDone.",
+      draft: true,
+    });
+    expect(created).toEqual({ number: 12, url: PR_URL, created: true });
+    expect(body).toEqual({
+      head: "ralph/epic",
+      base: "main",
+      title: "Build the epic",
+      body: "## Summary\n\nDone.",
+      draft: true,
+    });
+  });
+
+  it("caps the title and body", async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post(PULLS, async ({ request }) => {
+        body = await jsonBody(request);
+        return HttpResponse.json({ number: 12, html_url: PR_URL }, { status: 201 });
+      }),
+    );
+    await makeAdapter({ installationId: 42 }).createChangeRequest(REPO, {
+      sourceBranch: "ralph/epic",
+      targetBranch: "main",
+      title: "t".repeat(300),
+      body: "b".repeat(70_000),
+      draft: false,
+    });
+    expect((body.title as string).length).toBe(256);
+    expect((body.title as string).endsWith("…")).toBe(true);
+    expect((body.body as string).length).toBe(65_536);
+    expect(body.draft).toBe(false);
+  });
+
+  it("recovers from 'already exists' by returning the open pull request", async () => {
+    server.use(
+      http.post(PULLS, () =>
+        HttpResponse.json(
+          {
+            message: "Validation Failed",
+            errors: [{ resource: "PullRequest", code: "custom", message: "A pull request already exists for acme:ralph/epic." }],
+          },
+          { status: 422 },
+        ),
+      ),
+      http.get(PULLS, () => HttpResponse.json([{ number: 9, html_url: "https://github.com/acme/widgets/pull/9", draft: false }])),
+    );
+    const created = await makeAdapter({ installationId: 42 }).createChangeRequest(REPO, {
+      sourceBranch: "ralph/epic",
+      targetBranch: "main",
+      title: "Build the epic",
+      body: "",
+      draft: true,
+    });
+    expect(created).toEqual({ number: 9, url: "https://github.com/acme/widgets/pull/9", created: false });
+  });
+
+  it("propagates other validation errors", async () => {
+    server.use(
+      http.post(PULLS, () =>
+        HttpResponse.json(
+          { message: "Validation Failed", errors: [{ message: "No commits between main and ralph/epic" }] },
+          { status: 422 },
+        ),
+      ),
+    );
+    await expect(
+      makeAdapter({ installationId: 42 }).createChangeRequest(REPO, {
+        sourceBranch: "ralph/epic",
+        targetBranch: "main",
+        title: "Build the epic",
+        body: "",
+        draft: false,
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("updates only the given fields", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(
+      http.patch(`${PULLS}/12`, async ({ request }) => {
+        bodies.push(await jsonBody(request));
+        return HttpResponse.json({ number: 12 });
+      }),
+    );
+    const adapter = makeAdapter({ installationId: 42 });
+    await adapter.updateChangeRequest(REPO, 12, { title: "New title", body: "New body" });
+    await adapter.updateChangeRequest(REPO, 12, { body: "Only body" });
+    expect(bodies).toEqual([{ title: "New title", body: "New body" }, { body: "Only body" }]);
+  });
+
+  it("throws ChangeRequestNotFoundError when updating a missing pull request", async () => {
+    server.use(http.patch(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })));
+    const error = await makeAdapter({ installationId: 42 })
+      .updateChangeRequest(REPO, 404, { body: "x" })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ChangeRequestNotFoundError);
+    expect(error).toMatchObject({ number: 404, message: "Change request acme/widgets#404 not found" });
+  });
+
+  it("marks a draft ready through the GraphQL mutation", async () => {
+    const graphql: { query: string; variables: Record<string, unknown> }[] = [];
+    server.use(
+      http.get(`${PULLS}/12`, () => HttpResponse.json({ number: 12, node_id: "PR_node12", draft: true })),
+      http.post(`${API}/graphql`, async ({ request }) => {
+        graphql.push((await request.json()) as (typeof graphql)[number]);
+        return HttpResponse.json({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } });
+      }),
+    );
+    await makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 12);
+    expect(graphql).toHaveLength(1);
+    expect(graphql[0]?.query).toContain("markPullRequestReadyForReview");
+    expect(graphql[0]?.variables).toEqual({ pullRequestId: "PR_node12" });
+  });
+
+  it("does nothing when the pull request isn't a draft", async () => {
+    let mutations = 0;
+    server.use(
+      http.get(`${PULLS}/12`, () => HttpResponse.json({ number: 12, node_id: "PR_node12", draft: false })),
+      http.post(`${API}/graphql`, () => {
+        mutations += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    await makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 12);
+    expect(mutations).toBe(0);
+  });
+
+  it("throws ChangeRequestNotFoundError when marking a missing pull request ready", async () => {
+    server.use(http.get(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })));
+    await expect(makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
   });
 });

@@ -81,6 +81,21 @@ function fakeAdapter() {
     async getWriteCloneCredential() {
       throw new Error("not used");
     },
+    async getDefaultBranch() {
+      throw new Error("not used");
+    },
+    async findOpenChangeRequest() {
+      throw new Error("not used");
+    },
+    async createChangeRequest() {
+      throw new Error("not used");
+    },
+    async updateChangeRequest() {
+      throw new Error("not used");
+    },
+    async markChangeRequestReady() {
+      throw new Error("not used");
+    },
     async hasWriteAccess() {
       return true;
     },

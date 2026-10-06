@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   capSummary,
   linkAllowed,
+  mentionedNames,
   MAX_BODY_CHARS,
   MAX_SUMMARY_CHARS,
   MAX_TITLE_CHARS,
@@ -168,5 +169,17 @@ describe("sanitizeFinding", () => {
       title: "t",
       body: "b",
     });
+  });
+});
+
+describe("allowedMentions", () => {
+  it("keeps mentions of the allowed users besides the author", () => {
+    expect(sanitizeMarkdown("@octocat @Hubot @other", { ...ctx, allowedMentions: ["hubot"] })).toBe(
+      "@octocat @Hubot `@other`",
+    );
+  });
+
+  it("lists the distinct mentioned names, lowercased", () => {
+    expect(mentionedNames("@A and @a, @org/team, a@b.com, `@code`")).toEqual(["a", "org/team"]);
   });
 });

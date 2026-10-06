@@ -2,7 +2,8 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MemoryCredentialCache } from "../credential-cache.js";
-import { GitLabAdapter } from "./adapter.js";
+import { ChangeRequestNotFoundError } from "../types.js";
+import { GitLabAdapter, stripDraftPrefix } from "./adapter.js";
 
 const HOST = "https://gitlab.example.com";
 const API = `${HOST}/api/v4/projects/99`;
@@ -511,5 +512,142 @@ describe("verifyWebhook", () => {
   it("rejects everything when no secret is configured", async () => {
     const adapter = new GitLabAdapter({ token: TOKEN, webhookSecret: "" });
     await expect(adapter.verifyWebhook({ "x-gitlab-token": "" }, "{}")).resolves.toBe(false);
+  });
+});
+
+describe("merge request operations", () => {
+  const MRS = `${API}/merge_requests`;
+  const MR_URL = `${HOST}/acme/tools/widgets/-/merge_requests/12`;
+  const NEW_MR = { sourceBranch: "ralph/epic", targetBranch: "main", title: "Build the epic", body: "## Summary\n\nDone." };
+
+  function mrHandler(iid: number, fields: { title: string; draft: boolean }) {
+    return http.get(`${MRS}/${iid}`, () => HttpResponse.json({ ...mrJson, iid, ...fields }));
+  }
+
+  function editHandler(iid: number) {
+    return http.put(`${MRS}/${iid}`, () => HttpResponse.json({ ...mrJson, iid }));
+  }
+
+  async function edits(iid: number) {
+    await Promise.all(pendingBodies);
+    return requests.filter((r) => r.method === "PUT" && r.url.endsWith(`/merge_requests/${iid}`)).map((r) => r.body);
+  }
+
+  it("reads the default branch", async () => {
+    server.use(http.get(API, () => HttpResponse.json({ id: 99, default_branch: "trunk" })));
+    await expect(makeAdapter().getDefaultBranch(REPO)).resolves.toBe("trunk");
+  });
+
+  it("finds the open MR for a branch, ignoring MRs from forks", async () => {
+    let query: URLSearchParams | undefined;
+    server.use(
+      http.get(MRS, ({ request }) => {
+        query = new URL(request.url).searchParams;
+        return HttpResponse.json([
+          { iid: 3, web_url: `${HOST}/fork/-/merge_requests/3`, draft: false, source_project_id: 5, target_project_id: 99 },
+          { iid: 12, web_url: MR_URL, draft: true, source_project_id: 99, target_project_id: 99 },
+        ]);
+      }),
+    );
+    await expect(makeAdapter().findOpenChangeRequest(REPO, "ralph/epic")).resolves.toEqual({
+      number: 12,
+      url: MR_URL,
+      draft: true,
+    });
+    expect(query?.get("source_branch")).toBe("ralph/epic");
+    expect(query?.get("state")).toBe("opened");
+  });
+
+  it("returns null when no MR is open for the branch", async () => {
+    server.use(http.get(MRS, () => HttpResponse.json([])));
+    await expect(makeAdapter().findOpenChangeRequest(REPO, "ralph/epic")).resolves.toBeNull();
+  });
+
+  it("creates a draft MR by prefixing the title with Draft:", async () => {
+    server.use(http.post(MRS, () => HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 })));
+    const created = await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true });
+    expect(created).toEqual({ number: 12, url: MR_URL, created: true });
+    const [post] = await posts("/merge_requests");
+    expect(post?.auth).toBe(TOKEN);
+    expect(post?.body).toEqual({
+      source_branch: "ralph/epic",
+      target_branch: "main",
+      title: "Draft: Build the epic",
+      description: "## Summary\n\nDone.",
+    });
+  });
+
+  it("creates a ready MR without the prefix (removing one the title already had)", async () => {
+    server.use(http.post(MRS, () => HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 })));
+    await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, title: "Draft: Build the epic", draft: false });
+    const [post] = await posts("/merge_requests");
+    expect(post?.body).toMatchObject({ title: "Build the epic" });
+  });
+
+  it("recovers from 'already exists' by returning the open MR", async () => {
+    server.use(
+      http.post(MRS, () =>
+        HttpResponse.json(
+          { message: ["Another open merge request already exists for this source branch: !12"] },
+          { status: 409 },
+        ),
+      ),
+      http.get(MRS, () =>
+        HttpResponse.json([{ iid: 12, web_url: MR_URL, draft: false, source_project_id: 99, target_project_id: 99 }]),
+      ),
+    );
+    const created = await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true });
+    expect(created).toEqual({ number: 12, url: MR_URL, created: false });
+  });
+
+  it("propagates other create errors", async () => {
+    server.use(http.post(MRS, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })));
+    await expect(makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true })).rejects.toThrow("403 Forbidden");
+  });
+
+  it("updates the title of a draft MR, keeping it a draft", async () => {
+    server.use(mrHandler(12, { title: "Draft: Old", draft: true }), editHandler(12));
+    await makeAdapter().updateChangeRequest(REPO, 12, { title: "New title", body: "New body" });
+    expect(await edits(12)).toEqual([{ title: "Draft: New title", description: "New body" }]);
+  });
+
+  it("updates only the description without reading the MR", async () => {
+    server.use(editHandler(12));
+    await makeAdapter().updateChangeRequest(REPO, 12, { body: "Only body" });
+    expect(await edits(12)).toEqual([{ description: "Only body" }]);
+    expect(requests.some((r) => r.method === "GET")).toBe(false);
+  });
+
+  it("throws ChangeRequestNotFoundError when updating a missing MR", async () => {
+    server.use(http.put(`${MRS}/404`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })));
+    const error = await makeAdapter()
+      .updateChangeRequest(REPO, 404, { body: "x" })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ChangeRequestNotFoundError);
+    expect(error).toMatchObject({ number: 404 });
+  });
+
+  it("marks an MR ready by removing the draft prefix", async () => {
+    server.use(mrHandler(12, { title: "Draft: Build the epic", draft: true }), editHandler(12));
+    await makeAdapter().markChangeRequestReady(REPO, 12);
+    expect(await edits(12)).toEqual([{ title: "Build the epic" }]);
+  });
+
+  it("does nothing when the MR isn't a draft", async () => {
+    server.use(mrHandler(12, { title: "Build the epic", draft: false }), editHandler(12));
+    await makeAdapter().markChangeRequestReady(REPO, 12);
+    expect(await edits(12)).toEqual([]);
+  });
+
+  it("throws ChangeRequestNotFoundError when marking a missing MR ready", async () => {
+    server.use(http.get(`${MRS}/404`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })));
+    await expect(makeAdapter().markChangeRequestReady(REPO, 404)).rejects.toBeInstanceOf(ChangeRequestNotFoundError);
+  });
+
+  it("strips every draft marker GitLab recognises", () => {
+    expect(stripDraftPrefix("Draft: A")).toBe("A");
+    expect(stripDraftPrefix("[Draft] (draft) draft - A")).toBe("A");
+    expect(stripDraftPrefix("WIP: [WIP] A")).toBe("A");
+    expect(stripDraftPrefix("A Draft: B")).toBe("A Draft: B");
   });
 });
