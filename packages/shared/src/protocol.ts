@@ -99,6 +99,45 @@ export function effectiveCapabilityLimits(
   );
 }
 
+/** The npm package agents run and update themselves to. */
+export const AGENT_PACKAGE = "@iamthemcmaster/omniralph-agent";
+
+/** A semantic version (semver 2.0, no leading `v`), e.g. `1.4.0` or `1.5.0-beta.1`. */
+export const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/** An agent version: valid semver, at most 64 characters. */
+export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
+export type AgentVersion = z.infer<typeof AgentVersion>;
+
+/**
+ * Whether the agent can update itself: only under pm2 (which restarts it into
+ * the new version). Other hosts report `unsupported` and must be updated by hand.
+ */
+export const SELF_UPDATE_SUPPORT = ["supported", "unsupported"] as const;
+export type SelfUpdateSupport = (typeof SELF_UPDATE_SUPPORT)[number];
+
+/**
+ * Where an agent is in a self-update: `idle`, `draining` (no new jobs while
+ * running ones finish), `installing`, or `confirming` (running a freshly
+ * installed version that hasn't stayed up for a minute yet).
+ */
+export const AGENT_UPDATE_STATES = ["idle", "draining", "installing", "confirming"] as const;
+export type AgentUpdateStateName = (typeof AGENT_UPDATE_STATES)[number];
+
+export const AgentUpdateReport = z.object({
+  state: z.enum(AGENT_UPDATE_STATES),
+  /** The version being installed or confirmed. */
+  version: z.string().max(64).nullable(),
+  /** The version before the update (the rollback target). */
+  previous: z.string().max(64).nullable(),
+  /** Starts of the pending version so far (it's rolled back after 3). */
+  startsSincePending: z.int().min(0).max(1000),
+  /** Why the last update failed, if it did. */
+  error: z.string().max(2000).nullable(),
+});
+export type AgentUpdateReport = z.infer<typeof AgentUpdateReport>;
+
 /** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
@@ -111,6 +150,12 @@ export const Heartbeat = z.object({
   deliveredMessageIds: z.array(z.uuid()).max(500).default([]),
   /** `jobMessages` that had no live session to go to (e.g. the job was running its gates). */
   rejectedMessageIds: z.array(z.uuid()).max(500).default([]),
+  /** Whether the agent updates itself to `desiredVersion` (absent from older agents). */
+  selfUpdate: z.enum(SELF_UPDATE_SUPPORT).optional(),
+  /** The agent's self-update progress. */
+  update: AgentUpdateReport.optional(),
+  /** Versions that failed to install or to stay up; the agent never retries them. */
+  failedVersions: z.array(z.string().max(64)).max(100).default([]),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -156,6 +201,11 @@ export const HeartbeatResponse = z.object({
   jobTokens: z.array(JobToken),
   /** Undelivered messages for the agent's running jobs, oldest first. */
   jobMessages: z.array(JobMessageDelivery).default([]),
+  /**
+   * The version the agent should run (the agent's override, else the global
+   * setting); null when none is chosen. Agents under pm2 update themselves to it.
+   */
+  desiredVersion: AgentVersion.nullable().default(null),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

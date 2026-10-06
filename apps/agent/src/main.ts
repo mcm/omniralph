@@ -23,6 +23,13 @@ import { readCredentialRequest, runGitCredential } from "./credential-helper.js"
 import { startHealthServer } from "./healthz.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createQueueReceiver, type QueueReceiverFactory } from "./queue.js";
+import {
+  SelfUpdater,
+  npmInstaller,
+  runningUnderPm2,
+  updateStatePath,
+  type Installer,
+} from "./update.js";
 import { AGENT_VERSION } from "./version.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
@@ -64,6 +71,12 @@ export interface MainDeps {
   credentialHelper?: string;
   /** Registers the shutdown handler (SIGTERM/SIGINT by default). */
   onShutdownSignal?: (handler: () => void) => void;
+  /** Installs agent versions for self-update (default: `npm i -g`). */
+  installer?: Installer;
+  /** Clock for self-update confirmation (ms since epoch). */
+  now?: () => number;
+  /** The running agent version (default: this package's). */
+  version?: string;
 }
 
 const defaultDeps: MainDeps = {
@@ -201,6 +214,21 @@ async function runStart(
   }
   const config = await readConfig(configPath);
   const logger = deps.logger ?? createLogger(deps.env.OMNIRALPH_LOG_LEVEL);
+  const version = deps.version ?? AGENT_VERSION;
+
+  const updater = new SelfUpdater({
+    statePath: updateStatePath(configPath),
+    runningVersion: version,
+    underPm2: runningUnderPm2(deps.env),
+    installer: deps.installer ?? npmInstaller(deps.env),
+    logger,
+    now: deps.now,
+  });
+  if ((await updater.start()) === "exit") {
+    // Rolled back: pm2 starts the previous version.
+    logger.info("exiting so pm2 restarts the agent on the previous version");
+    return 0;
+  }
   const registry = new CapabilityRegistry(deps.capabilities ?? defaultCapabilities());
 
   // Set once the daemon exists; a fatal token error before that is handled below.
@@ -239,7 +267,7 @@ async function runStart(
     server: config.server,
     workspaceRoot: config.workspaceRoot,
     repos,
-    version: AGENT_VERSION,
+    version,
     api,
     tokens,
     registry,
@@ -247,6 +275,7 @@ async function runStart(
       deps.queue ??
       ((region) => createQueueReceiver(config.server, region, () => tokens.currentAccessToken())),
     logger,
+    updater,
   });
   running.daemon = daemon;
   if (fatal) daemon.fail(fatal);
@@ -264,7 +293,7 @@ async function runStart(
   onSignal(() => void daemon.shutdown());
 
   logger.info(
-    { agentId: config.agentId, server: config.server, version: AGENT_VERSION },
+    { agentId: config.agentId, server: config.server, version, selfUpdate: updater.support },
     "agent started",
   );
   const code = await daemon.run();

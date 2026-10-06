@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type {
   HeartbeatResponse,
   JobFailure,
@@ -21,6 +24,7 @@ import { silentLogger } from "./logger.js";
 import type { MessageHandler, QueueReceiver, RetryDirective } from "./queue.js";
 import type { ReceiveBatchOptions, ReceiveResult } from "@vercel/queue";
 import type { RepoCache } from "./workspace/repoCache.js";
+import { SelfUpdater, readUpdateState } from "./update.js";
 
 const AGENT_ID = randomUUID();
 
@@ -36,6 +40,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     cancelJobIds: [],
     jobTokens: [],
     jobMessages: [],
+    desiredVersion: null,
     ...overrides,
   };
 }
@@ -162,6 +167,7 @@ function setup(options: {
   capabilities?: Capability[];
   config?: HeartbeatResponse;
   repos?: RepoCache;
+  updater?: SelfUpdater;
 }) {
   const { api, state } = fakeApi(options.config);
   const queue = new FakeQueue();
@@ -182,6 +188,7 @@ function setup(options: {
     },
     logger: silentLogger(),
     reportRetryDelayMs: 10,
+    updater: options.updater,
   });
   return { api, state, queue, tokens, daemon };
 }
@@ -212,6 +219,7 @@ describe("AgentDaemon", () => {
       freeSlots: 0,
       deliveredMessageIds: [],
       rejectedMessageIds: [],
+      failedVersions: [],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
@@ -972,5 +980,161 @@ describe("AgentDaemon", () => {
     const polls = queue.receiveCalls.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(queue.receiveCalls.length).toBe(polls);
+  });
+});
+
+describe("self-update", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-update-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  function updater(installs: string[], underPm2 = true) {
+    return new SelfUpdater({
+      statePath: path.join(dir, "update-state.json"),
+      runningVersion: "1.2.3",
+      underPm2,
+      installer: { install: async (version) => void installs.push(version) },
+      logger: silentLogger(),
+    });
+  }
+
+  it("drains (no new jobs, running ones finish), installs and exits for pm2", async () => {
+    const first = randomUUID();
+    const second = randomUUID();
+    const gate = deferred();
+    const installs: string[] = [];
+    const { api, queue, state, daemon } = setup({
+      config: centralConfig({ maxConcurrency: 2 }),
+      run: async (j) => {
+        if (j.id === first) await gate.promise;
+        return {};
+      },
+      updater: updater(installs),
+    });
+    queue.push("review-jobs", first);
+    const exit = daemon.run();
+    await settle();
+    expect(daemon.status().runningJobIds).toEqual([first]);
+
+    state.config = centralConfig({ maxConcurrency: 2, desiredVersion: "2.0.0" });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await settle();
+    expect(daemon.status().draining).toBe(true);
+    // The next heartbeat reports the drain.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selfUpdate: "supported",
+        freeSlots: 0,
+        update: expect.objectContaining({ state: "draining", version: "2.0.0", previous: "1.2.3" }),
+      }),
+    );
+    // A job queued meanwhile isn't taken; heartbeats go on.
+    queue.push("review-jobs", second);
+    const polls = queue.receiveCalls.length;
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(queue.receiveCalls.length).toBe(polls);
+    expect(api.startJob).not.toHaveBeenCalledWith(second);
+    expect(installs).toEqual([]);
+
+    gate.resolve();
+    expect(await exit).toBe(0);
+    expect(api.submitResult).toHaveBeenCalledWith(first, { result: {} });
+    expect(installs).toEqual(["2.0.0"]);
+    expect(await readUpdateState(path.join(dir, "update-state.json"))).toMatchObject({
+      previous: "1.2.3",
+      pending: "2.0.0",
+      startsSincePending: 0,
+    });
+  });
+
+  it("aborts jobs still running after 2 hours, so they're redelivered, then updates", async () => {
+    const id = randomUUID();
+    const installs: string[] = [];
+    let signal: AbortSignal | undefined;
+    const { api, queue, state, daemon } = setup({
+      config: centralConfig({ desiredVersion: "2.0.0" }),
+      run: (_j, ctx) =>
+        new Promise((_resolve, reject) => {
+          signal = ctx.signal;
+          ctx.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+      updater: updater(installs),
+    });
+    // The first heartbeat has no desired version, so the job starts.
+    state.config = centralConfig();
+    queue.push("review-jobs", id);
+    const exit = daemon.run();
+    await settle();
+    expect(daemon.status().runningJobIds).toEqual([id]);
+    state.config = centralConfig({ desiredVersion: "2.0.0" });
+
+    await vi.advanceTimersByTimeAsync(20_000 + 2 * 60 * 60_000 - 1);
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(signal?.reason).toBeInstanceOf(ShutdownAbort);
+    expect(await exit).toBe(0);
+    expect(installs).toEqual(["2.0.0"]);
+    expect(api.submitFailure).not.toHaveBeenCalled();
+    expect(queue.acked).toEqual([]);
+    expect(queue.unacked).toEqual([{ topic: "review-jobs", message: { jobId: id } }]);
+  });
+
+  it("takes jobs again when the install fails", async () => {
+    const id = randomUUID();
+    let attempted = false;
+    const { api, queue, daemon } = setup({
+      config: centralConfig({ desiredVersion: "2.0.0" }),
+      updater: new SelfUpdater({
+        statePath: path.join(dir, "update-state.json"),
+        runningVersion: "1.2.3",
+        underPm2: true,
+        installer: {
+          install: async () => {
+            attempted = true;
+            throw new Error("E404");
+          },
+        },
+        logger: silentLogger(),
+      }),
+    });
+    void daemon.run();
+    await vi.waitFor(() => expect(attempted && !daemon.status().draining).toBe(true));
+    queue.push("review-jobs", id);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settle();
+    expect(api.submitResult).toHaveBeenCalledWith(id, { result: { ok: true } });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        failedVersions: ["2.0.0"],
+        update: expect.objectContaining({ state: "idle", error: "Installing 2.0.0 failed: E404" }),
+      }),
+    );
+    await daemon.shutdown();
+  });
+
+  it("reports unsupported and keeps working when not under pm2", async () => {
+    const installs: string[] = [];
+    const { api, daemon } = setup({
+      config: centralConfig({ desiredVersion: "2.0.0" }),
+      updater: updater(installs, false),
+    });
+    void daemon.run();
+    await settle();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(daemon.status().draining).toBe(false);
+    expect(installs).toEqual([]);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selfUpdate: "unsupported", freeSlots: 1 }),
+    );
+    await daemon.shutdown();
   });
 });

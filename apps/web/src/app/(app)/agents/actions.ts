@@ -2,10 +2,11 @@
 
 import {
   createAgentEnrollment,
+  setAgentDesiredVersion as setAgentDesiredVersionRow,
   unpinRepositoryFromAgent,
   updateAgentConfig as updateAgentConfigRow,
 } from "@omniralph/db";
-import { CAPABILITIES, type Capability } from "@omniralph/shared";
+import { AgentVersion, CAPABILITIES, type Capability } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -116,6 +117,27 @@ export async function updateAgentConfig(
       };
     }
     if (!(await updateAgentConfigRow(getDb(), agentId, parsed.data))) {
+      return { ok: false, error: "That agent doesn't exist or was revoked." };
+    }
+    revalidate(agentId);
+  });
+}
+
+/**
+ * Sets the version this agent should run, overriding Settings › Agents; blank
+ * clears the override. Agents under pm2 update themselves to it.
+ */
+export async function setAgentDesiredVersion(
+  agentId: string,
+  version: string,
+): Promise<ActionResult> {
+  return runAdminAction(async () => {
+    const trimmed = version.trim().replace(/^v(?=\d)/, "");
+    const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
+    if (parsed && !parsed.success) {
+      return { ok: false, error: "Enter a version like 1.4.0, or leave it blank." };
+    }
+    if (!(await setAgentDesiredVersionRow(getDb(), agentId, parsed?.data ?? null))) {
       return { ok: false, error: "That agent doesn't exist or was revoked." };
     }
     revalidate(agentId);

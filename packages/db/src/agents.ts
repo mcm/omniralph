@@ -143,6 +143,23 @@ export async function updateAgentConfig(
   return row ?? null;
 }
 
+/**
+ * Sets (or, with null, clears) an agent's desired-version override. Returns
+ * null for unknown or revoked agents.
+ */
+export async function setAgentDesiredVersion(
+  db: Database,
+  agentId: string,
+  version: string | null,
+): Promise<AgentRow | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ desiredVersion: version })
+    .where(and(eq(agents.id, agentId), isNull(agents.revokedAt)))
+    .returning();
+  return row ?? null;
+}
+
 /** An agent's most recent audit events, newest first. */
 export async function listRecentAgentAudit(
   db: Database,

@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
@@ -51,6 +51,7 @@ const HEARTBEAT: HeartbeatResponse = {
   cancelJobIds: [],
   jobTokens: [],
   jobMessages: [],
+  desiredVersion: null,
 };
 
 describe("omniralph-agent CLI", () => {
@@ -194,6 +195,8 @@ describe("omniralph-agent CLI", () => {
     function startDeps(server: ReturnType<typeof fakeServer>, extra: Partial<MainDeps> = {}) {
       return {
         fetch: server.fetch,
+        // Not under pm2, whatever runs the tests.
+        env: {},
         logger: silentLogger(),
         queue: () => ({ receive: async () => ({ ok: false as const, reason: "empty" as const }) }),
         onShutdownSignal: () => {},
@@ -274,6 +277,64 @@ describe("omniralph-agent CLI", () => {
       );
       signal();
       expect(await exit).toBe(0);
+    });
+
+    it("under pm2, updates to the desired version and exits so pm2 restarts it", async () => {
+      await writeConfig(configPath, config);
+      const installs: string[] = [];
+      const server = fakeServer({
+        "/api/agent/token": () =>
+          Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
+        "/api/agent/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
+      });
+      const exit = main(["start", "--config", configPath], {
+        io: capture().io,
+        ...startDeps(server, {
+          env: { pm_id: "3" },
+          version: "1.0.0",
+          installer: { install: async (version) => void installs.push(version) },
+        }),
+      });
+      expect(await exit).toBe(0);
+      expect(installs).toEqual(["9.9.9"]);
+      const statePath = path.join(path.dirname(configPath), "update-state.json");
+      expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+        previous: "1.0.0",
+        pending: "9.9.9",
+        startsSincePending: 0,
+        failed: [],
+      });
+      expect((await stat(statePath)).mode & 0o777).toBe(0o600);
+      expect(server.calls.find((c) => c.path === "/api/agent/heartbeat")?.body).toMatchObject({
+        version: "1.0.0",
+        selfUpdate: "supported",
+      });
+    });
+
+    it("rolls back on start after a new version failed to stay up 3 times", async () => {
+      await writeConfig(configPath, config);
+      const statePath = path.join(path.dirname(configPath), "update-state.json");
+      await writeFile(
+        statePath,
+        JSON.stringify({ previous: "1.0.0", pending: "9.9.9", startsSincePending: 3, failed: [] }),
+      );
+      const installs: string[] = [];
+      const server = fakeServer({});
+      const code = await main(["start", "--config", configPath], {
+        io: capture().io,
+        ...startDeps(server, {
+          env: { pm_id: "3" },
+          version: "9.9.9",
+          installer: { install: async (version) => void installs.push(version) },
+        }),
+      });
+      expect(code).toBe(0);
+      expect(installs).toEqual(["1.0.0"]);
+      expect(server.calls).toEqual([]);
+      expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+        pending: null,
+        failed: ["9.9.9"],
+      });
     });
   });
 });

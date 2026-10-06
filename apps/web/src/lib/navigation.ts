@@ -9,7 +9,8 @@ export type NavIcon =
   | "analytics"
   | "users"
   | "profiles"
-  | "integrations";
+  | "integrations"
+  | "agentSettings";
 
 export interface NavItem {
   href: string;
@@ -46,6 +47,12 @@ export const navGroups: NavGroup[] = [
         href: "/settings/integrations",
         label: "Integrations",
         icon: "integrations",
+        adminOnly: true,
+      },
+      {
+        href: "/settings/agents",
+        label: "Agent settings",
+        icon: "agentSettings",
         adminOnly: true,
       },
     ],

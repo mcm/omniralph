@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AgentVersion,
   agentTopic,
   capabilityTopic,
   defaultCapabilityLimit,
@@ -80,5 +81,39 @@ describe("protocol", () => {
       jobTokens: [],
     });
     expect(response.capabilityLimits).toEqual({});
+  });
+});
+
+describe("self-update protocol", () => {
+  it("accepts semver versions only", () => {
+    for (const ok of ["1.0.0", "0.1.1", "1.5.0-beta.1", "2.0.0+build.7"]) {
+      expect(AgentVersion.safeParse(ok).success).toBe(true);
+    }
+    for (const bad of ["latest", "v1.0.0", "1.0", "01.0.0", "1.0.0; rm -rf /", ""]) {
+      expect(AgentVersion.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it("stays compatible with agents and control panels that predate self-update", () => {
+    const heartbeat = Heartbeat.parse({
+      version: "0.1.0",
+      capabilities: [],
+      runningJobIds: [],
+      freeSlots: 0,
+    });
+    expect(heartbeat.selfUpdate).toBeUndefined();
+    expect(heartbeat.update).toBeUndefined();
+    expect(heartbeat.failedVersions).toEqual([]);
+    const response = HeartbeatResponse.parse({
+      maxConcurrency: 1,
+      pollIntervalSeconds: 5,
+      enabledCapabilities: [],
+      pinnedRepoIds: [],
+      topics: [],
+      queueRegion: "iad1",
+      cancelJobIds: [],
+      jobTokens: [],
+    });
+    expect(response.desiredVersion).toBeNull();
   });
 });

@@ -85,6 +85,7 @@ export {
   listQueuedJobsOnAgentTopics,
   listRecentAgentAudit,
   listRecentJobs,
+  setAgentDesiredVersion,
   updateAgentConfig,
   type AgentConfigInput,
   type AgentJobSummary,
@@ -92,6 +93,14 @@ export {
   type JobListEntry,
   type RepositoryLink,
 } from "./agents.js";
+export {
+  DESIRED_AGENT_VERSION_KEY,
+  getAppSetting,
+  getDesiredAgentVersion,
+  setAppSetting,
+  setDesiredAgentVersion,
+  type AppSetting,
+} from "./app-settings.js";
 export {
   classifyAgentRunningJobs,
   completeJob,

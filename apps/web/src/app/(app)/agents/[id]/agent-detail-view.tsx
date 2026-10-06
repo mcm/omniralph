@@ -33,8 +33,19 @@ import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import type { AgentRow } from "@/lib/agents/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
-import { pinRepository, revokeAgent, unpinRepository, updateAgentConfig } from "../actions";
-import { AgentStatusBadge, CapabilityBadges, JobTargetLink } from "../agent-parts";
+import {
+  pinRepository,
+  revokeAgent,
+  setAgentDesiredVersion,
+  unpinRepository,
+  updateAgentConfig,
+} from "../actions";
+import {
+  AgentStatusBadge,
+  CapabilityBadges,
+  JobTargetLink,
+  UpdateStatusBadge,
+} from "../agent-parts";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { AgentAuditLog, TokenTheftAlert, type AuditRow } from "./agent-audit-log";
 
@@ -46,6 +57,8 @@ interface AgentDetailViewProps {
   /** Connected repositories (for pinning). */
   repositories: { id: string; provider: "github" | "gitlab"; fullPath: string }[];
   audit: AuditRow[];
+  /** Settings › Agents version, used when the agent has no override. */
+  globalDesiredVersion: string | null;
 }
 
 const stack = { display: "flex", flexDirection: "column", gap: "var(--space-4)" } as const;
@@ -206,6 +219,67 @@ function ConfigCard({
               </div>
             </div>
           )}
+          <div>
+            <Button type="submit" variant="primary" disabled={disabled}>
+              <IconDeviceFloppy size={14} />
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Version ──────────────────────────────────────────────────────────────────
+
+function VersionCard({
+  agent,
+  globalDesiredVersion,
+}: {
+  agent: AgentRow;
+  globalDesiredVersion: string | null;
+}) {
+  const { pending, run } = useAction();
+  const [override, setOverride] = React.useState(agent.desiredVersionOverride ?? "");
+  const disabled = agent.revoked || pending;
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    run(
+      () => setAgentDesiredVersion(agent.id, override),
+      override.trim()
+        ? `${agent.name} will update to ${override.trim()} with its next heartbeat.`
+        : `${agent.name} follows the global version again.`,
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Version</CardTitle>
+        <CardDescription>
+          {agent.selfUpdate === "supported"
+            ? "This agent runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and never tried again here."
+            : "This agent can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={save} style={stack}>
+          <Field
+            label="Desired version override"
+            htmlFor="desired-version"
+            hint={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Agents).`}
+          >
+            <Input
+              id="desired-version"
+              placeholder={globalDesiredVersion ?? "Not set"}
+              disabled={disabled}
+              value={override}
+              onChange={(e) => setOverride(e.target.value)}
+              style={{ fontFamily: "var(--font-mono)" }}
+            />
+          </Field>
           <div>
             <Button type="submit" variant="primary" disabled={disabled}>
               <IconDeviceFloppy size={14} />
@@ -390,6 +464,7 @@ export function AgentDetailView({
   knownCapabilities,
   repositories,
   audit,
+  globalDesiredVersion,
 }: AgentDetailViewProps) {
   return (
     <>
@@ -436,6 +511,22 @@ export function AgentDetailView({
                 {agent.lastHeartbeatAt ? formatRelative(agent.lastHeartbeatAt, now) : "Never"}
               </Fact>
               <Fact label="Version">{agent.version ?? "Unknown"}</Fact>
+              <Fact label="Desired version">
+                {agent.desiredVersion
+                  ? `${agent.desiredVersion}${agent.desiredVersionOverride ? " (override)" : " (global)"}`
+                  : "Not set"}
+              </Fact>
+              <Fact label="Update status">
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                  <div>
+                    <UpdateStatusBadge agent={agent} />
+                  </div>
+                  {agent.update?.error && <Muted>{agent.update.error}</Muted>}
+                </div>
+              </Fact>
+              <Fact label="Failed versions">
+                {agent.failedVersions.length > 0 ? agent.failedVersions.join(", ") : "None"}
+              </Fact>
               <Fact label="Capabilities (reported vs. enabled)">
                 <CapabilityBadges
                   reported={agent.reportedCapabilities}
@@ -465,6 +556,7 @@ export function AgentDetailView({
         </Card>
 
         <ConfigCard agent={agent} knownCapabilities={knownCapabilities} />
+        <VersionCard agent={agent} globalDesiredVersion={globalDesiredVersion} />
         <PinsCard agent={agent} repositories={repositories} />
 
         <Card>
