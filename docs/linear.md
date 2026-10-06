@@ -151,6 +151,17 @@ wait until a person completes it. Teams and labels often span repositories, so a
 never makes a story manual. The run detail page shows one section per repository with its branch,
 PR/MR and stories.
 
+Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
+settings (model, tools, prompt additions, setup command) and its quality gates (its
+`verifyCommands`, plus the PRD's gates when its `runPrdQualityGates` is on), on the run's agent.
+The prompt names the repository. When every story is done, each lane is published in turn: a
+lane no story committed to (every story went elsewhere) gets no PR/MR; every other lane gets its
+own description job and its own PR/MR, and `openPullRequestEarly` follows each repository's own
+setting. If a lane's PR/MR step fails, the others still go ahead; the problems, prefixed
+"In `<repo>`:", are collected into one question saying what didn't happen, and the run waits until
+a reply retries the lanes that failed. The final response lists every PR/MR, labelled by repository
+when there is more than one, and each is added to the agent session's links.
+
 Don't route the same team, project or label to both Omniralph and cyralph
 ([deploy-agent.md](deploy-agent.md#coexisting-with-cyralph-and-manual-dev-work)).
 

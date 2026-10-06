@@ -85,6 +85,7 @@ export function storyList(epic: Epic, stories: readonly Story[]): RalphStoryList
     status: s.status,
     manual: s.manual === true,
     dependsOn: s.dependsOn.map((d) => dependencyLabel(epic, d).slice(0, 64)).slice(0, 100),
+    repository: s.repo?.name.slice(0, 500) ?? null,
   }));
 }
 

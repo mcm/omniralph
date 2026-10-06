@@ -46,7 +46,11 @@ is the only state that matters between jobs.
 A run works in one or more repositories. Each has a lane (`ralph_lanes`): its branch, base branch,
 PR/MR and follow-up state. The lane of the run's own repository is its main lane; stories of an
 epic routed to another repository by their own signals get a lane there (`ralph_stories.lane_id`).
-All lanes of a run use the run's sticky agent.
+All lanes of a run use the run's sticky agent. A story's job runs with its lane's repository,
+branch, base, settings and quality gates. At the finish, every lane with commits (or a PR/MR) is
+published with its own `ralph.describe-pr` job, one at a time (a run has at most one job);
+`ralph_lanes.publish` records each lane's progress (`describing`, `published`, `failed`), so a
+reply after a failure retries only the lanes that failed, and a new story in a lane clears it.
 
 ### The sticky agent
 

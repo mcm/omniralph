@@ -97,6 +97,8 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 ## Your Task: {{storyId}} - {{storyTitle}}
 {{#if storyIdentifier}}Linear issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
 {{/if}}
+{{#if repository}}Repository: \`{{repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
+{{/if}}
 {{#if storyDescription}}
 ### Description
 {{storyDescription}}
@@ -229,7 +231,11 @@ export function formatStoryList(epic: Epic, current?: Story): string {
       const deps = s.dependsOn.map((d) => dependencyLabel(epic, d));
       const depText = deps.length ? ` (depends on ${deps.join(", ")})` : "";
       const here = current?.key === s.key ? "  <- current" : "";
-      const manual = s.manual ? " (manual step for a person, not for you)" : "";
+      const manual = s.manual
+        ? " (manual step for a person, not for you)"
+        : s.repo
+          ? ` (in ${s.repo.name})`
+          : "";
       return `- ${STATUS_MARK[s.status]} ${s.storyId}: ${s.title}${manual}${depText}${here}`;
     })
     .join("\n");
@@ -259,6 +265,7 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     storyTitle: story.title,
     storyIdentifier: story.identifier,
     storyUrl: story.url,
+    repository: story.repo?.name,
     storyDescription: story.description.trim() || undefined,
     acceptanceCriteria: story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n") || undefined,
     notes: story.notes,

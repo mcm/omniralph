@@ -95,6 +95,8 @@ export const RalphStoryListItem = RalphIssue.extend({
   manual: z.boolean().default(false),
   /** Identifiers of the issues it waits for. */
   dependsOn: z.array(z.string().min(1).max(64)).max(100).default([]),
+  /** The repository (full path) the story is worked in, when it isn't the epic's main one. */
+  repository: z.string().min(1).max(500).nullable().default(null),
 });
 export type RalphStoryListItem = z.infer<typeof RalphStoryListItem>;
 

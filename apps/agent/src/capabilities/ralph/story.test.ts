@@ -160,6 +160,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
           status: "completed",
           manual: false,
           dependsOn: [],
+          repository: null,
         },
         {
           identifier: "TOOL-91",
@@ -167,6 +168,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
           status: "open",
           manual: false,
           dependsOn: ["TOOL-90"],
+          repository: null,
         },
       ],
       commitMessage: "feat(TOOL-91): Run a story",
@@ -438,6 +440,43 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     const prompt = calls[0]!.prompt;
     expect(prompt).toContain("The quality gate `pnpm test` failed (exit 1).");
     expect(prompt).toContain("- Use the v2 API.\n- Keep commits small.");
+  });
+
+  it("tells a story of another repository's lane where it is, and lists where the others are", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Done.", followUps: [] });
+    });
+    await runStory(
+      job({
+        stories: [
+          {
+            identifier: "TOOL-90",
+            title: "Start runs",
+            status: "completed",
+            manual: false,
+            dependsOn: [],
+            repository: null,
+          },
+          {
+            identifier: "TOOL-91",
+            title: "Run a story",
+            status: "open",
+            manual: false,
+            dependsOn: ["TOOL-90"],
+            repository: "acme/web",
+          },
+        ],
+      }),
+      context(),
+      options(query),
+    );
+    const prompt = calls[0]!.prompt;
+    expect(prompt).toContain(
+      "Repository: `acme/web`. This story belongs in this repository rather than the epic's main one",
+    );
+    expect(prompt).toContain("TOOL-91: Run a story (in acme/web)");
+    expect(prompt).toContain("- [x] TOOL-90: Start runs\n");
   });
 
   it("undoes the commit and fails the attempt when files are left uncommitted after it", async () => {

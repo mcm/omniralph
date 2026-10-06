@@ -121,7 +121,14 @@ describe("RalphStoryPayload", () => {
     });
     expect(listed.epic.kind).toBe("single");
     expect(listed.stories).toEqual([
-      { identifier: "TOOL-83", title: "Add", status: "in_progress", manual: false, dependsOn: [] },
+      {
+        identifier: "TOOL-83",
+        title: "Add",
+        status: "in_progress",
+        manual: false,
+        dependsOn: [],
+        repository: null,
+      },
     ]);
     expect(
       RalphStoryPayload.safeParse({

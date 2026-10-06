@@ -10,8 +10,10 @@ import {
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
+  listLanes,
   listStories,
   lockRun,
+  updateLane,
   updateRun,
   updateStory,
   upsertStories,
@@ -53,7 +55,7 @@ import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
-import { mainBranch, routeStories, type StoryLanes } from "./lanes";
+import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
 import { postActivity, quietly, tail } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
@@ -69,8 +71,12 @@ import {
 import {
   applyPullRequestJob,
   changeRequestTerm,
+  finishPublishing,
+  laneRows,
+  lanesToPublish,
   moveCompletedEpic,
   openEarlyPullRequest,
+  type PublishedLane,
 } from "./publish";
 
 export interface RalphDeps {
@@ -179,7 +185,7 @@ export type AdvanceResult =
   /** One of the run's jobs is queued or running: its outcome advances the run. */
   | { action: "busy"; run: RalphRun }
   | { action: "enqueued"; run: RalphRun; story: RalphStory; jobId: string }
-  /** Every story is done: a `ralph.describe-pr` job writes the PR/MR. */
+  /** Every story is done: a `ralph.describe-pr` job writes a lane's PR/MR. */
   | { action: "describing"; run: RalphRun; jobId: string }
   /** An approved manual-story preparation runs as a `ralph.prepare` job. */
   | { action: "preparing"; run: RalphRun; jobId: string }
@@ -278,7 +284,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     if (run.status === "waiting" && run.error) {
       return { action: "waiting", run, waitingOn: run.waitingOn ?? { blockers: [], manual: [] } };
     }
-    return describePullRequest(deps, tx, run, { epic, stories, rows });
+    return publishLanes(deps, tx, run, { epic, stories, rows });
   }
   return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: false });
 }
@@ -305,38 +311,52 @@ async function failRun(
   return { action: "failed", run: failed };
 }
 
-/** The run's repository (with its main lane) while it may run ralph jobs; else the run fails. */
+/**
+ * A lane's repository while it may run ralph jobs (connected, ralph enabled),
+ * or why not. Without a lane: the run's main lane, which it must have.
+ */
+async function laneRepository(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  given?: RalphLane,
+): Promise<{ repository: Repository; connection: ScmConnection; lane: RalphLane } | string> {
+  const lane = given ?? (await getMainLane(tx, run));
+  const repositoryId = lane?.repositoryId ?? run.repositoryId;
+  const found = repositoryId ? await getRepositoryWithConnection(deps.db, repositoryId) : null;
+  const main = !lane || lane.repositoryId === run.repositoryId;
+  if (!found || found.repository.disconnectedAt) {
+    return main
+      ? "The run's repository is no longer connected, so I stopped."
+      : `\`${found?.repository.fullPath ?? repositoryId}\` is no longer connected, so I stopped.`;
+  }
+  if (!found.repository.ralphEnabled) {
+    return (
+      `Ralph was disabled for \`${found.repository.fullPath}\`, so I stopped. Enable it under ` +
+      "**Repository › Settings › Ralph** and delegate the issue again to continue."
+    );
+  }
+  if (!lane) return "The run has no branch in its repository, so I stopped.";
+  return { ...found, lane };
+}
+
+/** A lane's repository while it may run ralph jobs (the main lane's by default); else the run fails. */
 async function usableRepository(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
+  lane?: RalphLane,
 ): Promise<{ repository: Repository; connection: ScmConnection; lane: RalphLane } | AdvanceResult> {
-  const found = run.repositoryId
-    ? await getRepositoryWithConnection(deps.db, run.repositoryId)
-    : null;
-  if (!found || found.repository.disconnectedAt) {
-    return failRun(deps, tx, run, "The run's repository is no longer connected, so I stopped.");
-  }
-  if (!found.repository.ralphEnabled) {
-    return failRun(
-      deps,
-      tx,
-      run,
-      `Ralph was disabled for \`${found.repository.fullPath}\`, so I stopped. Enable it under ` +
-        "**Repository › Settings › Ralph** and delegate the issue again to continue.",
-    );
-  }
-  const lane = await getMainLane(tx, run);
-  if (!lane) {
-    return failRun(deps, tx, run, "The run has no branch in its repository, so I stopped.");
-  }
-  return { ...found, lane };
+  const found = await laneRepository(deps, tx, run, lane);
+  return typeof found === "string" ? failRun(deps, tx, run, found) : found;
 }
 
 /**
- * Enqueues one attempt at `story`: its sub-issue moves to started and a
+ * Enqueues one attempt at `story` in its lane (that repository, branch, base,
+ * settings and quality gates): its sub-issue moves to started and a
  * `ralph.story` job goes to the run's sticky agent (the agent that started
- * its first job), else to the repository's pinned agent, else to `ralph-jobs`.
+ * its first job, whichever lane it worked in), else to the lane repository's
+ * pinned agent, else to `ralph-jobs`.
  */
 async function enqueueStory(
   deps: RalphDeps,
@@ -345,7 +365,12 @@ async function enqueueStory(
   input: { epic: Epic; stories: Story[]; story: Story; row: RalphStory },
 ): Promise<AdvanceResult> {
   const { epic, story, row } = input;
-  const found = await usableRepository(deps, tx, run);
+  // Routed to another repository whose lane couldn't be added yet (`routeStories` logged why).
+  if (story.repo && !row.laneId) {
+    throw new Error(`${row.identifier} has no lane in ${story.repo.name} yet`);
+  }
+  const lane = await storyLane(tx, run, row);
+  const found = await usableRepository(deps, tx, run, lane ?? undefined);
   if ("action" in found) return found;
 
   const payload = buildStoryPayload({
@@ -362,13 +387,15 @@ async function enqueueStory(
     capability: RALPH_CAPABILITY,
     type: RALPH_STORY_JOB_TYPE,
     payload,
-    repositoryId: run.repositoryId,
+    repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
     targetAgentId: await stickyAgentId(deps.db, run.agentId),
   });
   if (!created) return { action: "busy", run };
 
+  // New work on the lane's branch: it is published again at the finish.
+  if (found.lane.publish) await updateLane(tx, found.lane.id, { publish: null });
   if (run.kind !== "single" && story.status === "open") {
     await quietly(`Starting ${row.identifier} in Linear`, () =>
       deps.linear.setIssueState(row.linearIssueId, { type: "started" }),
@@ -391,33 +418,100 @@ async function enqueueStory(
 }
 
 /**
- * Every story is done: one `ralph.describe-pr` job (on the run's sticky
- * agent) writes the PR/MR title and body, and its outcome opens the PR/MR and
- * completes the run (`applyPullRequestJob`). A run none of whose stories
- * committed anything, and without a PR/MR, has nothing to open: it completes.
+ * Every story is done: each lane to publish (`lanesToPublish`: those with
+ * commits or a PR/MR) gets a `ralph.describe-pr` job in turn (`describeLane`),
+ * whose outcome opens or updates its PR/MR (`applyPullRequestJob`). Once every
+ * one of them is through, `finishPublishing` completes the run or, when one
+ * failed, waits for a reply. A run none of whose stories committed anything,
+ * and without a PR/MR, has nothing to open: it completes.
  */
-async function describePullRequest(
+async function publishLanes(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
   input: { epic: Epic; stories: Story[]; rows: RalphStory[] },
 ): Promise<AdvanceResult> {
-  const main = await getMainLane(tx, run);
-  if ((main?.prNumber ?? null) === null && !input.rows.some((r) => r.commitSha)) {
-    return complete(deps, tx, run, input);
+  const lanes = lanesToPublish(await listLanes(tx, run.id), input.rows, run);
+  if (lanes.length === 0) return complete(deps, tx, run, input);
+  const through: PublishedLane[] = [];
+  for (const lane of lanes) {
+    // Not published since its last story, or its describe job was dropped (a stop).
+    if (lane.publish === null || lane.publish.status === "describing") {
+      const found = await laneRepository(deps, tx, run, lane);
+      if (typeof found !== "string")
+        return describeLane(deps, tx, run, { ...input, ...found, lanes });
+      // A lane whose repository can't take jobs any more is a problem of that lane.
+      const failed = await updateLane(tx, lane.id, {
+        publish: { status: "failed", problem: found },
+      });
+      through.push({ lane: failed ?? lane, repository: await laneRepositoryName(deps, lane) });
+      continue;
+    }
+    through.push({ lane, repository: await laneRepositoryName(deps, lane) });
   }
-  const found = await usableRepository(deps, tx, run);
-  if ("action" in found) return found;
+  const epic = { identifier: input.epic.identifier, title: input.epic.title, url: input.epic.url };
+  await publishPlan(deps.linear, run, input.rows);
+  const finished = await finishPublishing(deps, tx, run, {
+    epic,
+    rows: input.rows,
+    lanes: through,
+  });
+  return finished.status === "completed"
+    ? { action: "completed", run: finished }
+    : {
+        action: "waiting",
+        run: finished,
+        waitingOn: finished.waitingOn ?? { blockers: [], manual: [] },
+      };
+}
+
+/** A lane's repository's provider and full path (kept when it's disconnected). */
+async function laneRepositoryName(
+  deps: RalphDeps,
+  lane: RalphLane,
+): Promise<PublishedLane["repository"]> {
+  const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
+  return found?.repository ?? { provider: "github", fullPath: lane.repositoryId };
+}
+
+/**
+ * One lane's `ralph.describe-pr` job (on the run's sticky agent), with the
+ * stories worked in that lane: it writes the lane's PR/MR title and body.
+ */
+async function describeLane(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: {
+    epic: Epic;
+    stories: Story[];
+    rows: RalphStory[];
+    lanes: RalphLane[];
+    repository: Repository;
+    connection: ScmConnection;
+    lane: RalphLane;
+  },
+): Promise<AdvanceResult> {
+  const { lane, repository, connection } = input;
+  const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
   const { job, created } = await deps.dispatcher.createAndPublish({
     capability: RALPH_CAPABILITY,
     type: RALPH_DESCRIBE_PR_JOB_TYPE,
-    payload: buildDescribePrPayload({ run, ...found, epic: input.epic, rows: input.rows }),
-    repositoryId: run.repositoryId,
+    payload: buildDescribePrPayload({
+      run,
+      lane,
+      repository,
+      connection,
+      epic: input.epic,
+      rows: laneRows(input.rows, lane, main),
+    }),
+    repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
     targetAgentId: await stickyAgentId(deps.db, run.agentId),
   });
   if (!created) return { action: "busy", run };
+  await updateLane(tx, lane.id, { publish: { status: "describing", jobId: job.id } });
   const updated =
     (await updateRun(tx, run.id, {
       status: "running",
@@ -426,14 +520,15 @@ async function describePullRequest(
       error: null,
     })) ?? run;
   await publishPlan(deps.linear, run, input.rows);
-  const term = changeRequestTerm(found.repository.provider);
+  const term = changeRequestTerm(repository.provider);
   const what =
     run.kind === "single"
       ? `**${input.epic.identifier}** is done`
       : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
+  const where = input.lanes.length > 1 ? ` of \`${repository.fullPath}\`` : "";
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "thought",
-    body: `${what}. Writing the ${term} description.`,
+    body: `${what}. Writing the ${term} description${where}.`,
   });
   return { action: "describing", run: updated, jobId: job.id };
 }

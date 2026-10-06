@@ -1,19 +1,21 @@
 /**
- * The PR/MR of a ralph run (ported from cyralph's `syncPullRequest` and
- * `describePullRequest`). The control panel opens and updates it through the
- * SCM adapter; agents never hold code-host API tokens. When every story is
- * done, a `ralph.describe-pr` job writes the title and body; its outcome
- * (applied by `advanceRun` under the run's row lock) opens the PR/MR as a
- * draft or updates the open one, marks it ready and finishes the run. With
- * `openPullRequestEarly`, a draft with a templated body is opened as soon as
- * the first story is pushed.
+ * The PRs/MRs of a ralph run (ported from cyralph's `syncPullRequest`,
+ * `describePullRequest`, `publishLane` and `finish`): one per lane (each
+ * repository the run works in). The control panel opens and updates them
+ * through the SCM adapter; agents never hold code-host API tokens. When every
+ * story is done, each lane with commits gets a `ralph.describe-pr` job, one at
+ * a time, that writes its title and body; its outcome (applied by
+ * `advanceRun` under the run's row lock) opens the lane's PR/MR as a draft or
+ * updates the open one and marks it ready. Once every lane is through, the run
+ * completes, or waits on a reply when one of them failed. With
+ * `openPullRequestEarly`, a lane's draft with a templated body is opened as
+ * soon as its first story is pushed.
  */
 import {
   getJob,
   getRepository,
-  getMainLane,
   getRepositoryWithConnection,
-  listStories,
+  listLanes,
   updateLane,
   updateRun,
   type Job,
@@ -35,7 +37,6 @@ import {
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
-import { planFor } from "./plan";
 import { sanitizePullRequestText, type PullRequestText } from "./pull-request";
 import type { RalphDeps } from "./run";
 
@@ -90,28 +91,20 @@ export function templatedPullRequest(
   };
 }
 
-interface RunRepository {
+interface LaneRepository {
   adapter: ScmAdapter;
   repo: RepoRef;
   repository: Repository;
   connection: ScmConnection;
-  /** The run's main lane (its branch and PR/MR). */
+  /** The lane (its branch and PR/MR). */
   lane: RalphLane;
 }
 
-async function runRepository(
-  deps: RalphDeps,
-  run: RalphRun,
-  tx: RalphTransaction,
-): Promise<RunRepository> {
-  const found = run.repositoryId
-    ? await getRepositoryWithConnection(deps.db, run.repositoryId)
-    : null;
+async function laneRepository(deps: RalphDeps, lane: RalphLane): Promise<LaneRepository> {
+  const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
   if (!found || found.repository.disconnectedAt) {
-    throw new Error("the run's repository is no longer connected");
+    throw new Error("the repository is no longer connected");
   }
-  const lane = await getMainLane(tx, run);
-  if (!lane) throw new Error("the run has no branch in its repository");
   return {
     lane,
     adapter: deps.adapterFor(deps.db, found.connection),
@@ -123,7 +116,7 @@ async function runRepository(
 
 /** Agent- or Linear-written text, sanitized for the code host, with the Linear footer. */
 async function postableText(
-  target: RunRepository,
+  target: LaneRepository,
   text: PullRequestText,
   epic: LinearLink,
 ): Promise<PullRequestText> {
@@ -144,18 +137,17 @@ export interface PublishedPullRequest {
 }
 
 /**
- * Opens the run's PR/MR as a draft or, when one is open for the branch,
+ * Opens a lane's PR/MR as a draft or, when one is open for its branch,
  * updates its title and body (never a second one); then marks it ready.
  */
 export async function publishPullRequest(
   deps: RalphDeps,
-  tx: RalphTransaction,
-  run: RalphRun,
+  lane: RalphLane,
   text: PullRequestText,
   epic: LinearLink,
-): Promise<PublishedPullRequest & { lane: RalphLane }> {
-  const target = await runRepository(deps, run, tx);
-  const { adapter, repo, lane } = target;
+): Promise<PublishedPullRequest> {
+  const target = await laneRepository(deps, lane);
+  const { adapter, repo } = target;
   const { title, body } = await postableText(target, text, epic);
   let pr: PublishedPullRequest;
   const open = await adapter.findOpenChangeRequest(repo, lane.branch);
@@ -175,15 +167,55 @@ export async function publishPullRequest(
     pr = opened;
   }
   await adapter.markChangeRequestReady(repo, pr.number);
-  return { ...pr, lane };
+  return pr;
+}
+
+/** The stories worked in a lane (those without a lane belong to the main one). */
+export function laneRows<T extends Pick<RalphStory, "laneId">>(
+  rows: readonly T[],
+  lane: Pick<RalphLane, "id">,
+  main: Pick<RalphLane, "id"> | null,
+): T[] {
+  return rows.filter((r) => (r.laneId ?? main?.id) === lane.id);
 }
 
 /**
- * `openPullRequestEarly`: once a story is pushed, opens a draft PR/MR with a
- * templated body (or adopts the one open for the branch, as it is). Runs
- * without the setting, with a PR/MR already, without a pushed story or with
- * every story done (the describe job opens it then) are left alone. A failure
- * is reported as a thought: the next story's outcome tries again.
+ * The lanes a finish publishes (cyralph's `publishLane`), the main lane first:
+ * those a story committed to, or with a PR/MR already. A lane with no commits
+ * (every story of the run went elsewhere) gets no PR/MR.
+ */
+export function lanesToPublish(
+  lanes: readonly RalphLane[],
+  rows: readonly Pick<RalphStory, "laneId" | "commitSha">[],
+  run: Pick<RalphRun, "repositoryId">,
+): RalphLane[] {
+  const main = lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
+  return [...lanes]
+    .sort((a, b) => Number(b === main) - Number(a === main))
+    .filter((l) => l.prNumber !== null || laneRows(rows, l, main).some((r) => r.commitSha));
+}
+
+/**
+ * The label of a lane's PR/MR link in the agent session: with the repository
+ * when the run works in more than one.
+ */
+async function sessionLinkLabel(
+  tx: RalphTransaction,
+  run: Pick<RalphRun, "id">,
+  repository: Pick<Repository, "provider" | "fullPath">,
+  number: number,
+): Promise<string> {
+  const label = changeRequestLabel(repository.provider, number);
+  return (await listLanes(tx, run.id)).length > 1 ? `${label} (${repository.fullPath})` : label;
+}
+
+/**
+ * `openPullRequestEarly` (per lane, with its repository's setting): once a
+ * story of a lane is pushed, opens a draft PR/MR with a templated body (or
+ * adopts the one open for the branch, as it is). Lanes without the setting,
+ * with a PR/MR already or without a pushed story, and runs with every story
+ * done (the describe jobs open them then) are left alone. A failure is
+ * reported as a thought: the next story's outcome tries again.
  */
 export async function openEarlyPullRequest(
   deps: RalphDeps,
@@ -191,18 +223,35 @@ export async function openEarlyPullRequest(
   run: RalphRun,
   input: { epic: Epic; rows: readonly RalphStory[] },
 ): Promise<RalphRun> {
-  if (!input.rows.some((r) => r.status === "completed" && r.commitSha)) return run;
-  const main = await getMainLane(tx, run);
-  if (!main || main.prNumber !== null) return run;
-  const found = await getRepositoryWithConnection(deps.db, main.repositoryId);
-  if (!found?.repository.ralphSettings.openPullRequestEarly) return run;
+  const lanes = await listLanes(tx, run.id);
+  const main = lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
+  for (const lane of lanes) {
+    const rows = laneRows(input.rows, lane, main);
+    if (lane.prNumber !== null || !rows.some((r) => r.status === "completed" && r.commitSha)) {
+      continue;
+    }
+    await openEarlyLanePullRequest(deps, tx, run, { ...input, rows, lane, main: lane === main });
+  }
+  return run;
+}
+
+async function openEarlyLanePullRequest(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: Epic; rows: readonly RalphStory[]; lane: RalphLane; main: boolean },
+): Promise<void> {
+  const { lane } = input;
+  const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
+  if (!found || !parseRalphSettings(found.repository.ralphSettings).openPullRequestEarly) return;
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
+  const where = input.main ? "" : ` in \`${found.repository.fullPath}\``;
   const epic = { identifier: input.epic.identifier, title: input.epic.title, url: input.epic.url };
   let pr: PublishedPullRequest;
   try {
-    const target = await runRepository(deps, run, tx);
-    const open = await target.adapter.findOpenChangeRequest(target.repo, main.branch);
+    const target = await laneRepository(deps, lane);
+    const open = await target.adapter.findOpenChangeRequest(target.repo, lane.branch);
     if (open) pr = { number: open.number, url: open.url, created: false };
     else {
       const text = await postableText(
@@ -211,8 +260,8 @@ export async function openEarlyPullRequest(
         epic,
       );
       pr = await target.adapter.createChangeRequest(target.repo, {
-        sourceBranch: main.branch,
-        targetBranch: main.baseBranch,
+        sourceBranch: lane.branch,
+        targetBranch: lane.baseBranch,
         ...text,
         draft: true,
       });
@@ -220,23 +269,19 @@ export async function openEarlyPullRequest(
   } catch (error) {
     await postActivity(deps.linear, run.linearAgentSessionId, {
       type: "thought",
-      body: `I couldn't open a draft ${term} yet (I'll try again after the next story): ${tail(errorMessage(error), 1500)}`,
+      body: `I couldn't open a draft ${term}${where} yet (I'll try again after the next story): ${tail(errorMessage(error), 1500)}`,
     });
-    return run;
+    return;
   }
-  await updateLane(tx, main.id, { prNumber: pr.number, prUrl: pr.url });
+  await updateLane(tx, lane.id, { prNumber: pr.number, prUrl: pr.url });
+  const label = await sessionLinkLabel(tx, run, found.repository, pr.number);
   await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
-    deps.linear.addSessionExternalUrl(
-      run.linearAgentSessionId,
-      changeRequestLabel(provider, pr.number),
-      pr.url,
-    ),
+    deps.linear.addSessionExternalUrl(run.linearAgentSessionId, label, pr.url),
   );
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "thought",
-    body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${main.branch}\`: ${pr.url}`,
+    body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${lane.branch}\`${where}: ${pr.url}`,
   });
-  return run;
 }
 
 /**
@@ -260,58 +305,14 @@ export async function moveCompletedEpic(
   });
 }
 
-/** The PR/MR step failed: the run waits for a reply, which retries it. */
-async function pullRequestFailed(
-  deps: RalphDeps,
-  tx: RalphTransaction,
-  run: RalphRun,
-  term: string,
-  reason: string,
-): Promise<void> {
-  const error = `Every story is done, but I couldn't open the ${term}: ${tail(reason, 3000)}`;
-  await updateRun(tx, run.id, {
-    status: "waiting",
-    waitingOn: { blockers: [], manual: [] },
-    prJobId: null,
-    error,
-  });
-  await postActivity(deps.linear, run.linearAgentSessionId, {
-    type: "error",
-    body: `${error}\n\nReply with guidance (for example \`retry\`) and I'll try the ${term} step again, or say \`stop\`.`,
-  });
-}
-
-/** The final response: the PR/MR and every story with its commit. */
-function finalResponse(
-  run: RalphRun,
-  epic: LinearLink,
-  stories: readonly RalphStory[],
-  pr: PublishedPullRequest & { lane: RalphLane },
-  provider: Provider,
-): string {
-  const what =
-    run.kind === "single"
-      ? `**${epic.identifier}**`
-      : `all ${stories.length} ${stories.length === 1 ? "story" : "stories"} of **${epic.identifier}**`;
-  const link = `[${changeRequestLabel(provider, pr.number)}](${pr.url})`;
-  const lines = stories.map((s) => {
-    const mark = s.status === "completed" ? "✅" : s.status === "canceled" ? "🚫" : "•";
-    return `- ${mark} **${s.identifier}**: ${s.title}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`;
-  });
-  return [
-    `Finished ${what} on \`${pr.lane.branch}\`. ${pr.created ? "Opened" : "Updated"} ${link}, ready for review.`,
-    "",
-    ...lines,
-  ].join("\n");
-}
-
 /**
  * Applies the outcome of the run's `ralph.describe-pr` job, once it has
- * finished (inside the run's row lock): opens or updates the PR/MR with the
- * agent's title and body, marks it ready, stores it on the run, adds it to the
- * agent session and completes the run with a final response. A failed job or
- * PR/MR call leaves the run waiting with an `error` activity. Returns whether
- * the job is still queued or running.
+ * finished (inside the run's row lock): opens or updates its lane's PR/MR
+ * with the agent's title and body, marks it ready, stores it on the lane and
+ * adds it to the agent session. A failed job or PR/MR call is recorded on the
+ * lane as a problem. Either way `advanceRun`'s next step publishes the next
+ * lane or finishes the run (`finishPublishing`). Returns whether the job is
+ * still queued or running.
  */
 export async function applyPullRequestJob(
   deps: RalphDeps,
@@ -323,13 +324,26 @@ export async function applyPullRequestJob(
   if (job && ACTIVE_JOB_STATUSES.has(job.status)) return { busy: true };
 
   const payload = job ? RalphDescribePrPayload.safeParse(job.payload) : null;
-  const provider = payload?.success ? payload.data.repository.provider : "github";
+  const lanes = await listLanes(tx, run.id);
+  const lane =
+    lanes.find((l) => l.publish?.status === "describing" && l.publish.jobId === run.prJobId) ??
+    (payload?.success ? lanes.find((l) => l.repositoryId === payload.data.repositoryId) : null) ??
+    lanes.find((l) => l.repositoryId === run.repositoryId);
+  await updateRun(tx, run.id, { prJobId: null });
+  if (!lane) return { busy: false };
+
+  const provider = payload?.success
+    ? payload.data.repository.provider
+    : ((await getRepository(deps.db, lane.repositoryId))?.provider ?? "github");
   const term = changeRequestTerm(provider);
+  const failed = (reason: string) =>
+    updateLane(tx, lane.id, {
+      publish: { status: "failed", problem: `I couldn't open the ${term}: ${tail(reason, 3000)}` },
+    });
   const parsed = job?.status === "completed" ? RalphDescribePrResult.safeParse(job.result) : null;
   if (!parsed?.success || !payload?.success) {
     const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
-    await pullRequestFailed(deps, tx, run, term, `writing its description failed: ${why}.`);
-    await moveCompletedEpic(deps, run);
+    await failed(`writing its description failed: ${why}.`);
     return { busy: false };
   }
 
@@ -338,13 +352,98 @@ export async function applyPullRequestJob(
     title: payload.data.epic.title,
     url: payload.data.epic.url,
   };
-  let pr: PublishedPullRequest & { lane: RalphLane };
+  let pr: PublishedPullRequest;
   try {
-    pr = await publishPullRequest(deps, tx, run, parsed.data, epic);
+    pr = await publishPullRequest(deps, lane, parsed.data, epic);
   } catch (error) {
-    await pullRequestFailed(deps, tx, run, term, `${errorMessage(error)}.`);
-    await moveCompletedEpic(deps, run);
+    await failed(`${errorMessage(error)}.`);
     return { busy: false };
+  }
+  await updateLane(tx, lane.id, {
+    prNumber: pr.number,
+    prUrl: pr.url,
+    publish: { status: "published", created: pr.created },
+  });
+  const label = await sessionLinkLabel(
+    tx,
+    run,
+    { provider, fullPath: payload.data.repository.fullPath },
+    pr.number,
+  );
+  await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
+    deps.linear.addSessionExternalUrl(run.linearAgentSessionId, label, pr.url),
+  );
+  return { busy: false };
+}
+
+/** A published lane, for the final response and the problem elicitation. */
+export interface PublishedLane {
+  lane: RalphLane;
+  repository: Pick<Repository, "provider" | "fullPath">;
+}
+
+/** "pull request", "merge request", or "pull/merge request" for lanes on both code hosts. */
+function termOf(lanes: readonly PublishedLane[]): string {
+  const terms = new Set(lanes.map((l) => changeRequestTerm(l.repository.provider)));
+  return terms.size === 1 ? [...terms][0]! : "pull/merge request";
+}
+
+/** A lane's PR/MR as a Markdown link. */
+function laneLink({ lane, repository }: PublishedLane): string {
+  return `[${changeRequestLabel(repository.provider, lane.prNumber ?? 0)}](${lane.prUrl ?? ""})`;
+}
+
+/**
+ * Every lane to publish is through (cyralph's `finish`): with problems, they
+ * are collected (prefixed "In \`<repo>\`:" when there's more than one lane)
+ * into one elicitation saying what didn't happen, and the run waits until a
+ * reply retries the lanes that failed. Otherwise the run completes with a final
+ * response listing every lane's PR/MR (labelled by repository when there is
+ * more than one) and every story. The epic moves to its completed state either
+ * way.
+ */
+export async function finishPublishing(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: LinearLink; rows: readonly RalphStory[]; lanes: readonly PublishedLane[] },
+): Promise<RalphRun> {
+  const { lanes } = input;
+  const many = lanes.length > 1;
+  const failed = lanes.filter((l) => l.lane.publish?.status === "failed");
+  const published = lanes.filter((l) => l.lane.publish?.status === "published" && l.lane.prUrl);
+  if (failed.length > 0) {
+    const problems = failed.map(({ lane, repository }) => {
+      const problem = lane.publish?.status === "failed" ? lane.publish.problem : "";
+      return many ? `In \`${repository.fullPath}\`: ${problem}` : problem;
+    });
+    const error = many
+      ? [
+          `Every story is done, but the last step didn't happen everywhere.`,
+          ...problems,
+          ...(published.length > 0
+            ? [
+                `Ready for review: ${published.map((l) => `${laneLink(l)} in \`${l.repository.fullPath}\``).join(", ")}.`,
+              ]
+            : []),
+        ].join("\n\n")
+      : `Every story is done, but ${problems[0]}`;
+    const waiting =
+      (await updateRun(tx, run.id, {
+        status: "waiting",
+        waitingOn: { blockers: [], manual: [] },
+        prJobId: null,
+        error,
+      })) ?? run;
+    // A reply retries the lanes that failed; the published ones stay published.
+    for (const { lane } of failed) await updateLane(tx, lane.id, { publish: null });
+    const term = termOf(failed);
+    await postActivity(deps.linear, run.linearAgentSessionId, {
+      type: "elicitation",
+      body: `${error}\n\nReply with guidance (for example \`retry\`) and I'll try the ${term} step again, or say \`stop\`.`,
+    });
+    await moveCompletedEpic(deps, run);
+    return waiting;
   }
 
   const completed =
@@ -354,22 +453,47 @@ export async function applyPullRequestJob(
       waitingOn: null,
       error: null,
     })) ?? run;
-  await updateLane(tx, pr.lane.id, { prNumber: pr.number, prUrl: pr.url });
-  const stories = await listStories(tx, run.id);
-  await quietly(`Posting the plan of session ${run.linearAgentSessionId}`, () =>
-    deps.linear.updateSessionPlan(run.linearAgentSessionId, planFor(stories)),
-  );
-  await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
-    deps.linear.addSessionExternalUrl(
-      run.linearAgentSessionId,
-      changeRequestLabel(provider, pr.number),
-      pr.url,
-    ),
-  );
   await postActivity(deps.linear, run.linearAgentSessionId, {
     type: "response",
-    body: finalResponse(completed, epic, stories, pr, provider),
+    body: finalResponse(completed, input.epic, input.rows, published),
   });
   await moveCompletedEpic(deps, run);
-  return { busy: false };
+  return completed;
+}
+
+/** The final response: every lane's PR/MR and every story with its commit. */
+function finalResponse(
+  run: RalphRun,
+  epic: LinearLink,
+  stories: readonly RalphStory[],
+  lanes: readonly PublishedLane[],
+): string {
+  const what =
+    run.kind === "single"
+      ? `**${epic.identifier}**`
+      : `all ${stories.length} ${stories.length === 1 ? "story" : "stories"} of **${epic.identifier}**`;
+  const branch = lanes[0]?.lane.branch ?? "";
+  const done = (l: PublishedLane) =>
+    l.lane.publish?.status === "published" && l.lane.publish.created ? "Opened" : "Updated";
+  const head =
+    lanes.length === 1
+      ? [
+          `Finished ${what} on \`${branch}\`. ${done(lanes[0]!)} ${laneLink(lanes[0]!)}, ready for review.`,
+        ]
+      : [
+          `Finished ${what} on \`${branch}\`. Ready for review:`,
+          "",
+          ...lanes.map((l) => `- \`${l.repository.fullPath}\`: ${done(l)} ${laneLink(l)}`),
+        ];
+  const repositoryOf = new Map(lanes.map((l) => [l.lane.id, l.repository.fullPath]));
+  const main = lanes[0]?.lane.id;
+  const lines = stories.map((s) => {
+    const mark = s.status === "completed" ? "✅" : s.status === "canceled" ? "🚫" : "•";
+    const elsewhere =
+      lanes.length > 1 && s.laneId && s.laneId !== main && repositoryOf.has(s.laneId)
+        ? ` (in \`${repositoryOf.get(s.laneId)}\`)`
+        : "";
+    return `- ${mark} **${s.identifier}**: ${s.title}${elsewhere}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`;
+  });
+  return [...head, "", ...lines].join("\n");
 }

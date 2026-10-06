@@ -345,9 +345,11 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(payload.epic.prd).toContain("Build the thing.");
     expect(payload.progress).toContain("# Ralph Progress Log");
     expect(payload.stories).toEqual([
-      { identifier: "ENG-2", title: "Alpha", status: "open", manual: false, dependsOn: [] },
-      { identifier: "ENG-3", title: "Beta", status: "open", manual: false, dependsOn: ["ENG-4"] },
-      { identifier: "ENG-4", title: "Gamma", status: "open", manual: false, dependsOn: [] },
+      ...[
+        { identifier: "ENG-2", title: "Alpha", status: "open", manual: false, dependsOn: [] },
+        { identifier: "ENG-3", title: "Beta", status: "open", manual: false, dependsOn: ["ENG-4"] },
+        { identifier: "ENG-4", title: "Gamma", status: "open", manual: false, dependsOn: [] },
+      ].map((s) => ({ ...s, repository: null })),
     ]);
     expect(linear.issues.get(gamma.id)?.stateType).toBe("started");
     expect(linear.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
@@ -1175,6 +1177,214 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         ["group/app", false],
       ]);
     });
+
+    /** Runs `body` with the GitLab repository's ralph settings changed. */
+    async function withAppSettings(
+      settings: Partial<typeof DEFAULT_RALPH_SETTINGS>,
+      body: () => Promise<void>,
+    ) {
+      const update = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
+        updateRepositoryRalphSettings(db, gitlabRepoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["GL"],
+          linearProjectNames: ["Web"],
+          linearLabels: [],
+          ralphSettings,
+        });
+      await update({ ...DEFAULT_RALPH_SETTINGS, ...settings });
+      try {
+        await body();
+      } finally {
+        await update(DEFAULT_RALPH_SETTINGS);
+      }
+    }
+
+    const reply = (run: RalphRun, body: string) =>
+      handleLinearEvent(
+        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { db, organizationId: "org-1" },
+        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      );
+
+    it("works a story whose project routes to another repository there, on its own branch and PR", async () => {
+      await withAppSettings({ verifyCommands: ["npm run check"], model: "sonnet" }, async () => {
+        const t = crossRepo("Web");
+        const run = await delegate(t.epic.id);
+        const lanes = await listLanes(db, run.id);
+        const main = lanes.find((l) => l.repositoryId === repoId)!;
+        const web = lanes.find((l) => l.repositoryId === gitlabRepoId)!;
+
+        const first = await work(run.id, { commitSha: sha(41) }, agentA);
+        expect(first).toMatchObject({
+          repositoryId: repoId,
+          repository: { fullPath: "acme/api" },
+          branch: main.branch,
+          baseBranch: "develop",
+          settings: { setupCommand: "pnpm install" },
+          qualityGates: [],
+        });
+        expect(first.stories.map((s) => [s.identifier, s.repository])).toEqual([
+          ["ENG-2", null],
+          ["ENG-3", "group/app"],
+          ["ENG-4", null],
+        ]);
+
+        // ENG-3 runs in its lane: that repository, the same branch on its base, its settings and gates.
+        const job = await activeJob(run.id);
+        expect(job).toMatchObject({
+          repositoryId: gitlabRepoId,
+          topic: `ralph-jobs-agent-${agentA}`,
+        });
+        const second = await work(run.id, { commitSha: sha(42) }, agentA);
+        expect(second).toMatchObject({
+          repositoryId: gitlabRepoId,
+          repository: { provider: "gitlab", fullPath: "group/app" },
+          branch: web.branch,
+          baseBranch: web.baseBranch,
+          settings: { model: "sonnet", setupCommand: null },
+          qualityGates: ["npm run check"],
+          story: { identifier: "ENG-3" },
+        });
+        expect(linear.comments.find((c) => c.issueId === t.s2.id)?.body).toContain(
+          `on \`${web.branch}\` in \`group/app\``,
+        );
+
+        // The sticky agent takes every lane's jobs.
+        expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-agent-${agentA}`);
+        expect((await work(run.id, { commitSha: sha(43) }, agentA)).repositoryId).toBe(repoId);
+
+        // Each lane is published with its own describe job and its own PR/MR, the main one first.
+        const api = await describePr(run.id, { title: "API: priority" });
+        expect(api).toMatchObject({ repositoryId: repoId, branch: main.branch });
+        expect(api.stories.map((s) => s.identifier)).toEqual(["ENG-2", "ENG-4"]);
+        expect(linear.bodies(run.linearAgentSessionId, "thought").at(-1)).toBe(
+          "All 3 stories are done. Writing the merge request description of `group/app`.",
+        );
+        const app = await describePr(run.id, { title: "Web: badge" });
+        expect(app).toMatchObject({ repositoryId: gitlabRepoId, branch: web.branch });
+        expect(app.stories.map((s) => s.identifier)).toEqual(["ENG-3"]);
+
+        expect(
+          scm.changeRequests.map((c) => [c.fullPath, c.title, c.sourceBranch, c.targetBranch]),
+        ).toEqual([
+          ["acme/api", "API: priority", main.branch, "develop"],
+          ["group/app", "Web: badge", web.branch, web.baseBranch],
+        ]);
+        const [apiPr, appPr] = scm.changeRequests;
+        const updated = await listLanes(db, run.id);
+        expect(updated.find((l) => l.id === main.id)).toMatchObject({
+          prNumber: apiPr!.number,
+          prUrl: apiPr!.url,
+        });
+        expect(updated.find((l) => l.id === web.id)).toMatchObject({
+          prNumber: appPr!.number,
+          prUrl: appPr!.url,
+        });
+        expect(linear.urls).toEqual([
+          {
+            sessionId: run.linearAgentSessionId,
+            label: `Pull request #${apiPr!.number} (acme/api)`,
+            url: apiPr!.url,
+          },
+          {
+            sessionId: run.linearAgentSessionId,
+            label: `Merge request !${appPr!.number} (group/app)`,
+            url: appPr!.url,
+          },
+        ]);
+        expect((await getRun(db, run.id))?.status).toBe("completed");
+        const response = linear.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+        expect(response).toContain(
+          `- \`acme/api\`: Opened [Pull request #${apiPr!.number}](${apiPr!.url})`,
+        );
+        expect(response).toContain(
+          `- \`group/app\`: Opened [Merge request !${appPr!.number}](${appPr!.url})`,
+        );
+        expect(response).toContain("**ENG-3**: Show badge (in `group/app`)");
+      });
+    });
+
+    it("opens no PR in the epic's repository when every story went to another one", async () => {
+      const t = crossRepo("Web");
+      for (const s of [t.s1, t.s3]) await linear.setIssueState(s.id, { type: "completed" });
+      const run = await delegate(t.epic.id);
+      expect((await work(run.id, { commitSha: sha(44) })).story.identifier).toBe("ENG-3");
+      const payload = await describePr(run.id);
+      expect(payload.repositoryId).toBe(gitlabRepoId);
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["group/app"]);
+      const lanes = await listLanes(db, run.id);
+      expect(lanes.find((l) => l.repositoryId === repoId)?.prNumber).toBeNull();
+      // One PR/MR: no repository label in the response.
+      expect(linear.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
+        `Opened [Merge request !${scm.changeRequests[0]!.number}](${scm.changeRequests[0]!.url}), ready for review.`,
+      );
+    });
+
+    it("collects a lane's publish problem while another lane's PR opens, and a reply retries only it", async () => {
+      const t = crossRepo("Web");
+      const run = await delegate(t.epic.id);
+      await work(run.id, { commitSha: sha(45) });
+      await work(run.id, { commitSha: sha(46) });
+      await work(run.id, { commitSha: sha(47) });
+      await describePr(run.id);
+      await describePr(run.id, { jobError: "the session ran out of turns" });
+
+      expect(await activeJobs(run.id)).toEqual([]);
+      const waiting = (await getRun(db, run.id))!;
+      expect(waiting).toMatchObject({ status: "waiting", prJobId: null });
+      const [apiPr] = scm.changeRequests;
+      expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api"]);
+      const elicitation = linear.bodies(run.linearAgentSessionId, "elicitation").at(-1) ?? "";
+      expect(elicitation).toContain(
+        "Every story is done, but the last step didn't happen everywhere.",
+      );
+      expect(elicitation).toContain(
+        "In `group/app`: I couldn't open the merge request: writing its description failed: the session ran out of turns.",
+      );
+      expect(elicitation).toContain(
+        `Ready for review: [Pull request #${apiPr!.number}](${apiPr!.url}) in \`acme/api\`.`,
+      );
+      expect(elicitation).toContain("Reply with guidance (for example `retry`)");
+      expect(waiting.error).toContain("In `group/app`:");
+      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+
+      // Nothing happens until someone replies.
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
+      expect(await activeJobs(run.id)).toEqual([]);
+
+      await reply(run, "retry");
+      expect((await describePr(run.id)).repositoryId).toBe(gitlabRepoId);
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await getRun(db, run.id)).toMatchObject({ status: "completed", error: null });
+      expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api", "group/app"]);
+      const response = linear.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+      expect(response).toContain(`\`acme/api\`: Opened [Pull request #${apiPr!.number}]`);
+      expect(response).toContain("`group/app`: Opened [Merge request !");
+      expect(linear.urls.map((u) => u.url)).toEqual(scm.changeRequests.map((c) => c.url));
+    });
+
+    it("applies openPullRequestEarly per lane", async () => {
+      await withAppSettings({ openPullRequestEarly: true }, async () => {
+        const t = crossRepo("Web");
+        const run = await delegate(t.epic.id);
+        await work(run.id, { commitSha: sha(48) });
+        expect(scm.changeRequests).toEqual([]);
+        await work(run.id, { commitSha: sha(49) });
+        expect(scm.changeRequests).toEqual([
+          expect.objectContaining({ fullPath: "group/app", draft: true }),
+        ]);
+        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+          "Opened a draft merge request for `eng-1-branch` in `group/app`:",
+        );
+        const draft = scm.changeRequests[0]!.body;
+        expect(draft).toContain("- [x] ENG-3: Show badge");
+        expect(draft).not.toContain("ENG-2");
+        await work(run.id, { commitSha: sha(50) });
+        expect(scm.changeRequests).toHaveLength(1);
+      });
+    });
   });
 
   describe("the pull/merge request", () => {
@@ -1500,7 +1710,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         waitingOn: { blockers: [], manual: [] },
       });
       expect(waiting.error).toContain("the session ended without a valid title and body");
-      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      const [error] = linear.bodies(run.linearAgentSessionId, "elicitation");
       expect(error).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the session ended without a valid title and body.",
       );
@@ -1528,8 +1738,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       const run = await finishedRun();
       await describePr(run.id);
       expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
-      expect(linear.bodies(run.linearAgentSessionId, "error")[0]).toContain(
-        "couldn't open the pull request: Resource not accessible by integration.",
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+        "Every story is done, but I couldn't open the pull request: Resource not accessible by integration.",
       );
 
       scm.failures.clear();
