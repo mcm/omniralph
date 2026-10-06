@@ -244,6 +244,8 @@ export interface PlannedStoryIssue {
   subIssueSortOrder: number;
   /** The story already passes (prd.json `passes`): create it completed. */
   completed: boolean;
+  /** A step for a person: create it with the manual label. */
+  manual: boolean;
 }
 
 export interface MaterializationPlan {
@@ -269,6 +271,7 @@ export function materializationPlan(prd: ParsedPrd): MaterializationPlan {
       priority: linearPriorityFor(s.priority),
       subIssueSortOrder: i,
       completed: s.passes,
+      manual: s.manual === true,
     })),
     relations: prd.stories.flatMap((s) =>
       s.dependsOn.filter((dep) => ids.has(dep)).map((dep) => ({ blocker: dep, blocked: s.id })),

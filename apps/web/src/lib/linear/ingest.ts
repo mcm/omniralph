@@ -14,6 +14,11 @@ export interface LinearWebhookDeps {
   secret: string | undefined;
   handle: (event: HandledLinearEvent, context: LinearEventContext) => Promise<void>;
   /**
+   * Runs before the response (after the delivery is claimed), e.g. the
+   * acknowledgement Linear needs within 10 seconds of a new agent session.
+   */
+  acknowledge?: (event: HandledLinearEvent, context: LinearEventContext) => Promise<void>;
+  /**
    * Runs the handler after the response is sent (the route passes Next.js
    * `after`). Defaults to running it before responding.
    */
@@ -31,8 +36,8 @@ const reply = (outcome: Outcome) => Response.json(outcome);
 /**
  * `POST /api/webhooks/linear`: verifies the signature and timestamp (401),
  * classifies the event, drops events from workspaces other than the
- * connected one, claims the delivery ID (a redelivery is a no-op) and hands
- * the event to `handle` via `defer`.
+ * connected one, claims the delivery ID (a redelivery is a no-op), runs
+ * `acknowledge` and hands the event to `handle` via `defer`.
  */
 export async function handleLinearWebhook(
   req: Request,
@@ -74,6 +79,13 @@ export async function handleLinearWebhook(
   }
 
   const context: LinearEventContext = { db, organizationId: integration.externalId };
+  if (deps.acknowledge) {
+    try {
+      await deps.acknowledge(event, context);
+    } catch (error) {
+      console.error(`Acknowledging Linear ${event.kind} webhook failed`, error);
+    }
+  }
   const task = async () => {
     try {
       await deps.handle(event, context);

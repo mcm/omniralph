@@ -232,6 +232,7 @@ describe("PRD epics", () => {
         priority: 3,
         subIssueSortOrder: 0,
         completed: false,
+        manual: false,
       },
       {
         storyId: "US-002",
@@ -240,9 +241,31 @@ describe("PRD epics", () => {
         priority: 1,
         subIssueSortOrder: 1,
         completed: false,
+        manual: false,
       },
     ]);
     expect(plan.relations).toEqual([{ blocker: "US-001", blocked: "US-002" }]);
+  });
+
+  it("plans manual PRD stories (markdown labels or prd.json) as manual", () => {
+    const markdown = parsePrd(
+      "# PRD: X\n\n### US-001: Grant access\n**Labels:** `manual`, ops\n\n### US-002: Build it\n**Labels:** backend\n",
+    )!;
+    expect(materializationPlan(markdown).issues.map((i) => [i.storyId, i.manual])).toEqual([
+      ["US-001", true],
+      ["US-002", false],
+    ]);
+    const json = parsePrd(
+      JSON.stringify({
+        name: "X",
+        userStories: [
+          { id: "US-1", title: "A", manual: true },
+          { id: "US-2", title: "B", labels: ["Manual"] },
+          { id: "US-3", title: "C" },
+        ],
+      }),
+    )!;
+    expect(materializationPlan(json).issues.map((i) => i.manual)).toEqual([true, true, false]);
   });
 });
 

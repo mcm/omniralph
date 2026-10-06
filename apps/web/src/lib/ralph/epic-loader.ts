@@ -1,0 +1,139 @@
+/**
+ * Loads a delegated Linear issue as a ralph epic (ported from cyralph's
+ * `src/linear/epic-loader.ts`; the pure builders live in `@omniralph/ralph`):
+ *
+ *  1. The issue has sub-issues         -> `children`: each sub-issue is a story.
+ *  2. It is a sub-issue itself         -> its parent's epic, focused on this story.
+ *  3. Its description holds a PRD      -> `prd`: each PRD story is created as a sub-issue
+ *                                         (priority, order, blocks relations, manual label),
+ *                                         then the issue loads as `children`.
+ *  4. Anything else                    -> `single`: the issue itself is the only story.
+ */
+import {
+  childrenEpic,
+  DEFAULT_MANUAL_LABELS,
+  materializationPlan,
+  parsePrd,
+  singleIssueEpic,
+  type Epic,
+  type ParsedPrd,
+} from "@omniralph/ralph";
+import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
+
+export interface LoadedEpic {
+  epic: Epic;
+  /** The epic's own issue (the delegated issue, or its parent for a delegated sub-issue). */
+  root: IssueSummary;
+  /** `prd` when this load created the epic's sub-issues from its PRD, else the epic's kind. */
+  kind: "children" | "prd" | "single";
+  /** Linear issue ID of the delegated story, when a sub-issue of an epic was delegated. */
+  focusStoryId?: string;
+  /** Sub-issues created from the PRD during this load. */
+  materialized: number;
+}
+
+export interface LoadEpicOptions {
+  /** Labels marking a story as a manual step; the first one labels materialized manual stories. */
+  manualLabels?: readonly string[];
+}
+
+/** The children epic of `parent`: its sub-issues with their blockers. */
+async function loadChildrenEpic(
+  linear: LinearGateway,
+  parent: IssueSummary,
+  children: readonly IssueSummary[],
+  manualLabels: readonly string[],
+): Promise<Epic> {
+  const stories = await Promise.all(
+    children.map(async (issue) => ({ issue, blockers: await linear.getBlockers(issue.id) })),
+  );
+  return childrenEpic(parent, stories, { manualLabels });
+}
+
+/**
+ * Creates one sub-issue per PRD story: priority, sub-issue order and "blocks"
+ * relations come from the PRD; stories that already pass are completed and
+ * manual ones get the manual label.
+ */
+export async function materializePrd(
+  linear: LinearGateway,
+  parent: IssueSummary,
+  prd: ParsedPrd,
+  manualLabel: string,
+): Promise<IssueSummary[]> {
+  const plan = materializationPlan(prd);
+  const created = new Map<string, IssueSummary>();
+  for (const planned of plan.issues) {
+    const issue = await linear.createIssue({
+      teamId: parent.teamId,
+      parentId: parent.id,
+      title: planned.title,
+      description: planned.description,
+      priority: planned.priority,
+      subIssueSortOrder: planned.subIssueSortOrder,
+      ...(parent.projectName && { projectName: parent.projectName }),
+      ...(planned.manual && { labels: [manualLabel] }),
+    });
+    created.set(planned.storyId, issue);
+    if (planned.completed) await linear.setIssueState(issue.id, { type: "completed" });
+  }
+  for (const { blocker, blocked } of plan.relations) {
+    const from = created.get(blocker);
+    const to = created.get(blocked);
+    if (from && to) await linear.createBlocksRelation(from.id, to.id);
+  }
+  return [...created.values()];
+}
+
+/** Loads the delegated issue `issueId` as an epic, materializing a PRD's stories first. */
+export async function loadEpic(
+  linear: LinearGateway,
+  issueId: string,
+  options: LoadEpicOptions = {},
+): Promise<LoadedEpic> {
+  const manualLabels = options.manualLabels?.length ? options.manualLabels : DEFAULT_MANUAL_LABELS;
+  const issue = await linear.getIssue(issueId);
+
+  const children = await linear.getChildren(issue.id);
+  if (children.length > 0) {
+    const epic = await loadChildrenEpic(linear, issue, children, manualLabels);
+    return { epic, root: issue, kind: "children", materialized: 0 };
+  }
+
+  // A sub-issue delegated on its own is one story of its parent's epic.
+  if (issue.parentId) {
+    const parent = await linear.getIssue(issue.parentId);
+    const siblings = await linear.getChildren(parent.id);
+    const epic = await loadChildrenEpic(linear, parent, siblings, manualLabels);
+    return { epic, root: parent, kind: "children", focusStoryId: issue.id, materialized: 0 };
+  }
+
+  const prd = parsePrd(issue.description);
+  if (prd) {
+    const created = await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual");
+    const epic = await loadChildrenEpic(
+      linear,
+      issue,
+      await linear.getChildren(issue.id),
+      manualLabels,
+    );
+    return { epic, root: issue, kind: "prd", materialized: created.length };
+  }
+
+  return { epic: singleIssueEpic(issue), root: issue, kind: "single", materialized: 0 };
+}
+
+/**
+ * Re-reads a run's stories from Linear: the epic issue's sub-issues, or the
+ * issue itself for a `single` run. Never creates issues.
+ */
+export async function reloadEpic(
+  linear: LinearGateway,
+  run: { linearIssueId: string; kind: "children" | "prd" | "single" },
+  options: LoadEpicOptions = {},
+): Promise<Epic> {
+  const manualLabels = options.manualLabels?.length ? options.manualLabels : DEFAULT_MANUAL_LABELS;
+  const issue = await linear.getIssue(run.linearIssueId);
+  if (run.kind === "single") return singleIssueEpic(issue);
+  return loadChildrenEpic(linear, issue, await linear.getChildren(issue.id), manualLabels);
+}

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."ralph_story_status" ADD VALUE 'canceled';
