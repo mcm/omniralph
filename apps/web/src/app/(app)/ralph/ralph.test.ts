@@ -9,13 +9,17 @@ import {
   getMainLane,
   getRun,
   insertJob,
+  insertMessage,
   integrations,
   jobs,
   listStories,
+  ralphMessages,
   ralphRuns,
   runMigrations,
+  RUN_DETAIL_MESSAGE_LIMIT,
   saveIntegration,
   updateLane,
+  updateMessage,
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
@@ -395,6 +399,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
         baseBranch: "main",
         pullRequest: null,
         cleanup: null,
+        reviewRounds: { done: 0, max: 3 },
+        ciFixRounds: { done: 0, max: 3 },
       },
       {
         id: web.id,
@@ -408,6 +414,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
           label: "!8",
         },
         cleanup: null,
+        reviewRounds: { done: 0, max: 3 },
+        ciFixRounds: { done: 0, max: 3 },
       },
     ]);
     expect(laned.stories.map((s) => [s.identifier, s.laneId, s.elsewhere])).toEqual([
@@ -424,6 +432,137 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       "NEXT_NOT_FOUND",
     );
     await expect(detailPage("nope")).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("shows each lane's review/CI rounds, the pending requests and the live messages", async () => {
+    // acme/web turned CI fixes off and allows 5 review rounds.
+    await updateRepositoryRalphSettings(db, repoB, {
+      ralphEnabled: true,
+      linearTeamKeys: [],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, maxReviewRounds: 5, respondToCiFailures: false },
+    });
+    const run = await newRun();
+    const main = (await getMainLane(db, run))!;
+    await updateLane(db, main.id, { reviewRounds: 2, ciFixRounds: 3 });
+    const web = await ensureLane(db, {
+      runId: run.id,
+      repositoryId: repoB,
+      branch: main.branch,
+      baseBranch: "main",
+    });
+    await updateLane(db, web.id, { reviewRounds: 1, ciFixRounds: 1 });
+
+    // Pending: no job, not consumed (lane null: the main lane's). Consumed ones aren't listed.
+    const at = (minute: number) => new Date(Date.UTC(2026, 9, 6, 10, minute));
+    const ask = await insertMessage(db, {
+      runId: run.id,
+      kind: "request",
+      text: "Open the PR",
+      author: "Ada",
+    });
+    const fix = await insertMessage(db, {
+      runId: run.id,
+      laneId: web.id,
+      kind: "request",
+      text: "Fix the CI",
+    });
+    const done = await insertMessage(db, { runId: run.id, kind: "request", text: "Done already" });
+    await updateMessage(db, done.id, { consumedAt: new Date() });
+
+    // Live messages: delivered, rejected (kept as guidance), still waiting.
+    const { job: story } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: run.id,
+    });
+    await db.update(jobs).set({ status: "running", agentId }).where(eq(jobs.id, story.id));
+    const live = async (
+      minute: number,
+      text: string,
+      update: Parameters<typeof updateMessage>[2],
+    ) => {
+      const message = await insertMessage(db, {
+        runId: run.id,
+        jobId: story.id,
+        kind: "guidance",
+        text,
+        author: "Bob",
+      });
+      await db
+        .update(ralphMessages)
+        .set({ createdAt: at(minute) })
+        .where(eq(ralphMessages.id, message.id));
+      if (Object.keys(update).length > 0) await updateMessage(db, message.id, update);
+      return message;
+    };
+    const delivered = await live(1, "Use pnpm", { deliveredAt: at(2), consumedAt: at(2) });
+    const rejected = await live(3, "Skip the docs", { consumedAt: at(4) });
+    const waiting = await live(5, "Also add a test", {});
+
+    const view = (await detailPage(run.id)).run;
+    expect(view.lanes.map((l) => [l.repository.fullPath, l.reviewRounds, l.ciFixRounds])).toEqual([
+      ["acme/api", { done: 2, max: 3 }, { done: 3, max: 3 }],
+      ["acme/web", { done: 1, max: 5 }, { done: 1, max: null }],
+    ]);
+    expect(view.pendingRequests).toEqual([
+      {
+        id: ask.id,
+        laneId: null,
+        text: "Open the PR",
+        author: "Ada",
+        createdAt: ask.createdAt.toISOString(),
+      },
+      {
+        id: fix.id,
+        laneId: web.id,
+        text: "Fix the CI",
+        author: null,
+        createdAt: fix.createdAt.toISOString(),
+      },
+    ]);
+    expect(view.messageLimit).toBe(RUN_DETAIL_MESSAGE_LIMIT);
+    const job = { id: story.id, type: "ralph.story", status: "running" };
+    expect(view.messages).toEqual([
+      {
+        id: waiting.id,
+        kind: "guidance",
+        text: "Also add a test",
+        author: "Bob",
+        job,
+        state: "waiting",
+        createdAt: at(5).toISOString(),
+        deliveredAt: null,
+        consumedAt: null,
+      },
+      {
+        id: rejected.id,
+        kind: "guidance",
+        text: "Skip the docs",
+        author: "Bob",
+        job,
+        state: "guidance",
+        createdAt: at(3).toISOString(),
+        deliveredAt: null,
+        consumedAt: at(4).toISOString(),
+      },
+      {
+        id: delivered.id,
+        kind: "guidance",
+        text: "Use pnpm",
+        author: "Bob",
+        job,
+        state: "delivered",
+        createdAt: at(1).toISOString(),
+        deliveredAt: at(2).toISOString(),
+        consumedAt: at(2).toISOString(),
+      },
+    ]);
+
+    // A run without requests or messages.
+    const empty = (await detailPage((await newRun()).id)).run;
+    expect(empty).toMatchObject({ pendingRequests: [], messages: [] });
   });
 
   async function runningRun(): Promise<{ run: RalphRun; jobId: string }> {

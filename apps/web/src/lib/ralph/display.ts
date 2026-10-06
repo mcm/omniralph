@@ -126,6 +126,75 @@ export interface RalphLaneView {
   pullRequest: RalphPullRequest | null;
   /** After its PR/MR merged: where the cleanup of its worktree and branch is (`cleanupLabel`). */
   cleanup: string | null;
+  /** Review-response rounds so far, out of the repository's `maxReviewRounds` (null: turned off). */
+  reviewRounds: RalphRounds;
+  /** CI-fix rounds so far, out of the repository's `maxFixRounds` (null: turned off). */
+  ciFixRounds: RalphRounds;
+}
+
+/** A lane's follow-up rounds: done, and the most allowed (null: the loop is turned off). */
+export interface RalphRounds {
+  done: number;
+  max: number | null;
+}
+
+/** "1 / 3" rounds, or "2 (off)" when the repository turned the loop off. */
+export function roundsLabel({ done, max }: RalphRounds): string {
+  return max === null ? `${done} (off)` : `${done} / ${max}`;
+}
+
+/** A request the run hasn't handled yet. */
+export interface RalphRequestView {
+  id: string;
+  /** The lane it's for (requests without one are the main lane's). */
+  laneId: string | null;
+  text: string;
+  author: string | null;
+  /** ISO timestamp. */
+  createdAt: string;
+}
+
+/**
+ * Where a message for a running job is: waiting for the agent's next
+ * heartbeat, delivered into the live session, or rejected (or its job ended)
+ * and kept as guidance for the next story attempts instead.
+ */
+export const RALPH_MESSAGE_STATES = ["waiting", "delivered", "guidance", "undelivered"] as const;
+export type RalphMessageState = (typeof RALPH_MESSAGE_STATES)[number];
+
+export const RALPH_MESSAGE_STATE_LABELS: Record<RalphMessageState, string> = {
+  waiting: "Waiting for delivery",
+  delivered: "Delivered",
+  guidance: "Not delivered: kept as guidance",
+  undelivered: "Not delivered: the job ended",
+};
+
+/** A message's state from its timestamps and its job's status. */
+export function ralphMessageState(message: {
+  deliveredAt: string | null;
+  consumedAt: string | null;
+  kind: "guidance" | "request";
+  jobStatus: RalphJobView["status"];
+}): RalphMessageState {
+  if (message.deliveredAt) return "delivered";
+  if (message.consumedAt) return message.kind === "guidance" ? "guidance" : "undelivered";
+  return message.jobStatus === "queued" || message.jobStatus === "running"
+    ? "waiting"
+    : "undelivered";
+}
+
+/** A Linear reply or mention sent to a running job's live session. */
+export interface RalphMessageView {
+  id: string;
+  kind: "guidance" | "request";
+  text: string;
+  author: string | null;
+  job: { id: string; type: string; status: RalphJobView["status"] };
+  state: RalphMessageState;
+  /** ISO timestamps. */
+  createdAt: string;
+  deliveredAt: string | null;
+  consumedAt: string | null;
 }
 
 export interface RalphJobView {
@@ -159,6 +228,11 @@ export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   stories: RalphStoryView[];
   /** Newest first. */
   jobs: RalphJobView[];
+  /** Requests not handled yet, oldest first. */
+  pendingRequests: RalphRequestView[];
+  /** Messages for running jobs, newest first (the latest `messageLimit`). */
+  messages: RalphMessageView[];
+  messageLimit: number;
   /** ISO timestamp. */
   createdAt: string;
 }
