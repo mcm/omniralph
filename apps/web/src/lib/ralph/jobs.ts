@@ -3,6 +3,7 @@ import {
   findLaneByPullRequest,
   getReview,
   getRun,
+  listLanes,
   lockRun,
   skipJob,
   updateRun,
@@ -12,6 +13,7 @@ import {
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGateway } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { onCleanupJobFinished, startPendingCleanups } from "./cleanup";
 import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
@@ -63,10 +65,33 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
   if (!job.ralphRunId) return;
   try {
     const run = await getRun(db, job.ralphRunId);
-    if (!run || FINISHED_RUN_STATUSES.has(run.status)) return;
-    await advanceRun(run.id, deps ?? (await defaultDeps(db)));
+    if (!run) return;
+    const finished = FINISHED_RUN_STATUSES.has(run.status);
+    // A merged lane's cleanup that waited for the run's jobs starts now.
+    const pending = (await listLanes(db, run.id)).some((l) => l.cleanup?.status === "pending");
+    if (finished && !pending) return;
+    const ralph = deps ?? (await defaultDeps(db));
+    if (!finished) await advanceRun(run.id, ralph);
+    if (pending) await startPendingCleanups(ralph, run.id);
   } catch (error) {
     console.error(`Advancing ralph run ${job.ralphRunId} after job ${job.id} failed`, error);
+  }
+}
+
+/**
+ * A `ralph.cleanup` job completed, failed for good or was canceled: its
+ * outcome is applied (`onCleanupJobFinished`). Errors are logged.
+ */
+export async function onRalphCleanupJobFinished(
+  db: Database,
+  job: Job,
+  deps?: RalphDeps,
+): Promise<void> {
+  if (!job.ralphRunId) return;
+  try {
+    await onCleanupJobFinished(deps ?? (await defaultDeps(db)), job);
+  } catch (error) {
+    console.error(`Applying the outcome of cleanup job ${job.id} failed`, error);
   }
 }
 

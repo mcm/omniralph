@@ -7,6 +7,10 @@ import {
   RALPH_CAPABILITY,
   RALPH_JOB_TYPES,
   RalphActivity,
+  RalphCleanupPayload,
+  RalphCleanupResult,
+  ralphStashBranch,
+  ralphStashPrefix,
   RalphDescribePrPayload,
   RalphDescribePrResult,
   RalphPreparePayload,
@@ -79,7 +83,37 @@ describe("ralph capability", () => {
       "ralph.describe-pr",
       "ralph.prepare",
       "ralph.request",
+      "ralph.cleanup",
     ]);
+  });
+
+  it("parses ralph.cleanup payloads and results", () => {
+    const cleanup = { ...base, epic: { identifier: "ENG-1" } };
+    expect(
+      RalphCleanupPayload.parse({ ...cleanup, action: { kind: "cleanup", mergedSha: sha } }).action,
+    ).toEqual({ kind: "cleanup", mergedSha: sha, stashes: [] });
+    expect(
+      RalphCleanupPayload.safeParse({
+        ...cleanup,
+        action: { kind: "stashes", push: true, shas: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      RalphCleanupPayload.safeParse({ ...cleanup, action: { kind: "cleanup", mergedSha: "head" } })
+        .success,
+    ).toBe(false);
+    expect(RalphCleanupResult.parse({ durationMs: 1 })).toEqual({
+      error: null,
+      removedWorktree: false,
+      hadBranch: false,
+      stashed: null,
+      unmerged: 0,
+      stashes: [],
+      handled: 0,
+      durationMs: 1,
+    });
+    expect(ralphStashPrefix("r")).toBe("omniralph ralph r ");
+    expect(ralphStashBranch("ENG-1")).toBe("ralph/stash/eng-1");
   });
 
   it("validates ralph.request payloads and results", () => {

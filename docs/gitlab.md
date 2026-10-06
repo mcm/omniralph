@@ -58,6 +58,10 @@ project protects the run's branch, or only allows Maintainers to push, the Devel
 token can't push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by
 Developers.
 
+After a ralph MR merges, the webhook's merge request events (action `merge`) start the cleanup of
+its worktree and local branch on the agent (the reconcile cron is the fallback); nothing else is
+needed for it.
+
 Ralph's CI-fix loop reads the MR's head pipeline, its failed jobs and their traces with the bot
 token (scope `api`), and learns that a pipeline finished from the webhook's **Pipeline events** (the
 reconcile cron is the fallback). Projects connected before then have webhooks without pipeline

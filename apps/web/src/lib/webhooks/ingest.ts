@@ -19,6 +19,7 @@ import { runBotCommand } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { respondToCiEvent } from "@/lib/ralph/ci";
+import { cleanupMergedPullRequest } from "@/lib/ralph/cleanup";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -26,13 +27,16 @@ import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
   parseGitHubEvent,
+  parseGitHubMergeEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
   parseGitLabEvent,
+  parseGitLabMergeEvent,
   webhookRepositoryId,
   type ChangeRequestEvent,
   type CiEvent,
   type CommentEvent,
+  type MergeEvent,
 } from "./events";
 
 /** Code-host lookups a handler may make stay well inside the 3s webhook budget. */
@@ -44,6 +48,7 @@ interface ProviderSpec {
   parse(eventName: string | null, body: unknown): ChangeRequestEvent | null;
   parseComment(eventName: string | null, body: unknown): CommentEvent | null;
   parseCi(eventName: string | null, body: unknown): CiEvent | null;
+  parseMerge(eventName: string | null, body: unknown): MergeEvent | null;
 }
 
 const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
@@ -53,6 +58,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parse: parseGitHubEvent,
     parseComment: parseGitHubCommentEvent,
     parseCi: parseGitHubCiEvent,
+    parseMerge: parseGitHubMergeEvent,
   },
   gitlab: {
     eventHeader: "x-gitlab-event",
@@ -60,6 +66,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parse: parseGitLabEvent,
     parseComment: parseGitLabCommentEvent,
     parseCi: parseGitLabCiEvent,
+    parseMerge: parseGitLabMergeEvent,
   },
 };
 
@@ -83,7 +90,7 @@ type Outcome =
   | { status: "enqueued"; reviewId: string; jobId: string }
   | { status: "duplicate"; jobId?: string }
   | { status: "accepted"; command: string }
-  | { status: "accepted"; event: "ci_failure" }
+  | { status: "accepted"; event: "ci_failure" | "merged" }
   | { status: "ignored"; reason: string };
 
 const reply = (outcome: Outcome) => Response.json(outcome);
@@ -140,6 +147,8 @@ export async function handleWebhook(
   const delivery = deliveryId ? { provider, deliveryId } : null;
   const ci = spec.parseCi(eventName, body);
   if (ci) return handleCi({ ...deps, ...match, provider, delivery, ci });
+  const merge = spec.parseMerge(eventName, body);
+  if (merge) return handleMerge({ ...deps, ...match, provider, delivery, merge });
   const event = spec.parse(eventName, body);
   if (!event) {
     const comment = spec.parseComment(eventName, body);
@@ -275,6 +284,51 @@ async function handleCi(
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
   return reply({ status: "accepted", event: "ci_failure" });
+}
+
+/**
+ * A merged PR/MR: when it's a ralph lane's, the cleanup of its worktree and
+ * branch starts (`cleanupMergedPullRequest`, via `defer`, since it confirms
+ * the merge with the code host). Other PRs/MRs are ignored; a delivery ID
+ * that was already acted on is a no-op.
+ */
+async function handleMerge(
+  input: WebhookDeps & {
+    repository: Repository;
+    connection: ScmConnection;
+    provider: ScmProvider;
+    delivery: WebhookDeliveryRef | null;
+    merge: MergeEvent;
+  },
+): Promise<Response> {
+  const { db, repository, delivery, merge } = input;
+  const found = await findLaneByPullRequest(db, repository.id, merge.number);
+  if (!found) return ignored("not_ralph");
+  if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
+    return reply({ status: "duplicate" });
+  }
+  const task = async () => {
+    try {
+      const linear = await (input.linear ?? (() => getLinearGatewayOrDisconnected({ db })))();
+      await cleanupMergedPullRequest(
+        {
+          db,
+          linear,
+          dispatcher: input.dispatcher,
+          adapterFor: input.adapterFor ?? scmAdapterFor,
+        },
+        found.lane,
+      );
+    } catch (error) {
+      console.error(
+        `${input.provider} merge of ${repository.fullPath}#${merge.number} failed to clean up`,
+        error,
+      );
+    }
+  };
+  const defer = input.defer ?? ((run: () => Promise<void>) => run());
+  await defer(task);
+  return reply({ status: "accepted", event: "merged" });
 }
 
 /**

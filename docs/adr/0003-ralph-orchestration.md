@@ -86,6 +86,18 @@ run lock), skips runs with an active job (they may push again; the next check ca
 acts once per head SHA (`handled_ci_shas`), capped by `ci_fix_rounds`, by adding a pending request
 on the lane and advancing the run.
 
+Cleanup after a merge runs as a `ralph.cleanup` job, because only the run's sticky agent has the
+branch worktree (and the stash list) on disk. Every check that finds a ralph PR/MR merged goes
+through `recordClosedPullRequest`, which starts it: the merge webhook, a Linear issue moving to
+completed, the review and CI follow-ups, and the reconcile cron (the fallback). It is one of the
+run's jobs (`ralph_run_id`, so `advanceRun` waits for it) but has its own dedupe key per lane and
+runs after the run is over too; while another job of the run is active, the lane's cleanup waits
+(`pending`) and starts when that job finishes. The questions about leftovers (unapplied stashes, a
+branch with unmerged commits) are stored in `ralph_lanes.cleanup`, answered by replies in the
+run's session, and carried out by further `ralph.cleanup` jobs; the cron deletes a kept branch
+whose question timed out (`unmergedBranchTimeoutMinutes`). Agents never get a code-host token for
+this: pushes go through the job's write-scoped git credentials, as for stories.
+
 ### The sticky agent
 
 A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the

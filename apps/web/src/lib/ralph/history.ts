@@ -3,7 +3,12 @@
  * (`./display`): ISO dates, PR/MR labels.
  */
 import type { RalphRunDetail, RalphRunListEntry, ScmProvider } from "@omniralph/db";
-import type { RalphPullRequest, RalphRunDetailView, RalphRunRow } from "./display";
+import {
+  cleanupLabel,
+  type RalphPullRequest,
+  type RalphRunDetailView,
+  type RalphRunRow,
+} from "./display";
 
 function pullRequest(
   provider: ScmProvider | undefined,
@@ -60,6 +65,7 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       branch: lane.branch,
       baseBranch: lane.baseBranch,
       pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
+      cleanup: cleanupLabel(lane.cleanup),
     })),
     agent: detail.agent,
     error: run.error,

@@ -5,10 +5,13 @@ import {
   LEARN_RULE_JOB_TYPE,
   LearnRuleJobPayload,
   RALPH_CAPABILITY,
+  RALPH_CLEANUP_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
+  RalphCleanupPayload,
+  RalphCleanupResult,
   RalphDescribePrPayload,
   RalphDescribePrResult,
   RalphPreparePayload,
@@ -35,7 +38,7 @@ import {
   onReviewJobStarted,
   parseReviewResult,
 } from "@/lib/review/jobs";
-import { onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
+import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
 import { onLearnRuleJobCompleted, parseLearnRuleResult } from "@/lib/rules/learn";
 
 /**
@@ -153,4 +156,14 @@ registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
   onCompleted: (db, job) => onRalphJobFinished(db, job),
   onFailed: (db, job) => onRalphJobFinished(db, job),
   onCanceled: (db, job) => onRalphJobFinished(db, job),
+});
+
+// No `onStarted`: a cleanup runs after the run is over too, and doesn't make its agent sticky.
+registerJobOutcomeHandler(RALPH_CLEANUP_JOB_TYPE, {
+  capability: RALPH_CAPABILITY,
+  payload: RalphCleanupPayload,
+  isValidResult: (result) => RalphCleanupResult.safeParse(result).success,
+  onCompleted: (db, job) => onRalphCleanupJobFinished(db, job),
+  onFailed: (db, job) => onRalphCleanupJobFinished(db, job),
+  onCanceled: (db, job) => onRalphCleanupJobFinished(db, job),
 });

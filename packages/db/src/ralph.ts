@@ -758,6 +758,40 @@ export async function listOpenPullRequestLanes(
   );
 }
 
+/**
+ * Merged ralph PRs/MRs whose cleanup isn't through, each with the lane of its
+ * newest run: never cleaned up, waiting, running or failed, or with an answer
+ * being carried out or questions still open. Oldest lane first.
+ */
+export async function listLanesToCleanUp(
+  db: Executor,
+): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
+  const rows = await db
+    .select({ lane: ralphLanes, run: ralphRuns })
+    .from(ralphLanes)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
+    .where(
+      and(
+        isNotNull(ralphLanes.prNumber),
+        eq(ralphLanes.prMerged, true),
+        sql`(${ralphLanes.cleanup} is null
+          or ${ralphLanes.cleanup}->>'status' <> 'done'
+          or ${ralphLanes.cleanup}->>'jobId' is not null
+          or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
+  const newest = new Map<string, { lane: RalphLane; run: RalphRun }>();
+  for (const row of rows) {
+    const key = `${row.lane.repositoryId}#${row.lane.prNumber}`;
+    if (!newest.has(key)) newest.set(key, row);
+  }
+  return [...newest.values()].sort(
+    (a, b) =>
+      a.lane.createdAt.getTime() - b.lane.createdAt.getTime() || a.lane.id.localeCompare(b.lane.id),
+  );
+}
+
 /** Lane columns the orchestrator changes (the run and repository are fixed). */
 export type RalphLaneUpdate = Partial<
   Omit<typeof ralphLanes.$inferInsert, "id" | "runId" | "repositoryId" | "createdAt" | "updatedAt">

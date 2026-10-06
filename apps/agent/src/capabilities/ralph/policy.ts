@@ -56,3 +56,6 @@ export const RALPH_PREPARE_TOOL_POLICY: ToolPolicy = {
   settingSources: [],
   writable: false,
 };
+
+/** `ralph.cleanup` runs git in the agent's repo cache and no Claude session at all. */
+export const RALPH_CLEANUP_TOOL_POLICY: ToolPolicy = RALPH_PREPARE_TOOL_POLICY;

@@ -33,8 +33,8 @@ import {
   type RalphTransaction,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
-import type { ChangeRequestStatus } from "@omniralph/scm";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
 import { changeRequestTerm } from "./publish";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
@@ -123,22 +123,6 @@ export async function addLaneRequest(
     };
   }
   return { delivery: "started", run: current, note: `${input.what}. Working through it.` };
-}
-
-/**
- * Records that a lane's PR/MR was closed or merged: it is no longer followed
- * up (reviews, CI). This is where the merge cleanup takes over.
- */
-export async function recordClosedPullRequest(
-  deps: Pick<RalphDeps, "db">,
-  lane: RalphLane,
-  state: ChangeRequestStatus,
-): Promise<void> {
-  await updateLane(deps.db, lane.id, {
-    prClosed: true,
-    prMerged: state.state === "merged",
-    mergeSha: state.mergeSha,
-  });
 }
 
 /** Advances a run after a request was added, logging (not throwing) a failure: the reconcile cron retries. */

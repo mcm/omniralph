@@ -27,7 +27,7 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 
 | Event | Triggers |
 | -- | -- |
-| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize) |
+| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); ralph cleans up after a ralph PR is merged (closed + merged) |
 | `issue_comment` | `@bot` commands in the PR conversation |
 | `pull_request_review_comment` | `@bot dismiss` and questions in a finding's thread |
 | `workflow_run` | Ralph's CI-fix loop: a finished workflow run on a ralph PR's head commit (the reconcile cron is the fallback) |

@@ -274,6 +274,7 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
           <PullRequestLink pullRequest={lane.pullRequest} />
           {" · "}
           {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
+          {lane.cleanup ? ` · ${lane.cleanup}` : null}
         </CardDescription>
       </CardHeader>
       <CardContent>

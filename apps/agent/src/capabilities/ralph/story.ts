@@ -16,6 +16,7 @@ import {
 import {
   MAX_ATTEMPTS_PER_STORY,
   MAX_LEASE_SECONDS,
+  ralphStashPrefix,
   RalphStoryPayload,
   type JobPayload,
   type RalphFollowUp,
@@ -71,7 +72,7 @@ function clip(text: string, max = MAX_TEXT): string {
 
 /** Label prefix of a story's stash entries: they're offered to the story's later attempts. */
 export function stashPrefix(payload: Pick<RalphStoryPayload, "runId" | "story">): string {
-  return `omniralph ralph ${payload.runId} ${payload.story.identifier} `;
+  return `${ralphStashPrefix(payload.runId)}${payload.story.identifier} `;
 }
 
 /** The epic and story `buildStoryPrompt` expects, from the job's payload. */

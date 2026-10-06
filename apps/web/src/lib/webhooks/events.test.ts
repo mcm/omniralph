@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
+  parseGitHubMergeEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
+  parseGitLabMergeEvent,
 } from "./events";
 
 const user = { login: "octocat", type: "User" };
@@ -174,5 +176,38 @@ describe("CI events", () => {
     expect(parseGitLabCiEvent("Pipeline Hook", pipeline("failed", null, true))?.branch).toBeNull();
     expect(parseGitLabCiEvent("Pipeline Hook", pipeline("running", null))?.failed).toBe(false);
     expect(parseGitLabCiEvent("Note Hook", pipeline("failed", null))).toBeNull();
+  });
+});
+
+describe("merge events", () => {
+  it("parses merged GitHub pull requests only", () => {
+    const closed = (merged: boolean | null) => ({
+      action: "closed",
+      pull_request: { number: 4, merged, state: "closed" },
+    });
+    expect(parseGitHubMergeEvent("pull_request", closed(true))).toEqual({ number: 4 });
+    expect(parseGitHubMergeEvent("pull_request", closed(false))).toBeNull();
+    expect(parseGitHubMergeEvent("pull_request", closed(null))).toBeNull();
+    expect(
+      parseGitHubMergeEvent("pull_request", { ...closed(true), action: "synchronize" }),
+    ).toBeNull();
+    expect(parseGitHubMergeEvent("issue_comment", closed(true))).toBeNull();
+  });
+
+  it("parses merged GitLab merge requests only", () => {
+    const mr = (action: string | undefined, state: string) => ({
+      object_kind: "merge_request",
+      object_attributes: { iid: 9, state, ...(action && { action }) },
+    });
+    expect(parseGitLabMergeEvent("Merge Request Hook", mr("merge", "merged"))).toEqual({
+      number: 9,
+    });
+    // Older GitLab versions send no action.
+    expect(parseGitLabMergeEvent("Merge Request Hook", mr(undefined, "merged"))).toEqual({
+      number: 9,
+    });
+    expect(parseGitLabMergeEvent("Merge Request Hook", mr("close", "closed"))).toBeNull();
+    expect(parseGitLabMergeEvent("Merge Request Hook", mr("update", "merged"))).toBeNull();
+    expect(parseGitLabMergeEvent("Pipeline Hook", mr("merge", "merged"))).toBeNull();
   });
 });

@@ -3,7 +3,10 @@
  * `SessionManager.onPrompted`), handled in this order (FR-15):
  *
  * 1. Stop (Linear's Stop signal, or "stop"): the run is stopped, its job canceled.
- * 1a. While the run asks which repository to use, the answer to that
+ * 1a. An answer to an open question about a merged PR/MR's leftovers
+ *     (`cleanup.ts`: stash entries, a branch with unmerged commits), in any
+ *     run status: a `ralph.cleanup` job carries it out.
+ * 1b. While the run asks which repository to use, the answer to that
  *     (`repository-selection.ts`); an unmatched reply asks again.
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").
  * 3. `rerun preparation` (epic mode): the earliest open manual story's preparation is asked about again.
@@ -49,6 +52,7 @@ import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
+import { answerCleanup } from "./cleanup";
 import { applyGuidance, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
@@ -67,6 +71,8 @@ export type SessionPromptedEvent = Extract<LinearWebhookEvent, { kind: "session_
 /** What a reply turned out to be. */
 export type ReplyKind =
   | "stop"
+  /** An answer to a question about a merged PR/MR's leftovers (`cleanup.ts`). */
+  | "cleanup_answer"
   /** An answer (or a reply that matched nothing) to the repository question. */
   | "repository_selection"
   | "preparation_answer"
@@ -97,6 +103,9 @@ export async function handleReply(
 
   const text = event.body.trim();
   if (!text) return null;
+  // An answer to a question about a merged PR/MR's leftovers (stashes, unmerged commits).
+  const cleanup = await answerCleanup(deps, run.id, parseInstruction(text).text || text);
+  if (cleanup) return { kind: "cleanup_answer" };
   if (run.status === "failed") {
     await postActivity(deps.linear, run.linearAgentSessionId, {
       type: "response",

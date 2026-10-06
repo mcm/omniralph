@@ -322,7 +322,10 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
 }
 
 /** The run's agent, while it may still take the run's jobs (not revoked, ralph enabled). */
-async function stickyAgentId(db: Database, agentId: string | null): Promise<string | undefined> {
+export async function stickyAgentId(
+  db: Database,
+  agentId: string | null,
+): Promise<string | undefined> {
   if (!agentId) return undefined;
   const agent = await getAgent(db, agentId);
   if (!agent || agent.revokedAt || !agent.enabledCapabilities.includes(RALPH_CAPABILITY)) {
