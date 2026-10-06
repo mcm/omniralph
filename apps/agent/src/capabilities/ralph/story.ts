@@ -151,7 +151,8 @@ function followUpsOf(outcome: StoryOutcome | undefined): RalphFollowUp[] {
  * Claude session with ralph's tool policy, then on `complete` run the quality
  * gates, commit, require a clean tree and push through the brokered helper.
  * Work of an attempt that doesn't complete is stashed and offered to the
- * story's next attempt. Activities are relayed to the agent session while the
+ * story's next attempt, except a blocked story's work that passes the gates:
+ * that is committed as `wip(<ID>): …` and pushed. Activities are relayed to the agent session while the
  * session runs. A Claude rate limit throws `RetryableJobError`; a canceled job
  * stashes its work and rejects.
  */
@@ -304,11 +305,31 @@ export async function runStory(
             return notDone("failed", feedback, "error");
           }
           if (outcome.status === "blocked") {
-            return notDone(
-              "blocked",
-              `The previous session reported it was blocked. Its summary was:\n\n${quote(tail(summary, 3000))}`,
-              "blocked",
-            );
+            const feedback = `The previous session reported it was blocked. Its summary was:\n\n${quote(tail(summary, 3000))}`;
+            const kept = await commitBlockedWork({
+              worktree,
+              payload,
+              summary: outcome.commit?.summary ?? payload.story.title,
+              env: plainEnv,
+              signal: ctx.signal,
+              relay,
+              log,
+            });
+            if (!kept.sha) {
+              const why = kept.note ? `${feedback}\n\n${kept.note}` : feedback;
+              return notDone("blocked", why, "blocked");
+            }
+            // Anything the commit didn't take is set aside like any blocked work, offered again next time.
+            await stashQuietly(worktree, label("blocked"), log);
+            for (const entry of offered) {
+              await worktree.dropStash(entry.sha).catch((error: unknown) => {
+                log.warn({ err: error, stash: entry.sha }, "dropping a stash failed");
+              });
+            }
+            return result("blocked", {
+              feedback: `${feedback}\n\nIts work so far is committed on the branch as \`${kept.sha.slice(0, 10)}\`.`,
+              commitSha: kept.sha,
+            });
           }
           if (outcome.status === "incomplete") {
             return notDone(
@@ -325,9 +346,15 @@ export async function runStory(
             ctx.signal,
             relay,
           );
-          if (gateFailure) return notDone("failed", gateFailure, "unverified");
+          if (gateFailure) {
+            return notDone(
+              "failed",
+              `The agent reported the story complete, but ${gateFailureText(gateFailure)}`,
+              "unverified",
+            );
+          }
 
-          const commit = await commitStory(worktree, payload);
+          const commit = await commitStory(worktree, commitMessage(payload));
           if ("feedback" in commit) return notDone("failed", commit.feedback, "uncommitted");
 
           try {
@@ -403,36 +430,114 @@ async function dropApplied(
   }
 }
 
-/** Runs the gates in order (`bash -lc`); the first failure's feedback, if any. */
+interface GateFailure {
+  gate: string;
+  exitCode: number | null;
+  output: string;
+}
+
+/** "the quality gate `x` failed (exit n):" and the output's tail. */
+function gateFailureText(failure: GateFailure): string {
+  const exit = failure.exitCode !== null ? ` (exit ${failure.exitCode})` : "";
+  return `the quality gate \`${failure.gate}\` failed${exit}:\n\n\`\`\`\n${tail(failure.output, MAX_FEEDBACK_OUTPUT)}\n\`\`\``;
+}
+
+/** Runs the gates in order (`bash -lc`); the first failure, if any. */
 async function runQualityGates(
   gates: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
   relay: ActivityRelay,
-): Promise<string | undefined> {
+): Promise<GateFailure | undefined> {
   for (const gate of gates) {
     relay.post({ type: "action", body: "Quality gate", parameter: gate, ephemeral: true });
     try {
       await runShell(gate, { cwd, env, signal });
     } catch (error) {
       signal.throwIfAborted();
-      const exit =
-        error instanceof CommandError && error.exitCode !== null ? ` (exit ${error.exitCode})` : "";
-      return `The agent reported the story complete, but the quality gate \`${gate}\` failed${exit}:\n\n\`\`\`\n${tail(errorText(error), MAX_FEEDBACK_OUTPUT)}\n\`\`\``;
+      const exitCode = error instanceof CommandError ? error.exitCode : null;
+      return { gate, exitCode, output: errorText(error) };
     }
   }
   return undefined;
 }
 
+/** The story commit's message: the payload's, with the epic for a story of one. */
+function commitMessage(payload: RalphStoryPayload, subject = payload.commitMessage): string {
+  return payload.epic.kind === "single"
+    ? subject
+    : `${subject}\n\nEpic: ${payload.epic.identifier} ${payload.epic.title}`;
+}
+
 /**
- * Commits everything as the payload's commit message, then requires a clean
- * tree. A failed commit, or files left over afterwards (undoing the commit),
- * give feedback instead. No changes at all: nothing to commit, no SHA.
+ * Commits a blocked story's work so far as `wip(<ID>): <summary>` once the
+ * story's quality gates pass, and pushes it (cyralph's `commitBlockedWork`),
+ * so it survives on the branch whichever agent picks the run up next. A clean
+ * tree commits nothing. A failing gate, commit or push leaves the work
+ * uncommitted (the caller stashes it), with a note saying why.
+ */
+async function commitBlockedWork(args: {
+  worktree: BranchWorktree;
+  payload: RalphStoryPayload;
+  summary: string;
+  env: NodeJS.ProcessEnv;
+  signal: AbortSignal;
+  relay: ActivityRelay;
+  log: JobContext["logger"];
+}): Promise<{ sha?: string; note?: string }> {
+  const { worktree, payload, env, signal, relay, log } = args;
+  const changes = await worktree.git(["status", "--porcelain", "--untracked-files=all"]);
+  if (!changes.trim()) return {};
+  const failure = await runQualityGates(
+    uniqueCommands(payload.qualityGates),
+    worktree.path,
+    env,
+    signal,
+    relay,
+  );
+  if (failure) {
+    return {
+      note: `Its work so far wasn't committed because ${gateFailureText(failure)}`,
+    };
+  }
+  const subject = `wip(${payload.story.identifier}): ${args.summary.replace(/\s+/g, " ").trim()}`;
+  const commit = await commitStory(worktree, commitMessage(payload, subject), {
+    keepLeftovers: true,
+  });
+  if ("feedback" in commit) {
+    return { note: "Its work so far passed the quality gates, but committing it failed." };
+  }
+  if (!commit.sha) return {};
+  try {
+    await worktree.git(["push", "--quiet", "-u", "origin", payload.branch]);
+  } catch (error) {
+    signal.throwIfAborted();
+    log.warn({ err: error }, "pushing the blocked story's work failed");
+    await worktree.git(["reset", "--quiet", "HEAD~1"]);
+    return {
+      note: `Its work so far was committed, but pushing it failed, so the commit was undone:\n\n\`\`\`\n${tail(errorText(error), MAX_FEEDBACK_OUTPUT)}\n\`\`\``,
+    };
+  }
+  log.info({ commit: commit.sha }, "committed the blocked story's work");
+  relay.post({
+    type: "thought",
+    body: `Committed ${payload.story.identifier}'s work so far as \`${commit.sha.slice(0, 10)}\` (\`${subject}\`).`,
+    ephemeral: false,
+  });
+  return { sha: commit.sha };
+}
+
+/**
+ * Commits everything as `message`, then requires a clean tree (unless
+ * `keepLeftovers`). A failed commit, or files left over afterwards (undoing
+ * the commit), give feedback instead. No changes at all: nothing to commit,
+ * no SHA.
  */
 async function commitStory(
   worktree: BranchWorktree,
-  payload: RalphStoryPayload,
+  message: string,
+  options: { keepLeftovers?: boolean } = {},
 ): Promise<{ sha?: string } | { feedback: string }> {
   await worktree.git(["add", "-A"]);
   const staged = await worktree.git(["diff", "--cached", "--name-only"]);
@@ -441,10 +546,6 @@ async function commitStory(
     (email) => (email.trim() ? [] : FALLBACK_IDENTITY),
     () => FALLBACK_IDENTITY,
   );
-  const message =
-    payload.epic.kind === "single"
-      ? payload.commitMessage
-      : `${payload.commitMessage}\n\nEpic: ${payload.epic.identifier} ${payload.epic.title}`;
   try {
     await worktree.git([...identity, "commit", "--quiet", "-m", message]);
   } catch (error) {
@@ -453,6 +554,7 @@ async function commitStory(
     };
   }
   const sha = (await worktree.git(["rev-parse", "HEAD"])).trim();
+  if (options.keepLeftovers) return { sha };
   const left = (await worktree.git(["status", "--porcelain", "--untracked-files=all"]))
     .split("\n")
     .filter(Boolean);

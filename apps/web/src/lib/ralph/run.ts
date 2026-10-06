@@ -52,7 +52,7 @@ import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
-import { applyJobOutcomes } from "./outcome";
+import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
 import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
 import { planFor } from "./plan";
 import {
@@ -586,7 +586,9 @@ async function wait(
       const row = feedback.get(s.issueId ?? s.key);
       const problem = tail(row?.lastFeedback ?? "unknown", 1500);
       lines.push(
-        `**${s.storyId}: ${s.title}** didn't complete after ${row?.attempts ?? MAX_ATTEMPTS_PER_STORY} attempts. Last problem:\n\n${problem}`,
+        isBlockedFeedback(row?.lastFeedback)
+          ? `**${s.storyId}: ${s.title}** is blocked:\n\n${problem}`
+          : `**${s.storyId}: ${s.title}** didn't complete after ${row?.attempts ?? MAX_ATTEMPTS_PER_STORY} attempts. Last problem:\n\n${problem}`,
       );
     }
     for (const s of blockedStories(stories, new Set())) {

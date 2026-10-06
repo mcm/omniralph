@@ -675,26 +675,67 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).length).toBe(4);
   });
 
-  it("retries a blocked story with feedback like any other unfinished attempt", async () => {
+  it("sets a blocked story aside without retrying and carries on with the others", async () => {
     const epic = linear.add({ identifier: "ENG-40", title: "Epic" });
-    linear.add({ identifier: "ENG-41", title: "Needs a key", parentId: epic.id });
+    linear.add({ identifier: "ENG-41", title: "Needs a key", parentId: epic.id, priority: 1 });
+    linear.add({ identifier: "ENG-42", title: "Other", parentId: epic.id, priority: 2 });
     const run = await delegate(epic.id);
     await work(run.id, {
       status: "blocked",
       summary: "I need an API key for the payment sandbox.",
     });
-    expect(await storyStates(run.id)).toEqual([["ENG-41", "running", 1]]);
-    const second = await work(run.id, { status: "blocked", summary: "Still no key." });
-    expect(second).toMatchObject({ attempt: 2 });
-    expect(second.lastFeedback).toContain("reported it was blocked");
-    expect(second.lastFeedback).toContain("I need an API key for the payment sandbox.");
-    await work(run.id, { status: "blocked", summary: "Still no key." });
-    expect(await storyStates(run.id)).toEqual([["ENG-41", "exhausted", 3]]);
-    expect(await activeJobs(run.id)).toEqual([]);
-    const [error] = linear.bodies(run.linearAgentSessionId, "error");
-    expect(error).toContain("**ENG-41** did not complete after 3 attempts");
-    expect(error).toContain("Still no key.");
+    expect(await storyStates(run.id)).toEqual([
+      ["ENG-41", "exhausted", 3],
+      ["ENG-42", "running", 0],
+    ]);
+    const [thought] = linear
+      .bodies(run.linearAgentSessionId, "thought")
+      .filter((b) => b.includes("is blocked"));
+    expect(thought).toContain("**ENG-41** is blocked, so I'm setting it aside without retrying.");
+    expect(thought).toContain("I need an API key for the payment sandbox.");
+    expect(thought).not.toContain("committed as");
+    const stories = await listStories(db, run.id);
+    expect(stories.find((s) => s.identifier === "ENG-41")?.commitSha).toBeNull();
+
+    await work(run.id, { commitSha: sha(5) });
     expect((await getRun(db, run.id))?.status).toBe("waiting");
+    const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+    expect(elicitation).toContain("**ENG-41: Needs a key** is blocked:");
+    expect(elicitation).toContain("I need an API key for the payment sandbox.");
+  });
+
+  it("records a blocked story's wip commit and logs it, still setting the story aside", async () => {
+    const epic = linear.add({ identifier: "ENG-45", title: "Epic" });
+    linear.add({ identifier: "ENG-46", title: "Needs a key", parentId: epic.id, priority: 1 });
+    linear.add({ identifier: "ENG-47", title: "Other", parentId: epic.id, priority: 2 });
+    const run = await delegate(epic.id);
+    await work(run.id, {
+      status: "blocked",
+      summary: "I need an API key.",
+      commitSha: sha(9),
+      feedback:
+        "The previous session reported it was blocked. Its summary was:\n\n> I need an API key.",
+    });
+    expect(await storyStates(run.id)).toEqual([
+      ["ENG-46", "exhausted", 3],
+      ["ENG-47", "running", 0],
+    ]);
+    const blocked = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-46")!;
+    expect(blocked.commitSha).toBe(sha(9));
+    const progress = (await getRun(db, run.id))!.progress;
+    expect(progress).toContain("ENG-46: Needs a key (blocked)");
+    expect(progress).toContain(`committed as \`wip(ENG-46)\` in \`${sha(9).slice(0, 10)}\``);
+    expect(progress).toContain("I need an API key.");
+    const [thought] = linear
+      .bodies(run.linearAgentSessionId, "thought")
+      .filter((b) => b.includes("is blocked"));
+    expect(thought).toContain(`Its work so far is committed as \`${sha(9).slice(0, 10)}\`.`);
+    // The other story's payload carries the log with the wip entry.
+    const other = RalphStoryPayload.parse((await activeJob(run.id)).payload);
+    expect(other.progress).toContain("ENG-46: Needs a key (blocked)");
+    // Not a Linear completion: the story stays open.
+    const comments = linear.comments.filter((c) => c.issueId === blocked.linearIssueId);
+    expect(comments.map((c) => c.body).join("\n")).not.toContain("Completed by");
   });
 
   it("files follow-ups as sub-issues; an unfinished story's follow-ups block it", async () => {

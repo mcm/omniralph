@@ -469,6 +469,100 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(storyStashes()).toHaveLength(1);
   });
 
+  it("commits and pushes a blocked story's work as wip once its gates pass", async () => {
+    const first = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "from attempt 1\n");
+      yield result({ status: "incomplete", summary: "Ran out of time.", followUps: [] });
+    });
+    await runStory(job(), context(), options(first.query));
+    const [offered] = storyStashes()[0]!.split(" ");
+
+    const { query } = fakeQuery(async function* (call) {
+      execFileSync("git", ["stash", "apply", "--quiet", offered!], { cwd: cwdOf(call), env: ENV });
+      yield result({
+        status: "blocked",
+        summary: "I need an API key for the payment sandbox.",
+        appliedStashes: [offered!],
+        commit: { summary: "Add the payment client" },
+        followUps: [],
+      });
+    });
+    const storyJob = job({ attempt: 2 });
+    const out = await runStory(storyJob, context(), options(query));
+
+    expect(out.status).toBe("blocked");
+    const pushed = git(remote.bare, "rev-parse", `refs/heads/${branch}`);
+    expect(out.commitSha).toBe(pushed);
+    expect(git(remote.bare, "log", "-1", "--format=%B", pushed)).toBe(
+      "wip(TOOL-91): Add the payment client\n\nEpic: TOOL-32 Ralph core",
+    );
+    expect(git(remote.bare, "show", `${pushed}:feature.txt`)).toBe("from attempt 1");
+    expect(out.feedback).toContain("reported it was blocked");
+    expect(out.feedback).toContain(`committed on the branch as \`${pushed.slice(0, 10)}\``);
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    expect(storyStashes()).toEqual([]);
+    expect(posted.map((p) => p.body)).toContainEqual({
+      type: "thought",
+      body: `Committed TOOL-91's work so far as \`${pushed.slice(0, 10)}\` (\`wip(TOOL-91): Add the payment client\`).`,
+      ephemeral: false,
+    });
+  });
+
+  it("names a blocked story's wip commit after the story when the session gives no summary", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "partial\n");
+      yield result({ status: "blocked", summary: "Needs a decision.", followUps: [] });
+    });
+    const out = await runStory(job(), context(), options(query));
+    expect(out.status).toBe("blocked");
+    expect(git(remote.bare, "log", "-1", "--format=%s", `refs/heads/${branch}`)).toBe(
+      "wip(TOOL-91): Run a story",
+    );
+  });
+
+  it("stashes a blocked story's work instead of committing it when a gate fails", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "broken\n");
+      yield result({
+        status: "blocked",
+        summary: "Needs a token.",
+        commit: { summary: "Half a client" },
+        followUps: [],
+      });
+    });
+    const out = await runStory(
+      job({ qualityGates: ["echo 'type error'; exit 2"] }),
+      context(),
+      options(query),
+    );
+    expect(out.status).toBe("blocked");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).toContain("reported it was blocked");
+    expect(out.feedback).toContain(
+      "wasn't committed because the quality gate `echo 'type error'; exit 2` failed (exit 2)",
+    );
+    expect(() => git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`)).toThrow();
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    const stashes = storyStashes();
+    expect(stashes).toHaveLength(1);
+    expect(stashes[0]).toContain("blocked (attempt 1)");
+  });
+
+  it("commits nothing and runs no gates for a blocked story with a clean tree", async () => {
+    const { query } = fakeQuery(async function* () {
+      yield result({ status: "blocked", summary: "Needs a token.", followUps: [] });
+    });
+    const before = git(remote.bare, "rev-parse", "refs/heads/main");
+    const out = await runStory(job(), context(), options(query));
+    expect(out.status).toBe("blocked");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).not.toContain("committed");
+    expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(before);
+    expect(() => git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`)).toThrow();
+    expect(storyStashes()).toEqual([]);
+    expect(posted.map((p) => p.body.body)).not.toContain("Quality gate");
+  });
+
   it("stashes leftover work (pre-run), offers the stashes and drops them once the story is committed", async () => {
     const first = fakeQuery(async function* (call) {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "from attempt 1\n");

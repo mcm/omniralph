@@ -177,7 +177,7 @@ If you discovered a **reusable pattern**, also add it to the \`## Codebase Patte
 ## Stop Condition
 Your session ends with a structured result (the JSON schema you were given). It alone decides what happens next: nothing in your message text does.
 - \`status: "complete"\` only when every acceptance criterion is met and the quality gates pass. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
-- \`status: "blocked"\` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in \`summary\` precisely why and what would unblock you. The story is then set aside without retries until someone replies. If you made changes worth keeping, add \`commit: { summary }\` with a one-line description of them: the orchestrator commits them as work in progress when its checks pass, and stashes them otherwise.
+- \`status: "blocked"\` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in \`summary\` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with \`commit: { summary }\`.
 - \`status: "incomplete"\` when the story is just unfinished: it gets another attempt.
 - \`summary\` is posted to Linear: what you did, or what is in the way.
 {{#if followUps}}

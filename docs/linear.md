@@ -148,9 +148,13 @@ How the run behaves:
 - **Quality gates.** The commands under the epic description's `## Quality Gates` heading run after
   every story; a failing gate fails the attempt.
 - **Order.** Stories in progress first, then by Linear priority, then sub-issue order. A story waits
-  while it's blocked by an open issue. A failed, incomplete or blocked attempt is retried with
-  feedback up to 3 times, then the story is marked exhausted and later independent stories still
-  run.
+  while it's blocked by an open issue. A failed or incomplete attempt is retried with feedback up
+  to 3 times, then the story is marked exhausted and later independent stories still run.
+- **Blocked stories.** A story whose session reports it blocked is set aside at once (no retries
+  until someone replies); independent stories still run. If it left changes and the story's quality
+  gates pass, they are committed as `wip(<STORY-ID>): <summary>` and pushed, recorded on the story
+  and in the progress log; otherwise they are stashed and offered to its next attempt. A blocked
+  story that files blocking follow-ups waits for them instead.
 - **Manual stories.** Sub-issues labelled with one of the repository's **Manual labels** (`manual`
   by default) are for a person: the run waits for them to be
   completed. A manual story's description may contain a ` ```cyralph-prepare ` block of shell
