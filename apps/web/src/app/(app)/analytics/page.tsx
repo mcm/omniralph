@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { getAnalytics, listAnalyticsRepositories } from "@omniralph/db";
-import { analyticsData, parseAnalyticsParams } from "@/lib/analytics/display";
+import { getAnalytics, getRalphAnalytics, listAnalyticsRepositories } from "@omniralph/db";
+import { analyticsData, parseAnalyticsParams, ralphAnalyticsData } from "@/lib/analytics/display";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { AnalyticsView } from "./analytics-view";
@@ -19,13 +19,15 @@ export default async function AnalyticsPage({
     await searchParams,
     repositories.map((r) => r.id),
   );
-  const analytics = await getAnalytics(db, {
-    days: params.days,
-    repositoryId: params.repositoryId ?? undefined,
-  });
+  const filter = { days: params.days, repositoryId: params.repositoryId ?? undefined };
+  const [analytics, ralph] = await Promise.all([
+    getAnalytics(db, filter),
+    getRalphAnalytics(db, filter),
+  ]);
   return (
     <AnalyticsView
       analytics={analyticsData(analytics)}
+      ralph={ralphAnalyticsData(ralph)}
       repositories={repositories}
       params={params}
     />
