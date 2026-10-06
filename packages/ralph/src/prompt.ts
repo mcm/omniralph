@@ -70,6 +70,8 @@ export interface PromptContext {
   verifyCommands?: string[];
   /** Stash entries of earlier sessions of this story that haven't been applied yet. */
   stashes?: OfferedStash[];
+  /** Markdown list of the Linear attachments the session can open (see `formatAttachments`). */
+  attachments?: string;
   /** Today's date in the progress entry heading; defaults to now. */
   now?: Date;
 }
@@ -112,6 +114,12 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{#if notes}}
 ### Notes
 {{notes}}
+
+{{/if}}
+{{#if attachments}}
+### Attachments
+Files attached in Linear (screenshots, mockups, documents). Open each one with the Read tool (it shows images) before you start, and treat them as part of the spec:
+{{attachments}}
 
 {{/if}}
 {{#if qualityGates}}
@@ -269,6 +277,7 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     storyDescription: story.description.trim() || undefined,
     acceptanceCriteria: story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n") || undefined,
     notes: story.notes,
+    attachments: ctx.attachments,
     qualityGates: qualityGates.map((g) => `- \`${g}\``).join("\n") || undefined,
     verifyCommands: verifyCommands.map((g) => `- \`${g}\``).join("\n") || undefined,
     guidance: ctx.guidance?.length

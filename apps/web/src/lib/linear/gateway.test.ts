@@ -422,3 +422,38 @@ describe("SdkLinearGateway agent sessions", () => {
     ]);
   });
 });
+
+describe("SdkLinearGateway.downloadUpload", () => {
+  const UPLOAD = "https://uploads.linear.app/org/a1b2/shot";
+
+  it("fetches an upload with the workspace token", async () => {
+    const seen: Array<string | null> = [];
+    server.use(
+      http.get(UPLOAD, ({ request }) => {
+        seen.push(request.headers.get("authorization"));
+        return new HttpResponse("PNGDATA", {
+          headers: { "content-type": "image/png; charset=binary", "content-length": "7" },
+        });
+      }),
+      http.get(`${UPLOAD}-missing`, () => new HttpResponse(null, { status: 401 })),
+    );
+    const ok = await gateway().downloadUpload(UPLOAD);
+    expect(ok).toMatchObject({ ok: true, status: 200, contentType: "image/png", contentLength: 7 });
+    expect(await new Response(ok.body).text()).toBe("PNGDATA");
+    expect(await gateway().downloadUpload(`${UPLOAD}-missing`)).toMatchObject({
+      ok: false,
+      status: 401,
+      body: null,
+    });
+    expect(seen).toEqual(["Bearer lin_oauth_token"]);
+  });
+
+  it("never sends the token anywhere but Linear's uploads", async () => {
+    await expect(gateway().downloadUpload("https://example.com/x.png")).rejects.toThrow(
+      "not a Linear upload URL",
+    );
+    await expect(gateway().downloadUpload(`${UPLOAD}?signature=x`)).rejects.toThrow(
+      "not a Linear upload URL",
+    );
+  });
+});

@@ -661,4 +661,86 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect((await request(run!.id)).historyRewrite).toBe("never");
     });
   });
+
+  describe("Linear attachments", () => {
+    const UP = "https://uploads.linear.app/9aa27def/d172798b";
+    const titles = (payload: { attachments: { title: string | null; sources: string[] }[] }) =>
+      payload.attachments.map((a) => `${a.title} (from ${a.sources.join(", ")})`);
+
+    it("lists an image-only issue's upload (signature stripped) and remembers it for the download", async () => {
+      const issue = linear.add({
+        identifier: "ENG-32",
+        title: "Static renders from multiple angles",
+        description: `\n<linear-image>{"type":"image","attrs":{"src":"${UP}/365d683b?signature=eyJhbGciOi.abc.def","title":"pavilion_contact_sheet.png","width":1440,"height":1894}}</linear-image>`,
+      });
+      const { run } = await session(issue.id);
+      expect(run?.kind).toBe("single");
+      const payload = await work(run!.id);
+      expect(payload.attachments).toEqual([
+        {
+          id: expect.stringMatching(/^[0-9a-f]{32}$/),
+          title: "pavilion_contact_sheet.png",
+          sources: ["ENG-32 description"],
+        },
+      ]);
+      const stored = await getRun(db, run!.id);
+      expect(stored?.attachments).toEqual({
+        [payload.attachments[0]!.id]: {
+          url: `${UP}/365d683b`,
+          title: "pavilion_contact_sheet.png",
+        },
+      });
+    });
+
+    it("scopes story images to their story, shares epic/thread images, and reads comments", async () => {
+      const { epic, s2, s3 } = threeStoryEpic();
+      linear.issues.get(epic.id)!.description += `\n\n![architecture.png](${UP}/arch)`;
+      linear.issues.get(s2.id)!.description = `Beta.\n\n![badge mockup](${UP}/badge?signature=x)`;
+      linear.commentsByIssue.set(epic.id, [
+        { body: `Colour reference: ${UP}/palette`, author: "Ana" },
+      ]);
+      linear.commentsByIssue.set(s3.id, [{ body: `Like [this](${UP}/gamma)`, author: "Bo" }]);
+      const { run } = await session(epic.id);
+      await reply(run!, `Also see ![flow.png](${UP}/flow)`);
+
+      const byStory = new Map<string, string[]>();
+      for (let i = 0; i < 3; i++) {
+        const payload = await work(run!.id, { commitSha: sha(i + 1) });
+        byStory.set(payload.story.identifier, titles(payload));
+      }
+      const epicImages = [
+        "architecture.png (from ENG-1 description)",
+        "null (from comment on ENG-1 by Ana)",
+      ];
+      // ENG-2 was enqueued at the delegation, before the reply came in.
+      expect(byStory.get("ENG-2")).toEqual(epicImages);
+      const thread = "flow.png (from Linear thread)";
+      expect(byStory.get("ENG-3")).toEqual([...epicImages, "badge mockup (from ENG-3)", thread]);
+      expect(byStory.get("ENG-4")).toEqual([
+        ...epicImages,
+        "this (from comment on ENG-4 by Bo)",
+        thread,
+      ]);
+    });
+
+    it("includes images from an @mention in the request", async () => {
+      const { epic } = threeStoryEpic();
+      const { run } = await session(
+        epic.id,
+        `@omniralph does this screenshot match? ![screenshot.png](${UP}/shot) ![old.png](${UP}/broken)`,
+      );
+      const payload = await request(run!.id);
+      expect(titles(payload)).toEqual([
+        "screenshot.png (from Linear thread)",
+        "old.png (from Linear thread)",
+      ]);
+    });
+
+    it("leaves a comment that can't be read out instead of failing the run", async () => {
+      const { epic } = threeStoryEpic();
+      linear.failures.set("getComments", new Error("Linear is down"));
+      const { run } = await session(epic.id);
+      expect((await work(run!.id)).attachments).toEqual([]);
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -145,6 +145,7 @@ describe("ralph.request", { timeout: 60_000 }, () => {
       qualityGates: ["pnpm test"],
       historyRewrite: "when-asked",
       resumeSessionId: null,
+      attachments: [],
       ...overrides,
     };
     return {
@@ -157,10 +158,10 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     };
   }
 
-  function options(query: SessionQueryFn): StoryOptions {
+  function options(query: SessionQueryFn, fetchFn?: typeof fetch): StoryOptions {
     return {
       runSession: createSessionRunner(query),
-      fetch: (async () => Response.json({ ok: true })) as typeof fetch,
+      fetch: fetchFn ?? ((async () => Response.json({ ok: true })) as typeof fetch),
     };
   }
 
@@ -212,6 +213,53 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     expect(system).not.toContain("Never run git commit, git push");
     // Nothing was left uncommitted.
     expect(git(worktreePath(), "stash", "list")).toBe("");
+  });
+
+  // cyralph: "includes images from an @mention and reports failed downloads instead of guessing"
+  it("lists the request's attachments and reports failed downloads once instead of guessing", async () => {
+    const shot = "1".repeat(32);
+    const broken = "2".repeat(32);
+    const thoughts: string[] = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/attachments/${shot}`)) {
+        return new Response("PNG", { headers: { "content-type": "image/png" } });
+      }
+      if (url.endsWith(`/attachments/${broken}`)) {
+        return Response.json({ error: "download_failed", reason: "HTTP 401" }, { status: 502 });
+      }
+      const body = JSON.parse(String(init?.body)) as { type: string; body: string };
+      if (body.type === "thought") thoughts.push(body.body);
+      return Response.json({ forwarded: true });
+    }) as typeof fetch;
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ summary: "They match." });
+    });
+    const attachments = [
+      { id: shot, title: "screenshot.png", sources: ["Linear thread"] },
+      { id: broken, title: "old.png", sources: ["Linear thread"] },
+    ];
+    await runRequest(job({ attachments }), context(), options(query, fetchFn));
+
+    const dir = path.join(root, "workspace", ".attachments", "TOOL-32");
+    expect(await readFile(path.join(dir, "screenshot.png"), "utf8")).toBe("PNG");
+    const prompt = calls[0]!.prompt;
+    expect(prompt).toContain("## Attachments");
+    expect(prompt).toContain(
+      `- **screenshot.png** (from Linear thread): \`${path.join(dir, "screenshot.png")}\``,
+    );
+    expect(prompt).toContain(
+      "- **old.png** (from Linear thread): could not be downloaded (HTTP 401). Don't guess what it shows; say so if it matters.",
+    );
+    expect(calls[0]!.options.additionalDirectories).toContain(dir);
+    expect(thoughts).toEqual([
+      "I couldn't download 1 of 2 attachment(s) from Linear, so I can't see them:\n\n- old.png (Linear thread): HTTP 401",
+    ]);
+
+    // The next request tries again, but doesn't report the same failure twice.
+    await runRequest(job({ attachments }), context(), options(query, fetchFn));
+    expect(calls[1]!.prompt).toContain("could not be downloaded (HTTP 401)");
+    expect(thoughts).toHaveLength(1);
   });
 
   it("returns the PR/MR change the session asks for", async () => {

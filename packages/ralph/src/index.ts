@@ -12,3 +12,4 @@ export * from "./epic.js";
 export * from "./output.js";
 export * from "./prompt.js";
 export * from "./replies.js";
+export * from "./attachments.js";

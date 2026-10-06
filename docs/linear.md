@@ -8,8 +8,9 @@ story, then opens a pull/merge request to the repository's default branch. See
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
 Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
-their activities through the control panel (`POST /api/agent/jobs/{id}/activities`) and never see
-a Linear token.
+their activities through the control panel (`POST /api/agent/jobs/{id}/activities`), download
+[Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
+and never see a Linear token.
 
 Setting ralph up takes five steps:
 
@@ -248,6 +249,28 @@ epic as context. The mention's text (without a leading `@name`) is the request.
   session."); one whose run waits is added to that run as a request.
 - A mention without a request does nothing.
 
+### Attachments
+
+Files uploaded to Linear (pasted screenshots, mockups, PDFs: `https://uploads.linear.app/...`
+links) reach the agent, as in cyralph:
+
+- **Where they're found.** The epic's description and comments, every story's description, the
+  comments of stories that aren't done, and the thread (guidance and pending requests, listed as
+  "Linear thread"). Linear's `<linear-image>` blocks, markdown links and images, and bare URLs all
+  count; the signed `?signature=…` part is dropped and each file is listed once.
+- **Scope.** A file referenced by a story (or its comments) only goes to that story's job; files of
+  the epic and the thread go to every story. A `ralph.request` job gets all of them.
+- **Download.** Job payloads list them by ID (`{ id, title, sources }`). The agent downloads each
+  through the control panel with its job token (scope `ralph:attachments`, only for attachments in
+  that job's payload); the control panel fetches it from Linear with its own token and streams it
+  back. HTML pages (a sign-in page instead of the file) and files over 25 MB are rejected.
+- **Cache.** The agent keeps them in `<workspaceRoot>/.attachments/<EPIC>/` (indexed in
+  `.index.json`), downloads at most 20 new files per job, names them after their Linear title (or
+  `attachment-N`, with an extension from the content type) and lets the session read that folder.
+- **Prompt.** Each file is listed with where it came from and its local path; the session opens
+  them with the Read tool (which shows images). A file that couldn't be downloaded is listed as
+  such ("Don't guess what it shows"), and the agent says so once in the session as a thought.
+
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Ralph runs**,
 where admins can also stop a run.
 
@@ -265,5 +288,9 @@ where admins can also stop a run.
   **Repository › Settings › Ralph**.
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
+- **"I couldn't download … attachment(s) from Linear".** `HTTP 401`/`403` or an HTML page means
+  Linear refused the connected workspace's token (reconnect it under **Settings › Integrations**);
+  `larger than 25 MB` files aren't downloaded; `skipped: more than 20 attachments` ones are
+  downloaded by the run's next job.
 - **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is
   pinned to an agent that doesn't ([deploy-agent.md](deploy-agent.md#ralph)).

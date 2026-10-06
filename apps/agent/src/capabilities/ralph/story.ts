@@ -28,6 +28,7 @@ import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { CommandError, GitError, runShell } from "../../workspace/git.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { ActivityRelay } from "./activities.js";
+import { controlPanelFetcher, jobAttachments } from "./attachments.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import { createSessionRunner, type SessionResult, type SessionRunner } from "./session.js";
 
@@ -214,6 +215,21 @@ export async function runStory(
           .filter((e) => e.label.startsWith(prefix))
           .map((e) => ({ sha: e.sha, label: e.label, date: e.date }));
 
+        // Files attached in Linear, downloaded through the control panel (which holds the token).
+        const attachments = await jobAttachments({
+          attachments: payload.attachments,
+          epicIdentifier: payload.epic.identifier,
+          workspaceRoot: ctx.workspaceRoot,
+          fetcher: controlPanelFetcher({
+            server: ctx.server,
+            jobId: job.id,
+            jobToken: ctx.jobToken,
+            signal: ctx.signal,
+            ...(options.fetch && { fetch: options.fetch }),
+          }),
+          logger: log,
+          report: (body) => relay.post({ type: "thought", body, ephemeral: false }),
+        });
         const progressDir = await mkdtemp(path.join(tmpdir(), "omniralph-progress-"));
         const progressFile = path.join(progressDir, "progress.md");
         try {
@@ -234,6 +250,7 @@ export async function runStory(
               appendInstruction: payload.settings.appendInstruction,
             }),
             stashes: offered,
+            ...(attachments.prompt && { attachments: attachments.prompt }),
             ...(options.now && { now: options.now() }),
           });
 
@@ -251,7 +268,10 @@ export async function runStory(
               allowedTools: payload.settings.allowedTools,
               disallowedTools: payload.settings.disallowedTools,
             },
-            additionalDirectories: [progressDir],
+            additionalDirectories: [
+              progressDir,
+              ...(attachments.files.length > 0 ? [attachments.dir] : []),
+            ],
             env: plainEnv,
             signal: ctx.signal,
             ...(options.idleTimeoutMs !== undefined && { idleTimeoutMs: options.idleTimeoutMs }),

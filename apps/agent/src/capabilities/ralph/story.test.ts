@@ -84,8 +84,20 @@ describe("ralph.story", { timeout: 60_000 }, () => {
   const runId = randomUUID();
   const branch = "feat/tool-32";
 
+  /** Attachment ID -> the file the control panel serves for it. */
+  let uploads: Map<string, { contentType: string; body: string }>;
+  let downloads: { url: string; auth: string | null }[];
+
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
+    const attachment = /\/attachments\/([^/]+)$/.exec(String(input));
+    if (attachment) {
+      downloads.push({ url: String(input), auth: headers.get("authorization") });
+      const upload = uploads.get(attachment[1]!);
+      return upload
+        ? new Response(upload.body, { headers: { "content-type": upload.contentType } })
+        : Response.json({ error: "download_failed", reason: "HTTP 404" }, { status: 502 });
+    }
     posted.push({
       url: String(input),
       auth: headers.get("authorization"),
@@ -107,6 +119,8 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     controller = new AbortController();
     posted = [];
     activityStatus = 200;
+    uploads = new Map();
+    downloads = [];
   });
 
   afterEach(async () => {
@@ -177,6 +191,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
       progress: "# Ralph Progress Log\n",
       lastFeedback: null,
       guidance: [],
+      attachments: [],
       ...overrides,
     };
     return {
@@ -440,6 +455,55 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     const prompt = calls[0]!.prompt;
     expect(prompt).toContain("The quality gate `pnpm test` failed (exit 1).");
     expect(prompt).toContain("- Use the v2 API.\n- Keep commits small.");
+  });
+
+  // cyralph: "downloads an image-only issue's upload (signature stripped) and points the agent at it"
+  it("downloads its attachments through the control panel and points the session at them", async () => {
+    const id = "a".repeat(32);
+    uploads.set(id, { contentType: "image/png", body: "PNGDATA" });
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Done.", followUps: [] });
+    });
+    const attachments = [
+      { id, title: "pavilion_contact_sheet.png", sources: ["TOOL-91 description"] },
+    ];
+    const storyJob = job({ attachments });
+    await runStory(storyJob, context(), options(query));
+
+    expect(downloads).toEqual([
+      {
+        url: `https://omniralph.example.com/api/agent/jobs/${storyJob.id}/attachments/${id}`,
+        auth: "Bearer job-token",
+      },
+    ]);
+    const dir = path.join(workspaceRoot, ".attachments", "TOOL-32");
+    const file = path.join(dir, "pavilion_contact_sheet.png");
+    expect(await readFile(file, "utf8")).toBe("PNGDATA");
+    const prompt = calls[0]!.prompt;
+    expect(prompt).toContain("### Attachments");
+    expect(prompt).toContain("Open each one with the Read tool");
+    expect(prompt).toContain(
+      `- **pavilion_contact_sheet.png** (from TOOL-91 description): \`${file}\``,
+    );
+    expect(calls[0]!.options.additionalDirectories).toContain(dir);
+    expect(posted.some((p) => String(p.body.body).includes("couldn't download"))).toBe(false);
+
+    // A later job reuses the cached file instead of downloading it again.
+    await runStory(job({ attachments, attempt: 2 }), context(), options(query));
+    expect(downloads).toHaveLength(1);
+    expect(calls[1]!.prompt).toContain(`\`${file}\``);
+  });
+
+  it("tells a story without attachments nothing about them", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Done.", followUps: [] });
+    });
+    await runStory(job(), context(), options(query));
+    expect(calls[0]!.prompt).not.toContain("### Attachments");
+    expect(calls[0]!.options.additionalDirectories).toHaveLength(1);
+    expect(downloads).toEqual([]);
   });
 
   it("tells a story of another repository's lane where it is, and lists where the others are", async () => {

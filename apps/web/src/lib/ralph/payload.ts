@@ -26,6 +26,7 @@ import {
   RalphPreparePayload,
   RalphRequestPayload,
   RalphStoryPayload,
+  type RalphAttachment,
   type RalphJobSettings,
   type RalphStoryListItem,
 } from "@omniralph/shared";
@@ -108,6 +109,8 @@ export interface StoryPayloadInput {
   stories: readonly Story[];
   story: Story;
   row: RalphStory;
+  /** The Linear attachments in the story's scope (`payloadAttachments`). */
+  attachments?: readonly RalphAttachment[];
 }
 
 export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
@@ -143,6 +146,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     lastFeedback: row.lastFeedback ? row.lastFeedback.slice(-20_000) : null,
     guidance: run.guidance.slice(-MAX_GUIDANCE_IN_PROMPT).map((g) => g.text.slice(0, 20_000)),
+    attachments: input.attachments ?? [],
   });
 }
 
@@ -234,6 +238,8 @@ export interface RequestPayloadInput {
   requests: readonly Pick<RalphMessage, "id" | "text">[];
   /** The lane's last request conversation, when the job goes to the agent holding it. */
   resumeSessionId: string | null;
+  /** Every Linear attachment of the run (`payloadAttachments`). */
+  attachments?: readonly RalphAttachment[];
 }
 
 /**
@@ -265,5 +271,6 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     qualityGates: storyQualityGates(run.kind, epic, repository),
     historyRewrite: settings.historyRewrite,
     resumeSessionId: input.resumeSessionId,
+    attachments: input.attachments ?? [],
   });
 }

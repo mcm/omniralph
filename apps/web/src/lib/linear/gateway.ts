@@ -1,5 +1,6 @@
 import "server-only";
 import { LinearClient } from "@linear/sdk";
+import { isUploadUrl } from "@omniralph/ralph";
 
 /**
  * The slice of Linear the ralph loop needs, behind an interface so the
@@ -87,6 +88,19 @@ export interface PlanStep {
   status: "pending" | "inProgress" | "completed" | "canceled";
 }
 
+/** A file uploaded to Linear, as `downloadUpload` fetched it. */
+export interface UploadDownload {
+  /** False for an error status. */
+  ok: boolean;
+  status: number;
+  /** Without parameters, e.g. `image/png`. */
+  contentType: string;
+  /** From `Content-Length`, when Linear sent one. */
+  contentLength: number | null;
+  /** The file (null after an error status). */
+  body: ReadableStream<Uint8Array> | null;
+}
+
 export interface LinearGateway {
   /** The installing workspace. */
   getOrganization(): Promise<{ id: string; name: string }>;
@@ -115,6 +129,11 @@ export interface LinearGateway {
   ): Promise<void>;
   updateSessionPlan(sessionId: string, plan: PlanStep[]): Promise<void>;
   addSessionExternalUrl(sessionId: string, label: string, url: string): Promise<void>;
+  /**
+   * Fetches a file uploaded to Linear (`https://uploads.linear.app/...`) with
+   * the workspace's token. Rejects any other URL without sending the token.
+   */
+  downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload>;
 }
 
 const PAGE_SIZE = 100;
@@ -219,7 +238,10 @@ export class SdkLinearGateway implements LinearGateway {
   private readonly client: LinearClient;
   private readonly statesByTeam = new Map<string, Promise<WorkflowState[]>>();
 
-  constructor(accessToken: string, options: { apiUrl?: string } = {}) {
+  constructor(
+    private readonly accessToken: string,
+    options: { apiUrl?: string } = {},
+  ) {
     this.client = new LinearClient({
       accessToken,
       ...(options.apiUrl && { apiUrl: options.apiUrl }),
@@ -639,5 +661,24 @@ export class SdkLinearGateway implements LinearGateway {
 
   addSessionExternalUrl(sessionId: string, label: string, url: string): Promise<void> {
     return this.updateSession(sessionId, { addedExternalUrls: [{ label, url }] });
+  }
+
+  async downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload> {
+    if (!isUploadUrl(url)) throw new Error("not a Linear upload URL");
+    // Redirects (e.g. to a signed storage URL) are followed; fetch drops the token on a cross-origin one.
+    const res = await fetch(url, {
+      headers: { authorization: `Bearer ${this.accessToken}` },
+      redirect: "follow",
+      ...(signal && { signal }),
+    });
+    const length = Number(res.headers.get("content-length"));
+    return {
+      ok: res.ok,
+      status: res.status,
+      contentType:
+        (res.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "",
+      contentLength: res.headers.has("content-length") && Number.isFinite(length) ? length : null,
+      body: res.ok ? res.body : null,
+    };
   }
 }

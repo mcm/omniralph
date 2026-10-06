@@ -8,13 +8,15 @@ export const AGENT_TOKEN_TTL_SECONDS = 900;
 
 /**
  * Scopes a job token can carry. Review jobs get `credentials:read` only;
- * ralph jobs may also push (`credentials:write`) and relay Linear session
- * activities (`ralph:activity`).
+ * ralph jobs may also push (`credentials:write`), relay Linear session
+ * activities (`ralph:activity`) and download the Linear attachments listed in
+ * their payload (`ralph:attachments`).
  */
 export const JOB_TOKEN_SCOPES = [
   "credentials:read",
   "credentials:write",
   "ralph:activity",
+  "ralph:attachments",
 ] as const;
 export const JobTokenScope = z.enum(JOB_TOKEN_SCOPES);
 export type JobTokenScope = z.infer<typeof JobTokenScope>;
