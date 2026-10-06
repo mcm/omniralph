@@ -59,6 +59,63 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
   };
 }
 
+/** A repository's tool settings (`allowedTools`/`disallowedTools`; null or empty for none). */
+export interface ToolRestrictions {
+  allowedTools?: readonly string[] | null;
+  disallowedTools?: readonly string[] | null;
+}
+
+/** The tool a permission rule is about: `Bash` for `Bash(pnpm test:*)`. */
+export function ruleTool(rule: string): string {
+  const paren = rule.indexOf("(");
+  return (paren === -1 ? rule : rule.slice(0, paren)).trim();
+}
+
+const unique = (values: readonly string[]) => [...new Set(values)];
+
+/**
+ * A session's permissions narrowed by a repository's tool settings: they can
+ * take tools away, never add any. `disallowedTools` are denied on top of the
+ * policy's. With `allowedTools`, only their tools stay available (of those the
+ * policy offers), and only calls matching them run: a session that bypassed
+ * permissions gets `dontAsk` with the repository's rules as its only approvals,
+ * and the policy's own approvals are kept only where the repository allows them.
+ */
+export function narrowPermissions(
+  permissions: SessionPermissions,
+  restrictions: ToolRestrictions | undefined,
+): SessionPermissions {
+  const disallowedTools = unique([
+    ...(permissions.disallowedTools ?? []),
+    ...(restrictions?.disallowedTools ?? []),
+  ]);
+  const allowed = restrictions?.allowedTools ?? [];
+  if (allowed.length === 0) return { ...permissions, disallowedTools };
+
+  const names = new Set(allowed.map(ruleTool));
+  const current = permissions.tools;
+  const tools = Array.isArray(current)
+    ? current.filter((tool) => names.has(tool))
+    : [...names].filter((tool) => !tool.startsWith("mcp__"));
+  const available = (rule: string) =>
+    ruleTool(rule).startsWith("mcp__") || tools.includes(ruleTool(rule));
+  const bypassing = permissions.permissionMode === "bypassPermissions";
+  const allowedTools = bypassing
+    ? unique(allowed.filter(available))
+    : (permissions.allowedTools ?? []).filter(
+        (rule) => available(rule) && (allowed.includes(rule) || allowed.includes(ruleTool(rule))),
+      );
+  const narrowed: SessionPermissions = {
+    ...permissions,
+    tools,
+    allowedTools,
+    disallowedTools,
+    permissionMode: bypassing ? "dontAsk" : permissions.permissionMode,
+  };
+  delete narrowed.allowDangerouslySkipPermissions;
+  return narrowed;
+}
+
 /** Shell syntax beyond one plain command (chaining, pipes, redirection, substitution, globbing). */
 const SHELL_SYNTAX = /[;&|<>`$(){}[\]*?!\\\n\r]/;
 /** git options that write files, run other programs or read outside the repository. */

@@ -23,7 +23,12 @@ import {
 import { parseRepoTags, type Epic } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
-import { loadEpic, repositoryManualLabels, type LoadedEpic } from "./epic-loader";
+import {
+  loadEpic,
+  repositoryAllowsPreparation,
+  repositoryManualLabels,
+  type LoadedEpic,
+} from "./epic-loader";
 import { quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import { routeIssue, type RouteMatch } from "./routing";
@@ -207,7 +212,15 @@ export async function startRun(
       const route = routeIssue(root, repositories);
       return route ? repositoryManualLabels(route.repository) : [];
     };
-    loaded = await loadEpic(linear, event.issueId, { completePrd, manualLabels });
+    const allowPreparation = (root: IssueSummary) => {
+      const route = routeIssue(root, repositories);
+      return route ? repositoryAllowsPreparation(route.repository) : true;
+    };
+    loaded = await loadEpic(linear, event.issueId, {
+      completePrd,
+      manualLabels,
+      allowPreparation,
+    });
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",

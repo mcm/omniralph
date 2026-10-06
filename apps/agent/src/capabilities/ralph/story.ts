@@ -115,7 +115,8 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     description: payload.epic.prd,
     ...(payload.epic.url && { url: payload.epic.url }),
     branchName: payload.branch,
-    qualityGates: payload.qualityGates,
+    // The PRD's gates; the ones the job runs are listed as checked by the orchestrator instead.
+    qualityGates: payload.prdQualityGates,
     stories,
   };
   return { epic, story };
@@ -222,6 +223,10 @@ export async function runStory(
             attempt: payload.attempt,
             maxAttempts: MAX_ATTEMPTS_PER_STORY,
             followUps: payload.epic.kind !== "single",
+            verifyCommands: payload.qualityGates,
+            ...(payload.settings.appendInstruction && {
+              appendInstruction: payload.settings.appendInstruction,
+            }),
             stashes: offered,
             ...(options.now && { now: options.now() }),
           });
@@ -233,6 +238,13 @@ export async function runStory(
             systemAppend: RALPH_SYSTEM_APPEND,
             outputSchema: STORY_OUTPUT_SCHEMA,
             model: payload.settings.model ?? DEFAULT_STORY_MODEL,
+            ...(payload.settings.fallbackModel && {
+              fallbackModel: payload.settings.fallbackModel,
+            }),
+            tools: {
+              allowedTools: payload.settings.allowedTools,
+              disallowedTools: payload.settings.disallowedTools,
+            },
             additionalDirectories: [progressDir],
             env: plainEnv,
             signal: ctx.signal,

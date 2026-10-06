@@ -14,9 +14,11 @@ import {
   type Story,
 } from "@omniralph/ralph";
 import {
+  parseRalphSettings,
   RalphDescribePrPayload,
   RalphPreparePayload,
   RalphStoryPayload,
+  type RalphJobSettings,
   type RalphStoryListItem,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -42,6 +44,35 @@ function tailOf(text: string, max = MAX_DOCUMENT_LENGTH): string {
 
 function headOf(text: string, max = MAX_DOCUMENT_LENGTH): string {
   return text.length > max ? text.slice(0, max) : text;
+}
+
+/** The repository's ralph settings a job runs with (`settings` of every ralph payload). */
+export function jobSettings(repository: Pick<Repository, "ralphSettings">): RalphJobSettings {
+  const settings = parseRalphSettings(repository.ralphSettings);
+  return {
+    model: settings.model || null,
+    setupCommand: settings.setupCommand,
+    fallbackModel: settings.fallbackModel,
+    appendInstruction: settings.appendInstruction,
+    allowedTools: settings.allowedTools,
+    disallowedTools: settings.disallowedTools,
+  };
+}
+
+/**
+ * A story's quality gates (cyralph's `verifyCommands` of `runStory`): the
+ * repository's `verifyCommands`, then the PRD's gates when
+ * `runPrdQualityGates` is on, duplicates removed. A single issue has no PRD:
+ * only `verifyCommands`.
+ */
+export function storyQualityGates(
+  kind: RalphRun["kind"],
+  epic: Pick<Epic, "qualityGates">,
+  repository: Pick<Repository, "ralphSettings">,
+): string[] {
+  const settings = parseRalphSettings(repository.ralphSettings);
+  const prd = kind !== "single" && settings.runPrdQualityGates ? epic.qualityGates : [];
+  return uniqueCommands([...settings.verifyCommands, ...prd]).slice(0, 100);
 }
 
 const url = (value: string | undefined) => (value && /^https?:\/\//.test(value) ? value : null);
@@ -77,10 +108,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     repository: jobRepository(repository, connection),
     branch: run.branch,
     baseBranch: run.baseBranch,
-    settings: {
-      model: repository.ralphSettings.model || null,
-      setupCommand: repository.ralphSettings.setupCommand || null,
-    },
+    settings: jobSettings(repository),
     storyId: row.id,
     attempt: row.attempts + 1,
     epic: {
@@ -99,7 +127,8 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     },
     stories: storyList(epic, input.stories).slice(0, 500),
     commitMessage: storyCommitMessage(run.kind, identifier, story.title),
-    qualityGates: uniqueCommands(epic.qualityGates).slice(0, 50),
+    qualityGates: storyQualityGates(run.kind, epic, repository),
+    prdQualityGates: run.kind === "single" ? [] : uniqueCommands(epic.qualityGates).slice(0, 50),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     lastFeedback: row.lastFeedback ? row.lastFeedback.slice(-20_000) : null,
     guidance: run.guidance.slice(-MAX_GUIDANCE_IN_PROMPT).map((g) => g.text.slice(0, 20_000)),
@@ -128,10 +157,7 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
     repository: jobRepository(repository, connection),
     branch: run.branch,
     baseBranch: run.baseBranch,
-    settings: {
-      model: repository.ralphSettings.model || null,
-      setupCommand: repository.ralphSettings.setupCommand || null,
-    },
+    settings: jobSettings(repository),
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),
@@ -145,7 +171,7 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
       commitSha: r.commitSha,
     })),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
-    qualityGates: uniqueCommands(epic.qualityGates).slice(0, 50),
+    qualityGates: storyQualityGates(run.kind, epic, repository),
   });
 }
 
@@ -172,10 +198,7 @@ export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePay
     repository: jobRepository(repository, connection),
     branch: run.branch,
     baseBranch: run.baseBranch,
-    settings: {
-      model: repository.ralphSettings.model || null,
-      setupCommand: repository.ralphSettings.setupCommand || null,
-    },
+    settings: jobSettings(repository),
     story: { identifier: story.identifier ?? story.storyId, title: story.title.slice(0, 1000) },
     commands: story.preparation ?? [],
     commandsHash: approved.commandsHash,

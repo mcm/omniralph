@@ -13,6 +13,8 @@ import {
   type Database,
 } from "@omniralph/db";
 import {
+  DEFAULT_RALPH_SETTINGS,
+  ralphSettingsFormValues,
   ReviewJobPayload,
   type RalphSettingsInput,
   type RepositorySettingsInput,
@@ -72,10 +74,7 @@ const baseRalph: RalphSettingsInput = {
   linearTeamKeys: [],
   linearProjectNames: [],
   linearLabels: [],
-  openPullRequestEarly: false,
-  setupCommand: "",
-  model: "opus",
-  manualLabels: ["manual"],
+  ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
 const standardProfile = {
@@ -369,6 +368,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     });
     expect(
       await updateRalphSettings(repoId, {
+        ...baseRalph,
         ralphEnabled: true,
         linearTeamKeys: ["tool", "ENG"],
         linearProjectNames: ["Omniralph"],
@@ -409,6 +409,82 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       },
       profileId: "standard",
     });
+  });
+
+  it("saves every cyralph setting, storing empty text and lists as none", async () => {
+    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        verifyCommands: ["pnpm typecheck", "pnpm test"],
+        runPrdQualityGates: false,
+        appendInstruction: "  Keep commits small.  ",
+        fallbackModel: "sonnet",
+        allowedTools: ["Read", "Bash(pnpm test:*)"],
+        disallowedTools: ["WebFetch"],
+        allowPreparation: false,
+        manualLabels: ["by hand"],
+        historyRewrite: "never",
+        respondToReviews: false,
+        maxReviewRounds: 5,
+        respondToCiFailures: false,
+        maxFixRounds: 0,
+        cleanupMergedWorktrees: false,
+        unmergedBranchTimeoutMinutes: 120,
+        epicCompletedState: "In Review",
+      }),
+    ).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.ralphSettings).toEqual({
+      ...DEFAULT_RALPH_SETTINGS,
+      verifyCommands: ["pnpm typecheck", "pnpm test"],
+      runPrdQualityGates: false,
+      appendInstruction: "Keep commits small.",
+      fallbackModel: "sonnet",
+      allowedTools: ["Read", "Bash(pnpm test:*)"],
+      disallowedTools: ["WebFetch"],
+      allowPreparation: false,
+      manualLabels: ["by hand"],
+      historyRewrite: "never",
+      respondToReviews: false,
+      maxReviewRounds: 5,
+      respondToCiFailures: false,
+      maxFixRounds: 0,
+      cleanupMergedWorktrees: false,
+      unmergedBranchTimeoutMinutes: 120,
+      epicCompletedState: "In Review",
+    });
+    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
+  });
+
+  it("rejects invalid cyralph settings with field errors without saving", async () => {
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        verifyCommands: ["pnpm test", "  "],
+        allowedTools: ["not a tool"],
+        fallbackModel: "x y",
+        historyRewrite: "always" as never,
+        maxReviewRounds: -1,
+        maxFixRounds: 2.5,
+        unmergedBranchTimeoutMinutes: 0,
+        epicCompletedState: "Done, really",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Fix the highlighted fields.",
+      fieldErrors: {
+        "verifyCommands.1": "Enter a command.",
+        "allowedTools.0": "Enter a tool name or rule, e.g. Read or Bash(pnpm test:*).",
+        fallbackModel: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
+        historyRewrite: "Choose a policy.",
+        maxReviewRounds: "Enter 0 or more.",
+        maxFixRounds: "Enter a whole number.",
+        unmergedBranchTimeoutMinutes: "Enter at least 1 minute.",
+        epicCompletedState: "Names can't contain commas or control characters.",
+      },
+    });
+    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
   });
 
   it("rejects invalid Ralph settings with field errors without saving", async () => {

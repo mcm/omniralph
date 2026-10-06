@@ -131,7 +131,14 @@ describe("ralph.describe-pr", { timeout: 60_000 }, () => {
       repository: repo,
       branch,
       baseBranch: "main",
-      settings: { model: "sonnet", setupCommand: null },
+      settings: {
+        model: "sonnet",
+        setupCommand: null,
+        fallbackModel: null,
+        appendInstruction: null,
+        allowedTools: null,
+        disallowedTools: null,
+      },
       epic: {
         identifier: "TOOL-32",
         title: "Ralph core",

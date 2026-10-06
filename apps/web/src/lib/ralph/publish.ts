@@ -10,6 +10,7 @@
  */
 import {
   getJob,
+  getRepository,
   getRepositoryWithConnection,
   listStories,
   updateRun,
@@ -22,7 +23,12 @@ import {
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
-import { RalphDescribePrPayload, RalphDescribePrResult } from "@omniralph/shared";
+import {
+  epicCompletedTarget,
+  parseRalphSettings,
+  RalphDescribePrPayload,
+  RalphDescribePrResult,
+} from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -218,6 +224,27 @@ export async function openEarlyPullRequest(
   return updated;
 }
 
+/**
+ * Every story of the epic is complete: the epic moves to the repository's
+ * `epicCompletedState` (cyralph's `epicCompletedStateName`/`Type`), a state of
+ * that name or else the first state of that type. Runs after the PR/MR step,
+ * whether or not it worked; a single issue is left alone. A failure is logged,
+ * never fails the run.
+ */
+export async function moveCompletedEpic(
+  deps: Pick<RalphDeps, "db" | "linear">,
+  run: Pick<RalphRun, "kind" | "linearIssueId" | "repositoryId">,
+): Promise<void> {
+  if (run.kind === "single") return;
+  await quietly(`Moving epic ${run.linearIssueId} to its completed state`, async () => {
+    const repository = await getRepository(deps.db, run.repositoryId);
+    const target = epicCompletedTarget(
+      repository && parseRalphSettings(repository.ralphSettings).epicCompletedState,
+    );
+    if (target) await deps.linear.setIssueState(run.linearIssueId, target);
+  });
+}
+
 /** The PR/MR step failed: the run waits for a reply, which retries it. */
 async function pullRequestFailed(
   deps: RalphDeps,
@@ -287,6 +314,7 @@ export async function applyPullRequestJob(
   if (!parsed?.success || !payload?.success) {
     const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
     await pullRequestFailed(deps, tx, run, term, `writing its description failed: ${why}.`);
+    await moveCompletedEpic(deps, run);
     return { busy: false };
   }
 
@@ -300,6 +328,7 @@ export async function applyPullRequestJob(
     pr = await publishPullRequest(deps, run, parsed.data, epic);
   } catch (error) {
     await pullRequestFailed(deps, tx, run, term, `${errorMessage(error)}.`);
+    await moveCompletedEpic(deps, run);
     return { busy: false };
   }
 
@@ -327,5 +356,6 @@ export async function applyPullRequestJob(
     type: "response",
     body: finalResponse(completed, epic, stories, pr, provider),
   });
+  await moveCompletedEpic(deps, run);
   return { busy: false };
 }

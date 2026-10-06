@@ -266,26 +266,60 @@ export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
 
 export const DEFAULT_PROFILE_ID = "standard";
 
-/** Per-repository settings of the `ralph` capability (`repositories.ralph_settings`). */
+/**
+ * Per-repository settings of the `ralph` capability (`repositories.ralph_settings`),
+ * validated by `RalphSettings` in `@omniralph/shared` (which documents each one).
+ */
 export interface RalphSettings {
-  /** Open a draft PR/MR after the first pushed story (updated and marked ready at the end). */
-  openPullRequestEarly: boolean;
-  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
-  setupCommand: string | null;
-  /** Claude model (alias or ID) the story sessions use. */
+  verifyCommands: string[];
+  runPrdQualityGates: boolean;
+  appendInstruction: string | null;
+  allowedTools: string[] | null;
+  disallowedTools: string[] | null;
+  /** Claude model (alias or ID) the sessions use. */
   model: string;
+  fallbackModel: string | null;
+  allowPreparation: boolean;
   /**
    * Linear labels marking a story as a manual step (matched ignoring case); the
    * first one labels the manual stories and follow-ups ralph files.
    */
   manualLabels: string[];
+  historyRewrite: "when-asked" | "never";
+  respondToReviews: boolean;
+  maxReviewRounds: number;
+  respondToCiFailures: boolean;
+  maxFixRounds: number;
+  cleanupMergedWorktrees: boolean;
+  unmergedBranchTimeoutMinutes: number;
+  /** A state type (`started`, `completed`) or name the epic moves to when every story is complete. */
+  epicCompletedState: string | null;
+  /** Open a draft PR/MR after the first pushed story (updated and marked ready at the end). */
+  openPullRequestEarly: boolean;
+  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
+  setupCommand: string | null;
 }
 
 export const DEFAULT_RALPH_SETTINGS: RalphSettings = {
+  verifyCommands: [],
+  runPrdQualityGates: true,
+  appendInstruction: null,
+  allowedTools: null,
+  disallowedTools: null,
+  model: "opus",
+  fallbackModel: null,
+  allowPreparation: true,
+  manualLabels: ["manual"],
+  historyRewrite: "when-asked",
+  respondToReviews: true,
+  maxReviewRounds: 3,
+  respondToCiFailures: true,
+  maxFixRounds: 3,
+  cleanupMergedWorktrees: true,
+  unmergedBranchTimeoutMinutes: 60,
+  epicCompletedState: null,
   openPullRequestEarly: false,
   setupCommand: null,
-  model: "opus",
-  manualLabels: ["manual"],
 };
 
 export const repositories = pgTable(

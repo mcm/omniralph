@@ -76,6 +76,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   let dispatcher: VercelQueuesDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
+  let repoId: string;
   const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
 
   beforeAll(async () => {
@@ -93,7 +94,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       },
       randomBytes(32),
     );
-    const repoId = (
+    repoId = (
       await connectRepository(db, {
         connectionId: connection.id,
         provider: "github",
@@ -430,6 +431,38 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   });
 
   describe("preparation", () => {
+    it("offers nothing with allowPreparation off: the blocks are plain text", async () => {
+      const settings = (allowPreparation: boolean) =>
+        updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, allowPreparation },
+        });
+      await settings(false);
+      try {
+        const { run } = await manualEpic();
+        await work(run.id, { commitSha: sha(7) });
+        expect(selects(run)).toEqual([]);
+        const waiting = (await getRun(db, run.id))!;
+        expect(waiting).toMatchObject({ status: "waiting", preparation: null });
+        expect(waiting.waitingOn?.manual.map((m) => m.identifier)).toEqual(["ENG-3"]);
+        const posted = linear.bodies(run.linearAgentSessionId, "elicitation").join("\n");
+        expect(posted).toContain("waiting on **ENG-3**");
+        expect(posted).not.toContain("rerun preparation");
+        expect(posted).not.toContain("terraform");
+
+        expect(await reply(run, "rerun preparation")).toMatchObject({
+          kind: "rerun_preparation",
+        });
+        expect(selects(run)).toEqual([]);
+        expect(await activeJobs(run.id)).toEqual([]);
+      } finally {
+        await settings(true);
+      }
+    });
+
     it("asks once the manual story is unblocked, runs it on approval and doesn't ask again", async () => {
       const { alpha, bucket, run } = await manualEpic();
       await work(run.id, { commitSha: sha(7) });

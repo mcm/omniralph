@@ -50,7 +50,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
-import { reloadEpic, runManualLabels } from "./epic-loader";
+import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
 import { applyJobOutcomes } from "./outcome";
 import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
@@ -61,7 +61,12 @@ import {
   offerPreparation,
   preparationOf,
 } from "./preparation";
-import { applyPullRequestJob, changeRequestTerm, openEarlyPullRequest } from "./publish";
+import {
+  applyPullRequestJob,
+  changeRequestTerm,
+  moveCompletedEpic,
+  openEarlyPullRequest,
+} from "./publish";
 
 export interface RalphDeps {
   db: Database;
@@ -219,9 +224,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   if (FINISHED_RUN_STATUSES.has(run.status)) return { action: "finished", run };
   if ((await listActiveRunJobIds(tx, run.id)).length > 0) return { action: "busy", run };
 
-  const epic = await reloadEpic(deps.linear, run, {
-    manualLabels: await runManualLabels(deps.db, run),
-  });
+  const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
   const rows = await syncStories(tx, run.id, epic);
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
   // An approved preparation ("Run it") goes first: it was asked for while nothing else could run.
@@ -470,6 +473,7 @@ async function complete(
     type: "response",
     body: `Finished ${what} on \`${run.branch}\`. Nothing was committed, so there is no pull/merge request.`,
   });
+  await moveCompletedEpic(deps, run);
   return { action: "completed", run: completed };
 }
 

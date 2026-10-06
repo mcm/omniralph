@@ -83,12 +83,32 @@ Ralph only builds in repositories that opted in. On **Repository â€º Settings â€
 | **Linear projects** | Comma-separated project names. |
 | **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. |
-| **Setup command** | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
-| **Model** | The Claude model alias or ID the story sessions use (default `opus`). |
-| **Manual labels** | Comma-separated Linear labels that mark a story as a step for a person (default `manual`, at least one). Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
 
-Settings apply to runs started afterwards, except **Manual labels**: a run re-reads them every time
-it picks the next story, so changing them also changes which stories of a running epic are manual.
+The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
+config), with the same names and defaults, grouped as on the page:
+
+| Group | Setting | Default | What it does |
+| -- | -- | -- | -- |
+| Verification | **Verify commands** (`verifyCommands`) | none | One per line. The story job runs them as quality gates after the session reports a story complete; a failing one sends its output back for the next attempt. |
+| Verification | **Run the PRD's quality gates** (`runPrdQualityGates`) | on | Also run the PRD's `## Quality Gates` commands, after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
+| Verification | **Setup command** (`setupCommand`) | none | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
+| Prompt and model | **Appended instruction** (`appendInstruction`) | none | Text appended to every story (and request) prompt. |
+| Prompt and model | **Model** (`model`) / **Fallback model** (`fallbackModel`) | `opus` / none | The Claude model alias or ID the sessions use, and the one used when it's overloaded. |
+| Tools | **Allowed tools** (`allowedTools`) | none | Agent SDK tools or permission rules, one per line (`Read`, `Bash(pnpm test:*)`). Empty: ralph's whole tool policy. Otherwise only these tools are available and only calls matching them run (the session switches from `bypassPermissions` to `dontAsk`). They can only narrow ralph's policy. |
+| Tools | **Disallowed tools** (`disallowedTools`) | none | Always denied, on top of ralph's policy. |
+| PR follow-up | **History rewrites** (`historyRewrite`) | `when-asked` | `when-asked` or `never`: whether a request may rebase and push with `--force-with-lease`. |
+| PR follow-up | **Fix review findings** (`respondToReviews`) / **Max review rounds** (`maxReviewRounds`) | on / 3 | Omniralph's review findings and `@bot` requests on the run's PR/MR become requests, for at most this many reviews. |
+| PR follow-up | **Fix failed CI** (`respondToCiFailures`) / **Max CI fix rounds** (`maxFixRounds`) | on / 3 | A failed CI run on the PR/MR's head commit becomes a request, at most this many times. |
+| PR follow-up | **Clean up after the merge** (`cleanupMergedWorktrees`) / **Unmerged branch timeout** (`unmergedBranchTimeoutMinutes`) | on / 60 | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer. |
+| Linear | **Manual labels** (`manualLabels`) | `manual` | Comma-separated Linear labels that mark a story as a step for a person (at least one). Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
+| Linear | **Offer to run preparation** (`allowPreparation`) | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
+| Linear | **Epic completed state** (`epicCompletedState`) | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
+
+The review, CI, cleanup and history-rewrite settings are stored and editable, but ralph doesn't act
+on them yet: the request mode and PR follow-up behind them are still to come.
+
+Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
+also changes running epics from their next story on (for example which stories are manual).
 
 A delegated issue is routed to the first repository that matches, trying these rules in order:
 

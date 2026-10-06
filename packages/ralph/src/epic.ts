@@ -143,13 +143,18 @@ export interface StoryIssue {
 export interface EpicOptions {
   /** Labels marking a story issue as a manual step (case-insensitive). */
   manualLabels?: readonly string[];
+  /**
+   * Read manual stories' ```cyralph-prepare blocks as preparation commands
+   * (default). Off (`allowPreparation: false`), they're plain text.
+   */
+  allowPreparation?: boolean;
 }
 
 function storyFromIssue(
   { issue, blockers }: StoryIssue,
   epicKeys: ReadonlySet<string>,
   external: Record<string, string>,
-  manualLabels: readonly string[] | undefined,
+  opts: EpicOptions,
 ): Story {
   const dependsOn: string[] = [];
   for (const b of blockers) {
@@ -160,9 +165,12 @@ function storyFromIssue(
       external[b.id] = b.identifier;
     }
   }
-  const manual = isManualIssue(issue, manualLabels);
+  const manual = isManualIssue(issue, opts.manualLabels);
   // Preparation is only ever offered for manual stories: blocks anywhere else are plain text.
-  const preparation = manual ? parsePrepareBlocks(stripLegacyMetadata(issue.description)) : [];
+  const preparation =
+    manual && opts.allowPreparation !== false
+      ? parsePrepareBlocks(stripLegacyMetadata(issue.description))
+      : [];
   return {
     ...linearStory(issue),
     dependsOn,
@@ -198,7 +206,7 @@ export function childrenEpic(
 ): Epic {
   const keys = new Set(children.map((c) => c.issue.id));
   const externalIssues: Record<string, string> = {};
-  const stories = children.map((c) => storyFromIssue(c, keys, externalIssues, opts.manualLabels));
+  const stories = children.map((c) => storyFromIssue(c, keys, externalIssues, opts));
   return {
     ...epicBase(parent, parsePrd(parent.description)),
     kind: "children",
