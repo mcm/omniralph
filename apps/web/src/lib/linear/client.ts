@@ -72,3 +72,32 @@ export async function getLinearGateway(options: LinearGatewayOptions): Promise<L
   }
   return createGateway(credentials.accessToken);
 }
+
+/**
+ * A gateway whose every call fails with `LinearNotConnectedError`, for code
+ * that writes to Linear best-effort (e.g. stopping a run from the control
+ * panel while no workspace is connected).
+ */
+export function disconnectedLinearGateway(): LinearGateway {
+  return new Proxy({} as LinearGateway, {
+    // Not a thenable, so it can be returned from async functions.
+    get: (_target, prop) =>
+      prop === "then"
+        ? undefined
+        : async () => {
+            throw new LinearNotConnectedError();
+          },
+  });
+}
+
+/** The connected workspace's gateway, or a disconnected one when none is connected. */
+export async function getLinearGatewayOrDisconnected(
+  options: LinearGatewayOptions,
+): Promise<LinearGateway> {
+  try {
+    return await getLinearGateway(options);
+  } catch (error) {
+    if (error instanceof LinearNotConnectedError) return disconnectedLinearGateway();
+    throw error;
+  }
+}

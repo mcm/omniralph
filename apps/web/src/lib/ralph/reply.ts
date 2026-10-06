@@ -67,7 +67,10 @@ export async function handleReply(
 ): Promise<ReplyResult | null> {
   const run = await getRunBySession(deps.db, event.sessionId);
   if (!run) return null;
-  if (isStopRequest(event)) return stop(deps, run, event.authorName);
+  if (isStopRequest(event)) {
+    await stopRun(deps, run, event.authorName);
+    return { kind: "stop" };
+  }
 
   const text = event.body.trim();
   if (!text) return null;
@@ -162,19 +165,28 @@ async function whenFree(
   return active.length > 0 ? `${busy} once the current job finishes.` : free;
 }
 
+/** What `stopRun` did. */
+export type StopRunResult =
+  | { status: "stopped"; /** Jobs canceled (or asked to cancel). */ canceled: number }
+  | { status: "already"; runStatus: RalphRun["status"] }
+  | { status: "gone" };
+
 /**
- * Stop: the run becomes `stopped`, its queued or running jobs are canceled
+ * Stop (the Linear stop reply, and the Ralph run page's Stop button): the run
+ * becomes `stopped`, its queued or running jobs are canceled
  * (`JobDispatcher.cancel`; a running job through its heartbeat), its running
  * stories go back to pending and the open preparation question is dropped.
- * Guidance resumes it later.
+ * The session is told (by `authorName`, when given). Guidance resumes it later.
  */
-async function stop(
+export async function stopRun(
   deps: RalphDeps,
   run: RalphRun,
   authorName: string | undefined,
-): Promise<ReplyResult | null> {
+): Promise<StopRunResult> {
   const stopped = await lockRun(deps.db, run.id, async (tx, current) => {
-    if (FINISHED_RUN_STATUSES.has(current.status)) return { already: current.status };
+    if (FINISHED_RUN_STATUSES.has(current.status)) {
+      return { already: current.status as RalphRun["status"] };
+    }
     const state = preparationOf(current);
     await updateRun(tx, current.id, {
       status: "stopped",
@@ -192,8 +204,8 @@ async function stop(
       stories: await listStories(tx, current.id),
     };
   });
-  if (!stopped) return null;
-  if ("already" in stopped) {
+  if (!stopped) return { status: "gone" };
+  if ("already" in stopped && stopped.already) {
     await postActivity(deps.linear, run.linearAgentSessionId, {
       type: "response",
       body:
@@ -201,7 +213,7 @@ async function stop(
           ? "This run is already stopped. Reply with guidance to resume it."
           : `This run is already over (${stopped.already}).`,
     });
-    return { kind: "stop" };
+    return { status: "already", runStatus: stopped.already };
   }
   let canceled = 0;
   for (const jobId of stopped.jobIds) {
@@ -222,7 +234,7 @@ async function stop(
     ].join(" "),
   };
   await postActivity(deps.linear, run.linearAgentSessionId, content);
-  return { kind: "stop" };
+  return { status: "stopped", canceled };
 }
 
 /**

@@ -1,0 +1,430 @@
+import { randomBytes } from "node:crypto";
+import {
+  agents,
+  connectRepository,
+  createDb,
+  createRun,
+  getJob,
+  getRun,
+  insertJob,
+  integrations,
+  jobs,
+  listStories,
+  ralphRuns,
+  runMigrations,
+  saveIntegration,
+  updateRepositoryRalphSettings,
+  updateRun,
+  updateStory,
+  upsertScmConnection,
+  upsertStories,
+  DEFAULT_RALPH_SETTINGS,
+  type Database,
+  type RalphRun,
+} from "@omniralph/db";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { eq } from "drizzle-orm";
+import type { ReactElement } from "react";
+import { getContainerRuntimeClient } from "testcontainers";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertRole, type Role } from "@/lib/auth/roles";
+import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
+import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type { LinearGateway } from "@/lib/linear/gateway";
+import type { RalphRunDetailView, RalphRunListParams, RalphRunRow } from "@/lib/ralph/display";
+
+vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("NEXT_NOT_FOUND");
+  },
+}));
+
+type TestUser = { id: string; role: Role; name: string | null; email: string | null; image: null };
+const state = vi.hoisted(() => ({
+  db: undefined as unknown as Database,
+  user: null as TestUser | null,
+  linear: undefined as unknown as LinearGateway,
+  dispatcher: undefined as unknown,
+}));
+vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/auth/session", () => ({
+  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  requirePageUser: async (role: Role = "member") => assertRole(state.user, role),
+}));
+vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
+vi.mock("@/lib/linear/client", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getLinearGatewayOrDisconnected: async () => state.linear,
+}));
+// The pages only load data: their client views are stubs here.
+vi.mock("./ralph-runs-view", () => ({ RalphRunsView: () => null }));
+vi.mock("./[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
+
+process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+
+const { stopRalphRun } = await import("./actions");
+const { default: RalphRunsPage } = await import("./page");
+const { default: RalphRunPage } = await import("./[id]/page");
+const { disconnectedLinearGateway } = await import("@/lib/linear/client");
+
+const dockerAvailable = await getContainerRuntimeClient().then(
+  () => true,
+  () => false,
+);
+
+const admin: TestUser = {
+  id: "admin-1",
+  role: "admin",
+  name: "Ada Admin",
+  email: null,
+  image: null,
+};
+const member: TestUser = { id: "member-1", role: "member", name: null, email: null, image: null };
+
+interface ListProps {
+  runs: RalphRunRow[];
+  repositories: { id: string; fullPath: string }[];
+  params: RalphRunListParams;
+  total: number;
+  pageSize: number;
+  linearConnected: boolean;
+}
+
+async function listPage(searchParams: Record<string, string> = {}): Promise<ListProps> {
+  const element = (await RalphRunsPage({
+    searchParams: Promise.resolve(searchParams),
+  })) as ReactElement<ListProps>;
+  return element.props;
+}
+
+async function detailPage(
+  id: string,
+): Promise<{ run: RalphRunDetailView; linearConnected: boolean }> {
+  const element = (await RalphRunPage({ params: Promise.resolve({ id }) })) as ReactElement<{
+    run: RalphRunDetailView;
+    linearConnected: boolean;
+  }>;
+  return element.props;
+}
+
+describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
+  let container: StartedPostgreSqlContainer;
+  let db: Database;
+  let repoA: string;
+  let repoB: string;
+  let agentId: string;
+  let linear: FakeLinearGateway;
+  let session = 0;
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer("postgres:17-alpine").start();
+    await runMigrations(container.getConnectionUri());
+    db = createDb(container.getConnectionUri());
+    state.db = db;
+    const github = await upsertScmConnection(db, {
+      provider: "github",
+      name: "acme",
+      baseUrl: "https://api.github.com",
+      externalId: "1",
+      credentials: {},
+    });
+    const gitlab = await upsertScmConnection(db, {
+      provider: "gitlab",
+      name: "bot",
+      baseUrl: "https://gitlab.example.com",
+      externalId: "5",
+      credentials: { token: "glpat-bot", webhookSecret: "hook" },
+    });
+    repoA = (
+      await connectRepository(db, {
+        connectionId: github.id,
+        provider: "github",
+        externalId: "1",
+        fullPath: "acme/api",
+      })
+    ).id;
+    repoB = (
+      await connectRepository(db, {
+        connectionId: gitlab.id,
+        provider: "gitlab",
+        externalId: "2",
+        fullPath: "acme/web",
+      })
+    ).id;
+    await updateRepositoryRalphSettings(db, repoA, {
+      ralphEnabled: true,
+      linearTeamKeys: ["ENG"],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: DEFAULT_RALPH_SETTINGS,
+    });
+    [{ id: agentId }] = (await db
+      .insert(agents)
+      .values({ name: "agent-a", enabledCapabilities: ["ralph"] })
+      .returning({ id: agents.id })) as [{ id: string }];
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.$client.end();
+    await container?.stop();
+  });
+
+  beforeEach(async () => {
+    await db.delete(jobs);
+    await db.delete(ralphRuns);
+    await db.delete(integrations);
+    state.user = admin;
+    linear = new FakeLinearGateway();
+    state.linear = linear;
+    state.dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+  });
+
+  async function newRun(overrides: Partial<Parameters<typeof createRun>[1]> = {}) {
+    session += 1;
+    return (
+      await createRun(db, {
+        linearIssueId: `issue-${session}`,
+        linearIdentifier: `ENG-${session}`,
+        linearTitle: `Epic ${session}`,
+        linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+        linearAgentSessionId: `session-${session}`,
+        kind: "children",
+        repositoryId: repoA,
+        branch: `eng-${session}`,
+        baseBranch: "main",
+        ...overrides,
+      })
+    ).run;
+  }
+
+  async function connectLinear() {
+    await saveIntegration(db, {
+      provider: "linear",
+      externalId: "org-1",
+      name: "Acme",
+      credentials: { accessToken: "lin_x" },
+      installedByUserId: null,
+    });
+  }
+
+  it("lists runs newest first with their row facts, filtered by status and repository", async () => {
+    const first = await newRun();
+    const second = await newRun({ repositoryId: repoB });
+    await updateRun(db, first.id, {
+      status: "completed",
+      agentId,
+      prNumber: 7,
+      prUrl: "https://github.com/acme/api/pull/7",
+    });
+    await updateRun(db, second.id, { status: "waiting", prNumber: 3, prUrl: "https://gl/mr/3" });
+    for (const [i, id] of [first.id, second.id].entries()) {
+      await db
+        .update(ralphRuns)
+        .set({ createdAt: new Date(Date.UTC(2026, 9, 1 + i)) })
+        .where(eq(ralphRuns.id, id));
+    }
+    const stories = await upsertStories(db, first.id, [
+      { linearIssueId: "s-1", identifier: "ENG-11", title: "One" },
+      { linearIssueId: "s-2", identifier: "ENG-12", title: "Two" },
+    ]);
+    await updateStory(db, stories[0]!.id, { status: "completed" });
+
+    const all = await listPage();
+    expect(all.total).toBe(2);
+    expect(all.linearConnected).toBe(false);
+    expect(all.params).toEqual({ status: null, repositoryId: null, page: 1 });
+    expect(all.repositories.map((r) => r.fullPath)).toEqual(["acme/api", "acme/web"]);
+    expect(all.runs.map((r) => r.id)).toEqual([second.id, first.id]);
+    expect(all.runs[1]).toMatchObject({
+      linearIdentifier: first.linearIdentifier,
+      linearTitle: first.linearTitle,
+      linearUrl: first.linearUrl,
+      repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+      status: "completed",
+      stories: { total: 2, completed: 1 },
+      branch: first.branch,
+      pullRequest: { number: 7, url: "https://github.com/acme/api/pull/7", label: "#7" },
+      agent: { id: agentId, name: "agent-a" },
+    });
+    expect(typeof all.runs[1]!.updatedAt).toBe("string");
+    expect(all.runs[0]).toMatchObject({ pullRequest: { label: "!3" }, agent: null });
+
+    expect((await listPage({ status: "waiting" })).runs.map((r) => r.id)).toEqual([second.id]);
+    expect((await listPage({ repository: repoA })).runs.map((r) => r.id)).toEqual([first.id]);
+    expect((await listPage({ repository: repoA, status: "waiting" })).total).toBe(0);
+    // Unknown filter values are ignored.
+    const ignored = await listPage({ status: "bogus", repository: "not-a-uuid", page: "x" });
+    expect(ignored.params).toEqual({ status: null, repositoryId: null, page: 1 });
+    expect(ignored.total).toBe(2);
+    // Past the last page.
+    const past = await listPage({ page: "3" });
+    expect(past).toMatchObject({ total: 2, runs: [], params: { page: 3 } });
+
+    await connectLinear();
+    expect((await listPage()).linearConnected).toBe(true);
+  });
+
+  it("is empty with no runs, and tells whether Linear is connected", async () => {
+    expect(await listPage()).toMatchObject({ runs: [], total: 0, linearConnected: false });
+  });
+
+  it("loads a run's detail: header, stories, guidance, progress and jobs", async () => {
+    const run = await newRun();
+    const [s1, s2] = await upsertStories(db, run.id, [
+      { linearIssueId: "d-1", identifier: "ENG-21", title: "First" },
+      { linearIssueId: "d-2", identifier: "ENG-22", title: "Second" },
+    ]);
+    const { job } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: run.id,
+    });
+    await db
+      .update(jobs)
+      .set({ status: "completed", agentId, finishedAt: new Date() })
+      .where(eq(jobs.id, job.id));
+    await updateStory(db, s1!.id, {
+      status: "completed",
+      attempts: 2,
+      commitSha: "a".repeat(40),
+      lastJobId: job.id,
+    });
+    await updateStory(db, s2!.id, {
+      status: "blocked",
+      attempts: 1,
+      lastFeedback: "Gates failed.",
+    });
+    await updateRun(db, run.id, {
+      status: "waiting",
+      agentId,
+      waitingOn: {
+        blockers: [{ id: "x", identifier: "OPS-1", title: "Provision DB" }],
+        manual: [],
+      },
+      guidance: [{ text: "Use pnpm.", at: "2026-10-06T01:00:00.000Z" }],
+      progress: "## Progress\n- did ENG-21",
+    });
+    await connectLinear();
+
+    const { run: view, linearConnected } = await detailPage(run.id);
+    expect(linearConnected).toBe(true);
+    expect(view).toMatchObject({
+      id: run.id,
+      linearIdentifier: run.linearIdentifier,
+      linearTitle: run.linearTitle,
+      linearUrl: run.linearUrl,
+      status: "waiting",
+      repository: { id: repoA, fullPath: "acme/api" },
+      branch: run.branch,
+      baseBranch: "main",
+      agent: { id: agentId, name: "agent-a" },
+      pullRequest: null,
+      waitingOn: { blockers: [{ identifier: "OPS-1", title: "Provision DB" }], manual: [] },
+      guidance: [{ text: "Use pnpm.", at: "2026-10-06T01:00:00.000Z" }],
+      progress: "## Progress\n- did ENG-21",
+      storyCounts: { total: 2, completed: 1 },
+    });
+    expect(view.stories).toEqual([
+      {
+        id: s1!.id,
+        identifier: "ENG-21",
+        title: "First",
+        status: "completed",
+        attempts: 2,
+        lastFeedback: null,
+        commitSha: "a".repeat(40),
+        lastJobId: job.id,
+      },
+      {
+        id: s2!.id,
+        identifier: "ENG-22",
+        title: "Second",
+        status: "blocked",
+        attempts: 1,
+        lastFeedback: "Gates failed.",
+        commitSha: null,
+        lastJobId: null,
+      },
+    ]);
+    expect(view.jobs).toMatchObject([
+      { id: job.id, type: "ralph.story", status: "completed", agent: { name: "agent-a" } },
+    ]);
+
+    // waiting_on is only shown while waiting.
+    await updateRun(db, run.id, { status: "running" });
+    expect((await detailPage(run.id)).run.waitingOn).toBeNull();
+
+    await expect(detailPage("00000000-0000-4000-8000-000000000000")).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
+    await expect(detailPage("nope")).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  async function runningRun(): Promise<{ run: RalphRun; jobId: string }> {
+    const run = await newRun();
+    const [story] = await upsertStories(db, run.id, [
+      { linearIssueId: "r-1", identifier: "ENG-31", title: "Story" },
+    ]);
+    const { job } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: run.id,
+    });
+    await updateStory(db, story!.id, { status: "running", lastJobId: job.id });
+    await updateRun(db, run.id, { status: "running" });
+    return { run: (await getRun(db, run.id))!, jobId: job.id };
+  }
+
+  it("stops a run like the Linear stop reply: job canceled, session told who stopped it", async () => {
+    const { run, jobId } = await runningRun();
+    expect(await stopRalphRun(run.id)).toEqual({ ok: true });
+
+    expect((await getRun(db, run.id))!.status).toBe("stopped");
+    expect((await getJob(db, jobId))!.status).toBe("canceled");
+    expect((await listStories(db, run.id)).map((s) => s.status)).toEqual(["pending"]);
+    const [response] = linear.bodies(run.linearAgentSessionId, "response");
+    expect(response).toContain("Stopped (requested by Ada Admin).");
+    expect(response).toContain("I canceled the job that was running.");
+    expect(linear.plan(run.linearAgentSessionId)).toBeDefined();
+
+    expect(await stopRalphRun(run.id)).toEqual({
+      ok: false,
+      error: "This run is already stopped.",
+    });
+  });
+
+  it("only lets admins stop a run", async () => {
+    const { run, jobId } = await runningRun();
+    state.user = member;
+    const result = await stopRalphRun(run.id);
+    expect(result.ok).toBe(false);
+    state.user = null;
+    expect((await stopRalphRun(run.id)).ok).toBe(false);
+
+    expect((await getRun(db, run.id))!.status).toBe("running");
+    expect((await getJob(db, jobId))!.status).toBe("queued");
+    expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+  });
+
+  it("stops a run while Linear isn't connected, and rejects unknown or finished runs", async () => {
+    const { run } = await runningRun();
+    state.linear = disconnectedLinearGateway();
+    expect(await stopRalphRun(run.id)).toEqual({ ok: true });
+    expect((await getRun(db, run.id))!.status).toBe("stopped");
+
+    const done = await newRun();
+    await updateRun(db, done.id, { status: "completed" });
+    expect(await stopRalphRun(done.id)).toEqual({
+      ok: false,
+      error: "This run is already over (completed).",
+    });
+    expect(await stopRalphRun("00000000-0000-4000-8000-000000000000")).toEqual({
+      ok: false,
+      error: "That run doesn't exist.",
+    });
+    expect(await stopRalphRun("nope")).toEqual({ ok: false, error: "That run doesn't exist." });
+  });
+});

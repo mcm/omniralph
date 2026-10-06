@@ -238,6 +238,8 @@ export async function startRun(
     const result = await createRun(tx, {
       linearIssueId: root.id,
       linearIdentifier: root.identifier,
+      linearTitle: root.title,
+      linearUrl: root.url,
       linearAgentSessionId: sessionId,
       kind: loaded.kind,
       focusStoryId: loaded.focusStoryId ?? null,

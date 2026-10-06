@@ -3,6 +3,7 @@ import type { Role } from "@/lib/auth/roles";
 export type NavIcon =
   | "repositories"
   | "reviews"
+  | "ralph"
   | "agents"
   | "jobs"
   | "analytics"
@@ -30,6 +31,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: "/repositories", label: "Repositories", icon: "repositories" },
       { href: "/reviews", label: "Reviews", icon: "reviews" },
+      { href: "/ralph", label: "Ralph runs", icon: "ralph" },
       { href: "/agents", label: "Agents", icon: "agents" },
       { href: "/jobs", label: "Jobs", icon: "jobs" },
       { href: "/analytics", label: "Analytics", icon: "analytics" },
