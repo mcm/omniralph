@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   agents,
   completeJob,
@@ -9,6 +9,7 @@ import {
   getRun,
   getRunBySession,
   jobs,
+  listPendingRequests,
   listStories,
   ralphRuns,
   runMigrations,
@@ -40,6 +41,7 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { exchangeJobMessages } from "./messages";
 import { handleReply, type ReplyResult } from "./reply";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -343,15 +345,126 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       );
     });
 
-    it("a guidance reply while a job runs is applied from the next attempt", async () => {
+    it("a guidance reply while a job is queued is applied from the next attempt", async () => {
       twoStoryEpic();
       const run = await delegate("issue-1");
-      await start(run.id);
       const result = await reply(run, "Prefer small commits.");
       expect(result).toMatchObject({ kind: "guidance", advanced: { action: "busy" } });
       expect(last(run, "thought")).toBe(
         "Got it. I'll apply this from the next story attempt once the current job finishes.",
       );
+    });
+  });
+
+  describe("live messages to a running story session", () => {
+    /** The agent's side of a heartbeat: what it acknowledges, and the messages it gets. */
+    const heartbeat = (
+      runningJobIds: string[],
+      acks: { delivered?: string[]; rejected?: string[] } = {},
+      agentId = agentA,
+    ) =>
+      exchangeJobMessages({ db, linear: async () => linear }, agentId, runningJobIds, {
+        deliveredMessageIds: acks.delivered ?? [],
+        rejectedMessageIds: acks.rejected ?? [],
+      });
+
+    it("replies are delivered into a running story session", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      const thoughts = linear.bodies(run.linearAgentSessionId, "thought").length;
+
+      expect(await reply(run, "Use a smallint column")).toEqual({ kind: "live" });
+      // Nothing else happens yet: no note, no guidance, no advance.
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
+      expect((await getRun(db, run.id))?.guidance).toEqual([]);
+
+      const [message, ...more] = await heartbeat([job.id]);
+      expect(message).toMatchObject({ jobId: job.id, text: "Use a smallint column" });
+      expect(more).toEqual([]);
+      // Another agent can't acknowledge it.
+      expect(await heartbeat([], { delivered: [message!.messageId] }, randomUUID())).toEqual([]);
+      expect(await heartbeat([job.id])).toEqual([message]);
+
+      expect(await heartbeat([job.id], { delivered: [message!.messageId] })).toEqual([]);
+      expect(last(run, "thought")).toBe("Passed this to the agent that's working right now.");
+      expect((await getRun(db, run.id))?.guidance.map((g) => g.text)).toEqual([
+        "Use a smallint column",
+      ]);
+      // A repeated acknowledgement changes nothing.
+      await heartbeat([job.id], { delivered: [message!.messageId] });
+      expect(linear.bodies(run.linearAgentSessionId, "thought").slice(thoughts)).toEqual([
+        "Passed this to the agent that's working right now.",
+      ]);
+
+      // Delivered live, so it isn't applied again; later stories still see it as guidance.
+      await finish(job, { ...storyResult({ commitSha: sha(1) }) });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).not.toContain(
+        "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done.",
+      );
+      const next = await work(run.id);
+      expect(next.story.identifier).toBe("ENG-3");
+      expect(next.guidance).toEqual(["Use a smallint column"]);
+    });
+
+    it("keeps push/MR requests away from a running story agent", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+
+      expect(await reply(run, "Please use glab to create an MR")).toEqual({ kind: "request" });
+      expect(last(run, "thought")).toBe(
+        "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done.",
+      );
+      expect(await heartbeat([job.id])).toEqual([]);
+
+      await finish(job, { ...storyResult({ commitSha: sha(1) }) });
+      // Not story guidance (story agents may not push), but a pending request.
+      const next = await work(run.id);
+      expect(next.story.identifier).toBe("ENG-3");
+      expect(next.guidance).toEqual([]);
+      expect((await listPendingRequests(db, run.id)).map((r) => r.text)).toEqual([
+        "Please use glab to create an MR",
+      ]);
+    });
+
+    it("a rejected message becomes guidance for the next attempt", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      await reply(run, "Mind the migrations.");
+      const [message] = await heartbeat([job.id]);
+
+      expect(await heartbeat([job.id], { rejected: [message!.messageId] })).toEqual([]);
+      expect(last(run, "thought")).toBe(
+        "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done.",
+      );
+      await finish(job, { ...storyResult({ status: "incomplete", summary: "Half." }) });
+      expect(await work(run.id)).toMatchObject({
+        attempt: 2,
+        guidance: ["Mind the migrations."],
+      });
+    });
+
+    it("messages still undelivered when the job ends become guidance, and the run moves on", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      await reply(run, "Use the v2 API.");
+      await reply(run, "And keep commits small.");
+
+      await finish(job, { ...storyResult({ commitSha: sha(1) }) });
+      expect(
+        linear
+          .bodies(run.linearAgentSessionId, "thought")
+          .filter((b) => b.startsWith("Got it. I'll apply this from the next story iteration")),
+      ).toHaveLength(2);
+      expect(await heartbeat([job.id])).toEqual([]);
+      // Re-advanced: the next story got the late messages.
+      expect(await work(run.id)).toMatchObject({
+        story: { identifier: "ENG-3" },
+        guidance: ["Use the v2 API.", "And keep commits small."],
+      });
     });
   });
 

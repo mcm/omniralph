@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asksForPushOrPullRequest,
   eligiblePreparations,
   fenced,
   isRerunPreparationRequest,
@@ -49,6 +50,14 @@ describe("reply intents", () => {
     expect(matchPreparationAnswer("run it later maybe")).toBeUndefined();
     expect(isRerunPreparationRequest("Rerun preparation!")).toBe(true);
     expect(isRerunPreparationRequest("rerun")).toBe(false);
+  });
+
+  it("recognises push and PR/MR requests", () => {
+    expect(asksForPushOrPullRequest("Please use glab to create an MR")).toBe(true);
+    expect(asksForPushOrPullRequest("push the branch")).toBe(true);
+    expect(asksForPushOrPullRequest("open a pull request")).toBe(true);
+    expect(asksForPushOrPullRequest("Use a smallint column")).toBe(false);
+    expect(asksForPushOrPullRequest("pushing back on that idea")).toBe(false);
   });
 });
 

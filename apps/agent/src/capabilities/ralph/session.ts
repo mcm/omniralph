@@ -1,10 +1,19 @@
-import { query as sdkQuery, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryFn, TokenUsage } from "@omniralph/engine";
+import { randomUUID } from "node:crypto";
+import {
+  query as sdkQuery,
+  type Options,
+  type SDKMessage,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
+import type { TokenUsage } from "@omniralph/engine";
 import type { ToolPolicy } from "../index.js";
 import { narrowPermissions, sdkPermissions, type ToolRestrictions } from "../tool-policy.js";
 
 /** A session that sends nothing (no message at all) for this long is aborted. */
 export const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;
+
+/** If an injected message never gets answered, the session stops waiting for it after this long. */
+export const INJECTION_IDLE_TIMEOUT_MS = 5 * 60_000;
 
 const RATE_LIMIT_TEXT = /rate[_ ]limit|usage limit|\b429\b|too many requests/i;
 
@@ -32,8 +41,19 @@ export interface SessionRequest {
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
   idleTimeoutMs?: number;
+  /** How long a finished turn waits for an injected message's turn (default `INJECTION_IDLE_TIMEOUT_MS`). */
+  injectionIdleTimeoutMs?: number;
   onEvent?: (event: SessionEvent) => void;
+  /**
+   * Called with a function that injects a message into the live session (or
+   * `undefined` once the session takes no more input). It returns false when
+   * it was too late.
+   */
+  onInjector?: (inject: MessageInjector | undefined) => void;
 }
+
+/** Delivers a message into a live session; false when the session takes no more input. */
+export type MessageInjector = (text: string) => boolean;
 
 export interface SessionResult {
   /**
@@ -92,14 +112,73 @@ export function sessionOptions(request: SessionRequest, abortController: AbortCo
   };
 }
 
+/** Async-iterable message queue: a session's streaming input (cyralph's `InputQueue`). */
+export class InputQueue implements AsyncIterable<SDKUserMessage> {
+  private readonly items: SDKUserMessage[] = [];
+  private waiting: ((result: IteratorResult<SDKUserMessage>) => void) | undefined;
+  closed = false;
+
+  push(message: SDKUserMessage): void {
+    if (this.closed) return;
+    const waiting = this.waiting;
+    if (waiting) {
+      this.waiting = undefined;
+      waiting({ value: message, done: false });
+    } else this.items.push(message);
+  }
+
+  close(): void {
+    this.closed = true;
+    const waiting = this.waiting;
+    this.waiting = undefined;
+    waiting?.({ value: undefined, done: true });
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    return {
+      next: () => {
+        const item = this.items.shift();
+        if (item) return Promise.resolve({ value: item, done: false });
+        if (this.closed) return Promise.resolve({ value: undefined, done: true });
+        return new Promise((resolve) => {
+          this.waiting = resolve;
+        });
+      },
+    };
+  }
+}
+
+function userMessage(text: string, uuid: string, priority?: "next"): SDKUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: text },
+    parent_tool_use_id: null,
+    uuid: uuid as SDKUserMessage["uuid"],
+    ...(priority && { priority }),
+    origin: { kind: "human" },
+  };
+}
+
+/** The Agent SDK's `query()` with streaming input (what a `SessionRunner` calls). */
+export type SessionQueryFn = (params: {
+  prompt: AsyncIterable<SDKUserMessage>;
+  options?: Options;
+}) => AsyncIterable<SDKMessage>;
+
 /**
  * A `SessionRunner` on the Agent SDK's `query()` (ported from cyralph's
- * `ClaudeAgentRunner`): one prompt, the policy's permissions, a structured
- * result, Claude's text and tool calls reported as events. The session is
- * aborted when the request's signal fires or no message arrives for the idle
- * timeout.
+ * `ClaudeAgentRunner`): the prompt as streaming input, the policy's
+ * permissions, a structured result, Claude's text and tool calls reported as
+ * events. Messages injected through `onInjector` go into the live session as
+ * user messages with priority `next`; the session stays open until every one
+ * is answered (the last turn's result counts), but stops waiting for an
+ * answer after `injectionIdleTimeoutMs`. The session is aborted when the
+ * request's signal fires or no message arrives for the idle timeout while a
+ * turn runs.
  */
-export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): SessionRunner {
+export function createSessionRunner(
+  query: SessionQueryFn = sdkQuery as SessionQueryFn,
+): SessionRunner {
   return async (request) => {
     const controller = new AbortController();
     const onAbort = () => controller.abort(request.signal.reason);
@@ -110,6 +189,7 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
     let idle = false;
     let idleTimer: NodeJS.Timeout | undefined;
     const idleTimeoutMs = request.idleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
+    const injectionIdleTimeoutMs = request.injectionIdleTimeoutMs ?? INJECTION_IDLE_TIMEOUT_MS;
     const resetIdle = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
@@ -118,10 +198,35 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
       }, idleTimeoutMs);
     };
 
+    // Streaming input: the session stays open until every message sent has been answered.
+    const input = new InputQueue();
+    const outstanding = new Set<string>();
+    const send = (text: string, priority?: "next") => {
+      const id = randomUUID();
+      outstanding.add(id);
+      input.push(userMessage(text, id, priority));
+    };
+    let injectionTimer: NodeJS.Timeout | undefined;
+    const finishInput = () => {
+      clearTimeout(injectionTimer);
+      if (input.closed) return;
+      input.close();
+      request.onInjector?.(undefined);
+    };
+    send(request.prompt);
+    request.onInjector?.((text) => {
+      if (input.closed) return false;
+      send(text, "next");
+      return true;
+    });
+    controller.signal.addEventListener("abort", finishInput, { once: true });
+
     const texts: string[] = [];
     const last = () => texts.at(-1) ?? "";
     let rateLimited = false;
     let retryAfterMs: number | undefined;
+    /** A turn's successful result while an injected message is still unanswered. */
+    let answered: SessionResult | undefined;
     const stopped = (): SessionResult | undefined => {
       if (request.signal.aborted) return { stop: "aborted", output: last(), usage };
       if (idle) {
@@ -137,11 +242,9 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
 
     resetIdle();
     try {
-      const messages = query({
-        prompt: request.prompt,
-        options: sessionOptions(request, controller),
-      });
+      const messages = query({ prompt: input, options: sessionOptions(request, controller) });
       for await (const message of messages) {
+        clearTimeout(injectionTimer);
         resetIdle();
         switch (message.type) {
           case "assistant": {
@@ -175,12 +278,23 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
           case "result": {
             Object.assign(usage, resultUsage(message));
             if (message.subtype === "success" && !message.is_error) {
-              return {
+              const result: SessionResult = {
                 stop: "completed",
                 structured: message.structured_output,
                 output: message.result || last(),
                 usage,
               };
+              // Which of our messages this turn answered; older producers don't say, so assume all.
+              const ids =
+                message.user_message_uuids ??
+                (message.user_message_uuid ? [message.user_message_uuid] : [...outstanding]);
+              for (const id of ids) outstanding.delete(id);
+              if (outstanding.size === 0) return result;
+              // An injected message starts another turn; until it does, only the injection timeout runs.
+              answered = result;
+              clearTimeout(idleTimer);
+              injectionTimer = setTimeout(finishInput, injectionIdleTimeoutMs);
+              break;
             }
             const detail =
               message.subtype === "success"
@@ -202,7 +316,8 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
         }
       }
       return (
-        stopped() ?? {
+        stopped() ??
+        answered ?? {
           stop: "error",
           output: last(),
           error: "the session ended without a result",
@@ -225,7 +340,9 @@ export function createSessionRunner(query: QueryFn = sdkQuery as QueryFn): Sessi
       return { stop: "error", output: last(), error: text, usage };
     } finally {
       clearTimeout(idleTimer);
+      finishInput();
       request.signal.removeEventListener("abort", onAbort);
+      controller.signal.removeEventListener("abort", finishInput);
     }
   };
 }

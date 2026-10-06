@@ -82,7 +82,14 @@ interface RunningJob {
   capability: string;
   controller: AbortController;
   jobToken: string;
+  /** Delivers a `jobMessages` message into the job's live session, while it has one. */
+  injector?: (text: string) => boolean;
 }
+
+/** Most message IDs one heartbeat acknowledges (per kind); the rest wait for the next one. */
+const MAX_ACKS_PER_HEARTBEAT = 500;
+/** Acknowledged message IDs remembered, so a message the control panel resends isn't injected twice. */
+const ACKED_MESSAGES_KEPT = 1000;
 
 export interface DaemonStatus {
   stopping: boolean;
@@ -121,6 +128,10 @@ export class AgentDaemon {
   private readonly shutdownGraceMs: number;
   private readonly reportRetryDelayMs: number;
   private repoCache: RepoCache | undefined;
+  /** `jobMessages` handled since the last heartbeat that got through: ID → job and whether it was injected. */
+  private readonly pendingAcks = new Map<string, { jobId: string; delivered: boolean }>();
+  /** Message IDs already acknowledged (oldest first). */
+  private readonly ackedMessageIds = new Set<string>();
 
   constructor(private readonly options: DaemonOptions) {
     this.repoCache = options.repos;
@@ -204,14 +215,32 @@ export class AgentDaemon {
 
   /** Sends one heartbeat and applies the response. */
   async heartbeat(): Promise<void> {
+    const acks = [...this.pendingAcks];
+    const ids = (delivered: boolean) =>
+      acks
+        .filter(([, ack]) => ack.delivered === delivered)
+        .map(([id]) => id)
+        .slice(0, MAX_ACKS_PER_HEARTBEAT);
+    const deliveredMessageIds = ids(true);
+    const rejectedMessageIds = ids(false);
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
         capabilities: this.options.registry.names(),
         runningJobIds: [...this.running.keys()],
         freeSlots: this.freeSlots(),
+        deliveredMessageIds,
+        rejectedMessageIds,
       });
       this.lastHeartbeatAt = new Date();
+      for (const id of [...deliveredMessageIds, ...rejectedMessageIds]) {
+        this.pendingAcks.delete(id);
+        this.ackedMessageIds.add(id);
+      }
+      for (const id of this.ackedMessageIds) {
+        if (this.ackedMessageIds.size <= ACKED_MESSAGES_KEPT) break;
+        this.ackedMessageIds.delete(id);
+      }
       this.applyConfig(response);
     } catch (error) {
       this.onApiError(error, "heartbeat failed");
@@ -254,7 +283,25 @@ export class AgentDaemon {
       const job = this.running.get(jobId);
       if (job) job.jobToken = token;
     }
+    this.deliverMessages(config.jobMessages);
     this.fillSlots();
+  }
+
+  /**
+   * Injects each new message into its job's live session. The outcome is
+   * acknowledged in the next heartbeat: delivered, or rejected when the job
+   * has no live session (anymore) to take it.
+   */
+  private deliverMessages(messages: HeartbeatResponse["jobMessages"]): void {
+    for (const { jobId, messageId, text } of messages) {
+      if (this.pendingAcks.has(messageId) || this.ackedMessageIds.has(messageId)) continue;
+      const delivered = this.running.get(jobId)?.injector?.(text) ?? false;
+      this.pendingAcks.set(messageId, { jobId, delivered });
+      this.options.logger.info(
+        { jobId, messageId, delivered },
+        delivered ? "delivered a message to the job's session" : "rejected a message for the job",
+      );
+    }
   }
 
   private onApiError(error: unknown, message: string): void {
@@ -481,6 +528,10 @@ export class AgentDaemon {
     } finally {
       this.running.delete(job.id);
     }
+    if ([...this.pendingAcks.values()].some((ack) => ack.jobId === job.id)) {
+      // Acknowledge the job's messages before its outcome, so none is taken for undelivered.
+      await this.heartbeat();
+    }
 
     const reason: unknown = controller.signal.reason;
     if (failure !== undefined && reason instanceof ShutdownAbort) {
@@ -512,6 +563,9 @@ export class AgentDaemon {
       workspaceRoot,
       repos: this.repos(),
       logger,
+      setMessageInjector: (inject) => {
+        running.injector = inject;
+      },
     };
   }
 

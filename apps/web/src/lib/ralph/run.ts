@@ -52,6 +52,7 @@ import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { postActivity, quietly, tail } from "./notify";
+import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
 import { buildDescribePrPayload, buildPreparePayload, buildStoryPayload } from "./payload";
 import { planFor } from "./plan";
@@ -180,7 +181,8 @@ export type AdvanceResult =
   | { action: "failed"; run: RalphRun };
 
 /**
- * Moves a run forward. First, under the run's row lock, the outcome of every
+ * Moves a run forward. First, under the run's row lock, replies its ended
+ * job's live session never got are settled (`settleStrandedMessages`), the outcome of every
  * story job that finished is applied (completed, retried or exhausted), and
  * that of the describe job (the PR/MR is opened and the run completes). Then,
  * under the lock again, the stories are re-read from Linear (new sub-issues,
@@ -193,6 +195,8 @@ export async function advanceRun(runId: string, deps: RalphDeps): Promise<Advanc
   // Outcomes commit on their own, so a Linear failure while selecting can't undo them.
   const applied = await lockRun(deps.db, runId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };
+    // Replies the ended job's session never got become guidance (or pending requests) first.
+    await settleStrandedMessages(deps.linear, tx, run);
     const stories = await applyJobOutcomes({ ...deps, tx, run });
     const pullRequest = await applyPullRequestJob(deps, tx, run);
     const preparation = await applyPreparationJob(deps, tx, run);

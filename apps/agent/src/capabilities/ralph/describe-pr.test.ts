@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryFn } from "@omniralph/engine";
 import { PR_DESCRIPTION_HEADING } from "@omniralph/ralph";
 import {
   RalphDescribePrResult,
@@ -14,12 +13,13 @@ import {
 } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentLogger } from "../../logger.js";
+import { firstPrompt } from "../../test/fake-query.js";
 import { ENV, git, Remote } from "../../test/git-remote.js";
 import { RepoCache } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { fitTitle, runDescribePr } from "./describe-pr.js";
 import { createRalphCapability } from "./index.js";
-import { createSessionRunner } from "./session.js";
+import { createSessionRunner, type SessionQueryFn } from "./session.js";
 import type { StoryOptions } from "./story.js";
 
 interface Call {
@@ -28,15 +28,17 @@ interface Call {
 }
 
 /** A fake Agent SDK `query()` that yields `messages`. */
-function fakeQuery(messages: (call: Call) => unknown[]): { query: QueryFn; calls: Call[] } {
+function fakeQuery(messages: (call: Call) => unknown[]): {
+  query: SessionQueryFn;
+  calls: Call[];
+} {
   const calls: Call[] = [];
-  const query = ((params: { prompt: string; options?: Options }) => {
-    const call = { prompt: params.prompt, options: params.options ?? {} };
-    calls.push(call);
-    return (async function* () {
+  const query: SessionQueryFn = (params) =>
+    (async function* () {
+      const call = { prompt: await firstPrompt(params.prompt), options: params.options ?? {} };
+      calls.push(call);
       for (const m of messages(call)) yield m;
     })() as AsyncGenerator<SDKMessage>;
-  }) as QueryFn;
   return { query, calls };
 }
 
@@ -173,7 +175,7 @@ describe("ralph.describe-pr", { timeout: 60_000 }, () => {
     };
   }
 
-  const options = (query: QueryFn, extra: StoryOptions = {}): StoryOptions => ({
+  const options = (query: SessionQueryFn, extra: StoryOptions = {}): StoryOptions => ({
     runSession: createSessionRunner(query),
     fetch: fetchFn,
     ...extra,

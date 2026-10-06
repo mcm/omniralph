@@ -251,6 +251,8 @@ export async function runStory(
             signal: ctx.signal,
             ...(options.idleTimeoutMs !== undefined && { idleTimeoutMs: options.idleTimeoutMs }),
             onEvent: (event) => relay.event(event),
+            // Replies from the Linear thread reach the live session (see `jobMessages`).
+            onInjector: (inject) => ctx.setMessageInjector?.(inject),
           });
           const after = await readFile(progressFile, "utf8").catch(() => payload.progress);
           const progress = after !== payload.progress ? { progress: after } : {};
