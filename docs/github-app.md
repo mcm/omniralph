@@ -7,6 +7,11 @@ for every job, and `contents: write` on the one repository only for running `ral
 can push their branch). Agents never hold a GitHub API token, and review jobs never get a write
 credential.
 
+For `ralph` runs ([linear.md](linear.md)) the control panel also opens, updates and marks ready the
+run's pull request through the App (Pull requests: write), and the run's branch is pushed by the
+agent with the brokered write token. Nothing else is needed for ralph on the GitHub side: the
+repository must be connected here and have ralph enabled under **Repository › Settings › Ralph**.
+
 Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, see
 [env.md](env.md)). Don't reuse the App for sign-in.
 
@@ -33,7 +38,7 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 {
   "name": "Omniralph",
   "url": "https://omniralph.example.com",
-  "description": "Self-hosted AI code review",
+  "description": "Self-hosted AI code review and Linear-driven builds",
   "public": false,
   "hook_attributes": {
     "url": "https://omniralph.example.com/api/webhooks/github",
@@ -56,7 +61,8 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 - **Upgrading an existing App** (created before ralph, with `Contents: Read`): change
   **Contents** to **Read and write** under the App's **Permissions & events**, then accept the new
   permissions on each installation (**Settings › Applications › Configure**). Until then, ralph
-  jobs can't push; reviews keep working.
+  jobs can't push; reviews keep working. Apps created before reviews posted replies may also have
+  **Pull requests: Read** only; ralph needs **Read and write** to open its PRs.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
   GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the

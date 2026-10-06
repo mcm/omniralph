@@ -32,7 +32,7 @@ put them in `apps/web/.env.local`.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `ENCRYPTION_KEY` | yes | — | 32-byte AES-256-GCM key (base64 or hex) encrypting SCM credentials at rest: `openssl rand -base64 32`. Changing it makes stored GitLab tokens unreadable (reconnect GitLab). |
+| `ENCRYPTION_KEY` | yes | — | 32-byte AES-256-GCM key (base64 or hex) encrypting SCM and Linear credentials at rest: `openssl rand -base64 32`. Changing it makes stored GitLab and Linear tokens unreadable (reconnect GitLab and Linear). |
 | `APP_URL` | yes (except Vercel production) | `https://$VERCEL_PROJECT_PRODUCTION_URL` on Vercel | Public base URL of the control panel. Webhook URLs, review links in summary comments and the enrollment command use it. |
 | `BOT_HANDLE` | no | `omniralph` | The `@handle` for mention commands (`@omniralph review`, `dismiss`, questions). On GitLab set it to the bot user's username. A leading `@` is ignored. |
 
@@ -66,7 +66,7 @@ GitLab has no env vars: the base URL, bot token and webhook secret are entered u
 
 ### Linear app (ralph)
 
-An OAuth application in Linear (**Settings › API › OAuth applications**) that admins install from
+See [linear.md](linear.md). An OAuth application in Linear (**Settings › API › OAuth applications**) that admins install from
 **Settings › Integrations**. Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
 webhooks to `<APP_URL>/api/webhooks/linear` with the **Agent session events** and **Issues** events.
 The app is installed with `actor=app` and scopes `read,write,app:assignable,app:mentionable`; its
@@ -117,4 +117,9 @@ config file, and everything else comes from the control panel. See [deploy-agent
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |
 
 The agent sets `OMNIRALPH_JOB_TOKEN` and `OMNIRALPH_JOB_ID` itself for processes inside a job (the
-`git-credential` helper). Don't set them.
+`git-credential` helper). Don't set them. Ralph's Claude sessions, quality gates, setup and
+preparation commands get the agent's environment without any `OMNIRALPH_*` variable, so they can't
+fetch credentials; whatever else the agent's environment holds, they can read.
+
+Ralph needs no extra agent variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
+[deploy-agent.md](deploy-agent.md#ralph)).
