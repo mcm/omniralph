@@ -36,8 +36,8 @@ function fakeAdapter() {
     resolveThread: [] as { number: number; commentId: string }[],
     hasWriteAccess: [] as string[],
   };
-  const writers = new Set<string>(["maintainer"]);
-  const head = { sha: "f".repeat(40) };
+  const writers = new Set<string>(["maintainer", "dev"]);
+  const head = { sha: "f".repeat(40), state: "open" as ChangeRequest["state"] };
   const adapter: ScmAdapter = {
     provider: "github",
     async getChangeRequest(_repo, number): Promise<ChangeRequest> {
@@ -47,7 +47,7 @@ function fakeAdapter() {
         description: "Please review",
         author: "octocat",
         draft: false,
-        state: "open",
+        state: head.state,
         baseSha: "a".repeat(40),
         headSha: head.sha,
         baseRef: "main",
@@ -290,6 +290,16 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
     });
 
+    it("refuses to review a closed or merged pull request", async () => {
+      const { number } = await reviewedPr();
+      state.scm.head.state = "merged";
+      await conversationComment(number, "@omniralph review fresh");
+      expect(await prReviewJobs(number)).toHaveLength(0);
+      expect(state.scm.calls.postComment[0]!.body).toContain(
+        "this merged pull request can't be reviewed again",
+      );
+    });
+
     it("answers a second request for the same head with the queued job", async () => {
       const { number } = await reviewedPr();
       await conversationComment(number, "@omniralph review");
@@ -413,17 +423,17 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       return db.select().from(jobs).where(eq(jobs.type, "review.reply"));
     }
 
-    it("creates a review.reply job for any other mention in a finding's thread, for anyone", async () => {
+    it("creates a review.reply job for any other mention in a finding's thread", async () => {
       const { number, review, finding, commentId } = await reviewedPr();
       const before = (await replyJobs()).length;
       const res = await threadComment(
         number,
         commentId,
         "Is this really reachable, @omniralph?",
-        "drive-by",
+        "maintainer",
       );
       expect(res).toEqual({ status: "accepted", command: "question" });
-      expect(state.scm.calls.hasWriteAccess).toEqual([]);
+      expect(state.scm.calls.hasWriteAccess).toEqual(["maintainer"]);
 
       const created = (await replyJobs()).slice(before);
       expect(created).toHaveLength(1);
@@ -438,13 +448,24 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         // 10% of the Standard profile's 200,000-token budget.
         maxTokens: 20_000,
         question: "Is this really reachable, @omniralph?",
-        askedBy: "drive-by",
+        askedBy: "maintainer",
         threadCommentId: commentId,
         finding: { path: "src/app.ts", startLine: 3, endLine: 4, title: "Missing null check" },
       });
       expect(state.sends.some((s) => s.topic === "review-jobs")).toBe(true);
       // The answer is the reply; nothing is posted yet.
       expect(state.scm.calls.replyToComment).toHaveLength(0);
+    });
+
+    it("politely refuses questions in a finding's thread from users without write access", async () => {
+      const { number, commentId } = await reviewedPr();
+      const before = (await replyJobs()).length;
+      await threadComment(number, commentId, "@omniralph is this real?", "drive-by");
+      expect(await replyJobs()).toHaveLength(before);
+      expect(state.scm.calls.hasWriteAccess).toEqual(["drive-by"]);
+      expect(state.scm.calls.replyToComment[0]!.body).toMatch(
+        /^Sorry @drive-by, only people with write access to this repository can ask me about findings/,
+      );
     });
 
     it("answers mentions outside a finding thread with the command list", async () => {

@@ -191,7 +191,7 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>
+          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: "var(--font-weight-semibold)" }}>
             Review profiles
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>

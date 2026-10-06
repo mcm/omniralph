@@ -37,7 +37,10 @@ export type BotCommandOutcome =
   | { status: "not_in_finding_thread" }
   | { status: "help" };
 
-/** Commands that change state need write access to the repository. */
+/**
+ * Commands that change state need write access to the repository. Questions
+ * in a finding's thread (which spend tokens) are checked where they're handled.
+ */
 const PRIVILEGED: ReadonlySet<BotCommand["kind"]> = new Set(["review", "dismiss"]);
 
 /** The command list, in code spans so posting it can't trigger a command. */
@@ -61,8 +64,9 @@ const PROFILE_NAMES: Record<string, string> = {
 
 /**
  * Runs a `@bot` command from a PR/MR comment and replies in the comment's
- * thread (or the conversation). `review` and `dismiss` need write access to
- * the repository (`ScmAdapter.hasWriteAccess`); others get a polite refusal.
+ * thread (or the conversation). `review`, `dismiss` and questions in a
+ * finding's thread need write access to the repository
+ * (`ScmAdapter.hasWriteAccess`); others get a polite refusal.
  * Every reply goes through the output sanitizer.
  */
 export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandOutcome> {
@@ -83,11 +87,15 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     }
   };
 
-  if (PRIVILEGED.has(command.kind) && !(await adapter.hasWriteAccess(repo, author))) {
+  const refuse = async (what: string): Promise<BotCommandOutcome> => {
     await respond(
-      `Sorry @${author}, only people with write access to this repository can use ${inlineCode(`@${handle} ${command.kind}`)}. You can still ask me questions about a finding in its thread.`,
+      `Sorry @${author}, only people with write access to this repository can ${what}.`,
     );
     return { status: "refused" };
+  };
+
+  if (PRIVILEGED.has(command.kind) && !(await adapter.hasWriteAccess(repo, author))) {
+    return refuse(`use ${inlineCode(`@${handle} ${command.kind}`)}`);
   }
 
   const inThread = () =>
@@ -100,6 +108,11 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
   switch (command.kind) {
     case "review": {
       const cr = await adapter.getChangeRequest(repo, comment.number);
+      if (cr.state !== "open") {
+        const kind = repository.provider === "gitlab" ? "merge request" : "pull request";
+        await respond(`Sorry @${author}, this ${cr.state} ${kind} can't be reviewed again.`);
+        return { status: "review_unavailable" };
+      }
       const result = await enqueueReview(db, dispatcher, {
         repositoryId: repository.id,
         prNumber: comment.number,
@@ -175,6 +188,9 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       if (!found) {
         await respond(helpText(handle));
         return { status: "help" };
+      }
+      if (!(await adapter.hasWriteAccess(repo, author))) {
+        return refuse("ask me about findings");
       }
       const result = await enqueueReply(db, dispatcher, {
         finding: found.finding,
