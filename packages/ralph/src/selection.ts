@@ -4,7 +4,7 @@
  * sub-issue order in Linear, then the story id (natural sort).
  */
 import { NO_PRIORITY_RANK } from "./story-body.js";
-import type { Story } from "./types.js";
+import { externalIdOf, type Epic, type Story } from "./types.js";
 
 const DONE = new Set(["completed", "cancelled"]);
 
@@ -77,4 +77,63 @@ export function blockedStories(stories: Story[], exclude: ReadonlySet<string>): 
     return ok;
   };
   return stories.filter((s) => !isStoryDone(s) && !excluded(s) && !reachable(s, new Set()));
+}
+
+/**
+ * "Start anyway": blockers outside the epic and manual stories no longer gate any story
+ * (cyralph's `dropOutsideBlockers`). Returns new stories; the input is unchanged.
+ */
+export function withoutOutsideBlockers(stories: readonly Story[]): Story[] {
+  const manual = new Set(stories.filter((s) => s.manual).map((s) => s.key));
+  return stories.map((s) => ({
+    ...s,
+    dependsOn: s.dependsOn.filter((d) => !externalIdOf(d) && !manual.has(d)),
+  }));
+}
+
+/** An issue a run waits for: an open blocker outside the epic, or an open manual story. */
+export interface WaitingIssue {
+  /** Linear issue id. */
+  id: string;
+  identifier: string;
+}
+
+export interface WaitingOn {
+  blockers: WaitingIssue[];
+  manual: WaitingIssue[];
+}
+
+/**
+ * What the epic's remaining stories wait for (ported from cyralph's `finish`): open issues
+ * outside the epic and open manual stories that hold up an unfinished story, directly or
+ * through the stories it depends on. Each issue is listed once, in story order.
+ */
+export function waitingOnFor(epic: Pick<Epic, "stories" | "externalIssues">): WaitingOn {
+  const byKey = new Map(epic.stories.map((s) => [s.key, s]));
+  const blockers = new Map<string, string>();
+  const manual = new Map<string, string>();
+  const waitForManual = (s: Story | undefined) => {
+    if (s?.manual && !isStoryDone(s)) manual.set(s.issueId ?? s.key, s.identifier ?? s.storyId);
+  };
+  const visit = (s: Story, seen: Set<string>) => {
+    for (const d of s.dependsOn) {
+      const ext = externalIdOf(d);
+      if (ext) {
+        blockers.set(ext, epic.externalIssues?.[ext] ?? ext);
+        continue;
+      }
+      const dep = byKey.get(d);
+      if (!dep || isStoryDone(dep) || seen.has(d)) continue;
+      seen.add(d);
+      waitForManual(dep);
+      visit(dep, seen);
+    }
+  };
+  for (const s of epic.stories) {
+    if (isStoryDone(s)) continue;
+    waitForManual(s);
+    visit(s, new Set([s.key]));
+  }
+  const list = (m: Map<string, string>) => [...m].map(([id, identifier]) => ({ id, identifier }));
+  return { blockers: list(blockers), manual: list(manual) };
 }

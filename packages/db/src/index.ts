@@ -233,6 +233,8 @@ export {
   getStory,
   listActiveRunJobIds,
   listRalphRepositories,
+  listRunsAffectedByIssue,
+  listRunsToReconcile,
   listRuns,
   listStories,
   lockRun,
