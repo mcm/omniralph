@@ -11,6 +11,7 @@ import {
 } from "@omniralph/ralph";
 import {
   MAX_LEASE_SECONDS,
+  ralphStashPrefix,
   RalphRequestPayload,
   type JobPayload,
   type RalphRequestResult,
@@ -36,7 +37,7 @@ function clip(text: string, max = MAX_TEXT): string {
 
 /** Label prefix of a run's request stash entries (never offered to its stories). */
 export function requestStashPrefix(payload: Pick<RalphRequestPayload, "runId">): string {
-  return `omniralph ralph ${payload.runId} request `;
+  return `${ralphStashPrefix(payload.runId)}request `;
 }
 
 /** The epic `buildRequestPrompt` expects, from the job's payload. */

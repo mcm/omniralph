@@ -143,6 +143,29 @@ export interface BranchWorktree {
   git(args: readonly string[], options?: WorktreeCallOptions): Promise<string>;
 }
 
+export interface BranchCleanupOptions extends GitJobOptions {
+  branch: string;
+  /** The merged PR/MR head: commits of the local branch it doesn't have keep the branch. */
+  mergedSha: string;
+  /** Message of the stash entry holding the worktree's uncommitted changes. */
+  stashLabel: string;
+}
+
+/** What `cleanupBranchWorktree` did. */
+export interface BranchCleanup {
+  /** The worktree was there (it's removed now). */
+  removedWorktree: boolean;
+  /** The local branch was there. */
+  hadBranch: boolean;
+  /** The worktree's uncommitted changes, stashed; null when it was clean (or gone). */
+  stashed: string | null;
+  /** Commits of the local branch the merged head doesn't have; the branch is kept when > 0. */
+  unmerged: number;
+}
+
+/** Identity for commits the agent makes on hosts without a git `user.name`/`user.email`. */
+const FALLBACK_IDENTITY = ["-c", "user.name=Omniralph", "-c", "user.email=omniralph@localhost"];
+
 /**
  * The local branch and `origin/<branch>` both have commits the other doesn't
  * (e.g. someone force-pushed). Retrying won't help, so this fails the job.
@@ -312,6 +335,190 @@ export class RepoCache {
     await this.withLock(worktreePath, options.signal, () =>
       this.removeBranchWorktreeLocked(repo, worktreePath, branch),
     );
+  }
+
+  /**
+   * Cleanup after a branch's PR/MR merged (ported from cyralph's
+   * `removeWorkspace`): the worktree's uncommitted changes are stashed, the
+   * worktree is removed, and the local branch is deleted unless it has commits
+   * `mergedSha` doesn't (then it's kept, and they're counted). A repository
+   * this agent never cloned has nothing to clean up: it isn't cloned for it.
+   */
+  async cleanupBranchWorktree(
+    repo: JobRepository,
+    options: BranchCleanupOptions,
+  ): Promise<BranchCleanup> {
+    const { branch, mergedSha } = options;
+    await this.checkBranchName(branch);
+    if (!SHA.test(mergedSha)) throw new Error(`invalid commit SHA ${mergedSha}`);
+    const nothing: BranchCleanup = {
+      removedWorktree: false,
+      hadBranch: false,
+      stashed: null,
+      unmerged: 0,
+    };
+    const repoDir = this.repoDir(repo);
+    if (!(await exists(path.join(repoDir, "HEAD")))) return nothing;
+    const job = { env: options.env, signal: options.signal };
+    const worktreePath = this.branchWorktreePath(repo, branch);
+    return this.withLock(worktreePath, options.signal, async () => {
+      const hasWorktree = await exists(path.join(worktreePath, ".git"));
+      const stashed = hasWorktree
+        ? await this.stashWork(worktreePath, options.stashLabel, job)
+        : null;
+      return this.withRepoLock(repo, options.signal, async () => {
+        const git = (args: string[]) => this.runGit(args, { ...job, cwd: repoDir });
+        const tip = (
+          await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).catch(() => "")
+        ).trim();
+        let unmerged = 0;
+        if (tip && tip !== mergedSha) {
+          // The merged head may only be on the remote (e.g. pushed by someone else).
+          if ((await this.missingCommits(repoDir, [mergedSha], job)).length > 0) {
+            await this.fetch(repoDir, [mergedSha], job);
+          }
+          const merged = await git(["merge-base", "--is-ancestor", tip, mergedSha]).then(
+            () => true,
+            () => false,
+          );
+          if (!merged) {
+            const count = await git(["rev-list", "--count", tip, `^${mergedSha}`]);
+            unmerged = Number(count.trim()) || 1;
+          }
+        }
+        await rm(worktreePath, { recursive: true, force: true });
+        await git(["worktree", "unlock", worktreePath]).catch(() => undefined);
+        await git(["worktree", "prune"]);
+        if (tip && unmerged === 0) await git(["branch", "-D", branch]);
+        if (hasWorktree || tip) {
+          this.logger?.info(
+            { path: worktreePath, branch, unmerged, stashed },
+            "cleaned up a merged branch worktree",
+          );
+        }
+        return { removedWorktree: hasWorktree, hadBranch: !!tip, stashed, unmerged };
+      });
+    });
+  }
+
+  /** The repository's stash list (shared by its worktrees), newest first; empty when it isn't cloned. */
+  async listRepoStashes(repo: JobRepository, options: GitJobOptions): Promise<StashEntry[]> {
+    const repoDir = this.repoDir(repo);
+    if (!(await exists(path.join(repoDir, "HEAD")))) return [];
+    return this.withRepoLock(repo, options.signal, () => this.repoStashes(repoDir, options));
+  }
+
+  /**
+   * Drops stash entries by SHA (those no longer in the list are skipped);
+   * returns how many were dropped. Works without a worktree.
+   */
+  async dropRepoStashes(
+    repo: JobRepository,
+    shas: readonly string[],
+    options: GitJobOptions,
+  ): Promise<number> {
+    for (const sha of shas) if (!SHA.test(sha)) throw new Error(`invalid stash SHA ${sha}`);
+    const repoDir = this.repoDir(repo);
+    if (!(await exists(path.join(repoDir, "HEAD")))) return 0;
+    return this.withRepoLock(repo, options.signal, async () => {
+      const git = (args: string[]) => this.runGit(args, { ...options, cwd: repoDir });
+      let dropped = 0;
+      for (const sha of shas) {
+        // Indexes shift as entries go, so look the entry up right before dropping it.
+        const index = (await this.repoStashes(repoDir, options)).findIndex((e) => e.sha === sha);
+        if (index < 0) continue;
+        // What `git stash drop` does, which needs a work tree.
+        await git(["reflog", "delete", "--updateref", "--rewrite", `refs/stash@{${index}}`]);
+        dropped += 1;
+      }
+      if (dropped > 0 && (await this.repoStashes(repoDir, options)).length === 0) {
+        await git(["update-ref", "-d", "refs/stash"]).catch(() => undefined);
+      }
+      return dropped;
+    });
+  }
+
+  /**
+   * Pushes stash entries to `branch` on `origin` (ported from cyralph's
+   * `pushStashes`): one commit per entry, oldest first, on top of the
+   * branch's tip there (or the entry's base when the branch is new), with
+   * the tracked and untracked files of the entry. The entries stay stashed.
+   */
+  async pushStashes(
+    repo: JobRepository,
+    branch: string,
+    entries: readonly StashEntry[],
+    options: GitJobOptions,
+  ): Promise<void> {
+    await this.checkBranchName(branch);
+    if (entries.length === 0) return;
+    const repoDir = this.repoDir(repo);
+    await this.withRepoLock(repo, options.signal, async () => {
+      const git = (args: string[], env: NodeJS.ProcessEnv = options.env) =>
+        this.runGit(args, { ...options, env, cwd: repoDir }).then((out) => out.trim());
+      const existing = await git(["fetch", "--quiet", "origin", `refs/heads/${branch}`]).then(
+        () => git(["rev-parse", "FETCH_HEAD"]),
+        () => null,
+      );
+      let tip = existing;
+      const identity = await git(["config", "--get", "user.email"]).then(
+        (email) => (email ? [] : FALLBACK_IDENTITY),
+        () => FALLBACK_IDENTITY,
+      );
+      const index = path.join(this.workspaceRoot, TMP_DIR, `stash-index-${randomUUID()}`);
+      await mkdir(path.dirname(index), { recursive: true });
+      try {
+        for (const entry of [...entries].reverse()) {
+          if (!SHA.test(entry.sha)) throw new Error(`invalid stash SHA ${entry.sha}`);
+          const env = { ...options.env, GIT_INDEX_FILE: index };
+          // A stash commit's tree has the tracked files; its third parent, if any, the untracked ones.
+          const untracked = await git(["rev-parse", "--verify", "--quiet", `${entry.sha}^3`]).then(
+            () => true,
+            () => false,
+          );
+          const trees = [`${entry.sha}^{tree}`, ...(untracked ? [`${entry.sha}^3^{tree}`] : [])];
+          await git(["read-tree", ...trees], env);
+          const tree = await git(["write-tree"], env);
+          const base = await git(["rev-parse", `${entry.sha}^1`]);
+          const message = `${entry.label}\n\nStash ${entry.sha} from ${entry.date}, made on top of ${base}.`;
+          tip = await git([...identity, "commit-tree", tree, "-p", tip ?? base, "-m", message]);
+          await rm(index, { force: true });
+        }
+      } finally {
+        await rm(index, { force: true });
+      }
+      await git(["push", "--quiet", "origin", `${tip}:refs/heads/${branch}`]);
+    });
+  }
+
+  /** Pushes the local `branch` to `origin` (e.g. a kept branch with unmerged commits). */
+  async pushBranch(repo: JobRepository, branch: string, options: GitJobOptions): Promise<void> {
+    await this.checkBranchName(branch);
+    const repoDir = this.repoDir(repo);
+    if (!(await exists(path.join(repoDir, "HEAD")))) {
+      throw new Error(`${repo.fullPath} isn't cloned on this agent`);
+    }
+    await this.withRepoLock(repo, options.signal, () =>
+      this.runGit(["push", "--quiet", "origin", `refs/heads/${branch}:refs/heads/${branch}`], {
+        ...options,
+        cwd: repoDir,
+      }),
+    );
+  }
+
+  /** Deletes the local `branch`; one that's already gone is fine. */
+  async deleteBranch(repo: JobRepository, branch: string, options: GitJobOptions): Promise<void> {
+    await this.checkBranchName(branch);
+    const repoDir = this.repoDir(repo);
+    if (!(await exists(path.join(repoDir, "HEAD")))) return;
+    await this.withRepoLock(repo, options.signal, async () => {
+      const git = (args: string[]) => this.runGit(args, { ...options, cwd: repoDir });
+      const local = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(
+        () => true,
+        () => false,
+      );
+      if (local) await git(["branch", "-D", branch]);
+    });
   }
 
   /**
@@ -688,6 +895,24 @@ export class RepoCache {
       cwd: worktreePath,
     });
     return true;
+  }
+
+  /** The stash list read from the repository itself (`git stash` needs a work tree). */
+  private async repoStashes(repoDir: string, options: GitJobOptions): Promise<StashEntry[]> {
+    const git = (args: string[]) => this.runGit(args, { ...options, cwd: repoDir });
+    const has = await git(["rev-parse", "--verify", "--quiet", "refs/stash"]).then(
+      () => true,
+      () => false,
+    );
+    if (!has) return [];
+    const list = await git(["log", "-g", "--format=%H%x1f%cI%x1f%gs", "refs/stash", "--"]);
+    return list
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [sha = "", date = "", subject = ""] = line.split("\x1f");
+        return { sha, date, label: subject.replace(/^On [^:]*: /, "") };
+      });
   }
 
   private async stashShas(worktreePath: string, options: GitJobOptions): Promise<string[]> {

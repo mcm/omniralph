@@ -105,9 +105,6 @@ config), with the same names and defaults, grouped as on the page:
 | Linear | **Offer to run preparation** (`allowPreparation`) | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
 | Linear | **Epic completed state** (`epicCompletedState`) | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
 
-The review, CI, cleanup and history-rewrite settings are stored and editable, but ralph doesn't act
-on them yet: the request mode and PR follow-up behind them are still to come.
-
 Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
 also changes running epics from their next story on (for example which stories are manual).
 
@@ -287,6 +284,29 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   this pull request, so I'm leaving this one for a person." A run with a job queued or running is
   checked again later (it may push again); stopped runs and repositories with **Fix failed CI**
   (`respondToCiFailures`) off are skipped, and a closed or merged PR/MR is no longer followed up.
+- **Cleanup after the merge.** When a ralph PR/MR merges (its merge webhook: GitHub
+  `pull_request` closed + merged, GitLab **Merge request events** `merge`; the Linear issue moving
+  to a completed state; or `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR), a
+  `ralph.cleanup` job on the run's sticky agent stashes the worktree's uncommitted changes, removes
+  the branch worktree, and deletes the local branch unless it has commits the merged head doesn't
+  (remote branches are never deleted). It waits while one of the run's jobs is queued or running.
+  The session then says "The pull request `<url>` was merged, so I removed its worktree and the
+  local branch `b`." (or "…but kept the local branch `b`.", plus "Its uncommitted changes are
+  stashed (`sha`)." when there were some), as a thought while the run is active, otherwise as a
+  response. Leftovers are asked about with select questions, stored on the lane (they survive
+  restarts and deploys):
+  - the run's stash entries nobody applied: **Push to a branch on origin** (one commit per entry
+    on `ralph/stash/<epic>`, then dropped) or **Drop**; they stay until someone answers;
+  - a kept branch: **Push to origin** (pushed, then deleted) or **Delete**. Without an answer
+    within **Unmerged branch timeout** (`unmergedBranchTimeoutMinutes`, default 60) the cron
+    deletes it and says "Nobody answered within M minutes, so I deleted the local branch…".
+
+  Answers are matched as in cyralph: the option's text (newest question first), `1`/`2` when only
+  one question is open, or a short reply with a unique first word ("drop", "delete"). A reply
+  that isn't an answer is handled as usual. When an answer can't be carried out the session says
+  "I couldn't do that (…): … Answer again to retry." Turn **Clean up after the merge**
+  (`cleanupMergedWorktrees`) off to keep worktrees and branches; a PR/MR closed without merging is
+  left alone. The lane's cleanup state is shown on the run's page.
 
 ### Attachments
 
@@ -323,6 +343,10 @@ where admins can also stop a run.
 - **Failed CI on a ralph PR/MR isn't picked up until the cron runs.** The GitHub App lacks
   **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
   events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).
+- **Worktrees of merged ralph PRs/MRs stay on the agent host.** The cleanup runs on the run's
+  sticky agent: if that agent is revoked or no longer has `ralph` enabled, nothing can reach its
+  worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
+  that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
   issue: add its label, project or team to a repository's routing, or tag the issue with
   `[repo=<path>]`.

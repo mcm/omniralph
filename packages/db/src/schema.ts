@@ -837,15 +837,45 @@ export interface RalphStash {
   at: string;
 }
 
+/**
+ * A question about a merged lane's leftovers, posted in the run's session and
+ * waiting for a reply (cyralph's `CleanupRequest`).
+ */
+export type RalphCleanupQuestion =
+  | {
+      kind: "stashes";
+      /** Stash entries (by commit SHA) nobody applied. */
+      shas: string[];
+      /** ISO timestamp. */
+      askedAt: string;
+    }
+  | {
+      kind: "branch";
+      /** Commits of the kept local branch the merge doesn't contain. */
+      commits: number;
+      askedAt: string;
+      /** Without an answer by then the branch is deleted (`unmergedBranchTimeoutMinutes`). */
+      deadline: string;
+    };
+
 /** Cleanup of a lane after its PR/MR merged (cyralph's merged-worktree cleanup). */
 export interface RalphLaneCleanup {
-  status: "pending" | "running" | "asked" | "done" | "failed";
+  /**
+   * `pending`: waits until none of the run's jobs is active; `running`: its
+   * `ralph.cleanup` job runs; `done`: the worktree is gone (questions may be
+   * open); `failed`: the job failed (the reconcile cron tries again).
+   */
+  status: "pending" | "running" | "done" | "failed";
   /** ISO timestamp of the last change. */
   at: string;
-  /** The `ralph.cleanup` job doing it. */
+  /** The merged PR/MR head. */
+  mergedSha: string;
+  /** The `ralph.cleanup` job doing the cleanup or carrying out an answer, until its outcome is applied. */
   jobId?: string;
-  /** When unmerged commits were offered: the branch is deleted after the timeout without an answer. */
-  askedAt?: string;
+  /** The answer that job carries out (`expired`: the branch question timed out). */
+  answer?: { kind: "stashes" | "branch"; option: string; expired?: boolean };
+  /** Open questions, oldest first. */
+  questions: RalphCleanupQuestion[];
   error?: string;
 }
 

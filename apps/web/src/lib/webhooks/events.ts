@@ -113,6 +113,43 @@ export function parseGitLabEvent(
   };
 }
 
+/** A PR/MR that was merged (GitHub `pull_request` closed + merged, GitLab MR `merge`). */
+export interface MergeEvent {
+  number: number;
+}
+
+const GitHubMergedEvent = z.object({
+  action: z.literal("closed"),
+  pull_request: z.object({ number: z.number().int().positive(), merged: z.boolean().nullish() }),
+});
+
+/** The merge of a GitHub delivery (`X-GitHub-Event: pull_request`), or null. */
+export function parseGitHubMergeEvent(eventName: string | null, body: unknown): MergeEvent | null {
+  if (eventName !== "pull_request") return null;
+  const parsed = GitHubMergedEvent.safeParse(body);
+  if (!parsed.success || parsed.data.pull_request.merged !== true) return null;
+  return { number: parsed.data.pull_request.number };
+}
+
+const GitLabMergedEvent = z.object({
+  object_kind: z.literal("merge_request"),
+  object_attributes: z.object({
+    iid: z.number().int().positive(),
+    action: z.string().optional(),
+    state: z.string(),
+  }),
+});
+
+/** The merge of a GitLab delivery (`X-Gitlab-Event: Merge Request Hook`), or null. */
+export function parseGitLabMergeEvent(eventName: string | null, body: unknown): MergeEvent | null {
+  if (eventName !== "Merge Request Hook") return null;
+  const parsed = GitLabMergedEvent.safeParse(body);
+  if (!parsed.success) return null;
+  const mr = parsed.data.object_attributes;
+  if (mr.action !== "merge" && !(mr.action === undefined && mr.state === "merged")) return null;
+  return { number: mr.iid };
+}
+
 /**
  * A new comment on a PR/MR that may hold a `@bot` command: GitHub
  * `issue_comment` (conversation) and `pull_request_review_comment` (inline

@@ -261,6 +261,7 @@ export {
   findLaneByBranch,
   findLaneByPullRequest,
   listOpenPullRequestLanes,
+  listLanesToCleanUp,
   getLane,
   getLaneByRepository,
   getMainLane,

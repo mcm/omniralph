@@ -394,6 +394,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
         branch: main.branch,
         baseBranch: "main",
         pullRequest: null,
+        cleanup: null,
       },
       {
         id: web.id,
@@ -406,6 +407,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
           url: "https://gitlab.com/acme/web/-/merge_requests/8",
           label: "!8",
         },
+        cleanup: null,
       },
     ]);
     expect(laned.stories.map((s) => [s.identifier, s.laneId, s.elsewhere])).toEqual([

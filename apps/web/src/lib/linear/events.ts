@@ -1,6 +1,7 @@
 import "server-only";
 import type { Database } from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
+import { cleanupAfterIssueCompleted } from "@/lib/ralph/cleanup";
 import { wakeRunsForIssue } from "@/lib/ralph/reconcile";
 import { handleReply } from "@/lib/ralph/reply";
 import type { RalphDeps } from "@/lib/ralph/run";
@@ -57,7 +58,8 @@ export async function acknowledgeLinearEvent(
 /**
  * Acts on a verified, deduplicated Linear event after the webhook response:
  * a new agent session starts a ralph run; an issue's state change (or
- * removal) advances the runs waiting on it or building it; a reply in an agent
+ * removal) advances the runs waiting on it or building it (and, when it is
+ * completed, cleans up its runs' merged PRs/MRs); a reply in an agent
  * session is the run's guidance.
  */
 export async function handleLinearEvent(
@@ -75,5 +77,11 @@ export async function handleLinearEvent(
   };
   if (event.kind === "session_created") await startRun(event, ralph);
   else if (event.kind === "session_prompted") await handleReply(event, ralph);
-  else await wakeRunsForIssue(event.issueId, ralph);
+  else {
+    // Done: the issue's merged PRs/MRs are cleaned up (logged, never failing the delivery).
+    if (event.stateType === "completed" && !event.removed) {
+      await cleanupAfterIssueCompleted(ralph, event.issueId);
+    }
+    await wakeRunsForIssue(event.issueId, ralph);
+  }
 }

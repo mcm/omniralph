@@ -8,6 +8,8 @@
  * - `ralph.prepare`: runs the approved `cyralph-prepare` commands of a manual story.
  * - `ralph.request`: one Claude session doing what a request from the Linear
  *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
+ * - `ralph.cleanup`: removes a merged lane's branch worktree and local branch,
+ *   and carries out the answers to the questions about its leftovers.
  */
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
@@ -19,11 +21,13 @@ export const RALPH_STORY_JOB_TYPE = "ralph.story";
 export const RALPH_DESCRIBE_PR_JOB_TYPE = "ralph.describe-pr";
 export const RALPH_PREPARE_JOB_TYPE = "ralph.prepare";
 export const RALPH_REQUEST_JOB_TYPE = "ralph.request";
+export const RALPH_CLEANUP_JOB_TYPE = "ralph.cleanup";
 export const RALPH_JOB_TYPES = [
   RALPH_STORY_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
+  RALPH_CLEANUP_JOB_TYPE,
 ] as const;
 
 /** Attempts (not queue deliveries) a story gets before it is marked exhausted. */
@@ -330,6 +334,79 @@ export const RalphRequestResult = z.object({
   durationMs: z.int().min(0),
 });
 export type RalphRequestResult = z.infer<typeof RalphRequestResult>;
+
+/** Label prefix of every stash entry a run's jobs make (story, request and cleanup stashes). */
+export function ralphStashPrefix(runId: string): string {
+  return `omniralph ralph ${runId} `;
+}
+
+/** Branch on `origin` that keeps an epic's leftover stash entries (cyralph's `cyralph/stash/<epic>`). */
+export function ralphStashBranch(epicIdentifier: string): string {
+  return `ralph/stash/${epicIdentifier.toLowerCase()}`;
+}
+
+/** What a `ralph.cleanup` job does. */
+export const RalphCleanupAction = z.discriminatedUnion("kind", [
+  /**
+   * The lane's PR/MR merged: stash what the worktree has uncommitted, remove
+   * the worktree, and delete the local branch unless it has commits the
+   * merged head doesn't. Lists the run's stash entries still in the stash list.
+   */
+  z.object({
+    kind: z.literal("cleanup"),
+    /** The PR/MR head that was merged. */
+    mergedSha: CommitSha,
+    /** Stash entries recorded on the lane (e.g. by earlier runs of the issue). */
+    stashes: z.array(CommitSha).max(200).default([]),
+  }),
+  /** Answer to the stash question: push them (one commit each) to `ralphStashBranch`, then drop them; or drop them. */
+  z.object({
+    kind: z.literal("stashes"),
+    push: z.boolean(),
+    shas: z.array(CommitSha).min(1).max(200),
+  }),
+  /** Answer to the branch question (or its timeout): push the local branch to `origin`, then delete it; or delete it. */
+  z.object({ kind: z.literal("branch"), push: z.boolean() }),
+]);
+export type RalphCleanupAction = z.infer<typeof RalphCleanupAction>;
+
+/** Payload of a `ralph.cleanup` job, on the run's sticky agent (it holds the worktree). */
+export const RalphCleanupPayload = RalphJobBase.extend({
+  /** The epic, which names the stash branch. */
+  epic: RalphIssue.pick({ identifier: true }),
+  action: RalphCleanupAction,
+});
+export type RalphCleanupPayload = z.infer<typeof RalphCleanupPayload>;
+
+/** A stash entry the cleanup found. */
+export const RalphCleanupStash = z.object({
+  sha: CommitSha,
+  /** The message it was stashed with. */
+  label: z.string().max(2000),
+  /** When it was stashed (ISO 8601). */
+  date: z.string().max(64),
+});
+export type RalphCleanupStash = z.infer<typeof RalphCleanupStash>;
+
+/** Result of a `ralph.cleanup` job. */
+export const RalphCleanupResult = z.object({
+  /** Set when the git work failed (the answer can be given again); the rest is then empty. */
+  error: z.string().max(20_000).nullable().default(null),
+  /** `cleanup`: the branch worktree was there and is removed now. */
+  removedWorktree: z.boolean().default(false),
+  /** `cleanup`: the local branch was there. */
+  hadBranch: z.boolean().default(false),
+  /** `cleanup`: the worktree's uncommitted changes, stashed before it was removed. */
+  stashed: CommitSha.nullable().default(null),
+  /** `cleanup`: commits on the kept local branch that the merged head doesn't have (0: deleted). */
+  unmerged: z.int().min(0).default(0),
+  /** `cleanup`: the run's stash entries (and the lane's) still in the stash list, newest first. */
+  stashes: z.array(RalphCleanupStash).max(200).default([]),
+  /** `stashes`: how many entries were pushed or dropped. */
+  handled: z.int().min(0).default(0),
+  durationMs: z.int().min(0),
+});
+export type RalphCleanupResult = z.infer<typeof RalphCleanupResult>;
 
 /**
  * An agent-session activity relayed by an agent (`POST /api/agent/jobs/{id}/activities`):

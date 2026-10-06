@@ -30,13 +30,13 @@ import {
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
 import { parseRalphSettings } from "@omniralph/shared";
+import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
 import { changeRequestTerm } from "./publish";
 import {
   addLaneRequest,
   advanceQuietly,
   OVER,
-  recordClosedPullRequest,
   type PullRequestRequestDelivery,
 } from "./pull-request-requests";
 import type { RalphDeps } from "./run";
