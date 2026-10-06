@@ -15,8 +15,10 @@ export {
   listUsers,
   normalizeEmail,
   setUserRole,
+  setUserTheme,
   type AllowedEmail,
   type NewUser,
+  type UiTheme,
   type User,
   type UserRole,
 } from "./users.js";

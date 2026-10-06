@@ -27,7 +27,10 @@ import {
   IconMoon,
   IconLogout,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { signOutAction } from "@/lib/auth/actions";
+import type { Theme } from "@/lib/theme";
+import { saveThemePreference } from "@/lib/theme-actions";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
 
@@ -35,10 +38,8 @@ interface AppHeaderProps {
   breadcrumbs?: { label: string; href?: string }[];
 }
 
-type Theme = "light" | "dark";
-
-// The theme lives on <html data-theme> (set before paint by the bootstrap
-// script in layout.tsx), so subscribe to that attribute instead of copying it
+// The theme lives on <html data-theme> (rendered from the user's saved theme,
+// or set before paint by the bootstrap script in layout.tsx), so subscribe to that attribute instead of copying it
 // into state.
 function subscribeToTheme(onChange: () => void) {
   const observer = new MutationObserver(onChange);
@@ -56,11 +57,13 @@ function useTheme() {
   const toggle = React.useCallback(() => {
     const next = readTheme() === "light" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("mcmaster-theme", next);
-    } catch {
-      /* storage unavailable */
-    }
+    // Saved server-side so the choice follows the user across reloads and devices.
+    void saveThemePreference(next).then(
+      (result) => {
+        if (!result.ok) toast.error(result.error);
+      },
+      () => toast.error("Couldn't save your theme preference."),
+    );
   }, []);
 
   return { theme, toggle };

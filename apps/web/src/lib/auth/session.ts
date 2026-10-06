@@ -1,5 +1,7 @@
 import "server-only";
+import type { UiTheme } from "@omniralph/db";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { auth } from "@/auth";
 import { assertRole, hasRole, type Role } from "./roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "./routes";
@@ -10,15 +12,17 @@ export interface CurrentUser {
   name: string | null;
   email: string | null;
   image: string | null;
+  /** Remembered control panel theme; `null` follows the OS preference. */
+  theme: UiTheme | null;
 }
 
-/** The signed-in user, or `null`. */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** The signed-in user, or `null`. Cached per request: the root and `(app)` layouts both need it. */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, role, name, email, image } = session.user;
-  return { id, role, name: name ?? null, email: email ?? null, image: image ?? null };
-}
+  const { id, role, name, email, image, theme } = session.user;
+  return { id, role, name: name ?? null, email: email ?? null, image: image ?? null, theme };
+});
 
 /** For pages: the signed-in user with `role` (default `member`); redirects otherwise. */
 export async function requirePageUser(role: Role = "member"): Promise<CurrentUser> {

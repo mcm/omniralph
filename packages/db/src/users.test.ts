@@ -9,12 +9,14 @@ import {
   countAdmins,
   createUserWithInitialRole,
   deleteUser,
+  getUserById,
   initialUserRole,
   isEmailAllowlisted,
   listAllowedEmails,
   listUsers,
   normalizeEmail,
   setUserRole,
+  setUserTheme,
 } from "./users.js";
 
 describe("initialUserRole", () => {
@@ -82,6 +84,15 @@ describe.skipIf(!dockerAvailable)("user queries", () => {
     expect(entries.filter((e) => e.email === "x@y.io")).toEqual([
       expect.objectContaining({ role: "admin" }),
     ]);
+  });
+
+  it("remembers a user's theme, following the OS until one is chosen", async () => {
+    const user = await createUserWithInitialRole(db, { email: "theme@example.com" });
+    expect(user.theme).toBeNull();
+    await setUserTheme(db, user.id, "dark");
+    expect((await getUserById(db, user.id))?.theme).toBe("dark");
+    await setUserTheme(db, user.id, "light");
+    expect((await getUserById(db, user.id))?.theme).toBe("light");
   });
 
   it("changes roles and deletes users with their accounts, sessions and allowlist entry", async () => {

@@ -5,6 +5,7 @@ import {
   createUserWithInitialRole,
   isEmailAllowlisted,
   sessions,
+  type UiTheme,
   users,
 } from "@omniralph/db";
 import NextAuth, { type DefaultSession, type NextAuthConfig } from "next-auth";
@@ -15,13 +16,15 @@ import { isEmailAllowed, parseAllowedDomains } from "@/lib/auth/allowlist";
 import { isRole, type Role } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { getDb } from "@/lib/db";
+import { parseTheme } from "@/lib/theme";
 
 declare module "next-auth" {
   interface User {
     role?: Role;
+    theme?: UiTheme | null;
   }
   interface Session {
-    user: { id: string; role: Role } & DefaultSession["user"];
+    user: { id: string; role: Role; theme: UiTheme | null } & DefaultSession["user"];
   }
 }
 
@@ -87,6 +90,7 @@ function authConfig(): NextAuthConfig {
       session({ session, user }) {
         session.user.id = user.id;
         session.user.role = isRole(user.role) ? user.role : "member";
+        session.user.theme = parseTheme(user.theme);
         return session;
       },
     },

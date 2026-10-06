@@ -32,6 +32,7 @@ const updatedAt = () =>
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 export const userRole = pgEnum("user_role", ["admin", "member"]);
+export const uiTheme = pgEnum("ui_theme", ["light", "dark"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
 export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
@@ -95,6 +96,8 @@ export const users = pgTable("users", {
   image: text("image"),
   /** `admin` manages repos, agents and users; `member` has read access. The first user is `admin`. */
   role: userRole("role").notNull().default("member"),
+  /** The user's chosen control panel theme; `null` follows the OS preference. */
+  theme: uiTheme("theme"),
   createdAt: createdAt(),
 });
 
