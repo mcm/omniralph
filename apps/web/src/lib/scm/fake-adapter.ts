@@ -44,7 +44,14 @@ export class FakeScmAdapter {
   /** `getCiJobLog` answers by job ID; `""` when missing. */
   readonly ciJobLogs = new Map<string, string>();
 
+  /** What `verifyWebhook` answers. */
+  webhookValid = true;
+
   constructor(readonly provider: ScmProvider = "github") {}
+
+  async verifyWebhook(): Promise<boolean> {
+    return this.webhookValid;
+  }
 
   private call(name: string): void {
     this.calls.push(name);

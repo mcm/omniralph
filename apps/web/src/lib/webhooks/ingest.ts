@@ -1,6 +1,8 @@
 import "server-only";
 import {
   claimWebhookDelivery,
+  findLaneByBranch,
+  findLaneByPullRequest,
   findRepositoriesByExternalId,
   releaseWebhookDelivery,
   setWebhookDeliveryJob,
@@ -14,17 +16,22 @@ import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { botHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand } from "@/lib/mentions/handle";
+import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
+import { respondToCiEvent } from "@/lib/ralph/ci";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
   githubInstallationId,
+  parseGitHubCiEvent,
   parseGitHubCommentEvent,
   parseGitHubEvent,
+  parseGitLabCiEvent,
   parseGitLabCommentEvent,
   parseGitLabEvent,
   webhookRepositoryId,
   type ChangeRequestEvent,
+  type CiEvent,
   type CommentEvent,
 } from "./events";
 
@@ -36,6 +43,7 @@ interface ProviderSpec {
   deliveryHeader: string;
   parse(eventName: string | null, body: unknown): ChangeRequestEvent | null;
   parseComment(eventName: string | null, body: unknown): CommentEvent | null;
+  parseCi(eventName: string | null, body: unknown): CiEvent | null;
 }
 
 const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
@@ -44,12 +52,14 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     deliveryHeader: "x-github-delivery",
     parse: parseGitHubEvent,
     parseComment: parseGitHubCommentEvent,
+    parseCi: parseGitHubCiEvent,
   },
   gitlab: {
     eventHeader: "x-gitlab-event",
     deliveryHeader: "x-gitlab-event-uuid",
     parse: parseGitLabEvent,
     parseComment: parseGitLabCommentEvent,
+    parseCi: parseGitLabCiEvent,
   },
 };
 
@@ -73,6 +83,7 @@ type Outcome =
   | { status: "enqueued"; reviewId: string; jobId: string }
   | { status: "duplicate"; jobId?: string }
   | { status: "accepted"; command: string }
+  | { status: "accepted"; event: "ci_failure" }
   | { status: "ignored"; reason: string };
 
 const reply = (outcome: Outcome) => Response.json(outcome);
@@ -127,6 +138,8 @@ export async function handleWebhook(
   const eventName = req.headers.get(spec.eventHeader);
   const deliveryId = req.headers.get(spec.deliveryHeader)?.trim();
   const delivery = deliveryId ? { provider, deliveryId } : null;
+  const ci = spec.parseCi(eventName, body);
+  if (ci) return handleCi({ ...deps, ...match, provider, delivery, ci });
   const event = spec.parse(eventName, body);
   if (!event) {
     const comment = spec.parseComment(eventName, body);
@@ -208,6 +221,60 @@ async function handleComment(
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
   return reply({ status: "accepted", command: command.kind });
+}
+
+/**
+ * A finished CI run (GitHub `workflow_run`, GitLab Pipeline Hook): a failure
+ * on a ralph PR/MR's lane is handed to the ralph run (`respondToCiEvent`, via
+ * `defer`, since it reads the CI status and job logs from the code host).
+ * Passing runs, repositories without ralph and PRs/MRs that aren't ralph
+ * lanes are ignored; a delivery ID that was already acted on is a no-op.
+ */
+async function handleCi(
+  input: WebhookDeps & {
+    repository: Repository;
+    connection: ScmConnection;
+    provider: ScmProvider;
+    delivery: WebhookDeliveryRef | null;
+    ci: CiEvent;
+  },
+): Promise<Response> {
+  const { db, repository, delivery, ci } = input;
+  if (!ci.failed) return ignored("ci_not_failed");
+  if (repository.disconnectedAt || !repository.ralphEnabled) return ignored("ralph_disabled");
+  const lanes = await Promise.all([
+    ...ci.prNumbers.map((n) => findLaneByPullRequest(db, repository.id, n)),
+    ci.prNumbers.length === 0 && ci.branch
+      ? findLaneByBranch(db, repository.id, ci.branch)
+      : Promise.resolve(null),
+  ]);
+  if (!lanes.some(Boolean)) return ignored("not_ralph");
+  if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
+    return reply({ status: "duplicate" });
+  }
+  const task = async () => {
+    try {
+      const linear = await (input.linear ?? (() => getLinearGatewayOrDisconnected({ db })))();
+      await respondToCiEvent(
+        {
+          db,
+          linear,
+          dispatcher: input.dispatcher,
+          adapterFor: input.adapterFor ?? scmAdapterFor,
+        },
+        repository.id,
+        ci,
+      );
+    } catch (error) {
+      console.error(
+        `${input.provider} CI failure on ${repository.fullPath} (${ci.headSha}) failed`,
+        error,
+      );
+    }
+  };
+  const defer = input.defer ?? ((run: () => Promise<void>) => run());
+  await defer(task);
+  return reply({ status: "accepted", event: "ci_failure" });
 }
 
 /**

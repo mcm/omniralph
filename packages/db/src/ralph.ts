@@ -12,6 +12,7 @@ import {
   eq,
   exists,
   inArray,
+  isNotNull,
   isNull,
   lt,
   notExists,
@@ -705,6 +706,56 @@ export async function findLaneByPullRequest(
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The open lane of the newest run whose PR/MR has this source branch in the
+ * repository (CI events that name a branch, not a PR/MR), or null.
+ */
+export async function findLaneByBranch(
+  db: Executor,
+  repositoryId: string,
+  branch: string,
+): Promise<{ lane: RalphLane; run: RalphRun } | null> {
+  const [row] = await db
+    .select({ lane: ralphLanes, run: ralphRuns })
+    .from(ralphLanes)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
+    .where(
+      and(
+        eq(ralphLanes.repositoryId, repositoryId),
+        eq(ralphLanes.branch, branch),
+        isNotNull(ralphLanes.prNumber),
+        eq(ralphLanes.prClosed, false),
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Every ralph PR/MR not known to be closed, each with the lane of its newest
+ * run (a re-delegation carries a PR/MR forward), oldest lane first.
+ */
+export async function listOpenPullRequestLanes(
+  db: Executor,
+): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
+  const rows = await db
+    .select({ lane: ralphLanes, run: ralphRuns })
+    .from(ralphLanes)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
+    .where(and(isNotNull(ralphLanes.prNumber), eq(ralphLanes.prClosed, false)))
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
+  const newest = new Map<string, { lane: RalphLane; run: RalphRun }>();
+  for (const row of rows) {
+    const key = `${row.lane.repositoryId}#${row.lane.prNumber}`;
+    if (!newest.has(key)) newest.set(key, row);
+  }
+  return [...newest.values()].sort(
+    (a, b) =>
+      a.lane.createdAt.getTime() - b.lane.createdAt.getTime() || a.lane.id.localeCompare(b.lane.id),
+  );
 }
 
 /** Lane columns the orchestrator changes (the run and repository are fixed). */
