@@ -65,16 +65,22 @@ const server = setupServer(
   }),
   http.post(`${MR}/notes`, () => HttpResponse.json({ id: 900 }, { status: 201 })),
   http.post(`${API}/access_tokens`, async ({ request }) => {
-    const body = (await request.clone().json()) as { expires_at: string };
+    const body = (await request.clone().json()) as {
+      name: string;
+      expires_at: string;
+      scopes: string[];
+      access_level: number;
+    };
     tokensIssued += 1;
+    const kind = body.scopes.includes("write_repository") ? "write" : "read";
     return HttpResponse.json(
       {
         id: 300 + tokensIssued,
-        name: "omniralph-read-repository",
-        token: `glpat-read-${tokensIssued}`,
+        name: body.name,
+        token: `glpat-${kind}-${tokensIssued}`,
         expires_at: body.expires_at,
-        scopes: ["read_repository"],
-        access_level: 20,
+        scopes: body.scopes,
+        access_level: body.access_level,
       },
       { status: 201 },
     );
@@ -412,6 +418,58 @@ describe("getReadOnlyCloneCredential", () => {
     );
     await expect(failing.getReadOnlyCloneCredential(REPO)).rejects.toThrow();
     await expect(failing.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({ token: "glpat-read-2" });
+  });
+});
+
+describe("getWriteCloneCredential", () => {
+  it("creates a write_repository Developer token cached under its own scope", async () => {
+    const cache = new MemoryCredentialCache();
+    const adapter = makeAdapter(cache);
+    const read = await adapter.getReadOnlyCloneCredential(REPO);
+    const credential = await adapter.getWriteCloneCredential(REPO);
+
+    const created = await posts("/projects/99/access_tokens");
+    expect(created).toHaveLength(2);
+    expect(created[1]?.body).toEqual({
+      name: "omniralph-write-repository",
+      scopes: ["write_repository"],
+      expires_at: "2026-10-05",
+      access_level: 30,
+    });
+    expect(credential).toEqual({
+      cloneUrl: `${HOST}/acme/tools/widgets.git`,
+      username: "oauth2",
+      token: "glpat-write-2",
+      expiresAt: new Date("2026-10-05T00:00:00Z"),
+    });
+    expect(read.token).toBe("glpat-read-1");
+    expect(await cache.get(REPO, "write_repository")).toEqual({
+      token: "glpat-write-2",
+      expiresAt: new Date("2026-10-05T00:00:00Z"),
+      externalId: "302",
+    });
+    expect((await cache.get(REPO, "read_repository"))?.token).toBe("glpat-read-1");
+
+    // Reused from the cache, then rotated within 2 hours of expiry.
+    await expect(makeAdapter(cache).getWriteCloneCredential(REPO)).resolves.toMatchObject({
+      token: "glpat-write-2",
+    });
+    expect(await posts("/access_tokens")).toHaveLength(2);
+    now = Date.UTC(2026, 9, 4, 22, 0, 0);
+    const rotated = await adapter.getWriteCloneCredential(REPO);
+    expect(rotated.token).toBe("glpat-write-3");
+    expect(rotated.expiresAt).toEqual(new Date("2026-10-06T00:00:00Z"));
+    expect((await cache.get(REPO, "write_repository"))?.externalId).toBe("303");
+  });
+
+  it("doesn't share in-flight creation with the read-only token", async () => {
+    const adapter = makeAdapter();
+    const [read, write] = await Promise.all([
+      adapter.getReadOnlyCloneCredential(REPO),
+      adapter.getWriteCloneCredential(REPO),
+    ]);
+    expect(read.token).toMatch(/^glpat-read-/);
+    expect(write.token).toMatch(/^glpat-write-/);
   });
 });
 

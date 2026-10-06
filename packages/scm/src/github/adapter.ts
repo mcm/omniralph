@@ -273,11 +273,23 @@ export class GitHubAdapter implements ScmAdapter {
 
   /** An installation token limited to `contents: read` on this one repository. */
   async getReadOnlyCloneCredential(repo: RepoRef): Promise<CloneCredential> {
+    return this.cloneCredential(repo, "read");
+  }
+
+  /**
+   * An installation token limited to `contents: write` on this one
+   * repository. GitHub expires installation tokens after (at most) 1 hour.
+   */
+  async getWriteCloneCredential(repo: RepoRef): Promise<CloneCredential> {
+    return this.cloneCredential(repo, "write");
+  }
+
+  private async cloneCredential(repo: RepoRef, contents: "read" | "write"): Promise<CloneCredential> {
     const { owner, repo: name } = splitRepoPath(repo);
     const installationId = await this.resolveInstallationId(owner, name);
     const { token, expiresAt } = await this.auth.getInstallationToken(installationId, {
       repositories: [name],
-      permissions: { contents: "read" },
+      permissions: { contents },
     });
     return {
       cloneUrl: `${this.webUrl}/${owner}/${name}.git`,

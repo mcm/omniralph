@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrollCommand, isAgentOnline, jobTarget } from "./display";
+import { auditDetailSummary, enrollCommand, isAgentOnline, jobTarget } from "./display";
 
 describe("isAgentOnline", () => {
   const now = new Date("2026-10-05T12:00:00Z");
@@ -47,5 +47,20 @@ describe("jobTarget", () => {
       url: "https://github.com/acme/web",
     });
     expect(jobTarget({ payload: { prNumber: 1 }, repository: null })).toBeNull();
+  });
+});
+
+describe("auditDetailSummary", () => {
+  it("says whether an issued credential was read-only or write", () => {
+    expect(
+      auditDetailSummary("credential_issued", { repository: "acme/api", jobId: "abcdef12-0" }),
+    ).toBe("Read-only token for acme/api, job abcdef12");
+    expect(
+      auditDetailSummary("credential_issued", {
+        repository: "acme/api",
+        jobId: "abcdef12-0",
+        access: "write",
+      }),
+    ).toBe("Write token for acme/api, job abcdef12");
   });
 });

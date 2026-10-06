@@ -10,11 +10,13 @@ function forbidden(error: string): Response {
 }
 
 /**
- * The credential broker: a short-lived, read-only clone credential for the
- * repository of the job whose token authenticates the request (used by the
- * agent's `git-credential` helper). Only while the job is `running` on the
- * token's agent (else 401); jobs without a usable repository get 403. Every
- * issuance is audited as `credential_issued`.
+ * The credential broker: a short-lived clone credential for the repository of
+ * the job whose token authenticates the request (used by the agent's
+ * `git-credential` helper). Only while the job is `running` on the token's
+ * agent (else 401); jobs without a usable repository get 403. The credential
+ * is read-only unless the job token has `credentials:write` *and* the job row
+ * is a `ralph` job; then it can push. The request body is ignored. Every
+ * issuance is audited as `credential_issued` with its `access`.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireJob(req, "credentials:read");
@@ -26,10 +28,14 @@ export async function POST(req: Request): Promise<Response> {
   if (!found || found.repository.disconnectedAt) return forbidden("repository_unavailable");
   const { repository, connection } = found;
 
-  const credential = await scmAdapterFor(db, connection).getReadOnlyCloneCredential({
-    fullPath: repository.fullPath,
-    externalId: repository.externalId,
-  });
+  const access =
+    principal.scopes.includes("credentials:write") && job.capability === "ralph" ? "write" : "read";
+  const adapter = scmAdapterFor(db, connection);
+  const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
+  const credential =
+    access === "write"
+      ? await adapter.getWriteCloneCredential(repo)
+      : await adapter.getReadOnlyCloneCredential(repo);
   await writeAgentAudit(db, {
     agentId: principal.agentId,
     event: "credential_issued",
@@ -39,6 +45,7 @@ export async function POST(req: Request): Promise<Response> {
       repositoryId: repository.id,
       repository: repository.fullPath,
       provider: repository.provider,
+      access,
       expiresAt: credential.expiresAt.toISOString(),
     },
   });

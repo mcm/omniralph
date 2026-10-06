@@ -81,7 +81,8 @@ export function auditDetailSummary(event: AuditEventName, detail: Record<string,
     case "credential_issued": {
       const repo = str(detail.repository);
       const job = str(detail.jobId);
-      return [repo && `Read-only token for ${repo}`, job && `job ${job.slice(0, 8)}`]
+      const kind = detail.access === "write" ? "Write token" : "Read-only token";
+      return [repo && `${kind} for ${repo}`, job && `job ${job.slice(0, 8)}`]
         .filter(Boolean)
         .join(", ");
     }

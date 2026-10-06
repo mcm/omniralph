@@ -72,6 +72,9 @@ function fakeAdapter() {
     async getReadOnlyCloneCredential() {
       throw new Error("not used");
     },
+    async getWriteCloneCredential() {
+      throw new Error("not used");
+    },
     async hasWriteAccess(_repo, username) {
       calls.hasWriteAccess.push(username);
       return writers.has(username);

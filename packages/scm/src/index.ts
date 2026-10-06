@@ -29,6 +29,7 @@ export {
   GitLabAdapter,
   READ_REPOSITORY_SCOPE,
   renderGitLabComment,
+  WRITE_REPOSITORY_SCOPE,
 } from "./gitlab/adapter.js";
 export type { GitLabAdapterOptions } from "./gitlab/adapter.js";
 export { buildGitLabDiffIndex, buildPosition, lineCode, parseFileLines } from "./gitlab/positions.js";

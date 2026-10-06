@@ -2,8 +2,10 @@
 
 Omniralph talks to GitHub as **one GitHub App per control panel** (one per Vercel environment if
 previews connect to GitHub too). The App receives the webhooks, posts reviews and replies, resolves
-threads and mints the short-lived, read-only clone tokens the credential broker hands to agents.
-Agents never hold GitHub write credentials.
+threads and mints the short-lived clone tokens the credential broker hands to agents: read-only
+for every job, and `contents: write` on the one repository only for running `ralph` jobs (so they
+can push their branch). Agents never hold a GitHub API token, and review jobs never get a write
+credential.
 
 Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, see
 [env.md](env.md)). Don't reuse the App for sign-in.
@@ -12,8 +14,8 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 
 | Permission | Access | Used for |
 | -- | -- | -- |
-| Pull requests | Read & write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads |
-| Contents | Read | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour) |
+| Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready ralph runs' PRs |
+| Contents | Read and write | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour); push tokens brokered to running `ralph` jobs only (`contents: write`, one repository, ≤ 1 hour) |
 | Issues | Read & write | The `issue_comment` event (PR conversation comments are issue comments) and replies to `@bot` commands in the PR conversation |
 | Metadata | Read | Mandatory for every App |
 
@@ -43,7 +45,7 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
   "request_oauth_on_install": false,
   "default_permissions": {
     "pull_requests": "write",
-    "contents": "read",
+    "contents": "write",
     "issues": "write",
     "metadata": "read"
   },
@@ -51,6 +53,10 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 }
 ```
 
+- **Upgrading an existing App** (created before ralph, with `Contents: Read`): change
+  **Contents** to **Read and write** under the App's **Permissions & events**, then accept the new
+  permissions on each installation (**Settings › Applications › Configure**). Until then, ralph
+  jobs can't push; reviews keep working.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
   GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the

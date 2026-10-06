@@ -11,7 +11,12 @@ import {
   upsertScmConnection,
   type Database,
 } from "@omniralph/db";
-import type { CloneCredentialResponse, JobStartResponse } from "@omniralph/shared";
+import {
+  CAPABILITY_JOB_SCOPES,
+  type CloneCredentialResponse,
+  type JobStartResponse,
+  type JobTokenScope,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
@@ -47,7 +52,7 @@ process.env.GITHUB_APP_ID = "12345";
 process.env.GITHUB_APP_PRIVATE_KEY = appKey.export({ type: "pkcs8", format: "pem" }).toString();
 process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
-const { getTokenSigner } = await import("@/lib/agent-auth/signer");
+const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/signer");
 const { VercelQueuesDispatcher } = await import("@/lib/dispatch");
 const { pinRepository } = await import("@/lib/agents/pins");
 const { POST: credentials } = await import("./credentials/route");
@@ -62,38 +67,50 @@ const GITLAB = "https://gitlab.example.com";
 const tokenRequests: { url: string; body: unknown }[] = [];
 const server = setupServer(
   http.post(`${GITLAB}/api/v4/projects/77/access_tokens`, async ({ request }) => {
-    const body = (await request.json()) as { expires_at: string };
+    const body = (await request.json()) as {
+      name: string;
+      expires_at: string;
+      scopes: string[];
+      access_level: number;
+    };
     tokenRequests.push({ url: request.url, body });
+    const write = body.scopes.includes("write_repository");
     return HttpResponse.json(
       {
-        id: 1,
-        name: "omniralph-read-repository",
-        token: "glpat-read-only",
+        id: write ? 2 : 1,
+        name: body.name,
+        token: write ? "glpat-write-repository" : "glpat-read-only",
         expires_at: body.expires_at,
-        scopes: ["read_repository"],
-        access_level: 20,
+        scopes: body.scopes,
+        access_level: body.access_level,
       },
       { status: 201 },
     );
   }),
   http.post("https://api.github.com/app/installations/4242/access_tokens", async ({ request }) => {
-    tokenRequests.push({ url: request.url, body: await request.json() });
+    const body = (await request.json()) as { permissions?: { contents?: string } };
+    tokenRequests.push({ url: request.url, body });
     return HttpResponse.json(
-      { token: "ghs_contents_read", expires_at: new Date(Date.now() + 3_600_000).toISOString() },
+      {
+        token: `ghs_contents_${body.permissions?.contents ?? "all"}`,
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      },
       { status: 201 },
     );
   }),
 );
 
 let ipCounter = 0;
-function credentialRequest(token?: string): Request {
+function credentialRequest(token?: string, body?: unknown): Request {
   ipCounter += 1;
   return new Request("http://localhost/api/agent/credentials", {
     method: "POST",
     headers: {
       ...(token && { authorization: `Bearer ${token}` }),
+      ...(body !== undefined && { "content-type": "application/json" }),
       "x-real-ip": `203.0.113.${ipCounter}`,
     },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
   });
 }
 
@@ -185,7 +202,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   function jobToken(
     jobId: string,
     agentId: string,
-    scopes: "credentials:read"[] = ["credentials:read"],
+    scopes: JobTokenScope[] = ["credentials:read"],
   ) {
     return getTokenSigner().signJobToken({ jobId, agentId, scopes });
   }
@@ -217,6 +234,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         repositoryId: gitlabRepoId,
         repository: "group/sub/app",
         provider: "gitlab",
+        access: "read",
         expiresAt: body.expiresAt,
       });
       expect(audit[0]!.ip).toMatch(/^203\.0\.113\./);
@@ -236,6 +254,162 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         { repositories: ["app"], permissions: { contents: "read" } },
       ]);
       expect(await issued(agentId)).toHaveLength(1);
+    });
+
+    describe("write credentials", () => {
+      const RALPH_SCOPES = CAPABILITY_JOB_SCOPES.ralph;
+      const ralphJob = { capability: "ralph", type: "ralph.story" } as const;
+
+      it("issues a GitLab write_repository token to a running ralph job and audits it as write", async () => {
+        const agentId = await newAgent();
+        const jobId = await newJob({
+          ...ralphJob,
+          status: "running",
+          agentId,
+          repositoryId: gitlabRepoId,
+        });
+        const res = await credentials(
+          credentialRequest(await jobToken(jobId, agentId, RALPH_SCOPES)),
+        );
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as CloneCredentialResponse;
+        expect(body).toMatchObject({
+          cloneUrl: `${GITLAB}/group/sub/app.git`,
+          username: "oauth2",
+          password: "glpat-write-repository",
+        });
+        expect(tokenRequests.map((r) => r.body)).toEqual([
+          expect.objectContaining({ scopes: ["write_repository"], access_level: 30 }),
+        ]);
+        const audit = await issued(agentId);
+        expect(audit).toHaveLength(1);
+        expect(audit[0]!.detail).toMatchObject({
+          jobId,
+          access: "write",
+          expiresAt: body.expiresAt,
+        });
+      });
+
+      it("issues a GitHub token limited to contents: write on the one repo, expiring within an hour", async () => {
+        const agentId = await newAgent();
+        const jobId = await newJob({
+          ...ralphJob,
+          status: "running",
+          agentId,
+          repositoryId: githubRepoId,
+        });
+        const res = await credentials(
+          credentialRequest(await jobToken(jobId, agentId, RALPH_SCOPES)),
+        );
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as CloneCredentialResponse;
+        expect(body).toMatchObject({
+          cloneUrl: "https://github.com/acme/app.git",
+          username: "x-access-token",
+          password: "ghs_contents_write",
+        });
+        expect(Date.parse(body.expiresAt) - Date.now()).toBeLessThanOrEqual(3_600_000);
+        expect(tokenRequests.map((r) => r.body)).toEqual([
+          { repositories: ["app"], permissions: { contents: "write" } },
+        ]);
+        expect((await issued(agentId))[0]!.detail).toMatchObject({ access: "write" });
+      });
+
+      it("gives a started ralph job's token a write credential", async () => {
+        const agentId = await newAgent({ enabledCapabilities: ["ralph"] });
+        const jobId = await newJob({ ...ralphJob, status: "queued", repositoryId: githubRepoId });
+        const accessToken = await getTokenSigner().signAccessToken(agentId);
+        const res = await start(
+          new Request(`http://localhost/api/agent/jobs/${jobId}/start`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.251" },
+          }),
+          { params: Promise.resolve({ id: jobId }) },
+        );
+        const started = (await res.json()) as JobStartResponse;
+        expect(started.action).toBe("run");
+        if (started.action !== "run") return;
+        const cred = await credentials(credentialRequest(started.jobToken.token));
+        expect(await cred.json()).toMatchObject({ password: "ghs_contents_write" });
+      });
+
+      it("never gives a review job a write credential, even with a forged token scope and request body", async () => {
+        const agentId = await newAgent();
+        const readOnly = [
+          [gitlabRepoId, "glpat-read-only"],
+          [githubRepoId, "ghs_contents_read"],
+        ] as const;
+        for (const [repositoryId, password] of readOnly) {
+          const jobId = await newJob({ status: "running", agentId, repositoryId });
+          const res = await credentials(
+            credentialRequest(
+              await jobToken(jobId, agentId, ["credentials:read", "credentials:write"]),
+              {
+                access: "write",
+                capability: "ralph",
+                scopes: ["credentials:write"],
+                permissions: { contents: "write" },
+              },
+            ),
+          );
+          expect(res.status).toBe(200);
+          expect(await res.json()).toMatchObject({ password });
+        }
+        // Read tokens may come from the cache, but no write token was minted.
+        for (const { body } of tokenRequests) {
+          expect(JSON.stringify(body)).not.toMatch(/write/);
+        }
+        expect((await issued(agentId)).map((e) => e.detail.access)).toEqual(["read", "read"]);
+      });
+
+      it("gives a ralph job whose token lacks credentials:write only a read credential", async () => {
+        const agentId = await newAgent();
+        const jobId = await newJob({
+          ...ralphJob,
+          status: "running",
+          agentId,
+          repositoryId: githubRepoId,
+        });
+        const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
+        expect(await res.json()).toMatchObject({ password: "ghs_contents_read" });
+        expect((await issued(agentId))[0]!.detail).toMatchObject({ access: "read" });
+      });
+
+      it("refuses ralph job tokens whose job isn't running on that agent, or that expired", async () => {
+        const agentId = await newAgent();
+        const other = await newAgent();
+        const jobIds = [
+          await newJob({ ...ralphJob, status: "queued", repositoryId: githubRepoId }),
+          await newJob({ ...ralphJob, status: "completed", agentId, repositoryId: githubRepoId }),
+          await newJob({
+            ...ralphJob,
+            status: "running",
+            agentId: other,
+            repositoryId: githubRepoId,
+          }),
+        ];
+        for (const jobId of jobIds) {
+          const res = await credentials(
+            credentialRequest(await jobToken(jobId, agentId, RALPH_SCOPES)),
+          );
+          expect(res.status).toBe(401);
+        }
+
+        const running = await newJob({
+          ...ralphJob,
+          status: "running",
+          agentId,
+          repositoryId: githubRepoId,
+        });
+        const expired = await new LocalTokenSigner({
+          privateKey: signingKey,
+          now: () => Date.now() - 24 * 3_600_000,
+        }).signJobToken({ jobId: running, agentId, scopes: RALPH_SCOPES });
+        expect((await credentials(credentialRequest(expired))).status).toBe(401);
+
+        expect(tokenRequests).toHaveLength(0);
+        expect(await issued(agentId)).toHaveLength(0);
+      });
     });
 
     it("rejects jobs that aren't running on the token's agent with 401", async () => {
