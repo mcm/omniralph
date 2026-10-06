@@ -14,6 +14,7 @@ import {
   runMigrations,
   startJob,
   updateRepositoryRalphSettings,
+  updateRun,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
   type Database,
@@ -331,6 +332,16 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       );
     });
 
+    it("links an early draft in the stop response", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      await updateRun(db, run.id, { prNumber: 4, prUrl: "https://github.com/acme/api/pull/4" });
+      await reply(run, "stop");
+      expect(last(run, "response")).toContain(
+        "The draft stays open: https://github.com/acme/api/pull/4",
+      );
+    });
+
     it("a guidance reply while a job runs is applied from the next attempt", async () => {
       twoStoryEpic();
       const run = await delegate("issue-1");
@@ -373,6 +384,28 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         guidance: ["hint 0"],
         lastFeedback: expect.stringContaining("No."),
       });
+    });
+    it("resets the attempts a pending or running story has used", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      await work(run.id, { status: "incomplete", summary: "No." });
+      await work(run.id, { status: "incomplete", summary: "Still no." });
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-2", "running", 2],
+        ["ENG-3", "pending", 0],
+      ]);
+      await reply(run, "Try the other library.");
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-2", "running", 0],
+        ["ENG-3", "pending", 0],
+      ]);
+      // The queued job was built before the reply; the next attempts count from zero.
+      await work(run.id, { status: "incomplete", summary: "Nope." });
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-2", "running", 1],
+        ["ENG-3", "pending", 0],
+      ]);
+      expect(await work(run.id)).toMatchObject({ guidance: ["Try the other library."] });
     });
   });
 

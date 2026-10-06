@@ -55,9 +55,24 @@ export function preparationHash(commands: readonly string[]): string {
   return createHash("sha256").update(JSON.stringify(commands)).digest("hex");
 }
 
+/** The most commands one `ralph.prepare` job runs. */
+export const MAX_PREPARATION_COMMANDS = 50;
+/** The longest command a `ralph.prepare` job runs. */
+export const MAX_PREPARATION_COMMAND_LENGTH = 4000;
+
+/** Whether a `ralph.prepare` job can run these commands (as many and as long as its payload allows). */
+export function isRunnablePreparation(commands: readonly string[]): boolean {
+  return (
+    commands.length > 0 &&
+    commands.length <= MAX_PREPARATION_COMMANDS &&
+    commands.every((c) => c.length <= MAX_PREPARATION_COMMAND_LENGTH)
+  );
+}
+
 /**
- * Manual stories whose preparation can be offered now, in story order: open, with commands, every
- * blocker done, and not in `handled` (story issue IDs, or keys) yet.
+ * Manual stories whose preparation can be offered now, in story order: open, with commands a
+ * `ralph.prepare` job can run, every blocker done, and not in `handled` (story issue IDs, or keys)
+ * yet. A story with more (or longer) commands than that is left to a person.
  */
 export function eligiblePreparations(
   stories: readonly Story[],
@@ -67,7 +82,7 @@ export function eligiblePreparations(
   return sortStories([...stories]).filter(
     (s) =>
       s.manual &&
-      (s.preparation?.length ?? 0) > 0 &&
+      isRunnablePreparation(s.preparation ?? []) &&
       !isStoryDone(s) &&
       !handled.has(s.issueId ?? s.key) &&
       s.dependsOn.every((d) => {

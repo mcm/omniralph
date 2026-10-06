@@ -14,6 +14,7 @@ import {
   saveIntegration,
   updateRepositoryRalphSettings,
   updateRun,
+  updateStory,
   upsertScmConnection,
   webhookDeliveries,
   DEFAULT_RALPH_SETTINGS,
@@ -263,6 +264,32 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     ]);
   });
 
+  it("creates the PRD stories an interrupted materialization left out, once", async () => {
+    const epic = linear.add({ identifier: "ENG-15", title: "PRD", description: PRD });
+    // The first try created one sub-issue, then failed.
+    const store = linear.add({ identifier: "ENG-16", title: "Store priority", parentId: epic.id });
+    const event = created(epic.id);
+    await startRun(event, deps());
+
+    const children = await linear.getChildren(epic.id);
+    expect(children.map((c) => c.title)).toEqual([
+      "Store priority",
+      "Grant database access",
+      "Show priority",
+    ]);
+    expect(linear.blocks.get(children[2]!.id)).toEqual([store.id]);
+    const run = await getRunBySession(db, event.sessionId);
+    expect(run).toMatchObject({ kind: "prd" });
+    expect((await listStories(db, run!.id)).map((s) => s.title)).toEqual([
+      "Store priority",
+      "Grant database access",
+      "Show priority",
+    ]);
+    expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
+      "Created 2 story sub-issues from the PRD",
+    );
+  });
+
   it("treats a plain issue as a single story", async () => {
     const issue = linear.add({ identifier: "ENG-20", title: "Fix the login bug" });
     const event = created(issue.id);
@@ -389,15 +416,29 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     );
     expect((await getRun(db, previous.id))?.status).toBe("running");
 
+    // It was running the story with an early draft open.
+    const [running] = await listStories(db, previous.id);
+    await updateStory(db, running!.id, { status: "running", lastJobId: job.id });
+    await updateRun(db, previous.id, {
+      prNumber: 7,
+      prUrl: "https://github.com/acme/api/pull/7",
+      prJobId: job.id,
+    });
+
     const again = created(epic.id);
     await startRun(again, deps());
     expect(await getRun(db, previous.id)).toMatchObject({
       status: "stopped",
+      prJobId: null,
       error: `Superseded by agent session ${again.sessionId}`,
     });
+    expect((await listStories(db, previous.id)).map((s) => s.status)).toEqual(["pending"]);
     const [canceled] = await db.select().from(jobs).where(eq(jobs.id, job.id));
     expect(canceled).toMatchObject({ status: "canceled", cancelRequested: true });
     expect(linear.bodies(first.sessionId, "response")[0]).toContain("delegated to me again");
+    expect(linear.bodies(first.sessionId, "response")[0]).toContain(
+      "https://github.com/acme/api/pull/7",
+    );
     expect(await getRunBySession(db, again.sessionId)).toMatchObject({
       branch: previous.branch,
       status: "running",

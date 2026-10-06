@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -304,6 +304,71 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     const stashes = storyStashes();
     expect(stashes).toHaveLength(1);
     expect(stashes[0]).toContain("unverified (attempt 1)");
+  });
+
+  it("gives the session the last feedback and the guidance", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Done.", followUps: [] });
+    });
+    await runStory(
+      job({
+        attempt: 2,
+        lastFeedback: "The quality gate `pnpm test` failed (exit 1).",
+        guidance: ["Use the v2 API.", "Keep commits small."],
+      }),
+      context(),
+      options(query),
+    );
+    const prompt = calls[0]!.prompt;
+    expect(prompt).toContain("The quality gate `pnpm test` failed (exit 1).");
+    expect(prompt).toContain("- Use the v2 API.\n- Keep commits small.");
+  });
+
+  it("undoes the commit and fails the attempt when files are left uncommitted after it", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      const cwd = cwdOf(call);
+      await writeFile(path.join(cwd, "feature.txt"), "built\n");
+      // A post-commit hook leaves a generated file behind.
+      await mkdir(path.join(cwd, ".hooks"));
+      await writeFile(
+        path.join(cwd, ".hooks", "post-commit"),
+        "#!/bin/sh\necho x > generated.txt\n",
+      );
+      await chmod(path.join(cwd, ".hooks", "post-commit"), 0o755);
+      git(cwd, "config", "core.hooksPath", ".hooks");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const before = git(remote.bare, "rev-parse", "refs/heads/main");
+    const out = await runStory(job(), context(), options(query));
+    expect(out.status).toBe("failed");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).toContain("these files were still uncommitted");
+    expect(out.feedback).toContain("generated.txt");
+    expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(before);
+    expect(() => git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`)).toThrow();
+    expect(storyStashes()).toHaveLength(1);
+  });
+
+  it("undoes the commit and fails the attempt when the push is rejected", async () => {
+    const hook = path.join(remote.bare, "hooks", "pre-receive");
+    await writeFile(hook, "#!/bin/sh\necho 'protected branch' >&2\nexit 1\n");
+    await chmod(hook, 0o755);
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const before = git(remote.bare, "rev-parse", "refs/heads/main");
+    const out = await runStory(job(), context(), options(query));
+    expect(out.status).toBe("failed");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).toContain("pushing it failed, so the commit was undone");
+    expect(out.feedback).toContain("protected branch");
+    expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(before);
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    const stashes = storyStashes();
+    expect(stashes).toHaveLength(1);
+    expect(stashes[0]).toContain("push-failed");
   });
 
   it("stashes the work of an incomplete attempt and returns the summary as feedback, with follow-ups", async () => {

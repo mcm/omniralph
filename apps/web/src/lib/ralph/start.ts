@@ -13,9 +13,10 @@ import {
   getRunBySession,
   listActiveRunJobIds,
   listRalphRepositories,
+  listStories,
   lockRun,
-  requestJobCancel,
   updateRun,
+  updateStory,
   type RalphRun,
   type Repository,
 } from "@omniralph/db";
@@ -23,6 +24,8 @@ import { parseRepoTags, type Epic } from "@omniralph/ralph";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { loadEpic, type LoadedEpic } from "./epic-loader";
+import { quietly } from "./notify";
+import { preparationOf } from "./preparation";
 import { routeIssue, type RouteMatch } from "./routing";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
@@ -140,27 +143,37 @@ export function describeRun(
 
 /**
  * Stops an unfinished run of the same issue from another agent session (the
- * issue was delegated again), cancels its jobs and points its session at the
- * new one.
+ * issue was delegated again) the way a stop reply does (running stories back
+ * to pending, the PR step and preparation question dropped), cancels its jobs
+ * and points its session at the new one.
  */
 async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string): Promise<void> {
-  const stopped = await lockRun(deps.db, previous.id, async (tx, run) => {
-    if (FINISHED_RUN_STATUSES.has(run.status)) return false;
+  const jobIds = await lockRun(deps.db, previous.id, async (tx, run) => {
+    if (FINISHED_RUN_STATUSES.has(run.status)) return null;
+    const state = preparationOf(run);
     await updateRun(tx, run.id, {
       status: "stopped",
       waitingOn: null,
       pendingElicitation: null,
+      prJobId: null,
+      preparation: { ...state, request: null },
       error: `Superseded by agent session ${sessionId}`,
     });
-    return true;
+    for (const story of await listStories(tx, run.id)) {
+      if (story.status === "running") await updateStory(tx, story.id, { status: "pending" });
+    }
+    return listActiveRunJobIds(tx, run.id);
   });
-  if (!stopped) return;
-  for (const jobId of await listActiveRunJobIds(deps.db, previous.id)) {
-    await requestJobCancel(deps.db, jobId);
+  if (!jobIds) return;
+  for (const jobId of jobIds) {
+    await quietly(`Canceling job ${jobId} of ralph run ${previous.id}`, () =>
+      deps.dispatcher.cancel(jobId),
+    );
   }
+  const pr = previous.prUrl ? ` The open draft stays where it is: ${previous.prUrl}` : "";
   await post(deps, previous.linearAgentSessionId, {
     type: "response",
-    body: "This issue was delegated to me again, so I stopped here and continue in the new session.",
+    body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
   });
 }
 
@@ -186,7 +199,9 @@ export async function startRun(
 
   let loaded: LoadedEpic;
   try {
-    loaded = await loadEpic(linear, event.issueId);
+    // An issue that was never run may hold a PRD whose materialization stopped half way.
+    const completePrd = !(await getRunByIssue(db, event.issueId));
+    loaded = await loadEpic(linear, event.issueId, { completePrd });
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",

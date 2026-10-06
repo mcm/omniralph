@@ -3,6 +3,7 @@ import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
+import { withoutJobEnv } from "../job-env.js";
 import type { Logger } from "../logger.js";
 import {
   credentialConfigArgs,
@@ -427,9 +428,10 @@ export class RepoCache {
         await git(["reset", "--hard", "--quiet", "HEAD"]);
         if (options.setupCommand) {
           this.logger?.info({ path: worktreePath }, "running the repository's setup command");
+          // Like the session and gates, the setup command never sees the job token.
           await runShell(options.setupCommand, {
             cwd: worktreePath,
-            env: this.gitEnv(options.env),
+            env: withoutJobEnv(options.env),
             signal: options.signal,
           });
         }
@@ -506,12 +508,15 @@ export class RepoCache {
       start = `refs/remotes/origin/${baseBranch}`;
       if (!(await hasRef(start))) await this.createInitialCommit(repoDir, baseBranch, job);
     }
-    // Drops the bookkeeping of a worktree whose directory is gone, which would block the branch.
+    // Drops the bookkeeping of a worktree whose directory is gone, which would block the branch
+    // (unlocked first: branch worktrees are locked).
+    await git(["worktree", "unlock", worktreePath]).catch(() => undefined);
     await git(["worktree", "prune"]);
     await mkdir(path.dirname(worktreePath), { recursive: true });
     this.logger?.info({ path: worktreePath, branch, start }, "creating branch worktree");
     // -B: a local branch left in the bare repository (e.g. by the clone) starts over from `start`.
-    await git(["worktree", "add", "--no-checkout", "-B", branch, worktreePath, start]);
+    // --lock: git never prunes a long-lived worktree's bookkeeping (e.g. while its disk is unmounted).
+    await git(["worktree", "add", "--lock", "--no-checkout", "-B", branch, worktreePath, start]);
     await writeFile(await this.setupMarker(worktreePath, job), "");
   }
 
@@ -569,6 +574,7 @@ export class RepoCache {
     if (!(await exists(repoDir))) return;
     const options = { env: hostEnv(), cwd: repoDir };
     await this.withLock(repoDir, undefined, async () => {
+      await this.runGit(["worktree", "unlock", worktreePath], options).catch(() => undefined);
       await this.runGit(["worktree", "prune"], options);
       const local = await this.runGit(
         ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],

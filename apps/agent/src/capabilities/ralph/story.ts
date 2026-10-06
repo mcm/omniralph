@@ -23,6 +23,7 @@ import {
   type RalphStoryStatus,
 } from "@omniralph/shared";
 import type { FetchFn } from "../../api.js";
+import { withoutJobEnv } from "../../job-env.js";
 import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { CommandError, GitError, runShell } from "../../workspace/git.js";
 import { RetryableJobError, type JobContext } from "../index.js";
@@ -122,7 +123,7 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
 
 /** The agent's environment minus `OMNIRALPH_*`: Claude sessions and gates never see the job token. */
 export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith("OMNIRALPH_")));
+  return withoutJobEnv(env);
 }
 
 /** Why a session's attempt failed, for the next attempt. */

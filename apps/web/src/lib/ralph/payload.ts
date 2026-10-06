@@ -177,7 +177,7 @@ export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePay
       setupCommand: repository.ralphSettings.setupCommand || null,
     },
     story: { identifier: story.identifier ?? story.storyId, title: story.title.slice(0, 1000) },
-    commands: (story.preparation ?? []).slice(0, 50),
+    commands: story.preparation ?? [],
     commandsHash: approved.commandsHash,
     approvedHeadSha: approved.headSha,
   });
