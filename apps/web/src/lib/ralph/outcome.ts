@@ -91,9 +91,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     if (parsed?.success) await applyStoryResult(ctx, story, parsed.data);
     else {
       const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
-      await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`, {
-        blocked: false,
-      });
+      await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`);
     }
   }
   return { busy };
@@ -110,9 +108,7 @@ async function applyStoryResult(
     run = (await updateRun(tx, run.id, { progress: result.progress })) ?? run;
   }
   if (result.status !== "complete") {
-    await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result), {
-      blocked: result.status === "blocked",
-    });
+    await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result));
     // Work the story turned up has to be done first (cyralph: follow-ups of an unfinished story block it).
     await fileFollowUps({ ...ctx, run }, story, result.followUps, { blocking: true });
     return;
@@ -156,33 +152,29 @@ async function applyStoryResult(
 }
 
 /**
- * Counts a finished attempt that didn't complete the story: stores the
- * feedback and retries it, or (out of attempts, or blocked: another attempt
- * can't get past it) sets it aside as `exhausted`.
+ * Counts a finished attempt that didn't complete the story (failed,
+ * incomplete or blocked): stores the feedback and retries it, or, out of
+ * attempts, sets it aside as `exhausted`. A blocked story's blocking
+ * follow-ups hold its retry until they're done.
  */
 export async function recordFailedAttempt(
   ctx: OutcomeContext,
   story: RalphStory,
   feedback: string,
-  options: { blocked: boolean },
 ): Promise<void> {
   const max = MAX_ATTEMPTS_PER_STORY;
   const attempt = story.attempts + 1;
-  const attempts = options.blocked ? Math.max(attempt, max) : attempt;
-  const exhausted = attempts >= max;
+  const exhausted = attempt >= max;
   await updateStory(ctx.tx, story.id, {
     status: exhausted ? "exhausted" : "pending",
-    attempts,
+    attempts: attempt,
     lastFeedback: feedback,
   });
   const sessionId = ctx.run.linearAgentSessionId;
   if (exhausted) {
-    const lead = options.blocked
-      ? `🚧 **${story.identifier}** is blocked, so I'm setting it aside without retrying.`
-      : `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside.`;
     await postActivity(ctx.linear, sessionId, {
       type: "error",
-      body: `${lead} Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
+      body: `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside. Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
     });
   } else {
     await postActivity(ctx.linear, sessionId, {

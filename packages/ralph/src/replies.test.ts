@@ -3,7 +3,10 @@ import {
   eligiblePreparations,
   fenced,
   isRerunPreparationRequest,
+  isRunnablePreparation,
   isStartAnywayRequest,
+  MAX_PREPARATION_COMMAND_LENGTH,
+  MAX_PREPARATION_COMMANDS,
   isStopRequest,
   matchPreparationAnswer,
   preparationHash,
@@ -69,6 +72,18 @@ describe("preparation", () => {
     expect(eligiblePreparations(stories, new Set(["M2"])).map((s) => s.key)).toEqual(["M6"]);
     const done = stories.map((s) => (s.key === "A" ? { ...s, status: "completed" as const } : s));
     expect(eligiblePreparations(done).map((s) => s.key)).toEqual(["M2", "M1", "M6"]);
+  });
+
+  it("leaves preparations a job can't run to a person", () => {
+    const many = Array.from({ length: MAX_PREPARATION_COMMANDS + 1 }, (_, i) => `echo ${i}`);
+    const long = "x".repeat(MAX_PREPARATION_COMMAND_LENGTH + 1);
+    const stories = [
+      story("M1", { manual: true, preparation: many }),
+      story("M2", { manual: true, preparation: [long] }),
+      story("M3", { manual: true, preparation: many.slice(0, MAX_PREPARATION_COMMANDS) }),
+    ];
+    expect(eligiblePreparations(stories).map((s) => s.key)).toEqual(["M3"]);
+    expect(isRunnablePreparation([])).toBe(false);
   });
 
   it("asks with the commands, branch and SHA", () => {

@@ -503,6 +503,25 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     );
   });
 
+  it("runs the setup command without the job token", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    const env = { ...ENV, OMNIRALPH_JOB_TOKEN: "secret", OMNIRALPH_JOB_ID: "job-1" };
+    const setupCommand = 'test -z "$OMNIRALPH_JOB_TOKEN$OMNIRALPH_JOB_ID" && touch .clean';
+    await repos.withBranchWorktree(repo, { ...feature, env, setupCommand }, async (wt) => {
+      expect(await exists(path.join(wt.path, ".clean"))).toBe(true);
+    });
+  });
+
+  it("recreates a locked worktree whose directory was deleted", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    const wtPath = await repos.withBranchWorktree(repo, feature, async (wt) => wt.path);
+    await rm(wtPath, { recursive: true, force: true });
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      expect(wt.created).toBe(true);
+      expect(await exists(path.join(wt.path, "README.md"))).toBe(true);
+    });
+  });
+
   it("recreates a worktree whose setup command never finished (agent crash)", async () => {
     await remote.commit({ "README.md": "base\n" });
     const wtPath = await repos.withBranchWorktree(repo, feature, async (wt) => wt.path);
@@ -563,6 +582,9 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     expect(await exists(path.join(wtPath, "README.md"))).toBe(true);
     const dir = repos.repoDir(repo);
     expect(git(dir, "worktree", "list", "--porcelain")).toContain(wtPath);
+    // Git-locked too: `git worktree prune` keeps it even while its directory is missing.
+    const entry = (list: string) => list.split("\n\n").find((e) => e.includes(wtPath)) ?? "";
+    expect(entry(git(dir, "worktree", "list", "--porcelain"))).toMatch(/^locked/m);
 
     await repos.removeBranchWorktree(repo, "feat/TOOL-1");
     await repos.removeBranchWorktree(repo, "feat/TOOL-1"); // idempotent

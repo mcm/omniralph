@@ -28,6 +28,11 @@ export function jobProcessEnv(
   return env;
 }
 
+/** `env` without any `OMNIRALPH_*` variable (the job token, ID and server). */
+export function withoutJobEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith("OMNIRALPH_")));
+}
+
 /** Spawns a job subprocess with `jobProcessEnv` (any `env` option is merged in, minus `OMNIRALPH_*`). */
 export function spawnJobProcess(
   job: { jobId: string; jobToken: string; server: string },

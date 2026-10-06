@@ -6,7 +6,10 @@
  *  2. It is a sub-issue itself         -> its parent's epic, focused on this story.
  *  3. Its description holds a PRD      -> `prd`: each PRD story is created as a sub-issue
  *                                         (priority, order, blocks relations, manual label),
- *                                         then the issue loads as `children`.
+ *                                         then the issue loads as `children`. With
+ *                                         `completePrd`, a PRD issue that already has
+ *                                         sub-issues (a materialization that failed half
+ *                                         way) gets the missing ones, matched by title.
  *  4. Anything else                    -> `single`: the issue itself is the only story.
  */
 import {
@@ -35,6 +38,11 @@ export interface LoadedEpic {
 export interface LoadEpicOptions {
   /** Labels marking a story as a manual step; the first one labels materialized manual stories. */
   manualLabels?: readonly string[];
+  /**
+   * Create the PRD stories a PRD issue with sub-issues is missing. Only for an
+   * issue that was never run: a run's epic is what people curate afterwards.
+   */
+  completePrd?: boolean;
 }
 
 /** The children epic of `parent`: its sub-issues with their blockers. */
@@ -53,17 +61,28 @@ async function loadChildrenEpic(
 /**
  * Creates one sub-issue per PRD story: priority, sub-issue order and "blocks"
  * relations come from the PRD; stories that already pass are completed and
- * manual ones get the manual label.
+ * manual ones get the manual label. A story with the title of one of
+ * `existing` (sub-issues created by an earlier, interrupted materialization)
+ * isn't created again; relations are only added for new issues. Returns the
+ * created issues.
  */
 export async function materializePrd(
   linear: LinearGateway,
   parent: IssueSummary,
   prd: ParsedPrd,
   manualLabel: string,
+  existing: readonly IssueSummary[] = [],
 ): Promise<IssueSummary[]> {
   const plan = materializationPlan(prd);
+  const byTitle = new Map(existing.map((issue) => [issue.title.trim(), issue]));
+  const issues = new Map<string, IssueSummary>();
   const created = new Map<string, IssueSummary>();
   for (const planned of plan.issues) {
+    const found = byTitle.get(planned.title.trim());
+    if (found) {
+      issues.set(planned.storyId, found);
+      continue;
+    }
     const issue = await linear.createIssue({
       teamId: parent.teamId,
       parentId: parent.id,
@@ -74,13 +93,15 @@ export async function materializePrd(
       ...(parent.projectName && { projectName: parent.projectName }),
       ...(planned.manual && { labels: [manualLabel] }),
     });
+    issues.set(planned.storyId, issue);
     created.set(planned.storyId, issue);
     if (planned.completed) await linear.setIssueState(issue.id, { type: "completed" });
   }
   for (const { blocker, blocked } of plan.relations) {
-    const from = created.get(blocker);
-    const to = created.get(blocked);
-    if (from && to) await linear.createBlocksRelation(from.id, to.id);
+    const from = issues.get(blocker);
+    const to = issues.get(blocked);
+    if (!from || !to || !(created.has(blocker) || created.has(blocked))) continue;
+    await linear.createBlocksRelation(from.id, to.id);
   }
   return [...created.values()];
 }
@@ -96,6 +117,15 @@ export async function loadEpic(
 
   const children = await linear.getChildren(issue.id);
   if (children.length > 0) {
+    const prd = options.completePrd ? parsePrd(issue.description) : null;
+    const created = prd
+      ? await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual", children)
+      : [];
+    if (created.length > 0) {
+      const all = await linear.getChildren(issue.id);
+      const epic = await loadChildrenEpic(linear, issue, all, manualLabels);
+      return { epic, root: issue, kind: "prd", materialized: created.length };
+    }
     const epic = await loadChildrenEpic(linear, issue, children, manualLabels);
     return { epic, root: issue, kind: "children", materialized: 0 };
   }

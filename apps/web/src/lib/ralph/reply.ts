@@ -202,6 +202,7 @@ export async function stopRun(
     return {
       jobIds: await listActiveRunJobIds(tx, current.id),
       stories: await listStories(tx, current.id),
+      prUrl: current.prUrl,
     };
   });
   if (!stopped) return { status: "gone" };
@@ -231,7 +232,10 @@ export async function stopRun(
     body: [
       `Stopped${by}.${canceled > 0 ? ` I canceled the ${canceled === 1 ? "job that was running" : `${canceled} jobs that were running`}.` : ""}`,
       "Reply with guidance to resume the run; finished stories stay done.",
-    ].join(" "),
+      stopped.prUrl ? `The draft stays open: ${stopped.prUrl}` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
   await postActivity(deps.linear, run.linearAgentSessionId, content);
   return { status: "stopped", canceled };
