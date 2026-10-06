@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@omniralph/engine": "workspace:*",
+    "@omniralph/ralph": "workspace:*",
     "@omniralph/shared": "workspace:*",
     "@types/proper-lockfile": "^4.1.4",
     "tsup": "^8.5.1",

@@ -1,0 +1,26 @@
+{
+  "name": "@omniralph/ralph",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The ralph loop's pure logic (ported from cyralph): PRDs, story selection, prompts and story results",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@omniralph/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

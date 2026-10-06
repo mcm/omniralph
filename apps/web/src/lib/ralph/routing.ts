@@ -12,6 +12,9 @@
  * one with the first `full_path` wins. A tag is authoritative: an issue whose
  * tags name no enabled repository isn't routed by its labels, project or team.
  */
+import { normalizeRepoPath, parseRepoTags } from "@omniralph/ralph";
+
+export { parseRepoTags };
 
 export interface RoutableIssue {
   description?: string | null;
@@ -38,25 +41,6 @@ export interface RouteMatch<R extends RoutableRepository> {
   value: string;
 }
 
-/** Repository paths named by `[repo=…]` tags in `description`, in order, without duplicates. */
-export function parseRepoTags(description: string | null | undefined): string[] {
-  if (!description) return [];
-  const paths: string[] = [];
-  for (const match of description.matchAll(/\\?\[repo=([^\s\]]+?)\\?\]/gi)) {
-    const path = match[1]!.replace(/\\(.)/g, "$1");
-    if (!paths.some((p) => normalizePath(p) === normalizePath(path))) paths.push(path);
-  }
-  return paths;
-}
-
-function normalizePath(path: string): string {
-  return path
-    .trim()
-    .toLowerCase()
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\.git$/, "");
-}
-
 const lower = (values: readonly string[]) => values.map((v) => v.trim().toLowerCase());
 
 /** The repository `issue` routes to and the rule that matched, or null when none does. */
@@ -71,7 +55,9 @@ export function routeIssue<R extends RoutableRepository>(
   const tags = parseRepoTags(issue.description);
   if (tags.length > 0) {
     for (const tag of tags) {
-      const repository = candidates.find((r) => normalizePath(r.fullPath) === normalizePath(tag));
+      const repository = candidates.find(
+        (r) => normalizeRepoPath(r.fullPath) === normalizeRepoPath(tag),
+      );
       if (repository) return { repository, rule: "tag", value: tag };
     }
     return null;
