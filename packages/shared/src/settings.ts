@@ -92,16 +92,15 @@ export const RepositorySettingsInput = z.object({
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
+const ClaudeModel = z
+  .string()
+  .trim()
+  .min(1, "Enter a model.")
+  .max(200, "Model names can be at most 200 characters.")
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/, "Enter a Claude model ID, e.g. claude-sonnet-5-5.");
+
 export const ReviewProfileInput = z.object({
-  model: z
-    .string()
-    .trim()
-    .min(1, "Enter a model.")
-    .max(200, "Model names can be at most 200 characters.")
-    .regex(
-      /^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/,
-      "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
-    ),
+  model: ClaudeModel,
   maxTokensPerReview: z
     .int("Enter a whole number.")
     .min(
@@ -116,6 +115,64 @@ export const ReviewProfileInput = z.object({
   allowRepoExploration: z.boolean(),
 });
 export type ReviewProfileInput = z.infer<typeof ReviewProfileInput>;
+
+export const MAX_LINEAR_ROUTING_VALUES = 50;
+export const MAX_SETUP_COMMAND_LENGTH = 4000;
+export const DEFAULT_RALPH_MODEL = "opus";
+
+/**
+ * Splits a comma-separated input (team keys, project names, labels) into
+ * values: trimmed, blanks dropped, duplicates (ignoring case) removed.
+ */
+export function parseCommaList(text: string): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const value of text.split(",").map((v) => v.trim())) {
+    if (!value || seen.has(value.toLowerCase())) continue;
+    seen.add(value.toLowerCase());
+    values.push(value);
+  }
+  return values;
+}
+
+const routingValues = (item: z.ZodString, what: string) =>
+  z.array(item).max(MAX_LINEAR_ROUTING_VALUES, `At most ${MAX_LINEAR_ROUTING_VALUES} ${what}.`);
+
+const RoutingName = z
+  .string()
+  .trim()
+  .min(1, "Enter a name.")
+  .max(255, "Names can be at most 255 characters.")
+  // eslint-disable-next-line no-control-regex
+  .regex(/^[^,\u0000-\u001f\u007f]+$/, "Names can't contain commas or control characters.");
+
+/** The Ralph section of Repository › Settings (`repositories.ralph_*`). */
+export const RalphSettingsInput = z.object({
+  /** Linear delegations may build in this repository. */
+  ralphEnabled: z.boolean(),
+  /** Linear team keys routed here, e.g. `ENG`. */
+  linearTeamKeys: routingValues(
+    z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_]{1,32}$/, "Team keys are letters and digits, e.g. ENG."),
+    "team keys",
+  ),
+  linearProjectNames: routingValues(RoutingName, "project names"),
+  linearLabels: routingValues(RoutingName, "labels"),
+  /** Open a draft PR/MR after the first pushed story. */
+  openPullRequestEarly: z.boolean(),
+  /** Run once in a fresh branch worktree; empty for none. */
+  setupCommand: z
+    .string()
+    .max(
+      MAX_SETUP_COMMAND_LENGTH,
+      `The setup command can be at most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString("en-US")} characters.`,
+    ),
+  /** Claude model (alias or ID) the story sessions use. */
+  model: ClaudeModel,
+});
+export type RalphSettingsInput = z.infer<typeof RalphSettingsInput>;
 
 /** Field errors keyed by dotted path (`pathExcludes.2`, `triggers.onOpen`), first message per field. */
 export type FieldErrors = Record<string, string>;
