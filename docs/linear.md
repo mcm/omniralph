@@ -338,7 +338,7 @@ Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed unde
 where admins can also stop a run. A run's page has one section per repository (lane) with its
 branch, PR/MR, stories and cleanup state, plus the run's guidance and progress log. **Analytics**
 has a Ralph section: runs started, ralph tokens per day next to reviews, runs per day by status
-and story outcomes (first attempt, after retries, blocked, exhausted).
+and story outcomes per day and in total (first attempt, after retries, blocked, exhausted).
 
 ## Agents and concurrency
 

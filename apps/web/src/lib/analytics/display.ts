@@ -2,7 +2,13 @@
  * Client-safe parts of the Analytics page: the window and repository filter
  * in the URL, view-prop types and chart labels.
  */
-import type { Analytics, AnalyticsRange, RalphAnalytics, RalphRunOutcome } from "@omniralph/db";
+import type {
+  Analytics,
+  AnalyticsRange,
+  RalphAnalytics,
+  RalphRunOutcome,
+  RalphStoryOutcomes,
+} from "@omniralph/db";
 
 /** Client-safe copy of the DB's `ANALYTICS_RANGES`. */
 export const ANALYTICS_RANGES = [7, 30, 90] as const satisfies readonly AnalyticsRange[];
@@ -78,15 +84,33 @@ export const RALPH_RUN_OUTCOME_LABELS: Record<RalphRunOutcome, string> = {
   running: "In progress",
 };
 
+export type RalphStoryOutcome = keyof RalphStoryOutcomes;
+
+/** Story outcomes in chart order. */
+export const RALPH_STORY_OUTCOMES = [
+  "firstAttempt",
+  "afterRetries",
+  "exhausted",
+  "blocked",
+] as const satisfies readonly RalphStoryOutcome[];
+
+export const RALPH_STORY_OUTCOME_LABELS: Record<RalphStoryOutcome, string> = {
+  firstAttempt: "First attempt",
+  afterRetries: "After retries",
+  exhausted: "Exhausted",
+  blocked: "Blocked",
+};
+
 /**
  * One chart row per UTC day: ralph and review tokens (in + out) side by side,
- * and the runs started that day by status. Both series cover the same days.
+ * the runs started that day by status, and those runs' story outcomes. Both
+ * token series cover the same days.
  */
 export function ralphDailyRows(
   ralph: Pick<RalphAnalyticsData, "daily">,
   reviews: Pick<AnalyticsData, "daily">,
 ): ({ day: string; ralphTokens: number; reviewTokens: number } & Record<
-  RalphRunOutcome,
+  RalphRunOutcome | RalphStoryOutcome,
   number
 >)[] {
   const reviewTokens = new Map(reviews.daily.map((d) => [d.date, d.tokensIn + d.tokensOut]));
@@ -95,6 +119,7 @@ export function ralphDailyRows(
     ralphTokens: d.tokensIn + d.tokensOut,
     reviewTokens: reviewTokens.get(d.date) ?? 0,
     ...d.runs,
+    ...d.stories,
   }));
 }
 

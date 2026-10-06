@@ -5,8 +5,8 @@
  *
  * Tokens are the `usage` ralph jobs record in their results, attributed to the
  * day the job was created. Runs are attributed to the day they started, and
- * their stories to their run, so the story outcomes describe the runs started
- * in the window.
+ * their stories to their run (and its day), so the story outcomes describe the
+ * runs started in the window.
  */
 import { and, eq, gte, like, lt, sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
@@ -28,6 +28,8 @@ export interface RalphDailyUsage {
   tokensOut: number;
   /** Runs started that day, by how they stand now. */
   runs: Record<RalphRunOutcome, number>;
+  /** Outcomes of the stories of the runs started that day. */
+  stories: RalphStoryOutcomes;
 }
 
 export interface RalphStoryOutcomes {
@@ -59,6 +61,13 @@ const DAY_MS = 86_400_000;
 
 /** Postgres aggregates come back as strings (bigint/numeric) or null. */
 const num = (value: unknown): number => (value == null ? 0 : Number(value));
+
+const emptyStories = (): RalphStoryOutcomes => ({
+  firstAttempt: 0,
+  afterRetries: 0,
+  exhausted: 0,
+  blocked: 0,
+});
 
 const emptyRuns = (): Record<RalphRunOutcome, number> =>
   Object.fromEntries(RALPH_RUN_OUTCOMES.map((o) => [o, 0])) as Record<RalphRunOutcome, number>;
@@ -93,7 +102,7 @@ export async function getRalphAnalytics(
   const blocked = sql`(${ralphStories.status} = 'blocked' or (${ralphStories.status} = 'exhausted' and coalesce(${lastJob}, '') = 'blocked'))`;
   const completed = sql`${ralphStories.status} = 'completed'`;
 
-  const [tokenRows, runRows, [storyRow]] = await Promise.all([
+  const [tokenRows, runRows, storyRows] = await Promise.all([
     db
       .select({
         day: jobDay,
@@ -111,15 +120,17 @@ export async function getRalphAnalytics(
       .groupBy(runDay, ralphRuns.status),
     db
       .select({
+        day: runDay,
         firstAttempt: sql<string>`count(*) filter (where ${completed} and ${ralphStories.attempts} <= 1)`,
         afterRetries: sql<string>`count(*) filter (where ${completed} and ${ralphStories.attempts} > 1)`,
         exhausted: sql<string>`count(*) filter (where ${ralphStories.status} = 'exhausted' and not ${blocked})`,
         blocked: sql<string>`count(*) filter (where ${blocked})`,
-        averageAttempts: sql<string>`avg(greatest(${ralphStories.attempts}, 1)) filter (where ${completed})`,
+        completedAttempts: sql<string>`sum(greatest(${ralphStories.attempts}, 1)) filter (where ${completed})`,
       })
       .from(ralphStories)
       .innerJoin(ralphRuns, eq(ralphRuns.id, ralphStories.runId))
-      .where(runWhere),
+      .where(runWhere)
+      .groupBy(runDay),
   ]);
 
   const tokensByDay = new Map(tokenRows.map((row) => [row.day, row]));
@@ -133,6 +144,24 @@ export async function getRalphAnalytics(
     runsByOutcome[outcome] += num(row.count);
   }
 
+  const storiesByDay = new Map<string, RalphStoryOutcomes>();
+  const storyOutcomes = emptyStories();
+  let completedAttempts = 0;
+  for (const row of storyRows) {
+    const stories = {
+      firstAttempt: num(row.firstAttempt),
+      afterRetries: num(row.afterRetries),
+      exhausted: num(row.exhausted),
+      blocked: num(row.blocked),
+    };
+    storiesByDay.set(row.day, stories);
+    for (const key of Object.keys(stories) as (keyof RalphStoryOutcomes)[]) {
+      storyOutcomes[key] += stories[key];
+    }
+    completedAttempts += num(row.completedAttempts);
+  }
+  const completedStories = storyOutcomes.firstAttempt + storyOutcomes.afterRetries;
+
   const daily: RalphDailyUsage[] = [];
   for (let t = from.getTime(); t < to.getTime(); t += DAY_MS) {
     const date = new Date(t).toISOString().slice(0, 10);
@@ -142,6 +171,7 @@ export async function getRalphAnalytics(
       tokensIn: num(row?.tokensIn),
       tokensOut: num(row?.tokensOut),
       runs: runsByDay.get(date) ?? emptyRuns(),
+      stories: storiesByDay.get(date) ?? emptyStories(),
     });
   }
 
@@ -156,12 +186,8 @@ export async function getRalphAnalytics(
     },
     daily,
     runsByOutcome,
-    storyOutcomes: {
-      firstAttempt: num(storyRow?.firstAttempt),
-      afterRetries: num(storyRow?.afterRetries),
-      exhausted: num(storyRow?.exhausted),
-      blocked: num(storyRow?.blocked),
-    },
-    averageAttempts: Math.round(num(storyRow?.averageAttempts) * 10) / 10,
+    storyOutcomes,
+    averageAttempts:
+      completedStories === 0 ? 0 : Math.round((completedAttempts / completedStories) * 10) / 10,
   };
 }

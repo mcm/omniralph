@@ -160,6 +160,17 @@ describe("matchSelection", () => {
     expect(matchSelection("0", [api, web])).toBeUndefined();
   });
 
+  it("matches a repository's URL, preferring the longest path it contains", () => {
+    const nested = repo("group/platform/api");
+    const v2 = repo("platform/api-v2");
+    const all = [api, nested, v2, web];
+    expect(matchSelection("https://github.com/group/platform/api", all)).toBe(nested);
+    expect(matchSelection("https://gitlab.example.com/platform/api/", all)).toBe(api);
+    expect(matchSelection("https://github.com/platform/api-v2.git", all)).toBe(v2);
+    expect(matchSelection("https://github.com/group/platform/web", all)).toBe(web);
+    expect(matchSelection("https://github.com/xplatform/api", [api])).toBeUndefined();
+  });
+
   it("prefers a number over a repository named like one", () => {
     const numbered = repo("acme/2");
     expect(matchSelection("2", [numbered, api])).toBe(api);
