@@ -93,13 +93,58 @@ export function gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 /** Runs git and resolves with its stdout; rejects with `GitError`, or the signal's reason on abort. */
 export function runGit(args: readonly string[], options: RunGitOptions): Promise<string> {
+  return runProcess(options.git ?? "git", args, {
+    ...options,
+    // Never prompt: a missing credential must fail the command, not hang it.
+    env: gitEnv(options.env),
+    error: (code, stderr) => new GitError(args, code, stderr),
+  });
+}
+
+/** A shell command (e.g. a repository's setup command) that exited non-zero (or couldn't start). */
+export class CommandError extends Error {
+  override name = "CommandError";
+  constructor(
+    readonly command: string,
+    readonly exitCode: number | null,
+    readonly output: string,
+  ) {
+    super(
+      `\`${command}\` failed${exitCode === null ? "" : ` (exit ${exitCode})`}: ${output.trim().slice(-2000)}`,
+    );
+  }
+}
+
+/**
+ * Runs `command` with `bash -lc` and resolves with its stdout; rejects with
+ * `CommandError` (whose output is stdout and stderr), or the signal's reason on abort.
+ */
+export function runShell(
+  command: string,
+  options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
+): Promise<string> {
+  return runProcess("bash", ["-lc", command], {
+    ...options,
+    error: (code, stderr, stdout) => new CommandError(command, code, `${stdout}${stderr}`),
+  });
+}
+
+function runProcess(
+  file: string,
+  args: readonly string[],
+  options: {
+    cwd?: string;
+    env: NodeJS.ProcessEnv;
+    signal?: AbortSignal;
+    error: (exitCode: number | null, stderr: string, stdout: string) => Error;
+  },
+): Promise<string> {
   const { signal } = options;
   if (signal?.aborted) return Promise.reject(signal.reason);
   return new Promise((resolve, reject) => {
-    const child = spawn(options.git ?? "git", args, {
+    const child = spawn(file, args, {
       cwd: options.cwd,
-      // Never prompt: a missing credential must fail the command, not hang it.
-      env: gitEnv(options.env),
+      env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
@@ -110,13 +155,14 @@ export function runGit(args: readonly string[], options: RunGitOptions): Promise
     signal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (error) => {
       signal?.removeEventListener("abort", onAbort);
-      reject(new GitError(args, null, error.message));
+      reject(options.error(null, error.message, ""));
     });
     child.on("close", (code) => {
       signal?.removeEventListener("abort", onAbort);
+      const out = Buffer.concat(stdout).toString("utf8");
       if (signal?.aborted) reject(signal.reason);
-      else if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
-      else reject(new GitError(args, code, Buffer.concat(stderr).toString("utf8")));
+      else if (code === 0) resolve(out);
+      else reject(options.error(code, Buffer.concat(stderr).toString("utf8"), out));
     });
   });
 }
