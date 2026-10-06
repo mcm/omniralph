@@ -45,23 +45,21 @@ templates) can still become `omniralph`; remove that if you need a hard boundary
 
 ## 2. Install
 
-Agents run from a checkout of the repository. The agent doesn't need the private UI package, so a
-filtered install needs no npm token:
+The agent is published as the private npm package `@iamthemcmaster/omniralph-agent`. The agent's
+user needs an `~/.npmrc` with a token that can read the `@iamthemcmaster` scope (a read-only
+granular token is enough):
 
 ```sh
 sudo -iu omniralph
-corepack enable --install-directory ~/.local/bin   # pnpm 10 (from packageManager)
-export PATH="$HOME/.local/bin:$PATH"
-git clone https://github.com/mcm/omniralph.git ~/omniralph   # a token or deploy key for the private repo
-cd ~/omniralph
-pnpm install --frozen-lockfile --filter "@iamthemcmaster/omniralph-agent..."
-pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent
-chmod +x apps/agent/dist/cli.js
-ln -sf "$PWD/apps/agent/dist/cli.js" ~/.local/bin/omniralph-agent   # it has a node shebang
-omniralph-agent --help
+echo "//registry.npmjs.org/:_authToken=<read-only npm token>" > ~/.npmrc && chmod 600 ~/.npmrc
+npm config set prefix ~/.local                    # global installs go to ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"              # also add this to ~/.profile
+npm install -g @iamthemcmaster/omniralph-agent
+omniralph-agent --version
 ```
 
-To upgrade: stop the agent, `git pull`, re-run the install and build, start it again.
+To upgrade: stop the agent, run `npm install -g @iamthemcmaster/omniralph-agent@latest`, then start
+it again. See [apps/agent/README.md](../apps/agent/README.md) for the release procedure.
 
 ## 3. Give the agent's user its own Claude login
 
@@ -120,7 +118,7 @@ Environment=OMNIRALPH_LOG_LEVEL=info
 Environment=PATH=/home/omniralph/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Optional overrides (ANTHROPIC_API_KEY=… or CLAUDE_CODE_OAUTH_TOKEN=…); root-owned, mode 0600.
 EnvironmentFile=-/etc/omniralph/agent.env
-ExecStart=/usr/bin/node /home/omniralph/omniralph/apps/agent/dist/cli.js start --healthz-port 9310
+ExecStart=/usr/bin/node /home/omniralph/.local/lib/node_modules/@iamthemcmaster/omniralph-agent/dist/cli.js start --healthz-port 9310
 # SIGTERM: stop polling, give running jobs up to 60s; unfinished jobs are redelivered.
 KillSignal=SIGTERM
 TimeoutStopSec=90

@@ -43,3 +43,6 @@ coverage/
 
 # eval reports (evals/baseline.json is committed)
 evals/reports/
+
+# packed npm tarballs
+*.tgz

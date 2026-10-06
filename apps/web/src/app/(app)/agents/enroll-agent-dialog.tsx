@@ -17,8 +17,9 @@ import {
   Field,
   Input,
 } from "@iamthemcmaster/ui";
-import { IconCopy, IconKey, IconPlus, IconTerminal2 } from "@tabler/icons-react";
+import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { AGENT_INSTALL_COMMAND } from "@/lib/agents/display";
 import { formatDateTime } from "@/lib/format-date";
 import { createEnrollment } from "./actions";
 
@@ -119,7 +120,8 @@ export function EnrollAgentDialog() {
             <DialogHeader>
               <DialogTitle>Enrollment token created</DialogTitle>
               <DialogDescription>
-                Run this on the agent host as the agent&apos;s Unix user. The token works once and
+                Run these on the agent host as the agent&apos;s Unix user (installing needs npm
+                access to the private <code>@iamthemcmaster</code> scope). The token works once and
                 expires {formatDateTime(enrollment.expiresAt)}.
               </DialogDescription>
             </DialogHeader>
@@ -133,12 +135,22 @@ export function EnrollAgentDialog() {
               </Alert>
               <SecretRow
                 icon={
+                  <IconPackage
+                    size={14}
+                    style={{ color: "var(--text-secondary)", flexShrink: 0 }}
+                  />
+                }
+                label="Install command"
+                value={AGENT_INSTALL_COMMAND}
+              />
+              <SecretRow
+                icon={
                   <IconTerminal2
                     size={14}
                     style={{ color: "var(--text-secondary)", flexShrink: 0 }}
                   />
                 }
-                label="Command"
+                label="Enroll command"
                 value={enrollment.command}
               />
               <SecretRow

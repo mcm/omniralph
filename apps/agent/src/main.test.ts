@@ -7,6 +7,7 @@ import type { FetchFn } from "./api.js";
 import { writeConfig, type AgentConfig } from "./config.js";
 import { silentLogger } from "./logger.js";
 import { main, USAGE, type MainDeps } from "./main.js";
+import packageJson from "../package.json" with { type: "json" };
 import { AGENT_VERSION } from "./version.js";
 
 const AGENT_ID = "0b6f5e0e-8a52-4a4b-9a43-6e8e0c1f9b10";
@@ -68,6 +69,13 @@ describe("omniralph-agent CLI", () => {
     const { out, io } = capture();
     expect(await main(["--help"], { io })).toBe(0);
     expect(out.stdout).toBe(USAGE);
+  });
+
+  it("prints the package.json version with --version", async () => {
+    const { out, io } = capture();
+    expect(await main(["--version"], { io })).toBe(0);
+    expect(out.stdout).toBe(`${packageJson.version}\n`);
+    expect(AGENT_VERSION).toBe(packageJson.version);
   });
 
   it("rejects unknown commands and options", async () => {
