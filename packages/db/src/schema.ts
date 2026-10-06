@@ -92,6 +92,8 @@ export const ralphStoryStatus = pgEnum("ralph_story_status", [
   "blocked",
   "exhausted",
   "manual",
+  /** Canceled in Linear: done without work. */
+  "canceled",
 ]);
 export const jobStatus = pgEnum("job_status", [
   "queued",

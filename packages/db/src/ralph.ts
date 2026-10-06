@@ -9,6 +9,7 @@ import type { Database } from "./client.js";
 import type { Repository, ScmProvider } from "./repositories.js";
 import {
   agents,
+  jobs,
   ralphRuns,
   ralphStories,
   repositories,
@@ -353,6 +354,16 @@ export async function listRuns(
     page,
     pageSize,
   };
+}
+
+/** IDs of the run's jobs that are still queued or running (oldest first). */
+export async function listActiveRunJobIds(db: Executor, runId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.ralphRunId, runId), inArray(jobs.status, ["queued", "running"])))
+    .orderBy(asc(jobs.createdAt), asc(jobs.id));
+  return rows.map((r) => r.id);
 }
 
 // ── Stories ──────────────────────────────────────────────────────────────────

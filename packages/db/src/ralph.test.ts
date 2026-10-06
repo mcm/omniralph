@@ -13,6 +13,7 @@ import {
   getRun,
   getRunByIssue,
   getRunBySession,
+  listActiveRunJobIds,
   listRalphRepositories,
   listRuns,
   listStories,
@@ -296,6 +297,24 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await db.delete(ralphRuns).where(eq(ralphRuns.id, run.id));
     expect(await listStories(db, run.id)).toEqual([]);
     expect((await db.select().from(jobs).where(eq(jobs.id, job.id)))[0]!.ralphRunId).toBeNull();
+  });
+
+  it("lists a run's queued and running jobs", async () => {
+    const { run } = await createRun(db, runInput());
+    const job = async (status: "queued" | "running" | "completed") => {
+      const { job } = await insertJob(db, {
+        capability: "ralph",
+        type: "ralph.story",
+        ralphRunId: run.id,
+      });
+      await db.update(jobs).set({ status }).where(eq(jobs.id, job.id));
+      return job.id;
+    };
+    const queued = await job("queued");
+    const running = await job("running");
+    await job("completed");
+    await insertJob(db, { capability: "ralph", type: "ralph.story" });
+    expect(await listActiveRunJobIds(db, run.id)).toEqual([queued, running]);
   });
 
   it("lockRun serializes changes to a run", async () => {

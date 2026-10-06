@@ -17,11 +17,15 @@ vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   handled: [] as Array<{ event: unknown; context: unknown }>,
+  acknowledged: [] as string[],
   fail: false,
   deferred: [] as Array<() => Promise<void>>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/linear/events", () => ({
+  acknowledgeLinearEvent: async (event: HandledLinearEvent) => {
+    state.acknowledged.push(event.kind);
+  },
   handleLinearEvent: async (event: HandledLinearEvent, context: LinearEventContext) => {
     state.handled.push({ event, context: { organizationId: context.organizationId } });
     if (state.fail) throw new Error("handler failed");
@@ -103,6 +107,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
       installedByUserId: null,
     });
     state.handled = [];
+    state.acknowledged = [];
     state.deferred = [];
     state.fail = false;
     process.env.LINEAR_WEBHOOK_SECRET = SECRET;
@@ -112,6 +117,8 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
     const res = await deliver(createdPayload());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "accepted", kind: "session_created" });
+    // Acknowledged before the response, handled after it.
+    expect(state.acknowledged).toEqual(["session_created"]);
     expect(state.handled).toEqual([]);
     await flush();
     expect(state.handled).toEqual([
@@ -202,6 +209,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
     });
     await flush();
     expect(state.handled).toHaveLength(1);
+    expect(state.acknowledged).toEqual(["session_created"]);
     const rows = await state.db.select().from(webhookDeliveries);
     expect(rows).toMatchObject([{ provider: "linear", deliveryId: id, repositoryId: null }]);
   });

@@ -231,6 +231,7 @@ export {
   getRunByIssue,
   getRunBySession,
   getStory,
+  listActiveRunJobIds,
   listRalphRepositories,
   listRuns,
   listStories,

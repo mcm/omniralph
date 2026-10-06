@@ -1,0 +1,295 @@
+/**
+ * Starts a ralph run for a new Linear agent session (ported from cyralph's
+ * `SessionManager.onCreated` and the start of `EpicEngine.run`): tells a
+ * delegation from a mention, loads (and materializes) the epic, routes it to a
+ * repository, creates the run and its stories (carrying over the branch, PR,
+ * guidance and progress of an earlier run of the same issue), moves the epic
+ * to started and hands the run to `advanceRun`.
+ */
+import {
+  createRun,
+  getRepositoryWithConnection,
+  getRunByIssue,
+  getRunBySession,
+  listActiveRunJobIds,
+  listRalphRepositories,
+  lockRun,
+  requestJobCancel,
+  updateRun,
+  type Database,
+  type RalphRun,
+  type Repository,
+  type ScmConnection,
+} from "@omniralph/db";
+import { parseRepoTags, type Epic } from "@omniralph/ralph";
+import type { ScmAdapter } from "@omniralph/scm";
+import type { ActivityContent } from "@/lib/linear/gateway";
+import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { loadEpic, type LoadedEpic } from "./epic-loader";
+import { routeIssue, type RouteMatch } from "./routing";
+import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
+
+export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
+
+export interface StartRunDeps extends RalphDeps {
+  /** The code-host adapter of a repository's connection (for its default branch). */
+  adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
+}
+
+/**
+ * Linear always fills `agentSession.comment.body`; for a delegation (not an
+ * @mention) it holds a system note containing this marker (cyralph and Cyrus
+ * tell the two apart the same way).
+ */
+export const AGENT_SESSION_MARKER = "This thread is for an agent session";
+
+/** The acknowledgement posted before the webhook responds. */
+export const ACKNOWLEDGEMENT = "On it…";
+
+export const MENTION_RESPONSE =
+  "I only build issues that are delegated to me for now: delegate this issue (or its epic) to me " +
+  "to build it story by story. Mentions aren't supported yet.";
+
+/** Whether a new agent session comes from a mention rather than a delegation. */
+export function isMention(event: Pick<SessionCreatedEvent, "commentBody">): boolean {
+  const body = event.commentBody?.trim();
+  return !!body && !body.includes(AGENT_SESSION_MARKER);
+}
+
+export type StartOutcome =
+  | { status: "mention" }
+  | { status: "load_failed"; error: string }
+  | { status: "unroutable" }
+  | { status: "already_running"; run: RalphRun }
+  | { status: "failed"; error: string }
+  | { status: "started"; run: RalphRun; created: boolean };
+
+async function post(deps: RalphDeps, sessionId: string, content: ActivityContent): Promise<void> {
+  try {
+    await deps.linear.createActivity(sessionId, content);
+  } catch (error) {
+    console.error(
+      `Posting a Linear ${content.type} activity to session ${sessionId} failed`,
+      error,
+    );
+  }
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** The error explaining how to route an issue to a repository. */
+export function unroutableMessage(epic: Pick<Epic, "identifier" | "description">): string {
+  const tags = parseRepoTags(epic.description);
+  const why =
+    tags.length > 0
+      ? `its \`[repo=…]\` tag (${tags.map((t) => `\`${t}\``).join(", ")}) names no repository with ralph enabled`
+      : "no repository with ralph enabled is routed to it";
+  return [
+    `I can't build **${epic.identifier}**: ${why}.`,
+    "To route it, enable ralph on a repository under **Repository › Settings › Ralph** and add this " +
+      "issue's label, project or team to its Linear routing, or add a `[repo=<owner/name>]` tag " +
+      "to the issue description. Then delegate it to me again.",
+  ].join("\n\n");
+}
+
+const RULE_LABEL: Record<RouteMatch<Repository>["rule"], string> = {
+  tag: "`[repo=…]` tag",
+  label: "label",
+  project: "project",
+  team: "team",
+};
+
+/** The thought describing what the run will do (cyralph's `describeEpic`). */
+export function describeRun(
+  loaded: LoadedEpic,
+  route: RouteMatch<Repository>,
+  run: Pick<RalphRun, "branch" | "baseBranch" | "prUrl">,
+  carriedOver: boolean,
+): string {
+  const { epic } = loaded;
+  const done = epic.stories.filter((s) => s.status === "completed" || s.status === "cancelled");
+  const kind =
+    epic.kind === "single"
+      ? "a single issue, so I'll treat it as one story"
+      : `an epic with ${epic.stories.length} ${epic.stories.length === 1 ? "story" : "stories"} (${done.length} already done)`;
+  const lines = [
+    `**${epic.identifier}** is ${kind}. Building it in \`${route.repository.fullPath}\` ` +
+      `(routed by ${RULE_LABEL[route.rule]} \`${route.value}\`) on branch \`${run.branch}\`, ` +
+      `based on \`${run.baseBranch}\`.`,
+  ];
+  if (loaded.materialized > 0) {
+    lines.push(`Created ${loaded.materialized} story sub-issues from the PRD in the description.`);
+  }
+  if (loaded.focusStoryId) {
+    const story = epic.stories.find((s) => s.issueId === loaded.focusStoryId);
+    lines.push(
+      `This issue is one story of the epic, so I'll start with ${story?.storyId ?? "it"}.`,
+    );
+  }
+  if (carriedOver) {
+    lines.push(
+      `Picking up where the previous session for this issue left off` +
+        `${run.prUrl ? ` (${run.prUrl})` : ""}, with its guidance.`,
+    );
+  }
+  const manual = epic.stories.filter(
+    (s) => s.manual && s.status !== "completed" && s.status !== "cancelled",
+  );
+  if (manual.length > 0) {
+    lines.push(
+      `Manual steps for a person: ${manual.map((s) => `**${s.storyId}**`).join(", ")}. ` +
+        "I won't work them, and stories that depend on them wait until they're done.",
+    );
+  }
+  return lines.join("\n\n");
+}
+
+/**
+ * Stops an unfinished run of the same issue from another agent session (the
+ * issue was delegated again), cancels its jobs and points its session at the
+ * new one.
+ */
+async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string): Promise<void> {
+  const stopped = await lockRun(deps.db, previous.id, async (tx, run) => {
+    if (FINISHED_RUN_STATUSES.has(run.status)) return false;
+    await updateRun(tx, run.id, {
+      status: "stopped",
+      waitingOn: null,
+      pendingElicitation: null,
+      error: `Superseded by agent session ${sessionId}`,
+    });
+    return true;
+  });
+  if (!stopped) return;
+  for (const jobId of await listActiveRunJobIds(deps.db, previous.id)) {
+    await requestJobCancel(deps.db, jobId);
+  }
+  await post(deps, previous.linearAgentSessionId, {
+    type: "response",
+    body: "This issue was delegated to me again, so I stopped here and continue in the new session.",
+  });
+}
+
+/** Handles `AgentSessionEvent.created` (after the acknowledgement was posted). */
+export async function startRun(
+  event: SessionCreatedEvent,
+  deps: StartRunDeps,
+): Promise<StartOutcome> {
+  const { db, linear } = deps;
+  const sessionId = event.sessionId;
+
+  // A redelivered or repeated event: the session already has its run.
+  const existing = await getRunBySession(db, sessionId);
+  if (existing) {
+    await advanceRun(existing.id, deps);
+    return { status: "started", run: existing, created: false };
+  }
+
+  if (isMention(event)) {
+    await post(deps, sessionId, { type: "response", body: MENTION_RESPONSE });
+    return { status: "mention" };
+  }
+
+  let loaded: LoadedEpic;
+  try {
+    loaded = await loadEpic(linear, event.issueId);
+  } catch (error) {
+    await post(deps, sessionId, {
+      type: "error",
+      body: `I couldn't load the issue from Linear: ${message(error)}`,
+    });
+    return { status: "load_failed", error: message(error) };
+  }
+  const { epic, root } = loaded;
+
+  const route = routeIssue(root, await listRalphRepositories(db));
+  if (!route) {
+    await post(deps, sessionId, { type: "error", body: unroutableMessage(epic) });
+    return { status: "unroutable" };
+  }
+
+  // Re-delegation: carry over the latest run of the issue (cyralph's behaviour).
+  const previous = await getRunByIssue(db, root.id);
+  if (previous && !FINISHED_RUN_STATUSES.has(previous.status)) {
+    if (loaded.focusStoryId) {
+      // A story of an epic that is being built already: its run covers the story.
+      await post(deps, sessionId, {
+        type: "response",
+        body: `**${root.identifier}** is already being built in another session, which covers this story.`,
+      });
+      return { status: "already_running", run: previous };
+    }
+    await supersede(deps, previous, sessionId);
+  }
+
+  let baseBranch: string;
+  try {
+    const found = await getRepositoryWithConnection(db, route.repository.id);
+    if (!found) throw new Error(`repository ${route.repository.fullPath} is gone`);
+    baseBranch = await deps
+      .adapterFor(db, found.connection)
+      .getDefaultBranch({
+        fullPath: found.repository.fullPath,
+        externalId: found.repository.externalId,
+      });
+  } catch (error) {
+    await post(deps, sessionId, {
+      type: "error",
+      body: `I couldn't read the default branch of \`${route.repository.fullPath}\`: ${message(error)}`,
+    });
+    return { status: "failed", error: message(error) };
+  }
+
+  const sameRepository = previous?.repositoryId === route.repository.id;
+  const branch = previous?.branch ?? epic.branchName;
+  const { run, created } = await db.transaction(async (tx) => {
+    const result = await createRun(tx, {
+      linearIssueId: root.id,
+      linearIdentifier: root.identifier,
+      linearAgentSessionId: sessionId,
+      kind: loaded.kind,
+      focusStoryId: loaded.focusStoryId ?? null,
+      repositoryId: route.repository.id,
+      branch,
+      baseBranch,
+    });
+    if (!result.created) return result;
+    let run = result.run;
+    if (previous) {
+      run =
+        (await updateRun(tx, run.id, {
+          guidance: previous.guidance,
+          progress: previous.progress,
+          ...(sameRepository && { prNumber: previous.prNumber, prUrl: previous.prUrl }),
+        })) ?? run;
+    }
+    await syncStories(tx, run.id, epic);
+    return { run, created: true };
+  });
+  if (!created) {
+    // Another delivery started this session's (or this issue's) run first.
+    if (run.linearAgentSessionId === sessionId) await advanceRun(run.id, deps);
+    else {
+      await post(deps, sessionId, {
+        type: "response",
+        body: `**${root.identifier}** is already being built in another session.`,
+      });
+      return { status: "already_running", run };
+    }
+    return { status: "started", run, created: false };
+  }
+
+  if (!["started", "completed", "canceled"].includes(root.stateType)) {
+    try {
+      await linear.setIssueState(root.id, { type: "started" });
+    } catch (error) {
+      console.warn(`Moving ${root.identifier} to started failed`, error);
+    }
+  }
+  await post(deps, sessionId, {
+    type: "thought",
+    body: describeRun(loaded, route, run, !!previous),
+  });
+  await advanceRun(run.id, deps);
+  return { status: "started", run, created: true };
+}

@@ -15,6 +15,8 @@ export interface PrdStory {
   dependsOn: string[];
   passes: boolean;
   notes?: string;
+  /** A step for a person (`**Labels:** manual`, or `manual: true` in prd.json): filed with the manual label. */
+  manual?: boolean;
 }
 
 export interface ParsedPrd {
@@ -89,6 +91,7 @@ function parseStorySection(id: string, title: string, lines: string[]): PrdStory
   let priority = DEFAULT_PRD_PRIORITY;
   let dependsOn: string[] = [];
   let notes: string | undefined;
+  let manual = false;
   let mode: "description" | "criteria" | "other" = "description";
 
   for (const raw of lines) {
@@ -108,6 +111,9 @@ function parseStorySection(id: string, title: string, lines: string[]): PrdStory
         mode = "other";
       } else if (label === "depends on" || label === "dependencies") {
         dependsOn = parseDependsOn(rest);
+        mode = "other";
+      } else if (label === "labels") {
+        manual = hasManualLabel(rest.split(/[,\s]+/));
         mode = "other";
       } else if (label === "notes") {
         notes = rest || undefined;
@@ -133,7 +139,15 @@ function parseStorySection(id: string, title: string, lines: string[]): PrdStory
     dependsOn,
     passes: false,
     notes,
+    ...(manual && { manual: true }),
   };
+}
+
+/** Whether a PRD story's labels mark it as a manual step. */
+function hasManualLabel(labels: readonly unknown[]): boolean {
+  return labels.some(
+    (l) => typeof l === "string" && l.trim().replace(/^`|`$/g, "").toLowerCase() === "manual",
+  );
 }
 
 function parseDependsOn(text: string): string[] {
@@ -212,6 +226,9 @@ export function parsePrdJson(input: string | unknown): ParsedPrd | null {
       dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.map(String) : [],
       passes: s.passes === true,
       notes: typeof s.notes === "string" && s.notes ? s.notes : undefined,
+      ...((s.manual === true || (Array.isArray(s.labels) && hasManualLabel(s.labels))) && {
+        manual: true,
+      }),
     });
   }
   if (stories.length === 0) return null;
