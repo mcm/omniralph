@@ -19,14 +19,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@iamthemcmaster/ui";
-import {
-  IconBell,
-  IconSearch,
-  IconChevronDown,
-  IconSun,
-  IconMoon,
-  IconLogout,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconSun, IconMoon, IconLogout } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { signOutAction } from "@/lib/auth/actions";
 import type { Theme } from "@/lib/theme";
@@ -123,29 +116,6 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
         >
           {theme === "light" ? <IconMoon size={16} /> : <IconSun size={16} />}
         </Button>
-
-        <Button variant="ghost" size="icon" aria-label="Search">
-          <IconSearch size={16} />
-        </Button>
-
-        {/* Notification bell with badge */}
-        <div style={{ position: "relative" }}>
-          <Button variant="ghost" size="icon" aria-label="Notifications">
-            <IconBell size={16} />
-          </Button>
-          <span
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 6,
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "var(--glacier-500)",
-              border: "2px solid var(--bg-page)",
-            }}
-          />
-        </div>
 
         <div
           style={{
