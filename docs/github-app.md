@@ -22,6 +22,7 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 | Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready ralph runs' PRs |
 | Contents | Read and write | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour); push tokens brokered to running `ralph` jobs only (`contents: write`, one repository, ≤ 1 hour) |
 | Issues | Read & write | The `issue_comment` event (PR conversation comments are issue comments) and replies to `@bot` commands in the PR conversation |
+| Actions | Read | Ralph's CI-fix loop: the workflow runs and failed jobs of a ralph PR's head commit, and the failed jobs' logs |
 | Metadata | Read | Mandatory for every App |
 
 | Event | Triggers |
@@ -29,6 +30,7 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 | `pull_request` | Reviews on open, reopen, ready for review and push (synchronize) |
 | `issue_comment` | `@bot` commands in the PR conversation |
 | `pull_request_review_comment` | `@bot dismiss` and questions in a finding's thread |
+| `workflow_run` | Ralph's CI-fix loop: a finished workflow run on a ralph PR's head commit (the reconcile cron is the fallback) |
 
 ## Manifest
 
@@ -52,9 +54,10 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
     "pull_requests": "write",
     "contents": "write",
     "issues": "write",
+    "actions": "read",
     "metadata": "read"
   },
-  "default_events": ["pull_request", "issue_comment", "pull_request_review_comment"]
+  "default_events": ["pull_request", "issue_comment", "pull_request_review_comment", "workflow_run"]
 }
 ```
 
@@ -63,6 +66,10 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
   permissions on each installation (**Settings › Applications › Configure**). Until then, ralph
   jobs can't push; reviews keep working. Apps created before reviews posted replies may also have
   **Pull requests: Read** only; ralph needs **Read and write** to open its PRs.
+- **Upgrading an existing App** (created before ralph's CI-fix loop): add **Actions: Read** under
+  **Permissions & events**, subscribe to the **Workflow run** event, and accept the new permissions
+  on each installation. Until then, ralph can't see why a PR's CI failed and doesn't try to fix it;
+  reviews and the rest of ralph keep working.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
   GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the

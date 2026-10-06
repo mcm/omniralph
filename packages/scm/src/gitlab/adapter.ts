@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AccessLevel, Gitlab } from "@gitbeaker/rest";
+import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
 import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
 import { MemoryCredentialCache, type CachedCredential, type CredentialCache } from "../credential-cache.js";
 import {
@@ -45,6 +46,16 @@ export const WRITE_REPOSITORY_SCOPE = "write_repository";
 /** Cached clone tokens are rotated once they're this close to expiry. */
 export const CLONE_TOKEN_ROTATE_MS = 2 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Pipeline statuses that mean CI hasn't finished yet. */
+const GITLAB_PENDING = new Set([
+  "created",
+  "waiting_for_resource",
+  "preparing",
+  "pending",
+  "running",
+  "scheduled",
+]);
 
 type GitlabClient = Gitlab<false>;
 
@@ -348,6 +359,82 @@ export class GitLabAdapter implements ScmAdapter {
       await this.api.MergeRequests.edit(project, number, { title });
     } catch (error) {
       if (statusOf(error) === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      throw error;
+    }
+  }
+
+  /**
+   * The MR's head pipeline, `none` when it ran on another commit than the
+   * head. `canceled`, `skipped` and `manual` count as `none`. A failed
+   * pipeline lists its failed jobs that aren't allowed to fail ("stage /
+   * name"), or itself as `noLog` when only a downstream pipeline failed.
+   */
+  async getCiStatus(repo: RepoRef, number: number): Promise<CiStatus> {
+    const project = projectId(repo);
+    const mr = await this.mergeRequest(repo, number);
+    const headSha = mr.sha;
+    const pipeline = (mr.head_pipeline ?? null) as {
+      id?: number;
+      sha?: string;
+      status?: string;
+      web_url?: string;
+    } | null;
+    const status = pipeline?.status;
+    if (!pipeline || !status || (pipeline.sha && pipeline.sha !== headSha)) {
+      return { state: "none", headSha, failedJobs: [] };
+    }
+    if (GITLAB_PENDING.has(status)) return { state: "pending", headSha, failedJobs: [] };
+    if (status === "success") return { state: "passed", headSha, failedJobs: [] };
+    // canceled, skipped, manual: nothing failed that ralph should fix.
+    if (status !== "failed" || pipeline.id === undefined)
+      return { state: "none", headSha, failedJobs: [] };
+    const jobs = await this.api.Jobs.all(project, {
+      pipelineId: pipeline.id,
+      scope: "failed",
+      perPage: 100,
+    });
+    const failedJobs: CiFailedJob[] = jobs
+      .filter((job) => job.allow_failure !== true)
+      .map((job) => ({
+        id: String(job.id),
+        name: job.stage ? `${job.stage} / ${job.name}` : job.name,
+        url: job.web_url ?? null,
+        noLog: false,
+      }));
+    // A failure only in a downstream (child) pipeline has no failed job here; point at the pipeline.
+    if (failedJobs.length === 0) {
+      failedJobs.push({
+        id: String(pipeline.id),
+        name: "pipeline",
+        url: pipeline.web_url ?? null,
+        noLog: true,
+      });
+    }
+    return { state: "failed", headSha, failedJobs };
+  }
+
+  /** The job's trace. */
+  async getCiJobLog(repo: RepoRef, jobId: string): Promise<string> {
+    const trace = await this.api.Jobs.showLog(projectId(repo), Number(jobId));
+    return ciLogTail(String(trace));
+  }
+
+  async getChangeRequestState(repo: RepoRef, number: number): Promise<ChangeRequestStatus> {
+    const mr = await this.mergeRequest(repo, number);
+    if (mr.state === "merged") {
+      // A fast-forward merge has no merge commit: the head itself landed.
+      const mergeSha = mr.merge_commit_sha ?? mr.squash_commit_sha ?? mr.sha;
+      return { state: "merged", headSha: mr.sha, mergeSha: mergeSha || null };
+    }
+    return { state: mr.state === "closed" ? "closed" : "open", headSha: mr.sha, mergeSha: null };
+  }
+
+  private async mergeRequest(repo: RepoRef, number: number) {
+    try {
+      return await this.api.MergeRequests.show(projectId(repo), number);
+    } catch (error) {
+      if (statusOf(error) === 404)
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
   }

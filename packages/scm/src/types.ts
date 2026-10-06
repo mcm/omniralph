@@ -1,3 +1,5 @@
+import type { ChangeRequestStatus, CiStatus } from "./ci.js";
+
 /**
  * Provider-neutral SCM types. Review logic talks to code hosts only through
  * {@link ScmAdapter}; GitHub and GitLab implement it.
@@ -167,6 +169,21 @@ export interface ScmAdapter {
   updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void>;
   /** Takes the PR/MR out of draft; a no-op when it isn't one. */
   markChangeRequestReady(repo: RepoRef, number: number): Promise<void>;
+  /**
+   * CI state of the PR/MR's current head commit, with its failed jobs.
+   * Throws {@link ChangeRequestNotFoundError} when the PR/MR doesn't exist.
+   */
+  getCiStatus(repo: RepoRef, number: number): Promise<CiStatus>;
+  /**
+   * Log of a failed CI job (`CiFailedJob.id`): cleaned of ANSI codes and
+   * GitLab section markers, only its last 4,000 chars (prefixed with "…").
+   */
+  getCiJobLog(repo: RepoRef, jobId: string): Promise<string>;
+  /**
+   * Whether the PR/MR is open, merged or closed, with its head and merge
+   * commits. Throws {@link ChangeRequestNotFoundError} when it doesn't exist.
+   */
+  getChangeRequestState(repo: RepoRef, number: number): Promise<ChangeRequestStatus>;
   /** Verifies a webhook delivery's signature against the raw request body. */
   verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean>;
 }

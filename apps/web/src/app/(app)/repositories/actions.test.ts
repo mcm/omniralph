@@ -183,6 +183,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
         url: "https://omniralph.example.com/api/webhooks/gitlab",
         merge_requests_events: true,
         note_events: true,
+        pipeline_events: true,
         push_events: false,
         enable_ssl_verification: true,
         token: credentials.webhookSecret,
