@@ -96,7 +96,9 @@ delivers jobs.**
 - **Heartbeat** (`POST /api/agent/heartbeat`, every 20s): the agent reports its
   version, capabilities, running job IDs and free slots. The response carries
   the central config: `maxConcurrency`, `pollIntervalSeconds`,
-  `enabledCapabilities`, `pinnedRepoIds`, `topics`, `queueRegion` and
+  `enabledCapabilities`, `capabilityLimits` (effective per-capability caps
+  within `maxConcurrency`; the agent only receives from a capability's topics
+  while it runs fewer of its jobs), `pinnedRepoIds`, `topics`, `queueRegion` and
   `cancelJobIds`. It also carries **freshly signed job tokens** for the jobs
   that are still running on this agent, so a long job never holds an expired
   15-minute job token.

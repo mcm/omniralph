@@ -44,6 +44,7 @@ const HEARTBEAT: HeartbeatResponse = {
   maxConcurrency: 1,
   pollIntervalSeconds: 5,
   enabledCapabilities: ["review"],
+  capabilityLimits: { review: 1 },
   pinnedRepoIds: [],
   topics: [],
   queueRegion: "iad1",

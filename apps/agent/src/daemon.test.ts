@@ -29,6 +29,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     maxConcurrency: 1,
     pollIntervalSeconds: 5,
     enabledCapabilities: ["review"],
+    capabilityLimits: {},
     pinnedRepoIds: [],
     topics: ["review-jobs"],
     queueRegion: "iad1",
@@ -471,6 +472,128 @@ describe("AgentDaemon", () => {
     expect(queue.acked).toHaveLength(5);
     expect(maxRunning).toBe(2);
     expect(queue.maxInFlight).toBe(2);
+    await daemon.shutdown();
+  });
+
+  /** Review and ralph capabilities whose jobs wait on gates; `startJob` maps ids to capabilities. */
+  function gatedCapabilities(config: HeartbeatResponse) {
+    const gates = new Map<string, ReturnType<typeof deferred>>();
+    const runningJobs: Record<string, string[]> = { review: [], ralph: [] };
+    const signals = new Map<string, AbortSignal>();
+    const run =
+      (name: string): Capability["run"] =>
+      async (j, ctx) => {
+        runningJobs[name]!.push(j.id);
+        signals.set(j.id, ctx.signal);
+        const gate = deferred();
+        gates.set(j.id, gate);
+        await gate.promise;
+        runningJobs[name] = runningJobs[name]!.filter((id) => id !== j.id);
+        return {};
+      };
+    const env = setup({
+      config,
+      capabilities: [
+        capability(run("review")),
+        capability(run("ralph"), { name: "ralph", jobTypes: ["ralph.story"] }),
+      ],
+    });
+    const ralphIds = new Set<string>();
+    env.api.startJob.mockImplementation(async (id: string) => ({
+      action: "run",
+      job: ralphIds.has(id) ? job(id, { capability: "ralph", type: "ralph.story" }) : job(id),
+      jobToken: { jobId: id, token: `job-token-${id}`, expiresIn: 900 },
+    }));
+    const pushRalph = (...ids: string[]) => {
+      for (const id of ids) ralphIds.add(id);
+      env.queue.push("ralph-jobs", ...ids);
+    };
+    return { ...env, gates, runningJobs, signals, pushRalph };
+  }
+
+  it("caps ralph jobs at their limit so a slot stays free for reviews", async () => {
+    const { api, queue, daemon, gates, runningJobs, pushRalph } = gatedCapabilities(
+      centralConfig({
+        maxConcurrency: 2,
+        enabledCapabilities: ["review", "ralph"],
+        // No ralph limit sent: the default (maxConcurrency - 1) applies.
+        capabilityLimits: { review: 2 },
+        topics: ["review-jobs", "ralph-jobs"],
+      }),
+    );
+    const ralph = Array.from({ length: 3 }, () => randomUUID());
+    pushRalph(...ralph);
+    void daemon.run();
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(daemon.capabilityLimit("ralph")).toBe(1);
+    expect(runningJobs.ralph).toEqual([ralph[0]]);
+    expect(daemon.freeSlots()).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ freeSlots: 1 }));
+
+    const review = randomUUID();
+    queue.push("review-jobs", review);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(runningJobs.review).toEqual([review]);
+    expect(runningJobs.ralph).toEqual([ralph[0]]);
+    expect(daemon.freeSlots()).toBe(0);
+
+    // A finished review frees its slot, but ralph still has none.
+    gates.get(review)!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runningJobs.ralph).toEqual([ralph[0]]);
+    expect(daemon.freeSlots()).toBe(1);
+
+    gates.get(ralph[0]!)!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(runningJobs.ralph).toEqual([ralph[1]]);
+    expect(queue.maxInFlight).toBe(2);
+    gates.get(ralph[1]!)!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
+    gates.get(ralph[2]!)!.resolve();
+    await settle();
+    expect(queue.acked).toHaveLength(4);
+    await daemon.shutdown();
+  });
+
+  it("keeps running jobs when a limit is lowered and receives again once under it", async () => {
+    const config = centralConfig({
+      maxConcurrency: 3,
+      enabledCapabilities: ["review", "ralph"],
+      capabilityLimits: { review: 3, ralph: 2 },
+      topics: ["review-jobs", "ralph-jobs"],
+    });
+    const { state, daemon, gates, runningJobs, signals, pushRalph } = gatedCapabilities(config);
+    const ralph = Array.from({ length: 4 }, () => randomUUID());
+    pushRalph(...ralph);
+    void daemon.run();
+    await settle();
+    expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
+    expect(daemon.freeSlots()).toBe(1);
+
+    state.config = { ...config, capabilityLimits: { review: 3, ralph: 1 } };
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(daemon.capabilityLimit("ralph")).toBe(1);
+    expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
+    expect(signals.get(ralph[0]!)!.aborted).toBe(false);
+    expect(signals.get(ralph[1]!)!.aborted).toBe(false);
+    // Over the limit: only non-ralph work could still start.
+    expect(daemon.freeSlots()).toBe(1);
+
+    gates.get(ralph[0]!)!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runningJobs.ralph).toEqual([ralph[1]]);
+
+    gates.get(ralph[1]!)!.resolve();
+    await settle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(runningJobs.ralph).toEqual([ralph[2]]);
+    for (const gate of gates.values()) gate.resolve();
     await daemon.shutdown();
   });
 

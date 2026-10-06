@@ -391,6 +391,14 @@ export const agents = pgTable("agents", {
     .array()
     .notNull()
     .default(sql`'{review}'::text[]`),
+  /**
+   * Per-capability caps on concurrent jobs (e.g. `{ "ralph": 1 }`), within
+   * `maxConcurrency`. Unset capabilities use the protocol's default limit.
+   */
+  capabilityLimits: jsonb("capability_limits")
+    .$type<Partial<Record<string, number>>>()
+    .notNull()
+    .default({}),
   reportedVersion: text("reported_version"),
   reportedCapabilities: text("reported_capabilities").array(),
   lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),

@@ -3,7 +3,7 @@ import {
   listAgentPinnedRepositoryIds,
   recordAgentHeartbeat,
 } from "@omniralph/db";
-import { Heartbeat, type HeartbeatResponse } from "@omniralph/shared";
+import { Heartbeat, effectiveCapabilityLimits, type HeartbeatResponse } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import { signJobToken } from "@/lib/agent-api/jobs";
@@ -38,6 +38,11 @@ export async function POST(req: Request): Promise<Response> {
     maxConcurrency: agent.maxConcurrency,
     pollIntervalSeconds: agent.pollIntervalSeconds,
     enabledCapabilities: agent.enabledCapabilities,
+    capabilityLimits: effectiveCapabilityLimits(
+      agent.enabledCapabilities,
+      agent.capabilityLimits,
+      agent.maxConcurrency,
+    ),
     pinnedRepoIds,
     topics: agentTopics(agent),
     queueRegion: publishRegion(),

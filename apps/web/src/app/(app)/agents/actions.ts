@@ -5,7 +5,7 @@ import {
   unpinRepositoryFromAgent,
   updateAgentConfig as updateAgentConfigRow,
 } from "@omniralph/db";
-import { CAPABILITIES } from "@omniralph/shared";
+import { CAPABILITIES, type Capability } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -73,15 +73,32 @@ export async function createEnrollment(name: string): Promise<EnrollmentActionRe
   return created ?? { ok: false, error: "Couldn't create an enrollment token." };
 }
 
-const AgentConfig = z.object({
-  maxConcurrency: z.number().int().min(1).max(32),
-  pollIntervalSeconds: z.number().int().min(1).max(300),
-  enabledCapabilities: z.array(z.enum(CAPABILITIES)),
-});
+const AgentConfig = z
+  .object({
+    maxConcurrency: z.number().int().min(1).max(32),
+    pollIntervalSeconds: z.number().int().min(1).max(300),
+    enabledCapabilities: z.array(z.enum(CAPABILITIES)),
+    capabilityLimits: z.partialRecord(z.enum(CAPABILITIES), z.number().int().min(1)).optional(),
+  })
+  .superRefine((config, ctx) => {
+    for (const [capability, limit] of Object.entries(config.capabilityLimits ?? {})) {
+      if (!config.enabledCapabilities.includes(capability as Capability)) {
+        ctx.addIssue({ code: "custom", message: `${capability} isn't enabled.` });
+      }
+      if (limit !== undefined && limit > config.maxConcurrency) {
+        ctx.addIssue({ code: "custom", message: `${capability}'s limit exceeds max concurrency.` });
+      }
+    }
+  });
 export interface AgentConfigForm {
   maxConcurrency: number;
   pollIntervalSeconds: number;
   enabledCapabilities: string[];
+  /**
+   * Per-capability concurrency limits of enabled capabilities (1 to
+   * `maxConcurrency`); left-out ones use the default. Omitted: unchanged.
+   */
+  capabilityLimits?: Record<string, number>;
 }
 
 /** Updates an agent's central config; the agent gets it with its next heartbeat. */
@@ -95,7 +112,7 @@ export async function updateAgentConfig(
       return {
         ok: false,
         error:
-          "Max concurrency must be 1–32, the poll interval 1–300 seconds, and capabilities known ones.",
+          "Max concurrency must be 1–32, the poll interval 1–300 seconds, capabilities known ones, and each capability limit 1 to the max concurrency for an enabled capability.",
       };
     }
     if (!(await updateAgentConfigRow(getDb(), agentId, parsed.data))) {
