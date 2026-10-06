@@ -2,9 +2,16 @@
  * Maps ralph runs from the database to the Ralph runs pages' view props
  * (`./display`): ISO dates, PR/MR labels.
  */
-import type { RalphRunDetail, RalphRunListEntry, ScmProvider } from "@omniralph/db";
+import {
+  RUN_DETAIL_MESSAGE_LIMIT,
+  type RalphRunDetail,
+  type RalphRunListEntry,
+  type ScmProvider,
+} from "@omniralph/db";
+import { parseRalphSettings } from "@omniralph/shared";
 import {
   cleanupLabel,
+  ralphMessageState,
   type RalphPullRequest,
   type RalphRunDetailView,
   type RalphRunRow,
@@ -58,15 +65,26 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       main?.lane.prNumber ?? null,
       main?.lane.prUrl ?? null,
     ),
-    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain }) => ({
-      id: lane.id,
-      repository: laneRepository,
-      main: isMain,
-      branch: lane.branch,
-      baseBranch: lane.baseBranch,
-      pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
-      cleanup: cleanupLabel(lane.cleanup),
-    })),
+    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain, ralphSettings }) => {
+      const settings = parseRalphSettings(ralphSettings);
+      return {
+        id: lane.id,
+        repository: laneRepository,
+        main: isMain,
+        branch: lane.branch,
+        baseBranch: lane.baseBranch,
+        pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
+        cleanup: cleanupLabel(lane.cleanup),
+        reviewRounds: {
+          done: lane.reviewRounds,
+          max: settings.respondToReviews ? settings.maxReviewRounds : null,
+        },
+        ciFixRounds: {
+          done: lane.ciFixRounds,
+          max: settings.respondToCiFailures ? settings.maxFixRounds : null,
+        },
+      };
+    }),
     agent: detail.agent,
     error: run.error,
     waitingOn:
@@ -103,6 +121,27 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       createdAt: job.createdAt.toISOString(),
       finishedAt: job.finishedAt?.toISOString() ?? null,
     })),
+    pendingRequests: detail.pendingRequests.map((request) => ({
+      id: request.id,
+      laneId: request.laneId,
+      text: request.text,
+      author: request.author,
+      createdAt: request.createdAt.toISOString(),
+    })),
+    messages: detail.messages.map((message) => {
+      const view = {
+        id: message.id,
+        kind: message.kind,
+        text: message.text,
+        author: message.author,
+        job: message.job,
+        createdAt: message.createdAt.toISOString(),
+        deliveredAt: message.deliveredAt?.toISOString() ?? null,
+        consumedAt: message.consumedAt?.toISOString() ?? null,
+      };
+      return { ...view, state: ralphMessageState({ ...view, jobStatus: message.job.status }) };
+    }),
+    messageLimit: RUN_DETAIL_MESSAGE_LIMIT,
     createdAt: run.createdAt.toISOString(),
     updatedAt: run.updatedAt.toISOString(),
   };

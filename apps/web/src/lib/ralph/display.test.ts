@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   linearIssueUrl,
   parseRalphRunListParams,
+  ralphMessageState,
   ralphRunListHref,
+  roundsLabel,
   shortSha,
   truncate,
 } from "./display";
@@ -47,5 +49,29 @@ describe("formatting", () => {
     expect(shortSha("a".repeat(40))).toBe("a".repeat(12));
     expect(truncate("short", 10)).toBe("short");
     expect(truncate("0123456789abc", 10)).toBe("012345678…");
+  });
+});
+
+describe("run detail follow-up", () => {
+  it("labels a lane's rounds, or says the loop is off", () => {
+    expect(roundsLabel({ done: 1, max: 3 })).toBe("1 / 3");
+    expect(roundsLabel({ done: 2, max: null })).toBe("2 (off)");
+  });
+
+  it("derives a live message's state from its timestamps and job", () => {
+    const at = "2026-10-06T10:00:00.000Z";
+    const message = { kind: "guidance" as const, deliveredAt: null, consumedAt: null };
+    expect(ralphMessageState({ ...message, jobStatus: "running" })).toBe("waiting");
+    expect(ralphMessageState({ ...message, jobStatus: "queued" })).toBe("waiting");
+    expect(ralphMessageState({ ...message, jobStatus: "completed" })).toBe("undelivered");
+    expect(
+      ralphMessageState({ ...message, deliveredAt: at, consumedAt: at, jobStatus: "completed" }),
+    ).toBe("delivered");
+    expect(ralphMessageState({ ...message, consumedAt: at, jobStatus: "running" })).toBe(
+      "guidance",
+    );
+    expect(
+      ralphMessageState({ ...message, kind: "request", consumedAt: at, jobStatus: "running" }),
+    ).toBe("undelivered");
   });
 });

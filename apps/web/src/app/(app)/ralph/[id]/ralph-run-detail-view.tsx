@@ -35,8 +35,10 @@ import {
 import {
   IconAlertTriangle,
   IconClockPause,
+  IconInbox,
   IconListCheck,
   IconMessage,
+  IconMessages,
   IconNotes,
   IconPlayerStop,
 } from "@tabler/icons-react";
@@ -48,9 +50,12 @@ import { formatDateTime } from "@/lib/format-date";
 import {
   jobHref,
   linearIssueUrl,
+  RALPH_MESSAGE_STATE_LABELS,
+  roundsLabel,
   shortSha,
   STOPPABLE_RALPH_RUN_STATUSES,
   truncate,
+  type RalphMessageState,
   type RalphRunDetailView as RalphRunDetail,
 } from "@/lib/ralph/display";
 import { STATUS_BADGES as JOB_STATUS_BADGES } from "../../jobs/jobs-view";
@@ -84,6 +89,8 @@ const codeBlock: React.CSSProperties = {
 
 /** Characters of a story's last feedback shown in the table (all of it on hover). */
 const FEEDBACK_PREVIEW = 120;
+/** Characters of a request or message shown in the tables (all of it on hover). */
+const MESSAGE_PREVIEW = 240;
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -274,6 +281,10 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
           <PullRequestLink pullRequest={lane.pullRequest} />
           {" · "}
           {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
+          {" · "}
+          Review rounds {roundsLabel(lane.reviewRounds)}
+          {" · "}
+          CI fix rounds {roundsLabel(lane.ciFixRounds)}
           {lane.cleanup ? ` · ${lane.cleanup}` : null}
         </CardDescription>
       </CardHeader>
@@ -344,6 +355,182 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
           />
         ) : (
           <StoriesTable run={run} stories={run.stories} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The repository a request or message is for (null lane: the main lane's). */
+function laneRepository(run: RalphRunDetail, laneId: string | null): string | null {
+  const lane = run.lanes.find((l) => (laneId ? l.id === laneId : l.main));
+  return lane?.repository.fullPath ?? run.repository?.fullPath ?? null;
+}
+
+const textCell: React.CSSProperties = {
+  ...cellText,
+  display: "block",
+  maxWidth: "calc(var(--space-6) * 16)",
+  whiteSpace: "pre-wrap",
+  overflowWrap: "anywhere",
+};
+
+function JobLink({ id, label }: { id: string; label: string }) {
+  return (
+    <Link
+      href={jobHref(id)}
+      style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
+    >
+      {label}
+    </Link>
+  );
+}
+
+/** Requests the run hasn't handled yet, per lane (repository). */
+function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
+  const multiLane = run.lanes.length > 1;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending requests</CardTitle>
+        <CardDescription>
+          Requests from Linear, review findings, <InlineCode>@bot</InlineCode> comments and failed
+          CI that the run hasn&apos;t handled yet. They run as request jobs when no story runs.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {run.pendingRequests.length === 0 ? (
+          <Empty
+            size="sm"
+            icon={<IconInbox size={24} />}
+            title="No pending requests"
+            description="Every request has been handled."
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {multiLane && <TableHead>Repository</TableHead>}
+                <TableHead>Request</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {run.pendingRequests.map((request) => (
+                <TableRow key={request.id}>
+                  {multiLane && (
+                    <TableCell>
+                      <span style={mono}>{laneRepository(run, request.laneId) ?? "—"}</span>
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <span style={textCell} title={request.text}>
+                      {truncate(request.text, MESSAGE_PREVIEW)}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {request.author ? (
+                      <span style={cellText}>{request.author}</span>
+                    ) : (
+                      <Muted>—</Muted>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span style={cellText}>{formatDateTime(request.createdAt)}</span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const MESSAGE_STATE_BADGES: Record<RalphMessageState, "neutral" | "success" | "warning" | "info"> =
+  {
+    waiting: "info",
+    delivered: "success",
+    guidance: "warning",
+    undelivered: "neutral",
+  };
+
+/** Linear replies and mentions sent to running jobs' live sessions. */
+function MessagesCard({ run }: { run: RalphRunDetail }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Messages</CardTitle>
+        <CardDescription>
+          Replies passed to the agent that was working at the time, through its heartbeat, newest
+          first (the latest {run.messageLimit}).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {run.messages.length === 0 ? (
+          <Empty
+            size="sm"
+            icon={<IconMessages size={24} />}
+            title="No messages"
+            description="Replies sent while a story or request runs appear here."
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kind</TableHead>
+                <TableHead>Message</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Job</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {run.messages.map((message) => {
+                const settledAt = message.deliveredAt ?? message.consumedAt;
+                return (
+                  <TableRow key={message.id}>
+                    <TableCell>
+                      <Badge variant="outline">{message.kind}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span style={textCell} title={message.text}>
+                        {truncate(message.text, MESSAGE_PREVIEW)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {message.author ? (
+                        <span style={cellText}>{message.author}</span>
+                      ) : (
+                        <Muted>—</Muted>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <JobLink id={message.job.id} label={message.job.type} />
+                    </TableCell>
+                    <TableCell>
+                      <div style={{ ...stack, gap: "var(--space-1)" }}>
+                        <Badge variant={MESSAGE_STATE_BADGES[message.state]} dot>
+                          {RALPH_MESSAGE_STATE_LABELS[message.state]}
+                        </Badge>
+                        {settledAt && (
+                          <Muted style={{ fontSize: "var(--text-xs)" }}>
+                            {formatDateTime(settledAt)}
+                          </Muted>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span style={cellText}>{formatDateTime(message.createdAt)}</span>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
       </CardContent>
     </Card>
@@ -569,6 +756,10 @@ export function RalphRunDetailView({
         </Card>
 
         <StoriesCard run={run} />
+
+        <PendingRequestsCard run={run} />
+
+        <MessagesCard run={run} />
 
         <Card>
           <CardHeader>

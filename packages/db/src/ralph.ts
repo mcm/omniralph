@@ -426,11 +426,25 @@ export interface RalphRunDetail {
   stories: RalphStory[];
   /** Every job of the run, newest first. */
   jobs: RalphRunJob[];
+  /** Requests not handled yet (`listPendingRequests`), oldest first. */
+  pendingRequests: RalphMessage[];
+  /** Messages for running jobs (live replies), newest first, at most `RUN_DETAIL_MESSAGE_LIMIT`. */
+  messages: RalphJobMessage[];
 }
+
+/** Live messages shown on a run's page. */
+export const RUN_DETAIL_MESSAGE_LIMIT = 50;
+
+/** A message for a running job, with that job's type and status. */
+export type RalphJobMessage = RalphMessage & {
+  job: { id: string; type: string; status: Job["status"] };
+};
 
 export interface RalphLaneDetail {
   lane: RalphLane;
   repository: { id: string; provider: ScmProvider; fullPath: string };
+  /** The repository's stored ralph settings (unparsed: old rows may lack newer fields). */
+  ralphSettings: unknown;
   /** The lane of the run's own repository. */
   main: boolean;
 }
@@ -467,7 +481,7 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
     .where(eq(ralphRuns.id, runId))
     .limit(1);
   if (!row) return null;
-  const [lanes, stories, jobRows] = await Promise.all([
+  const [lanes, stories, jobRows, pendingRequests, messageRows] = await Promise.all([
     db
       .select({
         lane: ralphLanes,
@@ -476,6 +490,7 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
           provider: repositories.provider,
           fullPath: repositories.fullPath,
         },
+        ralphSettings: repositories.ralphSettings,
       })
       .from(ralphLanes)
       .innerJoin(repositories, eq(repositories.id, ralphLanes.repositoryId))
@@ -500,6 +515,17 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
       .leftJoin(agents, eq(agents.id, jobs.agentId))
       .where(eq(jobs.ralphRunId, runId))
       .orderBy(desc(jobs.createdAt), desc(jobs.id)),
+    listPendingRequests(db, runId),
+    db
+      .select({
+        message: ralphMessages,
+        job: { id: jobs.id, type: jobs.type, status: jobs.status },
+      })
+      .from(ralphMessages)
+      .innerJoin(jobs, eq(jobs.id, ralphMessages.jobId))
+      .where(eq(ralphMessages.runId, runId))
+      .orderBy(desc(ralphMessages.createdAt), desc(ralphMessages.id))
+      .limit(RUN_DETAIL_MESSAGE_LIMIT),
   ]);
   return {
     run: row.run,
@@ -513,6 +539,8 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
       ...job,
       agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
     })),
+    pendingRequests,
+    messages: messageRows.map(({ message, job }) => ({ ...message, job })),
   };
 }
 

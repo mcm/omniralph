@@ -36,6 +36,8 @@ import {
   listMessages,
   moveToRepository,
   updateLane,
+  updateMessage,
+  RUN_DETAIL_MESSAGE_LIMIT,
   type NewRalphRunInput,
 } from "./ralph.js";
 import {
@@ -535,7 +537,51 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       [first.id, "ralph.story", "completed", "coder-1"],
     ]);
 
+    expect(detail!.pendingRequests).toEqual([]);
+    expect(detail!.messages).toEqual([]);
+
     expect(await getRunDetail(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+
+  it("gives a run's detail its pending requests and its latest live messages", async () => {
+    const { run } = await createRun(db, runInput());
+    const { job } = await insertJob(db, {
+      capability: "ralph",
+      type: "ralph.request",
+      ralphRunId: run.id,
+    });
+    const pending = await insertMessage(db, { runId: run.id, kind: "request", text: "Open a PR" });
+    const consumed = await insertMessage(db, { runId: run.id, kind: "request", text: "Done" });
+    await updateMessage(db, consumed.id, { consumedAt: new Date() });
+    // One more live message than the page shows; the oldest is left out.
+    const live: string[] = [];
+    for (let i = 0; i <= RUN_DETAIL_MESSAGE_LIMIT; i++) {
+      const message = await insertMessage(db, {
+        runId: run.id,
+        jobId: job.id,
+        kind: "request",
+        text: `live ${i}`,
+        author: "Ada",
+      });
+      await db
+        .update(ralphMessages)
+        .set({ createdAt: new Date(Date.UTC(2026, 9, 6, 10, 0, i)) })
+        .where(eq(ralphMessages.id, message.id));
+      live.push(message.id);
+    }
+    // Another run's message isn't listed.
+    const other = (await createRun(db, runInput())).run;
+    await insertMessage(db, { runId: other.id, kind: "request", text: "elsewhere" });
+
+    const detail = (await getRunDetail(db, run.id))!;
+    expect(detail.pendingRequests.map((m) => m.id)).toEqual([pending.id]);
+    expect(detail.messages).toHaveLength(RUN_DETAIL_MESSAGE_LIMIT);
+    expect(detail.messages.map((m) => m.id)).toEqual(live.slice(1).reverse());
+    expect(detail.messages[0]).toMatchObject({
+      text: `live ${RUN_DETAIL_MESSAGE_LIMIT}`,
+      author: "Ada",
+      job: { id: job.id, type: "ralph.request", status: "queued" },
+    });
   });
 
   describe("lanes", () => {

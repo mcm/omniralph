@@ -336,7 +336,13 @@ links) reach the agent, as in cyralph:
 
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Ralph runs**,
 where admins can also stop a run. A run's page has one section per repository (lane) with its
-branch, PR/MR, stories and cleanup state, plus the run's guidance and progress log. **Analytics**
+branch, PR/MR, stories, review rounds and CI fix rounds (out of the repository's `maxReviewRounds`
+/ `maxFixRounds`, or "off" when that loop is turned off) and cleanup state. Below them are
+**Pending requests** (requests from Linear, review findings, `@bot` comments and failed CI the
+run hasn't handled yet, with their repository, author and time), **Messages** (the latest 50
+replies passed to a running job's live session, newest first: kind, text, author, job, and
+whether the agent's heartbeat delivered it, it's still waiting, or it couldn't be delivered and
+was kept as guidance), the run's guidance, its progress log and its jobs. **Analytics**
 has a Ralph section: runs started, ralph tokens per day next to reviews, runs per day by status
 and story outcomes per day and in total (first attempt, after retries, blocked, exhausted).
 
