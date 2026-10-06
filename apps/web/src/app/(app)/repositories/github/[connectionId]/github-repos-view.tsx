@@ -120,10 +120,16 @@ export function GitHubReposView({
                     href={manageUrl}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: "var(--text-accent)" }}
+                    style={{
+                      color: "var(--text-accent)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "var(--space-1)",
+                      whiteSpace: "nowrap",
+                    }}
                   >
-                    Change them on GitHub{" "}
-                    <IconExternalLink size={12} style={{ verticalAlign: "middle" }} />
+                    Change them on GitHub
+                    <IconExternalLink size={12} />
                   </a>
                 </>
               )}
