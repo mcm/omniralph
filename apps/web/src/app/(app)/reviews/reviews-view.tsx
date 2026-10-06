@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -13,12 +12,6 @@ import {
   Empty,
   Muted,
   NativeSelect,
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
   Table,
   TableBody,
   TableCell,
@@ -30,7 +23,9 @@ import { IconChevronRight, IconExternalLink, IconHistory } from "@tabler/icons-r
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ReviewStatusBadge, SeverityBadge, TriggerBadge } from "@/components/review-badges";
+import { ListPagination } from "@/components/list-pagination";
 import { formatDateTime } from "@/lib/format-date";
+import { totalPages } from "@/lib/pagination";
 import {
   FINDING_SEVERITIES,
   formatDuration,
@@ -202,64 +197,11 @@ function ReviewTableRow({
   );
 }
 
-/** Page numbers to show: first, last and the current page's neighbours. */
-function pageWindow(page: number, pageCount: number): (number | "gap")[] {
-  const pages = new Set([1, pageCount, page - 1, page, page + 1]);
-  const sorted = [...pages].filter((p) => p >= 1 && p <= pageCount).sort((a, b) => a - b);
-  return sorted.flatMap((p, i) => (i > 0 && p - sorted[i - 1]! > 1 ? ["gap" as const, p] : [p]));
-}
-
-function ReviewPagination({
-  params,
-  pageCount,
-  hrefFor,
-}: {
-  params: ReviewListParams;
-  pageCount: number;
-  hrefFor: (page: number) => string;
-}) {
-  const router = useRouter();
-  if (pageCount <= 1) return null;
-  const go = (page: number) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    router.push(hrefFor(page));
-  };
-  return (
-    <Pagination>
-      <PaginationContent>
-        {params.page > 1 && (
-          <PaginationItem>
-            <PaginationPrevious href={hrefFor(params.page - 1)} onClick={go(params.page - 1)} />
-          </PaginationItem>
-        )}
-        {pageWindow(params.page, pageCount).map((p, i) =>
-          p === "gap" ? (
-            <PaginationItem key={`gap-${i}`}>
-              <Muted>…</Muted>
-            </PaginationItem>
-          ) : (
-            <PaginationItem key={p}>
-              <PaginationLink href={hrefFor(p)} isActive={p === params.page} onClick={go(p)}>
-                {p}
-              </PaginationLink>
-            </PaginationItem>
-          ),
-        )}
-        {params.page < pageCount && (
-          <PaginationItem>
-            <PaginationNext href={hrefFor(params.page + 1)} onClick={go(params.page + 1)} />
-          </PaginationItem>
-        )}
-      </PaginationContent>
-    </Pagination>
-  );
-}
-
 export function ReviewsView({ repository, reviews, params, total, pageSize }: ReviewsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const router = useRouter();
   const pathname = usePathname();
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageCount = totalPages(total, pageSize);
   const filtered = params.status !== null || params.trigger !== null;
   const first = total === 0 ? 0 : (params.page - 1) * pageSize + 1;
   const last = (params.page - 1) * pageSize + reviews.length;
@@ -426,8 +368,8 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                 </TableBody>
               </Table>
             )}
-            <ReviewPagination
-              params={params}
+            <ListPagination
+              page={params.page}
               pageCount={pageCount}
               hrefFor={(page) => reviewListHref(pathname, { ...params, page })}
             />

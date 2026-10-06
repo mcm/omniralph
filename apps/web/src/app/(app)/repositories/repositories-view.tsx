@@ -57,7 +57,9 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { ListPagination } from "@/components/list-pagination";
 import { useAction } from "@/components/use-action";
+import { pageRange, totalPages } from "@/lib/pagination";
 import { connectGitLab, disconnectRepository, setRepositoryEnabled } from "./actions";
 
 export interface RepositoryRow {
@@ -75,7 +77,13 @@ export interface RepositoryRow {
 export type GitHubNotice = "requested" | "invalid" | "error";
 
 interface RepositoriesViewProps {
+  /** The current page of connected repositories. */
   repositories: RepositoryRow[];
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+  /** Connected repositories across all pages. */
+  total: number;
   /** Admins only: stored GitHub App installations. */
   githubInstallations: { id: string; name: string }[];
   /** Admins only: the app's installation page, or null when the app isn't configured. */
@@ -355,6 +363,10 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
   );
 }
 
+function repositoriesHref(page: number): string {
+  return page > 1 ? `/repositories?page=${page}` : "/repositories";
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const githubNotices: Record<
@@ -382,12 +394,17 @@ const githubNotices: Record<
 
 export function RepositoriesView({
   repositories,
+  page,
+  pageSize,
+  total,
   githubInstallations,
   githubInstallUrl,
   defaultGitLabUrl,
   githubNotice,
 }: RepositoriesViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
+  const pageCount = totalPages(total, pageSize);
+  const { first, last } = pageRange(page, pageSize, repositories.length);
 
   return (
     <>
@@ -459,10 +476,19 @@ export function RepositoriesView({
               {isAdmin
                 ? "Turn reviews on or off per repository. Disconnecting keeps a repository's review history."
                 : "Repositories connected by an admin. Only admins can change them."}
+              {repositories.length > 0 &&
+                total > pageSize &&
+                ` Showing ${first}–${last} of ${total.toLocaleString()}.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {repositories.length === 0 ? (
+            {repositories.length === 0 && total > 0 ? (
+              <Empty
+                icon={<IconGitPullRequest size={24} />}
+                title="No repositories on this page"
+                description="The page is past the last one."
+              />
+            ) : repositories.length === 0 ? (
               <Empty
                 icon={<IconGitPullRequest size={24} />}
                 title="No repositories yet"
@@ -491,6 +517,7 @@ export function RepositoriesView({
                 </TableBody>
               </Table>
             )}
+            <ListPagination page={page} pageCount={pageCount} hrefFor={repositoriesHref} />
           </CardContent>
         </Card>
 

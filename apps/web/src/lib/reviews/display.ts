@@ -4,6 +4,7 @@
  */
 import type { FindingSeverity, ReviewStatus, ReviewTrigger } from "@omniralph/db";
 import type { FeedbackReasonValue } from "@omniralph/shared";
+import { parsePage } from "@/lib/pagination";
 
 /** Client-safe copies of the DB enums (the views can't import `@omniralph/db`). */
 export const REVIEW_STATUSES = [
@@ -46,11 +47,10 @@ function oneOf<T extends string>(values: readonly T[], value: string | undefined
 
 /** The list's filters and page from URL search params; unknown values are ignored. */
 export function parseReviewListParams(params: SearchParams): ReviewListParams {
-  const page = Number(single(params.page));
   return {
     status: oneOf(REVIEW_STATUSES, single(params.status)),
     trigger: oneOf(REVIEW_TRIGGERS, single(params.trigger)),
-    page: Number.isInteger(page) && page > 0 ? page : 1,
+    page: parsePage(params.page),
   };
 }
 

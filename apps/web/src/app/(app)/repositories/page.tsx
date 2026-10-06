@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
-import { listRepositoryOverview, listScmConnections } from "@omniralph/db";
+import {
+  listRepositoryOverviewPage,
+  listScmConnections,
+  REPOSITORY_PAGE_SIZE,
+} from "@omniralph/db";
 import { GITLAB_URL } from "@omniralph/scm";
 import { hasRole } from "@/lib/auth/roles";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { parsePage } from "@/lib/pagination";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { getGitHubInstallUrl } from "@/lib/scm/github-app";
 import { RepositoriesView, type GitHubNotice } from "./repositories-view";
@@ -19,21 +24,24 @@ const NOTICES: Record<string, GitHubNotice> = {
 export default async function RepositoriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ github?: string }>;
+  searchParams: Promise<{ github?: string; page?: string | string[] }>;
 }) {
   const user = await requirePageUser();
   const isAdmin = hasRole(user, "admin");
   const db = getDb();
+  const { github, page } = await searchParams;
   const [repos, githubConnections, githubInstallUrl] = await Promise.all([
-    listRepositoryOverview(db),
+    listRepositoryOverviewPage(db, { page: parsePage(page), pageSize: REPOSITORY_PAGE_SIZE }),
     isAdmin ? listScmConnections(db, "github") : [],
     isAdmin ? getGitHubInstallUrl() : null,
   ]);
-  const { github } = await searchParams;
 
   return (
     <RepositoriesView
-      repositories={repos.map((repo) => ({
+      page={repos.page}
+      pageSize={repos.pageSize}
+      total={repos.total}
+      repositories={repos.repositories.map((repo) => ({
         id: repo.id,
         provider: repo.provider,
         fullPath: repo.fullPath,

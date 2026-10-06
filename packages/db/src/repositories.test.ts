@@ -10,6 +10,7 @@ import {
   connectRepository,
   disconnectRepository,
   listRepositoryOverview,
+  listRepositoryOverviewPage,
   setRepositoryEnabled,
   upsertScmConnection,
 } from "./repositories.js";
@@ -137,6 +138,50 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       disconnectedAt: null,
       fullPath: "acme/web-renamed",
     });
+    await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+  });
+
+  it("pages connected repositories in path order, skipping disconnected ones", async () => {
+    const connection = await upsertScmConnection(
+      db,
+      {
+        provider: "gitlab",
+        name: "paged",
+        baseUrl: "https://gitlab.paged.example",
+        externalId: "7",
+        credentials: {},
+      },
+      key,
+    );
+    const repos = [];
+    for (const [i, path] of ["paged/c", "paged/a", "paged/e", "paged/b", "paged/d"].entries()) {
+      repos.push(
+        await connectRepository(db, {
+          connectionId: connection.id,
+          provider: "gitlab",
+          externalId: String(100 + i),
+          fullPath: path,
+        }),
+      );
+    }
+    await disconnectRepository(db, repos[4]!.id);
+
+    const all = (await listRepositoryOverview(db)).map((r) => r.id);
+    const pages = [];
+    for (let page = 1; page <= Math.ceil(all.length / 2); page++) {
+      const result = await listRepositoryOverviewPage(db, { page, pageSize: 2 });
+      expect(result).toMatchObject({ total: all.length, page, pageSize: 2 });
+      pages.push(...result.repositories.map((r) => r.id));
+    }
+    expect(pages).toEqual(all);
+    expect(all).not.toContain(repos[4]!.id);
+    const paged = (await listRepositoryOverview(db))
+      .filter((r) => r.connectionId === connection.id)
+      .map((r) => r.fullPath);
+    expect(paged).toEqual(["paged/a", "paged/b", "paged/c", "paged/e"]);
+
+    const past = await listRepositoryOverviewPage(db, { page: 99, pageSize: 2 });
+    expect(past).toMatchObject({ repositories: [], total: all.length, page: 99 });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
 });
