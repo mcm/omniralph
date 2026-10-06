@@ -9,7 +9,7 @@ Agents run jobs for one or more **capabilities**, enabled per agent under **Agen
 | Capability | Jobs | What it does |
 | -- | -- | -- |
 | `review` (default) | `review.run`, `review.reply`, `review.learn-rule` | PRs/MRs in connected repositories are reviewed automatically (or on `@omniralph review`) with a configurable depth profile. Findings are posted inline, and dismissed false positives turn into learned rules for later reviews. Read-only: sessions can't write, run commands or push. |
-| `ralph` | `ralph.story`, `ralph.describe-pr`, `ralph.prepare` | The ralph loop, ported from cyralph: delegate a Linear epic (or issue) to the Omniralph Linear app and it's built story by story, one Claude session per story, with quality gates, a `feat(<ID>)` commit and a push after each, and ends with a PR/MR to the default branch with an agent-written description. Opt-in per repository; see [docs/linear.md](docs/linear.md). |
+| `ralph` | `ralph.story`, `ralph.describe-pr`, `ralph.prepare`, `ralph.request`, `ralph.cleanup` | The ralph loop, ported from cyralph: delegate a Linear epic (or issue) to the Omniralph Linear app and it's built story by story, one Claude session per story, with quality gates, a `feat(<ID>)` commit and a push after each, and ends with a PR/MR to the default branch with an agent-written description; stories routed to other repositories get their own branch and PR/MR (lanes). @mention the app for a single request instead, and reply to steer a running session live. Ralph then looks after its PRs/MRs: it fixes Omniralph's review findings, `@omniralph fix` requests and failed CI (within capped rounds) and cleans up the worktree after the merge. Opt-in per repository, with cyralph's per-repository settings; see [docs/linear.md](docs/linear.md). Moving from cyralph: [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md). |
 
 Both share the control panel, job dispatch, agents, repo cache and credential broker. Only `ralph`
 jobs can get write credentials (one repository, short-lived), and the control panel performs every
@@ -53,7 +53,9 @@ code-host and Linear API call for both.
   See [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md).
 - **Agents make only outbound connections.** `omniralph-agent` runs on Coder instances, has no
   inbound port and a minimal local config (server, agent ID, rotating refresh token, workspace
-  root). Concurrency, capabilities, pins and cancellations come back with each heartbeat. It
+  root). Concurrency (also per capability, so ralph never takes every slot), capabilities, pins,
+  cancellations, the desired agent version (pm2 agents update themselves and roll back a broken
+  release) and replies for running ralph sessions come back with each heartbeat. It
   authenticates with 15-minute RS256 access tokens signed by Vercel KMS, and rotating refresh tokens
   with reuse detection. See [ADR 0002: agent auth](docs/adr/0002-agent-auth.md).
 - **Credential broker.** Agents never hold code-host API tokens. For git, the agent's
@@ -99,27 +101,31 @@ code-host and Linear API call for both.
    request outside finding threads) has ralph make the change. Admins can also use **Re-run** on a review's page or history row.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
    Integrations**, enable ralph and its Linear routing on a repository and the `ralph` capability
-   on an agent, then delegate an epic to the app → [docs/linear.md](docs/linear.md). Runs show up
-   under **Ralph runs**.
+   on an agent, then delegate an epic to the app (or @mention it with a request)
+   → [docs/linear.md](docs/linear.md). Runs show up under **Ralph runs**. Replacing cyralph?
+   Follow [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md).
 7. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
    excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
-   shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days.
+   shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days,
+   plus ralph's tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
+   Agents**.
 
 ## Documentation
 
 | Doc | Covers |
 | -- | -- |
 | [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
-| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux/pm2, central config, the `ralph` capability and its host prerequisites, disk usage, coexisting with cyralph, re-enrollment |
-| [linear.md](docs/linear.md) | The Linear app, connecting a workspace, routing issues to repositories, delegating, replies |
+| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux/pm2, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
+| [linear.md](docs/linear.md) | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments |
+| [cutover-from-cyralph.md](docs/cutover-from-cyralph.md) | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback |
 | [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
-| [github-app.md](docs/github-app.md) | GitHub App manifest, permissions, events, KMS-held private key |
-| [gitlab.md](docs/gitlab.md) | Bot token scopes and role, ralph's merge requests, self-managed GitLab |
+| [github-app.md](docs/github-app.md) | GitHub App manifest, permissions (incl. Actions: read for ralph's CI fixes), events (incl. `workflow_run`), KMS-held private key |
+| [gitlab.md](docs/gitlab.md) | Bot token scopes and role, webhook events (incl. Pipeline events), ralph's merge requests and their follow-up, self-managed GitLab |
 | [env.md](docs/env.md) | Every environment variable for the control panel and the agent |
 | [evals/README.md](evals/README.md) | The review eval harness (`pnpm eval`): precision, recall and tokens per profile against a baseline |
 | [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
 | [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
-| [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred |
+| [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update |
 
 ## Layout
 

@@ -116,6 +116,7 @@ only allows receive, acknowledge and extend-lease on the agent's topics in the `
 | `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (their messages have left the queue) |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
+| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs, checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |
 
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`). Vercel sends it as `Authorization: Bearer …`;
 the routes reject everything else. Cron jobs only run for the production deployment.
@@ -134,6 +135,8 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Set it before the first deploy: the first person to sign in becomes admin. |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
 | `BOT_HANDLE` | Optional, default `omniralph` |
+| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
+| `NPM_TOKEN` | Optional: a read-only npm token, for **Settings › Agents › Use latest on npm** |
 
 Configure at least one sign-in provider. Redeploy after changing variables
 (`vercel --prod` or **Deployments › Redeploy**).

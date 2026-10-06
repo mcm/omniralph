@@ -1,6 +1,6 @@
 # ADR 0003: Ralph orchestration — one job per story, the control panel as orchestrator
 
-- **Status:** Accepted (TOOL-32, Omniralph v2a)
+- **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update))
 - **Date:** 2026-10-06
 
 ## Context
@@ -209,7 +209,59 @@ depend on that agent's local state.
   cost to once per run in the common case.
 - A run moves to another agent after a revocation without losing completed stories, because every
   completed story is pushed before its job reports.
-- Replies can't reach a running session: they're stored as guidance and applied from the next
-  attempt (live injection is deferred to v2b).
+- Replies reach a running `ralph.story` or `ralph.request` session within one heartbeat (v2b, see
+  the addendum); otherwise they're stored as guidance or pending requests and applied from the
+  next job.
 - Lost wake-ups (a hook that failed, a missed webhook) are repaired by the reconcile cron within
   10 minutes, not instantly.
+
+## Addendum (v2b): request mode, lanes, live messages and self-update
+
+TOOL-99 closed the gap to cyralph without changing the decision above: the control panel still
+orchestrates, agents still run one short job at a time per run, and every change still goes
+through `JobDispatcher`, the per-capability outcome handlers, `advanceRun` and the run lock. The
+sections *Lanes* and *Requests and run modes* above describe the details; this is the summary.
+
+- **Request mode.** `ralph_runs.mode` is `epic` or `request`. An @mention creates (or reuses) a run
+  in `request` mode: no story loop, no Linear state changes, no blocker checks. Requests run as
+  `ralph.request` jobs (one Claude session on the lane's branch worktree). The session never calls
+  the code host; it returns `pullRequest: { action: open | update | ready }` and the control panel
+  performs it with the SCM operations, sanitizing the text. A lane's Claude session is resumed only
+  on the agent that holds its files (`request_agent_id`). `/ralph` switches a run to `epic`. In
+  epic mode, push/PR requests never reach a story agent: they wait until no story runs. Review
+  findings, `@bot fix` requests and failed CI become requests on their lane the same way.
+- **Lanes.** `ralph_lanes` (one per repository a run works in, the run's own being the main lane)
+  replaced v2a's run-level branch and PR columns; `ralph_stories.lane_id` records where each story
+  runs. Lanes keep PR/MR follow-up state (`review_rounds`, `handled_review_ids`, `ci_fix_rounds`,
+  `handled_ci_shas`, cleanup) and are published one at a time. All lanes use the run's sticky
+  agent, so "one job per run" still holds: lanes run in sequence, not in parallel (the first
+  *Revisit when* condition is still unmet).
+- **Live messages.** A reply or request for a run whose `ralph.story` or `ralph.request` job is
+  running is stored in `ralph_messages` with that job's ID. The heartbeat response carries it
+  (`jobMessages`); the agent injects it into the live session as a streamed user message
+  (`priority: "next"`) and acknowledges it in its next heartbeat (`deliveredMessageIds`, or
+  `rejectedMessageIds` when the job is past its session, e.g. running its gates). Rejected and
+  stranded messages become guidance (epic mode) or pending requests, settled by `advanceRun` when
+  the job ends. No new endpoint or polling: delivery takes at most one heartbeat (20s).
+- **PR/MR follow-up without new orchestration.** Review responses hang off the `review.run`
+  outcome handler; CI failures and merges arrive by webhook with `/api/cron/ralph-reconcile` as the
+  fallback; cleanup is a `ralph.cleanup` job on the sticky agent. These are the "waiting on CI and
+  reviews" loops the second *Revisit when* condition anticipated. They fit the state machine as
+  pending requests plus once-per-review/SHA bookkeeping and the existing 10-minute cron, so Vercel
+  Workflows stays deferred.
+- **Attachments.** The control panel gathers Linear upload URLs and records them on the run; agents
+  download them through a job-scoped proxy (`ralph:attachments`), so they still never hold the
+  Linear token.
+- **Concurrency.** `agents.capability_limits` caps concurrent jobs per capability (ralph defaults to
+  `max(1, maxConcurrency - 1)`), sent in the heartbeat config. The daemon only receives from a
+  capability's topics while it has a free slot, so long ralph jobs can't starve reviews.
+- **Self-update.** cyralph's git-following supervisor (`src/update/*`) is replaced by a desired
+  version (global in `app_settings`, per-agent override in `agents.desired_version`) returned in
+  the heartbeat. Agents under pm2 drain (up to 2 hours), `npm i -g` the version, write
+  `update-state.json` and exit for pm2 to restart them; a version that doesn't stay up for 60s
+  within three starts is rolled back and reported as failed, never retried. Other hosts report
+  `selfUpdate: "unsupported"`. The control panel only stores and shows these reports; it never
+  reaches into agents.
+
+The cutover from cyralph itself is an operator checklist, not code:
+[cutover-from-cyralph.md](../cutover-from-cyralph.md).

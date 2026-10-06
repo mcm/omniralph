@@ -9,8 +9,12 @@ credential.
 
 For `ralph` runs ([linear.md](linear.md)) the control panel also opens, updates and marks ready the
 run's pull request through the App (Pull requests: write), and the run's branch is pushed by the
-agent with the brokered write token. Nothing else is needed for ralph on the GitHub side: the
-repository must be connected here and have ralph enabled under **Repository › Settings › Ralph**.
+agent with the brokered write token. The App also lets the control panel look after those PRs:
+Omniralph's own review findings and `@omniralph fix` requests become ralph requests, failed
+workflow runs are read (Actions: read) and handed to the run, and a merge starts the cleanup of the
+branch worktree. The repository must be connected here and have ralph enabled under **Repository ›
+Settings › Ralph**. cyralph's separate `/github-webhook` webhook and its `gh` login aren't needed
+([cutover-from-cyralph.md](cutover-from-cyralph.md)).
 
 Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, see
 [env.md](env.md)). Don't reuse the App for sign-in.
@@ -28,8 +32,8 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 | Event | Triggers |
 | -- | -- |
 | `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); ralph cleans up after a ralph PR is merged (closed + merged) |
-| `issue_comment` | `@bot` commands in the PR conversation |
-| `pull_request_review_comment` | `@bot dismiss` and questions in a finding's thread |
+| `issue_comment` | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to ralph on ralph PRs |
+| `pull_request_review_comment` | `@bot dismiss`, `@bot fix` and questions in a finding's thread |
 | `workflow_run` | Ralph's CI-fix loop: a finished workflow run on a ralph PR's head commit (the reconcile cron is the fallback) |
 
 ## Manifest
