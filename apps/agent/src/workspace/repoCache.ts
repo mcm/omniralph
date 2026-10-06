@@ -74,6 +74,23 @@ export interface BranchWorktreeOptions extends GitJobOptions {
   setupCommand?: string;
 }
 
+/**
+ * Per-call override of a branch worktree operation: `signal: null` runs it
+ * without the job's signal (e.g. to stash the work of a canceled job).
+ */
+export interface WorktreeCallOptions {
+  signal?: AbortSignal | null;
+}
+
+/** An entry of the stash list (shared by every worktree of the repository). */
+export interface StashEntry {
+  sha: string;
+  /** The message it was stashed with (without git's `On <branch>: ` prefix). */
+  label: string;
+  /** When it was stashed (ISO 8601). */
+  date: string;
+}
+
 /** A long-lived worktree on a branch, reused across jobs (see `withBranchWorktree`). */
 export interface BranchWorktree {
   branch: string;
@@ -87,9 +104,18 @@ export interface BranchWorktree {
    * Stashes uncommitted changes (including untracked files) with `label` as
    * the message. Returns the stash commit SHA, or `null` when the tree is clean.
    */
-  stashWork(label: string): Promise<string | null>;
+  stashWork(label: string, options?: WorktreeCallOptions): Promise<string | null>;
   /** Reapplies a stash made by `stashWork` and drops it from the stash list. */
   applyStash(sha: string): Promise<void>;
+  /** The stash list, newest first. */
+  listStashes(options?: WorktreeCallOptions): Promise<StashEntry[]>;
+  /** Drops the stash entry with this SHA; false when it isn't in the list (anymore). */
+  dropStash(sha: string, options?: WorktreeCallOptions): Promise<boolean>;
+  /**
+   * Runs git in the worktree with the job's environment and only the agent's
+   * credential helper (so `git push` authenticates through the broker).
+   */
+  git(args: readonly string[], options?: WorktreeCallOptions): Promise<string>;
 }
 
 /**
@@ -130,6 +156,12 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+/** The job's git options with a call's signal override applied. */
+function withCall(job: GitJobOptions, call: WorktreeCallOptions | undefined): GitJobOptions {
+  if (!call || !("signal" in call)) return job;
+  return { env: job.env, signal: call.signal ?? undefined };
 }
 
 /** Keeps the agent's environment for git commands outside jobs, minus `OMNIRALPH_*`. */
@@ -419,8 +451,11 @@ export class RepoCache {
       path: worktreePath,
       repoDir,
       created,
-      stashWork: (label) => this.stashWork(worktreePath, label, job),
+      stashWork: (label, call) => this.stashWork(worktreePath, label, withCall(job, call)),
       applyStash: (sha) => this.applyStash(worktreePath, sha, job),
+      listStashes: (call) => this.listStashes(worktreePath, withCall(job, call)),
+      dropStash: (sha, call) => this.dropStash(worktreePath, sha, withCall(job, call)),
+      git: (args, call) => this.runGit([...args], { ...withCall(job, call), cwd: worktreePath }),
     };
   }
 
@@ -583,6 +618,36 @@ export class RepoCache {
     // Indexes shift as entries come and go, so look the entry up right before dropping it.
     const index = (await this.stashShas(worktreePath, options)).indexOf(sha);
     if (index >= 0) await git(["stash", "drop", "--quiet", `stash@{${index}}`]);
+  }
+
+  private async listStashes(worktreePath: string, options: GitJobOptions): Promise<StashEntry[]> {
+    const list = await this.runGit(["stash", "list", "--format=%H%x1f%cI%x1f%gs"], {
+      ...options,
+      cwd: worktreePath,
+    });
+    return list
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [sha = "", date = "", subject = ""] = line.split("\x1f");
+        // `git stash push -m` records "On <branch>: <message>".
+        return { sha, date, label: subject.replace(/^On [^:]*: /, "") };
+      });
+  }
+
+  private async dropStash(
+    worktreePath: string,
+    sha: string,
+    options: GitJobOptions,
+  ): Promise<boolean> {
+    if (!SHA.test(sha)) throw new Error(`invalid stash SHA ${sha}`);
+    const index = (await this.stashShas(worktreePath, options)).indexOf(sha);
+    if (index < 0) return false;
+    await this.runGit(["stash", "drop", "--quiet", `stash@{${index}}`], {
+      ...options,
+      cwd: worktreePath,
+    });
+    return true;
   }
 
   private async stashShas(worktreePath: string, options: GitJobOptions): Promise<string[]> {

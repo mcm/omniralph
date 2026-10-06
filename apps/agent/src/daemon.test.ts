@@ -15,7 +15,7 @@ import {
   type JobContext,
 } from "./capabilities/index.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort } from "./daemon.js";
-import { ralphCapability } from "./capabilities/ralph.js";
+import { ralphCapability } from "./capabilities/ralph/index.js";
 import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
 import type { MessageHandler, QueueReceiver, RetryDirective } from "./queue.js";
@@ -361,7 +361,7 @@ describe("AgentDaemon", () => {
     });
     api.startJob.mockResolvedValueOnce({
       action: "run",
-      job: job(id, { capability: "ralph", type: "ralph.story" }),
+      job: job(id, { capability: "ralph", type: "ralph.prepare" }),
       jobToken: { jobId: id, token: "t", expiresIn: 900 },
     });
     void daemon.run();
@@ -379,7 +379,7 @@ describe("AgentDaemon", () => {
     expect(queue.receiveCalls).toContain(ralphTopic);
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
-      error: "ralph.story jobs are not supported by this agent yet",
+      error: "ralph.prepare jobs are not supported by this agent yet",
     });
     expect(queue.rescheduled).toEqual([]);
     await daemon.shutdown();

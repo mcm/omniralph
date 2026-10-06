@@ -108,6 +108,28 @@ describe("RalphStoryPayload", () => {
     expect(RalphStoryPayload.safeParse({ ...storyPayload, attempt: 0 }).success).toBe(false);
     expect(RalphStoryPayload.safeParse({ ...storyPayload, storyId: "x" }).success).toBe(false);
   });
+
+  it("defaults the epic kind, URLs and the story list", () => {
+    const parsed = RalphStoryPayload.parse(storyPayload);
+    expect(parsed.epic).toMatchObject({ kind: "children", url: null });
+    expect(parsed.story.url).toBeNull();
+    expect(parsed.stories).toEqual([]);
+    const listed = RalphStoryPayload.parse({
+      ...storyPayload,
+      epic: { ...storyPayload.epic, kind: "single" },
+      stories: [{ identifier: "TOOL-83", title: "Add", status: "in_progress" }],
+    });
+    expect(listed.epic.kind).toBe("single");
+    expect(listed.stories).toEqual([
+      { identifier: "TOOL-83", title: "Add", status: "in_progress", manual: false, dependsOn: [] },
+    ]);
+    expect(
+      RalphStoryPayload.safeParse({
+        ...storyPayload,
+        stories: [{ identifier: "TOOL-83", title: "Add", status: "done" }],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("RalphStoryResult", () => {
@@ -119,6 +141,9 @@ describe("RalphStoryResult", () => {
         RalphStoryResult.safeParse({ ...rest, status, feedback: "pnpm test failed" }).success,
       ).toBe(true);
     }
+    expect(
+      RalphStoryResult.parse({ ...storyResult, progress: "# Ralph Progress Log\n" }).progress,
+    ).toBe("# Ralph Progress Log\n");
   });
 
   it("rejects unknown statuses, bad SHAs and incomplete follow-ups", () => {
@@ -203,6 +228,14 @@ describe("RalphActivity", () => {
     expect(
       RalphActivity.safeParse({ type: "action", body: "Bash: pnpm test", ephemeral: true }).success,
     ).toBe(true);
+    expect(
+      RalphActivity.parse({
+        type: "action",
+        body: "Bash",
+        parameter: "pnpm test",
+        ephemeral: true,
+      }),
+    ).toEqual({ type: "action", body: "Bash", parameter: "pnpm test", ephemeral: true });
   });
 
   it("rejects other types and empty bodies", () => {

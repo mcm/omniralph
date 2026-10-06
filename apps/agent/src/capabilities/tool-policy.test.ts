@@ -5,7 +5,7 @@ import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { ClaudeAgentProvider } from "@omniralph/engine";
 import { describe, expect, it } from "vitest";
 import type { ToolPolicy } from "./index.js";
-import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph.js";
+import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph/index.js";
 import { REVIEW_TOOL_POLICY, reviewSessionProvider } from "./review.js";
 import { sdkPermissions } from "./tool-policy.js";
 

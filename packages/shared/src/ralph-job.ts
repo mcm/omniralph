@@ -77,6 +77,19 @@ const RalphIssue = z.object({
   title: z.string().max(1000),
 });
 
+export const RALPH_EPIC_KINDS = ["children", "prd", "single"] as const;
+export const RALPH_STORY_LIST_STATUSES = ["open", "in_progress", "completed", "cancelled"] as const;
+
+/** One of the epic's stories, for the story list in the prompt. */
+export const RalphStoryListItem = RalphIssue.extend({
+  status: z.enum(RALPH_STORY_LIST_STATUSES),
+  /** A step for a person, never for an agent. */
+  manual: z.boolean().default(false),
+  /** Identifiers of the issues it waits for. */
+  dependsOn: z.array(z.string().min(1).max(64)).max(100).default([]),
+});
+export type RalphStoryListItem = z.infer<typeof RalphStoryListItem>;
+
 /** Payload of a `ralph.story` job: one attempt at one story. */
 export const RalphStoryPayload = RalphJobBase.extend({
   /** The `ralph_stories` row. */
@@ -84,13 +97,19 @@ export const RalphStoryPayload = RalphJobBase.extend({
   /** 1 on the story's first attempt (queue redeliveries keep the attempt). */
   attempt: z.int().min(1),
   epic: RalphIssue.extend({
+    /** `single`: the delegated issue is the only story (commit `<ID>: <title>`, no follow-ups). */
+    kind: z.enum(RALPH_EPIC_KINDS).default("children"),
+    url: z.url().nullable().default(null),
     /** The epic's PRD (its description); empty for a single issue. */
     prd: z.string().max(MAX_DOCUMENT_LENGTH),
   }),
   story: RalphIssue.extend({
     linearIssueId: z.string().min(1).max(64),
+    url: z.url().nullable().default(null),
     description: z.string().max(MAX_DOCUMENT_LENGTH),
   }),
+  /** Every story of the epic in order (the prompt lists them); may be empty. */
+  stories: z.array(RalphStoryListItem).max(500).default([]),
   /** The commit message, e.g. `feat(TOOL-83): <title>` (or `TOOL-83: <title>` for a single issue). */
   commitMessage: z.string().min(1).max(2000),
   /** The PRD's `## Quality Gates` commands, run after the session. */
@@ -126,6 +145,8 @@ export const RalphStoryResult = z.object({
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
   /** Why the attempt didn't complete (e.g. failed gate output), for the next attempt; null when complete. */
   feedback: z.string().max(20_000).nullable(),
+  /** The whole progress log after the session, when the session changed it (replaces the run's). */
+  progress: z.string().max(MAX_DOCUMENT_LENGTH).optional(),
   usage: TokenUsage,
   durationMs: z.int().min(0),
 });
@@ -203,7 +224,10 @@ export type RalphPrepareResult = z.infer<typeof RalphPrepareResult>;
  */
 export const RalphActivity = z.object({
   type: z.enum(["thought", "action"]),
+  /** A thought's text, or an action's name (e.g. the tool). */
   body: z.string().trim().min(1).max(10_000),
+  /** An action's parameter (e.g. the command or file); ignored for thoughts. */
+  parameter: z.string().max(10_000).optional(),
   /** Replaced by the session's next activity in Linear. */
   ephemeral: z.boolean().default(false),
 });
