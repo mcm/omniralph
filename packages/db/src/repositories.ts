@@ -3,7 +3,7 @@
  * control panel's Repositories page. Connection credentials are JSON encrypted
  * with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -203,25 +203,47 @@ export interface RepositoryOverview {
   lastReviewAt: Date | null;
 }
 
-/** Connected (not disconnected) repositories with their profile, pins and latest review. */
-export async function listRepositoryOverview(db: Database): Promise<RepositoryOverview[]> {
-  const rows = await db
-    .select({
-      id: repositories.id,
-      provider: repositories.provider,
-      fullPath: repositories.fullPath,
-      enabled: repositories.enabled,
-      connectionId: repositories.connectionId,
-      connectionName: scmConnections.name,
-      baseUrl: scmConnections.baseUrl,
-      profileId: repositories.profileId,
-      profileName: reviewProfiles.name,
-    })
+/** Repositories per page of the Repositories list. */
+export const REPOSITORY_PAGE_SIZE = 25;
+
+export interface RepositoryOverviewPage {
+  repositories: RepositoryOverview[];
+  /** Connected repositories across all pages. */
+  total: number;
+  /** The page returned (1-based). */
+  page: number;
+  pageSize: number;
+}
+
+const overviewColumns = {
+  id: repositories.id,
+  provider: repositories.provider,
+  fullPath: repositories.fullPath,
+  enabled: repositories.enabled,
+  connectionId: repositories.connectionId,
+  connectionName: scmConnections.name,
+  baseUrl: scmConnections.baseUrl,
+  profileId: repositories.profileId,
+  profileName: reviewProfiles.name,
+};
+
+function overviewQuery(db: Database) {
+  return db
+    .select(overviewColumns)
     .from(repositories)
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
     .innerJoin(reviewProfiles, eq(reviewProfiles.id, repositories.profileId))
     .where(isNull(repositories.disconnectedAt))
-    .orderBy(asc(repositories.fullPath));
+    .orderBy(asc(repositories.fullPath), asc(repositories.id))
+    .$dynamic();
+}
+
+type OverviewRow = Omit<RepositoryOverview, "pinnedAgents" | "lastReviewAt">;
+
+async function withPinsAndLastReview(
+  db: Database,
+  rows: OverviewRow[],
+): Promise<RepositoryOverview[]> {
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
@@ -251,6 +273,35 @@ export async function listRepositoryOverview(db: Database): Promise<RepositoryOv
     pinnedAgents: pinsByRepo.get(row.id) ?? [],
     lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
   }));
+}
+
+/** Connected (not disconnected) repositories with their profile, pins and latest review. */
+export async function listRepositoryOverview(db: Database): Promise<RepositoryOverview[]> {
+  return withPinsAndLastReview(db, await overviewQuery(db));
+}
+
+/**
+ * One page of `listRepositoryOverview`, ordered by path. A page past the last
+ * one comes back empty (with the real `total`).
+ */
+export async function listRepositoryOverviewPage(
+  db: Database,
+  options: { page?: number; pageSize?: number } = {},
+): Promise<RepositoryOverviewPage> {
+  const pageSize = Math.max(1, Math.floor(options.pageSize ?? REPOSITORY_PAGE_SIZE));
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const [[totalRow], rows] = await Promise.all([
+    db.select({ total: count() }).from(repositories).where(isNull(repositories.disconnectedAt)),
+    overviewQuery(db)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+  ]);
+  return {
+    repositories: await withPinsAndLastReview(db, rows),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
+  };
 }
 
 export type PinRepositoryResult =

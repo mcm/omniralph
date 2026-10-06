@@ -26,7 +26,9 @@ import {
   IconExternalLink,
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { ListPagination } from "@/components/list-pagination";
 import { useAction } from "@/components/use-action";
+import { pageRange, pageSlice, totalPages } from "@/lib/pagination";
 import { saveGitHubRepositories } from "../../actions";
 
 export interface InstallationRepoRow {
@@ -37,6 +39,9 @@ export interface InstallationRepoRow {
   /** Connected and enabled for reviews. */
   enabled: boolean;
 }
+
+/** Repositories per page; selections are kept across pages. */
+const PAGE_SIZE = 25;
 
 interface GitHubReposViewProps {
   connectionId: string;
@@ -60,6 +65,11 @@ export function GitHubReposView({
     () => new Set(repos.filter((repo) => repo.enabled).map((repo) => repo.id)),
   );
   const allSelected = repos.length > 0 && selected.size === repos.length;
+  const [page, setPage] = React.useState(1);
+  const pageCount = totalPages(repos.length, PAGE_SIZE);
+  const currentPage = Math.min(page, pageCount);
+  const shown = pageSlice(repos, currentPage, PAGE_SIZE);
+  const { first, last } = pageRange(currentPage, PAGE_SIZE, shown.length);
 
   const toggle = (id: number, checked: boolean) =>
     setSelected((current) => {
@@ -162,8 +172,12 @@ export function GitHubReposView({
                     }
                   />
                   <Label htmlFor="select-all">Select all ({repos.length})</Label>
+                  <Muted style={{ marginLeft: "auto" }}>
+                    {selected.size} selected
+                    {pageCount > 1 && ` · showing ${first}–${last} of ${repos.length}`}
+                  </Muted>
                 </div>
-                {repos.map((repo) => (
+                {shown.map((repo) => (
                   <div
                     key={repo.id}
                     style={{
@@ -195,6 +209,12 @@ export function GitHubReposView({
                     {repo.enabled && <Badge variant="success">Enabled</Badge>}
                   </div>
                 ))}
+                <ListPagination
+                  page={currentPage}
+                  pageCount={pageCount}
+                  hrefFor={(p) => `#page-${p}`}
+                  onSelect={setPage}
+                />
               </>
             )}
           </CardContent>
