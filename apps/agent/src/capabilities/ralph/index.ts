@@ -11,6 +11,7 @@ import {
   RALPH_PREPARE_TOOL_POLICY,
   RALPH_TOOL_POLICY,
 } from "./policy.js";
+import { runDescribePr } from "./describe-pr.js";
 import { runStory, type StoryOptions } from "./story.js";
 
 export {
@@ -41,6 +42,7 @@ export function createRalphCapability(options: StoryOptions = {}): Capability {
     },
     run(job, ctx) {
       if (job.type === RALPH_STORY_JOB_TYPE) return runStory(job, ctx, options);
+      if (job.type === RALPH_DESCRIBE_PR_JOB_TYPE) return runDescribePr(job, ctx, options);
       return Promise.reject(
         new NotImplementedJobError(`${job.type} jobs are not supported by this agent yet`),
       );

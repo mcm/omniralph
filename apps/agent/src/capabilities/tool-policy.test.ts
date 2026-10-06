@@ -6,8 +6,9 @@ import { ClaudeAgentProvider } from "@omniralph/engine";
 import { describe, expect, it } from "vitest";
 import type { ToolPolicy } from "./index.js";
 import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph/index.js";
+import { DESCRIBE_PR_GIT_COMMANDS } from "./ralph/policy.js";
 import { REVIEW_TOOL_POLICY, reviewSessionProvider } from "./review.js";
-import { sdkPermissions } from "./tool-policy.js";
+import { isReadOnlyCommand, sdkPermissions } from "./tool-policy.js";
 
 const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "omniralph-policy-")));
 const controller = new AbortController();
@@ -110,17 +111,78 @@ describe("sdkPermissions", () => {
     });
   });
 
-  it("keeps ralph describe-pr sessions read-only", () => {
+  it("keeps ralph describe-pr sessions read-only, with read-only git commands", async () => {
     const permissions = sdkPermissions(RALPH_DESCRIBE_PR_TOOL_POLICY)({
       cwd,
       allowExploration: true,
     });
-    expect(permissions.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(permissions.tools).toEqual(["Read", "Grep", "Glob", "Bash"]);
+    expect(permissions.allowedTools).toEqual(
+      expect.arrayContaining(["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git diff:*)"]),
+    );
+    expect((permissions.allowedTools ?? []).filter((t) => t.startsWith("Bash"))).toHaveLength(
+      DESCRIBE_PR_GIT_COMMANDS.length,
+    );
     expect(permissions.permissionMode).toBe("dontAsk");
     expect(permissions.allowDangerouslySkipPermissions).toBeUndefined();
-    expect(permissions.disallowedTools).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+    expect(permissions.disallowedTools).toEqual(
+      expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit"]),
+    );
+    expect(permissions.disallowedTools).not.toContain("Bash");
     expect(permissions.settingSources).toEqual([]);
-    expect(permissions.hooks?.PreToolUse?.[0]?.matcher).toBe("Read|Grep|Glob");
+    const [files, shell] = permissions.hooks?.PreToolUse ?? [];
+    expect(files?.matcher).toBe("Read|Grep|Glob");
+    expect(shell?.matcher).toBe("Bash");
+
+    const decide = async (command: string) => {
+      const output = await shell!.hooks[0]!(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Bash",
+          tool_input: { command },
+        } as unknown as HookInput,
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      return (output as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput
+        ?.permissionDecision;
+    };
+    expect(await decide("git log --reverse --format='%s%n%b' origin/main..HEAD")).toBeUndefined();
+    expect(await decide("git diff origin/main...HEAD")).toBeUndefined();
+    expect(await decide("rm -rf src")).toBe("deny");
+    expect(await decide("git commit -am x")).toBe("deny");
+    expect(await decide("git diff --output=/tmp/x")).toBe("deny");
+  });
+
+  it("only accepts the read-only commands with plain arguments", () => {
+    const git = ["git log", "git diff", "git show"];
+    expect(isReadOnlyCommand("git log", git)).toBe(true);
+    expect(isReadOnlyCommand("  git  show HEAD~1:src/a.ts ", git)).toBe(true);
+    expect(isReadOnlyCommand("git diff --stat origin/main...HEAD", git)).toBe(true);
+    for (const command of [
+      "git logs",
+      "git push origin HEAD",
+      "git log; rm -rf .",
+      "git log && touch x",
+      "git log | sh",
+      "git log > out.txt",
+      "git show $(whoami)",
+      "git show `id`",
+      "git diff -o out.patch",
+      "git diff --output out.patch",
+      "git diff --ext-diff",
+      "git diff --no-index /etc/passwd a",
+      "git log\nrm x",
+      "",
+    ]) {
+      expect(isReadOnlyCommand(command, git), command).toBe(false);
+    }
+  });
+
+  it("refuses read-only commands for a write-capable policy", () => {
+    expect(() => sdkPermissions({ ...RALPH_TOOL_POLICY, readOnlyCommands: ["git log"] })).toThrow(
+      /read-only/,
+    );
   });
 
   it("gives no tools to a session that may not explore", () => {

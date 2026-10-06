@@ -121,7 +121,7 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
 }
 
 /** The agent's environment minus `OMNIRALPH_*`: Claude sessions and gates never see the job token. */
-function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith("OMNIRALPH_")));
 }
 

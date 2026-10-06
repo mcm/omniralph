@@ -169,7 +169,7 @@ describe("RalphDescribePrPayload / RalphDescribePrResult", () => {
   };
 
   it("accepts a finished run and a title and body", () => {
-    expect(RalphDescribePrPayload.safeParse(payload).success).toBe(true);
+    expect(RalphDescribePrPayload.parse(payload).qualityGates).toEqual([]);
     expect(
       RalphDescribePrResult.safeParse({
         title: "Ralph core",
@@ -184,7 +184,7 @@ describe("RalphDescribePrPayload / RalphDescribePrResult", () => {
     expect(RalphDescribePrResult.safeParse({ title: " ", body: "x", usage }).success).toBe(false);
     expect(RalphDescribePrResult.safeParse({ title: "x", body: "", usage }).success).toBe(false);
     expect(
-      RalphDescribePrResult.safeParse({ title: "x".repeat(256), body: "x", usage }).success,
+      RalphDescribePrResult.safeParse({ title: "x".repeat(73), body: "x", usage }).success,
     ).toBe(false);
   });
 });

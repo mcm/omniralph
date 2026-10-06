@@ -1,7 +1,9 @@
 import "server-only";
 import type { Database } from "@omniralph/db";
-import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
+import { getDispatcher } from "@/lib/dispatch";
 import { wakeRunsForIssue } from "@/lib/ralph/reconcile";
+import { handleReply } from "@/lib/ralph/reply";
+import type { RalphDeps } from "@/lib/ralph/run";
 import { ACKNOWLEDGEMENT, startRun } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { getLinearGateway } from "./client";
@@ -42,21 +44,23 @@ export async function acknowledgeLinearEvent(
 /**
  * Acts on a verified, deduplicated Linear event after the webhook response:
  * a new agent session starts a ralph run; an issue's state change (or
- * removal) advances the runs waiting on it or building it. Replies are
- * accepted and dropped until the orchestrator handles them.
+ * removal) advances the runs waiting on it or building it; a reply in an agent
+ * session is the run's guidance.
  */
 export async function handleLinearEvent(
   event: HandledLinearEvent,
   context: LinearEventContext,
-  deps: { linear?: LinearGateway; dispatcher?: JobDispatcher } = {},
+  deps: Partial<Omit<RalphDeps, "db">> = {},
 ): Promise<void> {
-  if (event.kind === "session_prompted") return;
   const db = context.db;
   const linear = deps.linear ?? (await getLinearGateway({ db }));
-  const dispatcher = deps.dispatcher ?? getDispatcher();
-  if (event.kind === "session_created") {
-    await startRun(event, { db, linear, dispatcher, adapterFor: scmAdapterFor });
-  } else {
-    await wakeRunsForIssue(event.issueId, { db, linear, dispatcher });
-  }
+  const ralph: RalphDeps = {
+    db,
+    linear,
+    dispatcher: deps.dispatcher ?? getDispatcher(),
+    adapterFor: deps.adapterFor ?? scmAdapterFor,
+  };
+  if (event.kind === "session_created") await startRun(event, ralph);
+  else if (event.kind === "session_prompted") await handleReply(event, ralph);
+  else await wakeRunsForIssue(event.issueId, ralph);
 }

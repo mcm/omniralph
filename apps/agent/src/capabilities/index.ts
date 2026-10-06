@@ -34,6 +34,12 @@ export interface ToolPolicy {
   settingSources: readonly ("user" | "project" | "local")[];
   /** Whether sessions may change the worktree (edit files, run commands). */
   writable: boolean;
+  /**
+   * Read-only shell commands (e.g. `git log`) a session without a shell may
+   * run anyway: Bash is available, but only for these commands with plain
+   * arguments (no pipes, redirections, substitutions or output files).
+   */
+  readOnlyCommands?: readonly string[];
 }
 
 /** What a capability gets for running one job. */

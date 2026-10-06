@@ -308,7 +308,37 @@ describe("PR/MR description", () => {
     expect(p).toContain("git diff origin/main...HEAD");
     expect(p).toContain("**Breaking changes**");
     expect(p).toContain("**Decisions**");
-    expect(p).not.toContain("US-001");
+    expect(p).toContain("- US-001: ");
+    expect(p).toContain("**Stories**");
+    expect(p).toContain("**Verification**");
+    expect(p).toContain("at most 72 characters");
+    expect(p).toContain("`/tmp/p.md`");
+  });
+
+  it("quotes the progress log, the stories with their commits and the quality gates", () => {
+    const p = buildDescribePrPrompt({
+      epic: {
+        kind: "children",
+        issueId: "e",
+        identifier: "ENG-1",
+        title: "Task Priority",
+        description: "",
+        branchName: "b",
+        qualityGates: ["pnpm test", " pnpm  test", "pnpm lint"],
+        stories: [],
+      },
+      branch: "b",
+      baseBranch: "main",
+      prTerm: "pull request",
+      progress: "## [2026-10-06] - ENG-2: Store\nUsed a jsonb column.",
+      stories: [{ identifier: "ENG-2", title: "Store", commitSha: "0123456789abcdef" }],
+    });
+    expect(p).toContain("- ENG-2: Store (`0123456789`)");
+    expect(p).toContain(
+      "<progress-log>\n## [2026-10-06] - ENG-2: Store\nUsed a jsonb column.\n</progress-log>",
+    );
+    expect(p).toContain("- `pnpm test`\n- `pnpm lint`\n");
+    expect(p).not.toContain("<issue-background>");
   });
 
   it("reads the title and description from the structured result", () => {

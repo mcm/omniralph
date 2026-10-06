@@ -30,7 +30,7 @@ export const FOLLOW_UP_MARK = "Filed by Omniralph while working on";
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
 /** Why a job that didn't complete failed, for the next attempt's feedback. */
-function jobFailure(job: Job | null): string {
+export function jobFailure(job: Job | null): string {
   if (!job) return "its job is gone";
   if (job.error) return job.error;
   switch (job.status) {

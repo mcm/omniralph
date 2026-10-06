@@ -13,7 +13,11 @@ import {
   type Epic,
   type Story,
 } from "@omniralph/ralph";
-import { RalphStoryPayload, type RalphStoryListItem } from "@omniralph/shared";
+import {
+  RalphDescribePrPayload,
+  RalphStoryPayload,
+  type RalphStoryListItem,
+} from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /** Guidance replies passed to a story (the latest ones), as cyralph does. */
@@ -98,5 +102,48 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     lastFeedback: row.lastFeedback ? row.lastFeedback.slice(-20_000) : null,
     guidance: run.guidance.slice(-MAX_GUIDANCE_IN_PROMPT).map((g) => g.text.slice(0, 20_000)),
+  });
+}
+
+export interface DescribePrPayloadInput {
+  run: RalphRun;
+  repository: Repository;
+  connection: ScmConnection;
+  epic: Epic;
+  /** The run's stories (with their commits), in order. */
+  rows: readonly RalphStory[];
+}
+
+/**
+ * The payload of a `ralph.describe-pr` job: the epic PRD, the stories with
+ * their commits, the progress log and the quality gates, for the session that
+ * writes the PR/MR title and body.
+ */
+export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDescribePrPayload {
+  const { run, repository, connection, epic, rows } = input;
+  return RalphDescribePrPayload.parse({
+    runId: run.id,
+    repositoryId: repository.id,
+    repository: jobRepository(repository, connection),
+    branch: run.branch,
+    baseBranch: run.baseBranch,
+    settings: {
+      model: repository.ralphSettings.model || null,
+      setupCommand: repository.ralphSettings.setupCommand || null,
+    },
+    epic: {
+      identifier: epic.identifier,
+      title: epic.title.slice(0, 1000),
+      url: url(epic.url),
+      prd: headOf(epic.description),
+    },
+    stories: rows.slice(0, 500).map((r) => ({
+      identifier: r.identifier.slice(0, 64),
+      title: r.title.slice(0, 1000),
+      status: r.status,
+      commitSha: r.commitSha,
+    })),
+    progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
+    qualityGates: uniqueCommands(epic.qualityGates).slice(0, 50),
   });
 }

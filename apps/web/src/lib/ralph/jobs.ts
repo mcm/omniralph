@@ -2,6 +2,7 @@ import "server-only";
 import { getRun, lockRun, skipJob, updateRun, type Database, type Job } from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGateway } from "@/lib/linear/client";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
 /**
@@ -34,7 +35,12 @@ export async function onRalphJobStarted(
 }
 
 async function defaultDeps(db: Database): Promise<RalphDeps> {
-  return { db, linear: await getLinearGateway({ db }), dispatcher: getDispatcher() };
+  return {
+    db,
+    linear: await getLinearGateway({ db }),
+    dispatcher: getDispatcher(),
+    adapterFor: scmAdapterFor,
+  };
 }
 
 /**
