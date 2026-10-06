@@ -2,7 +2,7 @@
  * Client-safe parts of the Analytics page: the window and repository filter
  * in the URL, view-prop types and chart labels.
  */
-import type { Analytics, AnalyticsRange } from "@omniralph/db";
+import type { Analytics, AnalyticsRange, RalphAnalytics, RalphRunOutcome } from "@omniralph/db";
 
 /** Client-safe copy of the DB's `ANALYTICS_RANGES`. */
 export const ANALYTICS_RANGES = [7, 30, 90] as const satisfies readonly AnalyticsRange[];
@@ -52,6 +52,50 @@ export type AnalyticsData = Omit<Analytics, "from" | "to"> & { from: string; to:
 
 export function analyticsData(analytics: Analytics): AnalyticsData {
   return { ...analytics, from: analytics.from.toISOString(), to: analytics.to.toISOString() };
+}
+
+/** `RalphAnalytics` with its dates as ISO strings, so it can be passed to the view. */
+export type RalphAnalyticsData = Omit<RalphAnalytics, "from" | "to"> & { from: string; to: string };
+
+export function ralphAnalyticsData(ralph: RalphAnalytics): RalphAnalyticsData {
+  return { ...ralph, from: ralph.from.toISOString(), to: ralph.to.toISOString() };
+}
+
+/** Client-safe copy of the DB's `RALPH_RUN_OUTCOMES`, in chart order. */
+export const RALPH_RUN_OUTCOMES = [
+  "completed",
+  "waiting",
+  "stopped",
+  "failed",
+  "running",
+] as const satisfies readonly RalphRunOutcome[];
+
+export const RALPH_RUN_OUTCOME_LABELS: Record<RalphRunOutcome, string> = {
+  completed: "Completed",
+  waiting: "Waiting",
+  stopped: "Stopped",
+  failed: "Failed",
+  running: "In progress",
+};
+
+/**
+ * One chart row per UTC day: ralph and review tokens (in + out) side by side,
+ * and the runs started that day by status. Both series cover the same days.
+ */
+export function ralphDailyRows(
+  ralph: Pick<RalphAnalyticsData, "daily">,
+  reviews: Pick<AnalyticsData, "daily">,
+): ({ day: string; ralphTokens: number; reviewTokens: number } & Record<
+  RalphRunOutcome,
+  number
+>)[] {
+  const reviewTokens = new Map(reviews.daily.map((d) => [d.date, d.tokensIn + d.tokensOut]));
+  return ralph.daily.map((d) => ({
+    day: dayLabel(d.date),
+    ralphTokens: d.tokensIn + d.tokensOut,
+    reviewTokens: reviewTokens.get(d.date) ?? 0,
+    ...d.runs,
+  }));
 }
 
 /** A UTC day (`YYYY-MM-DD`) as a short axis label, e.g. "Oct 5". */

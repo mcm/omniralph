@@ -31,6 +31,8 @@ import {
   IconChartBar,
   IconCoins,
   IconHistory,
+  IconListCheck,
+  IconRepeat,
   IconServer,
   IconThumbDown,
 } from "@tabler/icons-react";
@@ -44,14 +46,19 @@ import {
   dayLabel,
   formatRate,
   overallAverageTokens,
+  RALPH_RUN_OUTCOME_LABELS,
+  RALPH_RUN_OUTCOMES,
+  ralphDailyRows,
   type AnalyticsData,
   type AnalyticsParams,
+  type RalphAnalyticsData,
 } from "@/lib/analytics/display";
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
 import { ProviderIcon } from "../repositories/repositories-view";
 
 interface AnalyticsViewProps {
   analytics: AnalyticsData;
+  ralph: RalphAnalyticsData;
   /** Every repository, for the filter. */
   repositories: AnalyticsRepositoryRef[];
   params: AnalyticsParams;
@@ -59,6 +66,15 @@ interface AnalyticsViewProps {
 
 /** Series colors: the library's brand and info chart hues, as design tokens. */
 const SERIES = { primary: "var(--glacier-500)", secondary: "var(--aurora-violet)" } as const;
+
+/** Run status colors: the library's chart hues, as design tokens. */
+const RUN_COLORS = {
+  completed: "var(--aurora-moss)",
+  waiting: "var(--aurora-amber)",
+  stopped: "var(--slate-500)",
+  failed: "var(--aurora-rust)",
+  running: "var(--glacier-500)",
+} as const;
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
@@ -160,7 +176,178 @@ function RepositoryLink({ repository }: { repository: AnalyticsRepositoryRef }) 
   );
 }
 
-export function AnalyticsView({ analytics, repositories, params }: AnalyticsViewProps) {
+/** Ralph's token usage, runs and story outcomes over the period. */
+function RalphSection({
+  ralph,
+  analytics,
+  period,
+}: {
+  ralph: RalphAnalyticsData;
+  analytics: AnalyticsData;
+  period: string;
+}) {
+  const daily = ralphDailyRows(ralph, analytics);
+  const tokens = ralph.totals.tokensIn + ralph.totals.tokensOut;
+  const outcomes = ralph.storyOutcomes;
+  const completed = outcomes.firstAttempt + outcomes.afterRetries;
+  const stories = completed + outcomes.exhausted + outcomes.blocked;
+  const noRuns = ralph.totals.runs === 0;
+  const noRunsEmpty = (
+    <Empty
+      size="sm"
+      icon={<IconRepeat size={20} />}
+      title="No ralph runs"
+      description="No ralph runs started in this period."
+    />
+  );
+
+  return (
+    <section
+      aria-label="Ralph"
+      style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 }}
+    >
+      <div>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: "var(--text-lg)",
+            fontWeight: "var(--font-weight-semibold)",
+          }}
+        >
+          Ralph
+        </h2>
+        <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+          Token usage of ralph jobs, the runs started in the period and their stories&apos;
+          outcomes.
+        </Muted>
+      </div>
+
+      <div style={grid("repeat(4, minmax(0, 1fr))")}>
+        <StatCard
+          label="Runs started"
+          value={ralph.totals.runs.toLocaleString()}
+          detail={period}
+          icon={IconRepeat}
+        />
+        <StatCard
+          label="Ralph tokens"
+          value={formatTokens(tokens)}
+          detail={`${formatTokens(ralph.totals.tokensIn)} in, ${formatTokens(ralph.totals.tokensOut)} out, ${ralph.totals.jobs.toLocaleString()} jobs`}
+          icon={IconCoins}
+        />
+        <StatCard
+          label="Stories completed"
+          value={completed.toLocaleString()}
+          detail={`Of ${stories.toLocaleString()} finished stories`}
+          icon={IconListCheck}
+        />
+        <StatCard
+          label="Average attempts"
+          value={completed === 0 ? "—" : ralph.averageAttempts.toLocaleString()}
+          detail="Per completed story"
+          icon={IconHistory}
+        />
+      </div>
+
+      <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
+        <Card ribbon style={{ minWidth: 0 }}>
+          <CardHeader>
+            <CardTitle>Ralph tokens per day</CardTitle>
+            <CardDescription>{period}, ralph jobs next to reviews (tokens in + out)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {noRuns && tokens === 0 ? (
+              noRunsEmpty
+            ) : (
+              <ChartContainer>
+                <AreaChart
+                  height={240}
+                  data={daily}
+                  xKey="day"
+                  showLegend
+                  areas={[
+                    { key: "ralphTokens", label: "Ralph", color: SERIES.primary },
+                    { key: "reviewTokens", label: "Reviews", color: SERIES.secondary },
+                  ]}
+                />
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card style={{ minWidth: 0 }}>
+          <CardHeader>
+            <CardTitle>Runs per day</CardTitle>
+            <CardDescription>{period}, runs started by their status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {noRuns ? (
+              noRunsEmpty
+            ) : (
+              <ChartContainer>
+                <BarChart
+                  height={240}
+                  data={daily}
+                  xKey="day"
+                  stacked
+                  showLegend
+                  bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
+                    key: outcome,
+                    label: RALPH_RUN_OUTCOME_LABELS[outcome],
+                    color: RUN_COLORS[outcome],
+                  }))}
+                />
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div style={grid("repeat(2, minmax(0, 1fr))")}>
+        <Card style={{ minWidth: 0 }}>
+          <CardHeader>
+            <CardTitle>Story outcomes</CardTitle>
+            <CardDescription>Stories of the runs started in the period</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {noRuns ? (
+              noRunsEmpty
+            ) : (
+              <CountRows
+                rows={[
+                  { key: "first", label: "First attempt", count: outcomes.firstAttempt },
+                  { key: "retries", label: "After retries", count: outcomes.afterRetries },
+                  { key: "exhausted", label: "Exhausted", count: outcomes.exhausted },
+                  { key: "blocked", label: "Blocked", count: outcomes.blocked },
+                ].map((row) => ({ ...row, label: <span style={cellText}>{row.label}</span> }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card style={{ minWidth: 0 }}>
+          <CardHeader>
+            <CardTitle>Runs by status</CardTitle>
+            <CardDescription>{ralph.totals.runs.toLocaleString()} runs</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {noRuns ? (
+              noRunsEmpty
+            ) : (
+              <CountRows
+                rows={RALPH_RUN_OUTCOMES.map((outcome) => ({
+                  key: outcome,
+                  label: <span style={cellText}>{RALPH_RUN_OUTCOME_LABELS[outcome]}</span>,
+                  count: ralph.runsByOutcome[outcome],
+                }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+export function AnalyticsView({ analytics, ralph, repositories, params }: AnalyticsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const router = useRouter();
   const pathname = usePathname();
@@ -208,7 +395,7 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: "var(--font-weight-semibold)" }}>Analytics</h1>
             <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Token usage and review quality for {scope}, by UTC day.
+              Token usage, review quality and ralph runs for {scope}, by UTC day.
             </Muted>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
@@ -521,6 +708,8 @@ export function AnalyticsView({ analytics, repositories, params }: AnalyticsView
             </CardContent>
           </Card>
         </div>
+
+        <RalphSection ralph={ralph} analytics={analytics} period={period} />
       </main>
     </>
   );

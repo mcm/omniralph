@@ -6,6 +6,8 @@ import {
   formatRate,
   overallAverageTokens,
   parseAnalyticsParams,
+  ralphAnalyticsData,
+  ralphDailyRows,
 } from "./display";
 
 const repo = "6f1c2a64-6d1e-4f43-9a55-2a0b8f0c4e11";
@@ -89,6 +91,46 @@ describe("formatting", () => {
       findingsBySeverity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       dismissalsByRepository: [],
       jobsByAgent: [],
+    });
+    expect(data.from).toBe("2026-09-29T00:00:00.000Z");
+    expect(data.to).toBe("2026-10-06T00:00:00.000Z");
+  });
+});
+
+describe("ralph analytics", () => {
+  const runs = { completed: 1, waiting: 0, stopped: 0, failed: 2, running: 0 };
+  const day = (date: string, tokensIn: number, tokensOut: number) => ({
+    date,
+    tokensIn,
+    tokensOut,
+  });
+
+  it("puts ralph and review tokens of each day side by side with its runs", () => {
+    expect(
+      ralphDailyRows(
+        {
+          daily: [
+            { ...day("2026-10-04", 100, 10), runs },
+            { ...day("2026-10-05", 0, 0), runs },
+          ],
+        },
+        { daily: [{ ...day("2026-10-05", 400, 40), reviews: 2 }] },
+      ),
+    ).toEqual([
+      { day: "Oct 4", ralphTokens: 110, reviewTokens: 0, ...runs },
+      { day: "Oct 5", ralphTokens: 0, reviewTokens: 440, ...runs },
+    ]);
+  });
+
+  it("serializes the window dates", () => {
+    const data = ralphAnalyticsData({
+      from: new Date("2026-09-29T00:00:00Z"),
+      to: new Date("2026-10-06T00:00:00Z"),
+      totals: { runs: 0, jobs: 0, tokensIn: 0, tokensOut: 0 },
+      daily: [],
+      runsByOutcome: runs,
+      storyOutcomes: { firstAttempt: 0, afterRetries: 0, exhausted: 0, blocked: 0 },
+      averageAttempts: 0,
     });
     expect(data.from).toBe("2026-09-29T00:00:00.000Z");
     expect(data.to).toBe("2026-10-06T00:00:00.000Z");

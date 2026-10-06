@@ -233,6 +233,14 @@ export {
   type RepositoryDismissals,
 } from "./queries/analytics.js";
 export {
+  getRalphAnalytics,
+  RALPH_RUN_OUTCOMES,
+  type RalphAnalytics,
+  type RalphDailyUsage,
+  type RalphRunOutcome,
+  type RalphStoryOutcomes,
+} from "./queries/ralph-analytics.js";
+export {
   ACTIVE_RALPH_RUN_STATUSES,
   appendGuidance,
   MAX_RUN_GUIDANCE,
