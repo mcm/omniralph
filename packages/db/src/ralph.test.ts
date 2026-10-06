@@ -121,7 +121,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     });
     expect(await listRalphRepositories(db)).toEqual([]);
 
-    const settings = { openPullRequestEarly: true, setupCommand: "pnpm install", model: "sonnet" };
+    const settings = {
+      openPullRequestEarly: true,
+      setupCommand: "pnpm install",
+      model: "sonnet",
+      manualLabels: ["by hand"],
+    };
     for (const id of [repoA, repoB]) {
       expect(
         await updateRepositoryRalphSettings(db, id, {

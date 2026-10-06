@@ -21,6 +21,7 @@ import {
   type Epic,
   type ParsedPrd,
 } from "@omniralph/ralph";
+import { getRepository, type Database } from "@omniralph/db";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
 
 export interface LoadedEpic {
@@ -36,13 +37,42 @@ export interface LoadedEpic {
 }
 
 export interface LoadEpicOptions {
-  /** Labels marking a story as a manual step; the first one labels materialized manual stories. */
-  manualLabels?: readonly string[];
+  /**
+   * Labels marking a story as a manual step; the first one labels materialized
+   * manual stories. A function gets the epic's root issue (to route it first).
+   */
+  manualLabels?: readonly string[] | ((root: IssueSummary) => readonly string[]);
   /**
    * Create the PRD stories a PRD issue with sub-issues is missing. Only for an
    * issue that was never run: a run's epic is what people curate afterwards.
    */
   completePrd?: boolean;
+}
+
+/**
+ * The labels marking a repository's stories as manual (`ralph_settings.manualLabels`),
+ * `manual` when none are set.
+ */
+export function repositoryManualLabels(repository: {
+  ralphSettings: { manualLabels?: readonly string[] | null };
+}): string[] {
+  const labels = repository.ralphSettings.manualLabels?.filter((l) => l.trim()) ?? [];
+  return labels.length > 0 ? [...labels] : [...DEFAULT_MANUAL_LABELS];
+}
+
+/** The manual labels of a run's repository (`manual` when the repository is gone). */
+export async function runManualLabels(
+  db: Database,
+  run: { repositoryId: string },
+): Promise<string[]> {
+  const repository = await getRepository(db, run.repositoryId);
+  return repository ? repositoryManualLabels(repository) : [...DEFAULT_MANUAL_LABELS];
+}
+
+function manualLabelsFor(options: LoadEpicOptions, root: IssueSummary): readonly string[] {
+  const labels =
+    typeof options.manualLabels === "function" ? options.manualLabels(root) : options.manualLabels;
+  return labels?.length ? labels : DEFAULT_MANUAL_LABELS;
 }
 
 /** The children epic of `parent`: its sub-issues with their blockers. */
@@ -112,11 +142,11 @@ export async function loadEpic(
   issueId: string,
   options: LoadEpicOptions = {},
 ): Promise<LoadedEpic> {
-  const manualLabels = options.manualLabels?.length ? options.manualLabels : DEFAULT_MANUAL_LABELS;
   const issue = await linear.getIssue(issueId);
 
   const children = await linear.getChildren(issue.id);
   if (children.length > 0) {
+    const manualLabels = manualLabelsFor(options, issue);
     const prd = options.completePrd ? parsePrd(issue.description) : null;
     const created = prd
       ? await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual", children)
@@ -134,12 +164,13 @@ export async function loadEpic(
   if (issue.parentId) {
     const parent = await linear.getIssue(issue.parentId);
     const siblings = await linear.getChildren(parent.id);
-    const epic = await loadChildrenEpic(linear, parent, siblings, manualLabels);
+    const epic = await loadChildrenEpic(linear, parent, siblings, manualLabelsFor(options, parent));
     return { epic, root: parent, kind: "children", focusStoryId: issue.id, materialized: 0 };
   }
 
   const prd = parsePrd(issue.description);
   if (prd) {
+    const manualLabels = manualLabelsFor(options, issue);
     const created = await materializePrd(linear, issue, prd, manualLabels[0] ?? "manual");
     const epic = await loadChildrenEpic(
       linear,
@@ -162,8 +193,8 @@ export async function reloadEpic(
   run: { linearIssueId: string; kind: "children" | "prd" | "single" },
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
-  const manualLabels = options.manualLabels?.length ? options.manualLabels : DEFAULT_MANUAL_LABELS;
   const issue = await linear.getIssue(run.linearIssueId);
   if (run.kind === "single") return singleIssueEpic(issue);
-  return loadChildrenEpic(linear, issue, await linear.getChildren(issue.id), manualLabels);
+  const children = await linear.getChildren(issue.id);
+  return loadChildrenEpic(linear, issue, children, manualLabelsFor(options, issue));
 }

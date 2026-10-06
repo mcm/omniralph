@@ -143,6 +143,7 @@ const validRalph: RalphSettingsInput = {
   openPullRequestEarly: false,
   setupCommand: "pnpm install --frozen-lockfile",
   model: "opus",
+  manualLabels: ["manual", "needs a person"],
 };
 
 describe("parseCommaList", () => {
@@ -187,5 +188,16 @@ describe("RalphSettingsInput", () => {
       linearLabels: Array.from({ length: 51 }, (_, i) => `l${i}`),
     });
     expect(fieldErrors(result.error!)).toEqual({ linearLabels: "At most 50 labels." });
+  });
+
+  it("needs at least one valid manual label", () => {
+    expect(
+      fieldErrors(RalphSettingsInput.safeParse({ ...validRalph, manualLabels: [] }).error!),
+    ).toEqual({ manualLabels: "Enter at least one manual label." });
+    expect(
+      fieldErrors(
+        RalphSettingsInput.safeParse({ ...validRalph, manualLabels: ["ok", "a,b"] }).error!,
+      ),
+    ).toEqual({ "manualLabels.1": "Names can't contain commas or control characters." });
   });
 });

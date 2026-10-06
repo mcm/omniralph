@@ -33,6 +33,7 @@ export interface RalphSettingsValues {
   openPullRequestEarly: boolean;
   setupCommand: string;
   model: string;
+  manualLabels: string[];
 }
 
 const stack: React.CSSProperties = {
@@ -93,6 +94,7 @@ export function RalphSettingsSection({
   );
   const [setupCommand, setSetupCommand] = React.useState(settings.setupCommand);
   const [model, setModel] = React.useState(settings.model);
+  const [manualLabels, setManualLabels] = React.useState(settings.manualLabels.join(", "));
   const [errors, setErrors] = React.useState<FieldErrors>({});
 
   const save = (e: React.FormEvent) => {
@@ -105,6 +107,7 @@ export function RalphSettingsSection({
       openPullRequestEarly,
       setupCommand,
       model,
+      manualLabels: parseCommaList(manualLabels),
     } satisfies RalphSettingsInput);
     if (!parsed.success) {
       setErrors(toFieldErrors(parsed.error));
@@ -198,6 +201,15 @@ export function RalphSettingsSection({
             disabled={pending}
             onChange={setOpenPullRequestEarly}
           />
+          {routingInput(
+            "ralph-manual-labels",
+            "Manual labels",
+            "Comma-separated. Stories with any of these labels are steps for a person: ralph skips them and waits until they're done. The first one labels the manual stories and follow-ups ralph files.",
+            "manualLabels",
+            manualLabels,
+            setManualLabels,
+            "manual",
+          )}
           <Field
             label="Setup command"
             htmlFor="ralph-setup-command"

@@ -14,13 +14,9 @@ import {
   type RalphStory,
   type RalphTransaction,
 } from "@omniralph/db";
-import {
-  appendProgress,
-  DEFAULT_MANUAL_LABELS,
-  initialProgress,
-  isDoneStateType,
-} from "@omniralph/ralph";
+import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
+import { runManualLabels } from "./epic-loader";
 import { postActivity, quietly, quote, tail } from "./notify";
 import type { RalphDeps } from "./run";
 
@@ -216,7 +212,7 @@ export async function fileFollowUps(
     siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
   );
   const priority = siblings.find((s) => s.id === story.linearIssueId)?.priority ?? 0;
-  const manualLabel = DEFAULT_MANUAL_LABELS[0] ?? "manual";
+  const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
   const filed: string[] = [];
   const forPerson: string[] = [];
   const failed: string[] = [];

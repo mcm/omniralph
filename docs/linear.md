@@ -85,8 +85,10 @@ Ralph only builds in repositories that opted in. On **Repository â€º Settings â€
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. |
 | **Setup command** | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
 | **Model** | The Claude model alias or ID the story sessions use (default `opus`). |
+| **Manual labels** | Comma-separated Linear labels that mark a story as a step for a person (default `manual`, at least one). Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
 
-Settings apply to runs started afterwards.
+Settings apply to runs started afterwards, except **Manual labels**: a run re-reads them every time
+it picks the next story, so changing them also changes which stories of a running epic are manual.
 
 A delegated issue is routed to the first repository that matches, trying these rules in order:
 
@@ -129,14 +131,15 @@ How the run behaves:
   while it's blocked by an open issue. A failed, incomplete or blocked attempt is retried with
   feedback up to 3 times, then the story is marked exhausted and later independent stories still
   run.
-- **Manual stories.** Sub-issues labelled `manual` are for a person: the run waits for them to be
+- **Manual stories.** Sub-issues labelled with one of the repository's **Manual labels** (`manual`
+  by default) are for a person: the run waits for them to be
   completed. A manual story's description may contain a ` ```cyralph-prepare ` block of shell
   commands, one per line; when the story becomes unblocked the session asks **Run it** / **I'll do
   it myself** / **Not yet**, and **Run it** runs them on the agent in the branch worktree.
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
-- **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled `manual` when they
-  need a person).
+- **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
+  **Manual label** when they need a person).
 - **The end.** When every story is done, an agent writes the PR/MR title and body, the control panel
   opens it (or updates the open one) and marks it ready, links it to the agent session and posts a
   final response.
