@@ -4,7 +4,7 @@
 control panel and runs them with the Claude Agent SDK. It needs Node 22 and git ≥ 2.40.
 
 This README covers installing and releasing the package. To set up a host (a dedicated Unix user,
-the Claude login, systemd or tmux), see
+the Claude login, systemd, tmux or pm2), see
 [docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
 ## Install
@@ -43,7 +43,7 @@ This writes `~/.config/omniralph/agent.json`. Run `omniralph-agent --help` to se
 omniralph-agent start --healthz-port 9310
 ```
 
-To run it as a service, see the systemd and tmux sections in
+To run it as a service, see the systemd, tmux and pm2 sections in
 [docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
 ## Upgrade

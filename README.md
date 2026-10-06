@@ -62,7 +62,7 @@ learned rules for later reviews.
    **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
 4. **Run an agent** on a Coder instance as a dedicated user with its own `claude` login, enrolled
-   from **Agents › Enroll agent** and run under systemd or tmux
+   from **Agents › Enroll agent** and run under systemd, tmux or pm2
    → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
 
    ```bash
@@ -85,7 +85,7 @@ learned rules for later reviews.
 | Doc | Covers |
 | -- | -- |
 | [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
-| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux, central config, disk usage, coexisting with cyralph, re-enrollment |
+| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux/pm2, central config, disk usage, coexisting with cyralph, re-enrollment |
 | [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
 | [github-app.md](docs/github-app.md) | GitHub App manifest, permissions, events, KMS-held private key |
 | [gitlab.md](docs/gitlab.md) | Bot token scopes and role, self-managed GitLab |
