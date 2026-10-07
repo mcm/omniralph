@@ -1,10 +1,10 @@
 /**
- * Installed issue-tracker apps (one per provider, e.g. the Omniralph Linear app
- * in one Linear workspace). Credentials are JSON encrypted at rest with
- * `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
+ * Installed issue-tracker apps (one per provider and organization, e.g. the
+ * Omniralph Linear app in one Linear workspace). Credentials are JSON
+ * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
 import { createHash } from "node:crypto";
-import { and, eq, lt, ne } from "drizzle-orm";
+import { and, asc, eq, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { integrations, oauthStateUses } from "./schema.js";
@@ -13,6 +13,7 @@ export type IntegrationProvider = (typeof integrations.$inferSelect)["provider"]
 
 export interface Integration {
   id: string;
+  organizationId: string;
   provider: IntegrationProvider;
   externalId: string;
   name: string;
@@ -26,6 +27,7 @@ export interface IntegrationWithCredentials<C> extends Integration {
 }
 
 export interface SaveIntegrationInput<C> {
+  organizationId: string;
   provider: IntegrationProvider;
   externalId: string;
   name: string;
@@ -51,58 +53,98 @@ function withCredentials<C>(
   };
 }
 
-/** The provider's installed integration (without credentials), or null. */
+/** The organization's integration of the provider (without credentials), or null. */
 export async function getIntegration(
   db: Database,
+  organizationId: string,
   provider: IntegrationProvider,
 ): Promise<Integration | null> {
   const [row] = await db
     .select()
     .from(integrations)
-    .where(eq(integrations.provider, provider))
+    .where(
+      and(eq(integrations.organizationId, organizationId), eq(integrations.provider, provider)),
+    )
     .limit(1);
   return row ? toIntegration(row) : null;
 }
 
-/** The provider's installed integration with its decrypted credentials, or null. */
+/**
+ * The integration of a provider-side workspace (e.g. a Linear workspace ID),
+ * or null: webhooks resolve their organization from it.
+ */
+export async function getIntegrationByExternalId(
+  db: Database,
+  provider: IntegrationProvider,
+  externalId: string,
+): Promise<Integration | null> {
+  const [row] = await db
+    .select()
+    .from(integrations)
+    .where(and(eq(integrations.provider, provider), eq(integrations.externalId, externalId)))
+    .limit(1);
+  return row ? toIntegration(row) : null;
+}
+
+/** The organization's integration of the provider with its decrypted credentials, or null. */
 export async function getIntegrationWithCredentials<C>(
   db: Database,
+  organizationId: string,
   provider: IntegrationProvider,
   key?: EncryptionKey,
 ): Promise<IntegrationWithCredentials<C> | null> {
   const [row] = await db
     .select()
     .from(integrations)
-    .where(eq(integrations.provider, provider))
+    .where(
+      and(eq(integrations.organizationId, organizationId), eq(integrations.provider, provider)),
+    )
     .limit(1);
   return row ? withCredentials<C>(row, key) : null;
 }
 
 /**
- * Installs (or reinstalls) the provider's integration for a workspace. Only one
- * workspace per provider is connected (`integrations_provider_uq`): any other
- * workspace's row is removed, and concurrent installs end with the last one.
+ * Installs (or reinstalls) the provider's integration of an organization for a
+ * workspace. An organization connects one workspace per provider
+ * (`integrations_provider_uq`): its other workspace's row is removed, and
+ * concurrent installs end with the last one. A workspace belongs to one
+ * organization (`integrations_provider_external_id_uq`): when another
+ * organization has it connected, nothing changes and the result is
+ * `"other_organization"`.
  */
 export async function saveIntegration<C>(
   db: Database,
   input: SaveIntegrationInput<C>,
   key?: EncryptionKey,
-): Promise<Integration> {
+): Promise<Integration | "other_organization"> {
   const encryptedCredentials = encrypt(JSON.stringify(input.credentials), key);
   return db.transaction(async (tx) => {
+    const [owner] = await tx
+      .select({ organizationId: integrations.organizationId })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.provider, input.provider),
+          eq(integrations.externalId, input.externalId),
+        ),
+      )
+      .for("update");
+    if (owner && owner.organizationId !== input.organizationId) return "other_organization";
     await tx
       .delete(integrations)
       .where(
         and(
+          eq(integrations.organizationId, input.organizationId),
           eq(integrations.provider, input.provider),
           ne(integrations.externalId, input.externalId),
         ),
       );
+    // Two organizations connecting the workspace at once: the unique index fails the second.
     const [row] = await tx
       .insert(integrations)
       .values({ ...input, encryptedCredentials })
       .onConflictDoUpdate({
-        target: integrations.provider,
+        target: [integrations.organizationId, integrations.provider],
         set: {
           externalId: input.externalId,
           name: input.name,
@@ -116,17 +158,36 @@ export async function saveIntegration<C>(
   });
 }
 
-/** Removes the provider's integration; returns the removed row (with credentials, to revoke them). */
+/**
+ * Removes the organization's integration of the provider; returns the removed
+ * row (with credentials, to revoke them).
+ */
 export async function deleteIntegration<C>(
   db: Database,
+  organizationId: string,
   provider: IntegrationProvider,
   key?: EncryptionKey,
 ): Promise<IntegrationWithCredentials<C> | null> {
   const [row] = await db
     .delete(integrations)
-    .where(eq(integrations.provider, provider))
+    .where(
+      and(eq(integrations.organizationId, organizationId), eq(integrations.provider, provider)),
+    )
     .returning();
   return row ? withCredentials<C>(row, key) : null;
+}
+
+/** Organization IDs with an integration of the provider (e.g. for the reconcile cron). */
+export async function listIntegratedOrganizationIds(
+  db: Database,
+  provider: IntegrationProvider,
+): Promise<string[]> {
+  const rows = await db
+    .select({ organizationId: integrations.organizationId })
+    .from(integrations)
+    .where(eq(integrations.provider, provider))
+    .orderBy(asc(integrations.createdAt), asc(integrations.id));
+  return rows.map((r) => r.organizationId);
 }
 
 /**

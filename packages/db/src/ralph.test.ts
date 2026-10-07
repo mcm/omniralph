@@ -33,7 +33,9 @@ import {
   getMainLane,
   insertMessage,
   listLanes,
+  listLanesToCleanUp,
   listMessages,
+  listOpenPullRequestLanes,
   moveToRepository,
   updateLane,
   updateMessage,
@@ -125,6 +127,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   const runInput = (overrides: Partial<NewRalphRunInput> = {}): NewRalphRunInput => {
     session += 1;
     return {
+      organizationId: orgId,
       linearIssueId: `issue-${session}`,
       linearIdentifier: `TOOL-${session}`,
       linearAgentSessionId: `session-${session}`,
@@ -144,7 +147,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
-    expect(await listRalphRepositories(db)).toEqual([]);
+    expect(await listRalphRepositories(db, orgId)).toEqual([]);
 
     const settings = {
       ...DEFAULT_RALPH_SETTINGS,
@@ -167,13 +170,13 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       ).toMatchObject({ ralphEnabled: true, linearTeamKeys: ["TOOL"], ralphSettings: settings });
     }
     // By path.
-    expect((await listRalphRepositories(db)).map((r) => r.fullPath)).toEqual([
+    expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
       "acme/a-web",
       "acme/b-api",
     ]);
 
     await disconnectRepository(db, orgId, repoB);
-    expect((await listRalphRepositories(db)).map((r) => r.id)).toEqual([repoA]);
+    expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
     expect(
       await updateRepositoryRalphSettings(db, repoB, {
         ralphEnabled: true,
@@ -208,9 +211,9 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     });
     expect(await getRun(db, run.id)).toEqual(run);
     expect(await getRunBySession(db, input.linearAgentSessionId)).toEqual(run);
-    expect(await getRunByIssue(db, input.linearIssueId)).toEqual(run);
+    expect(await getRunByIssue(db, orgId, input.linearIssueId)).toEqual(run);
     expect(await getRunBySession(db, "unknown")).toBeNull();
-    expect(await getRunByIssue(db, "unknown")).toBeNull();
+    expect(await getRunByIssue(db, orgId, "unknown")).toBeNull();
     // The branches are the main lane's.
     expect(await getMainLane(db, run)).toMatchObject({ repositoryId: repoA, branch, baseBranch });
   });
@@ -228,12 +231,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateRun(db, first.run.id, { status: "completed" });
     const second = await createRun(db, other);
     expect(second.created).toBe(true);
-    expect((await getRunByIssue(db, input.linearIssueId))?.id).toBe(second.run.id);
-    expect((await getRunByIssue(db, input.linearIssueId, { activeOnly: true }))?.id).toBe(
+    expect((await getRunByIssue(db, orgId, input.linearIssueId))?.id).toBe(second.run.id);
+    expect((await getRunByIssue(db, orgId, input.linearIssueId, { activeOnly: true }))?.id).toBe(
       second.run.id,
     );
     await updateRun(db, second.run.id, { status: "stopped" });
-    expect(await getRunByIssue(db, input.linearIssueId, { activeOnly: true })).toBeNull();
+    expect(await getRunByIssue(db, orgId, input.linearIssueId, { activeOnly: true })).toBeNull();
 
     // Concurrent creates make one run.
     const racing = runInput();
@@ -378,7 +381,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateRun(db, done.id, { status: "completed" });
 
     const ids = async (issue: string) =>
-      (await listRunsAffectedByIssue(db, issue)).map((r) => r.id);
+      (await listRunsAffectedByIssue(db, orgId, issue)).map((r) => r.id);
     expect(await ids("ext-1")).toEqual([waiting.id]);
     expect(await ids("manual-1")).toEqual([waiting.id]);
     expect(await ids("story-1")).toEqual([running.id]);
@@ -398,8 +401,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
 
     const later = new Date(Date.now() + 60_000);
     const ids = (runs: { id: string }[]) => runs.map((r) => r.id).sort();
-    expect(ids(await listRunsToReconcile(db, later))).toEqual([waiting.id, stale.id].sort());
-    expect(ids(await listRunsToReconcile(db, new Date(0)))).toEqual([waiting.id]);
+    expect(ids(await listRunsToReconcile(db, orgId, later))).toEqual([waiting.id, stale.id].sort());
+    expect(ids(await listRunsToReconcile(db, orgId, new Date(0)))).toEqual([waiting.id]);
   });
 
   it("lockRun serializes changes to a run", async () => {
@@ -479,7 +482,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateStory(db, stories[0]!.id, { status: "completed" });
     await updateStory(db, stories[1]!.id, { status: "completed" });
 
-    const all = await listRuns(db);
+    const all = await listRuns(db, orgId);
     expect(all).toMatchObject({ total: 3, page: 1, pageSize: 25 });
     expect(all.runs.map((r) => r.id)).toEqual([b1.id, a2.id, a1.id]);
     expect(all.runs[2]).toMatchObject({
@@ -494,19 +497,21 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     });
     expect(all.runs[1]).toMatchObject({ agent: null, stories: { total: 0, completed: 0 } });
 
-    expect((await listRuns(db, { status: "waiting" })).runs.map((r) => r.id)).toEqual([b1.id]);
+    expect((await listRuns(db, orgId, { status: "waiting" })).runs.map((r) => r.id)).toEqual([
+      b1.id,
+    ]);
     expect(
-      (await listRuns(db, { status: ["pending", "completed"] })).runs.map((r) => r.id),
+      (await listRuns(db, orgId, { status: ["pending", "completed"] })).runs.map((r) => r.id),
     ).toEqual([a2.id, a1.id]);
-    expect((await listRuns(db, { repositoryId: repoA })).total).toBe(2);
+    expect((await listRuns(db, orgId, { repositoryId: repoA })).total).toBe(2);
     expect(
-      (await listRuns(db, { repositoryId: repoA, status: "pending" })).runs.map((r) => r.id),
+      (await listRuns(db, orgId, { repositoryId: repoA, status: "pending" })).runs.map((r) => r.id),
     ).toEqual([a2.id]);
 
-    const page2 = await listRuns(db, { page: 2, pageSize: 2 });
+    const page2 = await listRuns(db, orgId, { page: 2, pageSize: 2 });
     expect(page2).toMatchObject({ total: 3, page: 2, pageSize: 2 });
     expect(page2.runs.map((r) => r.id)).toEqual([a1.id]);
-    expect((await listRuns(db, { page: 9, pageSize: 2 })).runs).toEqual([]);
+    expect((await listRuns(db, orgId, { page: 9, pageSize: 2 })).runs).toEqual([]);
   });
 
   it("loads a run's detail: repository, agent, stories in order and jobs newest first", async () => {
@@ -535,7 +540,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const other = (await createRun(db, runInput())).run;
     await insertJob(db, { capability: "ralph", type: "ralph.story", ralphRunId: other.id });
 
-    const detail = await getRunDetail(db, run.id);
+    const detail = await getRunDetail(db, orgId, run.id);
     expect(detail).toMatchObject({
       run: { id: run.id, status: "running", linearTitle: "Epic" },
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
@@ -553,7 +558,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect(detail!.pendingRequests).toEqual([]);
     expect(detail!.messages).toEqual([]);
 
-    expect(await getRunDetail(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+    expect(await getRunDetail(db, orgId, "00000000-0000-4000-8000-000000000000")).toBeNull();
   });
 
   it("gives a run's detail its pending requests and its latest live messages", async () => {
@@ -586,7 +591,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const other = (await createRun(db, runInput())).run;
     await insertMessage(db, { runId: other.id, kind: "request", text: "elsewhere" });
 
-    const detail = (await getRunDetail(db, run.id))!;
+    const detail = (await getRunDetail(db, orgId, run.id))!;
     expect(detail.pendingRequests.map((m) => m.id)).toEqual([pending.id]);
     expect(detail.messages).toHaveLength(RUN_DETAIL_MESSAGE_LIMIT);
     expect(detail.messages.map((m) => m.id)).toEqual(live.slice(1).reverse());
@@ -655,12 +660,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         ["L-3", null, "it's in project Docs"],
       ]);
 
-      const detail = await getRunDetail(db, run.id);
+      const detail = await getRunDetail(db, orgId, run.id);
       expect(detail!.lanes.map((l) => [l.repository.fullPath, l.main, l.lane.prNumber])).toEqual([
         ["acme/b-api", true, null],
         ["acme/a-web", false, 8],
       ]);
-      expect((await listRuns(db)).runs[0]).toMatchObject({
+      expect((await listRuns(db, orgId)).runs[0]).toMatchObject({
         branch: "eng-1",
         baseBranch: "develop",
       });
@@ -670,7 +675,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       const { run } = await createRun(db, runInput({ repositoryId: null, status: "waiting" }));
       expect(await getMainLane(db, run)).toBeNull();
       expect(await listLanes(db, run.id)).toEqual([]);
-      expect((await listRuns(db)).runs[0]).toMatchObject({ branch: null, prNumber: null });
+      expect((await listRuns(db, orgId)).runs[0]).toMatchObject({ branch: null, prNumber: null });
     });
 
     it("copies a run's lanes to another run, except one repository", async () => {
@@ -774,16 +779,83 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     };
     await updateRepositoryRalphSettings(db, repoA, off);
     await updateRepositoryRalphSettings(db, repoB, off);
-    expect(await listRalphRunRepositories(db)).toEqual([]);
+    expect(await listRalphRunRepositories(db, orgId)).toEqual([]);
 
     await updateRepositoryRalphSettings(db, repoB, { ...off, ralphEnabled: true });
-    expect((await listRalphRunRepositories(db)).map((r) => r.id)).toEqual([repoB]);
+    expect((await listRalphRunRepositories(db, orgId)).map((r) => r.id)).toEqual([repoB]);
 
     // repoA has a run (its ralph setting was turned off later).
     await createRun(db, runInput({ repositoryId: repoA }));
-    expect(await listRalphRunRepositories(db)).toEqual([
+    expect(await listRalphRunRepositories(db, orgId)).toEqual([
       { id: repoB, provider: "github", fullPath: "acme/a-web" },
       { id: repoA, provider: "github", fullPath: "acme/b-api" },
     ]);
+  });
+
+  it("keeps another organization's repositories and runs out of every query", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    await seedReviewProfiles(db, other!.id);
+    const otherConnection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: other!.id,
+        provider: "github",
+        name: "other",
+        baseUrl: "https://api.github.com",
+        externalId: "other-1",
+        credentials: {},
+      },
+      key,
+    ))!;
+    const otherRepo = (
+      await connectRepository(db, {
+        connectionId: otherConnection.id,
+        provider: "github",
+        externalId: "99",
+        fullPath: "other/api",
+      })
+    ).id;
+    await updateRepositoryRalphSettings(db, otherRepo, {
+      ralphEnabled: true,
+      linearTeamKeys: ["TOOL"],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: DEFAULT_RALPH_SETTINGS,
+    });
+    const { run: otherRun } = await createRun(
+      db,
+      runInput({ organizationId: other!.id, repositoryId: otherRepo }),
+    );
+    await upsertStories(db, otherRun.id, [
+      { linearIssueId: "shared-story", identifier: "S-1", title: "s" },
+    ]);
+    await updateRun(db, otherRun.id, { status: "waiting" });
+    await updateLane(db, (await getMainLane(db, otherRun))!.id, {
+      prNumber: 1,
+      prUrl: "https://example.com/1",
+      prMerged: true,
+    });
+
+    expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).not.toContain(otherRepo);
+    expect((await listRalphRepositories(db, other!.id)).map((r) => r.id)).toEqual([otherRepo]);
+    expect((await listRalphRunRepositories(db, orgId)).map((r) => r.id)).not.toContain(otherRepo);
+    expect((await listRuns(db, orgId)).runs.map((r) => r.id)).not.toContain(otherRun.id);
+    expect((await listRuns(db, other!.id)).runs.map((r) => r.id)).toEqual([otherRun.id]);
+    expect(await getRunDetail(db, orgId, otherRun.id)).toBeNull();
+    expect((await getRunDetail(db, other!.id, otherRun.id))?.run.id).toBe(otherRun.id);
+    expect(await listRunsAffectedByIssue(db, orgId, "shared-story")).toEqual([]);
+    expect(await listRunsToReconcile(db, orgId, new Date())).toEqual([]);
+    expect((await listRunsToReconcile(db, other!.id, new Date())).map((r) => r.id)).toEqual([
+      otherRun.id,
+    ]);
+    expect(await listOpenPullRequestLanes(db, orgId)).toEqual([]);
+    expect(await listLanesToCleanUp(db, orgId)).toEqual([]);
+    expect((await listLanesToCleanUp(db, other!.id)).map((l) => l.run.id)).toEqual([otherRun.id]);
+
+    // The same issue (a workspace that moved) doesn't collide with the other organization's run.
+    expect(await getRunByIssue(db, orgId, otherRun.linearIssueId)).toBeNull();
+    const mine = await createRun(db, runInput({ linearIssueId: otherRun.linearIssueId }));
+    expect(mine).toMatchObject({ created: true, run: { organizationId: orgId } });
+    expect((await getRunByIssue(db, orgId, otherRun.linearIssueId))?.id).toBe(mine.run.id);
   });
 });

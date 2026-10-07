@@ -11,14 +11,14 @@ import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
 export const RECONCILE_STALE_MS = 10 * 60 * 1000;
 
 /**
- * Advances every unfinished run an issue's state change may move: waiting runs
+ * Advances every unfinished run of the organization an issue's state change may move: waiting runs
  * whose `waiting_on` lists it and runs that have it as a story. Throws (after
  * trying them all) if one failed, so the webhook delivery is retried.
  */
 export async function wakeRunsForIssue(issueId: string, deps: RalphDeps): Promise<AdvanceResult[]> {
   const results: AdvanceResult[] = [];
   let failure: unknown;
-  for (const run of await listRunsAffectedByIssue(deps.db, issueId)) {
+  for (const run of await listRunsAffectedByIssue(deps.db, deps.organizationId, issueId)) {
     try {
       results.push(await advanceRun(run.id, deps));
     } catch (error) {
@@ -33,12 +33,19 @@ export async function wakeRunsForIssue(issueId: string, deps: RalphDeps): Promis
   return results;
 }
 
-/** Advances waiting runs and stale runs without an active job. Failures are logged and counted. */
+/**
+ * Advances the organization's waiting runs and stale runs without an active
+ * job. Failures are logged and counted.
+ */
 export async function reconcileRuns(
   deps: RalphDeps,
   now = new Date(),
 ): Promise<{ reconciled: number; failed: number }> {
-  const runs = await listRunsToReconcile(deps.db, new Date(now.getTime() - RECONCILE_STALE_MS));
+  const runs = await listRunsToReconcile(
+    deps.db,
+    deps.organizationId,
+    new Date(now.getTime() - RECONCILE_STALE_MS),
+  );
   let failed = 0;
   for (const run of runs) {
     try {

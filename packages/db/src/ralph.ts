@@ -90,18 +90,29 @@ export async function updateRepositoryRalphSettings(
   return row ?? null;
 }
 
-/** Connected repositories with ralph enabled (the routing candidates), by path. */
-export async function listRalphRepositories(db: Executor): Promise<Repository[]> {
+/** The organization's connected repositories with ralph enabled (the routing candidates), by path. */
+export async function listRalphRepositories(
+  db: Executor,
+  organizationId: string,
+): Promise<Repository[]> {
   return db
     .select()
     .from(repositories)
-    .where(and(eq(repositories.ralphEnabled, true), isNull(repositories.disconnectedAt)))
+    .where(
+      and(
+        eq(repositories.organizationId, organizationId),
+        eq(repositories.ralphEnabled, true),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
     .orderBy(asc(repositories.fullPath), asc(repositories.id));
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
 export interface NewRalphRunInput {
+  /** The organization whose Linear workspace delegated the issue. */
+  organizationId: string;
   linearIssueId: string;
   linearIdentifier: string;
   linearTitle?: string | null;
@@ -152,7 +163,7 @@ export async function createRun(
 
     const existing =
       (await getRunBySession(db, input.linearAgentSessionId)) ??
-      (await getRunByIssue(db, input.linearIssueId, { activeOnly: true }));
+      (await getRunByIssue(db, input.organizationId, input.linearIssueId, { activeOnly: true }));
     if (existing) return { run: existing, created: false };
   }
   throw new Error(`Failed to create a ralph run for ${input.linearIdentifier}`);
@@ -176,9 +187,13 @@ export async function getRunBySession(
   return row ?? null;
 }
 
-/** The latest run of a delegated Linear issue (only an unfinished one with `activeOnly`), or null. */
+/**
+ * The organization's latest run of a delegated Linear issue (only an
+ * unfinished one with `activeOnly`), or null.
+ */
 export async function getRunByIssue(
   db: Executor,
+  organizationId: string,
   linearIssueId: string,
   options: { activeOnly?: boolean } = {},
 ): Promise<RalphRun | null> {
@@ -187,6 +202,7 @@ export async function getRunByIssue(
     .from(ralphRuns)
     .where(
       and(
+        eq(ralphRuns.organizationId, organizationId),
         eq(ralphRuns.linearIssueId, linearIssueId),
         options.activeOnly ? inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES) : undefined,
       ),
@@ -334,18 +350,19 @@ export interface RalphRunListPage {
   pageSize: number;
 }
 
-/** Runs, newest first, optionally filtered by status and repository. */
+/** The organization's runs, newest first, optionally filtered by status and repository. */
 export async function listRuns(
   db: Executor,
+  organizationId: string,
   filter: RalphRunListFilter = {},
 ): Promise<RalphRunListPage> {
   const pageSize = Math.max(1, Math.floor(filter.pageSize ?? RALPH_RUN_PAGE_SIZE));
   const page = Math.max(1, Math.floor(filter.page ?? 1));
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(ralphRuns.organizationId, organizationId)];
   if (filter.repositoryId) conditions.push(eq(ralphRuns.repositoryId, filter.repositoryId));
   if (typeof filter.status === "string") conditions.push(eq(ralphRuns.status, filter.status));
   else if (filter.status) conditions.push(inArray(ralphRuns.status, [...filter.status]));
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const [[totalRow], rows] = await Promise.all([
     db.select({ total: count() }).from(ralphRuns).where(where),
@@ -462,8 +479,15 @@ export type RalphRunJob = Pick<
   | "finishedAt"
 > & { agent: { id: string; name: string } | null };
 
-/** A run with its repository, sticky agent, stories and jobs; null if it doesn't exist. */
-export async function getRunDetail(db: Executor, runId: string): Promise<RalphRunDetail | null> {
+/**
+ * An organization's run with its repository, sticky agent, stories and jobs;
+ * null if it doesn't exist or belongs to another organization.
+ */
+export async function getRunDetail(
+  db: Executor,
+  organizationId: string,
+  runId: string,
+): Promise<RalphRunDetail | null> {
   const [row] = await db
     .select({
       run: ralphRuns,
@@ -478,7 +502,7 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
     .from(ralphRuns)
     .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
     .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
-    .where(eq(ralphRuns.id, runId))
+    .where(and(eq(ralphRuns.id, runId), eq(ralphRuns.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
   const [lanes, stories, jobRows, pendingRequests, messageRows] = await Promise.all([
@@ -545,11 +569,12 @@ export async function getRunDetail(db: Executor, runId: string): Promise<RalphRu
 }
 
 /**
- * Repositories the Ralph runs list can be filtered by: those with ralph
- * enabled or with runs, by full path.
+ * The organization's repositories the Ralph runs list can be filtered by:
+ * those with ralph enabled or with runs, by full path.
  */
 export async function listRalphRunRepositories(
   db: Executor,
+  organizationId: string,
 ): Promise<{ id: string; provider: ScmProvider; fullPath: string }[]> {
   return db
     .select({
@@ -559,13 +584,16 @@ export async function listRalphRunRepositories(
     })
     .from(repositories)
     .where(
-      or(
-        eq(repositories.ralphEnabled, true),
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(ralphRuns)
-            .where(eq(ralphRuns.repositoryId, repositories.id)),
+      and(
+        eq(repositories.organizationId, organizationId),
+        or(
+          eq(repositories.ralphEnabled, true),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(ralphRuns)
+              .where(eq(ralphRuns.repositoryId, repositories.id)),
+          ),
         ),
       ),
     )
@@ -583,11 +611,13 @@ export async function listActiveRunJobIds(db: Executor, runId: string): Promise<
 }
 
 /**
- * Unfinished runs an `Issue` webhook for `linearIssueId` may move: waiting runs
- * whose `waiting_on` lists it, and runs that have it as a story. Oldest first.
+ * The organization's unfinished runs an `Issue` webhook for `linearIssueId`
+ * may move: waiting runs whose `waiting_on` lists it, and runs that have it as
+ * a story. Oldest first.
  */
 export async function listRunsAffectedByIssue(
   db: Executor,
+  organizationId: string,
   linearIssueId: string,
 ): Promise<RalphRun[]> {
   const ref = JSON.stringify([{ id: linearIssueId }]);
@@ -596,6 +626,7 @@ export async function listRunsAffectedByIssue(
     .from(ralphRuns)
     .where(
       and(
+        eq(ralphRuns.organizationId, organizationId),
         inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES),
         or(
           and(
@@ -623,27 +654,38 @@ export async function listRunsAffectedByIssue(
 }
 
 /**
- * Unfinished runs for the reconcile cron: every waiting run (its blockers are
- * re-checked), and pending or running runs without a queued or running job
- * that haven't changed since `staleBefore` (an outcome that was never applied).
+ * An organization's unfinished runs for the reconcile cron: every waiting run
+ * (its blockers are re-checked), and pending or running runs without a queued
+ * or running job that haven't changed since `staleBefore` (an outcome that was
+ * never applied).
  */
-export async function listRunsToReconcile(db: Executor, staleBefore: Date): Promise<RalphRun[]> {
+export async function listRunsToReconcile(
+  db: Executor,
+  organizationId: string,
+  staleBefore: Date,
+): Promise<RalphRun[]> {
   return db
     .select()
     .from(ralphRuns)
     .where(
-      or(
-        eq(ralphRuns.status, "waiting"),
-        and(
-          inArray(ralphRuns.status, ["pending", "running"]),
-          lt(ralphRuns.updatedAt, staleBefore),
-          notExists(
-            db
-              .select({ one: sql`1` })
-              .from(jobs)
-              .where(
-                and(eq(jobs.ralphRunId, ralphRuns.id), inArray(jobs.status, ["queued", "running"])),
-              ),
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        or(
+          eq(ralphRuns.status, "waiting"),
+          and(
+            inArray(ralphRuns.status, ["pending", "running"]),
+            lt(ralphRuns.updatedAt, staleBefore),
+            notExists(
+              db
+                .select({ one: sql`1` })
+                .from(jobs)
+                .where(
+                  and(
+                    eq(jobs.ralphRunId, ralphRuns.id),
+                    inArray(jobs.status, ["queued", "running"]),
+                  ),
+                ),
+            ),
           ),
         ),
       ),
@@ -763,17 +805,25 @@ export async function findLaneByBranch(
 }
 
 /**
- * Every ralph PR/MR not known to be closed, each with the lane of its newest
- * run (a re-delegation carries a PR/MR forward), oldest lane first.
+ * Every ralph PR/MR of the organization's runs not known to be closed, each
+ * with the lane of its newest run (a re-delegation carries a PR/MR forward),
+ * oldest lane first.
  */
 export async function listOpenPullRequestLanes(
   db: Executor,
+  organizationId: string,
 ): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
   const rows = await db
     .select({ lane: ralphLanes, run: ralphRuns })
     .from(ralphLanes)
     .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
-    .where(and(isNotNull(ralphLanes.prNumber), eq(ralphLanes.prClosed, false)))
+    .where(
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        isNotNull(ralphLanes.prNumber),
+        eq(ralphLanes.prClosed, false),
+      ),
+    )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
   const newest = new Map<string, { lane: RalphLane; run: RalphRun }>();
   for (const row of rows) {
@@ -787,12 +837,14 @@ export async function listOpenPullRequestLanes(
 }
 
 /**
- * Merged ralph PRs/MRs whose cleanup isn't through, each with the lane of its
- * newest run: never cleaned up, waiting, running or failed, or with an answer
- * being carried out or questions still open. Oldest lane first.
+ * Merged ralph PRs/MRs of the organization's runs whose cleanup isn't
+ * through, each with the lane of its newest run: never cleaned up, waiting,
+ * running or failed, or with an answer being carried out or questions still
+ * open. Oldest lane first.
  */
 export async function listLanesToCleanUp(
   db: Executor,
+  organizationId: string,
 ): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
   const rows = await db
     .select({ lane: ralphLanes, run: ralphRuns })
@@ -800,6 +852,7 @@ export async function listLanesToCleanUp(
     .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
     .where(
       and(
+        eq(ralphRuns.organizationId, organizationId),
         isNotNull(ralphLanes.prNumber),
         eq(ralphLanes.prMerged, true),
         sql`(${ralphLanes.cleanup} is null

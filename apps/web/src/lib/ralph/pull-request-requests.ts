@@ -87,7 +87,9 @@ export async function addLaneRequest(
 ): Promise<{ delivery: PullRequestRequestDelivery; run: RalphRun; note: string } | null> {
   let current = run;
   if (current.status === "completed" || current.status === "stopped") {
-    const other = await getRunByIssue(tx, current.linearIssueId, { activeOnly: true });
+    const other = await getRunByIssue(tx, current.organizationId, current.linearIssueId, {
+      activeOnly: true,
+    });
     if (other && other.id !== current.id) return null;
     current = (await updateRun(tx, current.id, { status: "pending", error: null })) ?? current;
   }

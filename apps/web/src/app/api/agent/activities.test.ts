@@ -110,6 +110,7 @@ describe.skipIf(!dockerAvailable)("POST /api/agent/jobs/{id}/activities", () => 
 
   async function newRun() {
     const { run } = await createRun(db, {
+      organizationId: orgId,
       linearIssueId: randomUUID(),
       linearIdentifier: "TOOL-32",
       linearAgentSessionId: `session-${randomUUID()}`,

@@ -84,7 +84,13 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   let sessionSeq = 0;
 
   let scm: FakeScmAdapter;
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
+  const deps = (): StartRunDeps => ({
+    db,
+    organizationId: orgId,
+    linear,
+    dispatcher,
+    adapterFor: () => scm.asAdapter(),
+  });
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -648,7 +654,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await linear.setIssueState(outside.id, { type: "completed" });
     await handleLinearEvent(
       { kind: "issue_state", issueId: outside.id, removed: false },
-      { db, organizationId: "org-1" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher },
     );
     expect((await work(run.id)).story.identifier).toBe("ENG-37");
@@ -846,7 +852,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const event = (issueId: string) =>
       handleLinearEvent(
         { kind: "issue_state", issueId, removed: false },
-        { db, organizationId: "org-1" },
+        { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher },
       );
     await event("unrelated");
@@ -894,7 +900,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await linear.setIssueState(manual.id, { type: "completed" });
     await handleLinearEvent(
       { kind: "issue_state", issueId: manual.id, removed: false },
-      { db, organizationId: "org-1" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher },
     );
     expect((await work(run.id)).story.identifier).toBe("ENG-73");
@@ -1137,7 +1143,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       await linear.setIssueState(t.s2.id, { type: "completed" });
       await handleLinearEvent(
         { kind: "issue_state", issueId: t.s2.id, removed: false },
-        { db, organizationId: "org-1" },
+        { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher },
       );
       expect((await work(run.id, { commitSha: sha(4) })).story.identifier).toBe("ENG-4");
@@ -1180,7 +1186,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(scm.calls.filter((c) => c === "getDefaultBranch")).toHaveLength(lookups);
 
       // The run detail has one section per lane.
-      const detail = await getRunDetail(db, run.id);
+      const detail = await getRunDetail(db, orgId, run.id);
       expect(detail!.lanes.map((l) => [l.repository.fullPath, l.main])).toEqual([
         ["acme/api", true],
         ["group/app", false],
@@ -1211,7 +1217,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const reply = (run: RalphRun, body: string) =>
       handleLinearEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
-        { db, organizationId: "org-1" },
+        { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 
@@ -1423,7 +1429,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const reply = (run: RalphRun, body: string) =>
       handleLinearEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
-        { db, organizationId: "org-1" },
+        { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 

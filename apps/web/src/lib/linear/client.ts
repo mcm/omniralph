@@ -17,7 +17,7 @@ export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 export class LinearNotConnectedError extends Error {
   constructor() {
-    super("No Linear workspace is connected (Settings › Integrations)");
+    super("The organization has no Linear workspace connected (Settings › Integrations)");
     this.name = "LinearNotConnectedError";
   }
 }
@@ -29,6 +29,8 @@ export function needsRefresh(credentials: LinearCredentials, now: number): boole
 
 export interface LinearGatewayOptions {
   db: Database;
+  /** The organization whose connected workspace to use. */
+  organizationId: string;
   config?: LinearOAuthConfig | null;
   now?: () => number;
   /** Encryption key override (tests). */
@@ -56,7 +58,7 @@ function settleWithin<T, F>(promise: Promise<T>, ms: number, fallback: F): Promi
 const refreshing = new Map<string, Promise<LinearCredentials | null>>();
 
 /**
- * A gateway for the connected Linear workspace with a valid access token. A
+ * A gateway for the organization's connected Linear workspace with a valid access token. A
  * token that expires within 5 minutes is refreshed first and persisted; the
  * refresh runs under the integration's row lock and re-checks the stored
  * token, so concurrent callers (in any process) refresh once and never
@@ -64,10 +66,15 @@ const refreshing = new Map<string, Promise<LinearCredentials | null>>();
  * still-valid token is used when the refresh is slow or fails.
  */
 export async function getLinearGateway(options: LinearGatewayOptions): Promise<LinearGateway> {
-  const { db, key } = options;
+  const { db, organizationId, key } = options;
   const now = options.now ?? Date.now;
   const createGateway = options.createGateway ?? ((token) => new SdkLinearGateway(token));
-  const integration = await getIntegrationWithCredentials<LinearCredentials>(db, "linear", key);
+  const integration = await getIntegrationWithCredentials<LinearCredentials>(
+    db,
+    organizationId,
+    "linear",
+    key,
+  );
   if (!integration) throw new LinearNotConnectedError();
   let credentials: LinearCredentials | null = integration.credentials;
   if (needsRefresh(credentials, now())) {
@@ -125,7 +132,7 @@ export function disconnectedLinearGateway(): LinearGateway {
   });
 }
 
-/** The connected workspace's gateway, or a disconnected one when none is connected. */
+/** The organization's workspace gateway, or a disconnected one when it has none connected. */
 export async function getLinearGatewayOrDisconnected(
   options: LinearGatewayOptions,
 ): Promise<LinearGateway> {

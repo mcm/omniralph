@@ -81,7 +81,13 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
 
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
+  const deps = (): StartRunDeps => ({
+    db,
+    organizationId: orgId,
+    linear,
+    dispatcher,
+    adapterFor: () => scm.asAdapter(),
+  });
 
   const ralphOn = (id: string, settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
     updateRepositoryRalphSettings(db, id, {

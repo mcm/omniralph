@@ -200,8 +200,10 @@ export {
 export {
   deleteIntegration,
   getIntegration,
+  getIntegrationByExternalId,
   getIntegrationWithCredentials,
   consumeOAuthState,
+  listIntegratedOrganizationIds,
   saveIntegration,
   updateIntegrationCredentials,
   type Integration,

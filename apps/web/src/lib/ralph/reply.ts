@@ -324,7 +324,9 @@ export async function stopRun(
  * delegated again): null.
  */
 async function resume(tx: RalphTransaction, run: RalphRun): Promise<RalphRun | null> {
-  const other = await getRunByIssue(tx, run.linearIssueId, { activeOnly: true });
+  const other = await getRunByIssue(tx, run.organizationId, run.linearIssueId, {
+    activeOnly: true,
+  });
   if (other && other.id !== run.id) return null;
   return updateRun(tx, run.id, { status: "pending", error: null });
 }

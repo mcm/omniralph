@@ -6,18 +6,14 @@ vi.mock("server-only", () => ({}));
 
 const {
   authorizeUrl,
-  createOAuthState,
   exchangeCode,
   LINEAR_OAUTH_TIMEOUT_MS,
   LinearOAuthError,
   linearOAuthConfig,
   refreshCredentials,
-  readOAuthState,
   revokeToken,
-  verifyOAuthState,
 } = await import("./oauth");
 
-const env = { AUTH_SECRET: "test-auth-secret" } as unknown as NodeJS.ProcessEnv;
 const config = { clientId: "client-1", clientSecret: "secret-1" };
 const tokenRequests: URLSearchParams[] = [];
 let tokenResponse: () => Response = () =>
@@ -67,38 +63,6 @@ describe("linearOAuthConfig", () => {
         LINEAR_CLIENT_SECRET: "b",
       } as unknown as NodeJS.ProcessEnv),
     ).toEqual({ clientId: "a", clientSecret: "b" });
-  });
-});
-
-describe("OAuth state", () => {
-  it("verifies for the same user and nonce only", async () => {
-    const { state, nonce } = await createOAuthState("admin-1", env);
-    expect(await verifyOAuthState(state, { userId: "admin-1", nonce }, env)).toBe(true);
-    const read = await readOAuthState(state, { userId: "admin-1", nonce }, env);
-    expect(read?.nonce).toBe(nonce);
-    expect(read!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
-    expect(await readOAuthState(state, { userId: "admin-2", nonce }, env)).toBeNull();
-    expect(await verifyOAuthState(state, { userId: "admin-2", nonce }, env)).toBe(false);
-    expect(await verifyOAuthState(state, { userId: "admin-1", nonce: "other" }, env)).toBe(false);
-    expect(await verifyOAuthState(state, { userId: "admin-1", nonce: undefined }, env)).toBe(false);
-  });
-
-  it("rejects missing, tampered, foreign-key and expired states", async () => {
-    const { state, nonce } = await createOAuthState("admin-1", env);
-    const expect_ = { userId: "admin-1", nonce };
-    expect(await verifyOAuthState(null, expect_, env)).toBe(false);
-    expect(await verifyOAuthState("", expect_, env)).toBe(false);
-    expect(await verifyOAuthState("not-a-jwt", expect_, env)).toBe(false);
-    expect(await verifyOAuthState(`${state.slice(0, -2)}xx`, expect_, env)).toBe(false);
-    const other = { AUTH_SECRET: "other-secret" } as unknown as NodeJS.ProcessEnv;
-    expect(await verifyOAuthState(state, expect_, other)).toBe(false);
-
-    vi.useFakeTimers({ now: Date.now() + 11 * 60 * 1000 });
-    try {
-      expect(await verifyOAuthState(state, expect_, env)).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

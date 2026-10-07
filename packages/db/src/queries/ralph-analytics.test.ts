@@ -64,6 +64,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
       const id = randomUUID();
       return {
         id,
+        organizationId: orgId,
         linearIssueId: id,
         linearIdentifier: "ENG-1",
         linearAgentSessionId: id,

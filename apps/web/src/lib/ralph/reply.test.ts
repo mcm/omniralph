@@ -85,7 +85,13 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
   let repoId: string;
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
+  const deps = (): StartRunDeps => ({
+    db,
+    organizationId: orgId,
+    linear,
+    dispatcher,
+    adapterFor: () => scm.asAdapter(),
+  });
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -765,7 +771,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     const run = await delegate("issue-1");
     await handleLinearEvent(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "", signal: "stop" },
-      { db, organizationId: "org-1" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },
     );
     expect((await getRun(db, run.id))?.status).toBe("stopped");

@@ -13,21 +13,24 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
 import { userDisplayName } from "@/lib/user-display";
 
 /**
- * Stops a ralph run (admins only) the way the Linear stop reply does: the run
+ * Stops a ralph run of the active organization (admins only) the way the Linear stop reply does: the run
  * becomes `stopped`, its queued or running job is canceled and the agent
  * session is told who stopped it. Linear writes are best-effort, so this works
- * while no workspace is connected. Guidance in Linear resumes the run.
+ * while the organization has no workspace connected. Guidance in Linear resumes the run.
  */
 export async function stopRalphRun(runId: string): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
     if (!z.uuid().safeParse(runId).success) return { ok: false, error: "That run doesn't exist." };
     const db = getDb();
     const run = await getRun(db, runId);
-    if (!run) return { ok: false, error: "That run doesn't exist." };
+    if (!run || run.organizationId !== admin.organization.id) {
+      return { ok: false, error: "That run doesn't exist." };
+    }
     const result = await stopRun(
       {
         db,
-        linear: await getLinearGatewayOrDisconnected({ db }),
+        organizationId: run.organizationId,
+        linear: await getLinearGatewayOrDisconnected({ db, organizationId: run.organizationId }),
         dispatcher: getDispatcher(),
         adapterFor: scmAdapterFor,
       },

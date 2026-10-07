@@ -10,13 +10,14 @@ import { RalphRunDetailView } from "./ralph-run-detail-view";
 export const metadata: Metadata = { title: "Ralph run · Omniralph" };
 
 export default async function RalphRunPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const db = getDb();
+  // Another organization's run is not found.
   const [detail, integration] = await Promise.all([
-    getRunDetail(db, id),
-    getIntegration(db, "linear"),
+    getRunDetail(db, user.organization.id, id),
+    getIntegration(db, user.organization.id, "linear"),
   ]);
   if (!detail) notFound();
   return (

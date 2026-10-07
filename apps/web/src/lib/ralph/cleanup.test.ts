@@ -75,7 +75,13 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
 
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
+  const deps = (): StartRunDeps => ({
+    db,
+    organizationId: orgId,
+    linear,
+    dispatcher,
+    adapterFor: () => scm.asAdapter(),
+  });
 
   const ralphOn = (settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
     updateRepositoryRalphSettings(db, repoId, {
@@ -251,7 +257,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   const issueDone = (issueId: string) =>
     handleLinearEvent(
       { kind: "issue_state", issueId, stateType: "completed", removed: false },
-      { db, organizationId: "org-1" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },
     );
 

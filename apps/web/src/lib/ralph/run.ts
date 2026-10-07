@@ -99,6 +99,11 @@ import {
 
 export interface RalphDeps {
   db: Database;
+  /**
+   * The organization whose runs these are: routing only considers its
+   * repositories, and `linear` is its Linear workspace's gateway.
+   */
+  organizationId: string;
   linear: LinearGateway;
   dispatcher: JobDispatcher;
   /** The code-host adapter of a repository's connection (default branch, PRs/MRs). */

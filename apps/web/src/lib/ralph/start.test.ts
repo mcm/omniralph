@@ -35,7 +35,7 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
-import { acknowledgeLinearEvent } from "@/lib/linear/events";
+import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { handleLinearWebhook } from "@/lib/linear/ingest";
 import { signBody, type LinearWebhookEvent } from "@/lib/linear/webhook";
@@ -102,6 +102,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
 
   const deps = (): StartRunDeps => ({
     db,
+    organizationId: orgId,
     linear,
     dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
     adapterFor: () => fakeAdapter,
@@ -822,6 +823,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       await db.delete(webhookDeliveries);
       await db.delete(integrations);
       await saveIntegration(db, {
+        organizationId: orgId,
         provider: "linear",
         externalId: "org-1",
         name: "Acme",
@@ -889,6 +891,92 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       expect(linear.plan("session-hook")).toEqual([
         { content: "ENG-100: Hooked", status: "inProgress" },
       ]);
+    });
+
+    it("routes only to repositories of the organization that connected the workspace", async () => {
+      // Another organization, with its own workspace and a repository matching team OPS.
+      const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+      await seedReviewProfiles(db, other!.id);
+      const otherConnection = (await upsertScmConnection(
+        db,
+        {
+          organizationId: other!.id,
+          provider: "github",
+          name: "other",
+          baseUrl: "https://api.github.com",
+          externalId: "other-installation",
+          credentials: {},
+        },
+        randomBytes(32),
+      ))!;
+      const foreignRepoId = (
+        await connectRepository(db, {
+          connectionId: otherConnection.id,
+          provider: "github",
+          externalId: "99",
+          fullPath: "other/ops",
+        })
+      ).id;
+      await updateRepositoryRalphSettings(db, foreignRepoId, routing({ linearTeamKeys: ["OPS"] }));
+      await saveIntegration(db, {
+        organizationId: other!.id,
+        provider: "linear",
+        externalId: "org-2",
+        name: "Other",
+        credentials: { accessToken: "t2" },
+        installedByUserId: null,
+      });
+
+      const deliver = (workspaceId: string, sessionId: string, issue: { id: string }) => {
+        const body = JSON.stringify({
+          type: "AgentSessionEvent",
+          action: "created",
+          organizationId: workspaceId,
+          webhookTimestamp: Date.now(),
+          agentSession: {
+            id: sessionId,
+            issue: { id: issue.id, identifier: "OPS-1" },
+            comment: { body: DELEGATION },
+          },
+        });
+        return handleLinearWebhook(
+          new Request("https://omniralph.example.com/api/webhooks/linear", {
+            method: "POST",
+            headers: { "linear-signature": signBody(body, SECRET), "linear-delivery": sessionId },
+            body,
+          }),
+          {
+            db,
+            secret: SECRET,
+            handle: (event, context) =>
+              handleLinearEvent(event, context, {
+                linear,
+                dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+                adapterFor: () => fakeAdapter,
+              }),
+          },
+        );
+      };
+
+      // From our workspace: team OPS matches only the other organization's repository,
+      // which is ignored, so a person is asked to pick one of ours.
+      const ours = linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
+      await deliver("org-1", "session-ours", ours);
+      const run = await getRunBySession(db, "session-ours");
+      expect(run).toMatchObject({ organizationId: orgId, repositoryId: null, status: "waiting" });
+      expect(run!.pendingElicitation).toMatchObject({ kind: "repository" });
+      const offered = (run!.pendingElicitation as { repositoryIds: string[] }).repositoryIds;
+      expect(offered.sort()).toEqual([repoId, otherRepoId].sort());
+      expect(linear.bodies("session-ours", "elicitation").join("\n")).not.toContain("other/ops");
+
+      // From the other organization's workspace, the same team routes to its repository.
+      const theirs = linear.add({ identifier: "OPS-2", title: "Infra", teamKey: "OPS" });
+      await deliver("org-2", "session-theirs", theirs);
+      expect(await getRunBySession(db, "session-theirs")).toMatchObject({
+        organizationId: other!.id,
+        repositoryId: foreignRepoId,
+        routedBy: "team `OPS`",
+      });
     });
   });
 });

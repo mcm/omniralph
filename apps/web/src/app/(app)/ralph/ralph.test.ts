@@ -56,13 +56,17 @@ type TestUser = { id: string; role: Role; name: string | null; email: string | n
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   user: null as TestUser | null,
+  /** The user's active organization. */
+  orgId: "",
   linear: undefined as unknown as LinearGateway,
   dispatcher: undefined as unknown,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+const withOrganization = (user: TestUser | null) =>
+  user && { ...user, organization: { id: state.orgId, name: "Acme" } };
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
-  requirePageUser: async (role: Role = "member") => assertRole(state.user, role),
+  requireUser: async (role: Role = "member") => assertRole(withOrganization(state.user), role),
+  requirePageUser: async (role: Role = "member") => assertRole(withOrganization(state.user), role),
 }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
 vi.mock("@/lib/linear/client", async (importOriginal) => ({
@@ -193,6 +197,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     await db.delete(ralphRuns);
     await db.delete(integrations);
     state.user = admin;
+    state.orgId = orgId;
     linear = new FakeLinearGateway();
     state.linear = linear;
     state.dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
@@ -202,6 +207,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     session += 1;
     return (
       await createRun(db, {
+        organizationId: orgId,
         linearIssueId: `issue-${session}`,
         linearIdentifier: `ENG-${session}`,
         linearTitle: `Epic ${session}`,
@@ -218,6 +224,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
 
   async function connectLinear() {
     await saveIntegration(db, {
+      organizationId: orgId,
       provider: "linear",
       externalId: "org-1",
       name: "Acme",
@@ -637,5 +644,65 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       error: "That run doesn't exist.",
     });
     expect(await stopRalphRun("nope")).toEqual({ ok: false, error: "That run doesn't exist." });
+  });
+
+  it("keeps another organization's runs out: not listed, 404 and can't be stopped", async () => {
+    // Another organization with its own repository, Linear workspace and run.
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    await seedReviewProfiles(db, other!.id);
+    const connection = (await upsertScmConnection(db, {
+      organizationId: other!.id,
+      provider: "github",
+      name: "other",
+      baseUrl: "https://api.github.com",
+      externalId: "other-1",
+      credentials: {},
+    }))!;
+    const otherRepo = (
+      await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "github",
+        externalId: "99",
+        fullPath: "other/api",
+      })
+    ).id;
+    await updateRepositoryRalphSettings(db, otherRepo, {
+      ralphEnabled: true,
+      linearTeamKeys: ["ENG"],
+      linearProjectNames: [],
+      linearLabels: [],
+      ralphSettings: DEFAULT_RALPH_SETTINGS,
+    });
+    await saveIntegration(db, {
+      organizationId: other!.id,
+      provider: "linear",
+      externalId: "org-2",
+      name: "Other",
+      credentials: { accessToken: "lin_other" },
+      installedByUserId: null,
+    });
+    const theirs = await newRun({ organizationId: other!.id, repositoryId: otherRepo });
+    await updateRun(db, theirs.id, { status: "running" });
+    const ours = await newRun();
+
+    const list = await listPage();
+    expect(list.runs.map((r) => r.id)).toEqual([ours.id]);
+    expect(list.repositories.map((r) => r.fullPath)).not.toContain("other/api");
+    // Their workspace isn't ours.
+    expect(list.linearConnected).toBe(false);
+    expect(await listPage({ repository: otherRepo })).toMatchObject({ total: 0, runs: [] });
+    await expect(detailPage(theirs.id)).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(await stopRalphRun(theirs.id)).toEqual({
+      ok: false,
+      error: "That run doesn't exist.",
+    });
+    expect((await getRun(db, theirs.id))!.status).toBe("running");
+
+    // Their members see it.
+    state.orgId = other!.id;
+    expect((await listPage()).runs.map((r) => r.id)).toEqual([theirs.id]);
+    expect((await listPage()).linearConnected).toBe(true);
+    expect((await detailPage(theirs.id)).run).toMatchObject({ id: theirs.id });
+    await expect(detailPage(ours.id)).rejects.toThrow("NEXT_NOT_FOUND");
   });
 });

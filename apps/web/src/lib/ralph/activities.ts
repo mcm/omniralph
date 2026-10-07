@@ -26,14 +26,15 @@ export type RelayOutcome =
  * Activities of a finished run are dropped, so a stopped run stays quiet.
  */
 export async function relayActivity(
-  deps: { db: Database; linear: () => Promise<LinearGateway> },
+  /** `linear` gives the gateway of an organization's workspace. */
+  deps: { db: Database; linear: (organizationId: string) => Promise<LinearGateway> },
   job: Pick<Job, "ralphRunId">,
   activity: RalphActivity,
 ): Promise<RelayOutcome> {
   const run = job.ralphRunId ? await getRun(deps.db, job.ralphRunId) : null;
   if (!run) return { forwarded: false, reason: "no_run" };
   if (FINISHED_RUN_STATUSES.has(run.status)) return { forwarded: false, reason: "run_finished" };
-  const linear = await deps.linear();
+  const linear = await deps.linear(run.organizationId);
   await linear.createActivity(run.linearAgentSessionId, activityContent(activity), {
     ephemeral: activity.ephemeral,
   });
