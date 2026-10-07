@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { DESIRED_AGENT_VERSION_KEY, getAppSetting } from "@omniralph/db";
 import { AGENT_PACKAGE } from "@omniralph/shared";
-import { npmToken } from "@/lib/agents/npm";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { AgentSettingsView } from "./agent-settings-view";
@@ -16,7 +15,6 @@ export default async function AgentSettingsPage() {
       desiredVersion={typeof setting?.value === "string" ? setting.value : null}
       updatedAt={setting?.updatedAt.toISOString() ?? null}
       packageName={AGENT_PACKAGE}
-      npmConfigured={npmToken() !== null}
     />
   );
 }

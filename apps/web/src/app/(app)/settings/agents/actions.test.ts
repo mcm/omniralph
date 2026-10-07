@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -70,11 +70,6 @@ describe("Settings › Agents actions", () => {
     state.updatedBy = null;
     requests.length = 0;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
-    process.env.NPM_TOKEN = "npm_secret";
-  });
-
-  afterEach(() => {
-    delete process.env.NPM_TOKEN;
   });
 
   it("sets the organization's version, which must be semver", async () => {
@@ -105,30 +100,24 @@ describe("Settings › Agents actions", () => {
     expect(requests).toEqual([]);
   });
 
-  it("uses the latest version on npm, read with NPM_TOKEN", async () => {
-    expect(await applyLatestAgentVersion()).toEqual({ ok: true, version: "1.4.2" });
+  it("uses the latest version on npm, read without a token", async () => {
+    process.env.NPM_TOKEN = "npm_secret";
+    try {
+      expect(await applyLatestAgentVersion()).toEqual({ ok: true, version: "1.4.2" });
+    } finally {
+      delete process.env.NPM_TOKEN;
+    }
     expect(state.version).toBe("1.4.2");
     expect(requests).toEqual([
-      { authorization: "Bearer npm_secret", accept: "application/vnd.npm.install-v1+json" },
+      { authorization: null, accept: "application/vnd.npm.install-v1+json" },
     ]);
-  });
-
-  it("needs NPM_TOKEN", async () => {
-    delete process.env.NPM_TOKEN;
-    expect(await applyLatestAgentVersion()).toEqual({
-      ok: false,
-      error: "Set NPM_TOKEN to read versions from npm.",
-    });
-    expect(requests).toEqual([]);
   });
 
   it("reports registry errors and keeps the version", async () => {
     registry = () => HttpResponse.json({ error: "Not found" }, { status: 404 });
     expect(await applyLatestAgentVersion()).toEqual({
       ok: false,
-      error: expect.stringContaining(
-        "check that NPM_TOKEN can read @omniralph/agent",
-      ),
+      error: expect.stringContaining("doesn't know @omniralph/agent"),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });
     expect(await applyLatestAgentVersion()).toEqual({

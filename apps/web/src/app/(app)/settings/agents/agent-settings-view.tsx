@@ -23,14 +23,11 @@ export function AgentSettingsView({
   desiredVersion,
   updatedAt,
   packageName,
-  npmConfigured,
 }: {
   desiredVersion: string | null;
   /** ISO timestamp of the last change. */
   updatedAt: string | null;
   packageName: string;
-  /** `NPM_TOKEN` is set, so the latest version can be read from npm. */
-  npmConfigured: boolean;
 }) {
   const { pending, run } = useAction();
   const [version, setVersion] = React.useState(desiredVersion ?? "");
@@ -112,30 +109,22 @@ export function AgentSettingsView({
                   <IconDeviceFloppy size={14} />
                   {pending ? "Saving…" : "Save"}
                 </Button>
-                {npmConfigured && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={pending}
-                    onClick={() =>
-                      run(async () => {
-                        const result = await applyLatestAgentVersion();
-                        if (result.ok && result.version) setVersion(result.version);
-                        return result;
-                      }, "Set to the latest version on npm.")
-                    }
-                  >
-                    <IconCloudDownload size={14} />
-                    Use latest on npm
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    run(async () => {
+                      const result = await applyLatestAgentVersion();
+                      if (result.ok && result.version) setVersion(result.version);
+                      return result;
+                    }, "Set to the latest version on npm.")
+                  }
+                >
+                  <IconCloudDownload size={14} />
+                  Use latest on npm
+                </Button>
               </div>
-              {!npmConfigured && (
-                <Muted>
-                  Set <InlineCode>NPM_TOKEN</InlineCode> on the control panel to pick the latest
-                  version from npm.
-                </Muted>
-              )}
             </form>
           </CardContent>
         </Card>

@@ -4,7 +4,7 @@ import { setDesiredAgentVersion } from "@omniralph/db";
 import { AgentVersion } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
-import { latestAgentVersion, npmToken, NpmRegistryError } from "@/lib/agents/npm";
+import { latestAgentVersion, NpmRegistryError } from "@/lib/agents/npm";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 
@@ -31,14 +31,12 @@ export async function setGlobalAgentVersion(version: string): Promise<ActionResu
 
 export type LatestVersionResult = ActionResult & { version?: string };
 
-/** Sets the global version to the agent package's `latest` on npm (needs `NPM_TOKEN`). */
+/** Sets the global version to the agent package's `latest` on npm. */
 export async function applyLatestAgentVersion(): Promise<LatestVersionResult> {
   let version: string | undefined;
   const result = await runAdminAction(async (admin) => {
-    const token = npmToken();
-    if (!token) return { ok: false, error: "Set NPM_TOKEN to read versions from npm." };
     try {
-      version = await latestAgentVersion(token);
+      version = await latestAgentVersion();
     } catch (error) {
       if (error instanceof NpmRegistryError) {
         return { ok: false, error: `Couldn't read the latest version: ${error.message}.` };
