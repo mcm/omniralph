@@ -203,7 +203,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   async function newJob(values: Partial<typeof jobs.$inferInsert>) {
     const [job] = await db
       .insert(jobs)
-      .values({ capability: "review", type: "review.run", ...values })
+      .values({ organizationId: orgId, capability: "review", type: "review.run", ...values })
       .returning();
     return job!.id;
   }

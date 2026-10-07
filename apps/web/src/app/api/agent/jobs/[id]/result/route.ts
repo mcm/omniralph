@@ -1,4 +1,4 @@
-import { completeJob, getJob, writeAgentAudit } from "@omniralph/db";
+import { completeJob, getJob, getJobForAgent, writeAgentAudit } from "@omniralph/db";
 import { JobResult, type JobOutcomeResponse } from "@omniralph/shared";
 import { badRequest, clientIp, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
@@ -27,7 +27,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   if (!body.success) return badRequest();
 
   const db = getDb();
-  const job = await getJob(db, jobId);
+  const job = await getJobForAgent(db, jobId, principal.agentId);
   if (!job) return notFound();
   const handler = jobOutcomeHandler(job);
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();

@@ -73,6 +73,7 @@ export async function POST(req: Request): Promise<Response> {
       agent.maxConcurrency,
     ),
     pinnedRepoIds,
+    organizationId: agent.organizationId,
     topics: agentTopics(agent),
     queueRegion: publishRegion(),
     cancelJobIds: running.cancel,

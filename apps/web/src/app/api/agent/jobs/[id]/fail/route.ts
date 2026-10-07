@@ -1,4 +1,4 @@
-import { failJob, getJob } from "@omniralph/db";
+import { failJob, getJob, getJobForAgent } from "@omniralph/db";
 import { JobFailure, MAX_JOB_DELIVERIES, type JobOutcomeResponse } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
@@ -27,6 +27,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   if (!body.success) return badRequest();
 
   const db = getDb();
+  if (!(await getJobForAgent(db, jobId, principal.agentId))) return notFound();
   const outcome = await failJob(db, {
     jobId,
     agentId: principal.agentId,

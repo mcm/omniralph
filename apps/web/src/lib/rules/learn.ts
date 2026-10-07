@@ -68,6 +68,7 @@ export async function enqueueLearnRule(
     note: feedback.note?.slice(0, 1000) ?? null,
   } satisfies LearnRuleJobPayload);
   const { job, created } = await dispatcher.createAndPublish({
+    organizationId: found.repository.organizationId,
     capability: LEARN_RULE_CAPABILITY,
     type: LEARN_RULE_JOB_TYPE,
     payload,

@@ -361,7 +361,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     // The job carries the resolved config and no credentials.
     const job = await jobRow(jobId);
     expect(state.sends).toEqual([
-      expect.objectContaining({ topic: "review-jobs", payload: { jobId } }),
+      expect.objectContaining({ topic: `review-jobs-org-${orgId}`, payload: { jobId } }),
     ]);
     const payload = ReviewJobPayload.parse(job.payload);
     expect(payload).toMatchObject({

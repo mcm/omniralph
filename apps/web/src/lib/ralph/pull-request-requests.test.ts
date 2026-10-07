@@ -163,6 +163,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     expect(job, "the run has a queued job").toBeDefined();
     expect(more).toEqual([]);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job!.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],

@@ -275,7 +275,10 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         changeRequest: { title: "Add login", description: "Please review", author: "octocat" },
       });
       expect(state.sends).toEqual([
-        expect.objectContaining({ topic: "review-jobs", payload: { jobId: body.jobId } }),
+        expect.objectContaining({
+          topic: `review-jobs-org-${orgId}`,
+          payload: { jobId: body.jobId },
+        }),
       ]);
     });
 
@@ -439,7 +442,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       expect(retried.status).toBe(200);
       const [job] = await prJobs(githubRepoId, number);
       expect(await retried.json()).toEqual({ status: "duplicate", jobId: job!.id });
-      expect(job!.topic).toBe("review-jobs");
+      expect(job!.topic).toBe(`review-jobs-org-${orgId}`);
       expect(state.sends).toEqual([expect.objectContaining({ payload: { jobId: job!.id } })]);
     });
   });

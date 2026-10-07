@@ -307,6 +307,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     ]);
 
     const { job } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: run.id,
@@ -347,6 +348,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const { run } = await createRun(db, runInput());
     const job = async (status: "queued" | "running" | "completed") => {
       const { job } = await insertJob(db, {
+        organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
         ralphRunId: run.id,
@@ -357,7 +359,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const queued = await job("queued");
     const running = await job("running");
     await job("completed");
-    await insertJob(db, { capability: "ralph", type: "ralph.story" });
+    await insertJob(db, { organizationId: orgId, capability: "ralph", type: "ralph.story" });
     expect(await listActiveRunJobIds(db, run.id)).toEqual([queued, running]);
   });
 
@@ -395,7 +397,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateRun(db, stale.id, { status: "running" });
     const { run: busy } = await createRun(db, runInput());
     await updateRun(db, busy.id, { status: "running" });
-    await insertJob(db, { capability: "ralph", type: "ralph.story", ralphRunId: busy.id });
+    await insertJob(db, {
+      organizationId: orgId,
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: busy.id,
+    });
     const { run: finished } = await createRun(db, runInput());
     await updateRun(db, finished.id, { status: "failed" });
 
@@ -522,11 +529,13 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       { linearIssueId: "d-2", identifier: "D-2", title: "Two" },
     ]);
     const { job: first } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: run.id,
     });
     const { job: second } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.describe-pr",
       ralphRunId: run.id,
@@ -538,7 +547,12 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateStory(db, stories[0]!.id, { lastJobId: first.id, commitSha: "c".repeat(40) });
     // Another run's job isn't listed.
     const other = (await createRun(db, runInput())).run;
-    await insertJob(db, { capability: "ralph", type: "ralph.story", ralphRunId: other.id });
+    await insertJob(db, {
+      organizationId: orgId,
+      capability: "ralph",
+      type: "ralph.story",
+      ralphRunId: other.id,
+    });
 
     const detail = await getRunDetail(db, orgId, run.id);
     expect(detail).toMatchObject({
@@ -564,6 +578,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   it("gives a run's detail its pending requests and its latest live messages", async () => {
     const { run } = await createRun(db, runInput());
     const { job } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.request",
       ralphRunId: run.id,

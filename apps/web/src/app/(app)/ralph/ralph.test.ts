@@ -304,6 +304,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       { linearIssueId: "d-2", identifier: "ENG-22", title: "Second" },
     ]);
     const { job } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: run.id,
@@ -489,6 +490,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
 
     // Live messages: delivered, rejected (kept as guidance), still waiting.
     const { job: story } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: run.id,
@@ -587,6 +589,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       { linearIssueId: "r-1", identifier: "ENG-31", title: "Story" },
     ]);
     const { job } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: run.id,

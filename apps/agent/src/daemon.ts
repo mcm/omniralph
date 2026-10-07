@@ -3,6 +3,7 @@ import {
   JobMessage,
   QUEUE_CONSUMER_GROUP,
   SYSTEM_CAPABILITY,
+  agentTopic,
   capabilityTopic,
   effectiveCapabilityLimit,
   type HeartbeatResponse,
@@ -408,12 +409,18 @@ export class AgentDaemon implements DrainableDaemon {
       .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
   }
 
-  /** The pollable capability whose jobs a topic carries, if any. */
+  /**
+   * The pollable capability whose jobs a topic carries, if any: its shared
+   * topic of the agent's organization, or a per-agent topic.
+   */
   private topicCapability(topic: string): string | undefined {
-    return this.pollableCapabilities().find((name) => {
-      const shared = capabilityTopic(name);
-      return topic === shared || topic.startsWith(`${shared}-agent-`);
-    });
+    const organizationId = this.config?.organizationId;
+    if (!organizationId) return undefined;
+    return this.pollableCapabilities().find(
+      (name) =>
+        topic === capabilityTopic(name, organizationId) ||
+        topic.startsWith(agentTopic(name, "")),
+    );
   }
 
   /**

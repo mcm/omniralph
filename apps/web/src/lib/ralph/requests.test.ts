@@ -213,6 +213,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   async function start(runId: string, agentId = agentA): Promise<Job> {
     const job = await activeJob(runId);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId,
       enabledCapabilities: ["ralph"],

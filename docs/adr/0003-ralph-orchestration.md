@@ -101,7 +101,7 @@ this: pushes go through the job's write-scoped git credentials, as for stories.
 ### The sticky agent
 
 A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the
-shared `ralph-jobs` topic. The agent that starts it is recorded as `ralph_runs.agent_id`, and every
+organization's shared `ralph-jobs-org-<organizationId>` topic. The agent that starts it is recorded as `ralph_runs.agent_id`, and every
 later job of the run goes to `ralph-jobs-agent-<agentId>`. That keeps the branch worktree (and its
 installed dependencies and stashed leftovers) warm on one host.
 

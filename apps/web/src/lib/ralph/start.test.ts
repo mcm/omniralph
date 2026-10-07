@@ -690,6 +690,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
     const { job } = await insertJob(db, {
+      organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
       ralphRunId: previous.id,

@@ -132,6 +132,7 @@ describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachm
     const [job] = await db
       .insert(jobs)
       .values({
+        organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
         status: "running",

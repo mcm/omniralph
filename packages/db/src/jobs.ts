@@ -13,6 +13,8 @@ export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
 
 export interface NewJobInput {
+  /** Only this organization's agents receive the job (its repository's / run's organization). */
+  organizationId: string;
   capability: string;
   type: string;
   payload?: Record<string, unknown>;
@@ -36,6 +38,7 @@ export async function insertJob(
     const [row] = await db
       .insert(jobs)
       .values({
+        organizationId: input.organizationId,
         capability: input.capability,
         type: input.type,
         payload: input.payload ?? {},
@@ -78,11 +81,34 @@ export async function getJob(db: Database, jobId: string): Promise<Job | null> {
 }
 
 /**
+ * A job as seen by an agent: null when it doesn't exist or belongs to another
+ * organization than the agent's (agents never act on other organizations' jobs).
+ */
+export async function getJobForAgent(
+  db: Database,
+  jobId: string,
+  agentId: string,
+): Promise<Job | null> {
+  const [row] = await db
+    .select({ job: jobs })
+    .from(jobs)
+    .innerJoin(agents, eq(agents.organizationId, jobs.organizationId))
+    .where(and(eq(jobs.id, jobId), eq(agents.id, agentId)))
+    .limit(1);
+  return row?.job ?? null;
+}
+
+/**
  * The agent to send a pinned repo's jobs to: among its pinned, non-revoked
  * agents, the one with the fewest active jobs (then the most recent
- * heartbeat). Null when the repo isn't pinned (any agent may serve it).
+ * heartbeat). Null when the repo isn't pinned (any agent of the organization
+ * may serve it). Only agents of `organizationId` count.
  */
-export async function pinnedAgentFor(db: Database, repositoryId: string): Promise<string | null> {
+export async function pinnedAgentFor(
+  db: Database,
+  organizationId: string,
+  repositoryId: string,
+): Promise<string | null> {
   const active = db
     .select({ agentId: jobs.agentId, n: count().as("n") })
     .from(jobs)
@@ -94,7 +120,13 @@ export async function pinnedAgentFor(db: Database, repositoryId: string): Promis
     .from(agentRepoPins)
     .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
     .leftJoin(active, eq(active.agentId, agents.id))
-    .where(and(eq(agentRepoPins.repositoryId, repositoryId), isNull(agents.revokedAt)))
+    .where(
+      and(
+        eq(agentRepoPins.repositoryId, repositoryId),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.revokedAt),
+      ),
+    )
     .orderBy(
       asc(sql`coalesce(${active.n}, 0)`),
       sql`${agents.lastHeartbeatAt} desc nulls last`,
@@ -159,6 +191,8 @@ export async function startJob(
   input: {
     jobId: string;
     agentId: string;
+    /** The agent's organization: a job of another organization is never started. */
+    organizationId: string;
     enabledCapabilities: readonly string[];
     maxDeliveries: number;
     now?: Date;
@@ -167,7 +201,9 @@ export async function startJob(
   const now = input.now ?? new Date();
   return db.transaction(async (tx): Promise<StartJobResult> => {
     const [job] = await tx.select().from(jobs).where(eq(jobs.id, input.jobId)).for("update");
-    if (!job) return { action: "skip", reason: "not_found" };
+    if (!job || job.organizationId !== input.organizationId) {
+      return { action: "skip", reason: "not_found" };
+    }
     switch (job.status) {
       case "canceled":
       case "completed":

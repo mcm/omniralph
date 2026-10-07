@@ -127,7 +127,7 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
   async function runningJob(agentId: string, status: "running" | "completed" = "running") {
     const [job] = await db
       .insert(jobs)
-      .values({ capability: "review", type: "review.run", status, agentId })
+      .values({ organizationId: orgId, capability: "review", type: "review.run", status, agentId })
       .returning({ id: jobs.id });
     return job!.id;
   }

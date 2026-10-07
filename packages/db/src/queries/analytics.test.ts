@@ -169,6 +169,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       status: (typeof jobs.$inferInsert)["status"],
       createdAt: string,
     ) => ({
+      organizationId: orgId,
       capability: "review",
       type: "review.run",
       agentId,

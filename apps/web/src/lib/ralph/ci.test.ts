@@ -169,6 +169,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     expect(job, "the run has a queued job").toBeDefined();
     expect(more).toEqual([]);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job!.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],
@@ -385,9 +386,10 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     const [queued] = await db
       .insert(jobs)
       .values({
+        organizationId: orgId,
         type: "ralph.request",
         capability: "ralph",
-        topic: "ralph-jobs",
+        topic: `ralph-jobs-org-${orgId}`,
         payload: {},
         ralphRunId: run.id,
         repositoryId: repoId,

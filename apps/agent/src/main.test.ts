@@ -46,6 +46,7 @@ const HEARTBEAT: HeartbeatResponse = {
   enabledCapabilities: ["review"],
   capabilityLimits: { review: 1 },
   pinnedRepoIds: [],
+  organizationId: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f",
   topics: [],
   queueRegion: "iad1",
   cancelJobIds: [],

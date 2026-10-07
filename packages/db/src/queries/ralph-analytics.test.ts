@@ -92,6 +92,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
       result: Record<string, unknown> | null,
     ) => ({
       id: randomUUID(),
+      organizationId: orgId,
       capability: type.split(".")[0]!,
       type,
       repositoryId,

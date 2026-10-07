@@ -289,7 +289,7 @@ export async function getAgentAuthState(
   return row.revokedAt ? "revoked" : "active";
 }
 
-/** Whether the job is `running` on the given (non-revoked) agent. */
+/** Whether the job is `running` on the given (non-revoked) agent, which belongs to its organization. */
 export async function isJobRunningOnAgent(
   db: Database,
   jobId: string,
@@ -303,6 +303,7 @@ export async function isJobRunningOnAgent(
       and(
         eq(jobs.id, jobId),
         eq(jobs.agentId, agentId),
+        eq(jobs.organizationId, agents.organizationId),
         eq(jobs.status, "running"),
         isNull(agents.revokedAt),
       ),

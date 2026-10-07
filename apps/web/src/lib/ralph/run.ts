@@ -326,14 +326,22 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: false });
 }
 
-/** The run's agent, while it may still take the run's jobs (not revoked, ralph enabled). */
+/**
+ * The run's agent, while it may still take the run's jobs (not revoked, ralph
+ * enabled, in the run's organization).
+ */
 export async function stickyAgentId(
   db: Database,
-  agentId: string | null,
+  run: Pick<RalphRun, "agentId" | "organizationId">,
 ): Promise<string | undefined> {
-  if (!agentId) return undefined;
-  const agent = await getAgent(db, agentId);
-  if (!agent || agent.revokedAt || !agent.enabledCapabilities.includes(RALPH_CAPABILITY)) {
+  if (!run.agentId) return undefined;
+  const agent = await getAgent(db, run.agentId);
+  if (
+    !agent ||
+    agent.revokedAt ||
+    agent.organizationId !== run.organizationId ||
+    !agent.enabledCapabilities.includes(RALPH_CAPABILITY)
+  ) {
     return undefined;
   }
   return agent.id;
@@ -396,7 +404,7 @@ async function usableRepository(
  * settings and quality gates): its sub-issue moves to started and a
  * `ralph.story` job goes to the run's sticky agent (the agent that started
  * its first job, whichever lane it worked in), else to the lane repository's
- * pinned agent, else to `ralph-jobs`.
+ * pinned agent, else to its organization's `ralph-jobs-org-<orgId>`.
  */
 async function enqueueStory(
   deps: RalphDeps,
@@ -426,13 +434,14 @@ async function enqueueStory(
     attachments: payloadAttachments(attachments, story.key),
   });
   const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_STORY_JOB_TYPE,
     payload,
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run.agentId),
+    targetAgentId: await stickyAgentId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
 
@@ -539,6 +548,7 @@ async function describeLane(
   const { lane, repository, connection } = input;
   const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
   const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_DESCRIBE_PR_JOB_TYPE,
     payload: buildDescribePrPayload({
@@ -552,7 +562,7 @@ async function describeLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run.agentId),
+    targetAgentId: await stickyAgentId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "describing", jobId: job.id } });
@@ -592,6 +602,7 @@ async function enqueuePreparation(
   const found = await usableRepository(deps, tx, run);
   if ("action" in found) return found;
   const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_PREPARE_JOB_TYPE,
     payload: buildPreparePayload({
@@ -603,7 +614,7 @@ async function enqueuePreparation(
     repositoryId: run.repositoryId,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run.agentId),
+    targetAgentId: await stickyAgentId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
   const state = preparationOf(run);
@@ -636,13 +647,14 @@ async function enqueueRequest(
   const found = await usableRepository(deps, tx, run, input.lane);
   if ("action" in found) return found;
   const { lane, repository, connection } = found;
-  const targetAgentId = await stickyAgentId(deps.db, run.agentId);
+  const targetAgentId = await stickyAgentId(deps.db, run);
   const resume =
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId
       : null;
   const attachments = await gatherRunAttachments(deps.linear, tx, run, input.epic);
   const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_REQUEST_JOB_TYPE,
     payload: buildRequestPayload({

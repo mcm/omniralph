@@ -176,6 +176,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   async function start(runId: string): Promise<Job> {
     const job = await activeJob(runId);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],

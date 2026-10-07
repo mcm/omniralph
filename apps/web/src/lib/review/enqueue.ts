@@ -152,6 +152,7 @@ export async function enqueueReview(
 
   try {
     const { job, created } = await dispatcher.createAndPublish({
+      organizationId: found.repository.organizationId,
       capability: REVIEW_CAPABILITY,
       type: REVIEW_JOB_TYPE,
       payload,
