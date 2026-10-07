@@ -38,13 +38,18 @@ in MR comments, e.g. `@group_42_bot_1a2b review`.
 
 ## Connecting projects
 
-1. As an admin, open **Repositories › Connect GitLab**.
+1. As an admin of the Omniralph organization, open **Repositories › Connect GitLab**.
 2. Enter the base URL (`https://gitlab.com` or your instance, without `/api/v4`), the bot token and
    the project paths (`group/subgroup/project`).
 3. The control panel validates the token (user and `api` scope), resolves each project and creates
    a project webhook at `<APP_URL>/api/webhooks/gitlab` for merge request, comment (note) and
    **Pipeline events**, with SSL verification on and a generated secret (checked against
    `X-Gitlab-Token`).
+
+The connection (the instance's base URL plus the bot token's user) belongs to that organization:
+its projects, reviews and jobs are only visible to its members and handled by its agents. The same
+bot user on the same instance can't be connected to a second organization ("already connected to
+another organization"); give each organization its own bot token.
 
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
 skipped unless the repository's settings include drafts) in enabled projects are then reviewed.

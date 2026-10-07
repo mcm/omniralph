@@ -92,9 +92,10 @@ PEM file. Do the same per environment if previews use their own GitHub App.
 ## 6. Vercel Queues (`QUEUE_REGIONS`)
 
 Jobs are delivered through Vercel Queues in poll mode ([ADR 0001](adr/0001-job-dispatch.md)).
-There's nothing to provision per topic: topics (`review-jobs`, `review-jobs-agent-<agentId>` for
-pinned repos, `system-jobs-agent-<agentId>` for `repo.sync`) and the `agents` consumer group are
-created on first use. The control panel authenticates to Queues with the deployment's Vercel OIDC token.
+There's nothing to provision per topic or per organization: topics (`review-jobs-org-<orgId>` and
+`ralph-jobs-org-<orgId>` per organization, `review-jobs-agent-<agentId>` for pinned repos,
+`system-jobs-agent-<agentId>` for `repo.sync`; see [ADR 0004](adr/0004-organizations.md)) and the
+`agents` consumer group are created on first use. The control panel authenticates to Queues with the deployment's Vercel OIDC token.
 
 1. Make sure Vercel Queues (beta) is enabled for the team that owns the project.
 2. Pick a region where Queues is available, ideally your function region. Set
@@ -132,7 +133,7 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `AUTH_SECRET` | `openssl rand -base64 32` |
 | `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | A GitHub **OAuth app**, callback `<APP_URL>/api/auth/callback/github` |
 | `AUTH_GITLAB_ID`, `AUTH_GITLAB_SECRET`, `AUTH_GITLAB_URL` | A GitLab OAuth application (`read_user`), callback `<APP_URL>/api/auth/callback/gitlab` |
-| `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). |
+| `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). The only instance-wide access setting: there are no instance admins. |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
 | `BOT_HANDLE` | Optional, default `omniralph` |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
@@ -141,14 +142,27 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 Configure at least one sign-in provider. Redeploy after changing variables
 (`vercel --prod` or **Deployments › Redeploy**).
 
-## 9. First sign-in and connecting code hosts
+## 9. First sign-in, organizations and connecting code hosts
 
-1. Open `APP_URL` and sign in, then create an organization: you become its admin. Invite
-   members and set email domains under **Settings › Organization**.
-2. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
-   ([gitlab.md](gitlab.md)).
-3. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md).
-4. Optionally tune **Settings › Profiles** and each repository's **Settings** (profile, triggers,
+The GitHub App, the sign-in OAuth apps and the Linear app configured above are shared by the whole
+deployment. Everything else is per **organization**: code-host connections, repositories,
+profiles, the Linear workspace, agents, jobs and ralph runs belong to one organization, and only
+its members see them. Roles (`admin`, `member`) are per organization; nobody is an admin of the
+whole instance. See [ADR 0004](adr/0004-organizations.md).
+
+1. Open `APP_URL` and sign in. Without an organization you land on onboarding: create an
+   organization (you become its admin), accept an invitation, or join one that allows your email
+   domain. Anyone who can sign in can create organizations; switch between yours from the
+   organization switcher in the sidebar.
+2. Under **Settings › Organization**, invite members by email (as `admin` or `member`; invitations
+   expire after 14 days, no email is sent: invitees accept after signing in) and optionally set
+   email domains and **Allow anyone with a matching email to join**.
+3. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
+   ([gitlab.md](gitlab.md)), as an admin of the organization. Each GitHub installation and GitLab
+   connection belongs to the organization that connected it.
+4. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
+   organization's jobs.
+5. Optionally tune **Settings › Profiles** and each repository's **Settings** (profile, triggers,
    path excludes, instructions, pinning) and **Rules**.
 
 Open a PR in a connected repository: the review appears under **Jobs** and **Reviews**, and the
@@ -162,5 +176,10 @@ summary comment links back to `/reviews/<id>`.
   grant for this project and environment.
 - **GitHub installation callback fails with KMS but works with the PEM:** the issuer is RS512.
   `vercel kms inspect` shows it; re-import with `--algorithm RS256` into a new issuer.
-- **Jobs stay queued:** no agent is online with the capability enabled (**Agents**), the repository
-  is pinned to an offline agent, or `QUEUE_REGIONS` changed while jobs were queued.
+- **Jobs stay queued:** no agent of the repository's organization is online with the capability
+  enabled (**Agents**; agents of other organizations never take its jobs), the repository is
+  pinned to an offline agent, or `QUEUE_REGIONS` changed while jobs were queued.
+- **"Installation belongs to another organization" / "already connected to another
+  organization":** a GitHub installation, GitLab token user or Linear workspace can only be
+  connected to one organization. Disconnect a Linear workspace there first; for GitLab use another
+  bot token. A GitHub installation can't be moved: install the App on another account instead.

@@ -15,6 +15,37 @@ Both share the control panel, job dispatch, agents, repo cache and credential br
 jobs can get write credentials (one repository, short-lived), and the control panel performs every
 code-host and Linear API call for both.
 
+## Organizations
+
+Everything in Omniralph belongs to an **organization**: code-host connections, repositories,
+review profiles and rules, reviews, the Linear workspace, agents and their enrollments, settings
+(such as the agents' desired version), jobs and ralph runs. Members of an organization share all
+of it; nobody outside it sees any of it, and its jobs only ever reach its own agents.
+
+- **Any signed-in user can create an organization** and becomes its admin. Users can belong to
+  several organizations and switch between them with the organization switcher in the sidebar;
+  the active one is remembered per user.
+- **Roles are per organization.** `admin`s connect code hosts and Linear, enroll and configure
+  agents, change settings, profiles and rules, and manage members; `member`s see everything in the
+  organization and can dismiss and restore findings, but not change its setup. There's no
+  instance-wide admin. The last admin of an organization can't be demoted, removed or leave.
+- **Invitations.** Admins invite people by email under **Settings › Organization**, as `admin` or
+  `member`. Invitations expire after 14 days and can be revoked. No email is sent: the invitee
+  signs in and accepts it on the onboarding page (also reachable from **New organization** in the
+  switcher). A pending invitation also
+  lets that email sign in when its domain isn't in `ALLOWED_EMAIL_DOMAINS`.
+- **Email domains.** An organization can restrict invitations and joins to some email domains, and
+  with **Allow anyone with a matching email to join** list itself for matching signed-in users,
+  who join as `member` without an invitation.
+- **Sign-in** is the only instance-wide setting: `ALLOWED_EMAIL_DOMAINS`, plus invited emails.
+  A signed-in user without an organization lands on onboarding: create one, accept an
+  invitation, or join one that allows their email domain.
+- A GitHub App installation, a GitLab bot user on an instance and a Linear workspace each belong
+  to one organization. A Linear workspace can be disconnected and connected elsewhere; code-host
+  connections can't be moved (use another GitLab bot token per organization).
+
+See [ADR 0004: organizations](docs/adr/0004-organizations.md).
+
 ## Architecture
 
 ```
@@ -36,7 +67,7 @@ code-host and Linear API call for both.
 ```
 
 - **The control panel is the single integration point.** It holds the GitHub App, GitLab bot and
-  Linear app credentials (encrypted at rest), receives webhooks and `@bot` commands, owns all job
+  Linear app credentials (encrypted at rest; installations and connections per organization), receives webhooks and `@bot` commands, owns all job
   and ralph run state in Postgres, and performs every code-host write (posting reviews, replies,
   resolving threads, opening ralph's PRs/MRs) as a typed operation. The UI (repositories, settings,
   profiles, reviews, ralph runs, rules, agents, jobs) lives here.
@@ -45,13 +76,16 @@ code-host and Linear API call for both.
   opens the PR/MR. A run sticks to one agent, which keeps the branch worktree warm.
   See [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md).
 - **Dispatch through Vercel Queues and the proxy.** Postgres is the source of truth; Vercel Queues
-  (poll mode) only delivers `{ jobId }` messages to capability topics (`review-jobs`, `ralph-jobs`, or
-  a per-agent topic for pinned repos and running ralph runs), with one competing consumer group. Agents never talk to Vercel: they
+  (poll mode) only delivers `{ jobId }` messages to per-organization capability topics
+  (`review-jobs-org-<orgId>`, `ralph-jobs-org-<orgId>`, or a per-agent topic for pinned repos and
+  running ralph runs), with one competing consumer group. Agents never talk to Vercel: they
   poll through the control panel's queue proxy (`/api/agent/queue/<region>/…`), which allows only
-  receive, acknowledge and extend-lease on the agent's own topics. Crashed agents' leases lapse
+  receive, acknowledge and extend-lease on the agent's own topics (its organization's capability
+  topics and its agent topics). Crashed agents' leases lapse
   and jobs are redelivered; rate-limited jobs are retried after a backoff.
   See [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md).
-- **Agents make only outbound connections.** `omniralph-agent` runs on Coder instances, has no
+- **Agents make only outbound connections.** Each agent belongs to the organization it was
+  enrolled in and only runs that organization's jobs. `omniralph-agent` runs on Coder instances, has no
   inbound port and a minimal local config (server, agent ID, rotating refresh token, workspace
   root). Concurrency (also per capability, so ralph never takes every slot), capabilities, pins,
   cancellations, the desired agent version (pm2 agents update themselves and roll back a broken
@@ -79,8 +113,9 @@ code-host and Linear API call for both.
 1. **Deploy the control panel** on Vercel: Neon Postgres, `NPM_RC`, a KMS issuer per environment,
    `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and the other variables in [`.env.example`](.env.example).
    → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
-2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` can sign
-   in and create an organization, becoming its admin.
+2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` (or invited)
+   can sign in and create an organization, becoming its admin. Invite teammates and set email
+   domains under **Settings › Organization**; everything below is set up per organization.
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
    **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
@@ -127,6 +162,7 @@ code-host and Linear API call for both.
 | [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
 | [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
 | [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update |
+| [ADR 0004: organizations](docs/adr/0004-organizations.md) | The tenancy model, per-org roles, invitations and email domains, per-org topics, uniqueness rules |
 
 ## Layout
 
