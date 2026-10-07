@@ -61,6 +61,7 @@ export {
   type UpdateMemberRoleResult,
   type UpdateOrganizationResult,
 } from "./organizations.js";
+export { getResourceOrganizationId, type OrganizationResource } from "./resource-organization.js";
 export {
   createScmCredentialCache,
   getScmCredential,

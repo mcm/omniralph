@@ -170,7 +170,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
   });
 
   it("totals ralph job tokens from their recorded usage, per UTC day", async () => {
-    const analytics = await getRalphAnalytics(db, { days: 7, now });
+    const analytics = await getRalphAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(analytics.totals).toEqual({ runs: 6, jobs: 7, tokensIn: 4700, tokensOut: 470 });
     expect(analytics.daily).toHaveLength(7);
     expect(analytics.daily[0]).toMatchObject({ date: "2026-09-29", tokensIn: 0, tokensOut: 0 });
@@ -185,7 +185,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
   });
 
   it("counts runs started per day by their status", async () => {
-    const analytics = await getRalphAnalytics(db, { days: 7, now });
+    const analytics = await getRalphAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(analytics.runsByOutcome).toEqual({
       completed: 1,
       waiting: 1,
@@ -205,12 +205,12 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
     expect(day("2026-10-05")).toMatchObject({ completed: 1, running: 1 });
     expect(day("2026-10-02")).toMatchObject({ running: 1 });
 
-    const quarter = await getRalphAnalytics(db, { days: 90, now });
+    const quarter = await getRalphAnalytics(db, { organizationId: orgId, days: 90, now });
     expect(quarter.runsByOutcome.completed).toBe(2);
   });
 
   it("classifies the outcomes of the stories of runs started in the window", async () => {
-    const analytics = await getRalphAnalytics(db, { days: 7, now });
+    const analytics = await getRalphAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(analytics.storyOutcomes).toEqual({
       firstAttempt: 3,
       afterRetries: 2,
@@ -248,7 +248,12 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
   });
 
   it("filters by repository", async () => {
-    const analytics = await getRalphAnalytics(db, { days: 7, now, repositoryId: repoB });
+    const analytics = await getRalphAnalytics(db, {
+      organizationId: orgId,
+      days: 7,
+      now,
+      repositoryId: repoB,
+    });
     expect(analytics.totals).toEqual({ runs: 1, jobs: 1, tokensIn: 3000, tokensOut: 300 });
     expect(analytics.runsByOutcome).toMatchObject({ running: 1, completed: 0 });
     expect(analytics.storyOutcomes).toEqual({
@@ -262,6 +267,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
 
   it("returns zeros for a window without runs", async () => {
     const analytics = await getRalphAnalytics(db, {
+      organizationId: orgId,
       days: 7,
       now: new Date("2026-01-15T00:00:00Z"),
     });
@@ -274,5 +280,17 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
       blocked: 0,
     });
     expect(analytics.averageAttempts).toBe(0);
+  });
+
+  it("leaves out other organizations' runs, stories and jobs", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    const analytics = await getRalphAnalytics(db, { organizationId: other!.id, days: 90, now });
+    expect(analytics.totals).toEqual({ runs: 0, jobs: 0, tokensIn: 0, tokensOut: 0 });
+    expect(analytics.storyOutcomes).toEqual({
+      firstAttempt: 0,
+      afterRetries: 0,
+      exhausted: 0,
+      blocked: 0,
+    });
   });
 });

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getScmConnection, listConnectionRepositories } from "@omniralph/db";
 import { getInstallation, listInstallationRepos } from "@omniralph/scm";
+import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
@@ -14,12 +15,17 @@ export default async function GitHubInstallationPage({
 }: {
   params: Promise<{ connectionId: string }>;
 }) {
-  const admin = await requirePageUser("admin");
   const { connectionId } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(connectionId)) notFound();
+  await enterResourceOrganization(
+    await requirePageUser(),
+    "scm_connection",
+    connectionId,
+    `/repositories/github/${connectionId}`,
+  );
+  const admin = await requirePageUser("admin");
   const db = getDb();
-  const connection = /^[0-9a-f-]{36}$/i.test(connectionId)
-    ? await getScmConnection(db, admin.organization.id, connectionId)
-    : null;
+  const connection = await getScmConnection(db, admin.organization.id, connectionId);
   if (!connection || connection.provider !== "github" || !connection.externalId) notFound();
 
   const installationId = Number(connection.externalId);

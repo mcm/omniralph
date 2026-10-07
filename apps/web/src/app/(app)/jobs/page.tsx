@@ -21,9 +21,9 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const status = parseStatus((await searchParams).status);
-  const jobs = await listRecentJobs(getDb(), {
+  const jobs = await listRecentJobs(getDb(), user.organization.id, {
     statuses: status ? [status] : undefined,
     limit: JOB_LIMIT,
   });

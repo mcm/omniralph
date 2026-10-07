@@ -82,11 +82,13 @@ export async function getRalphAnalytics(
 ): Promise<RalphAnalytics> {
   const { from, to } = analyticsWindow(filter.days, filter.now);
   const runWhere: SQL = and(
+    eq(ralphRuns.organizationId, filter.organizationId),
     gte(ralphRuns.createdAt, from),
     lt(ralphRuns.createdAt, to),
     filter.repositoryId ? eq(ralphRuns.repositoryId, filter.repositoryId) : undefined,
   )!;
   const jobWhere: SQL = and(
+    eq(jobs.organizationId, filter.organizationId),
     like(jobs.type, "ralph.%"),
     gte(jobs.createdAt, from),
     lt(jobs.createdAt, to),

@@ -2,7 +2,7 @@
  * Agents and Jobs pages: the fleet overview, central agent configuration
  * (returned to the agent in its next heartbeat), the audit log and the job list.
  */
-import { and, asc, desc, eq, inArray, isNull, like, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -214,15 +214,18 @@ export interface JobListEntry {
   finishedAt: Date | null;
 }
 
-/** Recent jobs across capabilities, newest first, optionally of some statuses only. */
+/** An organization's recent jobs across capabilities, newest first, optionally of some statuses only. */
 export async function listRecentJobs(
   db: Database,
+  organizationId: string,
   filter: { statuses?: JobStatus[]; limit?: number } = {},
 ): Promise<JobListEntry[]> {
-  const where: SQL | undefined =
+  const where = and(
+    eq(jobs.organizationId, organizationId),
     filter.statuses && filter.statuses.length > 0
       ? inArray(jobs.status, filter.statuses)
-      : undefined;
+      : undefined,
+  );
   const rows = await db
     .select({
       id: jobs.id,

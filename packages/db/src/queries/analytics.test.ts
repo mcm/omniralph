@@ -195,14 +195,14 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   });
 
   it("totals reviews and tokens over the last 7 days", async () => {
-    const analytics = await getAnalytics(db, { days: 7, now });
+    const analytics = await getAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(analytics.from).toEqual(new Date("2026-09-29T00:00:00Z"));
     expect(analytics.to).toEqual(new Date("2026-10-06T00:00:00Z"));
     expect(analytics.totals).toEqual({ reviews: 7, tokensIn: 7050, tokensOut: 1000 });
   });
 
   it("returns a zero-filled daily series in UTC days", async () => {
-    const { daily } = await getAnalytics(db, { days: 7, now });
+    const { daily } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(daily).toEqual([
       { date: "2026-09-29", reviews: 1, tokensIn: 2000, tokensOut: 300 },
       { date: "2026-09-30", reviews: 0, tokensIn: 0, tokensOut: 0 },
@@ -212,18 +212,20 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       { date: "2026-10-04", reviews: 2, tokensIn: 1000, tokensOut: 200 },
       { date: "2026-10-05", reviews: 2, tokensIn: 1000, tokensOut: 200 },
     ]);
-    expect((await getAnalytics(db, { days: 90, now })).daily).toHaveLength(90);
+    expect((await getAnalytics(db, { organizationId: orgId, days: 90, now })).daily).toHaveLength(
+      90,
+    );
   });
 
   it("averages tokens per review by profile over reviews that ran", async () => {
-    const { byProfile } = await getAnalytics(db, { days: 7, now });
+    const { byProfile } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(byProfile).toEqual([
       { profileId: "quick", profileName: "Quick", reviews: 2, averageTokens: 600 },
       // r1 (1,200), r5 (2,300) and s1 (3,300); the failed and queued reviews don't count.
       { profileId: "standard", profileName: "Standard", reviews: 3, averageTokens: 2267 },
     ]);
 
-    const month = await getAnalytics(db, { days: 30, now });
+    const month = await getAnalytics(db, { organizationId: orgId, days: 30, now });
     expect(month.byProfile.map((p) => [p.profileId, p.reviews, p.averageTokens])).toEqual([
       ["deep", 1, 5500],
       ["quick", 2, 600],
@@ -232,7 +234,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   });
 
   it("counts reviews by status and findings by severity", async () => {
-    const analytics = await getAnalytics(db, { days: 7, now });
+    const analytics = await getAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(analytics.reviewsByStatus).toEqual({
       queued: 1,
       running: 0,
@@ -248,11 +250,18 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       low: 1,
       info: 1,
     });
-    expect((await getAnalytics(db, { days: 30, now })).findingsBySeverity.critical).toBe(2);
+    expect(
+      (await getAnalytics(db, { organizationId: orgId, days: 30, now })).findingsBySeverity
+        .critical,
+    ).toBe(2);
   });
 
   it("computes the dismissal rate per repository, highest first", async () => {
-    const { dismissalsByRepository } = await getAnalytics(db, { days: 7, now });
+    const { dismissalsByRepository } = await getAnalytics(db, {
+      organizationId: orgId,
+      days: 7,
+      now,
+    });
     expect(dismissalsByRepository).toEqual([
       {
         repository: { id: repoA, provider: "github", fullPath: "acme/api" },
@@ -273,17 +282,22 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   });
 
   it("counts jobs per agent, most first, ignoring unassigned jobs", async () => {
-    const { jobsByAgent } = await getAnalytics(db, { days: 7, now });
+    const { jobsByAgent } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
     expect(jobsByAgent).toEqual([
       { agent: { id: agent1, name: "coder-1" }, total: 3, completed: 2, failed: 1 },
       { agent: { id: agent2, name: "coder-2" }, total: 1, completed: 0, failed: 0 },
     ]);
-    const quarter = await getAnalytics(db, { days: 90, now });
+    const quarter = await getAnalytics(db, { organizationId: orgId, days: 90, now });
     expect(quarter.jobsByAgent[1]).toMatchObject({ total: 2, completed: 1 });
   });
 
   it("filters everything by repository", async () => {
-    const analytics = await getAnalytics(db, { days: 7, now, repositoryId: repoB });
+    const analytics = await getAnalytics(db, {
+      organizationId: orgId,
+      days: 7,
+      now,
+      repositoryId: repoB,
+    });
     expect(analytics.totals).toEqual({ reviews: 2, tokensIn: 3000, tokensOut: 300 });
     expect(analytics.byProfile).toEqual([
       { profileId: "standard", profileName: "Standard", reviews: 1, averageTokens: 3300 },
@@ -298,6 +312,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
 
   it("returns zeros for a window without activity", async () => {
     const analytics = await getAnalytics(db, {
+      organizationId: orgId,
       days: 7,
       now: new Date("2026-01-15T00:00:00Z"),
     });
@@ -310,9 +325,26 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   });
 
   it("lists repositories for the filter by path", async () => {
-    expect(await listAnalyticsRepositories(db)).toEqual([
+    expect(await listAnalyticsRepositories(db, orgId)).toEqual([
       { id: repoA, provider: "github", fullPath: "acme/api" },
       { id: repoB, provider: "github", fullPath: "acme/web" },
     ]);
+  });
+
+  it("leaves out other organizations' reviews, findings, jobs and repositories", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    const analytics = await getAnalytics(db, { organizationId: other!.id, days: 90, now });
+    expect(analytics.totals).toEqual({ reviews: 0, tokensIn: 0, tokensOut: 0 });
+    expect(analytics.byProfile).toEqual([]);
+    expect(Object.values(analytics.reviewsByStatus).every((n) => n === 0)).toBe(true);
+    expect(Object.values(analytics.findingsBySeverity).every((n) => n === 0)).toBe(true);
+    expect(analytics.dismissalsByRepository).toEqual([]);
+    expect(analytics.jobsByAgent).toEqual([]);
+    // Another organization's repository as the filter doesn't widen it either.
+    expect(
+      (await getAnalytics(db, { organizationId: other!.id, days: 90, now, repositoryId: repoA }))
+        .totals.reviews,
+    ).toBe(0);
+    expect(await listAnalyticsRepositories(db, other!.id)).toEqual([]);
   });
 });

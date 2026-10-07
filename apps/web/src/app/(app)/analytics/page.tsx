@@ -12,14 +12,18 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const db = getDb();
-  const repositories = await listAnalyticsRepositories(db);
+  const repositories = await listAnalyticsRepositories(db, user.organization.id);
   const params = parseAnalyticsParams(
     await searchParams,
     repositories.map((r) => r.id),
   );
-  const filter = { days: params.days, repositoryId: params.repositoryId ?? undefined };
+  const filter = {
+    organizationId: user.organization.id,
+    days: params.days,
+    repositoryId: params.repositoryId ?? undefined,
+  };
   const [analytics, ralph] = await Promise.all([
     getAnalytics(db, filter),
     getRalphAnalytics(db, filter),
