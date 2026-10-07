@@ -12,7 +12,14 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
-import { jobs, repositories, reviewProfiles, scmConnections } from "./schema.js";
+import {
+  jobs,
+  organizationEmailDomains,
+  organizations,
+  repositories,
+  reviewProfiles,
+  scmConnections,
+} from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -87,6 +94,30 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
     });
+  });
+
+  it("creates the organization tables (0029)", async () => {
+    const { rows } = await db.$client.query<{ table_name: string }>(
+      `select table_name from information_schema.tables
+       where table_schema = 'public' and table_name like 'organization%' order by table_name`,
+    );
+    expect(rows.map((r) => r.table_name)).toEqual([
+      "organization_email_domains",
+      "organization_invitations",
+      "organization_members",
+      "organizations",
+    ]);
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    expect(org).toMatchObject({ allowDomainJoin: false, createdBy: null });
+    await expect(
+      db.insert(organizationEmailDomains).values({ organizationId: org!.id, domain: "Acme.io" }),
+    ).rejects.toThrow();
+    await db
+      .insert(organizationEmailDomains)
+      .values({ organizationId: org!.id, domain: "acme.io" });
+    await expect(
+      db.insert(organizationEmailDomains).values({ organizationId: org!.id, domain: "acme.io" }),
+    ).rejects.toThrow();
   });
 
   it("allows one queued/running job per dedupe key", async () => {

@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -33,6 +34,7 @@ const updatedAt = () =>
 
 export const userRole = pgEnum("user_role", ["admin", "member"]);
 export const uiTheme = pgEnum("ui_theme", ["light", "dark"]);
+export const organizationRole = pgEnum("organization_role", ["admin", "member"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
 /** Sources of webhook deliveries: the code hosts plus Linear. */
 export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "linear"]);
@@ -175,6 +177,92 @@ export const sessions = pgTable(
     expires: timestamp("expires", { mode: "date", withTimezone: true }).notNull(),
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
+
+// ── Organizations ────────────────────────────────────────────────────────────
+
+/** The tenancy boundary: every resource belongs to exactly one organization. */
+export const organizations = pgTable("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  /**
+   * Lists the organization as joinable (as `member`, without an invitation) for
+   * signed-in users whose email matches one of its domains. Only meaningful with
+   * at least one domain set.
+   */
+  allowDomainJoin: boolean("allow_domain_join").notNull().default(false),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** A user's membership of an organization, with their role in it. */
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** `admin` manages the organization and its resources; `member` has read access. */
+    role: organizationRole("role").notNull().default("member"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.userId] }),
+    index("organization_members_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * An invitation to join an organization, for an email address. Pending while
+ * not accepted, not revoked and not past `expires_at`.
+ */
+export const organizationInvitations = pgTable(
+  "organization_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Lower-cased email address. */
+    email: text("email").notNull(),
+    role: organizationRole("role").notNull().default("member"),
+    invitedBy: text("invited_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: text("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("organization_invitations_email_idx").on(t.email),
+    index("organization_invitations_organization_id_idx").on(t.organizationId),
+    check("organization_invitations_email_lower", sql`${t.email} = lower(${t.email})`),
+  ],
+);
+
+/**
+ * Email domains of an organization. With none, anyone may be invited; with some,
+ * invitations and joins are limited to emails in those domains.
+ */
+export const organizationEmailDomains = pgTable(
+  "organization_email_domains",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Lower-cased domain, e.g. `example.com`. */
+    domain: text("domain").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.domain] }),
+    index("organization_email_domains_domain_idx").on(t.domain),
+    check("organization_email_domains_domain_lower", sql`${t.domain} = lower(${t.domain})`),
+  ],
 );
 
 // ── Code hosts and repositories ──────────────────────────────────────────────
@@ -435,7 +523,10 @@ export const agents = pgTable("agents", {
   /** The agent's self-update progress, as last reported. */
   updateState: jsonb("update_state").$type<AgentUpdateState>(),
   /** Versions the agent failed to install or keep running; it never retries them. */
-  failedVersions: text("failed_versions").array().notNull().default(sql`'{}'::text[]`),
+  failedVersions: text("failed_versions")
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
   lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
