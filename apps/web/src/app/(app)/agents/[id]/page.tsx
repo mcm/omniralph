@@ -8,6 +8,7 @@ import {
 } from "@omniralph/db";
 import { CAPABILITIES } from "@omniralph/shared";
 import { agentRow } from "@/lib/agents/rows";
+import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import type { AuditRow } from "./agent-audit-log";
@@ -21,9 +22,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AUDIT_LIMIT = 50;
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
-  const admin = await requirePageUser("admin");
   const { id } = await params;
   if (!UUID.test(id)) notFound();
+  await enterResourceOrganization(await requirePageUser(), "agent", id, `/agents/${id}`);
+  const admin = await requirePageUser("admin");
   const db = getDb();
   const [agent, audit, repositories, globalVersion] = await Promise.all([
     getAgentOverview(db, admin.organization.id, id),

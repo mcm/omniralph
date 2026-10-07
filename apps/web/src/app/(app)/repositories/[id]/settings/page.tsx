@@ -8,6 +8,7 @@ import {
 } from "@omniralph/db";
 import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { z } from "zod";
+import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
@@ -24,6 +25,7 @@ export default async function RepositorySettingsPage({
   const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
+  await enterResourceOrganization(user, "repository", id, `/repositories/${id}/settings`);
   const db = getDb();
   const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();

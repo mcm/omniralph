@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getRepositoryWithConnection, listRepositoryRules } from "@omniralph/db";
 import { z } from "zod";
+import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
@@ -14,6 +15,7 @@ export default async function RepositoryRulesPage({ params }: { params: Promise<
   const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
+  await enterResourceOrganization(user, "repository", id, `/repositories/${id}/rules`);
   const db = getDb();
   const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();

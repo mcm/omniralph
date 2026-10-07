@@ -1,14 +1,14 @@
 /**
  * Usage analytics (the control panel's Analytics page): token usage, review
  * counts, finding severities, dismissal rates and jobs per agent over the last
- * 7, 30 or 90 days, optionally for one repository.
+ * 7, 30 or 90 days for one organization, optionally for one repository.
  *
  * Days are UTC calendar days. A window of `days` days ends with the day of
  * `now` (inclusive), so a 7-day window is today plus the six days before it.
  * Reviews and their findings are attributed to the day the review was created,
  * jobs to the day the job was created.
  */
-import { and, asc, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
 import type { Review } from "../reviews.js";
 import {
@@ -32,6 +32,8 @@ type FindingSeverity = (typeof findingSeverity.enumValues)[number];
 const DAY_MS = 86_400_000;
 
 export interface AnalyticsFilter {
+  /** Only this organization's reviews, findings, jobs and runs. */
+  organizationId: string;
   days: AnalyticsRange;
   /** Only this repository's reviews, findings and jobs; all repositories when omitted. */
   repositoryId?: string;
@@ -117,11 +119,19 @@ const num = (value: unknown): number => (value == null ? 0 : Number(value));
 export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promise<Analytics> {
   const { from, to } = analyticsWindow(filter.days, filter.now);
   const reviewWhere: SQL = and(
+    inArray(
+      reviews.repositoryId,
+      db
+        .select({ id: repositories.id })
+        .from(repositories)
+        .where(eq(repositories.organizationId, filter.organizationId)),
+    ),
     gte(reviews.createdAt, from),
     lt(reviews.createdAt, to),
     filter.repositoryId ? eq(reviews.repositoryId, filter.repositoryId) : undefined,
   )!;
   const jobWhere: SQL = and(
+    eq(jobs.organizationId, filter.organizationId),
     gte(jobs.createdAt, from),
     lt(jobs.createdAt, to),
     isNotNull(jobs.agentId),
@@ -278,8 +288,14 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
   };
 }
 
-/** Repositories for the Analytics filter (including disconnected ones, whose history is kept). */
-export async function listAnalyticsRepositories(db: Database): Promise<AnalyticsRepositoryRef[]> {
+/**
+ * An organization's repositories for the Analytics filter (including
+ * disconnected ones, whose history is kept).
+ */
+export async function listAnalyticsRepositories(
+  db: Database,
+  organizationId: string,
+): Promise<AnalyticsRepositoryRef[]> {
   return db
     .select({
       id: repositories.id,
@@ -287,5 +303,6 @@ export async function listAnalyticsRepositories(db: Database): Promise<Analytics
       fullPath: repositories.fullPath,
     })
     .from(repositories)
+    .where(eq(repositories.organizationId, organizationId))
     .orderBy(asc(repositories.fullPath));
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getRepositoryWithConnection, listReviews, REVIEW_PAGE_SIZE } from "@omniralph/db";
 import { z } from "zod";
+import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
@@ -21,12 +22,14 @@ export default async function RepositoryReviewsPage({
   const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
+  const query = await searchParams;
+  await enterResourceOrganization(user, "repository", id, `/repositories/${id}/reviews`, query);
   const db = getDb();
   const found = await getRepositoryWithConnection(db, id, user.organization.id);
   // Disconnected repositories keep their history, so it stays browsable.
   if (!found) notFound();
   const { repository, connection } = found;
-  const listParams = parseReviewListParams(await searchParams);
+  const listParams = parseReviewListParams(query);
   const page = await listReviews(db, {
     organizationId: user.organization.id,
     repositoryId: id,

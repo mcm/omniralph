@@ -1,0 +1,51 @@
+import { eq } from "drizzle-orm";
+import type { Database } from "./client.js";
+import { agents, ralphRuns, repositories, reviews, scmConnections } from "./schema.js";
+
+/** Resources with their own URL in the control panel. */
+export type OrganizationResource =
+  "agent" | "ralph_run" | "repository" | "review" | "scm_connection";
+
+/**
+ * The organization a resource belongs to, whichever organization the caller is
+ * working in, or `null` when there is no such resource. Detail pages use it to
+ * switch to the resource's organization (for a member of it) before loading it.
+ */
+export async function getResourceOrganizationId(
+  db: Database,
+  resource: OrganizationResource,
+  id: string,
+): Promise<string | null> {
+  const query = () => {
+    switch (resource) {
+      case "agent":
+        return db
+          .select({ organizationId: agents.organizationId })
+          .from(agents)
+          .where(eq(agents.id, id));
+      case "ralph_run":
+        return db
+          .select({ organizationId: ralphRuns.organizationId })
+          .from(ralphRuns)
+          .where(eq(ralphRuns.id, id));
+      case "repository":
+        return db
+          .select({ organizationId: repositories.organizationId })
+          .from(repositories)
+          .where(eq(repositories.id, id));
+      case "review":
+        return db
+          .select({ organizationId: repositories.organizationId })
+          .from(reviews)
+          .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+          .where(eq(reviews.id, id));
+      case "scm_connection":
+        return db
+          .select({ organizationId: scmConnections.organizationId })
+          .from(scmConnections)
+          .where(eq(scmConnections.id, id));
+    }
+  };
+  const [row] = await query().limit(1);
+  return row?.organizationId ?? null;
+}

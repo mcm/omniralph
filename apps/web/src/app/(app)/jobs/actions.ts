@@ -13,8 +13,12 @@ import { jobOutcomeHandler } from "@/lib/jobs/handlers";
  * start), a running one is stopped by its agent after the next heartbeat.
  */
 export async function cancelJob(jobId: string): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const db = getDb();
+    const existing = await getJob(db, jobId);
+    if (existing?.organizationId !== admin.organization.id) {
+      return { ok: false, error: "That job doesn't exist." };
+    }
     const result = await getDispatcher().cancel(jobId);
     if (result === "not_found") return { ok: false, error: "That job doesn't exist." };
     if (result === "not_cancelable") return { ok: false, error: "That job has already finished." };
