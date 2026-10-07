@@ -265,7 +265,8 @@ export const organizationEmailDomains = pgTable(
 export interface ScmConnectionProblem {
   /**
    * `token_invalid`, `missing_api_scope`, `access_token_bot`, `token_expiring`,
-   * `webhook_missing` or `webhook_events_outdated`.
+   * `webhook_missing`, `webhook_events_outdated`, `rotation_unsupported` or
+   * `rotation_failed`.
    */
   code: string;
   message: string;
