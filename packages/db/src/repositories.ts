@@ -13,6 +13,7 @@ import {
   reviewProfiles,
   reviews,
   scmConnections,
+  type ScmConnectionHealth,
 } from "./schema.js";
 
 type EncryptionKey = string | Buffer | undefined;
@@ -145,6 +146,27 @@ export async function listScmConnections(
       ),
     )
     .orderBy(asc(scmConnections.name));
+}
+
+/** Every connection of `provider`, across organizations (maintenance crons). */
+export async function listProviderScmConnections(
+  db: Database,
+  provider: ScmProvider,
+): Promise<ScmConnection[]> {
+  return db
+    .select()
+    .from(scmConnections)
+    .where(eq(scmConnections.provider, provider))
+    .orderBy(asc(scmConnections.createdAt));
+}
+
+/** Replaces a connection's health with the result of its latest check. */
+export async function setScmConnectionHealth(
+  db: Database,
+  id: string,
+  health: ScmConnectionHealth,
+): Promise<void> {
+  await db.update(scmConnections).set({ health }).where(eq(scmConnections.id, id));
 }
 
 /** Decrypts a connection's credentials JSON. */

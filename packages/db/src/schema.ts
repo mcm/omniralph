@@ -261,6 +261,27 @@ export const organizationEmailDomains = pgTable(
 
 // ── Code hosts and repositories ──────────────────────────────────────────────
 
+/** A problem found by the daily GitLab connection check. */
+export interface ScmConnectionProblem {
+  /**
+   * `token_invalid`, `missing_api_scope`, `access_token_bot`, `token_expiring`,
+   * `webhook_missing` or `webhook_events_outdated`.
+   */
+  code: string;
+  message: string;
+  /** The project the problem is about (webhook problems). */
+  repositoryId?: string;
+}
+
+/** Result of the last daily check of a connection (`scm_connections.health`). */
+export interface ScmConnectionHealth {
+  /** ISO timestamp of the check. */
+  checkedAt: string;
+  /** ISO date the bot token expires, when GitLab reports it. */
+  tokenExpiresAt: string | null;
+  problems: ScmConnectionProblem[];
+}
+
 export const scmConnections = pgTable(
   "scm_connections",
   {
@@ -278,6 +299,8 @@ export const scmConnections = pgTable(
     encryptedCredentials: text("encrypted_credentials").notNull(),
     /** GitLab: the token user's username, the bot's `@` handle. Null for GitHub. */
     botUsername: text("bot_username"),
+    /** GitLab: the last daily connection check (`/api/cron/gitlab-maintenance`); null until the first. */
+    health: jsonb("health").$type<ScmConnectionHealth>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

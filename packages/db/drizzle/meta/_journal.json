@@ -253,6 +253,13 @@
       "when": 1791406390493,
       "tag": "0035_gitlab_bot_username",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791406798321,
+      "tag": "0036_gitlab_connection_health",
+      "breakpoints": true
     }
   ]
 }
