@@ -59,11 +59,15 @@ export async function postJson<S extends z.ZodType>(
       json && typeof json === "object" && "error" in json && typeof json.error === "string"
         ? json.error
         : undefined;
+    const detail =
+      json && typeof json === "object" && "message" in json && typeof json.message === "string"
+        ? json.message
+        : undefined;
     const retryAfter = Number(res.headers.get("retry-after"));
     throw new ApiError(
       res.status,
       code,
-      `POST ${path} failed with ${res.status}${code ? ` (${code})` : ""}`,
+      `POST ${path} failed with ${res.status}${code ? ` (${code})` : ""}${detail ? `: ${detail}` : ""}`,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
     );
   }

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ChangeRequestNotFoundError } from "../types.js";
+import { ChangeRequestNotFoundError, CloneCredentialPermissionError } from "../types.js";
 import { GitHubAdapter } from "./adapter.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
@@ -191,6 +191,32 @@ describe("getWriteCloneCredential", () => {
     });
     await adapter.getWriteCloneCredential(REPO);
     expect(tokenRequests).toHaveLength(2);
+  });
+
+  it("explains a missing Contents permission instead of failing with GitHub's 422", async () => {
+    server.use(
+      http.post(`${API}/app/installations/42/access_tokens`, () =>
+        HttpResponse.json(
+          {
+            message: "The level of access for permissions requested are not granted to this installation.",
+            status: "422",
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const adapter = makeAdapter();
+    const error = await adapter.getWriteCloneCredential(REPO).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CloneCredentialPermissionError);
+    expect(error).toMatchObject({ repo: REPO, access: "write" });
+    expect((error as Error).message).toContain("Contents: Read and write");
+    expect((error as Error).message).toContain("acme/widgets");
+    expect((error as Error).cause).toMatchObject({ status: 422 });
+
+    await expect(adapter.getReadOnlyCloneCredential(REPO)).rejects.toMatchObject({
+      name: "CloneCredentialPermissionError",
+      access: "read",
+    });
   });
 });
 

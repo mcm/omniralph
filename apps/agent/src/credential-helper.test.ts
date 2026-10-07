@@ -99,6 +99,16 @@ describe("git-credential", () => {
     expect(stderr).toContain("401");
   });
 
+  it("prints the control panel's explanation when the code host refuses the access", async () => {
+    const message = "The GitHub App installation 7 on acme/app isn't granted Contents: Read and write.";
+    const { code, stdout, stderr } = await helper(["get"], {
+      fetch: fakeFetch(403, { error: "scm_permission_missing", message }),
+    });
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain(`403 (scm_permission_missing): ${message}`);
+  });
+
   it("refuses values that would inject extra attributes", async () => {
     const { code, stdout } = await helper(["get"], {
       fetch: fakeFetch(200, { ...CREDENTIAL, password: "token\nusername=evil" }),
