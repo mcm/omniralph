@@ -121,6 +121,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let orgId: string;
+  let gitlabConnectionId: string;
   let gitlabRepoId: string;
   let githubRepoId: string;
   let disconnectedRepoId: string;
@@ -143,6 +144,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       externalId: "5",
       credentials: { token: "glpat-bot-api", webhookSecret: "hook" },
     }))!;
+    gitlabConnectionId = gitlab.id;
     gitlabRepoId = (
       await connectRepository(db, {
         connectionId: gitlab.id,
@@ -410,6 +412,37 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         const body = (await res.json()) as { error: string; message: string };
         expect(body.error).toBe("scm_permission_missing");
         expect(body.message).toContain("Contents: Read and write");
+        expect(await issued(agentId)).toHaveLength(0);
+      });
+
+      it("answers 403 scm_permission_missing when the GitLab bot token can't create project access tokens", async () => {
+        server.use(
+          http.post(`${GITLAB}/api/v4/projects/79/access_tokens`, () =>
+            HttpResponse.json(
+              { message: "400 User does not have permission to create project access token" },
+              { status: 400 },
+            ),
+          ),
+        );
+        const repositoryId = (
+          await connectRepository(db, {
+            connectionId: gitlabConnectionId,
+            provider: "gitlab",
+            externalId: "79",
+            fullPath: "group/no-mint",
+          })
+        ).id;
+        const agentId = await newAgent();
+        const jobId = await newJob({ status: "running", agentId, repositoryId });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
+        warn.mockRestore();
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { error: string; message: string };
+        expect(body.error).toBe("scm_permission_missing");
+        expect(body.message).toMatch(
+          /service account's \(or real user's\) personal access token with the Maintainer role/,
+        );
         expect(await issued(agentId)).toHaveLength(0);
       });
 
