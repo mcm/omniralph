@@ -22,12 +22,12 @@ Use one of:
 
 Requirements:
 
-| Requirement | Why |
-| -- | -- |
-| Scope **`api`** | Post MR discussions and notes, resolve threads, read members, manage webhooks, create project access tokens, and open/update ralph runs' merge requests. The connect dialog rejects a token without it. |
-| Scope **`write_repository`** | Ralph: the bot's token mints `write_repository` project access tokens for ralph jobs to push with, and can't grant more than it has. |
-| Role **Maintainer** (or Owner) on every project | Creating the project webhook and **creating project access tokens** both need Maintainer. |
-| Project access tokens allowed | The credential broker creates a `read_repository` project access token (Reporter role, named `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached encrypted and is replaced when it's within 2 hours of expiry. For running `ralph` jobs only, it likewise creates a `write_repository` token (Developer role, named `omniralph-write-repository`), cached and rotated separately; review jobs never get it. Make sure no instance or group setting blocks project access token creation. |
+| Requirement                                     | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope **`api`**                                 | Post MR discussions and notes, resolve threads, read members, manage webhooks, create project access tokens, and open/update ralph runs' merge requests. The connect dialog rejects a token without it.                                                                                                                                                                                                                                                                                                                                  |
+| Scope **`write_repository`**                    | Ralph: the bot's token mints `write_repository` project access tokens for ralph jobs to push with, and can't grant more than it has.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Role **Maintainer** (or Owner) on every project | Creating the project webhook and **creating project access tokens** both need Maintainer.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Project access tokens allowed                   | The credential broker creates a `read_repository` project access token (Reporter role, named `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached encrypted and is replaced when it's within 2 hours of expiry. For running `ralph` jobs only, it likewise creates a `write_repository` token (Developer role, named `omniralph-write-repository`), cached and rotated separately; review jobs never get it. Make sure no instance or group setting blocks project access token creation. |
 
 Pick a sensible expiry for the bot token itself and put a reminder in your calendar: when it expires,
 reviews and clones stop. To rotate it, create a new token and connect GitLab again with it.
@@ -53,7 +53,8 @@ To change the projects later, use **Repositories › Code-host connections › C
 ticking a project connects it (or re-enables it), unticking a connected one disables its reviews
 (its webhook stays, so re-enabling is instant). A project missing from the list isn't maintained by
 the bot's user: make it a Maintainer on GitLab, or, past the 1,000-project limit, connect it by
-path with **Connect GitLab** using the same token. Entering paths again under **Connect GitLab**
+path with **Connect GitLab** using the same token. Saving the list never disables a connected
+project the list doesn't show. Entering paths again under **Connect GitLab**
 replaces those projects' webhooks (e.g. to pick up new events).
 
 The connection (the instance's base URL plus the bot token's user) belongs to that organization:

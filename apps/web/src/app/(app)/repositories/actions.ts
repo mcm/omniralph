@@ -302,8 +302,8 @@ export async function saveGitHubRepositories(
 
 /**
  * Saves which projects of a GitLab connection get reviews: selected ones are connected (a
- * project webhook is created for those without one) or re-enabled, other connected ones are
- * disabled. Only projects the bot token's user maintains are accepted.
+ * project webhook is created for those without one) or re-enabled, other listed connected ones
+ * are disabled; connected projects the list doesn't show are left alone. Only projects the bot token's user maintains are accepted.
  */
 export async function saveGitLabProjects(
   connectionId: string,
@@ -332,8 +332,16 @@ export async function saveGitLabProjects(
       webhookSecret,
       available.filter((project) => selected.has(String(project.id))),
     );
+    // Projects the list doesn't show (connected by path, archived, past the cap) can't be
+    // ticked, so only listed ones are disabled when left unticked.
+    const listedIds = new Set(available.map((project) => String(project.id)));
     for (const repo of await listConnectionRepositories(db, connectionId)) {
-      if (!repo.disconnectedAt && repo.enabled && !selected.has(repo.externalId)) {
+      if (
+        !repo.disconnectedAt &&
+        repo.enabled &&
+        listedIds.has(repo.externalId) &&
+        !selected.has(repo.externalId)
+      ) {
         await setRepositoryEnabledRow(db, organizationId, repo.id, false);
       }
     }
