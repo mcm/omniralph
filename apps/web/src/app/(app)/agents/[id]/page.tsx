@@ -26,10 +26,10 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   if (!UUID.test(id)) notFound();
   const db = getDb();
   const [agent, audit, repositories, globalVersion] = await Promise.all([
-    getAgentOverview(db, id),
+    getAgentOverview(db, admin.organization.id, id),
     listRecentAgentAudit(db, id, AUDIT_LIMIT),
     listRepositoryOverview(db, admin.organization.id),
-    getDesiredAgentVersion(db),
+    getDesiredAgentVersion(db, admin.organization.id),
   ]);
   if (!agent) notFound();
   const now = new Date();

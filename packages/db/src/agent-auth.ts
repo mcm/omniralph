@@ -41,16 +41,25 @@ export interface CreatedEnrollment {
   expiresAt: Date;
 }
 
-/** Creates a one-time enrollment token (valid for `ENROLLMENT_TOKEN_TTL_MS`). */
+/**
+ * Creates a one-time enrollment token (valid for `ENROLLMENT_TOKEN_TTL_MS`); the
+ * agent redeeming it joins `organizationId`.
+ */
 export async function createAgentEnrollment(
   db: Database,
-  input: { name?: string | null; createdBy?: string | null; now?: Date } = {},
+  input: {
+    organizationId: string;
+    name?: string | null;
+    createdBy?: string | null;
+    now?: Date;
+  },
 ): Promise<CreatedEnrollment> {
   const token = generateToken(ENROLLMENT_TOKEN_PREFIX);
   const expiresAt = new Date((input.now ?? new Date()).getTime() + ENROLLMENT_TOKEN_TTL_MS);
   const [row] = await db
     .insert(agentEnrollments)
     .values({
+      organizationId: input.organizationId,
       tokenHash: hashToken(token),
       name: input.name ?? null,
       expiresAt,
@@ -69,7 +78,8 @@ export interface EnrollAgentInput {
 }
 
 /**
- * Consumes an unused, unexpired enrollment token, creates the agent and its
+ * Consumes an unused, unexpired enrollment token, creates the agent (in the
+ * enrollment's organization) and its
  * first refresh token (a new family). Returns `null` if the token is unknown,
  * expired or already used.
  */
@@ -95,6 +105,7 @@ export async function enrollAgent(
     const [agent] = await tx
       .insert(agents)
       .values({
+        organizationId: enrollment.organizationId,
         // The admin's name for the enrollment wins over the host's self-reported one.
         name: enrollment.name ?? input.name,
         reportedVersion: input.version,
@@ -208,12 +219,13 @@ export interface RevokeAgentResult {
  * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
  * like `failJob`), so their queue messages are redelivered to other agents
  * once the lease lapses, and its repository pins are removed. Returns null
- * for unknown agents.
+ * for unknown agents (with `organizationId`, also for agents of another
+ * organization).
  */
 export async function revokeAgent(
   db: Database,
   agentId: string,
-  options: { now?: Date; maxDeliveries?: number } = {},
+  options: { now?: Date; maxDeliveries?: number; organizationId?: string } = {},
 ): Promise<RevokeAgentResult | null> {
   const now = options.now ?? new Date();
   const maxDeliveries = options.maxDeliveries ?? 3;
@@ -221,7 +233,12 @@ export async function revokeAgent(
     const [agent] = await tx
       .update(agents)
       .set({ revokedAt: sql`coalesce(${agents.revokedAt}, ${now})` })
-      .where(eq(agents.id, agentId))
+      .where(
+        and(
+          eq(agents.id, agentId),
+          options.organizationId ? eq(agents.organizationId, options.organizationId) : undefined,
+        ),
+      )
       .returning({ id: agents.id });
     if (!agent) return null;
     await tx

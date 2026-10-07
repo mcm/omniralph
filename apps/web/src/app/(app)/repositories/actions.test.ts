@@ -240,7 +240,10 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   it("disconnecting disables the repo, removes pins, deletes the webhook and keeps reviews", async () => {
     await connectGitLab({ ...form, projectPaths: "acme/api" });
     const [repo] = await state.db.select().from(repositories);
-    const [agent] = await state.db.insert(agents).values({ name: "coder-1" }).returning();
+    const [agent] = await state.db
+      .insert(agents)
+      .values({ organizationId: orgId, name: "coder-1" })
+      .returning();
     await state.db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo!.id });
     await state.db.insert(reviews).values({
       repositoryId: repo!.id,

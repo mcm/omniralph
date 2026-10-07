@@ -141,7 +141,9 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     await db.delete(agents);
     [{ id: agentA }] = (await db
       .insert(agents)
-      .values([{ name: "agent-a", enabledCapabilities: ["review", "ralph"] }])
+      .values([
+        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
+      ])
       .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);

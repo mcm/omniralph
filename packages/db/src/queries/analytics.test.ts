@@ -76,7 +76,10 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     ).id;
     const [a1, a2] = await db
       .insert(agents)
-      .values([{ name: "coder-1" }, { name: "coder-2" }])
+      .values([
+        { organizationId: orgId, name: "coder-1" },
+        { organizationId: orgId, name: "coder-2" },
+      ])
       .returning();
     agent1 = a1!.id;
     agent2 = a2!.id;

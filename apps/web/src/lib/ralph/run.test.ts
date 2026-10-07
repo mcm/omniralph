@@ -168,8 +168,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     [{ id: agentA }, { id: agentB }] = (await db
       .insert(agents)
       .values([
-        { name: "agent-a", enabledCapabilities: ["review", "ralph"] },
-        { name: "agent-b", enabledCapabilities: ["review", "ralph"] },
+        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
+        { organizationId: orgId, name: "agent-b", enabledCapabilities: ["review", "ralph"] },
       ])
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();

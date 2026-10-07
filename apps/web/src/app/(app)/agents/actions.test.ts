@@ -349,14 +349,17 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(reviewOnly.capabilityLimits).toEqual({ review: 3 });
     });
 
-    it("sends the desired version (override, else global) and stores the reported update state", async () => {
+    it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const other = await enrolledAgent();
       const desired = async (token: string) =>
         ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
       expect(await desired(accessToken)).toBeNull();
 
-      await setDesiredAgentVersion(db, "1.4.0", adminId);
+      await setDesiredAgentVersion(db, orgId, "1.4.0", adminId);
+      // Another organization's version doesn't reach this organization's agents.
+      const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
+      await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
       expect(await desired(accessToken)).toBe("1.4.0");
       expect(await setAgentDesiredVersion(agentId, "v1.5.0")).toEqual({ ok: true });
       expect(await setAgentDesiredVersion(agentId, "latest")).toEqual({
@@ -380,7 +383,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         update,
         failedVersions: ["1.3.0"],
       });
-      const overview = (await getAgentOverview(db, agentId))!;
+      const overview = (await getAgentOverview(db, orgId, agentId))!;
       expect(overview).toMatchObject({
         selfUpdate: "supported",
         updateState: update,
@@ -397,7 +400,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       // Cleared override: the global version again. Older agents report nothing.
       expect(await setAgentDesiredVersion(agentId, "")).toEqual({ ok: true });
       expect(await desired(accessToken)).toBe("1.4.0");
-      const legacy = (await getAgentOverview(db, agentId))!;
+      const legacy = (await getAgentOverview(db, orgId, agentId))!;
       expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
       expect(agentRow(legacy, new Date(), "1.4.0").updateStatus).toBe("manual");
 
@@ -406,7 +409,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         ok: false,
         error: expect.any(String),
       });
-      await setDesiredAgentVersion(db, null, adminId);
+      await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
     it("pinning enqueues a repo.sync job on the agent's topic", async () => {

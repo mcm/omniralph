@@ -69,7 +69,7 @@ export function AgentSettingsView({
             Agent settings
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Settings every agent gets with its heartbeat.
+            Settings every agent of this organization gets with its heartbeat.
           </Muted>
         </div>
 

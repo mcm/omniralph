@@ -332,7 +332,10 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const { number } = await reviewedPr("f".repeat(40));
       await conversationComment(number, "@omniralph review");
       const [job] = await prReviewJobs(number);
-      const [agent] = await db.insert(agents).values({ name: "agent-1" }).returning();
+      const [agent] = await db
+        .insert(agents)
+        .values({ organizationId: orgId, name: "agent-1" })
+        .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
     });
 
@@ -382,7 +385,10 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(review).toMatchObject({ trigger: "mention", profileId: "quick" });
       expect(state.scm.calls.postComment[0]!.body).toContain("a fresh **Quick** review");
 
-      const [agent] = await db.insert(agents).values({ name: "agent-fresh" }).returning();
+      const [agent] = await db
+        .insert(agents)
+        .values({ organizationId: orgId, name: "agent-fresh" })
+        .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
     });
 

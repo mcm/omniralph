@@ -7,7 +7,15 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
-  user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
+  user: null as {
+    id: string;
+    role: Role;
+    organization: { id: string; name: string };
+    name: null;
+    email: null;
+    image: null;
+  } | null,
+  organizationId: null as string | null,
   version: null as string | null,
   updatedBy: null as string | null,
 }));
@@ -16,7 +24,13 @@ vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
 vi.mock("@omniralph/db", () => ({
-  setDesiredAgentVersion: async (_db: unknown, version: string | null, updatedBy: string) => {
+  setDesiredAgentVersion: async (
+    _db: unknown,
+    organizationId: string,
+    version: string | null,
+    updatedBy: string,
+  ) => {
+    state.organizationId = organizationId;
     state.version = version;
     state.updatedBy = updatedBy;
   },
@@ -39,11 +53,19 @@ const server = setupServer(
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 afterAll(() => server.close());
 
-const user = (role: Role) => ({ id: `${role}-1`, role, name: null, email: null, image: null });
+const user = (role: Role) => ({
+  id: `${role}-1`,
+  role,
+  organization: { id: "org-1", name: "Acme" },
+  name: null,
+  email: null,
+  image: null,
+});
 
 describe("Settings › Agents actions", () => {
   beforeEach(() => {
     state.user = user("admin");
+    state.organizationId = null;
     state.version = null;
     state.updatedBy = null;
     requests.length = 0;
@@ -55,9 +77,14 @@ describe("Settings › Agents actions", () => {
     delete process.env.NPM_TOKEN;
   });
 
-  it("sets the global version, which must be semver", async () => {
+  it("sets the organization's version, which must be semver", async () => {
     expect(await setGlobalAgentVersion(" 1.4.0 ")).toEqual({ ok: true });
-    expect(state).toMatchObject({ version: "1.4.0", updatedBy: "admin-1" });
+    // The active organization's version.
+    expect(state).toMatchObject({
+      organizationId: "org-1",
+      version: "1.4.0",
+      updatedBy: "admin-1",
+    });
     expect(await setGlobalAgentVersion("v1.5.0-beta.1")).toEqual({ ok: true });
     expect(state.version).toBe("1.5.0-beta.1");
 

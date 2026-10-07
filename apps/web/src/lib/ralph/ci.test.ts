@@ -147,7 +147,9 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     await db.delete(webhookDeliveries);
     [{ id: agentA }] = (await db
       .insert(agents)
-      .values([{ name: "agent-a", enabledCapabilities: ["review", "ralph"] }])
+      .values([
+        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
+      ])
       .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);

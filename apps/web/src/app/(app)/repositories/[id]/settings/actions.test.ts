@@ -136,9 +136,9 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       await db
         .insert(agents)
         .values([
-          { name: "coder-a" },
-          { name: "coder-b" },
-          { name: "coder-old", revokedAt: new Date() },
+          { organizationId: orgId, name: "coder-a" },
+          { organizationId: orgId, name: "coder-b" },
+          { organizationId: orgId, name: "coder-old", revokedAt: new Date() },
         ])
         .returning({ id: agents.id })
     ).map((a) => a.id) as [string, string, string];
@@ -242,8 +242,13 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(await pinnedAgentIds()).toEqual([]);
   });
 
-  it("rejects revoked or unknown agents without saving anything", async () => {
-    for (const agentId of [revokedAgent, randomUUID()]) {
+  it("rejects revoked, unknown and other organizations' agents without saving anything", async () => {
+    const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
+    const [foreignAgent] = await db
+      .insert(agents)
+      .values({ organizationId: otherOrg!.id, name: "coder-foreign" })
+      .returning({ id: agents.id });
+    for (const agentId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,

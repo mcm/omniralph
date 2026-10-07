@@ -250,7 +250,7 @@ function VersionCard({
       () => setAgentDesiredVersion(agent.id, override),
       override.trim()
         ? `${agent.name} will update to ${override.trim()} with its next heartbeat.`
-        : `${agent.name} follows the global version again.`,
+        : `${agent.name} follows the organization's version again.`,
     );
   };
 
@@ -513,7 +513,7 @@ export function AgentDetailView({
               <Fact label="Version">{agent.version ?? "Unknown"}</Fact>
               <Fact label="Desired version">
                 {agent.desiredVersion
-                  ? `${agent.desiredVersion}${agent.desiredVersionOverride ? " (override)" : " (global)"}`
+                  ? `${agent.desiredVersion}${agent.desiredVersionOverride ? " (override)" : " (organization)"}`
                   : "Not set"}
               </Fact>
               <Fact label="Update status">

@@ -514,55 +514,73 @@ export interface AgentUpdateState {
 }
 
 /**
- * Instance-wide settings edited by admins, one JSON value per key (e.g.
+ * Per-organization settings edited by its admins, one JSON value per key (e.g.
  * `agent.desiredVersion`).
  */
-export const appSettings = pgTable("app_settings", {
-  key: text("key").primaryKey(),
-  value: jsonb("value").$type<unknown>().notNull(),
-  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
-  updatedAt: updatedAt(),
-});
+export const appSettings = pgTable(
+  "app_settings",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: jsonb("value").$type<unknown>().notNull(),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.key] })],
+);
 
-export const agents = pgTable("agents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  maxConcurrency: integer("max_concurrency").notNull().default(1),
-  pollIntervalSeconds: integer("poll_interval_seconds").notNull().default(5),
-  enabledCapabilities: text("enabled_capabilities")
-    .array()
-    .notNull()
-    .default(sql`'{review}'::text[]`),
-  /**
-   * Per-capability caps on concurrent jobs (e.g. `{ "ralph": 1 }`), within
-   * `maxConcurrency`. Unset capabilities use the protocol's default limit.
-   */
-  capabilityLimits: jsonb("capability_limits")
-    .$type<Partial<Record<string, number>>>()
-    .notNull()
-    .default({}),
-  /** Overrides the global desired agent version (`app_settings` `agent.desiredVersion`). */
-  desiredVersion: text("desired_version"),
-  reportedVersion: text("reported_version"),
-  reportedCapabilities: text("reported_capabilities").array(),
-  /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
-  selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
-  /** The agent's self-update progress, as last reported. */
-  updateState: jsonb("update_state").$type<AgentUpdateState>(),
-  /** Versions the agent failed to install or keep running; it never retries them. */
-  failedVersions: text("failed_versions")
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const agents = pgTable(
+  "agents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    maxConcurrency: integer("max_concurrency").notNull().default(1),
+    pollIntervalSeconds: integer("poll_interval_seconds").notNull().default(5),
+    enabledCapabilities: text("enabled_capabilities")
+      .array()
+      .notNull()
+      .default(sql`'{review}'::text[]`),
+    /**
+     * Per-capability caps on concurrent jobs (e.g. `{ "ralph": 1 }`), within
+     * `maxConcurrency`. Unset capabilities use the protocol's default limit.
+     */
+    capabilityLimits: jsonb("capability_limits")
+      .$type<Partial<Record<string, number>>>()
+      .notNull()
+      .default({}),
+    /** Overrides the organization's desired agent version (`app_settings` `agent.desiredVersion`). */
+    desiredVersion: text("desired_version"),
+    reportedVersion: text("reported_version"),
+    reportedCapabilities: text("reported_capabilities").array(),
+    /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
+    selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
+    /** The agent's self-update progress, as last reported. */
+    updateState: jsonb("update_state").$type<AgentUpdateState>(),
+    /** Versions the agent failed to install or keep running; it never retries them. */
+    failedVersions: text("failed_versions")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("agents_organization_id_idx").on(t.organizationId)],
+);
 
 export const agentEnrollments = pgTable("agent_enrollments", {
   id: uuid("id").primaryKey().defaultRandom(),
+  /** The organization the redeemed agent joins. */
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   /** `hashToken()` of the one-time enrollment token; the token itself is never stored. */
   tokenHash: text("token_hash").notNull().unique(),
   /** Display name for the agent this enrollment creates. */

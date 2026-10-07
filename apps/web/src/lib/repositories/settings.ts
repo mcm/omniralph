@@ -48,7 +48,7 @@ export async function saveRepositorySettings(
   const wanted = [...new Set(input.pinnedAgentIds)];
   const current = await listRepositoryPinnedAgentIds(db, repositoryId);
   const added = wanted.filter((id) => !current.includes(id));
-  const active = await filterActiveAgentIds(db, added);
+  const active = await filterActiveAgentIds(db, organizationId, added);
   const unknown = added.filter((id) => !active.has(id));
   if (unknown.length > 0) return { status: "unknown_agents", agentIds: unknown };
 

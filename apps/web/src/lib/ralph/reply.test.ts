@@ -140,7 +140,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     await db.delete(agents);
     [{ id: agentA }] = (await db
       .insert(agents)
-      .values([{ name: "agent-a", enabledCapabilities: ["ralph"] }])
+      .values([{ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] }])
       .returning({ id: agents.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();

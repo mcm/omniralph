@@ -60,7 +60,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
     });
     repoId = repo.id;
     otherRepoId = other.id;
-    const [agent] = await db.insert(agents).values({ name: "coder-1" }).returning();
+    const [agent] = await db.insert(agents).values({ organizationId: orgId, name: "coder-1" }).returning();
     agentId = agent!.id;
 
     // 30 reviews of `repoId`: every third is a mention, every fifth failed.

@@ -94,14 +94,15 @@ export async function updateReviewProfile(
   return row ?? null;
 }
 
-/** Agents that can be pinned (not revoked), by name. */
+/** The organization's agents that can be pinned (not revoked), by name. */
 export async function listPinnableAgents(
   db: Database,
+  organizationId: string,
 ): Promise<{ id: string; name: string; lastHeartbeatAt: Date | null }[]> {
   return db
     .select({ id: agents.id, name: agents.name, lastHeartbeatAt: agents.lastHeartbeatAt })
     .from(agents)
-    .where(isNull(agents.revokedAt))
+    .where(and(eq(agents.organizationId, organizationId), isNull(agents.revokedAt)))
     .orderBy(asc(agents.name), asc(agents.createdAt));
 }
 
@@ -118,13 +119,23 @@ export async function listRepositoryPinnedAgentIds(
   return rows.map((r) => r.agentId);
 }
 
-/** Which of `agentIds` are existing, non-revoked agents. */
-export async function filterActiveAgentIds(db: Database, agentIds: string[]): Promise<Set<string>> {
+/** Which of `agentIds` are existing, non-revoked agents of the organization. */
+export async function filterActiveAgentIds(
+  db: Database,
+  organizationId: string,
+  agentIds: string[],
+): Promise<Set<string>> {
   if (agentIds.length === 0) return new Set();
   const rows = await db
     .select({ id: agents.id })
     .from(agents)
-    .where(and(inArray(agents.id, agentIds), isNull(agents.revokedAt)));
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        inArray(agents.id, agentIds),
+        isNull(agents.revokedAt),
+      ),
+    );
   return new Set(rows.map((r) => r.id));
 }
 
