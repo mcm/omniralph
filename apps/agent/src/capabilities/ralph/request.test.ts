@@ -167,6 +167,32 @@ describe("ralph.request", { timeout: 60_000 }, () => {
 
   const worktreePath = () => repos.branchWorktreePath(repo, branch);
 
+  it("lets the session fetch and push through the brokered git-credential helper (TOOL-138)", async () => {
+    let seen: { env: NodeJS.ProcessEnv; token: string } | undefined;
+    const { query } = fakeQuery(async function* (call) {
+      const env = call.options.env ?? {};
+      seen = { env, token: await readFile(env.OMNIRALPH_JOB_TOKEN_FILE!, "utf8") };
+      yield result({ summary: "Pushed." });
+    });
+    await runRequest(job(), context(), options(query));
+
+    const env = seen!.env;
+    // The token comes from a file the agent keeps current, never from the env itself.
+    expect(env.OMNIRALPH_JOB_TOKEN).toBeUndefined();
+    expect(seen!.token).toBe("job-token");
+    expect(env.OMNIRALPH_SERVER).toBe("https://omniralph.example.com");
+    expect(env).toMatchObject({
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_COUNT: "3",
+      GIT_CONFIG_KEY_0: "credential.helper",
+      GIT_CONFIG_VALUE_0: "",
+      GIT_CONFIG_KEY_1: "credential.helper",
+      GIT_CONFIG_VALUE_1: "!true",
+    });
+    // The token file is removed with the job.
+    await expect(readFile(env.OMNIRALPH_JOB_TOKEN_FILE!, "utf8")).rejects.toThrow();
+  });
+
   it("runs one session in the lane's worktree with the request prompt and ralph's policy (a mention only does what it asks)", async () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ summary: "The epic has 1 open story; TOOL-91 is next." });

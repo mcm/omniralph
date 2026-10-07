@@ -21,8 +21,9 @@ import { RetryableJobError, type JobContext } from "../index.js";
 import { ActivityRelay } from "./activities.js";
 import { controlPanelFetcher, jobAttachments } from "./attachments.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
+import { sessionGitAccess } from "./git-access.js";
 import { createSessionRunner, type SessionRequest, type SessionResult } from "./session.js";
-import { DEFAULT_STORY_MODEL, sessionEnv, type StoryOptions } from "./story.js";
+import { DEFAULT_STORY_MODEL, type StoryOptions } from "./story.js";
 
 const MAX_TEXT = 20_000;
 
@@ -80,7 +81,8 @@ function sessionError(session: SessionResult): string {
  * `EpicEngine.runRequests`): one Claude session in the lane's branch
  * worktree, after setting aside what an earlier session left (`pre-run`),
  * with ralph's tool policy and the request system prompt (which follows the
- * repository's `historyRewrite`). It may commit and push the branch; PR/MR
+ * repository's `historyRewrite`). It may commit and push the branch (git
+ * authenticates through the brokered helper, see `sessionGitAccess`); PR/MR
  * changes come back as `pullRequest` for the control panel to make. The
  * lane's previous request conversation is resumed when the payload names it
  * (retried fresh when the resume fails without a session). What the session
@@ -111,7 +113,8 @@ export async function runRequest(
   });
   const runSession = options.runSession ?? createSessionRunner();
   const env = ctx.env();
-  const plainEnv = sessionEnv(env);
+  // The session fetches and pushes the branch itself, through the brokered helper.
+  const git = await sessionGitAccess(ctx);
   const label = (reason: string) => `${requestStashPrefix(payload)}${reason}`;
 
   try {
@@ -188,7 +191,7 @@ export async function runRequest(
               progressDir,
               ...(attachments.files.length > 0 ? [attachments.dir] : []),
             ],
-            env: plainEnv,
+            env: git.env,
             signal: ctx.signal,
             ...(options.idleTimeoutMs !== undefined && { idleTimeoutMs: options.idleTimeoutMs }),
             onEvent: (event) => relay.event(event),
@@ -266,6 +269,7 @@ export async function runRequest(
       },
     );
   } finally {
+    await git.close();
     await relay.flush();
   }
 }

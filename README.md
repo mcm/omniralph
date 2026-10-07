@@ -106,8 +106,10 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
   from the base branch's `CLAUDE.md`, passed as quoted data; a deterministic pre-pass flags
   prompt-injection text; bot-posted text goes through an output sanitizer. Ralph sessions build
   code from issues people delegated, in repositories that opted in: they run with full permissions
-  in the run's branch worktree and the repository's own Claude settings, but without the job token,
-  and the job (not the session) commits and pushes.
+  in the run's branch worktree and the repository's own Claude settings, but without the job token:
+  story sessions leave committing and pushing to the job. Request sessions (mentions, review and CI
+  follow-ups) push their branch themselves through the `git-credential` helper, which reads the job
+  token from a private file the agent keeps current; a `pre-push` hook rejects any other ref.
 
 ## Quickstart
 
