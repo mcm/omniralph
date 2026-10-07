@@ -52,3 +52,12 @@ export async function getGitHubInstallUrl(): Promise<string | null> {
     return null;
   }
 }
+
+/** The GitHub App's Setup URL path; GitHub sends installations back here. */
+export const GITHUB_CALLBACK_PATH = "/repositories/github/callback";
+/** Starts an installation with a signed `state` (see `createSignedState`). */
+export const GITHUB_INSTALL_PATH = "/repositories/github/install";
+/** `createSignedState` purpose of the installation flow. */
+export const GITHUB_INSTALL_STATE_PURPOSE = "github-install";
+/** Cookie holding the installation state's nonce, binding the flow to the browser that started it. */
+export const GITHUB_INSTALL_COOKIE = "omniralph_github_install";

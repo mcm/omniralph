@@ -25,10 +25,10 @@ export default async function RepositorySettingsPage({
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const db = getDb();
-  const found = await getRepositoryWithConnection(db, id);
+  const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();
   const [profiles, agents, pinnedAgentIds] = await Promise.all([
-    listReviewProfiles(db),
+    listReviewProfiles(db, user.organization.id),
     listPinnableAgents(db),
     listRepositoryPinnedAgentIds(db, id),
   ]);

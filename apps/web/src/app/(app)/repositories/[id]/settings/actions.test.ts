@@ -12,6 +12,8 @@ import {
   upsertScmConnection,
   users,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   DEFAULT_RALPH_SETTINGS,
@@ -30,13 +32,19 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@vercel/queue", () => ({
   QueueClient: class {
@@ -88,6 +96,7 @@ const standardProfile = {
 describe.skipIf(!dockerAvailable)("repository settings and review profiles: server actions", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let agentA: string;
   let agentB: string;
@@ -98,18 +107,23 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    state.orgId = orgId;
     state.db = db;
     await db.insert(users).values([
       { id: "admin-1", email: "admin@example.com" },
       { id: "member-1", email: "member@example.com" },
     ]);
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat-bot", webhookSecret: "hook" },
-    });
+    }))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -300,14 +314,14 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         allowRepoExploration: true,
       }),
     ).toEqual({ ok: true });
-    const quick = (await listReviewProfiles(db)).find((p) => p.id === "quick");
+    const quick = (await listReviewProfiles(db, orgId)).find((p) => p.id === "quick");
     expect(quick).toMatchObject({
       maxTokensPerReview: 5000,
       maxFiles: 10,
       allowRepoExploration: true,
       builtIn: true,
     });
-    expect((await listReviewProfiles(db)).map((p) => p.id).sort()).toEqual([
+    expect((await listReviewProfiles(db, orgId)).map((p) => p.id).sort()).toEqual([
       "deep",
       "quick",
       "standard",

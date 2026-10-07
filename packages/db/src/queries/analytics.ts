@@ -157,7 +157,14 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
           averageTokens: sql<string>`avg(${reviews.tokensIn} + ${reviews.tokensOut}) filter (where ${ran})`,
         })
         .from(reviews)
-        .leftJoin(reviewProfiles, eq(reviewProfiles.id, reviews.profileId))
+        .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+        .leftJoin(
+          reviewProfiles,
+          and(
+            eq(reviewProfiles.organizationId, repositories.organizationId),
+            eq(reviewProfiles.id, reviews.profileId),
+          ),
+        )
         .where(reviewWhere)
         .groupBy(reviews.profileId, reviewProfiles.name)
         .orderBy(asc(reviewProfiles.name)),

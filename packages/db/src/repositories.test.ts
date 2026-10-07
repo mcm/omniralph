@@ -9,12 +9,30 @@ import {
   connectionCredentials,
   connectRepository,
   disconnectRepository,
+  getRepository,
+  getRepositoryWithConnection,
+  getScmConnection,
   listRepositoryOverview,
   listRepositoryOverviewPage,
+  listScmConnections,
   setRepositoryEnabled,
   upsertScmConnection,
 } from "./repositories.js";
-import { agentRepoPins, agents, reviews, scmConnections } from "./schema.js";
+import {
+  agentRepoPins,
+  agents,
+  organizations,
+  reviewProfiles,
+  reviews,
+  scmConnections,
+} from "./schema.js";
+import {
+  getReviewProfile,
+  listReviewProfiles,
+  seedReviewProfiles,
+  updateRepositorySettings,
+  updateReviewProfile,
+} from "./settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -26,11 +44,15 @@ const key = randomBytes(32);
 describe.skipIf(!dockerAvailable)("repository queries", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -40,27 +62,29 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
 
   it("upserts connections by provider, base URL and external ID, encrypting credentials", async () => {
     const input = {
+      organizationId: orgId,
       provider: "gitlab" as const,
       name: "omniralph-bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "42",
       credentials: { token: "glpat-first", webhookSecret: "s1" },
     };
-    const first = await upsertScmConnection(db, input, key);
-    const second = await upsertScmConnection(
+    const first = (await upsertScmConnection(db, input, key))!;
+    const second = (await upsertScmConnection(
       db,
       { ...input, credentials: { token: "glpat-second" } },
       key,
-    );
+    ))!;
     expect(second.id).toBe(first.id);
     expect(second.encryptedCredentials).not.toContain("glpat");
     expect(connectionCredentials(second, key)).toEqual({ token: "glpat-second" });
   });
 
   it("lists connected repos with profile, pins and last review; disconnect keeps history", async () => {
-    const connection = await upsertScmConnection(
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -68,7 +92,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     const repo = await connectRepository(db, {
       connectionId: connection.id,
       provider: "github",
@@ -99,7 +123,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       },
     ]);
 
-    const [row] = (await listRepositoryOverview(db)).filter((r) => r.id === repo.id);
+    const [row] = (await listRepositoryOverview(db, orgId)).filter((r) => r.id === repo.id);
     expect(row).toMatchObject({
       provider: "github",
       fullPath: "acme/web",
@@ -110,20 +134,22 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       lastReviewAt: reviewedAt,
     });
 
-    expect(await setRepositoryEnabled(db, repo.id, false)).toBe(true);
-    expect((await listRepositoryOverview(db)).find((r) => r.id === repo.id)?.enabled).toBe(false);
+    expect(await setRepositoryEnabled(db, orgId, repo.id, false)).toBe(true);
+    expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)?.enabled).toBe(
+      false,
+    );
 
-    const disconnected = await disconnectRepository(db, repo.id);
+    const disconnected = await disconnectRepository(db, orgId, repo.id);
     expect(disconnected).toMatchObject({ enabled: false, webhookId: null });
     expect(disconnected?.disconnectedAt).toBeInstanceOf(Date);
-    expect((await listRepositoryOverview(db)).some((r) => r.id === repo.id)).toBe(false);
+    expect((await listRepositoryOverview(db, orgId)).some((r) => r.id === repo.id)).toBe(false);
     expect(
       await db.select().from(agentRepoPins).where(eq(agentRepoPins.repositoryId, repo.id)),
     ).toEqual([]);
     expect(await db.select().from(reviews).where(eq(reviews.repositoryId, repo.id))).toHaveLength(
       2,
     );
-    expect(await setRepositoryEnabled(db, repo.id, true)).toBe(false);
+    expect(await setRepositoryEnabled(db, orgId, repo.id, true)).toBe(false);
 
     // Reconnecting revives the same row (and its history).
     const again = await connectRepository(db, {
@@ -142,9 +168,10 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
   });
 
   it("pages connected repositories in path order, skipping disconnected ones", async () => {
-    const connection = await upsertScmConnection(
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "gitlab",
         name: "paged",
         baseUrl: "https://gitlab.paged.example",
@@ -152,7 +179,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     const repos = [];
     for (const [i, path] of ["paged/c", "paged/a", "paged/e", "paged/b", "paged/d"].entries()) {
       repos.push(
@@ -164,24 +191,97 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
         }),
       );
     }
-    await disconnectRepository(db, repos[4]!.id);
+    await disconnectRepository(db, orgId, repos[4]!.id);
 
-    const all = (await listRepositoryOverview(db)).map((r) => r.id);
+    const all = (await listRepositoryOverview(db, orgId)).map((r) => r.id);
     const pages = [];
     for (let page = 1; page <= Math.ceil(all.length / 2); page++) {
-      const result = await listRepositoryOverviewPage(db, { page, pageSize: 2 });
+      const result = await listRepositoryOverviewPage(db, orgId, { page, pageSize: 2 });
       expect(result).toMatchObject({ total: all.length, page, pageSize: 2 });
       pages.push(...result.repositories.map((r) => r.id));
     }
     expect(pages).toEqual(all);
     expect(all).not.toContain(repos[4]!.id);
-    const paged = (await listRepositoryOverview(db))
+    const paged = (await listRepositoryOverview(db, orgId))
       .filter((r) => r.connectionId === connection.id)
       .map((r) => r.fullPath);
     expect(paged).toEqual(["paged/a", "paged/b", "paged/c", "paged/e"]);
 
-    const past = await listRepositoryOverviewPage(db, { page: 99, pageSize: 2 });
+    const past = await listRepositoryOverviewPage(db, orgId, { page: 99, pageSize: 2 });
     expect(past).toMatchObject({ repositories: [], total: all.length, page: 99 });
+    await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+  });
+
+  it("keeps connections, repositories and profiles inside their organization", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    const otherId = other!.id;
+    await seedReviewProfiles(db, otherId);
+    const input = {
+      provider: "github" as const,
+      name: "acme",
+      baseUrl: "https://api.github.com",
+      externalId: "3003",
+      credentials: {},
+    };
+    const connection = (await upsertScmConnection(db, { ...input, organizationId: orgId }, key))!;
+    // The installation belongs to `orgId`: another organization can't take it over.
+    expect(
+      await upsertScmConnection(db, { ...input, organizationId: otherId, name: "taken" }, key),
+    ).toBeNull();
+    expect((await getScmConnection(db, orgId, connection.id))?.name).toBe("acme");
+    expect(await getScmConnection(db, otherId, connection.id)).toBeNull();
+    expect((await listScmConnections(db, otherId)).map((c) => c.id)).not.toContain(connection.id);
+
+    const repo = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "777",
+      fullPath: "acme/scoped",
+    });
+    expect(repo.organizationId).toBe(orgId);
+    expect(await getRepository(db, repo.id, orgId)).not.toBeNull();
+    expect(await getRepository(db, repo.id, otherId)).toBeNull();
+    expect(await getRepositoryWithConnection(db, repo.id, otherId)).toBeNull();
+    expect((await listRepositoryOverview(db, otherId)).map((r) => r.id)).not.toContain(repo.id);
+    expect(await setRepositoryEnabled(db, otherId, repo.id, false)).toBe(false);
+    expect(await disconnectRepository(db, otherId, repo.id)).toBeNull();
+    expect((await getRepository(db, repo.id))?.enabled).toBe(true);
+
+    // Profiles are per organization: same slugs, separate rows.
+    expect((await listReviewProfiles(db, otherId)).map((p) => p.id).sort()).toEqual([
+      "deep",
+      "quick",
+      "standard",
+    ]);
+    await updateReviewProfile(db, otherId, "deep", {
+      model: "claude-haiku-4-5",
+      maxTokensPerReview: 1000,
+      maxFiles: 1,
+      allowRepoExploration: false,
+    });
+    expect((await getReviewProfile(db, orgId, "deep"))?.maxTokensPerReview).toBe(500_000);
+
+    // A repository can only use a profile of its own organization.
+    await db.insert(reviewProfiles).values({
+      organizationId: otherId,
+      id: "custom",
+      name: "Custom",
+      model: "claude-haiku-4-5",
+      maxTokensPerReview: 1000,
+      maxFiles: 1,
+      allowRepoExploration: false,
+    });
+    const settings = {
+      profileId: "custom",
+      triggers: { onOpen: true, onPush: true, drafts: false },
+      pathExcludes: [],
+      customInstructions: null,
+    };
+    await expect(updateRepositorySettings(db, orgId, repo.id, settings)).rejects.toThrow();
+    expect(await updateRepositorySettings(db, otherId, repo.id, settings)).toBeNull();
+    expect(
+      await updateRepositorySettings(db, orgId, repo.id, { ...settings, profileId: "deep" }),
+    ).toMatchObject({ profileId: "deep" });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
 });

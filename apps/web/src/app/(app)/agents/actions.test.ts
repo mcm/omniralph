@@ -16,6 +16,8 @@ import {
   users,
   writeAgentAudit,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import type { HeartbeatResponse } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -31,13 +33,19 @@ vi.mock("next/headers", () => ({
 }));
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@vercel/queue", () => ({
   QueueClient: class {
@@ -101,6 +109,7 @@ const HEARTBEAT = { version: "0.2.0", capabilities: ["review"], runningJobIds: [
 describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoA: string;
   let repoB: string;
   const adminId = "admin-1";
@@ -109,18 +118,23 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    state.orgId = orgId;
     state.db = db;
     await db.insert(users).values([
       { id: adminId, email: "admin@example.com" },
       { id: "member-1", email: "member@example.com" },
     ]);
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat-bot", webhookSecret: "hook" },
-    });
+    }))!;
     repoA = (
       await connectRepository(db, {
         connectionId: connection.id,

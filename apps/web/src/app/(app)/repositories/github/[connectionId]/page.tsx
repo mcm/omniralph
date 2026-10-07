@@ -14,11 +14,11 @@ export default async function GitHubInstallationPage({
 }: {
   params: Promise<{ connectionId: string }>;
 }) {
-  await requirePageUser("admin");
+  const admin = await requirePageUser("admin");
   const { connectionId } = await params;
   const db = getDb();
   const connection = /^[0-9a-f-]{36}$/i.test(connectionId)
-    ? await getScmConnection(db, connectionId)
+    ? await getScmConnection(db, admin.organization.id, connectionId)
     : null;
   if (!connection || connection.provider !== "github" || !connection.externalId) notFound();
 

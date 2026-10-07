@@ -29,8 +29,9 @@ export async function rerunReview(
   reviewId: string,
   input: RerunReviewInput,
 ): Promise<RerunActionResult> {
+  let admin;
   try {
-    await requireUser("admin");
+    admin = await requireUser("admin");
   } catch (error) {
     if (error instanceof AuthorizationError) return { ok: false, error: error.message };
     throw error;
@@ -42,7 +43,11 @@ export async function rerunReview(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid re-run options." };
   }
-  const result = await rerun(getDb(), getDispatcher(), { reviewId, ...parsed.data });
+  const result = await rerun(getDb(), getDispatcher(), {
+    organizationId: admin.organization.id,
+    reviewId,
+    ...parsed.data,
+  });
   switch (result.status) {
     case "enqueued":
       revalidatePath(`/reviews/${reviewId}`);

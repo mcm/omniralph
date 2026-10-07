@@ -4,20 +4,39 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
 
+interface Connection {
+  id: string;
+  organizationId: string;
+  externalId: string;
+}
+
 const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
+  /** The signed-in user's active organization. */
+  orgId: "org-a",
   installations: new Map<number, { id: number; account: string }>(),
+  /** Stored connections (by installation ID). */
+  connections: new Map<string, Connection>(),
   upserts: [] as Array<Record<string, unknown>>,
+  usedNonces: new Set<string>(),
   /** Thrown by getInstallation instead of a lookup (auth/config/network failures). */
   failure: null as unknown,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@/lib/scm/github-app", () => ({
   getGitHubAppAuth: () => ({}),
   githubApiUrl: () => "https://api.github.com",
+  getGitHubInstallUrl: async () => "https://github.com/apps/omniralph/installations/new",
+  GITHUB_CALLBACK_PATH: "/repositories/github/callback",
+  GITHUB_INSTALL_COOKIE: "omniralph_github_install",
+  GITHUB_INSTALL_STATE_PURPOSE: "github-install",
 }));
 vi.mock("@omniralph/scm", () => ({
   getInstallation: async (_auth: unknown, id: number) => {
@@ -29,19 +48,52 @@ vi.mock("@omniralph/scm", () => ({
   },
 }));
 vi.mock("@omniralph/db", () => ({
-  upsertScmConnection: async (_db: unknown, values: Record<string, unknown>) => {
+  consumeOAuthState: async (_db: unknown, nonce: string) => {
+    if (state.usedNonces.has(nonce)) return false;
+    state.usedNonces.add(nonce);
+    return true;
+  },
+  findScmConnection: async (_db: unknown, _provider: string, _baseUrl: string, id: string) =>
+    state.connections.get(id) ?? null,
+  upsertScmConnection: async (
+    _db: unknown,
+    values: { organizationId: string; externalId: string },
+  ) => {
     state.upserts.push(values);
-    return { id: "conn-1", ...values };
+    const existing = state.connections.get(values.externalId);
+    // A connection belongs to one organization.
+    if (existing && existing.organizationId !== values.organizationId) return null;
+    const connection = existing ?? { id: `conn-${values.externalId}`, ...values };
+    state.connections.set(values.externalId, connection);
+    return connection;
   },
 }));
 
+process.env.AUTH_SECRET = "test-auth-secret";
+
 const { GET } = await import("./route");
+const { GET: install } = await import("../install/route");
+const { createSignedState, readSignedState } = await import("@/lib/auth/signed-state");
 
 const user = (role: Role) => ({ id: `${role}-1`, role, name: null, email: null, image: null });
+const COOKIE = "omniralph_github_install";
 
-async function callback(query: string): Promise<string | null> {
+/** A state and nonce cookie as `/repositories/github/install` would have set them. */
+async function signed(organizationId = state.orgId, userId = "admin-1") {
+  return createSignedState("github-install", { userId, organizationId });
+}
+
+async function callback(
+  query: string,
+  flow: { state: string; nonce: string } | null | "fresh" = "fresh",
+): Promise<string | null> {
+  const started = flow === "fresh" ? await signed() : flow;
+  const params = new URLSearchParams(query);
+  if (started) params.set("state", started.state);
   const res = await GET(
-    new NextRequest(`https://omniralph.example.com/repositories/github/callback?${query}`),
+    new NextRequest(`https://omniralph.example.com/repositories/github/callback?${params}`, {
+      headers: started ? { cookie: `${COOKIE}=${started.nonce}` } : {},
+    }),
   );
   expect(res.status).toBe(307);
   const location = res.headers.get("location");
@@ -53,8 +105,11 @@ describe("GET /repositories/github/callback", () => {
 
   beforeEach(() => {
     state.user = user("admin");
+    state.orgId = "org-a";
     state.installations = new Map([[42, { id: 42, account: "acme" }]]);
+    state.connections = new Map();
     state.upserts = [];
+    state.usedNonces = new Set();
     state.failure = null;
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -63,12 +118,13 @@ describe("GET /repositories/github/callback", () => {
     consoleError.mockRestore();
   });
 
-  it("stores the installation as a connection and opens its repository picker", async () => {
+  it("stores the installation in the state's organization and opens its repository picker", async () => {
     expect(await callback("installation_id=42&setup_action=install")).toBe(
-      "/repositories/github/conn-1",
+      "/repositories/github/conn-42",
     );
     expect(state.upserts).toEqual([
       {
+        organizationId: "org-a",
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -77,6 +133,61 @@ describe("GET /repositories/github/callback", () => {
         createdBy: "admin-1",
       },
     ]);
+  });
+
+  it("clears the state cookie", async () => {
+    const res = await GET(
+      new NextRequest(
+        "https://omniralph.example.com/repositories/github/callback?installation_id=42",
+      ),
+    );
+    expect(res.headers.get("set-cookie")).toContain(`${COOKIE}=;`);
+  });
+
+  it("refuses an installation another organization already connected", async () => {
+    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    state.orgId = "org-b";
+    expect(await callback("installation_id=42")).toBe("/repositories?github=other_organization");
+    expect(state.connections.get("42")).toMatchObject({ organizationId: "org-a" });
+  });
+
+  it("refuses missing, replayed, foreign and other-organization states", async () => {
+    const started = await signed();
+    expect(await callback("installation_id=42", started)).toBe("/repositories/github/conn-42");
+    state.connections.clear();
+    state.upserts = [];
+    // Replayed.
+    expect(await callback("installation_id=42", started)).toBe(
+      "/repositories?github=invalid_state",
+    );
+    // None (e.g. installed straight from GitHub).
+    expect(await callback("installation_id=42", null)).toBe("/repositories?github=invalid_state");
+    // Without the browser's nonce cookie.
+    const other = await signed();
+    expect(
+      await callback("installation_id=42", { state: other.state, nonce: "someone-else" }),
+    ).toBe("/repositories?github=invalid_state");
+    // Started by another admin.
+    expect(await callback("installation_id=42", await signed("org-a", "admin-2"))).toBe(
+      "/repositories?github=invalid_state",
+    );
+    // Started in another organization than the one the admin now works in.
+    expect(await callback("installation_id=42", await signed("org-b"))).toBe(
+      "/repositories?github=invalid_state",
+    );
+    expect(state.upserts).toEqual([]);
+  });
+
+  it("opens an installation the organization already has without a state", async () => {
+    state.connections.set("42", { id: "conn-42", organizationId: "org-a", externalId: "42" });
+    expect(await callback("installation_id=42&setup_action=update", null)).toBe(
+      "/repositories/github/conn-42",
+    );
+    state.orgId = "org-b";
+    expect(await callback("installation_id=42&setup_action=update", null)).toBe(
+      "/repositories?github=invalid_state",
+    );
+    expect(state.upserts).toEqual([]);
   });
 
   it("refuses installations that aren't ours and malformed IDs", async () => {
@@ -143,5 +254,37 @@ describe("GET /repositories/github/callback", () => {
     state.user = null;
     expect(await callback("installation_id=42")).toBe("/sign-in");
     expect(state.upserts).toEqual([]);
+  });
+});
+
+describe("GET /repositories/github/install", () => {
+  beforeEach(() => {
+    state.user = user("admin");
+    state.orgId = "org-a";
+  });
+
+  const start = () =>
+    install(new NextRequest("https://omniralph.example.com/repositories/github/install"));
+
+  it("sends admins to the app's installation page with a state for their organization", async () => {
+    const res = await start();
+    expect(res.status).toBe(307);
+    const location = new URL(res.headers.get("location")!);
+    expect(location.origin + location.pathname).toBe(
+      "https://github.com/apps/omniralph/installations/new",
+    );
+    const cookie = res.cookies.get(COOKIE);
+    expect(cookie).toMatchObject({ path: "/repositories/github/callback", httpOnly: true });
+    const read = await readSignedState("github-install", location.searchParams.get("state"), {
+      userId: "admin-1",
+      nonce: cookie?.value,
+    });
+    expect(read).toMatchObject({ organizationId: "org-a" });
+  });
+
+  it("refuses members", async () => {
+    state.user = user("member");
+    const res = await start();
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/access-denied");
   });
 });

@@ -21,14 +21,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AUDIT_LIMIT = 50;
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePageUser("admin");
+  const admin = await requirePageUser("admin");
   const { id } = await params;
   if (!UUID.test(id)) notFound();
   const db = getDb();
   const [agent, audit, repositories, globalVersion] = await Promise.all([
     getAgentOverview(db, id),
     listRecentAgentAudit(db, id, AUDIT_LIMIT),
-    listRepositoryOverview(db),
+    listRepositoryOverview(db, admin.organization.id),
     getDesiredAgentVersion(db),
   ]);
   if (!agent) notFound();

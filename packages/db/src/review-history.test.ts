@@ -6,7 +6,8 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import { connectRepository, upsertScmConnection } from "./repositories.js";
 import { emptyFindingCounts, getReviewDetail, listReviews } from "./review-history.js";
-import { agents, findings, reviews } from "./schema.js";
+import { agents, findings, reviews, organizations } from "./schema.js";
+import { seedReviewProfiles } from "./settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -18,6 +19,7 @@ const key = randomBytes(32);
 describe.skipIf(!dockerAvailable)("review history queries", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let otherRepoId: string;
   let agentId: string;
@@ -28,10 +30,14 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
 
-    const connection = await upsertScmConnection(
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "gitlab",
         name: "bot",
         baseUrl: "https://gitlab.example.com",
@@ -39,7 +45,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     const repo = await connectRepository(db, {
       connectionId: connection.id,
       provider: "gitlab",
@@ -117,23 +123,29 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
   });
 
   it("pages a repository's reviews newest first, 25 per page", async () => {
-    const first = await listReviews(db, { repositoryId: repoId });
+    const first = await listReviews(db, { organizationId: orgId, repositoryId: repoId });
     expect(first).toMatchObject({ total: 30, page: 1, pageSize: 25 });
     expect(first.reviews.map((r) => r.id)).toEqual(newestFirst.slice(0, 25));
 
-    const second = await listReviews(db, { repositoryId: repoId, page: 2 });
+    const second = await listReviews(db, { organizationId: orgId, repositoryId: repoId, page: 2 });
     expect(second).toMatchObject({ total: 30, page: 2 });
     expect(second.reviews.map((r) => r.id)).toEqual(newestFirst.slice(25));
 
-    const past = await listReviews(db, { repositoryId: repoId, page: 9 });
+    const past = await listReviews(db, { organizationId: orgId, repositoryId: repoId, page: 9 });
     expect(past).toMatchObject({ total: 30, page: 9, reviews: [] });
 
     // Invalid page numbers fall back to the first page.
-    expect((await listReviews(db, { repositoryId: repoId, page: 0 })).page).toBe(1);
+    expect(
+      (await listReviews(db, { organizationId: orgId, repositoryId: repoId, page: 0 })).page,
+    ).toBe(1);
   });
 
   it("returns the row's PR, repository, profile, agent, usage and per-severity counts", async () => {
-    const { reviews: rows } = await listReviews(db, { repositoryId: repoId, pageSize: 2 });
+    const { reviews: rows } = await listReviews(db, {
+      organizationId: orgId,
+      repositoryId: repoId,
+      pageSize: 2,
+    });
     expect(rows[0]).toMatchObject({
       prNumber: 30,
       prTitle: "PR 30",
@@ -157,16 +169,25 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
   });
 
   it("filters by status and trigger, alone and combined", async () => {
-    const failed = await listReviews(db, { repositoryId: repoId, status: "failed" });
+    const failed = await listReviews(db, {
+      organizationId: orgId,
+      repositoryId: repoId,
+      status: "failed",
+    });
     expect(failed.total).toBe(6);
     expect(failed.reviews.every((r) => r.status === "failed" && r.error === "boom")).toBe(true);
 
-    const mentions = await listReviews(db, { repositoryId: repoId, trigger: "mention" });
+    const mentions = await listReviews(db, {
+      organizationId: orgId,
+      repositoryId: repoId,
+      trigger: "mention",
+    });
     expect(mentions.total).toBe(10);
     expect(mentions.reviews.every((r) => r.trigger === "mention")).toBe(true);
 
     // i % 15 === 0: reviews 1 and 16.
     const both = await listReviews(db, {
+      organizationId: orgId,
       repositoryId: repoId,
       status: "failed",
       trigger: "mention",
@@ -174,6 +195,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
     expect(both.reviews.map((r) => r.prNumber)).toEqual([16, 1]);
 
     const filteredPage = await listReviews(db, {
+      organizationId: orgId,
       repositoryId: repoId,
       trigger: "webhook",
       pageSize: 15,
@@ -184,7 +206,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
   });
 
   it("lists every repository without a repository filter", async () => {
-    const all = await listReviews(db);
+    const all = await listReviews(db, { organizationId: orgId });
     expect(all.total).toBe(31);
     expect(all.reviews[0]).toMatchObject({
       prNumber: 99,
@@ -196,7 +218,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
   });
 
   it("loads a review's detail with its findings in order", async () => {
-    const detail = await getReviewDetail(db, newestFirst[0]!);
+    const detail = await getReviewDetail(db, orgId, newestFirst[0]!);
     expect(detail).toMatchObject({
       review: { id: newestFirst[0], prNumber: 30, model: null },
       repository: { id: repoId, fullPath: "acme/api" },
@@ -204,6 +226,20 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
       agent: { id: agentId, name: "coder-1" },
     });
     expect(detail!.findings.map((f) => f.title)).toEqual(["Finding 1", "Finding 2", "Finding 3"]);
-    expect(await getReviewDetail(db, randomUUID())).toBeNull();
+    expect(await getReviewDetail(db, orgId, randomUUID())).toBeNull();
+  });
+
+  it("hides the reviews from other organizations", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    const otherId = other!.id;
+    expect(await listReviews(db, { organizationId: otherId })).toMatchObject({
+      reviews: [],
+      total: 0,
+    });
+    expect(await listReviews(db, { organizationId: otherId, repositoryId: repoId })).toMatchObject({
+      reviews: [],
+      total: 0,
+    });
+    expect(await getReviewDetail(db, otherId, newestFirst[0]!)).toBeNull();
   });
 });

@@ -12,6 +12,8 @@ import {
   users,
   type Database,
   type FindingRow,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
@@ -24,13 +26,19 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   resolveThread: vi.fn<(repo: unknown, number: number, commentId: string) => Promise<void>>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
@@ -64,24 +72,30 @@ const member = { id: "member-1", role: "member" as const, name: null, email: nul
 describe.skipIf(!dockerAvailable)("finding dismiss and restore: server actions", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let reviewId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    state.orgId = orgId;
     state.db = db;
     await db.insert(users).values([
       { id: "member-1", name: "Mia Member", email: "mia@example.com" },
       { id: "member-2", name: null, email: "sam@example.com" },
     ]);
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat-bot", webhookSecret: "hook" },
-    });
+    }))!;
     const repo = await connectRepository(db, {
       connectionId: connection.id,
       provider: "gitlab",
@@ -250,7 +264,7 @@ describe.skipIf(!dockerAvailable)("finding dismiss and restore: server actions",
     ).toMatchObject({ status: "ok" });
     expect(state.resolveThread).toHaveBeenLastCalledWith(expect.anything(), 42, "discussion-2");
 
-    const view = reviewDetailView((await getReviewDetail(db, reviewId))!);
+    const view = reviewDetailView((await getReviewDetail(db, orgId, reviewId))!);
     const byTitle = Object.fromEntries(
       view.files.flatMap((f) => f.findings).map((f) => [f.title, f]),
     );

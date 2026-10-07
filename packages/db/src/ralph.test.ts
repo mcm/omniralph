@@ -46,7 +46,15 @@ import {
   getRepository,
   upsertScmConnection,
 } from "./repositories.js";
-import { agents, DEFAULT_RALPH_SETTINGS, jobs, ralphMessages, ralphRuns } from "./schema.js";
+import {
+  agents,
+  DEFAULT_RALPH_SETTINGS,
+  jobs,
+  ralphMessages,
+  ralphRuns,
+  organizations,
+} from "./schema.js";
+import { seedReviewProfiles } from "./settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -57,6 +65,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   const key = randomBytes(32);
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoA: string;
   let repoB: string;
   let agentId: string;
@@ -66,9 +75,13 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    const connection = await upsertScmConnection(
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -76,7 +89,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     repoA = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -159,7 +172,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       "acme/b-api",
     ]);
 
-    await disconnectRepository(db, repoB);
+    await disconnectRepository(db, orgId, repoB);
     expect((await listRalphRepositories(db)).map((r) => r.id)).toEqual([repoA]);
     expect(
       await updateRepositoryRalphSettings(db, repoB, {

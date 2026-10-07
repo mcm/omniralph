@@ -29,6 +29,8 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type RalphRun,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
@@ -121,6 +123,7 @@ async function detailPage(
 describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoA: string;
   let repoB: string;
   let agentId: string;
@@ -131,21 +134,26 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
-    const github = await upsertScmConnection(db, {
+    const github = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://api.github.com",
       externalId: "1",
       credentials: {},
-    });
-    const gitlab = await upsertScmConnection(db, {
+    }))!;
+    const gitlab = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat-bot", webhookSecret: "hook" },
-    });
+    }))!;
     repoA = (
       await connectRepository(db, {
         connectionId: github.id,

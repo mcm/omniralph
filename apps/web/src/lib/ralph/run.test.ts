@@ -26,6 +26,8 @@ import {
   type Database,
   type Job,
   type RalphRun,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
@@ -71,6 +73,7 @@ const EPIC_DESCRIPTION = `Build the thing.
 describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let gitlabRepoId: string;
   let agentA: string;
@@ -87,9 +90,13 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    const connection = await upsertScmConnection(
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -97,7 +104,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         credentials: {},
       },
       randomBytes(32),
-    );
+    ))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -113,9 +120,10 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
     });
-    const gitlab = await upsertScmConnection(
+    const gitlab = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "gitlab",
         name: "gitlab",
         baseUrl: "https://gitlab.example.com",
@@ -123,7 +131,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         credentials: { token: "t", webhookSecret: "s" },
       },
       randomBytes(32),
-    );
+    ))!;
     gitlabRepoId = (
       await connectRepository(db, {
         connectionId: gitlab.id,

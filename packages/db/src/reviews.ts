@@ -55,6 +55,21 @@ export async function getReview(db: Database, reviewId: string): Promise<Review 
   return row ?? null;
 }
 
+/** The organization of a finding (through its review's repository), or null if it doesn't exist. */
+export async function getFindingOrganizationId(
+  db: Database,
+  findingId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ organizationId: repositories.organizationId })
+    .from(findings)
+    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+    .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+    .where(eq(findings.id, findingId))
+    .limit(1);
+  return row?.organizationId ?? null;
+}
+
 export async function listReviewFindings(db: Database, reviewId: string): Promise<FindingRow[]> {
   return db
     .select()
@@ -142,7 +157,13 @@ export async function getRepositoryReviewSettings(
   const [row] = await db
     .select({ repository: repositories, profile: reviewProfiles })
     .from(repositories)
-    .innerJoin(reviewProfiles, eq(reviewProfiles.id, repositories.profileId))
+    .innerJoin(
+      reviewProfiles,
+      and(
+        eq(reviewProfiles.organizationId, repositories.organizationId),
+        eq(reviewProfiles.id, repositories.profileId),
+      ),
+    )
     .where(eq(repositories.id, repositoryId))
     .limit(1);
   if (!row) return null;

@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
 import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
-import { agents, feedback, findings, jobs, reviews } from "../schema.js";
+import { agents, feedback, findings, jobs, reviews, organizations } from "../schema.js";
 import { analyticsWindow, getAnalytics, listAnalyticsRepositories } from "./analytics.js";
+import { seedReviewProfiles } from "../settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -31,6 +32,7 @@ describe("analyticsWindow", () => {
 describe.skipIf(!dockerAvailable)("analytics queries", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoA: string;
   let repoB: string;
   let agent1: string;
@@ -40,10 +42,14 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
 
-    const connection = await upsertScmConnection(
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "app",
         baseUrl: "https://api.github.com",
@@ -51,7 +57,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     repoA = (
       await connectRepository(db, {
         connectionId: connection.id,

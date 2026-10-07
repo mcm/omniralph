@@ -17,6 +17,8 @@ import {
   runMigrations,
   scmConnections,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import type { HeartbeatResponse, JobOutcomeResponse, JobStartResponse } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -132,9 +134,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     // After the container started, or msw intercepts Testcontainers' Docker calls.
     server.listen({ onUnhandledFrame: "error" });
 
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
     const [connection] = await db
       .insert(scmConnections)
       .values({
+        organizationId: org!.id,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -145,6 +150,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     const [repo] = await db
       .insert(repositories)
       .values({
+        organizationId: org!.id,
         provider: "github",
         externalId: "100",
         fullPath: "acme/app",

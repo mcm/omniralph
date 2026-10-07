@@ -10,6 +10,8 @@ import {
   updateRun,
   upsertScmConnection,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { CAPABILITY_JOB_SCOPES, type JobTokenScope } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -64,6 +66,7 @@ const OTHER = "b".repeat(32);
 describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachmentId}", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repositoryId: string;
   let agentId: string;
 
@@ -71,14 +74,18 @@ describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachm
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat", webhookSecret: "hook" },
-    });
+    }))!;
     repositoryId = (
       await connectRepository(db, {
         connectionId: connection.id,

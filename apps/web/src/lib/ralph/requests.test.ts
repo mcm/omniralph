@@ -25,6 +25,8 @@ import {
   type Database,
   type Job,
   type RalphRun,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
@@ -72,6 +74,7 @@ const EPIC_DESCRIPTION = `Build the thing.
 describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let gitlabRepoId: string;
   let agentA: string;
@@ -87,9 +90,13 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    const connection = await upsertScmConnection(
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -97,7 +104,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
         credentials: {},
       },
       randomBytes(32),
-    );
+    ))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
 import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
-import { jobs, ralphRuns, ralphStories } from "../schema.js";
+import { jobs, ralphRuns, ralphStories, organizations } from "../schema.js";
 import { getRalphAnalytics } from "./ralph-analytics.js";
+import { seedReviewProfiles } from "../settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -19,6 +20,7 @@ const now = new Date("2026-10-05T12:00:00Z");
 describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoA: string;
   let repoB: string;
 
@@ -26,10 +28,14 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
 
-    const connection = await upsertScmConnection(
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "app",
         baseUrl: "https://api.github.com",
@@ -37,7 +43,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
         credentials: {},
       },
       key,
-    );
+    ))!;
     const connect = async (externalId: string, fullPath: string) =>
       (
         await connectRepository(db, {

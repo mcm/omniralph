@@ -19,16 +19,20 @@ export type RerunReviewResult =
  * (mode `full`, like `@bot review`: open findings are still dropped as
  * duplicates); Fresh reviews it from scratch (mode `fresh`). A closed or
  * merged PR gets no job; an active review of the same head is returned as
- * `duplicate` (the dedupe key).
+ * `duplicate` (the dedupe key). Only reviews of `organizationId` are re-run.
  */
 export async function rerunReview(
   db: Database,
   dispatcher: JobDispatcher,
-  input: { reviewId: string } & RerunReviewInput,
+  input: { organizationId: string; reviewId: string } & RerunReviewInput,
 ): Promise<RerunReviewResult> {
   const review = await getReview(db, input.reviewId);
   if (!review) return { status: "not_found" };
   const found = await getRepositoryWithConnection(db, review.repositoryId);
+  // Another organization's review doesn't exist as far as the caller can tell.
+  if (found && found.repository.organizationId !== input.organizationId) {
+    return { status: "not_found" };
+  }
   if (!found || !found.repository.enabled || found.repository.disconnectedAt) {
     return { status: "repository_unavailable" };
   }

@@ -74,7 +74,8 @@ export interface RepositoryRow {
   lastReviewAt: string | null;
 }
 
-export type GitHubNotice = "requested" | "invalid" | "error";
+export type GitHubNotice =
+  "requested" | "invalid" | "invalid_state" | "other_organization" | "error";
 
 interface RepositoriesViewProps {
   /** The current page of connected repositories. */
@@ -383,6 +384,18 @@ const githubNotices: Record<
     variant: "warning",
     title: "Unknown GitHub installation",
     description: "GitHub didn't return an installation of this app. Try connecting again.",
+  },
+  invalid_state: {
+    variant: "warning",
+    title: "GitHub installation not connected",
+    description:
+      "The installation didn't come back from a Connect GitHub started in this organization, or the link expired. Click Connect GitHub to try again.",
+  },
+  other_organization: {
+    variant: "destructive",
+    title: "Installation belongs to another organization",
+    description:
+      "This GitHub App installation is already connected to another Omniralph organization. An installation can only be connected to one organization.",
   },
   error: {
     variant: "destructive",
