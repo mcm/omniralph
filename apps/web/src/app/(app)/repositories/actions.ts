@@ -17,7 +17,7 @@ import {
   GitLabSetupClient,
   GitLabSetupError,
   listInstallationRepos,
-  type GitLabProject as ListedGitLabProject,
+  type GitLabProject,
 } from "@omniralph/scm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
@@ -38,9 +38,6 @@ interface GitLabCredentials extends Record<string, unknown> {
   /** Secret on every project webhook of the connection (`X-Gitlab-Token`). */
   webhookSecret: string;
 }
-
-/** A project to connect; `replaceHook` recreates the webhook of an already connected one. */
-type GitLabProject = ListedGitLabProject & { replaceHook?: boolean };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -66,7 +63,7 @@ async function connectGitLabProjects(
   const failed: string[] = [];
   for (const project of projects) {
     const previous = known.get(String(project.id));
-    if (previous && !previous.disconnectedAt && previous.webhookId && !project.replaceHook) {
+    if (previous && !previous.disconnectedAt && previous.webhookId) {
       await connectRepository(db, {
         connectionId,
         provider: "gitlab",
@@ -100,12 +97,10 @@ async function connectGitLabProjects(
 }
 
 /**
- * Connects GitLab: validates the bot token, resolves every given project, stores the
- * connection (token and webhook secret encrypted) in the admin's active organization and
- * creates a project webhook for MR and comment events on each project. Without project
- * paths only the connection is stored; its projects are then picked from a list (see
- * {@link saveGitLabProjects}). Nothing is stored if the token or a project path is bad, or
- * the connection (same instance and token user) already belongs to another organization.
+ * Connects GitLab: validates the bot token and stores the connection (token and webhook
+ * secret encrypted) in the admin's active organization. Its projects are then picked from a
+ * list (see {@link saveGitLabProjects}). Nothing is stored if the token is bad, or the
+ * connection (same instance and token user) already belongs to another organization.
  * Returns the connection's ID.
  */
 export async function connectGitLab(
@@ -114,14 +109,11 @@ export async function connectGitLab(
   return runAdminAction(async (admin) => {
     const parsed = parseGitLabConnectForm(form);
     if (!parsed.ok) return parsed;
-    const { baseUrl, token, projectPaths } = parsed.input;
+    const { baseUrl, token } = parsed.input;
 
-    const gitlab = new GitLabSetupClient({ baseUrl, token });
     let owner;
-    const projects = [];
     try {
-      owner = await gitlab.validateToken();
-      for (const path of projectPaths) projects.push(await gitlab.getProject(path));
+      owner = await new GitLabSetupClient({ baseUrl, token }).validateToken();
     } catch (error) {
       if (error instanceof GitLabSetupError) return { ok: false, error: error.message };
       throw error;
@@ -147,28 +139,9 @@ export async function connectGitLab(
     });
     if (!connection) return { ok: false, error: OTHER_ORGANIZATION_ERROR };
 
-    // Connecting projects by path again replaces their webhooks (e.g. to add new events).
-    const failed = await connectGitLabProjects(
-      gitlab,
-      connection.id,
-      webhookSecret,
-      projects.map((project) => ({ ...project, replaceHook: true })),
-    );
-
     revalidatePath(REPOSITORIES_PATH);
     revalidatePath(`${REPOSITORIES_PATH}/gitlab/${connection.id}`);
-    const connectionId = connection.id;
-    if (projects.length > 0 && failed.length === projects.length) {
-      return { ok: false, error: `Couldn't create the webhook. ${failed.join(" ")}` };
-    }
-    if (failed.length > 0) {
-      return {
-        ok: true,
-        connectionId,
-        warning: `Some projects weren't connected. ${failed.join(" ")}`,
-      };
-    }
-    return { ok: true, connectionId };
+    return { ok: true, connectionId: connection.id };
   });
 }
 
@@ -332,7 +305,7 @@ export async function saveGitLabProjects(
       webhookSecret,
       available.filter((project) => selected.has(String(project.id))),
     );
-    // Projects the list doesn't show (connected by path, archived, past the cap) can't be
+    // Projects the list doesn't show (archived, past the cap, no longer maintained) can't be
     // ticked, so only listed ones are disabled when left unticked.
     const listedIds = new Set(available.map((project) => String(project.id)));
     for (const repo of await listConnectionRepositories(db, connectionId)) {

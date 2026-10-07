@@ -40,11 +40,9 @@ in MR comments, e.g. `@group_42_bot_1a2b review`.
 
 1. As an admin of the Omniralph organization, open **Repositories › Connect GitLab**.
 2. Enter the base URL (`https://gitlab.com` or your instance, without `/api/v4`) and the bot token.
-   Either leave **Project paths** empty to pick the projects from a list next, or enter them
-   (`group/subgroup/project`, one per line) to connect them straight away.
-3. The control panel validates the token (user and `api` scope) and stores the connection. Without
-   project paths it opens the connection's project list: every unarchived project the bot's user
-   is a **Maintainer** (or Owner) of, up to 1,000. Tick the projects to review and **Save**.
+3. The control panel validates the token (user and `api` scope), stores the connection and opens
+   its project list: every unarchived project the bot's user is a **Maintainer** (or Owner) of, up
+   to 1,000. Tick the projects to review and **Save**.
 4. For each connected project it creates a project webhook at `<APP_URL>/api/webhooks/gitlab` for
    merge request, comment (note) and **Pipeline events**, with SSL verification on and a generated
    secret (checked against `X-Gitlab-Token`).

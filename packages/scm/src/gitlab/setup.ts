@@ -137,24 +137,6 @@ export class GitLabSetupClient {
     return { userId: user.id, username: user.username, name: user.name, scopes };
   }
 
-  /** Looks up a project by its `group/subgroup/project` path. */
-  async getProject(path: string): Promise<GitLabProject> {
-    const fullPath = path.trim().replace(/^\/+|\/+$/g, "").replace(/\.git$/, "");
-    try {
-      const project = await this.api.Projects.show(fullPath);
-      return toProject(project);
-    } catch (error) {
-      const status = statusOf(error);
-      if (status === 404 || status === 403) {
-        throw new GitLabSetupError(
-          `Project ${fullPath} wasn't found, or the token's user isn't a member of it.`,
-          status,
-        );
-      }
-      throw error;
-    }
-  }
-
   /**
    * Projects the token's user can connect: those it's a member of with at least the
    * Maintainer role (needed for webhooks and project access tokens), archived ones

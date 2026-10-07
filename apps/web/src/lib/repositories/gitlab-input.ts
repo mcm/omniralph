@@ -3,21 +3,12 @@ import { normalizeGitLabUrl } from "@omniralph/scm";
 export interface GitLabConnectForm {
   baseUrl: string;
   token: string;
-  /**
-   * Project paths, one per line (commas and spaces also separate). Optional: without
-   * them, the projects are picked from a list after connecting.
-   */
-  projectPaths: string;
 }
 
 export interface GitLabConnectInput {
   baseUrl: string;
   token: string;
-  projectPaths: string[];
 }
-
-export const MAX_GITLAB_PROJECTS = 50;
-const PROJECT_PATH = /^[\w.-]+(\/[\w.-]+)+$/;
 
 function isLocalhost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
@@ -47,30 +38,8 @@ export function parseGitLabConnectForm(
   const token = form.token.trim();
   if (!token) return { ok: false, error: "Enter the bot's access token." };
 
-  const projectPaths = [
-    ...new Set(
-      form.projectPaths
-        .split(/[\s,]+/)
-        .map((path) =>
-          path
-            .trim()
-            .replace(new RegExp(`^${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`), "")
-            .replace(/^\/+|\/+$/g, "")
-            .replace(/\.git$/, ""),
-        )
-        .filter(Boolean),
-    ),
-  ];
-  if (projectPaths.length > MAX_GITLAB_PROJECTS) {
-    return { ok: false, error: `Connect at most ${MAX_GITLAB_PROJECTS} projects at a time.` };
-  }
-  const invalid = projectPaths.find(
-    (path) => !PROJECT_PATH.test(path) || path.split("/").some((segment) => /^\.+$/.test(segment)),
-  );
-  if (invalid) return { ok: false, error: `${invalid} isn't a project path like group/project.` };
-
   return {
     ok: true,
-    input: { baseUrl: url.origin + url.pathname.replace(/\/+$/, ""), token, projectPaths },
+    input: { baseUrl: url.origin + url.pathname.replace(/\/+$/, ""), token },
   };
 }
