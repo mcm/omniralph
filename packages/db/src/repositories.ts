@@ -158,11 +158,14 @@ export interface ConnectRepositoryInput {
   externalId: string;
   fullPath: string;
   webhookId?: string | null;
+  /** Whether reviews are on (default `true`). */
+  enabled?: boolean;
 }
 
 /**
  * Connects (or reconnects) a repository: creates it, or re-enables an existing row for the
  * same connection and external ID (clearing `disconnectedAt`) so its history carries over.
+ * With `enabled: false` it's connected with reviews off.
  * The repository belongs to its connection's organization.
  */
 export async function connectRepository(
@@ -171,7 +174,7 @@ export async function connectRepository(
 ): Promise<Repository> {
   const set = {
     fullPath: input.fullPath,
-    enabled: true,
+    enabled: input.enabled ?? true,
     disconnectedAt: null,
     ...(input.webhookId !== undefined ? { webhookId: input.webhookId } : {}),
   };

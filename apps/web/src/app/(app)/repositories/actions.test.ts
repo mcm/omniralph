@@ -10,13 +10,14 @@ import {
   reviews,
   runMigrations,
   scmConnections,
+  scmCredentialCache,
   seedReviewProfiles,
   users,
   type Database,
 } from "@omniralph/db";
 import { GitHubAppAuth } from "@omniralph/scm";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -63,6 +64,9 @@ interface HookRequest {
 
 const hookRequests: HookRequest[] = [];
 const deletedHooks: string[] = [];
+/** Project access tokens minted, as `<project ID>/<scope>`. */
+const mintedTokens: string[] = [];
+let nextTokenId = 500;
 const listQueries: URLSearchParams[] = [];
 const projects: Record<string, { id: number; path_with_namespace: string; web_url: string }> = {
   "acme/api": { id: 101, path_with_namespace: "acme/api", web_url: `${GITLAB}/acme/api` },
@@ -99,6 +103,15 @@ const server = setupServer(
       body: (await request.json()) as Record<string, unknown>,
     });
     return HttpResponse.json({ id: nextHookId++, url: "x" }, { status: 201 });
+  }),
+  http.post(`${API}/projects/:id/access_tokens`, async ({ request, params }) => {
+    const body = (await request.json()) as { scopes: string[]; expires_at: string };
+    mintedTokens.push(`${String(params.id)}/${body.scopes.join(",")}`);
+    const id = nextTokenId++;
+    return HttpResponse.json(
+      { id, token: `glpat-project-${id}`, scopes: body.scopes, expires_at: body.expires_at },
+      { status: 201 },
+    );
   }),
   http.delete(`${API}/projects/:id/hooks/:hookId`, ({ params }) => {
     deletedHooks.push(`${String(params.id)}/${String(params.hookId)}`);
@@ -144,6 +157,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     state.orgId = orgId;
     hookRequests.length = 0;
     deletedHooks.length = 0;
+    mintedTokens.length = 0;
     listQueries.length = 0;
   });
 
@@ -247,6 +261,9 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       expect(await saveGitLabProjects(connectionId, [101, 102, 999])).toEqual({ ok: true });
       expect(listQueries[0]?.get("min_access_level")).toBe("40");
       expect(hookRequests.map((r) => r.projectId).sort()).toEqual(["101", "102"]);
+      // Each project's clone token was minted (and cached) before it was connected.
+      expect(mintedTokens.sort()).toEqual(["101/read_repository", "102/read_repository"]);
+      expect(await state.db.select().from(scmCredentialCache)).toHaveLength(2);
       const [connection] = await state.db.select().from(scmConnections);
       const { webhookSecret } = connectionCredentials<{ webhookSecret: string }>(connection!);
       for (const { body } of hookRequests) {
@@ -277,6 +294,59 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
       expect(repos.map((r) => r.enabled)).toEqual([true, true]);
       expect(hookRequests).toHaveLength(2);
+      expect(deletedHooks).toEqual([]);
+      // acme/api was re-enabled with its still-valid cached clone token.
+      expect(mintedTokens).toHaveLength(2);
+    });
+
+    it("doesn't connect a project that can't mint clone tokens, and connects the others", async () => {
+      server.use(
+        http.post(`${API}/projects/102/access_tokens`, () =>
+          HttpResponse.json(
+            { message: "400 Bad request - User does not have permission to create project access token" },
+            { status: 400 },
+          ),
+        ),
+      );
+      const connectionId = await connectGitLabProjects();
+
+      const result = await saveGitLabProjects(connectionId, [101, 102]);
+      expect(result).toEqual({
+        ok: true,
+        warning: expect.stringContaining(
+          "acme/sub/web: The GitLab bot token can't create project access tokens on acme/sub/web.",
+        ),
+      });
+      expect(result.ok && result.warning).not.toContain("acme/api:");
+      expect(hookRequests.map((r) => r.projectId)).toEqual(["101"]);
+      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => [r.fullPath, r.enabled, r.disconnectedAt !== null])).toEqual([
+        ["acme/api", true, false],
+        ["acme/sub/web", false, true],
+      ]);
+    });
+
+    it("doesn't re-enable a project that can no longer mint clone tokens", async () => {
+      const connectionId = await connectGitLabProjects([101]);
+      expect(await saveGitLabProjects(connectionId, [])).toEqual({ ok: true });
+      // No cached token to reuse, so a new one must be minted, and GitLab refuses.
+      await state.db.delete(scmCredentialCache);
+      server.use(
+        http.post(`${API}/projects/101/access_tokens`, () =>
+          HttpResponse.json(
+            { message: "403 Forbidden - User does not have permission to create project access token" },
+            { status: 403 },
+          ),
+        ),
+      );
+
+      expect(await saveGitLabProjects(connectionId, [101])).toEqual({
+        ok: true,
+        warning: expect.stringContaining("acme/api: The GitLab bot token can't create project access tokens"),
+      });
+      const [repo] = await state.db.select().from(repositories);
+      expect(repo).toMatchObject({ enabled: false, disconnectedAt: null });
+      expect(hookRequests).toHaveLength(1);
       expect(deletedHooks).toEqual([]);
     });
 
@@ -321,7 +391,10 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
         ok: true,
         warning: expect.stringContaining("acme/sub/web"),
       });
-      const repos = await state.db.select().from(repositories);
+      const repos = await state.db
+        .select()
+        .from(repositories)
+        .where(isNull(repositories.disconnectedAt));
       expect(repos.map((r) => r.fullPath)).toEqual(["acme/api"]);
     });
 
