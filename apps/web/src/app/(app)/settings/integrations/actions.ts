@@ -8,12 +8,16 @@ import { getDb } from "@/lib/db";
 import { revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 
 /**
- * Disconnects the Linear workspace: forgets its tokens and revokes them at
+ * Disconnects the active organization's Linear workspace: forgets its tokens and revokes them at
  * Linear (best effort). Linear webhooks are ignored from then on.
  */
 export async function disconnectLinear(): Promise<ActionResult> {
-  return runAdminAction(async () => {
-    const removed = await deleteIntegration<LinearCredentials>(getDb(), "linear");
+  return runAdminAction(async (admin) => {
+    const removed = await deleteIntegration<LinearCredentials>(
+      getDb(),
+      admin.organization.id,
+      "linear",
+    );
     if (!removed) return { ok: false, error: "No Linear workspace is connected." };
     revalidatePath("/settings/integrations");
     try {

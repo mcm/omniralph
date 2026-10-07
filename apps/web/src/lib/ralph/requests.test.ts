@@ -84,7 +84,13 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
 
-  const deps = (): StartRunDeps => ({ db, linear, dispatcher, adapterFor: () => scm.asAdapter() });
+  const deps = (): StartRunDeps => ({
+    db,
+    organizationId: orgId,
+    linear,
+    dispatcher,
+    adapterFor: () => scm.asAdapter(),
+  });
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();

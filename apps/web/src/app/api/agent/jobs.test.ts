@@ -125,6 +125,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let repositoryId: string;
+  let orgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -135,6 +136,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     server.listen({ onUnhandledFrame: "error" });
 
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    orgId = org!.id;
     await seedReviewProfiles(db, org!.id);
     const [connection] = await db
       .insert(scmConnections)
@@ -784,6 +786,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const [run] = await db
         .insert(ralphRuns)
         .values({
+          organizationId: orgId,
           linearIssueId: `issue-${randomUUID()}`,
           linearIdentifier: "ENG-1",
           linearAgentSessionId: `session-${randomUUID()}`,

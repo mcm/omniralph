@@ -267,7 +267,7 @@ export async function cleanupAfterIssueCompleted(
   deps: RalphDeps,
   linearIssueId: string,
 ): Promise<void> {
-  const run = await getRunByIssue(deps.db, linearIssueId);
+  const run = await getRunByIssue(deps.db, deps.organizationId, linearIssueId);
   if (!run) return;
   for (const lane of await listLanes(deps.db, run.id)) {
     if (lane.prNumber === null || (lane.prClosed && !lane.prMerged)) continue;
@@ -613,7 +613,7 @@ async function expireBranchQuestion(deps: RalphDeps, lane: RalphLane, at: Date):
 }
 
 /**
- * The reconcile cron's cleanup pass (the fallback for missed webhooks):
+ * The reconcile cron's cleanup pass of the organization's runs (the fallback for missed webhooks):
  * open ralph PRs/MRs of repositories that clean up are checked (merged ones
  * are recorded and cleaned up); merged lanes whose cleanup never started,
  * waits or failed are started; finished cleanup jobs whose outcome was never
@@ -647,7 +647,7 @@ export async function reconcileCleanup(
     return optedIn.get(repositoryId) ?? false;
   };
 
-  for (const { lane } of await listOpenPullRequestLanes(deps.db)) {
+  for (const { lane } of await listOpenPullRequestLanes(deps.db, deps.organizationId)) {
     if (!(await cleansUp(lane.repositoryId))) continue;
     await attempt(`Checking whether ${lane.prUrl} merged`, async () => {
       counts.checked += 1;
@@ -655,7 +655,7 @@ export async function reconcileCleanup(
     });
   }
 
-  for (const { lane } of await listLanesToCleanUp(deps.db)) {
+  for (const { lane } of await listLanesToCleanUp(deps.db, deps.organizationId)) {
     const cleanup = lane.cleanup;
     await attempt(`Cleaning up ${lane.branch} (ralph lane ${lane.id})`, async () => {
       if (cleanup?.jobId) {

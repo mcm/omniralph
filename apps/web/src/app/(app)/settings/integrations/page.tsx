@@ -12,6 +12,7 @@ const NOTICES: Record<string, LinearNotice> = {
   denied: "denied",
   invalid: "invalid",
   invalid_state: "invalid_state",
+  other_organization: "other_organization",
   not_configured: "not_configured",
   error: "error",
 };
@@ -21,9 +22,9 @@ export default async function IntegrationsPage({
 }: {
   searchParams: Promise<{ linear?: string }>;
 }) {
-  await requirePageUser("admin");
+  const admin = await requirePageUser("admin");
   const { linear } = await searchParams;
-  const integration = await getIntegration(getDb(), "linear");
+  const integration = await getIntegration(getDb(), admin.organization.id, "linear");
 
   return (
     <IntegrationsView

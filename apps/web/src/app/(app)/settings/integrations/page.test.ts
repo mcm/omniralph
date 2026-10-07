@@ -8,15 +8,20 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requirePageUser: async (role: Role = "member") => assertRole(state.user, role),
+  requirePageUser: async (role: Role = "member") =>
+    assertRole(state.user && { ...state.user, organization: { id: "org-a", name: "Acme" } }, role),
 }));
 vi.mock("@/lib/linear/oauth", () => ({ linearOAuthConfig: () => ({ clientId: "c" }) }));
 vi.mock("@omniralph/db", () => ({
-  getIntegration: async () => ({
-    name: "Acme",
-    externalId: "org-1",
-    updatedAt: new Date("2026-10-01T00:00:00Z"),
-  }),
+  // Only the active organization's integration exists.
+  getIntegration: async (_db: unknown, organizationId: string, provider: string) =>
+    organizationId === "org-a" && provider === "linear"
+      ? {
+          name: "Acme",
+          externalId: "org-1",
+          updatedAt: new Date("2026-10-01T00:00:00Z"),
+        }
+      : null,
 }));
 vi.mock("./integrations-view", () => ({ IntegrationsView: () => null }));
 
@@ -43,5 +48,6 @@ describe("Settings › Integrations page", () => {
       notice: "connected",
     });
     expect((await render("bogus")).props.notice).toBeNull();
+    expect((await render("other_organization")).props.notice).toBe("other_organization");
   });
 });

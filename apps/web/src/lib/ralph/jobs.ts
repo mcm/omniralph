@@ -46,11 +46,15 @@ export async function onRalphJobStarted(
   return { skip: false };
 }
 
-/** The orchestrator's dependencies: the connected Linear workspace, the dispatcher and the SCM adapters. */
-export async function defaultDeps(db: Database): Promise<RalphDeps> {
+/**
+ * The orchestrator's dependencies for an organization's runs: its connected
+ * Linear workspace, the dispatcher and the SCM adapters.
+ */
+export async function defaultDeps(db: Database, organizationId: string): Promise<RalphDeps> {
   return {
     db,
-    linear: await getLinearGateway({ db }),
+    organizationId,
+    linear: await getLinearGateway({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };
@@ -70,7 +74,7 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
     // A merged lane's cleanup that waited for the run's jobs starts now.
     const pending = (await listLanes(db, run.id)).some((l) => l.cleanup?.status === "pending");
     if (finished && !pending) return;
-    const ralph = deps ?? (await defaultDeps(db));
+    const ralph = deps ?? (await defaultDeps(db, run.organizationId));
     if (!finished) await advanceRun(run.id, ralph);
     if (pending) await startPendingCleanups(ralph, run.id);
   } catch (error) {
@@ -89,7 +93,13 @@ export async function onRalphCleanupJobFinished(
 ): Promise<void> {
   if (!job.ralphRunId) return;
   try {
-    await onCleanupJobFinished(deps ?? (await defaultDeps(db)), job);
+    let ralph = deps;
+    if (!ralph) {
+      const run = await getRun(db, job.ralphRunId);
+      if (!run) return;
+      ralph = await defaultDeps(db, run.organizationId);
+    }
+    await onCleanupJobFinished(ralph, job);
   } catch (error) {
     console.error(`Applying the outcome of cleanup job ${job.id} failed`, error);
   }
@@ -107,8 +117,9 @@ export async function onReviewForRalph(
 ): Promise<void> {
   try {
     const review = await getReview(db, reviewId);
-    if (!review || !(await findLaneByPullRequest(db, review.repositoryId, review.prNumber))) return;
-    await respondToReview(deps ?? (await defaultDeps(db)), reviewId);
+    const found = review && (await findLaneByPullRequest(db, review.repositoryId, review.prNumber));
+    if (!found) return;
+    await respondToReview(deps ?? (await defaultDeps(db, found.run.organizationId)), reviewId);
   } catch (error) {
     console.error(`Handing review ${reviewId} to its ralph run failed`, error);
   }

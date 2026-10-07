@@ -10,14 +10,17 @@ const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   integration: null as null | { name: string; credentials: { accessToken: string } },
   deletes: 0,
+  deletedFrom: [] as string[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  requireUser: async (role: Role = "member") =>
+    assertRole(state.user && { ...state.user, organization: { id: "org-a", name: "Acme" } }, role),
 }));
 vi.mock("@omniralph/db", () => ({
-  deleteIntegration: async () => {
+  deleteIntegration: async (_db: unknown, organizationId: string) => {
     state.deletes += 1;
+    state.deletedFrom.push(organizationId);
     const removed = state.integration;
     state.integration = null;
     return removed;
@@ -44,6 +47,7 @@ describe("disconnectLinear", () => {
     state.user = user("admin");
     state.integration = { name: "Acme", credentials: { accessToken: "access-1" } };
     state.deletes = 0;
+    state.deletedFrom = [];
     revoked.length = 0;
     revokeStatus = 200;
   });
@@ -51,6 +55,8 @@ describe("disconnectLinear", () => {
   it("removes the integration and revokes its token", async () => {
     expect(await disconnectLinear()).toEqual({ ok: true });
     expect(state.integration).toBeNull();
+    // Only the active organization's integration.
+    expect(state.deletedFrom).toEqual(["org-a"]);
     expect(revoked).toEqual(["Bearer access-1"]);
   });
 

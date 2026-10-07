@@ -1,6 +1,4 @@
 import "server-only";
-import { createHmac, randomBytes } from "node:crypto";
-import { jwtVerify, SignJWT } from "jose";
 import { getAppUrl } from "@/lib/app-url";
 
 /**
@@ -149,64 +147,7 @@ export async function revokeToken(accessToken: string): Promise<void> {
 
 // ── Signed state ─────────────────────────────────────────────────────────────
 
-const STATE_AUDIENCE = "omniralph:linear-oauth";
-const STATE_TTL_SECONDS = 10 * 60;
+/** `lib/auth/signed-state.ts` purpose of the connect flow's `state` (user + organization). */
+export const LINEAR_OAUTH_STATE_PURPOSE = "linear-oauth";
 /** Cookie holding the state's nonce, binding the flow to the browser that started it. */
 export const STATE_COOKIE = "omniralph_linear_oauth";
-
-/** HS256 key for OAuth states, derived from `AUTH_SECRET` (never the secret itself). */
-function stateKey(env: NodeJS.ProcessEnv = process.env): Uint8Array {
-  const secret = env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET is not set");
-  return createHmac("sha256", secret).update("omniralph linear oauth state").digest();
-}
-
-/** A signed `state` for the admin `userId`, and the nonce to put in `STATE_COOKIE`. */
-export async function createOAuthState(
-  userId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<{ state: string; nonce: string }> {
-  const nonce = randomBytes(16).toString("base64url");
-  const state = await new SignJWT({ nonce })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
-    .setAudience(STATE_AUDIENCE)
-    .setIssuedAt()
-    .setExpirationTime(`${STATE_TTL_SECONDS}s`)
-    .sign(stateKey(env));
-  return { state, nonce };
-}
-
-/**
- * The state's nonce and expiry when `state` was signed by us within its
- * lifetime, for this `userId`, and carries the nonce from the browser's
- * cookie; otherwise null. Callers consume the nonce (`consumeOAuthState`) so
- * the state works once.
- */
-export async function readOAuthState(
-  state: string | null | undefined,
-  expected: { userId: string; nonce: string | null | undefined },
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<{ nonce: string; expiresAt: Date } | null> {
-  if (!state || !expected.nonce) return null;
-  try {
-    const { payload } = await jwtVerify(state, stateKey(env), {
-      algorithms: ["HS256"],
-      audience: STATE_AUDIENCE,
-      subject: expected.userId,
-    });
-    if (payload.nonce !== expected.nonce || typeof payload.exp !== "number") return null;
-    return { nonce: expected.nonce, expiresAt: new Date(payload.exp * 1000) };
-  } catch {
-    return null;
-  }
-}
-
-/** True when `readOAuthState` accepts `state`. */
-export async function verifyOAuthState(
-  state: string | null | undefined,
-  expected: { userId: string; nonce: string | null | undefined },
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
-  return (await readOAuthState(state, expected, env)) !== null;
-}

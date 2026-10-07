@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import {
   claimWebhookDelivery,
-  getIntegration,
+  getIntegrationByExternalId,
   releaseWebhookDelivery,
   type Database,
 } from "@omniralph/db";
@@ -56,8 +56,8 @@ const reply = (outcome: Outcome) => Response.json(outcome);
 
 /**
  * `POST /api/webhooks/linear`: verifies the signature and timestamp (401),
- * classifies the event, drops events from workspaces other than the
- * connected one, claims the delivery ID (or body hash without one; a
+ * classifies the event, drops events from workspaces no organization has
+ * connected (the workspace's organization is the event's), claims the delivery ID (or body hash without one; a
  * redelivery is a no-op), runs `acknowledge` (within
  * `ACKNOWLEDGE_TIMEOUT_MS`) and hands the event to `handle` via `defer`.
  */
@@ -83,11 +83,12 @@ export async function handleLinearWebhook(
   const event = classifyWebhook(payload);
   if (event.kind === "ignored") return reply({ status: "ignored", reason: event.reason });
 
-  const organizationId = typeof payload.organizationId === "string" ? payload.organizationId : null;
-  const integration = await getIntegration(db, "linear");
-  if (!integration || integration.externalId !== organizationId) {
-    return reply({ status: "ignored", reason: "unknown_workspace" });
-  }
+  // Linear's `organizationId` is the workspace, which belongs to one of our organizations.
+  const workspaceId = typeof payload.organizationId === "string" ? payload.organizationId : null;
+  const integration = workspaceId
+    ? await getIntegrationByExternalId(db, "linear", workspaceId)
+    : null;
+  if (!integration) return reply({ status: "ignored", reason: "unknown_workspace" });
 
   const deliveryId = linearDeliveryKey(req.headers.get(DELIVERY_HEADER), rawBody);
   const delivery = { provider: "linear" as const, deliveryId };
@@ -100,7 +101,11 @@ export async function handleLinearWebhook(
     return Response.json({ error: "internal_error" }, { status: 500 });
   }
 
-  const context: LinearEventContext = { db, organizationId: integration.externalId };
+  const context: LinearEventContext = {
+    db,
+    organizationId: integration.organizationId,
+    workspaceId: integration.externalId,
+  };
   let acknowledging: Promise<void> | undefined;
   if (deps.acknowledge) {
     acknowledging = deps.acknowledge(event, context).catch((error: unknown) => {

@@ -6,14 +6,19 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
 
+const ORG_ID = "11111111-1111-4111-8111-111111111111";
+
 const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   saved: [] as Array<Record<string, unknown>>,
+  /** Linear workspace IDs connected to another organization. */
+  takenWorkspaces: new Set<string>(),
   consumed: new Map<string, Date>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  requireUser: async (role: Role = "member") =>
+    assertRole(state.user && { ...state.user, organization: { id: ORG_ID, name: "Acme" } }, role),
 }));
 vi.mock("@omniralph/db", () => ({
   consumeOAuthState: async (_db: unknown, nonce: string, expiresAt: Date) => {
@@ -22,6 +27,7 @@ vi.mock("@omniralph/db", () => ({
     return true;
   },
   saveIntegration: async (_db: unknown, values: Record<string, unknown>) => {
+    if (state.takenWorkspaces.has(values.externalId as string)) return "other_organization";
     state.saved.push(values);
     return { id: "integration-1", ...values };
   },
@@ -34,7 +40,11 @@ process.env.LINEAR_CLIENT_SECRET = "secret-1";
 
 const { GET: connect } = await import("./connect/route");
 const { GET: callback } = await import("./callback/route");
-const { createOAuthState, STATE_COOKIE } = await import("@/lib/linear/oauth");
+const { LINEAR_OAUTH_STATE_PURPOSE, STATE_COOKIE } = await import("@/lib/linear/oauth");
+const { createSignedState } = await import("@/lib/auth/signed-state");
+
+const createOAuthState = (userId: string, organizationId = ORG_ID) =>
+  createSignedState(LINEAR_OAUTH_STATE_PURPOSE, { userId, organizationId });
 
 const tokenRequests: URLSearchParams[] = [];
 let tokenStatus = 200;
@@ -80,6 +90,7 @@ beforeEach(() => {
   state.user = user("admin");
   state.saved = [];
   state.consumed.clear();
+  state.takenWorkspaces.clear();
   tokenRequests.length = 0;
   tokenStatus = 200;
 });
@@ -142,6 +153,7 @@ describe("GET /api/integrations/linear/callback", () => {
     });
     expect(state.saved).toEqual([
       {
+        organizationId: ORG_ID,
         provider: "linear",
         externalId: "org-1",
         name: "Acme",
@@ -191,7 +203,10 @@ describe("GET /api/integrations/linear/callback", () => {
   it("rejects a missing, forged, foreign or cookie-less state without exchanging the code", async () => {
     const { state: signed, nonce } = await createOAuthState("admin-1");
     const { state: otherAdmins } = await createOAuthState("admin-2");
+    // Signed for the admin, but for an organization they aren't working in.
+    const otherOrg = await createOAuthState("admin-1", "22222222-2222-4222-8222-222222222222");
     const cases: Array<[string, string | undefined]> = [
+      [`code=code-1&state=${encodeURIComponent(otherOrg.state)}`, otherOrg.nonce],
       ["code=code-1", nonce],
       [`code=code-1&state=`, nonce],
       [`code=code-1&state=forged`, nonce],
@@ -205,6 +220,15 @@ describe("GET /api/integrations/linear/callback", () => {
       );
     }
     expect(tokenRequests).toEqual([]);
+    expect(state.saved).toEqual([]);
+  });
+
+  it("refuses a workspace connected to another organization", async () => {
+    state.takenWorkspaces.add("org-1");
+    const { state: signed, nonce } = await createOAuthState("admin-1");
+    expect(location(await callbackWith(`code=c&state=${encodeURIComponent(signed)}`, nonce))).toBe(
+      "/settings/integrations?linear=other_organization",
+    );
     expect(state.saved).toEqual([]);
   });
 

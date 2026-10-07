@@ -3,6 +3,7 @@ import {
   closeDb,
   createDb,
   integrations,
+  organizations,
   runMigrations,
   saveIntegration,
   webhookDeliveries,
@@ -28,7 +29,10 @@ vi.mock("@/lib/linear/events", () => ({
     state.acknowledged.push(event.kind);
   },
   handleLinearEvent: async (event: HandledLinearEvent, context: LinearEventContext) => {
-    state.handled.push({ event, context: { organizationId: context.organizationId } });
+    state.handled.push({
+      event,
+      context: { organizationId: context.organizationId, workspaceId: context.workspaceId },
+    });
     if (state.fail) throw new Error("handler failed");
   },
 }));
@@ -86,11 +90,19 @@ async function flush() {
 
 describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
   let container: StartedPostgreSqlContainer;
+  let orgId: string;
+  let otherOrgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     state.db = createDb(container.getConnectionUri());
+    const [org, other] = await state.db
+      .insert(organizations)
+      .values([{ name: "Acme" }, { name: "Other" }])
+      .returning();
+    orgId = org!.id;
+    otherOrgId = other!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -102,6 +114,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
     await state.db.delete(webhookDeliveries);
     await state.db.delete(integrations);
     await saveIntegration(state.db, {
+      organizationId: orgId,
       provider: "linear",
       externalId: "org-1",
       name: "Acme",
@@ -134,7 +147,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
           commentBody: undefined,
           creatorName: undefined,
         },
-        context: { organizationId: "org-1" },
+        context: { organizationId: orgId, workspaceId: "org-1" },
       },
     ]);
   });
@@ -324,9 +337,31 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
     expect(state.handled).toHaveLength(2);
   });
 
+  it("hands an event to the organization that connected its workspace", async () => {
+    await saveIntegration(state.db, {
+      organizationId: otherOrgId,
+      provider: "linear",
+      externalId: "org-2",
+      name: "Other",
+      credentials: { accessToken: "t2" },
+      installedByUserId: null,
+    });
+    expect(await (await deliver(createdPayload({ organizationId: "org-2" }))).json()).toMatchObject(
+      { status: "accepted" },
+    );
+    expect(await (await deliver(createdPayload())).json()).toMatchObject({ status: "accepted" });
+    await flush();
+    expect(state.handled.map((h) => h.context)).toEqual([
+      { organizationId: otherOrgId, workspaceId: "org-2" },
+      { organizationId: orgId, workspaceId: "org-1" },
+    ]);
+  });
+
   it("ignores events from other workspaces or with no workspace connected", async () => {
     const other = await deliver(createdPayload({ organizationId: "org-2" }));
     expect(await other.json()).toEqual({ status: "ignored", reason: "unknown_workspace" });
+    const missing = await deliver(createdPayload({ organizationId: undefined }));
+    expect(await missing.json()).toEqual({ status: "ignored", reason: "unknown_workspace" });
     await state.db.delete(integrations);
     const none = await deliver(createdPayload());
     expect(await none.json()).toEqual({ status: "ignored", reason: "unknown_workspace" });

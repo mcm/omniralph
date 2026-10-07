@@ -18,18 +18,19 @@ export default async function RalphRunsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePageUser();
+  const user = await requirePageUser();
+  const organizationId = user.organization.id;
   const db = getDb();
   const params = parseRalphRunListParams(await searchParams);
   const [page, repositories, integration] = await Promise.all([
-    listRuns(db, {
+    listRuns(db, organizationId, {
       status: params.status ?? undefined,
       repositoryId: params.repositoryId ?? undefined,
       page: params.page,
       pageSize: RALPH_RUN_PAGE_SIZE,
     }),
-    listRalphRunRepositories(db),
-    getIntegration(db, "linear"),
+    listRalphRunRepositories(db, organizationId),
+    getIntegration(db, organizationId, "linear"),
   ]);
   return (
     <RalphRunsView

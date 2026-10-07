@@ -15,8 +15,10 @@ export type HandledLinearEvent = Exclude<LinearWebhookEvent, { kind: "ignored" }
 
 export interface LinearEventContext {
   db: Database;
-  /** The connected workspace the event came from. */
+  /** The organization that connected the workspace: the event only touches its runs and repositories. */
   organizationId: string;
+  /** The Linear workspace the event came from. */
+  workspaceId: string;
 }
 
 /**
@@ -43,6 +45,7 @@ export async function acknowledgeLinearEvent(
       linear ??
       (await getLinearGateway({
         db: context.db,
+        organizationId: context.organizationId,
         refreshTimeoutMs: ACKNOWLEDGE_REFRESH_TIMEOUT_MS,
       }));
     await gateway.createActivity(
@@ -65,12 +68,13 @@ export async function acknowledgeLinearEvent(
 export async function handleLinearEvent(
   event: HandledLinearEvent,
   context: LinearEventContext,
-  deps: Partial<Omit<RalphDeps, "db">> = {},
+  deps: Partial<Omit<RalphDeps, "db" | "organizationId">> = {},
 ): Promise<void> {
-  const db = context.db;
-  const linear = deps.linear ?? (await getLinearGateway({ db }));
+  const { db, organizationId } = context;
+  const linear = deps.linear ?? (await getLinearGateway({ db, organizationId }));
   const ralph: RalphDeps = {
     db,
+    organizationId,
     linear,
     dispatcher: deps.dispatcher ?? getDispatcher(),
     adapterFor: deps.adapterFor ?? scmAdapterFor,

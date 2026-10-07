@@ -65,16 +65,17 @@ export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Re
   if (!listed.success || !listed.data.attachments.some((a) => a.id === attachmentId.data)) {
     return forbidden("attachment_not_in_job");
   }
-  const link = (await getRun(db, job.ralphRunId))?.attachments[attachmentId.data];
-  if (!link) return notFound();
+  const run = await getRun(db, job.ralphRunId);
+  const link = run?.attachments[attachmentId.data];
+  if (!run || !link) return notFound();
 
   let download;
   try {
-    const linear = await getLinearGateway({ db });
+    const linear = await getLinearGateway({ db, organizationId: run.organizationId });
     download = await linear.downloadUpload(link.url, req.signal);
   } catch (error) {
     if (error instanceof LinearNotConnectedError) {
-      return failed(503, "no Linear workspace is connected");
+      return failed(503, "the run's organization has no Linear workspace connected");
     }
     console.error("downloading a Linear attachment failed", error);
     return failed(502, error instanceof Error ? error.message : String(error));

@@ -4,6 +4,7 @@ import {
   createDb,
   getIntegrationWithCredentials,
   integrations,
+  organizations,
   runMigrations,
   saveIntegration,
   type Database,
@@ -53,11 +54,19 @@ const server = setupServer(
 describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let organizationId: string;
+  let otherOrgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org, other] = await db
+      .insert(organizations)
+      .values([{ name: "Acme" }, { name: "Other" }])
+      .returning();
+    organizationId = org!.id;
+    otherOrgId = other!.id;
     server.listen({ onUnhandledFrame: "error" });
   }, 180_000);
 
@@ -78,6 +87,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
     saveIntegration(
       db,
       {
+        organizationId,
         provider: "linear",
         externalId: "org-1",
         name: "Acme",
@@ -87,11 +97,19 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
       key,
     );
   const stored = async () =>
-    (await getIntegrationWithCredentials<LinearCredentials>(db, "linear", key))?.credentials;
-  const gateway = () => getLinearGateway({ db, key, config, now: () => NOW });
+    (await getIntegrationWithCredentials<LinearCredentials>(db, organizationId, "linear", key))
+      ?.credentials;
+  const gateway = () => getLinearGateway({ db, organizationId, key, config, now: () => NOW });
 
   it("throws when no workspace is connected", async () => {
     await expect(gateway()).rejects.toBeInstanceOf(LinearNotConnectedError);
+  });
+
+  it("uses the organization's own workspace only", async () => {
+    await install({ accessToken: "access-1" });
+    await expect(
+      getLinearGateway({ db, organizationId: otherOrgId, key, config, now: () => NOW }),
+    ).rejects.toBeInstanceOf(LinearNotConnectedError);
   });
 
   it("uses a token that is valid for more than 5 minutes as is", async () => {
@@ -141,7 +159,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
       const other = await import("./client");
       const [a, b] = await Promise.all([
         gateway(),
-        other.getLinearGateway({ db: otherDb, key, config, now: () => NOW }),
+        other.getLinearGateway({ db: otherDb, organizationId, key, config, now: () => NOW }),
       ]);
       await Promise.all([a.getOrganization(), b.getOrganization()]);
     } finally {
@@ -158,7 +176,14 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(4) });
     token.delayMs = 500;
     const started = Date.now();
-    const fast = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 50 });
+    const fast = await getLinearGateway({
+      db,
+      organizationId,
+      key,
+      config,
+      now: () => NOW,
+      refreshTimeoutMs: 50,
+    });
     expect(Date.now() - started).toBeLessThan(400);
     await fast.getOrganization();
     expect(graphqlAuth).toEqual(["Bearer access-1"]);
@@ -173,7 +198,14 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
   it("with a refresh budget, uses a fast refresh's token", async () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(4) });
     await (
-      await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 5_000 })
+      await getLinearGateway({
+        db,
+        organizationId,
+        key,
+        config,
+        now: () => NOW,
+        refreshTimeoutMs: 5_000,
+      })
     ).getOrganization();
     expect(graphqlAuth).toEqual(["Bearer access-2"]);
   });
@@ -183,7 +215,14 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
     await install(before);
     token.fail = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const g = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 5_000 });
+    const g = await getLinearGateway({
+      db,
+      organizationId,
+      key,
+      config,
+      now: () => NOW,
+      refreshTimeoutMs: 5_000,
+    });
     await g.getOrganization();
     expect(graphqlAuth).toEqual(["Bearer access-1"]);
     expect(await stored()).toEqual(before);
@@ -192,7 +231,14 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
   it("with a refresh budget, still waits for the refresh of an expired token", async () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(-1) });
     token.delayMs = 200;
-    const g = await getLinearGateway({ db, key, config, now: () => NOW, refreshTimeoutMs: 10 });
+    const g = await getLinearGateway({
+      db,
+      organizationId,
+      key,
+      config,
+      now: () => NOW,
+      refreshTimeoutMs: 10,
+    });
     await g.getOrganization();
     expect(graphqlAuth).toEqual(["Bearer access-2"]);
   });

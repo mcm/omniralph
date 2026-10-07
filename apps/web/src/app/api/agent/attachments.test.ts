@@ -114,6 +114,7 @@ describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachm
   /** A run that knows the upload as `ID` and `OTHER`, and a running story job listing `listed`. */
   async function newJob(listed: string[] = [ID], values: Partial<typeof jobs.$inferInsert> = {}) {
     const { run } = await createRun(db, {
+      organizationId: orgId,
       linearIssueId: randomUUID(),
       linearIdentifier: "TOOL-32",
       linearAgentSessionId: `session-${randomUUID()}`,

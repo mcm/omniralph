@@ -301,6 +301,9 @@ export const integrations = pgTable(
   "integrations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     provider: integrationProvider("provider").notNull(),
     externalId: text("external_id").notNull(),
     /** Workspace name, for display. */
@@ -313,8 +316,12 @@ export const integrations = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  /** At most one connected workspace per provider (e.g. one Linear workspace). */
-  (t) => [uniqueIndex("integrations_provider_uq").on(t.provider)],
+  (t) => [
+    /** At most one connected workspace per provider and organization. */
+    uniqueIndex("integrations_provider_uq").on(t.organizationId, t.provider),
+    /** A workspace belongs to one organization; webhooks resolve the organization from it. */
+    uniqueIndex("integrations_provider_external_id_uq").on(t.provider, t.externalId),
+  ],
 );
 
 /**
@@ -908,6 +915,10 @@ export const ralphRuns = pgTable(
   "ralph_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** The organization whose Linear workspace delegated the issue (and whose repositories it uses). */
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     /** The delegated issue (the epic, or the single issue). */
     linearIssueId: text("linear_issue_id").notNull(),
     linearIdentifier: text("linear_identifier").notNull(),
@@ -957,13 +968,14 @@ export const ralphRuns = pgTable(
   },
   (t) => [
     uniqueIndex("ralph_runs_agent_session_uq").on(t.linearAgentSessionId),
-    /** At most one unfinished run per delegated issue. */
+    /** At most one unfinished run per delegated issue (and organization). */
     uniqueIndex("ralph_runs_issue_active_uq")
-      .on(t.linearIssueId)
+      .on(t.organizationId, t.linearIssueId)
       .where(sql`status in ('pending', 'running', 'waiting')`),
     index("ralph_runs_linear_issue_id_idx").on(t.linearIssueId, t.createdAt),
     index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),
     index("ralph_runs_repository_created_at_idx").on(t.repositoryId, t.createdAt),
+    index("ralph_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
   ],
 );
 

@@ -50,7 +50,10 @@ export async function POST(req: Request): Promise<Response> {
   let jobMessages: JobMessageDelivery[] = [];
   try {
     jobMessages = await exchangeJobMessages(
-      { db, linear: () => getLinearGatewayOrDisconnected({ db }) },
+      {
+        db,
+        linear: (organizationId) => getLinearGatewayOrDisconnected({ db, organizationId }),
+      },
       agentId,
       running.keep.map((job) => job.id),
       body.data,

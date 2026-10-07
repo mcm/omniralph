@@ -601,6 +601,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       });
       runSeq += 1;
       const { run } = await createRun(db, {
+        organizationId: orgId,
         linearIssueId: `issue-ralph-${runSeq}`,
         linearIdentifier: "ENG-1",
         linearUrl: "https://linear.app/acme/issue/ENG-1",

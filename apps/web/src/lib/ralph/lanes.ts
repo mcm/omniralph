@@ -56,7 +56,7 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
 export async function routeStories(
   deps: Pick<RalphDeps, "db" | "adapterFor">,
   tx: RalphTransaction,
-  run: Pick<RalphRun, "id" | "repositoryId" | "linearIdentifier">,
+  run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "linearIdentifier">,
   epic: Epic,
 ): Promise<StoryLanes> {
   const main = await getMainLane(tx, run);
@@ -65,7 +65,7 @@ export async function routeStories(
   for (const s of epic.stories) lanes.set(key(s), { laneId: main?.id ?? null, elsewhere: null });
   if (epic.kind !== "children" || !main) return lanes;
 
-  const repositories = await listRalphRepositories(tx);
+  const repositories = await listRalphRepositories(tx, run.organizationId);
   const byRepository = new Map<string, RalphLane | null>();
   for (const s of epic.stories) {
     if (s.manual) continue;

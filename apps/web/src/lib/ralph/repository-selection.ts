@@ -108,12 +108,16 @@ export async function leftBehind(
   };
 }
 
-/** The offered repositories still enabled for ralph, in the offered order (else all enabled ones). */
+/**
+ * The offered repositories (of the run's organization) still enabled for
+ * ralph, in the offered order (else all enabled ones).
+ */
 async function selectionCandidates(
   deps: Pick<RalphDeps, "db">,
+  run: Pick<RalphRun, "organizationId">,
   offered: readonly string[],
 ): Promise<Repository[]> {
-  const enabled = await listRalphRepositories(deps.db);
+  const enabled = await listRalphRepositories(deps.db, run.organizationId);
   const kept = offered
     .map((id) => enabled.find((r) => r.id === id))
     .filter((r): r is Repository => !!r);
@@ -141,7 +145,7 @@ export async function answerRepositorySelection(
   offered: readonly string[],
   text: string,
 ): Promise<RepositoryAnswer> {
-  const candidates = await selectionCandidates(deps, offered);
+  const candidates = await selectionCandidates(deps, run, offered);
   const repository = matchSelection(text, candidates);
   if (!repository) {
     await askForRepository(
@@ -215,7 +219,7 @@ export async function awaitRepository(
   run: RalphRun,
 ): Promise<RalphRun | { failed: string }> {
   if (run.status === "waiting" && repositorySelectionOf(run)) return run;
-  const candidates = await listRalphRepositories(tx);
+  const candidates = await listRalphRepositories(tx, run.organizationId);
   if (candidates.length === 0) {
     return {
       failed:

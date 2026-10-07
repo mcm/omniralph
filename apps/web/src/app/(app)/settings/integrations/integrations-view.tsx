@@ -30,7 +30,13 @@ import { formatDateTime } from "@/lib/format-date";
 import { disconnectLinear } from "./actions";
 
 export type LinearNotice =
-  "connected" | "denied" | "invalid" | "invalid_state" | "not_configured" | "error";
+  | "connected"
+  | "denied"
+  | "invalid"
+  | "invalid_state"
+  | "other_organization"
+  | "not_configured"
+  | "error";
 
 const notices: Record<
   LinearNotice,
@@ -56,6 +62,12 @@ const notices: Record<
     title: "The Linear sign-in link was invalid or expired",
     description:
       "For your safety the request was rejected. Click Connect Linear again from this browser and finish within 10 minutes.",
+  },
+  other_organization: {
+    variant: "destructive",
+    title: "This Linear workspace belongs to another organization",
+    description:
+      "A Linear workspace can be connected to one organization only. Disconnect it there first, or connect a different workspace.",
   },
   not_configured: {
     variant: "warning",

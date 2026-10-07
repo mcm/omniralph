@@ -8,12 +8,14 @@ import {
   consumeOAuthState,
   deleteIntegration,
   getIntegration,
+  getIntegrationByExternalId,
   getIntegrationWithCredentials,
+  listIntegratedOrganizationIds,
   saveIntegration,
   updateIntegrationCredentials,
 } from "./integrations.js";
 import { runMigrations } from "./migrate.js";
-import { integrations, oauthStateUses, users } from "./schema.js";
+import { integrations, oauthStateUses, organizations, users } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -29,12 +31,20 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
   const key = randomBytes(32);
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
+  let otherOrgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
     await db.insert(users).values({ id: "admin-1", email: "admin@example.com" });
+    const [org, other] = await db
+      .insert(organizations)
+      .values([{ name: "Acme" }, { name: "Other" }])
+      .returning();
+    orgId = org!.id;
+    otherOrgId = other!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -46,10 +56,16 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     await db.delete(integrations);
   });
 
-  const install = (externalId: string, name: string, accessToken: string) =>
-    saveIntegration<Creds>(
+  const install = async (
+    externalId: string,
+    name: string,
+    accessToken: string,
+    organizationId = orgId,
+  ) => {
+    const saved = await saveIntegration<Creds>(
       db,
       {
+        organizationId,
         provider: "linear",
         externalId,
         name,
@@ -58,9 +74,12 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
       },
       key,
     );
+    if (saved === "other_organization") throw new Error("connected to another organization");
+    return saved;
+  };
 
   it("stores credentials encrypted and reads them back", async () => {
-    expect(await getIntegration(db, "linear")).toBeNull();
+    expect(await getIntegration(db, orgId, "linear")).toBeNull();
     const saved = await install("org-1", "Acme", "lin_secret_1");
     expect(saved).toMatchObject({
       provider: "linear",
@@ -77,17 +96,20 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
       version: 1,
     });
 
-    expect(await getIntegration(db, "linear")).toMatchObject({ id: saved.id, name: "Acme" });
-    expect((await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials).toEqual({
+    expect(await getIntegration(db, orgId, "linear")).toMatchObject({ id: saved.id, name: "Acme" });
+    expect(
+      (await getIntegrationWithCredentials<Creds>(db, orgId, "linear", key))?.credentials,
+    ).toEqual({
       accessToken: "lin_secret_1",
       version: 1,
     });
   });
 
-  it("allows at most one integration per provider in the database", async () => {
+  it("allows at most one integration per provider and organization in the database", async () => {
     await install("org-1", "Acme", "t1");
     await expect(
       db.insert(integrations).values({
+        organizationId: orgId,
         provider: "linear",
         externalId: "org-2",
         name: "Other",
@@ -106,7 +128,7 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
     const rows = await db.select().from(integrations);
     expect(rows).toHaveLength(1);
-    const stored = await getIntegrationWithCredentials<Creds>(db, "linear", key);
+    const stored = await getIntegrationWithCredentials<Creds>(db, orgId, "linear", key);
     // The row and its credentials belong to the same install.
     expect({ "org-1": "t1", "org-2": "t2", "org-3": "t3" }[stored!.externalId]).toBe(
       stored!.credentials.accessToken,
@@ -142,11 +164,13 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     expect(again.id).toBe(first.id);
     expect(again.name).toBe("Acme Inc");
     expect(
-      (await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials.accessToken,
+      (await getIntegrationWithCredentials<Creds>(db, orgId, "linear", key))?.credentials
+        .accessToken,
     ).toBe("t2");
 
     await expect(
       db.insert(integrations).values({
+        organizationId: orgId,
         provider: "linear",
         externalId: "org-1",
         name: "dup",
@@ -155,19 +179,68 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     ).rejects.toThrow();
   });
 
-  it("keeps only one workspace per provider", async () => {
+  it("keeps only one workspace per provider and organization", async () => {
     await install("org-1", "Acme", "t1");
     await install("org-2", "Other", "t2");
     const rows = await db.select().from(integrations);
     expect(rows.map((r) => r.externalId)).toEqual(["org-2"]);
   });
 
+  it("connects a workspace to one organization only", async () => {
+    const saved = await install("ws-1", "Acme", "t1");
+    await install("ws-2", "Other", "t2", otherOrgId);
+    expect(await getIntegration(db, otherOrgId, "linear")).toMatchObject({ externalId: "ws-2" });
+
+    // Another organization can't take over a connected workspace.
+    const taken = await saveIntegration<Creds>(
+      db,
+      {
+        organizationId: otherOrgId,
+        provider: "linear",
+        externalId: "ws-1",
+        name: "Stolen",
+        credentials: { accessToken: "t3", version: 1 },
+        installedByUserId: "admin-1",
+      },
+      key,
+    );
+    expect(taken).toBe("other_organization");
+    expect(await getIntegrationByExternalId(db, "linear", "ws-1")).toMatchObject({
+      id: saved.id,
+      organizationId: orgId,
+      name: "Acme",
+    });
+    expect(await getIntegration(db, otherOrgId, "linear")).toMatchObject({ externalId: "ws-2" });
+    expect(await getIntegrationByExternalId(db, "linear", "ws-3")).toBeNull();
+    expect((await listIntegratedOrganizationIds(db, "linear")).sort()).toEqual(
+      [orgId, otherOrgId].sort(),
+    );
+
+    // The database enforces it too.
+    await expect(
+      db.insert(integrations).values({
+        organizationId: otherOrgId,
+        provider: "linear",
+        externalId: "ws-1",
+        name: "dup",
+        encryptedCredentials: "x",
+      }),
+    ).rejects.toThrow();
+
+    // Once disconnected, the workspace can move.
+    await deleteIntegration(db, orgId, "linear", key);
+    expect(await install("ws-1", "Moved", "t4", otherOrgId)).toMatchObject({
+      organizationId: otherOrgId,
+    });
+    expect(await getIntegration(db, otherOrgId, "linear")).toMatchObject({ externalId: "ws-1" });
+  });
+
   it("deletes the integration and returns its credentials", async () => {
     await install("org-1", "Acme", "t1");
-    const removed = await deleteIntegration<Creds>(db, "linear", key);
+    const removed = await deleteIntegration<Creds>(db, orgId, "linear", key);
     expect(removed?.credentials.accessToken).toBe("t1");
-    expect(await getIntegration(db, "linear")).toBeNull();
-    expect(await deleteIntegration(db, "linear", key)).toBeNull();
+    expect(await getIntegration(db, orgId, "linear")).toBeNull();
+    expect(await deleteIntegration(db, orgId, "linear", key)).toBeNull();
   });
 
   it("serializes concurrent credential updates under a row lock", async () => {
@@ -188,7 +261,9 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     // Each update saw the previous one's result: no lost update.
     expect(seen.sort()).toEqual([1, 2, 3]);
     expect(results.map((r) => r?.version).sort()).toEqual([2, 3, 4]);
-    expect((await getIntegrationWithCredentials<Creds>(db, "linear", key))?.credentials).toEqual({
+    expect(
+      (await getIntegrationWithCredentials<Creds>(db, orgId, "linear", key))?.credentials,
+    ).toEqual({
       accessToken: "t4",
       version: 4,
     });

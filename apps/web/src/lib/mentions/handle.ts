@@ -142,10 +142,14 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     text: string | null,
     finding: FindingRow | null,
   ): Promise<BotCommandOutcome> => {
+    const organizationId = repository.organizationId;
     const deps: RalphDeps = {
       db,
+      organizationId,
       dispatcher,
-      linear: await (ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db })))(),
+      linear: await (
+        ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
+      )(),
       adapterFor: ctx.adapterFor ?? scmAdapterFor,
     };
     const request = buildPullRequestCommentRequest({

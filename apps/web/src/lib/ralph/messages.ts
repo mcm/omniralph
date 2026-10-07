@@ -210,7 +210,8 @@ export interface JobMessageAcks {
  * already, are ignored.
  */
 export async function exchangeJobMessages(
-  deps: { db: Database; linear: () => Promise<LinearGateway> },
+  /** `linear` gives the gateway of an organization's workspace (each run's is told). */
+  deps: { db: Database; linear: (organizationId: string) => Promise<LinearGateway> },
   agentId: string,
   runningJobIds: readonly string[],
   acks: JobMessageAcks,
@@ -219,7 +220,7 @@ export async function exchangeJobMessages(
   const ids = [...delivered, ...acks.rejectedMessageIds];
   const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
-  const notes: { sessionId: string; content: ActivityContent }[] = [];
+  const notes: { organizationId: string; sessionId: string; content: ActivityContent }[] = [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
@@ -230,20 +231,27 @@ export async function exchangeJobMessages(
           if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);
           await updateMessage(tx, message.id, { deliveredAt: now, consumedAt: now });
           notes.push({
+            organizationId: run.organizationId,
             sessionId: run.linearAgentSessionId,
             content: { type: "thought", body: DELIVERED_NOTE },
           });
         } else {
           const content = await strand(tx, run, message, now);
-          notes.push({ sessionId: run.linearAgentSessionId, content });
+          notes.push({
+            organizationId: run.organizationId,
+            sessionId: run.linearAgentSessionId,
+            content,
+          });
         }
       }
     });
   }
-  if (notes.length > 0) {
+  for (const organizationId of new Set(notes.map((n) => n.organizationId))) {
     await quietly("Telling Linear about delivered job messages", async () => {
-      const linear = await deps.linear();
-      for (const note of notes) await postActivity(linear, note.sessionId, note.content);
+      const linear = await deps.linear(organizationId);
+      for (const note of notes.filter((n) => n.organizationId === organizationId)) {
+        await postActivity(linear, note.sessionId, note.content);
+      }
     });
   }
   const pending = await listUndeliveredJobMessages(deps.db, runningJobIds);

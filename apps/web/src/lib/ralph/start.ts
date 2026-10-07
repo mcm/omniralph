@@ -272,6 +272,7 @@ async function askForRepositoryFirst(
   const { epic, root } = loaded;
   const { run, created } = await deps.db.transaction(async (tx) => {
     const result = await createRun(tx, {
+      organizationId: deps.organizationId,
       linearIssueId: root.id,
       linearIdentifier: root.identifier,
       linearTitle: root.title,
@@ -372,7 +373,9 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     });
     return { status: "load_failed", error: message(error) };
   }
-  const active = await getRunByIssue(deps.db, root.id, { activeOnly: true });
+  const active = await getRunByIssue(deps.db, deps.organizationId, root.id, {
+    activeOnly: true,
+  });
   if (active) {
     const handed = await lockRun(deps.db, active.id, async (tx, run) => {
       if (FINISHED_RUN_STATUSES.has(run.status)) return null;
@@ -413,11 +416,11 @@ async function startNewRun(
   const sessionId = event.sessionId;
   const epicMode = start.mode === "epic";
 
-  const repositories = await listRalphRepositories(db);
+  const repositories = await listRalphRepositories(db, deps.organizationId);
   let loaded: LoadedEpic;
   try {
     // An issue that was never run may hold a PRD whose materialization stopped half way.
-    const completePrd = epicMode && !(await getRunByIssue(db, event.issueId));
+    const completePrd = epicMode && !(await getRunByIssue(db, deps.organizationId, event.issueId));
     // Which stories are manual depends on the repository the epic routes to.
     const manualLabels = (root: IssueSummary) => {
       const route = routeIssue(root, repositories);
@@ -448,7 +451,7 @@ async function startNewRun(
   }
 
   // Re-delegation: carry over the latest run of the issue (cyralph's behaviour).
-  const previous = await getRunByIssue(db, root.id);
+  const previous = await getRunByIssue(db, deps.organizationId, root.id);
   if (previous && !FINISHED_RUN_STATUSES.has(previous.status)) {
     if (loaded.focusStoryId) {
       // A story of an epic that is being built already: its run covers the story.
@@ -485,6 +488,7 @@ async function startNewRun(
   const { run, created, lane, left } = await db.transaction(async (tx) => {
     // The run continues the previous one (in its repository, with its lanes), then moves to the chosen repository.
     const result = await createRun(tx, {
+      organizationId: deps.organizationId,
       linearIssueId: root.id,
       linearIdentifier: root.identifier,
       linearTitle: root.title,

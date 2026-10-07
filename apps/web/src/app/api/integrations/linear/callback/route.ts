@@ -3,21 +3,24 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser } from "@/lib/auth/session";
+import { readSignedState } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
 import { SdkLinearGateway } from "@/lib/linear/gateway";
 import {
   exchangeCode,
   LINEAR_CALLBACK_PATH,
+  LINEAR_OAUTH_STATE_PURPOSE,
   linearOAuthConfig,
   linearRedirectUri,
-  readOAuthState,
   STATE_COOKIE,
 } from "@/lib/linear/oauth";
 
 /**
  * Linear's OAuth redirect: checks the signed `state` (same admin, same
- * browser, not expired, not used before) and consumes it, exchanges the code and stores the workspace and its
- * tokens as the Linear integration.
+ * browser, the admin's active organization, not expired, not used before) and
+ * consumes it, exchanges the code and stores the workspace and its tokens as
+ * the organization's Linear integration. A workspace already connected to
+ * another organization is refused (`?linear=other_organization`).
  */
 export async function GET(request: NextRequest) {
   const to = (path: string) => {
@@ -36,12 +39,19 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
-  const validState = await readOAuthState(params.get("state"), {
+  const db = getDb();
+  const organizationId = admin.organization.id;
+  const signed = await readSignedState(LINEAR_OAUTH_STATE_PURPOSE, params.get("state"), {
     userId: admin.id,
     nonce: request.cookies.get(STATE_COOKIE)?.value,
   });
-  // A state works once: a replayed callback is rejected.
-  if (!validState || !(await consumeOAuthState(getDb(), validState.nonce, validState.expiresAt))) {
+  // A state works once (a replayed callback is rejected), and only for the
+  // organization the admin is working in.
+  if (
+    !signed ||
+    signed.organizationId !== organizationId ||
+    !(await consumeOAuthState(db, signed.nonce, signed.expiresAt))
+  ) {
     return to("/settings/integrations?linear=invalid_state");
   }
   // The admin declined on Linear's consent screen.
@@ -51,13 +61,15 @@ export async function GET(request: NextRequest) {
   const config = linearOAuthConfig();
   if (!config) return to("/settings/integrations?linear=not_configured");
 
+  let saved;
   try {
     const credentials = await exchangeCode(config, { code, redirectUri: linearRedirectUri() });
-    const organization = await new SdkLinearGateway(credentials.accessToken).getOrganization();
-    await saveIntegration(getDb(), {
+    const workspace = await new SdkLinearGateway(credentials.accessToken).getOrganization();
+    saved = await saveIntegration(db, {
+      organizationId,
       provider: "linear",
-      externalId: organization.id,
-      name: organization.name,
+      externalId: workspace.id,
+      name: workspace.name,
       credentials,
       installedByUserId: admin.id,
     });
@@ -68,5 +80,6 @@ export async function GET(request: NextRequest) {
     });
     return to("/settings/integrations?linear=error");
   }
+  if (saved === "other_organization") return to("/settings/integrations?linear=other_organization");
   return to("/settings/integrations?linear=connected");
 }

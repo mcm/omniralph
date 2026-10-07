@@ -269,10 +269,14 @@ async function handleCi(
   }
   const task = async () => {
     try {
-      const linear = await (input.linear ?? (() => getLinearGatewayOrDisconnected({ db })))();
+      const organizationId = repository.organizationId;
+      const linear = await (
+        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
+      )();
       await respondToCiEvent(
         {
           db,
+          organizationId,
           linear,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,
@@ -315,10 +319,14 @@ async function handleMerge(
   }
   const task = async () => {
     try {
-      const linear = await (input.linear ?? (() => getLinearGatewayOrDisconnected({ db })))();
+      const organizationId = repository.organizationId;
+      const linear = await (
+        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
+      )();
       await cleanupMergedPullRequest(
         {
           db,
+          organizationId,
           linear,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,

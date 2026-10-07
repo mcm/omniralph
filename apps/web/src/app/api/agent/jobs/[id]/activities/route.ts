@@ -34,7 +34,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
 
   try {
     const outcome = await relayActivity(
-      { db, linear: () => getLinearGateway({ db }) },
+      { db, linear: (organizationId) => getLinearGateway({ db, organizationId }) },
       job,
       activity.data,
     );
