@@ -8,6 +8,7 @@ import {
   jobs,
   reviews,
   runMigrations,
+  scmConnections,
   upsertScmConnection,
   type Database,
   type FindingRow,
@@ -168,6 +169,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
   let db: Database;
   let orgId: string;
   let repoId: string;
+  let connectionId: string;
   let prCounter = 0;
 
   beforeAll(async () => {
@@ -187,6 +189,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       externalId: "4242",
       credentials: {},
     }))!;
+    connectionId = connection.id;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -406,6 +409,22 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       expect(summary.trimEnd().split("\n").at(-1)).toBe(
         `Re-run: comment \`@omniralph review\` (new issues only) or \`@omniralph review fresh\` (from scratch), or use **Re-run** on the [review page](https://omniralph.example.com/reviews/${reviewId}).`,
       );
+    });
+    it("names a GitLab connection's bot username in the re-run footer", async () => {
+      const { number } = await reviewedPr();
+      const asGitLab = { provider: "gitlab" as const, botUsername: "service_account_group_12_bot" };
+      await db.update(scmConnections).set(asGitLab).where(eq(scmConnections.id, connectionId));
+      try {
+        await completeFresh(number, []);
+      } finally {
+        await db
+          .update(scmConnections)
+          .set({ provider: "github", botUsername: null })
+          .where(eq(scmConnections.id, connectionId));
+      }
+      const summary = state.scm.calls.postReview.at(-1)!.summary;
+      expect(summary).toContain("`@service_account_group_12_bot review`");
+      expect(summary).not.toContain("@omniralph");
     });
   });
 

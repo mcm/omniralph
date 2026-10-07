@@ -32,9 +32,9 @@ Requirements:
 Pick a sensible expiry for the bot token itself and put a reminder in your calendar: when it expires,
 reviews and clones stop. To rotate it, create a new token and connect GitLab again with it.
 
-Set `BOT_HANDLE` on the control panel to the bot user's username (for access tokens it's
-`project_<id>_bot_…` / `group_<id>_bot_…`, shown on the token's page) so `@` mentions autocomplete
-in MR comments, e.g. `@group_42_bot_1a2b review`.
+The bot's `@` handle on GitLab is the bot user's username (shown on the connection as
+`<username> @ <host>`), so mentions autocomplete in MR comments, e.g.
+`@service_account_group_42_omniralph review`. `BOT_HANDLE` isn't used for GitLab connections.
 
 ## Connecting projects
 

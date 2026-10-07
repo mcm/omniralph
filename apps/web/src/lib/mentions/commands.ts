@@ -1,5 +1,6 @@
 /**
- * `@bot` mention commands in PR/MR threads (`BOT_HANDLE`, default `omniralph`):
+ * `@bot` mention commands in PR/MR threads (on GitLab the connection's bot
+ * username, otherwise `BOT_HANDLE`, default `omniralph`):
  *
  * - `@bot review [quick|standard|deep]`: a full review of the current head
  *   (duplicates of the PR's open findings are still dropped), optionally with
@@ -43,6 +44,18 @@ export type BotCommand =
 export function botHandle(env: Record<string, string | undefined> = process.env): string {
   const handle = env.BOT_HANDLE?.trim().replace(/^@/, "");
   return handle || DEFAULT_BOT_HANDLE;
+}
+
+/**
+ * The bot's handle on a connection: a GitLab connection's bot username (its
+ * token user), otherwise (GitHub, or GitLab connections from before the
+ * username was stored) `fallback`, default `botHandle()`.
+ */
+export function connectionBotHandle(
+  connection: { provider: string; botUsername: string | null },
+  fallback: string = botHandle(),
+): string {
+  return (connection.provider === "gitlab" && connection.botUsername?.trim()) || fallback;
 }
 
 /**

@@ -783,4 +783,88 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment).toHaveLength(1);
     });
   });
+
+  describe("on GitLab", () => {
+    const BOT = "service_account_group_12_omniralph";
+
+    /** Connects GitLab project `projectId` on a connection whose bot username is `botUsername`. */
+    async function gitlabProject(projectId: number, botUsername: string | null) {
+      const connection = (await upsertScmConnection(db, {
+        organizationId: orgId,
+        provider: "gitlab",
+        name: `${botUsername ?? "old-bot"} @ gitlab.example.com`,
+        baseUrl: "https://gitlab.example.com",
+        externalId: String(projectId),
+        credentials: {},
+        botUsername,
+      }))!;
+      await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "gitlab",
+        externalId: String(projectId),
+        fullPath: `acme/app-${projectId}`,
+      });
+    }
+
+    /** Delivers a GitLab MR note on project `projectId`, MR !1. */
+    async function note(projectId: number, text: string, username = "maintainer") {
+      const req = new Request("http://localhost/api/webhooks/gitlab", {
+        method: "POST",
+        headers: { "x-gitlab-event": "Note Hook", "x-gitlab-event-uuid": randomUUID() },
+        body: JSON.stringify({
+          object_kind: "note",
+          project: { id: projectId },
+          user: { username },
+          merge_request: { iid: 1 },
+          object_attributes: {
+            id: Math.floor(Math.random() * 1e9),
+            note: text,
+            noteable_type: "MergeRequest",
+            action: "create",
+          },
+        }),
+      });
+      const res = await handleWebhook("gitlab", req, {
+        db,
+        dispatcher: getDispatcher(),
+        adapterFor: () => state.scm.adapter,
+        defer: (task) => {
+          deferred.push(task());
+        },
+        handle: "omniralph",
+        linear: async () => state.linear,
+      });
+      await Promise.all(deferred);
+      return (await res.json()) as Record<string, unknown>;
+    }
+
+    it("answers mentions of the connection's bot username, not BOT_HANDLE", async () => {
+      await gitlabProject(300, BOT);
+      expect(await note(300, `@${BOT} help`)).toEqual({ status: "accepted", command: "help" });
+      expect(state.scm.calls.postComment[0]!.body).toContain(`@${BOT} review`);
+      expect(await note(300, "@omniralph help")).toEqual({
+        status: "ignored",
+        reason: "no_mention",
+      });
+      expect(state.scm.calls.postComment).toHaveLength(1);
+    });
+
+    it("ignores the bot user's own notes", async () => {
+      await gitlabProject(301, BOT);
+      expect(await note(301, `@${BOT} review`, BOT)).toEqual({
+        status: "ignored",
+        reason: "own_comment",
+      });
+      expect(state.scm.calls.postComment).toHaveLength(0);
+    });
+
+    it("falls back to BOT_HANDLE for a connection without a bot username", async () => {
+      await gitlabProject(302, null);
+      expect(await note(302, "@omniralph help")).toEqual({ status: "accepted", command: "help" });
+      expect(await note(302, "@omniralph help", "omniralph")).toEqual({
+        status: "ignored",
+        reason: "own_comment",
+      });
+    });
+  });
 });

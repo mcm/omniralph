@@ -85,7 +85,11 @@ function authorized(request: Request): boolean {
 const server = setupServer(
   http.get(`${API}/user`, ({ request }) =>
     authorized(request)
-      ? HttpResponse.json({ id: 77, username: "service_account_group_12_omniralph", name: "Omniralph" })
+      ? HttpResponse.json({
+          id: 77,
+          username: "service_account_group_12_omniralph",
+          name: "Omniralph",
+        })
       : HttpResponse.json({ message: "401 Unauthorized" }, { status: 401 }),
   ),
   http.get(`${API}/personal_access_tokens/self`, () =>
@@ -209,10 +213,15 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
   it("rejects a project access token, which can't mint clone tokens", async () => {
     server.use(
-      http.get(`${API}/user`, () => HttpResponse.json({ id: 78, username: "project_101_bot_9f3c", name: "Bot" })),
+      http.get(`${API}/user`, () =>
+        HttpResponse.json({ id: 78, username: "project_101_bot_9f3c", name: "Bot" }),
+      ),
     );
     const result = await connectGitLab(form);
-    expect(result).toEqual({ ok: false, error: expect.stringContaining("service account's personal access token") });
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("service account's personal access token"),
+    });
     expect(await state.db.select().from(scmConnections)).toEqual([]);
     expect(hookRequests).toEqual([]);
   });
@@ -227,6 +236,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       name: "service_account_group_12_omniralph @ gitlab.example.com",
       baseUrl: GITLAB,
       externalId: "77",
+      botUsername: "service_account_group_12_omniralph",
       createdBy: adminId,
     });
     expect(connection!.encryptedCredentials).not.toContain(TOKEN);
@@ -252,6 +262,16 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     );
     expect(hookRequests).toHaveLength(2);
     expect(deletedHooks).toEqual([]);
+  });
+
+  it("stores the bot username when connecting again", async () => {
+    expect(await connectGitLab(form)).toEqual(connected);
+    // A connection from before bot usernames were stored.
+    await state.db.update(scmConnections).set({ botUsername: null });
+
+    expect(await connectGitLab(form)).toEqual(connected);
+    const [connection] = await state.db.select().from(scmConnections);
+    expect(connection!.botUsername).toBe("service_account_group_12_omniralph");
   });
 
   describe("picking GitLab projects from a list", () => {
@@ -303,7 +323,10 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       server.use(
         http.post(`${API}/projects/102/access_tokens`, () =>
           HttpResponse.json(
-            { message: "400 Bad request - User does not have permission to create project access token" },
+            {
+              message:
+                "400 Bad request - User does not have permission to create project access token",
+            },
             { status: 400 },
           ),
         ),
@@ -334,7 +357,10 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       server.use(
         http.post(`${API}/projects/101/access_tokens`, () =>
           HttpResponse.json(
-            { message: "403 Forbidden - User does not have permission to create project access token" },
+            {
+              message:
+                "403 Forbidden - User does not have permission to create project access token",
+            },
             { status: 403 },
           ),
         ),
@@ -342,7 +368,9 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
       expect(await saveGitLabProjects(connectionId, [101])).toEqual({
         ok: true,
-        warning: expect.stringContaining("acme/api: The GitLab bot token can't create project access tokens"),
+        warning: expect.stringContaining(
+          "acme/api: The GitLab bot token can't create project access tokens",
+        ),
       });
       const [repo] = await state.db.select().from(repositories);
       expect(repo).toMatchObject({ enabled: false, disconnectedAt: null });

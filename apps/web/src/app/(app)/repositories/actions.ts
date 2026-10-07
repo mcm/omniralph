@@ -151,6 +151,7 @@ export async function connectGitLab(
       baseUrl,
       externalId,
       credentials: { token, webhookSecret } satisfies GitLabCredentials,
+      botUsername: owner.username,
       createdBy: admin.id,
     });
     if (!connection) return { ok: false, error: OTHER_ORGANIZATION_ERROR };

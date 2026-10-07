@@ -276,6 +276,8 @@ export const scmConnections = pgTable(
     externalId: text("external_id"),
     /** JSON credentials encrypted with `encrypt()` (AES-256-GCM). */
     encryptedCredentials: text("encrypted_credentials").notNull(),
+    /** GitLab: the token user's username, the bot's `@` handle. Null for GitHub. */
+    botUsername: text("bot_username"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
