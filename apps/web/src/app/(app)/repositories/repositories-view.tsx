@@ -67,6 +67,7 @@ import {
   removeScmConnection,
   setRepositoryEnabled,
 } from "./actions";
+import { ConnectionHealth, type ConnectionHealthRow } from "./connection-health";
 
 export interface RepositoryRow {
   id: string;
@@ -84,6 +85,8 @@ export interface ConnectionRow {
   id: string;
   provider: "github" | "gitlab";
   name: string;
+  /** GitLab: the last daily check, or null before the first one. */
+  health: ConnectionHealthRow | null;
 }
 
 export type GitHubNotice =
@@ -168,8 +171,8 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
             <DialogDescription>
               Use a service account&apos;s personal access token for the bot identity with the{" "}
               <InlineCode>api</InlineCode> scope and the Maintainer role. Omniralph validates it and
-              stores it encrypted; you then pick the projects to review, and each gets a webhook
-              for merge request and comment events.
+              stores it encrypted; you then pick the projects to review, and each gets a webhook for
+              merge request and comment events.
             </DialogDescription>
           </DialogHeader>
           <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -363,68 +366,73 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
 
 // ── Connection row ───────────────────────────────────────────────────────────
 
-function ConnectionItem({ connection }: { connection: ConnectionRow }) {
+function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; isAdmin: boolean }) {
   const { pending, run } = useAction();
   const kind = connection.provider === "github" ? "GitHub installation" : "GitLab connection";
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: "var(--space-3)",
+        flexDirection: "column",
+        gap: "var(--space-2)",
         padding: "var(--space-3) var(--space-4)",
         background: "var(--bg-raised)",
         borderRadius: "var(--radius-md)",
         border: "1px solid var(--border-subtle)",
       }}
     >
-      <ProviderIcon provider={connection.provider} size={14} />
-      <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
-        {connection.name}
-      </span>
-      <Button asChild variant="ghost" size="sm">
-        <Link href={`/repositories/${connection.provider}/${connection.id}`}>
-          <IconSettings size={14} />
-          {connection.provider === "github" ? "Choose repositories" : "Choose projects"}
-        </Link>
-      </Button>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={pending}
-            aria-label={`Remove ${connection.name}`}
-            title={`Remove ${connection.name}`}
-            style={{ color: "var(--error)" }}
-          >
-            <IconTrash size={14} />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {connection.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The {kind} and all of its repositories are removed from this organization, together
-              with their reviews, rules, agent pins and ralph runs
-              {connection.provider === "gitlab"
-                ? ". The project webhooks are deleted from GitLab"
-                : ". The app stays installed on GitHub until you uninstall it there"}
-              . It can then be connected again, from this or another organization.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() =>
-                run(() => removeScmConnection(connection.id), `Removed ${connection.name}`)
-              }
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+        <ProviderIcon provider={connection.provider} size={14} />
+        <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
+          {connection.name}
+        </span>
+        <Button asChild variant="ghost" size="sm">
+          <Link href={`/repositories/${connection.provider}/${connection.id}`}>
+            <IconSettings size={14} />
+            {connection.provider === "github" ? "Choose repositories" : "Choose projects"}
+          </Link>
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={pending}
+              aria-label={`Remove ${connection.name}`}
+              title={`Remove ${connection.name}`}
+              style={{ color: "var(--error)" }}
             >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <IconTrash size={14} />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove {connection.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The {kind} and all of its repositories are removed from this organization, together
+                with their reviews, rules, agent pins and ralph runs
+                {connection.provider === "gitlab"
+                  ? ". The project webhooks are deleted from GitLab"
+                  : ". The app stays installed on GitHub until you uninstall it there"}
+                . It can then be connected again, from this or another organization.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  run(() => removeScmConnection(connection.id), `Removed ${connection.name}`)
+                }
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+      {connection.provider === "gitlab" && (
+        <ConnectionHealth health={connection.health} isAdmin={isAdmin} />
+      )}
     </div>
   );
 }
@@ -613,7 +621,7 @@ export function RepositoriesView({
               style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
             >
               {connections.map((connection) => (
-                <ConnectionItem key={connection.id} connection={connection} />
+                <ConnectionItem key={connection.id} connection={connection} isAdmin={isAdmin} />
               ))}
               {githubInstallUrl && connections.some((c) => c.provider === "github") && (
                 <Muted style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>

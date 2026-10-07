@@ -169,6 +169,41 @@ export async function setScmConnectionHealth(
   await db.update(scmConnections).set({ health }).where(eq(scmConnections.id, id));
 }
 
+/**
+ * Removes the problems with one of `codes` about repository `repositoryId` from a
+ * connection's `health` (e.g. once its webhook was recreated). Done in one statement, so a
+ * concurrent health write isn't overwritten with stale problems.
+ */
+export async function removeScmConnectionProblems(
+  db: Database,
+  connectionId: string,
+  repositoryId: string,
+  codes: string[],
+): Promise<void> {
+  await db.execute(sql`
+    update ${scmConnections}
+    set health = jsonb_set(
+      health,
+      '{problems}',
+      coalesce(
+        (
+          select jsonb_agg(problem)
+          from jsonb_array_elements(health -> 'problems') as problem
+          where not (
+            problem ->> 'repositoryId' is not distinct from ${repositoryId}
+            and problem ->> 'code' in (${sql.join(
+              codes.map((code) => sql`${code}`),
+              sql`, `,
+            )})
+          )
+        ),
+        '[]'::jsonb
+      )
+    )
+    where ${scmConnections.id} = ${connectionId} and health is not null
+  `);
+}
+
 /** Decrypts a connection's credentials JSON. */
 export function connectionCredentials<T extends Record<string, unknown>>(
   connection: Pick<ScmConnection, "encryptedCredentials">,
@@ -294,6 +329,30 @@ export async function setRepositoryEnabled(
   const rows = await db
     .update(repositories)
     .set({ enabled })
+    .where(
+      and(
+        eq(repositories.id, id),
+        eq(repositories.organizationId, organizationId),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
+    .returning({ id: repositories.id });
+  return rows.length > 0;
+}
+
+/**
+ * Sets the stored webhook ID of a connected repository of the organization (null when it
+ * has none). Returns false if it has no such repository or it's disconnected.
+ */
+export async function setRepositoryWebhookId(
+  db: Database,
+  organizationId: string,
+  id: string,
+  webhookId: string | null,
+): Promise<boolean> {
+  const rows = await db
+    .update(repositories)
+    .set({ webhookId })
     .where(
       and(
         eq(repositories.id, id),

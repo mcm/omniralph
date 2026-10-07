@@ -47,6 +47,7 @@ vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => state.githubAut
 const {
   connectGitLab,
   disconnectRepository,
+  recreateGitLabWebhook,
   removeScmConnection,
   saveGitHubRepositories,
   saveGitLabProjects,
@@ -597,6 +598,121 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     const [after] = await state.db.select().from(repositories);
     expect(after).toMatchObject({ enabled: true, disconnectedAt: null });
   });
+  describe("recreating a GitLab webhook", () => {
+    /** Connects acme/api and acme/sub/web and records webhook problems for both. */
+    async function withWebhookProblems() {
+      const connectionId = await connectGitLabProjects([101, 102]);
+      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      const [api, web] = repos;
+      await state.db
+        .update(scmConnections)
+        .set({
+          health: {
+            checkedAt: "2026-10-07T04:45:00.000Z",
+            tokenExpiresAt: "2026-10-14",
+            problems: [
+              { code: "rotation_unsupported", message: "Can't rotate." },
+              { code: "webhook_missing", message: "acme/api: none", repositoryId: api!.id },
+              { code: "webhook_events_outdated", message: "acme/sub/web", repositoryId: web!.id },
+            ],
+          },
+        })
+        .where(eq(scmConnections.id, connectionId));
+      hookRequests.length = 0;
+      return { connectionId, api: api!, web: web! };
+    }
+
+    async function health(connectionId: string) {
+      const [row] = await state.db
+        .select()
+        .from(scmConnections)
+        .where(eq(scmConnections.id, connectionId));
+      return row!.health;
+    }
+
+    it("deletes the stored webhook, creates a new one like the picker and clears the problem", async () => {
+      const { connectionId, api, web } = await withWebhookProblems();
+
+      expect(await recreateGitLabWebhook(api.id)).toEqual({ ok: true });
+
+      expect(deletedHooks).toEqual([`101/${api.webhookId}`]);
+      expect(hookRequests).toHaveLength(1);
+      expect(hookRequests[0]).toMatchObject({
+        projectId: "101",
+        body: {
+          url: "https://omniralph.example.com/api/webhooks/gitlab",
+          merge_requests_events: true,
+          note_events: true,
+          pipeline_events: true,
+          enable_ssl_verification: true,
+        },
+      });
+      const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));
+      expect(after!.webhookId).not.toBe(api.webhookId);
+      expect(after!.webhookId).toMatch(/^\d+$/);
+      expect(after).toMatchObject({ enabled: true, disconnectedAt: null });
+      expect((await health(connectionId))!.problems).toEqual([
+        { code: "rotation_unsupported", message: "Can't rotate." },
+        { code: "webhook_events_outdated", message: "acme/sub/web", repositoryId: web.id },
+      ]);
+    });
+
+    it("creates a webhook for a project without a stored one", async () => {
+      const { connectionId, api } = await withWebhookProblems();
+      await state.db
+        .update(repositories)
+        .set({ webhookId: null })
+        .where(eq(repositories.id, api.id));
+
+      expect(await recreateGitLabWebhook(api.id)).toEqual({ ok: true });
+      expect(deletedHooks).toEqual([]);
+      expect(hookRequests.map((r) => r.projectId)).toEqual(["101"]);
+      expect((await health(connectionId))!.problems.map((p) => p.code)).toEqual([
+        "rotation_unsupported",
+        "webhook_events_outdated",
+      ]);
+    });
+
+    it("keeps the problem when GitLab refuses the new webhook", async () => {
+      const { connectionId, api } = await withWebhookProblems();
+      server.use(
+        http.post(`${API}/projects/101/hooks`, () =>
+          HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+        ),
+      );
+      expect(await recreateGitLabWebhook(api.id)).toEqual({
+        ok: false,
+        error: expect.stringContaining("Maintainer"),
+      });
+      const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));
+      expect(after!.webhookId).toBeNull();
+      expect((await health(connectionId))!.problems).toHaveLength(3);
+    });
+
+    it("refuses members and doesn't touch GitLab", async () => {
+      const { connectionId, api } = await withWebhookProblems();
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await recreateGitLabWebhook(api.id)).toMatchObject({ ok: false });
+      expect(deletedHooks).toEqual([]);
+      expect(hookRequests).toEqual([]);
+      expect((await health(connectionId))!.problems).toHaveLength(3);
+    });
+
+    it("refuses another organization's project", async () => {
+      const { connectionId, api } = await withWebhookProblems();
+      state.orgId = otherOrgId;
+      expect(await recreateGitLabWebhook(api.id)).toEqual({
+        ok: false,
+        error: "That GitLab project isn't connected.",
+      });
+      expect(deletedHooks).toEqual([]);
+      expect(hookRequests).toEqual([]);
+      const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));
+      expect(after!.webhookId).toBe(api.webhookId);
+      expect((await health(connectionId))!.problems).toHaveLength(3);
+    });
+  });
+
   describe("removing a connection", () => {
     it("deletes the GitLab webhooks, repositories and connection so another organization can connect it", async () => {
       await connectGitLabProjects([101, 102]);
