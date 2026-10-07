@@ -23,7 +23,7 @@ describe("classifyPath", () => {
     expect(classifyPath("/api/other")).toBe("api");
     expect(classifyPath("/api/agentx")).toBe("api");
     expect(classifyPath("/")).toBe("page");
-    expect(classifyPath("/admin/users")).toBe("page");
+    expect(classifyPath("/settings/organization")).toBe("page");
     expect(classifyPath("/sign-in-elsewhere")).toBe("page");
   });
 });

@@ -143,8 +143,8 @@ Configure at least one sign-in provider. Redeploy after changing variables
 
 ## 9. First sign-in and connecting code hosts
 
-1. Open `APP_URL` and sign in, then create an organization: you become its admin. Members
-   are managed per organization under **Admin › Users**.
+1. Open `APP_URL` and sign in, then create an organization: you become its admin. Invite
+   members and set email domains under **Settings › Organization**.
 2. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)).
 3. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md).

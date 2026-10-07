@@ -12,9 +12,7 @@ import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
 import { runSignedInAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
-
-/** Longest organization name accepted. */
-const MAX_NAME_LENGTH = 100;
+import { checkOrganizationName } from "./name";
 
 const ACCEPT_ERRORS: Record<Exclude<AcceptInvitationResult, "accepted">, string> = {
   not_found: "That invitation no longer exists.",
@@ -40,12 +38,9 @@ async function activate(userId: string, organizationId: string): Promise<ActionR
 /** Creates an organization; the caller becomes its admin and it becomes their active one. */
 export async function createOrganizationAction(name: string): Promise<ActionResult> {
   return runSignedInAction(async (user) => {
-    const trimmed = typeof name === "string" ? name.trim() : "";
-    if (!trimmed) return { ok: false, error: "Enter a name for the organization." };
-    if (trimmed.length > MAX_NAME_LENGTH) {
-      return { ok: false, error: `Use at most ${MAX_NAME_LENGTH} characters.` };
-    }
-    await createOrganization(getDb(), { name: trimmed, createdBy: user.id });
+    const checked = checkOrganizationName(name);
+    if ("error" in checked) return { ok: false, error: checked.error };
+    await createOrganization(getDb(), { name: checked.name, createdBy: user.id });
     revalidateAll();
   });
 }
