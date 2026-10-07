@@ -181,5 +181,6 @@ summary comment links back to `/reviews/<id>`.
   pinned to an offline agent, or `QUEUE_REGIONS` changed while jobs were queued.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be
-  connected to one organization. Disconnect a Linear workspace there first; for GitLab use another
-  bot token. A GitHub installation can't be moved: install the App on another account instead.
+  connected to one organization. Disconnect a Linear workspace there first; remove a GitHub
+  installation or GitLab connection there under **Repositories › Code-host connections** (or
+  uninstall the GitHub App), or use another GitLab bot token.

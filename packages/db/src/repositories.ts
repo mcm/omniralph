@@ -96,6 +96,36 @@ export async function findScmConnection(
   return row ?? null;
 }
 
+/** Connections of `provider` with this external ID on any instance, e.g. a GitHub App installation. */
+export async function findScmConnectionsByExternalId(
+  db: Database,
+  provider: ScmProvider,
+  externalId: string,
+): Promise<ScmConnection[]> {
+  return db
+    .select()
+    .from(scmConnections)
+    .where(and(eq(scmConnections.provider, provider), eq(scmConnections.externalId, externalId)));
+}
+
+/**
+ * Removes an organization's connection together with its repositories (and, through them,
+ * their reviews, rules, agent pins and ralph runs), so the same installation or token user
+ * can be connected again, from any organization. Returns the removed connection, or null
+ * when the organization has no such connection.
+ */
+export async function deleteScmConnection(
+  db: Database,
+  organizationId: string,
+  id: string,
+): Promise<ScmConnection | null> {
+  const [row] = await db
+    .delete(scmConnections)
+    .where(and(eq(scmConnections.id, id), eq(scmConnections.organizationId, organizationId)))
+    .returning();
+  return row ?? null;
+}
+
 /** An organization's connections (of `provider`), by name. */
 export async function listScmConnections(
   db: Database,

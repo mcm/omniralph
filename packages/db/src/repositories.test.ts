@@ -8,7 +8,9 @@ import { runMigrations } from "./migrate.js";
 import {
   connectionCredentials,
   connectRepository,
+  deleteScmConnection,
   disconnectRepository,
+  findScmConnectionsByExternalId,
   getRepository,
   getRepositoryWithConnection,
   getScmConnection,
@@ -21,7 +23,9 @@ import {
 import {
   agentRepoPins,
   agents,
+  jobs,
   organizations,
+  repositories,
   reviewProfiles,
   reviews,
   scmConnections,
@@ -286,5 +290,81 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       await updateRepositorySettings(db, orgId, repo.id, { ...settings, profileId: "deep" }),
     ).toMatchObject({ profileId: "deep" });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+  });
+  it("removes a connection with its repositories so another organization can connect it", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Removal" }).returning();
+    const otherId = other!.id;
+    await seedReviewProfiles(db, otherId);
+    const input = {
+      provider: "github" as const,
+      name: "acme",
+      baseUrl: "https://api.github.com",
+      externalId: "4004",
+      credentials: {},
+    };
+    const connection = (await upsertScmConnection(db, { ...input, organizationId: orgId }, key))!;
+    const repo = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "888",
+      fullPath: "acme/removed",
+    });
+    const [agent] = await db
+      .insert(agents)
+      .values({ organizationId: orgId, name: "removal-agent" })
+      .returning();
+    await db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo.id });
+    await db.insert(reviews).values({
+      repositoryId: repo.id,
+      prNumber: 1,
+      headSha: "a",
+      baseSha: "b",
+      trigger: "webhook",
+      budget: 1,
+    });
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: orgId,
+        capability: "review",
+        type: "review.run",
+        repositoryId: repo.id,
+      })
+      .returning();
+    expect((await findScmConnectionsByExternalId(db, "github", "4004")).map((c) => c.id)).toEqual([
+      connection.id,
+    ]);
+
+    // Only the connection's organization can remove it.
+    expect(await deleteScmConnection(db, otherId, connection.id)).toBeNull();
+    expect(await getScmConnection(db, orgId, connection.id)).not.toBeNull();
+
+    expect((await deleteScmConnection(db, orgId, connection.id))?.id).toBe(connection.id);
+    expect(await getScmConnection(db, orgId, connection.id)).toBeNull();
+    expect(await db.select().from(repositories).where(eq(repositories.id, repo.id))).toEqual([]);
+    expect(await db.select().from(reviews).where(eq(reviews.repositoryId, repo.id))).toEqual([]);
+    expect(
+      await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agent!.id)),
+    ).toEqual([]);
+    // Jobs are kept (as history), without their repository.
+    const [kept] = await db.select().from(jobs).where(eq(jobs.id, job!.id));
+    expect(kept?.repositoryId).toBeNull();
+    expect(await findScmConnectionsByExternalId(db, "github", "4004")).toEqual([]);
+    expect(await deleteScmConnection(db, orgId, connection.id)).toBeNull();
+
+    // The installation is free again: another organization can connect it.
+    const moved = (await upsertScmConnection(db, { ...input, organizationId: otherId }, key))!;
+    expect(moved.organizationId).toBe(otherId);
+    expect((await listScmConnections(db, otherId)).map((c) => c.id)).toEqual([moved.id]);
+    expect((await listScmConnections(db, orgId)).map((c) => c.id)).not.toContain(moved.id);
+    const reconnected = await connectRepository(db, {
+      connectionId: moved.id,
+      provider: "github",
+      externalId: "888",
+      fullPath: "acme/removed",
+    });
+    expect(reconnected.organizationId).toBe(otherId);
+    expect(reconnected.id).not.toBe(repo.id);
+    await db.delete(scmConnections).where(eq(scmConnections.id, moved.id));
   });
 });

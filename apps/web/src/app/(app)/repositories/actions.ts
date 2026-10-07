@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import {
   connectionCredentials,
   connectRepository,
+  deleteScmConnection,
   disconnectRepository as disconnectRepositoryRow,
   findScmConnection,
   getRepository,
@@ -163,6 +164,45 @@ export async function disconnectRepository(id: string): Promise<ActionResult> {
     await disconnectRepositoryRow(db, organizationId, id);
     revalidatePath(REPOSITORIES_PATH);
     return { ok: true, warning };
+  });
+}
+
+/**
+ * Removes a GitHub App installation or GitLab connection from the admin's organization:
+ * deletes the project webhooks of its GitLab repositories, then the connection with its
+ * repositories (and their reviews, rules and pins). The installation or token user can then
+ * be connected again, from this or another organization. A GitHub App stays installed on
+ * GitHub until it's uninstalled there.
+ */
+export async function removeScmConnection(connectionId: string): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    const organizationId = admin.organization.id;
+    const connection = await getScmConnection(db, organizationId, connectionId);
+    if (!connection) return { ok: false, error: "That connection doesn't exist." };
+
+    const failed: string[] = [];
+    if (connection.provider === "gitlab") {
+      const { token } = connectionCredentials<GitLabCredentials>(connection);
+      const gitlab = new GitLabSetupClient({ baseUrl: connection.baseUrl, token });
+      for (const repo of await listConnectionRepositories(db, connection.id)) {
+        if (!repo.webhookId) continue;
+        try {
+          await gitlab.deleteProjectHook(Number(repo.externalId), Number(repo.webhookId));
+        } catch (error) {
+          failed.push(`${repo.fullPath} (webhook ID ${repo.webhookId}): ${errorMessage(error)}`);
+        }
+      }
+    }
+
+    await deleteScmConnection(db, organizationId, connection.id);
+    revalidatePath(REPOSITORIES_PATH);
+    if (failed.length > 0) {
+      return {
+        ok: true,
+        warning: `Removed ${connection.name}, but some GitLab webhooks couldn't be deleted. Remove them under each project's Settings › Webhooks. ${failed.join(" ")}`,
+      };
+    }
   });
 }
 

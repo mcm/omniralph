@@ -151,6 +151,17 @@ describe("GET /repositories/github/callback", () => {
     expect(state.connections.get("42")).toMatchObject({ organizationId: "org-a" });
   });
 
+  it("connects an installation to another organization once the first one removed it", async () => {
+    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    state.orgId = "org-b";
+    expect(await callback("installation_id=42")).toBe("/repositories?github=other_organization");
+    // Org A removes the connection (Remove on the Repositories page, or GitHub's uninstall
+    // webhook): the row is deleted, see deleteScmConnection.
+    state.connections.delete("42");
+    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    expect(state.connections.get("42")).toMatchObject({ organizationId: "org-b" });
+  });
+
   it("refuses missing, replayed, foreign and other-organization states", async () => {
     const started = await signed();
     expect(await callback("installation_id=42", started)).toBe("/repositories/github/conn-42");

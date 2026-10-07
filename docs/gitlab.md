@@ -49,7 +49,14 @@ in MR comments, e.g. `@group_42_bot_1a2b review`.
 The connection (the instance's base URL plus the bot token's user) belongs to that organization:
 its projects, reviews and jobs are only visible to its members and handled by its agents. The same
 bot user on the same instance can't be connected to a second organization ("already connected to
-another organization"); give each organization its own bot token.
+another organization"); give each organization its own bot token, or remove the connection from
+the first organization.
+
+**Repositories › Code-host connections › Remove** (admins) deletes a connection: the webhooks of
+its connected projects are deleted from GitLab (a webhook that can't be deleted is reported, so you
+can remove it under the project's **Settings › Webhooks**), then the connection, its projects and
+their reviews, rules, agent pins and ralph runs. The bot user can then be connected again, from
+this or another organization.
 
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
 skipped unless the repository's settings include drafts) in enabled projects are then reviewed.

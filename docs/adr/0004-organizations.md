@@ -79,7 +79,7 @@ Capability topics are per organization (`capabilityTopic(capability, organizatio
 | -- | -- | -- |
 | Integration | `(organization_id, provider)` (`integrations_provider_uq`) | At most one Linear workspace per organization. |
 | Linear workspace | `(provider, external_id)` (`integrations_provider_external_id_uq`) | A workspace belongs to one organization; connecting it from another is refused until it's disconnected. Linear webhooks resolve their organization from the workspace ID. |
-| SCM connection | `(provider, base_url, external_id)` | A GitHub App installation, or a GitLab token user on an instance, belongs to one organization; connecting it from another is refused. Code-host webhooks resolve their organization from the verifying connection. |
+| SCM connection | `(provider, base_url, external_id)` | A GitHub App installation, or a GitLab token user on an instance, belongs to one organization; connecting it from another is refused until it's removed (or, for GitHub, uninstalled). Code-host webhooks resolve their organization from the verifying connection. |
 | Review profile | `(organization_id, id)` (primary key) | Profile IDs (`quick`, `standard`, `deep`, …) are unique per organization. Repositories reference `(organization_id, profile_id)`, so a repository can only use its own organization's profiles. |
 | App setting | `(organization_id, key)` (primary key) | Settings such as the agents' desired version are per organization. |
 | Active ralph run | `(organization_id, linear_issue_id)` | One active run per Linear issue per organization. |
@@ -96,9 +96,11 @@ parameter alone. GitLab connect uses the admin's active organization directly.
   seed two organizations and assert neither leaks into the other.
 - Agents can't be shared between organizations: a host serving two organizations runs two
   enrolled agents (separate configs and workspace roots).
-- A Linear workspace moves to another organization by disconnecting it first. GitHub
-  installations and GitLab connections can't be removed from the UI, so they stay with the
-  organization that connected them (another organization uses another GitLab bot token). There is
-  no organization deletion and no transfer of resources.
+- A Linear workspace moves to another organization by disconnecting it first. A GitHub
+  installation or GitLab connection moves by removing it first (**Repositories › Code-host
+  connections › Remove**, or a GitHub `installation` `deleted` webhook): the connection row is
+  deleted with its repositories (and, by cascade, their reviews, rules, pins and ralph runs; GitLab
+  project webhooks are deleted first), so its history doesn't move along. There is no
+  organization deletion and no transfer of resources.
 - A queued job's topic includes its organization ID, so changing an agent's organization isn't
   possible (agents are enrolled into one organization for life).
