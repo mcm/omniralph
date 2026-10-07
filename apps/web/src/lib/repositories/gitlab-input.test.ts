@@ -30,6 +30,12 @@ describe("parseGitLabConnectForm", () => {
     expect(prefixed).toMatchObject({ ok: true, input: { baseUrl: "https://example.com/gitlab" } });
   });
 
+  it("allows connecting without project paths, to pick them from a list", () => {
+    expect(
+      parseGitLabConnectForm({ baseUrl: "https://gitlab.com", token: "t", projectPaths: " \n" }),
+    ).toMatchObject({ ok: true, input: { projectPaths: [] } });
+  });
+
   it("rejects bad input", () => {
     const base = { baseUrl: "https://gitlab.com", token: "t", projectPaths: "a/b" };
     expect(parseGitLabConnectForm({ ...base, baseUrl: "http://gitlab.example.com" })).toMatchObject(
@@ -40,7 +46,6 @@ describe("parseGitLabConnectForm", () => {
     });
     expect(parseGitLabConnectForm({ ...base, baseUrl: "not a url" })).toMatchObject({ ok: false });
     expect(parseGitLabConnectForm({ ...base, token: "  " })).toMatchObject({ ok: false });
-    expect(parseGitLabConnectForm({ ...base, projectPaths: " \n" })).toMatchObject({ ok: false });
     expect(parseGitLabConnectForm({ ...base, projectPaths: "justaname" })).toMatchObject({
       ok: false,
     });

@@ -48,6 +48,7 @@ const {
   disconnectRepository,
   removeScmConnection,
   saveGitHubRepositories,
+  saveGitLabProjects,
   setRepositoryEnabled,
 } = await import("./actions");
 
@@ -156,6 +157,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   });
 
   const form = { baseUrl: `${GITLAB}/`, token: TOKEN, projectPaths: "acme/api\nacme/sub/web" };
+  const connected = { ok: true, connectionId: expect.any(String) };
 
   it("rejects a token GitLab doesn't accept and stores nothing", async () => {
     const result = await connectGitLab({ ...form, token: "glpat-wrong" });
@@ -186,7 +188,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   });
 
   it("stores the token encrypted and creates a project webhook per project", async () => {
-    expect(await connectGitLab(form)).toEqual({ ok: true });
+    expect(await connectGitLab(form)).toEqual(connected);
 
     const [connection] = await state.db.select().from(scmConnections);
     expect(connection).toMatchObject({
@@ -224,7 +226,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
     // Reconnecting keeps the secret and replaces each project's webhook.
     const oldHooks = repos.map((r) => `${r.externalId}/${r.webhookId}`);
-    expect(await connectGitLab(form)).toEqual({ ok: true });
+    expect(await connectGitLab(form)).toEqual(connected);
     expect(await state.db.select().from(scmConnections)).toHaveLength(1);
     expect(hookRequests.at(-1)?.body.token).toBe(credentials.webhookSecret);
     expect(deletedHooks.sort()).toEqual(oldHooks.sort());
@@ -237,9 +239,104 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       ),
     );
     const result = await connectGitLab(form);
-    expect(result).toEqual({ ok: true, warning: expect.stringContaining("acme/sub/web") });
+    expect(result).toEqual({ ...connected, warning: expect.stringContaining("acme/sub/web") });
     const repos = await state.db.select().from(repositories);
     expect(repos.map((r) => r.fullPath)).toEqual(["acme/api"]);
+  });
+
+  describe("picking GitLab projects from a list", () => {
+    let listQueries: URLSearchParams[] = [];
+
+    beforeEach(() => {
+      listQueries = [];
+      server.use(
+        http.get(`${API}/projects`, ({ request }) => {
+          listQueries.push(new URL(request.url).searchParams);
+          return HttpResponse.json(
+            Object.values(projects).map((project) => ({ ...project, visibility: "private" })),
+          );
+        }),
+      );
+    });
+
+    async function connectWithoutProjects(): Promise<string> {
+      const result = await connectGitLab({ ...form, projectPaths: "" });
+      expect(result).toEqual(connected);
+      return (result as { connectionId: string }).connectionId;
+    }
+
+    it("connects without project paths: stores the connection and creates no webhook", async () => {
+      const connectionId = await connectWithoutProjects();
+      const [connection] = await state.db.select().from(scmConnections);
+      expect(connection).toMatchObject({ id: connectionId, provider: "gitlab", baseUrl: GITLAB });
+      expect(hookRequests).toEqual([]);
+      expect(await state.db.select().from(repositories)).toEqual([]);
+    });
+
+    it("connects selected projects the bot maintains, with one webhook each, and disables the others", async () => {
+      const connectionId = await connectWithoutProjects();
+
+      expect(await saveGitLabProjects(connectionId, [101, 102, 999])).toEqual({ ok: true });
+      expect(listQueries[0]?.get("min_access_level")).toBe("40");
+      expect(hookRequests.map((r) => r.projectId).sort()).toEqual(["101", "102"]);
+      let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => [r.fullPath, r.enabled, r.webhookId !== null])).toEqual([
+        ["acme/api", true, true],
+        ["acme/sub/web", true, true],
+      ]);
+
+      // Deselecting disables; reselecting re-enables without another webhook.
+      expect(await saveGitLabProjects(connectionId, [102])).toEqual({ ok: true });
+      repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+        ["acme/api", false],
+        ["acme/sub/web", true],
+      ]);
+      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({ ok: true });
+      repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => r.enabled)).toEqual([true, true]);
+      expect(hookRequests).toHaveLength(2);
+      expect(deletedHooks).toEqual([]);
+    });
+
+    it("creates a new webhook for a disconnected project that's selected again", async () => {
+      const connectionId = await connectWithoutProjects();
+      await saveGitLabProjects(connectionId, [101]);
+      const [repo] = await state.db.select().from(repositories);
+      expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
+
+      expect(await saveGitLabProjects(connectionId, [101])).toEqual({ ok: true });
+      const [reconnected] = await state.db.select().from(repositories);
+      expect(reconnected).toMatchObject({ enabled: true, disconnectedAt: null });
+      expect(reconnected!.webhookId).not.toBe(repo!.webhookId);
+      expect(hookRequests).toHaveLength(2);
+    });
+
+    it("reports projects whose webhook GitLab refuses", async () => {
+      server.use(
+        http.post(`${API}/projects/102/hooks`, () =>
+          HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+        ),
+      );
+      const connectionId = await connectWithoutProjects();
+      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({
+        ok: true,
+        warning: expect.stringContaining("acme/sub/web"),
+      });
+      const repos = await state.db.select().from(repositories);
+      expect(repos.map((r) => r.fullPath)).toEqual(["acme/api"]);
+    });
+
+    it("refuses another organization's connection and members", async () => {
+      const connectionId = await connectWithoutProjects();
+      state.orgId = otherOrgId;
+      expect(await saveGitLabProjects(connectionId, [101])).toMatchObject({ ok: false });
+      state.orgId = orgId;
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await saveGitLabProjects(connectionId, [101])).toMatchObject({ ok: false });
+      expect(hookRequests).toEqual([]);
+      expect(await state.db.select().from(repositories)).toEqual([]);
+    });
   });
 
   it("disconnecting disables the repo, removes pins, deletes the webhook and keeps reviews", async () => {
@@ -373,7 +470,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   });
 
   it("refuses a GitLab connection that belongs to another organization", async () => {
-    expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({ ok: true });
+    expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual(connected);
     const hooks = hookRequests.length;
     state.orgId = otherOrgId;
     expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({
@@ -403,7 +500,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   });
   describe("removing a connection", () => {
     it("deletes the GitLab webhooks, repositories and connection so another organization can connect it", async () => {
-      expect(await connectGitLab(form)).toEqual({ ok: true });
+      expect(await connectGitLab(form)).toEqual(connected);
       const [connection] = await state.db.select().from(scmConnections);
       const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
       expect(repos).toHaveLength(2);
@@ -434,7 +531,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
       // The same instance and token user can now be connected from another organization.
       state.orgId = otherOrgId;
-      expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({ ok: true });
+      expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual(connected);
       const [moved] = await state.db.select().from(scmConnections);
       expect(moved).toMatchObject({ organizationId: otherOrgId, externalId: "77" });
       const [movedRepo] = await state.db.select().from(repositories);

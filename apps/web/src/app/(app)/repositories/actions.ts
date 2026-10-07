@@ -13,7 +13,12 @@ import {
   setRepositoryEnabled as setRepositoryEnabledRow,
   upsertScmConnection,
 } from "@omniralph/db";
-import { GitLabSetupClient, GitLabSetupError, listInstallationRepos } from "@omniralph/scm";
+import {
+  GitLabSetupClient,
+  GitLabSetupError,
+  listInstallationRepos,
+  type GitLabProject as ListedGitLabProject,
+} from "@omniralph/scm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
 import { gitlabWebhookUrl } from "@/lib/app-url";
@@ -34,23 +39,82 @@ interface GitLabCredentials extends Record<string, unknown> {
   webhookSecret: string;
 }
 
+/** A project to connect; `replaceHook` recreates the webhook of an already connected one. */
+type GitLabProject = ListedGitLabProject & { replaceHook?: boolean };
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * Connects GitLab projects: validates the bot token, resolves every project, stores the
- * connection (token and webhook secret encrypted) in the admin's active organization and
- * creates a project webhook for MR and comment events on each project. Nothing is stored if
- * the token or a project path is bad, or the connection (same instance and token user)
- * already belongs to another organization.
+ * Creates the project webhook of every project and connects it to the GitLab connection
+ * (or re-enables it). A project that's already connected keeps its webhook; otherwise the
+ * new one replaces any old one, so there is exactly one per project. Returns the projects
+ * that couldn't be connected, with the reason.
  */
-export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResult> {
+async function connectGitLabProjects(
+  gitlab: GitLabSetupClient,
+  connectionId: string,
+  webhookSecret: string,
+  projects: GitLabProject[],
+): Promise<string[]> {
+  const db = getDb();
+  const webhookUrl = gitlabWebhookUrl();
+  const known = new Map(
+    (await listConnectionRepositories(db, connectionId)).map((repo) => [repo.externalId, repo]),
+  );
+  const failed: string[] = [];
+  for (const project of projects) {
+    const previous = known.get(String(project.id));
+    if (previous && !previous.disconnectedAt && previous.webhookId && !project.replaceHook) {
+      await connectRepository(db, {
+        connectionId,
+        provider: "gitlab",
+        externalId: String(project.id),
+        fullPath: project.fullPath,
+      });
+      continue;
+    }
+    let hookId: number;
+    try {
+      hookId = await gitlab.createProjectHook(project.id, {
+        url: webhookUrl,
+        secret: webhookSecret,
+      });
+    } catch (error) {
+      failed.push(`${project.fullPath}: ${errorMessage(error)}`);
+      continue;
+    }
+    await connectRepository(db, {
+      connectionId,
+      provider: "gitlab",
+      externalId: String(project.id),
+      fullPath: project.fullPath,
+      webhookId: String(hookId),
+    });
+    if (previous?.webhookId) {
+      await gitlab.deleteProjectHook(project.id, Number(previous.webhookId)).catch(() => undefined);
+    }
+  }
+  return failed;
+}
+
+/**
+ * Connects GitLab: validates the bot token, resolves every given project, stores the
+ * connection (token and webhook secret encrypted) in the admin's active organization and
+ * creates a project webhook for MR and comment events on each project. Without project
+ * paths only the connection is stored; its projects are then picked from a list (see
+ * {@link saveGitLabProjects}). Nothing is stored if the token or a project path is bad, or
+ * the connection (same instance and token user) already belongs to another organization.
+ * Returns the connection's ID.
+ */
+export async function connectGitLab(
+  form: GitLabConnectForm,
+): Promise<ActionResult & { connectionId?: string }> {
   return runAdminAction(async (admin) => {
     const parsed = parseGitLabConnectForm(form);
     if (!parsed.ok) return parsed;
     const { baseUrl, token, projectPaths } = parsed.input;
-    const webhookUrl = gitlabWebhookUrl();
 
     const gitlab = new GitLabSetupClient({ baseUrl, token });
     let owner;
@@ -82,45 +146,29 @@ export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResu
       createdBy: admin.id,
     });
     if (!connection) return { ok: false, error: OTHER_ORGANIZATION_ERROR };
-    const known = new Map(
-      (await listConnectionRepositories(db, connection.id)).map((repo) => [repo.externalId, repo]),
+
+    // Connecting projects by path again replaces their webhooks (e.g. to add new events).
+    const failed = await connectGitLabProjects(
+      gitlab,
+      connection.id,
+      webhookSecret,
+      projects.map((project) => ({ ...project, replaceHook: true })),
     );
 
-    const failed: string[] = [];
-    for (const project of projects) {
-      const previous = known.get(String(project.id));
-      let hookId: number;
-      try {
-        hookId = await gitlab.createProjectHook(project.id, {
-          url: webhookUrl,
-          secret: webhookSecret,
-        });
-      } catch (error) {
-        failed.push(`${project.fullPath}: ${errorMessage(error)}`);
-        continue;
-      }
-      await connectRepository(db, {
-        connectionId: connection.id,
-        provider: "gitlab",
-        externalId: String(project.id),
-        fullPath: project.fullPath,
-        webhookId: String(hookId),
-      });
-      // Reconnecting replaces the old hook, so there is exactly one per project.
-      if (previous?.webhookId) {
-        await gitlab
-          .deleteProjectHook(project.id, Number(previous.webhookId))
-          .catch(() => undefined);
-      }
-    }
-
     revalidatePath(REPOSITORIES_PATH);
-    if (failed.length === projects.length) {
+    revalidatePath(`${REPOSITORIES_PATH}/gitlab/${connection.id}`);
+    const connectionId = connection.id;
+    if (projects.length > 0 && failed.length === projects.length) {
       return { ok: false, error: `Couldn't create the webhook. ${failed.join(" ")}` };
     }
     if (failed.length > 0) {
-      return { ok: true, warning: `Some projects weren't connected. ${failed.join(" ")}` };
+      return {
+        ok: true,
+        connectionId,
+        warning: `Some projects weren't connected. ${failed.join(" ")}`,
+      };
     }
+    return { ok: true, connectionId };
   });
 }
 
@@ -249,5 +297,50 @@ export async function saveGitHubRepositories(
     }
     revalidatePath(REPOSITORIES_PATH);
     revalidatePath(`${REPOSITORIES_PATH}/github/${connectionId}`);
+  });
+}
+
+/**
+ * Saves which projects of a GitLab connection get reviews: selected ones are connected (a
+ * project webhook is created for those without one) or re-enabled, other connected ones are
+ * disabled. Only projects the bot token's user maintains are accepted.
+ */
+export async function saveGitLabProjects(
+  connectionId: string,
+  selectedProjectIds: number[],
+): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    const organizationId = admin.organization.id;
+    const connection = await getScmConnection(db, organizationId, connectionId);
+    if (!connection || connection.provider !== "gitlab") {
+      return { ok: false, error: "That GitLab connection doesn't exist." };
+    }
+    const { token, webhookSecret } = connectionCredentials<GitLabCredentials>(connection);
+    const gitlab = new GitLabSetupClient({ baseUrl: connection.baseUrl, token });
+    let available;
+    try {
+      available = await gitlab.listProjects();
+    } catch (error) {
+      return { ok: false, error: `Couldn't list the GitLab projects: ${errorMessage(error)}` };
+    }
+
+    const selected = new Set(selectedProjectIds.map(String));
+    const failed = await connectGitLabProjects(
+      gitlab,
+      connectionId,
+      webhookSecret,
+      available.filter((project) => selected.has(String(project.id))),
+    );
+    for (const repo of await listConnectionRepositories(db, connectionId)) {
+      if (!repo.disconnectedAt && repo.enabled && !selected.has(repo.externalId)) {
+        await setRepositoryEnabledRow(db, organizationId, repo.id, false);
+      }
+    }
+    revalidatePath(REPOSITORIES_PATH);
+    revalidatePath(`${REPOSITORIES_PATH}/gitlab/${connectionId}`);
+    if (failed.length > 0) {
+      return { ok: true, warning: `Some projects weren't connected. ${failed.join(" ")}` };
+    }
   });
 }

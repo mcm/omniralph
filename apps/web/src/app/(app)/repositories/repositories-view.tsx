@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -129,6 +130,7 @@ function formatDateTime(iso: string): string {
 // ── Connect GitLab ───────────────────────────────────────────────────────────
 
 function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
+  const router = useRouter();
   const { pending, run } = useAction();
   const [open, setOpen] = React.useState(false);
   const [baseUrl, setBaseUrl] = React.useState(defaultUrl);
@@ -137,13 +139,21 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    const pickProjects = !projectPaths.trim();
+    let connectionId: string | undefined;
     run(
-      () => connectGitLab({ baseUrl, token, projectPaths }),
-      "GitLab projects connected",
+      async () => {
+        const result = await connectGitLab({ baseUrl, token, projectPaths });
+        connectionId = result.ok ? result.connectionId : undefined;
+        return result;
+      },
+      pickProjects ? "GitLab connected. Pick its projects." : "GitLab projects connected",
       () => {
         setOpen(false);
         setToken("");
         setProjectPaths("");
+        // Without paths, continue to the connection's project list.
+        if (pickProjects && connectionId) router.push(`/repositories/gitlab/${connectionId}`);
       },
     );
   };
@@ -164,7 +174,7 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
               Use a group or project access token for the bot identity with the{" "}
               <InlineCode>api</InlineCode> scope and the Maintainer role. Omniralph validates it,
               stores it encrypted and adds a webhook for merge request and comment events to each
-              project.
+              project. Leave the project paths empty to pick the projects from a list next.
             </DialogDescription>
           </DialogHeader>
           <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -197,12 +207,10 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
             <Field
               label="Project paths"
               htmlFor="gitlab-projects"
-              hint="One per line, e.g. group/subgroup/project."
-              required
+              hint="Optional. One per line, e.g. group/subgroup/project."
             >
               <Textarea
                 id="gitlab-projects"
-                required
                 rows={4}
                 value={projectPaths}
                 onChange={(e) => setProjectPaths(e.target.value)}
@@ -215,11 +223,7 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={pending || !token.trim() || !projectPaths.trim()}
-            >
+            <Button type="submit" variant="primary" disabled={pending || !token.trim()}>
               <IconPlugConnected size={14} />
               {pending ? "Connecting…" : "Connect"}
             </Button>
@@ -397,14 +401,12 @@ function ConnectionItem({ connection }: { connection: ConnectionRow }) {
       <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
         {connection.name}
       </span>
-      {connection.provider === "github" && (
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/repositories/github/${connection.id}`}>
-            <IconSettings size={14} />
-            Choose repositories
-          </Link>
-        </Button>
-      )}
+      <Button asChild variant="ghost" size="sm">
+        <Link href={`/repositories/${connection.provider}/${connection.id}`}>
+          <IconSettings size={14} />
+          {connection.provider === "github" ? "Choose repositories" : "Choose projects"}
+        </Link>
+      </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button
@@ -621,8 +623,9 @@ export function RepositoriesView({
             <CardHeader>
               <CardTitle>Code-host connections</CardTitle>
               <CardDescription>
-                Choose which repositories of each GitHub installation are reviewed. Removing a
-                connection deletes its repositories and their history from this organization.
+                Choose which repositories of each GitHub installation and projects of each GitLab
+                connection are reviewed. Removing a connection deletes its repositories and their
+                history from this organization.
               </CardDescription>
             </CardHeader>
             <CardContent

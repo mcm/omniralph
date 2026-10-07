@@ -7,11 +7,11 @@ import { requireSignedInUser, requireUser, type CurrentUser, type OrgUser } from
  * Runs a mutating server action as an admin of the active organization. Every server
  * action that changes settings, repos, agents or members goes through this: non-admins
  * (and signed-out callers, or users without an organization) get an error result and
- * `fn` never runs.
+ * `fn` never runs. `fn` may return a result with extra fields (e.g. a created ID).
  */
-export async function runAdminAction(
-  fn: (admin: OrgUser) => Promise<ActionResult | void>,
-): Promise<ActionResult> {
+export async function runAdminAction<R extends ActionResult = ActionResult>(
+  fn: (admin: OrgUser) => Promise<R | void>,
+): Promise<R | ActionResult> {
   let admin: OrgUser;
   try {
     admin = await requireUser("admin");
