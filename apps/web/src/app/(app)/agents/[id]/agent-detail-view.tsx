@@ -201,6 +201,8 @@ function ConfigCard({
                     label={capability}
                     htmlFor={`limit-${capability}`}
                     hint={`Effective now: ${agent.effectiveCapabilityLimits[capability] ?? "not enabled"}.`}
+                    // Fields size to their hint; keep room for the "Default (n)" placeholder.
+                    style={{ minWidth: "12rem" }}
                   >
                     <Input
                       id={`limit-${capability}`}
