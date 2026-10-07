@@ -299,6 +299,24 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       expect(deletedHooks).toEqual([]);
     });
 
+    it("leaves connected projects the list doesn't show enabled", async () => {
+      // acme/sub/web is connected by path but drops out of the list (e.g. archived).
+      expect(await connectGitLab(form)).toEqual(connected);
+      const [connection] = await state.db.select().from(scmConnections);
+      server.use(
+        http.get(`${API}/projects`, () =>
+          HttpResponse.json([{ ...projects["acme/api"], visibility: "private" }]),
+        ),
+      );
+
+      expect(await saveGitLabProjects(connection!.id, [])).toEqual({ ok: true });
+      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+        ["acme/api", false],
+        ["acme/sub/web", true],
+      ]);
+    });
+
     it("creates a new webhook for a disconnected project that's selected again", async () => {
       const connectionId = await connectWithoutProjects();
       await saveGitLabProjects(connectionId, [101]);
