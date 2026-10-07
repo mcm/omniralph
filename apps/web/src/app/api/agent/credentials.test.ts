@@ -11,6 +11,8 @@ import {
   runMigrations,
   upsertScmConnection,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   CAPABILITY_JOB_SCOPES,
@@ -118,6 +120,7 @@ function credentialRequest(token?: string, body?: unknown): Request {
 describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let gitlabRepoId: string;
   let githubRepoId: string;
   let disconnectedRepoId: string;
@@ -126,16 +129,20 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
 
-    const gitlab = await upsertScmConnection(db, {
+    const gitlab = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot @ gitlab.example.com",
       baseUrl: GITLAB,
       externalId: "5",
       credentials: { token: "glpat-bot-api", webhookSecret: "hook" },
-    });
+    }))!;
     gitlabRepoId = (
       await connectRepository(db, {
         connectionId: gitlab.id,
@@ -156,13 +163,14 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       .update(repositories)
       .set({ disconnectedAt: new Date() })
       .where(eq(repositories.id, disconnectedRepoId));
-    const github = await upsertScmConnection(db, {
+    const github = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://api.github.com",
       externalId: "4242",
       credentials: {},
-    });
+    }))!;
     githubRepoId = (
       await connectRepository(db, {
         connectionId: github.id,

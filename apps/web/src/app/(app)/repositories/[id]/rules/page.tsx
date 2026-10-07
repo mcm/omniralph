@@ -11,11 +11,11 @@ import { RulesView } from "./rules-view";
 export const metadata: Metadata = { title: "Repository rules · Omniralph" };
 
 export default async function RepositoryRulesPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const db = getDb();
-  const found = await getRepositoryWithConnection(db, id);
+  const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();
   const { repository, connection } = found;
   const rules = await listRepositoryRules(db, id);

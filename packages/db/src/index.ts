@@ -169,6 +169,7 @@ export {
   deleteReview,
   findCompletedReview,
   finishReview,
+  getFindingOrganizationId,
   getRepositoryReviewSettings,
   getReview,
   listReviewFindings,
@@ -209,12 +210,14 @@ export {
   type SaveIntegrationInput,
 } from "./integrations.js";
 export {
+  BUILT_IN_REVIEW_PROFILES,
   filterActiveAgentIds,
   listPinnableAgents,
   listRepositoryPinnedAgentIds,
   listReviewProfiles,
   getReviewProfile,
   updateRepositorySettings,
+  seedReviewProfiles,
   updateReviewProfile,
   type RepositorySettingsUpdate,
   type ReviewProfileUpdate,

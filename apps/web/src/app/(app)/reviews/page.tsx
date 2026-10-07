@@ -13,9 +13,10 @@ export default async function ReviewsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const params = parseReviewListParams(await searchParams);
   const page = await listReviews(getDb(), {
+    organizationId: user.organization.id,
     status: params.status ?? undefined,
     trigger: params.trigger ?? undefined,
     page: params.page,

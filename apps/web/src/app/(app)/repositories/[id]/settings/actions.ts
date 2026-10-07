@@ -1,6 +1,6 @@
 "use server";
 
-import { updateRepositoryRalphSettings } from "@omniralph/db";
+import { getRepository, updateRepositoryRalphSettings } from "@omniralph/db";
 import {
   fieldErrors,
   RalphSettingsInput,
@@ -22,7 +22,7 @@ export async function updateRepositorySettings(
   repositoryId: string,
   input: RepositorySettingsInput,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const parsed = RepositorySettingsInput.safeParse(input);
     if (!parsed.success) {
       return {
@@ -34,6 +34,7 @@ export async function updateRepositorySettings(
     const result = await saveRepositorySettings(
       getDb(),
       getDispatcher(),
+      admin.organization.id,
       repositoryId,
       parsed.data,
     );
@@ -68,7 +69,7 @@ export async function updateRalphSettings(
   repositoryId: string,
   input: RalphSettingsInput,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const parsed = RalphSettingsInput.safeParse(input);
     if (!parsed.success) {
       return {
@@ -78,7 +79,11 @@ export async function updateRalphSettings(
       };
     }
     const { ralphEnabled, linearTeamKeys, linearProjectNames, linearLabels } = parsed.data;
-    const saved = await updateRepositoryRalphSettings(getDb(), repositoryId, {
+    const db = getDb();
+    if (!(await getRepository(db, repositoryId, admin.organization.id))) {
+      return { ok: false, error: "That repository isn't connected." };
+    }
+    const saved = await updateRepositoryRalphSettings(db, repositoryId, {
       ralphEnabled,
       linearTeamKeys: linearTeamKeys.map((key) => key.toUpperCase()),
       linearProjectNames,

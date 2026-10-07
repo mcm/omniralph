@@ -23,6 +23,8 @@ import {
   type Database,
   type Job,
   type RalphRun,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { preparationHash } from "@omniralph/ralph";
 import {
@@ -75,6 +77,7 @@ ${PREPARE_COMMANDS.join("\n")}
 describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let agentA: string;
   let linear: FakeLinearGateway;
   let publisher: RecordingPublisher;
@@ -88,9 +91,13 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    const connection = await upsertScmConnection(
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -98,7 +105,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         credentials: {},
       },
       randomBytes(32),
-    );
+    ))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import { runMigrations } from "./migrate.js";
-import { repositories, scmConnections, scmCredentialCache } from "./schema.js";
+import { organizations, repositories, scmConnections, scmCredentialCache } from "./schema.js";
+import { seedReviewProfiles } from "./settings.js";
 import { createScmCredentialCache } from "./scm-credentials.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -25,9 +26,13 @@ describe.skipIf(!dockerAvailable)("scm credential cache", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    const organizationId = org!.id;
     const [connection] = await db
       .insert(scmConnections)
       .values({
+        organizationId,
         provider: "gitlab",
         name: "GitLab",
         baseUrl: "https://gitlab.example.com",
@@ -37,7 +42,13 @@ describe.skipIf(!dockerAvailable)("scm credential cache", () => {
     connectionId = connection!.id;
     const [repo] = await db
       .insert(repositories)
-      .values({ provider: "gitlab", externalId: "99", fullPath: "acme/widgets", connectionId })
+      .values({
+        organizationId,
+        provider: "gitlab",
+        externalId: "99",
+        fullPath: "acme/widgets",
+        connectionId,
+      })
       .returning();
     repositoryId = repo!.id;
   }, 180_000);

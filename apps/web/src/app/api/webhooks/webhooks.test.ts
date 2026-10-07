@@ -10,6 +10,8 @@ import {
   upsertScmConnection,
   webhookDeliveries,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { ReviewJobPayload } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -167,6 +169,7 @@ function gitlabRequest(
 describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let githubRepoId: string;
   let gitlabRepoId: string;
   let prCounter = 0;
@@ -175,16 +178,20 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
 
-    const ghConnection = await upsertScmConnection(db, {
+    const ghConnection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://api.github.com",
       externalId: "4242",
       credentials: {},
-    });
+    }))!;
     githubRepoId = (
       await connectRepository(db, {
         connectionId: ghConnection.id,
@@ -193,13 +200,14 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         fullPath: "acme/app",
       })
     ).id;
-    const glConnection = await upsertScmConnection(db, {
+    const glConnection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "gitlab",
       baseUrl: GITLAB_URL,
       externalId: "7",
       credentials: { token: "glpat-bot", webhookSecret: GITLAB_SECRET },
-    });
+    }))!;
     gitlabRepoId = (
       await connectRepository(db, {
         connectionId: glConnection.id,
@@ -563,6 +571,83 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         .from(webhookDeliveries)
         .where(eq(webhookDeliveries.deliveryId, delivery));
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("organizations", () => {
+    it("files the review under the organization of the connection that verified the delivery", async () => {
+      // Another organization connects the same GitLab project and GitHub repository with
+      // its own token user (and webhook secret) and its own GitHub App installation.
+      const [beta] = await db.insert(organizations).values({ name: "Beta" }).returning();
+      await seedReviewProfiles(db, beta!.id);
+      const betaGitlab = (await upsertScmConnection(db, {
+        organizationId: beta!.id,
+        provider: "gitlab",
+        name: "beta",
+        baseUrl: GITLAB_URL,
+        externalId: "8",
+        credentials: { token: "glpat-beta", webhookSecret: "beta-secret" },
+      }))!;
+      const betaGitlabRepo = await connectRepository(db, {
+        connectionId: betaGitlab.id,
+        provider: "gitlab",
+        externalId: "200",
+        fullPath: "acme/app",
+      });
+      const betaGithub = (await upsertScmConnection(db, {
+        organizationId: beta!.id,
+        provider: "github",
+        name: "beta",
+        baseUrl: "https://api.github.com",
+        externalId: "5555",
+        credentials: {},
+      }))!;
+      const betaGithubRepo = await connectRepository(db, {
+        connectionId: betaGithub.id,
+        provider: "github",
+        externalId: "100",
+        fullPath: "acme/app",
+      });
+      expect(betaGitlabRepo.organizationId).toBe(beta!.id);
+      expect(betaGithubRepo.organizationId).toBe(beta!.id);
+
+      const reviewOf = async (res: Response) => {
+        const body = (await res.json()) as { status: string; reviewId: string };
+        expect(body.status).toBe("enqueued");
+        const [review] = await db.select().from(reviews).where(eq(reviews.id, body.reviewId));
+        return review!;
+      };
+
+      const betaMr = await reviewOf(
+        await gitlab(
+          gitlabRequest(gitlabPayload("open", { iid: ++prCounter }), { token: "beta-secret" }),
+        ),
+      );
+      expect(betaMr.repositoryId).toBe(betaGitlabRepo.id);
+      const acmeMr = await reviewOf(
+        await gitlab(gitlabRequest(gitlabPayload("open", { iid: ++prCounter }))),
+      );
+      expect(acmeMr.repositoryId).toBe(gitlabRepoId);
+
+      const betaPr = await reviewOf(
+        await github(
+          githubRequest({
+            ...githubPayload("opened", { number: ++prCounter }),
+            installation: { id: 5555 },
+          }),
+        ),
+      );
+      expect(betaPr.repositoryId).toBe(betaGithubRepo.id);
+      const acmePr = await reviewOf(
+        await github(githubRequest(githubPayload("opened", { number: ++prCounter }))),
+      );
+      expect(acmePr.repositoryId).toBe(githubRepoId);
+
+      // The jobs belong to the same repositories (and so organizations) as their reviews.
+      expect(await prJobs(betaGitlabRepo.id, betaMr.prNumber)).toHaveLength(1);
+      expect(await prJobs(betaGithubRepo.id, betaPr.prNumber)).toHaveLength(1);
+      expect(await prJobs(gitlabRepoId, betaMr.prNumber)).toHaveLength(0);
+      expect(await prJobs(githubRepoId, betaPr.prNumber)).toHaveLength(0);
     });
   });
 });

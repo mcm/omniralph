@@ -12,6 +12,8 @@ import {
   type Database,
   type FindingRow,
   type Job,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
 import { ReviewJobPayload, type Finding, type ReviewJobResult } from "@omniralph/shared";
@@ -117,13 +119,19 @@ function fakeAdapter() {
 }
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   scm: undefined as unknown as ReturnType<typeof fakeAdapter>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
@@ -158,6 +166,7 @@ const member = { id: "member-1", role: "member" as const, name: null, email: nul
 describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let prCounter = 0;
 
@@ -165,14 +174,19 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    state.orgId = orgId;
     state.db = db;
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://github.com",
       externalId: "4242",
       credentials: {},
-    });
+    }))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

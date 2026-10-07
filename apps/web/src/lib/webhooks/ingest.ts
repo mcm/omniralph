@@ -98,7 +98,8 @@ const ignored = (reason: string) => reply({ status: "ignored", reason });
 
 /**
  * Handles a GitHub/GitLab webhook delivery: finds the connected repository,
- * verifies the signature with its connection's adapter (401 if invalid),
+ * verifies the signature with its connection's adapter (401 if invalid), which
+ * resolves the organization (the connection's),
  * applies the repo's triggers and enqueues a review. It only writes and
  * publishes (no review work), so it answers well within the code host's
  * timeout. Unknown, disabled or disconnected repos and irrelevant events get
@@ -140,7 +141,12 @@ export async function handleWebhook(
     }
   }
   if (!match) return Response.json({ error: "invalid_signature" }, { status: 401 });
-  const { repository, adapter } = match;
+  const { repository, connection, adapter } = match;
+  // The delivery belongs to the organization of the connection that verified it: the
+  // reviews and jobs it creates hang off `repository`, which is in that organization.
+  if (repository.organizationId !== connection.organizationId) {
+    return ignored("unknown_repository");
+  }
 
   const eventName = req.headers.get(spec.eventHeader);
   const deliveryId = req.headers.get(spec.deliveryHeader)?.trim();

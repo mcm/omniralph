@@ -7,8 +7,8 @@ import { ProfilesView } from "./profiles-view";
 export const metadata: Metadata = { title: "Review profiles · Omniralph" };
 
 export default async function ProfilesPage() {
-  await requirePageUser("admin");
-  const profiles = await listReviewProfiles(getDb());
+  const admin = await requirePageUser("admin");
+  const profiles = await listReviewProfiles(getDb(), admin.organization.id);
 
   return (
     <ProfilesView

@@ -1,14 +1,21 @@
 "use server";
 
+import { getFindingOrganizationId } from "@omniralph/db";
 import { DismissFindingInput } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { runMemberAction } from "@/lib/auth/admin-action";
+import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { dismissFindingWithFeedback, restoreDismissedFinding } from "@/lib/reviews/feedback";
 
 const FindingId = z.uuid();
+
+/** Whether the finding is one of the user's active organization. */
+async function inOrganization(user: OrgUser, findingId: string): Promise<boolean> {
+  return (await getFindingOrganizationId(getDb(), findingId)) === user.organization.id;
+}
 
 /**
  * Dismisses an open finding from the control panel: records `ui` feedback by
@@ -26,6 +33,9 @@ export async function dismissFinding(
         ok: false,
         error: parsed.error?.issues[0]?.message ?? "That finding doesn't exist.",
       };
+    }
+    if (!(await inOrganization(user, findingId))) {
+      return { ok: false, error: "That finding doesn't exist." };
     }
     const result = await dismissFindingWithFeedback(getDb(), {
       findingId,
@@ -48,7 +58,7 @@ export async function dismissFinding(
 /** Restores a dismissed finding to `open`; its feedback stays in the history, marked restored. */
 export async function restoreFinding(findingId: string): Promise<ActionResult> {
   return runMemberAction(async (user) => {
-    if (!FindingId.safeParse(findingId).success) {
+    if (!FindingId.safeParse(findingId).success || !(await inOrganization(user, findingId))) {
       return { ok: false, error: "That finding doesn't exist." };
     }
     const result = await restoreDismissedFinding(getDb(), { findingId, userId: user.id });

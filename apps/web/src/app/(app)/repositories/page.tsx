@@ -10,7 +10,7 @@ import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { parsePage } from "@/lib/pagination";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { getGitHubInstallUrl } from "@/lib/scm/github-app";
+import { getGitHubInstallUrl, GITHUB_INSTALL_PATH } from "@/lib/scm/github-app";
 import { RepositoriesView, type GitHubNotice } from "./repositories-view";
 
 export const metadata: Metadata = { title: "Repositories · Omniralph" };
@@ -18,6 +18,8 @@ export const metadata: Metadata = { title: "Repositories · Omniralph" };
 const NOTICES: Record<string, GitHubNotice> = {
   requested: "requested",
   invalid: "invalid",
+  invalid_state: "invalid_state",
+  other_organization: "other_organization",
   error: "error",
 };
 
@@ -31,8 +33,11 @@ export default async function RepositoriesPage({
   const db = getDb();
   const { github, page } = await searchParams;
   const [repos, githubConnections, githubInstallUrl] = await Promise.all([
-    listRepositoryOverviewPage(db, { page: parsePage(page), pageSize: REPOSITORY_PAGE_SIZE }),
-    isAdmin ? listScmConnections(db, "github") : [],
+    listRepositoryOverviewPage(db, user.organization.id, {
+      page: parsePage(page),
+      pageSize: REPOSITORY_PAGE_SIZE,
+    }),
+    isAdmin ? listScmConnections(db, user.organization.id, "github") : [],
     isAdmin ? getGitHubInstallUrl() : null,
   ]);
 
@@ -52,7 +57,8 @@ export default async function RepositoriesPage({
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       }))}
       githubInstallations={githubConnections.map((c) => ({ id: c.id, name: c.name }))}
-      githubInstallUrl={githubInstallUrl}
+      // Installations start at our install route, which adds the signed `state`.
+      githubInstallUrl={githubInstallUrl ? GITHUB_INSTALL_PATH : null}
       defaultGitLabUrl={process.env.AUTH_GITLAB_URL?.replace(/\/+$/, "") || GITLAB_URL}
       githubNotice={github ? (NOTICES[github] ?? null) : null}
     />

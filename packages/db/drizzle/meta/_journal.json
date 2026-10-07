@@ -218,6 +218,13 @@
       "when": 1791339014976,
       "tag": "0030_users_active_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791340520956,
+      "tag": "0031_org_scoped_repositories",
+      "breakpoints": true
     }
   ]
 }

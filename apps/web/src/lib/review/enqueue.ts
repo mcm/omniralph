@@ -81,7 +81,10 @@ export async function enqueueReview(
     return { status: "repository_unavailable" };
   }
 
-  const profile = input.profileId ? await getReviewProfile(db, input.profileId) : settings.profile;
+  // Only a profile of the repository's organization.
+  const profile = input.profileId
+    ? await getReviewProfile(db, found.repository.organizationId, input.profileId)
+    : settings.profile;
   if (!profile) return { status: "profile_not_found" };
 
   const prefix = reviewJobKeyPrefix(input.repositoryId, input.prNumber);

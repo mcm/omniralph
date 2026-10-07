@@ -3,7 +3,7 @@
  * control panel's Repositories page. Connection credentials are JSON encrypted
  * with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, count, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -21,6 +21,7 @@ export type ScmConnection = typeof scmConnections.$inferSelect;
 export type Repository = typeof repositories.$inferSelect;
 
 export interface ScmConnectionInput {
+  organizationId: string;
   provider: ScmProvider;
   name: string;
   baseUrl: string;
@@ -30,16 +31,21 @@ export interface ScmConnectionInput {
   createdBy?: string | null;
 }
 
-/** Creates the connection, or updates name and credentials of the one with the same provider, base URL and external ID. */
+/**
+ * Creates the connection, or updates name and credentials of the one with the same
+ * provider, base URL and external ID. A connection belongs to one organization:
+ * returns null (and changes nothing) when that one belongs to another organization.
+ */
 export async function upsertScmConnection(
   db: Database,
   input: ScmConnectionInput,
   key?: EncryptionKey,
-): Promise<ScmConnection> {
+): Promise<ScmConnection | null> {
   const encryptedCredentials = encrypt(JSON.stringify(input.credentials), key);
   const [row] = await db
     .insert(scmConnections)
     .values({
+      organizationId: input.organizationId,
       provider: input.provider,
       name: input.name,
       baseUrl: input.baseUrl,
@@ -50,14 +56,23 @@ export async function upsertScmConnection(
     .onConflictDoUpdate({
       target: [scmConnections.provider, scmConnections.baseUrl, scmConnections.externalId],
       set: { name: input.name, encryptedCredentials },
+      setWhere: eq(scmConnections.organizationId, input.organizationId),
     })
     .returning();
-  if (!row) throw new Error("Failed to save SCM connection");
-  return row;
+  return row ?? null;
 }
 
-export async function getScmConnection(db: Database, id: string): Promise<ScmConnection | null> {
-  const [row] = await db.select().from(scmConnections).where(eq(scmConnections.id, id)).limit(1);
+/** An organization's connection, or null. */
+export async function getScmConnection(
+  db: Database,
+  organizationId: string,
+  id: string,
+): Promise<ScmConnection | null> {
+  const [row] = await db
+    .select()
+    .from(scmConnections)
+    .where(and(eq(scmConnections.id, id), eq(scmConnections.organizationId, organizationId)))
+    .limit(1);
   return row ?? null;
 }
 
@@ -81,14 +96,21 @@ export async function findScmConnection(
   return row ?? null;
 }
 
+/** An organization's connections (of `provider`), by name. */
 export async function listScmConnections(
   db: Database,
+  organizationId: string,
   provider?: ScmProvider,
 ): Promise<ScmConnection[]> {
   return db
     .select()
     .from(scmConnections)
-    .where(provider ? eq(scmConnections.provider, provider) : undefined)
+    .where(
+      and(
+        eq(scmConnections.organizationId, organizationId),
+        provider ? eq(scmConnections.provider, provider) : undefined,
+      ),
+    )
     .orderBy(asc(scmConnections.name));
 }
 
@@ -111,6 +133,7 @@ export interface ConnectRepositoryInput {
 /**
  * Connects (or reconnects) a repository: creates it, or re-enables an existing row for the
  * same connection and external ID (clearing `disconnectedAt`) so its history carries over.
+ * The repository belongs to its connection's organization.
  */
 export async function connectRepository(
   db: Database,
@@ -125,6 +148,7 @@ export async function connectRepository(
   const [row] = await db
     .insert(repositories)
     .values({
+      organizationId: sql`(select ${scmConnections.organizationId} from ${scmConnections} where ${scmConnections.id} = ${input.connectionId})`,
       connectionId: input.connectionId,
       provider: input.provider,
       externalId: input.externalId,
@@ -136,9 +160,25 @@ export async function connectRepository(
   return row;
 }
 
-export async function getRepository(db: Database, id: string): Promise<Repository | null> {
-  const [row] = await db.select().from(repositories).where(eq(repositories.id, id)).limit(1);
+/**
+ * A repository, or null. With `organizationId`, only one of that organization (pass it
+ * whenever a user asks for the repository).
+ */
+export async function getRepository(
+  db: Database,
+  id: string,
+  organizationId?: string,
+): Promise<Repository | null> {
+  const [row] = await db
+    .select()
+    .from(repositories)
+    .where(and(eq(repositories.id, id), inOrganization(organizationId)))
+    .limit(1);
   return row ?? null;
+}
+
+function inOrganization(organizationId: string | undefined) {
+  return organizationId === undefined ? undefined : eq(repositories.organizationId, organizationId);
 }
 
 /** Repositories of a connection, including disconnected ones. */
@@ -153,26 +193,37 @@ export async function listConnectionRepositories(
     .orderBy(asc(repositories.fullPath));
 }
 
-/** Enables or disables reviews for a connected repository. Returns false if it's unknown or disconnected. */
+/**
+ * Enables or disables reviews for a connected repository of the organization. Returns
+ * false if it has no such repository or it's disconnected.
+ */
 export async function setRepositoryEnabled(
   db: Database,
+  organizationId: string,
   id: string,
   enabled: boolean,
 ): Promise<boolean> {
   const rows = await db
     .update(repositories)
     .set({ enabled })
-    .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
+    .where(
+      and(
+        eq(repositories.id, id),
+        eq(repositories.organizationId, organizationId),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
     .returning({ id: repositories.id });
   return rows.length > 0;
 }
 
 /**
- * Disconnects a repository: disables it, removes its agent pins and forgets its webhook.
- * The row (and so its reviews, findings and rules) is kept.
+ * Disconnects a repository of the organization: disables it, removes its agent pins and
+ * forgets its webhook. The row (and so its reviews, findings and rules) is kept.
  */
 export async function disconnectRepository(
   db: Database,
+  organizationId: string,
   id: string,
   now = new Date(),
 ): Promise<Repository | null> {
@@ -180,7 +231,7 @@ export async function disconnectRepository(
     const [row] = await tx
       .update(repositories)
       .set({ enabled: false, disconnectedAt: now, webhookId: null })
-      .where(eq(repositories.id, id))
+      .where(and(eq(repositories.id, id), eq(repositories.organizationId, organizationId)))
       .returning();
     if (!row) return null;
     await tx.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, id));
@@ -227,13 +278,23 @@ const overviewColumns = {
   profileName: reviewProfiles.name,
 };
 
-function overviewQuery(db: Database) {
+function connectedIn(organizationId: string) {
+  return and(eq(repositories.organizationId, organizationId), isNull(repositories.disconnectedAt));
+}
+
+function overviewQuery(db: Database, organizationId: string) {
   return db
     .select(overviewColumns)
     .from(repositories)
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .innerJoin(reviewProfiles, eq(reviewProfiles.id, repositories.profileId))
-    .where(isNull(repositories.disconnectedAt))
+    .innerJoin(
+      reviewProfiles,
+      and(
+        eq(reviewProfiles.organizationId, repositories.organizationId),
+        eq(reviewProfiles.id, repositories.profileId),
+      ),
+    )
+    .where(connectedIn(organizationId))
     .orderBy(asc(repositories.fullPath), asc(repositories.id))
     .$dynamic();
 }
@@ -275,9 +336,12 @@ async function withPinsAndLastReview(
   }));
 }
 
-/** Connected (not disconnected) repositories with their profile, pins and latest review. */
-export async function listRepositoryOverview(db: Database): Promise<RepositoryOverview[]> {
-  return withPinsAndLastReview(db, await overviewQuery(db));
+/** The organization's connected (not disconnected) repositories with their profile, pins and latest review. */
+export async function listRepositoryOverview(
+  db: Database,
+  organizationId: string,
+): Promise<RepositoryOverview[]> {
+  return withPinsAndLastReview(db, await overviewQuery(db, organizationId));
 }
 
 /**
@@ -286,13 +350,14 @@ export async function listRepositoryOverview(db: Database): Promise<RepositoryOv
  */
 export async function listRepositoryOverviewPage(
   db: Database,
+  organizationId: string,
   options: { page?: number; pageSize?: number } = {},
 ): Promise<RepositoryOverviewPage> {
   const pageSize = Math.max(1, Math.floor(options.pageSize ?? REPOSITORY_PAGE_SIZE));
   const page = Math.max(1, Math.floor(options.page ?? 1));
   const [[totalRow], rows] = await Promise.all([
-    db.select({ total: count() }).from(repositories).where(isNull(repositories.disconnectedAt)),
-    overviewQuery(db)
+    db.select({ total: count() }).from(repositories).where(connectedIn(organizationId)),
+    overviewQuery(db, organizationId)
       .limit(pageSize)
       .offset((page - 1) * pageSize),
   ]);
@@ -355,16 +420,20 @@ export async function unpinRepositoryFromAgent(
   return rows.length > 0;
 }
 
-/** A repository together with its connection (null if either is unknown). */
+/**
+ * A repository together with its connection (null if either is unknown). With
+ * `organizationId`, only a repository of that organization.
+ */
 export async function getRepositoryWithConnection(
   db: Database,
   id: string,
+  organizationId?: string,
 ): Promise<{ repository: Repository; connection: ScmConnection } | null> {
   const [row] = await db
     .select({ repository: repositories, connection: scmConnections })
     .from(repositories)
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .where(eq(repositories.id, id))
+    .where(and(eq(repositories.id, id), inOrganization(organizationId)))
     .limit(1);
   return row ?? null;
 }

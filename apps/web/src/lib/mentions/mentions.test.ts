@@ -21,6 +21,8 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
@@ -158,6 +160,7 @@ const SHA = (n: number) => n.toString(16).padStart(40, "0");
 describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let prCounter = 0;
   let deferred: Promise<void>[] = [];
@@ -166,14 +169,18 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://github.com",
       externalId: "4242",
       credentials: {},
-    });
+    }))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

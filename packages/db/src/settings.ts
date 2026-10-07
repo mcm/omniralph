@@ -1,6 +1,6 @@
 /**
  * Repository › Settings and Settings › Profiles: per-repository review config
- * and the built-in review profiles. Reviews read both when they're enqueued.
+ * and the organization's review profiles. Reviews read both when they're enqueued.
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
@@ -14,11 +14,56 @@ import {
   type RepositoryTriggers,
 } from "./schema.js";
 
-/** Review profiles by token cap (Quick, Standard, Deep), then by name. */
-export async function listReviewProfiles(db: Database): Promise<ReviewProfile[]> {
+type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** The built-in review profiles seeded into every new organization (see `createOrganization`). */
+export const BUILT_IN_REVIEW_PROFILES = [
+  {
+    id: "quick",
+    name: "Quick",
+    description: "Fast, diff-only review for small changes.",
+    model: "claude-haiku-4-5",
+    maxTokensPerReview: 60_000,
+    maxFiles: 15,
+    allowRepoExploration: false,
+  },
+  {
+    id: "standard",
+    name: "Standard",
+    description: "Balanced review with repository exploration.",
+    model: "claude-sonnet-5-5",
+    maxTokensPerReview: 200_000,
+    maxFiles: 40,
+    allowRepoExploration: true,
+  },
+  {
+    id: "deep",
+    name: "Deep",
+    description: "Thorough review for large or high-risk changes.",
+    model: "claude-opus-5-5",
+    maxTokensPerReview: 500_000,
+    maxFiles: 100,
+    allowRepoExploration: true,
+  },
+] as const;
+
+/** Adds the built-in review profiles to an organization (existing ones are kept). */
+export async function seedReviewProfiles(db: Queryable, organizationId: string): Promise<void> {
+  await db
+    .insert(reviewProfiles)
+    .values(BUILT_IN_REVIEW_PROFILES.map((p) => ({ ...p, organizationId, builtIn: true })))
+    .onConflictDoNothing();
+}
+
+/** An organization's review profiles by token cap (Quick, Standard, Deep), then by name. */
+export async function listReviewProfiles(
+  db: Database,
+  organizationId: string,
+): Promise<ReviewProfile[]> {
   return db
     .select()
     .from(reviewProfiles)
+    .where(eq(reviewProfiles.organizationId, organizationId))
     .orderBy(asc(reviewProfiles.maxTokensPerReview), asc(reviewProfiles.name));
 }
 
@@ -29,9 +74,10 @@ export interface ReviewProfileUpdate {
   allowRepoExploration: boolean;
 }
 
-/** Updates a profile's limits. Returns null if it doesn't exist. */
+/** Updates a profile's limits. Returns null if the organization has no such profile. */
 export async function updateReviewProfile(
   db: Database,
+  organizationId: string,
   id: string,
   input: ReviewProfileUpdate,
 ): Promise<ReviewProfile | null> {
@@ -43,7 +89,7 @@ export async function updateReviewProfile(
       maxFiles: input.maxFiles,
       allowRepoExploration: input.allowRepoExploration,
     })
-    .where(eq(reviewProfiles.id, id))
+    .where(and(eq(reviewProfiles.organizationId, organizationId), eq(reviewProfiles.id, id)))
     .returning();
   return row ?? null;
 }
@@ -91,11 +137,13 @@ export interface RepositorySettingsUpdate {
 }
 
 /**
- * Saves a connected repository's review config. Returns null if the repository
- * is unknown or disconnected.
+ * Saves a connected repository's review config. `profileId` must be a profile of
+ * the repository's organization. Returns null if the organization has no such
+ * connected repository.
  */
 export async function updateRepositorySettings(
   db: Database,
+  organizationId: string,
   id: string,
   input: RepositorySettingsUpdate,
 ): Promise<Repository | null> {
@@ -107,12 +155,27 @@ export async function updateRepositorySettings(
       pathExcludes: input.pathExcludes,
       customInstructions: input.customInstructions?.trim() || null,
     })
-    .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
+    .where(
+      and(
+        eq(repositories.id, id),
+        eq(repositories.organizationId, organizationId),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
     .returning();
   return row ?? null;
 }
 
-export async function getReviewProfile(db: Database, id: string): Promise<ReviewProfile | null> {
-  const [row] = await db.select().from(reviewProfiles).where(eq(reviewProfiles.id, id)).limit(1);
+/** An organization's review profile, or null. */
+export async function getReviewProfile(
+  db: Database,
+  organizationId: string,
+  id: string,
+): Promise<ReviewProfile | null> {
+  const [row] = await db
+    .select()
+    .from(reviewProfiles)
+    .where(and(eq(reviewProfiles.organizationId, organizationId), eq(reviewProfiles.id, id)))
+    .limit(1);
   return row ?? null;
 }

@@ -12,6 +12,7 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
+import { seedReviewProfiles } from "./settings.js";
 import {
   jobs,
   organizationEmailDomains,
@@ -45,7 +46,14 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     await expect(runMigrations(container.getConnectionUri())).resolves.toBeUndefined();
   });
 
-  it("seeds the quick, standard and deep profiles", async () => {
+  it("seeds the quick, standard and deep profiles per organization (0031)", async () => {
+    // Profiles belong to organizations now: none survive the migration.
+    expect(await db.select().from(reviewProfiles)).toEqual([]);
+    const [acme] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    await seedReviewProfiles(db, acme!.id);
+    await seedReviewProfiles(db, other!.id);
+
     const profiles = await db
       .select({
         id: reviewProfiles.id,
@@ -53,8 +61,10 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         maxTokensPerReview: reviewProfiles.maxTokensPerReview,
         maxFiles: reviewProfiles.maxFiles,
         allowRepoExploration: reviewProfiles.allowRepoExploration,
+        builtIn: reviewProfiles.builtIn,
       })
       .from(reviewProfiles)
+      .where(eq(reviewProfiles.organizationId, acme!.id))
       .orderBy(asc(reviewProfiles.maxTokensPerReview));
 
     expect(profiles.map((p) => [p.id, p.allowRepoExploration])).toEqual([
@@ -66,13 +76,19 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       expect(profile.model).toMatch(/^claude-/);
       expect(profile.maxTokensPerReview).toBeGreaterThan(0);
       expect(profile.maxFiles).toBeGreaterThan(0);
+      expect(profile.builtIn).toBe(true);
     }
+    // IDs are unique per organization, not globally.
+    expect(await db.select().from(reviewProfiles)).toHaveLength(6);
   });
 
   it("defaults repositories to the standard profile and default triggers", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Repos" }).returning();
+    await seedReviewProfiles(db, org!.id);
     const [connection] = await db
       .insert(scmConnections)
       .values({
+        organizationId: org!.id,
         provider: "github",
         name: "GitHub",
         baseUrl: "https://api.github.com",
@@ -82,6 +98,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     const [repo] = await db
       .insert(repositories)
       .values({
+        organizationId: org!.id,
         provider: "github",
         externalId: "1",
         fullPath: "mcm/omniralph",
@@ -94,6 +111,18 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
     });
+
+    // The profile must be one of the repository's organization.
+    const [bare] = await db.insert(organizations).values({ name: "No profiles" }).returning();
+    await expect(
+      db.insert(repositories).values({
+        organizationId: bare!.id,
+        provider: "github",
+        externalId: "2",
+        fullPath: "mcm/other",
+        connectionId: connection!.id,
+      }),
+    ).rejects.toThrow();
   });
 
   it("creates the organization tables (0029)", async () => {
@@ -144,14 +173,21 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
           entries: { tag: string }[];
         };
-        const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0024_"));
-        journal.entries = journal.entries.slice(0, upTo);
-        writeFileSync(journalPath, JSON.stringify(journal));
+        const allEntries = journal.entries;
+        // Only the entries before the migration `tag` starts with.
+        const migrateBefore = async (client: pg.Client, tag: string) => {
+          const upTo = allEntries.findIndex((e) => e.tag.startsWith(tag));
+          writeFileSync(
+            journalPath,
+            JSON.stringify({ ...journal, entries: allEntries.slice(0, upTo) }),
+          );
+          await migrate(drizzle(client), { migrationsFolder: before });
+        };
 
         const client = new pg.Client({ connectionString: uri });
         await client.connect();
         try {
-          await migrate(drizzle(client), { migrationsFolder: before });
+          await migrateBefore(client, "0024_");
           const { rows: connections } = await client.query<{ id: string }>(
             `insert into scm_connections (provider, name, base_url, encrypted_credentials)
            values ('github', 'GitHub', 'https://api.github.com', 'x') returning id`,
@@ -175,7 +211,8 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
             [runs[0]!.id, runs[1]!.id],
           );
 
-          await runMigrations(uri);
+          // Up to 0031, which deletes connections, repositories and their runs.
+          await migrateBefore(client, "0031_");
           const { rows: lanes } = await client.query(
             `select id, run_id, repository_id, branch, base_branch, pr_number, pr_url from ralph_lanes`,
           );
@@ -202,6 +239,13 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
            where table_name = 'ralph_runs' and column_name in ('branch', 'base_branch', 'pr_number', 'pr_url')`,
           );
           expect(columns).toEqual([]);
+
+          await runMigrations(uri);
+          const { rows: left } = await client.query(
+            `select (select count(*) from repositories)::int as repositories,
+                    (select count(*) from ralph_lanes)::int as lanes`,
+          );
+          expect(left).toEqual([{ repositories: 0, lanes: 0 }]);
         } finally {
           await client.end();
         }

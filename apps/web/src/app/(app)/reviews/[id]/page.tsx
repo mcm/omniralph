@@ -10,10 +10,10 @@ import { ReviewDetailView } from "./review-detail-view";
 export const metadata: Metadata = { title: "Review · Omniralph" };
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePageUser();
+  const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const detail = await getReviewDetail(getDb(), id);
+  const detail = await getReviewDetail(getDb(), user.organization.id, id);
   if (!detail) notFound();
   return <ReviewDetailView review={reviewDetailView(detail)} />;
 }

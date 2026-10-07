@@ -15,6 +15,8 @@ import {
   runMigrations,
   upsertScmConnection,
   type Database,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import { runReview, type ReviewProvider } from "@omniralph/engine";
 import { GitHubAdapter } from "@omniralph/scm";
@@ -206,6 +208,7 @@ const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repositoryId: string;
   let repo: Repo;
   let base: string;
@@ -218,16 +221,20 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
 
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "github",
       name: "acme",
       baseUrl: "https://api.github.com",
       externalId: "4242",
       credentials: {},
-    });
+    }))!;
     repositoryId = (
       await connectRepository(db, {
         connectionId: connection.id,

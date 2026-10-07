@@ -5,10 +5,12 @@ import {
   connectionCredentials,
   closeDb,
   createDb,
+  organizations,
   repositories,
   reviews,
   runMigrations,
   scmConnections,
+  seedReviewProfiles,
   users,
   type Database,
 } from "@omniralph/db";
@@ -25,13 +27,19 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   githubAuth: undefined as unknown,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => state.githubAuth }));
 
@@ -99,6 +107,8 @@ const dockerAvailable = await getContainerRuntimeClient().then(
 describe.skipIf(!dockerAvailable)("repository server actions", () => {
   let container: StartedPostgreSqlContainer;
   const adminId = "admin-1";
+  let orgId: string;
+  let otherOrgId: string;
 
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -110,12 +120,21 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       { id: adminId, email: "admin@example.com" },
       { id: "member-1", email: "member@example.com" },
     ]);
+    const [org, other] = await state.db
+      .insert(organizations)
+      .values([{ name: "Acme" }, { name: "Other" }])
+      .returning();
+    orgId = org!.id;
+    otherOrgId = other!.id;
+    await seedReviewProfiles(state.db, orgId);
+    await seedReviewProfiles(state.db, otherOrgId);
     // After Testcontainers is done talking to Docker over HTTP.
     server.listen({ onUnhandledFrame: "error" });
   }, 180_000);
 
   beforeEach(() => {
     state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
+    state.orgId = orgId;
     hookRequests.length = 0;
     deletedHooks.length = 0;
   });
@@ -166,6 +185,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
 
     const [connection] = await state.db.select().from(scmConnections);
     expect(connection).toMatchObject({
+      organizationId: orgId,
       provider: "gitlab",
       baseUrl: GITLAB,
       externalId: "77",
@@ -320,6 +340,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     const [connection] = await state.db
       .insert(scmConnections)
       .values({
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: GITHUB,
@@ -341,5 +362,35 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
       ["acme/one", false],
       ["acme/two", true],
     ]);
+  });
+
+  it("refuses a GitLab connection that belongs to another organization", async () => {
+    expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({ ok: true });
+    const hooks = hookRequests.length;
+    state.orgId = otherOrgId;
+    expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({
+      ok: false,
+      error: expect.stringContaining("another organization"),
+    });
+    expect(hookRequests).toHaveLength(hooks);
+    const connections = await state.db.select().from(scmConnections);
+    expect(connections.map((c) => c.organizationId)).toEqual([orgId]);
+  });
+
+  it("doesn't find another organization's repositories and connections", async () => {
+    await connectGitLab({ ...form, projectPaths: "acme/api" });
+    const [repo] = await state.db.select().from(repositories);
+    const [connection] = await state.db.select().from(scmConnections);
+    state.orgId = otherOrgId;
+    const notConnected = { ok: false, error: "That repository isn't connected." };
+    expect(await setRepositoryEnabled(repo!.id, false)).toEqual(notConnected);
+    expect(await disconnectRepository(repo!.id)).toEqual(notConnected);
+    expect(await saveGitHubRepositories(connection!.id, [1])).toEqual({
+      ok: false,
+      error: "That GitHub installation isn't connected.",
+    });
+    expect(deletedHooks).toEqual([]);
+    const [after] = await state.db.select().from(repositories);
+    expect(after).toMatchObject({ enabled: true, disconnectedAt: null });
   });
 });

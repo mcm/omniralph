@@ -22,6 +22,8 @@ import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositori
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
 
 const REPOSITORIES_PATH = "/repositories";
+const OTHER_ORGANIZATION_ERROR =
+  "This GitLab token user is already connected to another organization on that instance. Use a different bot token.";
 
 /** Encrypted `scm_connections.encrypted_credentials` of a GitLab connection. */
 interface GitLabCredentials extends Record<string, unknown> {
@@ -37,8 +39,10 @@ function errorMessage(error: unknown): string {
 
 /**
  * Connects GitLab projects: validates the bot token, resolves every project, stores the
- * connection (token and webhook secret encrypted) and creates a project webhook for MR and
- * comment events on each project. Nothing is stored if the token or a project path is bad.
+ * connection (token and webhook secret encrypted) in the admin's active organization and
+ * creates a project webhook for MR and comment events on each project. Nothing is stored if
+ * the token or a project path is bad, or the connection (same instance and token user)
+ * already belongs to another organization.
  */
 export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
@@ -61,10 +65,14 @@ export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResu
     const db = getDb();
     const externalId = String(owner.userId);
     const existing = await findScmConnection(db, "gitlab", baseUrl, externalId);
+    if (existing && existing.organizationId !== admin.organization.id) {
+      return { ok: false, error: OTHER_ORGANIZATION_ERROR };
+    }
     const webhookSecret =
       (existing && connectionCredentials<GitLabCredentials>(existing).webhookSecret) ||
       randomBytes(32).toString("base64url");
     const connection = await upsertScmConnection(db, {
+      organizationId: admin.organization.id,
       provider: "gitlab",
       name: `${owner.username} @ ${new URL(baseUrl).host}`,
       baseUrl,
@@ -72,6 +80,7 @@ export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResu
       credentials: { token, webhookSecret } satisfies GitLabCredentials,
       createdBy: admin.id,
     });
+    if (!connection) return { ok: false, error: OTHER_ORGANIZATION_ERROR };
     const known = new Map(
       (await listConnectionRepositories(db, connection.id)).map((repo) => [repo.externalId, repo]),
     );
@@ -116,8 +125,8 @@ export async function connectGitLab(form: GitLabConnectForm): Promise<ActionResu
 
 /** Turns reviews for a connected repository on or off. */
 export async function setRepositoryEnabled(id: string, enabled: boolean): Promise<ActionResult> {
-  return runAdminAction(async () => {
-    if (!(await setRepositoryEnabledRow(getDb(), id, Boolean(enabled)))) {
+  return runAdminAction(async (admin) => {
+    if (!(await setRepositoryEnabledRow(getDb(), admin.organization.id, id, Boolean(enabled)))) {
       return { ok: false, error: "That repository isn't connected." };
     }
     revalidatePath(REPOSITORIES_PATH);
@@ -129,15 +138,16 @@ export async function setRepositoryEnabled(id: string, enabled: boolean): Promis
  * its project webhook. Its review history is kept.
  */
 export async function disconnectRepository(id: string): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const db = getDb();
-    const repo = await getRepository(db, id);
+    const organizationId = admin.organization.id;
+    const repo = await getRepository(db, id, organizationId);
     if (!repo || repo.disconnectedAt)
       return { ok: false, error: "That repository isn't connected." };
 
     let warning: string | undefined;
     if (repo.provider === "gitlab" && repo.webhookId) {
-      const connection = await getScmConnection(db, repo.connectionId);
+      const connection = await getScmConnection(db, organizationId, repo.connectionId);
       try {
         if (!connection) throw new Error("its connection no longer exists");
         const { token } = connectionCredentials<GitLabCredentials>(connection);
@@ -150,7 +160,7 @@ export async function disconnectRepository(id: string): Promise<ActionResult> {
       }
     }
 
-    await disconnectRepositoryRow(db, id);
+    await disconnectRepositoryRow(db, organizationId, id);
     revalidatePath(REPOSITORIES_PATH);
     return { ok: true, warning };
   });
@@ -165,9 +175,10 @@ export async function saveGitHubRepositories(
   connectionId: string,
   selectedRepoIds: number[],
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const db = getDb();
-    const connection = await getScmConnection(db, connectionId);
+    const organizationId = admin.organization.id;
+    const connection = await getScmConnection(db, organizationId, connectionId);
     if (!connection || connection.provider !== "github" || !connection.externalId) {
       return { ok: false, error: "That GitHub installation isn't connected." };
     }
@@ -193,7 +204,7 @@ export async function saveGitHubRepositories(
     }
     for (const repo of await listConnectionRepositories(db, connectionId)) {
       if (!repo.disconnectedAt && repo.enabled && !selected.has(repo.externalId)) {
-        await setRepositoryEnabledRow(db, repo.id, false);
+        await setRepositoryEnabledRow(db, organizationId, repo.id, false);
       }
     }
     revalidatePath(REPOSITORIES_PATH);

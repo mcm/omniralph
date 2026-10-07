@@ -1,19 +1,34 @@
-import { upsertScmConnection } from "@omniralph/db";
+import { consumeOAuthState, findScmConnection, upsertScmConnection } from "@omniralph/db";
 import { getInstallation } from "@omniralph/scm";
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser } from "@/lib/auth/session";
+import { readSignedState } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
-import { getGitHubAppAuth, githubApiUrl } from "@/lib/scm/github-app";
+import {
+  getGitHubAppAuth,
+  githubApiUrl,
+  GITHUB_CALLBACK_PATH,
+  GITHUB_INSTALL_COOKIE,
+  GITHUB_INSTALL_STATE_PURPOSE,
+} from "@/lib/scm/github-app";
 
 /**
  * The GitHub App's Setup URL: GitHub redirects here after the app is installed (or its
- * repositories changed) with `installation_id` and `setup_action`. Stores the installation
- * as a connection and continues to its repository picker.
+ * repositories changed) with `installation_id`, `setup_action` and the `state` from
+ * `/repositories/github/install`. Stores the installation as a connection of the
+ * organization in the signed state (which must be the admin's active one) and continues
+ * to its repository picker. An installation already connected to another organization is
+ * refused. Without a valid state (e.g. the installation was changed on GitHub), only an
+ * installation the active organization already has is opened.
  */
 export async function GET(request: NextRequest) {
-  const to = (path: string) => NextResponse.redirect(new URL(path, request.url));
+  const to = (path: string) => {
+    const response = NextResponse.redirect(new URL(path, request.url));
+    response.cookies.delete({ name: GITHUB_INSTALL_COOKIE, path: GITHUB_CALLBACK_PATH });
+    return response;
+  };
   let admin;
   try {
     admin = await requireUser("admin");
@@ -32,6 +47,26 @@ export async function GET(request: NextRequest) {
     return to("/repositories?github=invalid");
   }
 
+  const db = getDb();
+  const organizationId = admin.organization.id;
+  const signed = await readSignedState(GITHUB_INSTALL_STATE_PURPOSE, params.get("state"), {
+    userId: admin.id,
+    nonce: request.cookies.get(GITHUB_INSTALL_COOKIE)?.value,
+  });
+  // A state works once, and only for the organization the admin is working in.
+  const validState =
+    signed !== null &&
+    signed.organizationId === organizationId &&
+    (await consumeOAuthState(db, signed.nonce, signed.expiresAt));
+  if (!validState) {
+    const existing = await findScmConnection(db, "github", githubApiUrl(), String(installationId));
+    return to(
+      existing?.organizationId === organizationId
+        ? `/repositories/github/${existing.id}`
+        : "/repositories?github=invalid_state",
+    );
+  }
+
   // Only installations of our own app resolve (others 404), so a forged ID can't be stored.
   let installation;
   try {
@@ -45,7 +80,8 @@ export async function GET(request: NextRequest) {
     );
     return to(`/repositories?github=${status === 404 ? "invalid" : "error"}`);
   }
-  const connection = await upsertScmConnection(getDb(), {
+  const connection = await upsertScmConnection(db, {
+    organizationId,
     provider: "github",
     name: installation.account,
     baseUrl: githubApiUrl(),
@@ -53,6 +89,7 @@ export async function GET(request: NextRequest) {
     credentials: {},
     createdBy: admin.id,
   });
+  if (!connection) return to("/repositories?github=other_organization");
   return to(`/repositories/github/${connection.id}`);
 }
 

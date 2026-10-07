@@ -1,6 +1,7 @@
 import "server-only";
 import {
   filterActiveAgentIds,
+  getRepository,
   listRepositoryPinnedAgentIds,
   listReviewProfiles,
   unpinRepositoryFromAgent,
@@ -24,7 +25,8 @@ export type SaveRepositorySettingsResult =
   | { status: "unknown_agents"; agentIds: string[] };
 
 /**
- * Saves a repository's review settings (validated with `RepositorySettingsInput`)
+ * Saves a repository's review settings (a repository of the organization; its profile
+ * must be one of the organization's too) (validated with `RepositorySettingsInput`)
  * and reconciles its agent pins: newly pinned agents go through the Agents
  * page's `pinRepository`, which enqueues a `repo.sync` job for that agent.
  * The next review job enqueued for the repository picks the settings up.
@@ -32,10 +34,15 @@ export type SaveRepositorySettingsResult =
 export async function saveRepositorySettings(
   db: Database,
   dispatcher: JobDispatcher,
+  organizationId: string,
   repositoryId: string,
   input: RepositorySettingsInput,
 ): Promise<SaveRepositorySettingsResult> {
-  const profiles = await listReviewProfiles(db);
+  // Only the organization's repositories, with one of its own profiles.
+  if (!(await getRepository(db, repositoryId, organizationId))) {
+    return { status: "unknown_repository" };
+  }
+  const profiles = await listReviewProfiles(db, organizationId);
   if (!profiles.some((p) => p.id === input.profileId)) return { status: "unknown_profile" };
 
   const wanted = [...new Set(input.pinnedAgentIds)];
@@ -45,7 +52,7 @@ export async function saveRepositorySettings(
   const unknown = added.filter((id) => !active.has(id));
   if (unknown.length > 0) return { status: "unknown_agents", agentIds: unknown };
 
-  const saved = await updateRepositorySettings(db, repositoryId, {
+  const saved = await updateRepositorySettings(db, organizationId, repositoryId, {
     profileId: input.profileId,
     triggers: input.triggers,
     pathExcludes: input.pathExcludes,

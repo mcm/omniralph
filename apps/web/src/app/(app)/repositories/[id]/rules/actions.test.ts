@@ -17,6 +17,8 @@ import {
   type Database,
   type FindingRow,
   type Job,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   LEARN_RULE_TOKEN_CAP,
@@ -35,13 +37,19 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
+  orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
-  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  // The signed-in user works in `state.orgId`.
+  requireUser: async (role: Role = "member") =>
+    assertRole(
+      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
+      role,
+    ),
 }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
@@ -78,6 +86,7 @@ const member = { id: "member-1", role: "member" as const, name: null, email: nul
 describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let reviewId: string;
   let prNumber = 100;
@@ -86,18 +95,23 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    state.orgId = orgId;
     state.db = db;
     await db.insert(users).values([
       { id: "admin-1", name: "Ada Admin", email: "ada@example.com" },
       { id: "member-1", name: "Mia Member", email: "mia@example.com" },
     ]);
-    const connection = await upsertScmConnection(db, {
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
       provider: "gitlab",
       name: "bot",
       baseUrl: "https://gitlab.example.com",
       externalId: "5",
       credentials: { token: "glpat-bot", webhookSecret: "hook" },
-    });
+    }))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

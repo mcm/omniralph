@@ -10,6 +10,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -264,6 +265,9 @@ export const scmConnections = pgTable(
   "scm_connections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     provider: scmProvider("provider").notNull(),
     name: text("name").notNull(),
     /** API base URL, e.g. https://api.github.com or https://gitlab.example.com. */
@@ -277,11 +281,13 @@ export const scmConnections = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    /** A code-host installation/connection belongs to one organization; webhooks resolve it from here. */
     uniqueIndex("scm_connections_provider_base_url_external_id_uq").on(
       t.provider,
       t.baseUrl,
       t.externalId,
     ),
+    index("scm_connections_organization_id_idx").on(t.organizationId),
   ],
 );
 
@@ -326,19 +332,30 @@ export const oauthStateUses = pgTable(
   (t) => [index("oauth_state_uses_expires_at_idx").on(t.expiresAt)],
 );
 
-export const reviewProfiles = pgTable("review_profiles", {
-  /** Stable slug, e.g. `quick`, `standard`, `deep`. */
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  model: text("model").notNull(),
-  maxTokensPerReview: integer("max_tokens_per_review").notNull(),
-  maxFiles: integer("max_files").notNull(),
-  allowRepoExploration: boolean("allow_repo_exploration").notNull(),
-  builtIn: boolean("built_in").notNull().default(false),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+/**
+ * Review profiles of an organization. The built-in ones (`quick`, `standard`,
+ * `deep`) are seeded into every new organization (`createOrganization`).
+ */
+export const reviewProfiles = pgTable(
+  "review_profiles",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Slug, unique per organization, e.g. `quick`, `standard`, `deep`. */
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    model: text("model").notNull(),
+    maxTokensPerReview: integer("max_tokens_per_review").notNull(),
+    maxFiles: integer("max_files").notNull(),
+    allowRepoExploration: boolean("allow_repo_exploration").notNull(),
+    builtIn: boolean("built_in").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.id] })],
+);
 
 export interface RepositoryTriggers {
   onOpen: boolean;
@@ -414,6 +431,10 @@ export const repositories = pgTable(
   "repositories",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** The organization of its connection. */
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     provider: scmProvider("provider").notNull(),
     /** Provider repository/project ID. */
     externalId: text("external_id").notNull(),
@@ -423,10 +444,8 @@ export const repositories = pgTable(
       .notNull()
       .references(() => scmConnections.id, { onDelete: "cascade" }),
     enabled: boolean("enabled").notNull().default(true),
-    profileId: text("profile_id")
-      .notNull()
-      .default(DEFAULT_PROFILE_ID)
-      .references(() => reviewProfiles.id),
+    /** A review profile of the repository's organization (composite foreign key below). */
+    profileId: text("profile_id").notNull().default(DEFAULT_PROFILE_ID),
     triggers: jsonb("triggers")
       .$type<RepositoryTriggers>()
       .notNull()
@@ -465,7 +484,15 @@ export const repositories = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("repositories_connection_external_id_uq").on(t.connectionId, t.externalId)],
+  (t) => [
+    uniqueIndex("repositories_connection_external_id_uq").on(t.connectionId, t.externalId),
+    index("repositories_organization_id_idx").on(t.organizationId),
+    foreignKey({
+      name: "repositories_organization_profile_fk",
+      columns: [t.organizationId, t.profileId],
+      foreignColumns: [reviewProfiles.organizationId, reviewProfiles.id],
+    }),
+  ],
 );
 
 // ── Agents ───────────────────────────────────────────────────────────────────
@@ -656,7 +683,8 @@ export const reviews = pgTable(
     baseSha: text("base_sha").notNull(),
     trigger: reviewTrigger("trigger").notNull(),
     status: reviewStatus("status").notNull().default("queued"),
-    profileId: text("profile_id").references(() => reviewProfiles.id),
+    /** Profile ID (in the repository's organization) the review ran with. */
+    profileId: text("profile_id"),
     tokensIn: integer("tokens_in").notNull().default(0),
     tokensOut: integer("tokens_out").notNull().default(0),
     /** Token budget (the profile's `maxTokensPerReview` at review time). */

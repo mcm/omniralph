@@ -25,6 +25,8 @@ import {
   type RalphLaneUpdate,
   type RalphRun,
   type RepositoryRalphSettingsUpdate,
+  organizations,
+  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -84,6 +86,7 @@ const PRD = `# PRD: Priorities
 describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
   let repoId: string;
   let otherRepoId: string;
   let linear: FakeLinearGateway;
@@ -149,9 +152,13 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    const connection = await upsertScmConnection(
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    await seedReviewProfiles(db, org!.id);
+    orgId = org!.id;
+    const connection = (await upsertScmConnection(
       db,
       {
+        organizationId: orgId,
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
@@ -159,7 +166,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
         credentials: {},
       },
       randomBytes(32),
-    );
+    ))!;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,

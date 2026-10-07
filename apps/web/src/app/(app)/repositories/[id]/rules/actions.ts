@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
+import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 
 const Id = z.uuid();
@@ -20,6 +21,11 @@ const NO_RULE = "That rule doesn't exist.";
 function invalidText(error: z.ZodError): ActionResult {
   const message = error.issues[0]?.message ?? "Enter the rule.";
   return { ok: false, error: message, fieldErrors: { text: message } };
+}
+
+/** Whether the repository is one of the admin's active organization. */
+async function inOrganization(admin: OrgUser, repositoryId: string): Promise<boolean> {
+  return (await getRepository(getDb(), repositoryId, admin.organization.id)) !== null;
 }
 
 function revalidate(repositoryId: string) {
@@ -33,7 +39,7 @@ export async function addCustomRule(repositoryId: string, input: RuleInput): Pro
     if (!parsed.success) return invalidText(parsed.error);
     if (!Id.safeParse(repositoryId).success) return { ok: false, error: NOT_CONNECTED };
     const db = getDb();
-    const repository = await getRepository(db, repositoryId);
+    const repository = await getRepository(db, repositoryId, admin.organization.id);
     if (!repository || repository.disconnectedAt) return { ok: false, error: NOT_CONNECTED };
     await createCustomRule(db, { repositoryId, text: parsed.data.text, createdBy: admin.id });
     revalidate(repositoryId);
@@ -46,12 +52,13 @@ export async function editRule(
   ruleId: string,
   input: RuleInput,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const parsed = RuleInput.safeParse(input);
     if (!parsed.success) return invalidText(parsed.error);
     if (!Id.safeParse(repositoryId).success || !Id.safeParse(ruleId).success) {
       return { ok: false, error: NO_RULE };
     }
+    if (!(await inOrganization(admin, repositoryId))) return { ok: false, error: NO_RULE };
     const rule = await updateRule(getDb(), { repositoryId, ruleId, text: parsed.data.text });
     if (!rule) return { ok: false, error: NO_RULE };
     revalidate(repositoryId);
@@ -64,10 +71,11 @@ export async function setRuleEnabled(
   ruleId: string,
   enabled: boolean,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     if (!Id.safeParse(repositoryId).success || !Id.safeParse(ruleId).success) {
       return { ok: false, error: NO_RULE };
     }
+    if (!(await inOrganization(admin, repositoryId))) return { ok: false, error: NO_RULE };
     const rule = await updateRule(getDb(), { repositoryId, ruleId, enabled: enabled === true });
     if (!rule) return { ok: false, error: NO_RULE };
     revalidate(repositoryId);
@@ -76,10 +84,11 @@ export async function setRuleEnabled(
 
 /** Deletes a rule. */
 export async function deleteRule(repositoryId: string, ruleId: string): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     if (!Id.safeParse(repositoryId).success || !Id.safeParse(ruleId).success) {
       return { ok: false, error: NO_RULE };
     }
+    if (!(await inOrganization(admin, repositoryId))) return { ok: false, error: NO_RULE };
     if (!(await deleteRuleRow(getDb(), { repositoryId, ruleId }))) {
       return { ok: false, error: NO_RULE };
     }

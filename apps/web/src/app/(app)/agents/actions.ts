@@ -2,6 +2,7 @@
 
 import {
   createAgentEnrollment,
+  getRepository,
   setAgentDesiredVersion as setAgentDesiredVersionRow,
   unpinRepositoryFromAgent,
   updateAgentConfig as updateAgentConfigRow,
@@ -162,8 +163,12 @@ export async function revokeAgent(agentId: string): Promise<ActionResult> {
 
 /** Pins a repository to an agent; the agent pre-clones it via a `repo.sync` job. */
 export async function pinRepository(agentId: string, repositoryId: string): Promise<ActionResult> {
-  return runAdminAction(async () => {
-    const { result } = await pinRepositoryWithSync(getDb(), getDispatcher(), {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    if (!(await getRepository(db, repositoryId, admin.organization.id))) {
+      return { ok: false, error: "That repository isn't connected." };
+    }
+    const { result } = await pinRepositoryWithSync(db, getDispatcher(), {
       agentId,
       repositoryId,
     });
@@ -180,8 +185,12 @@ export async function unpinRepository(
   agentId: string,
   repositoryId: string,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
-    if (!(await unpinRepositoryFromAgent(getDb(), { agentId, repositoryId }))) {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    if (
+      !(await getRepository(db, repositoryId, admin.organization.id)) ||
+      !(await unpinRepositoryFromAgent(db, { agentId, repositoryId }))
+    ) {
       return { ok: false, error: "That repository isn't pinned to this agent." };
     }
     revalidate(agentId);

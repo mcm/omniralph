@@ -24,6 +24,8 @@ export type ReviewTrigger = Review["trigger"];
 export const REVIEW_PAGE_SIZE = 25;
 
 export interface ReviewListFilter {
+  /** Only reviews of this organization's repositories. */
+  organizationId: string;
   /** Only this repository's reviews; all repositories when omitted. */
   repositoryId?: string;
   status?: Review["status"];
@@ -76,6 +78,12 @@ export function emptyFindingCounts(): Record<FindingSeverity, number> {
   >;
 }
 
+/** Joins a review's profile, which is one of its repository's organization. */
+const profileOfReview = and(
+  eq(reviewProfiles.organizationId, repositories.organizationId),
+  eq(reviewProfiles.id, reviews.profileId),
+);
+
 const reviewColumns = {
   id: reviews.id,
   prNumber: reviews.prNumber,
@@ -106,26 +114,27 @@ const reviewColumns = {
  * trigger, with the number of findings per severity. A page past the last one
  * comes back empty (with the real `total`).
  */
-export async function listReviews(
-  db: Database,
-  filter: ReviewListFilter = {},
-): Promise<ReviewListPage> {
+export async function listReviews(db: Database, filter: ReviewListFilter): Promise<ReviewListPage> {
   const pageSize = Math.max(1, Math.floor(filter.pageSize ?? REVIEW_PAGE_SIZE));
   const page = Math.max(1, Math.floor(filter.page ?? 1));
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(repositories.organizationId, filter.organizationId)];
   if (filter.repositoryId) conditions.push(eq(reviews.repositoryId, filter.repositoryId));
   if (filter.status) conditions.push(eq(reviews.status, filter.status));
   if (filter.trigger) conditions.push(eq(reviews.trigger, filter.trigger));
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const [[totalRow], rows] = await Promise.all([
-    db.select({ total: count() }).from(reviews).where(where),
+    db
+      .select({ total: count() })
+      .from(reviews)
+      .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+      .where(where),
     db
       .select(reviewColumns)
       .from(reviews)
       .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
       .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-      .leftJoin(reviewProfiles, eq(reviewProfiles.id, reviews.profileId))
+      .leftJoin(reviewProfiles, profileOfReview)
       .leftJoin(agents, eq(agents.id, reviews.agentId))
       .where(where)
       .orderBy(desc(reviews.createdAt), desc(reviews.id))
@@ -178,9 +187,13 @@ export interface ReviewDetail {
   supersedingReviewIds: Record<string, string>;
 }
 
-/** A review with its repository, profile, agent and findings; null if it doesn't exist. */
+/**
+ * A review of the organization with its repository, profile, agent and findings; null
+ * if the organization has no such review.
+ */
 export async function getReviewDetail(
   db: Database,
+  organizationId: string,
   reviewId: string,
 ): Promise<ReviewDetail | null> {
   const [row] = await db
@@ -200,9 +213,9 @@ export async function getReviewDetail(
     .from(reviews)
     .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .leftJoin(reviewProfiles, eq(reviewProfiles.id, reviews.profileId))
+    .leftJoin(reviewProfiles, profileOfReview)
     .leftJoin(agents, eq(agents.id, reviews.agentId))
-    .where(eq(reviews.id, reviewId))
+    .where(and(eq(reviews.id, reviewId), eq(repositories.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
   const rows = await db
