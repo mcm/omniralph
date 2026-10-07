@@ -80,7 +80,7 @@ function authorized(request: Request): boolean {
 const server = setupServer(
   http.get(`${API}/user`, ({ request }) =>
     authorized(request)
-      ? HttpResponse.json({ id: 77, username: "project_101_bot", name: "Omniralph" })
+      ? HttpResponse.json({ id: 77, username: "service_account_group_12_omniralph", name: "Omniralph" })
       : HttpResponse.json({ message: "401 Unauthorized" }, { status: 401 }),
   ),
   http.get(`${API}/personal_access_tokens/self`, () =>
@@ -178,6 +178,16 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     const result = await connectGitLab(form);
     expect(result).toEqual({ ok: false, error: expect.stringContaining("api scope") });
     expect(await state.db.select().from(scmConnections)).toEqual([]);
+  });
+
+  it("rejects a project access token, which can't mint clone tokens", async () => {
+    server.use(
+      http.get(`${API}/user`, () => HttpResponse.json({ id: 78, username: "project_101_bot_9f3c", name: "Bot" })),
+    );
+    const result = await connectGitLab(form);
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("service account's personal access token") });
+    expect(await state.db.select().from(scmConnections)).toEqual([]);
+    expect(hookRequests).toEqual([]);
   });
 
   it("rejects unknown projects before creating any webhook", async () => {

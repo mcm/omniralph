@@ -33,7 +33,7 @@ const OTHER_ORGANIZATION_ERROR =
 
 /** Encrypted `scm_connections.encrypted_credentials` of a GitLab connection. */
 interface GitLabCredentials extends Record<string, unknown> {
-  /** Bot group/project access token (`api` scope). */
+  /** Bot service account's personal access token (`api` scope). */
   token: string;
   /** Secret on every project webhook of the connection (`X-Gitlab-Token`). */
   webhookSecret: string;

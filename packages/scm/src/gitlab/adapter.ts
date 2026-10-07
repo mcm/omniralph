@@ -5,6 +5,7 @@ import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comme
 import { MemoryCredentialCache, type CachedCredential, type CredentialCache } from "../credential-cache.js";
 import {
   ChangeRequestNotFoundError,
+  CloneCredentialPermissionError,
   getHeader,
   type ChangeRequest,
   type ChangeRequestUpdate,
@@ -68,7 +69,7 @@ const REPOSITORY_TOKENS = {
 } as const satisfies Record<RepositoryTokenScope, { name: string; accessLevel: number }>;
 
 export interface GitLabAdapterOptions {
-  /** Group or project access token of the bot identity (`api` scope). */
+  /** Personal access token of the bot identity, a service account (`api` scope). */
   token: string;
   /** Secret configured on the project/group webhook (`X-Gitlab-Token`). */
   webhookSecret: string;
@@ -84,6 +85,18 @@ function statusOf(error: unknown): number | undefined {
   const cause = (error as { cause?: { response?: { status?: unknown } } }).cause;
   const status = cause?.response?.status;
   return typeof status === "number" ? status : undefined;
+}
+
+/**
+ * GitLab's 400/403 when the token's user may not create project access tokens
+ * (e.g. it's itself a group or project access token bot).
+ */
+function isTokenCreationForbidden(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status !== 400 && status !== 403) return false;
+  const description = (error as { cause?: { description?: unknown } }).cause?.description;
+  const text = `${typeof description === "string" ? description : ""} ${(error as Error).message ?? ""}`;
+  return /permission to create (a )?project access token/i.test(text);
 }
 
 /** GitLab project ID (preferred) or URL path. */
@@ -140,7 +153,7 @@ export function renderGitLabComment(comment: InlineComment): string {
 
 /**
  * {@link ScmAdapter} for GitLab (gitlab.com or self-managed), acting as a
- * group/project access token's bot user.
+ * service account (its personal access token).
  */
 export class GitLabAdapter implements ScmAdapter {
   readonly provider = "gitlab" as const;
@@ -468,9 +481,24 @@ export class GitLabAdapter implements ScmAdapter {
       expiresOn = utcDate(now + 2 * DAY_MS);
     }
     const { name, accessLevel } = REPOSITORY_TOKENS[scope];
-    const created = await this.api.ProjectAccessTokens.create(projectId(repo), name, [scope], expiresOn, {
-      accessLevel,
-    });
+    let created;
+    try {
+      created = await this.api.ProjectAccessTokens.create(projectId(repo), name, [scope], expiresOn, {
+        accessLevel,
+      });
+    } catch (error) {
+      if (isTokenCreationForbidden(error)) {
+        throw new CloneCredentialPermissionError(
+          repo,
+          scope === WRITE_REPOSITORY_SCOPE ? "write" : "read",
+          `The GitLab bot token can't create project access tokens on ${repo.fullPath}. It must be a service ` +
+            "account's (or real user's) personal access token with the Maintainer role on the project; group " +
+            "and project access tokens can't create them. Connect GitLab again with such a token.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     const credential: CachedCredential = {
       token: created.token,
       expiresAt: new Date(`${created.expires_at || expiresOn}T00:00:00Z`),
