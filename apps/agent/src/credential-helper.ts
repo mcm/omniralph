@@ -1,7 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { CloneCredentialResponse } from "@omniralph/shared";
 import { ApiError, postJson, type FetchFn } from "./api.js";
 import { validateServerUrl } from "./config.js";
-import { JOB_TOKEN_ENV, SERVER_ENV } from "./job-env.js";
+import { JOB_TOKEN_ENV, JOB_TOKEN_FILE_ENV, SERVER_ENV } from "./job-env.js";
 
 export interface GitCredentialIo {
   /** Reads the request git writes to the helper's stdin. */
@@ -43,7 +44,8 @@ function safeValue(value: string): boolean {
  * (https://git-scm.com/docs/gitcredentials). Only `get` does anything: it
  * fetches a short-lived, read-only credential for the job's repository from
  * `POST /api/agent/credentials`, authenticated with the job token in
- * `OMNIRALPH_JOB_TOKEN` (never the agent's own tokens). `store` and `erase`
+ * `OMNIRALPH_JOB_TOKEN`, or read from the file `OMNIRALPH_JOB_TOKEN_FILE`
+ * names (which the agent keeps current), never the agent's own tokens. `store` and `erase`
  * are ignored. Hosts other than the job repository's get no credential.
  */
 export async function runGitCredential(
@@ -55,11 +57,22 @@ export async function runGitCredential(
   const input = await io.readStdin();
   if (operation !== "get") return 0;
 
-  const jobToken = env[JOB_TOKEN_ENV];
+  const tokenFile = env[JOB_TOKEN_FILE_ENV];
+  let jobToken = env[JOB_TOKEN_ENV];
+  if (tokenFile) {
+    try {
+      jobToken = (await readFile(tokenFile, "utf8")).trim();
+    } catch (error) {
+      io.stderr(
+        `omniralph-agent git-credential: can't read ${JOB_TOKEN_FILE_ENV}: ${String(error)}\n`,
+      );
+      return 1;
+    }
+  }
   const serverEnv = env[SERVER_ENV];
   if (!jobToken || !serverEnv) {
     io.stderr(
-      `omniralph-agent git-credential: ${JOB_TOKEN_ENV} and ${SERVER_ENV} must be set (only jobs get credentials)\n`,
+      `omniralph-agent git-credential: ${JOB_TOKEN_ENV} (or ${JOB_TOKEN_FILE_ENV}) and ${SERVER_ENV} must be set (only jobs get credentials)\n`,
     );
     return 1;
   }

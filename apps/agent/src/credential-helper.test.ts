@@ -90,6 +90,34 @@ describe("git-credential", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("reads the job token from OMNIRALPH_JOB_TOKEN_FILE (a long session's current token)", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "omniralph-helper-"));
+    try {
+      const file = path.join(dir, "token");
+      await writeFile(file, "fresh-token\n");
+      const { code, stdout, fetch } = await helper(["get"], {
+        env: { OMNIRALPH_JOB_TOKEN_FILE: file, OMNIRALPH_SERVER: "https://omniralph.example" },
+      });
+      expect(code).toBe(0);
+      expect(stdout).toContain("password=ghs_installation_token\n");
+      expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("authorization")).toBe(
+        "Bearer fresh-token",
+      );
+
+      const missing = await helper(["get"], {
+        env: {
+          OMNIRALPH_JOB_TOKEN_FILE: path.join(dir, "gone"),
+          OMNIRALPH_SERVER: "https://omniralph.example",
+        },
+      });
+      expect(missing.code).toBe(1);
+      expect(missing.stderr).toContain("OMNIRALPH_JOB_TOKEN_FILE");
+      expect(missing.fetch).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("outputs nothing when the control panel refuses (e.g. the job isn't running)", async () => {
     const { code, stdout, stderr } = await helper(["get"], {
       fetch: fakeFetch(401, { error: "unauthorized" }),
@@ -100,7 +128,8 @@ describe("git-credential", () => {
   });
 
   it("prints the control panel's explanation when the code host refuses the access", async () => {
-    const message = "The GitHub App installation 7 on acme/app isn't granted Contents: Read and write.";
+    const message =
+      "The GitHub App installation 7 on acme/app isn't granted Contents: Read and write.";
     const { code, stdout, stderr } = await helper(["get"], {
       fetch: fakeFetch(403, { error: "scm_permission_missing", message }),
     });

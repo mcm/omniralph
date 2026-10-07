@@ -4,6 +4,11 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 export const JOB_TOKEN_ENV = "OMNIRALPH_JOB_TOKEN";
 export const JOB_ID_ENV = "OMNIRALPH_JOB_ID";
 export const SERVER_ENV = "OMNIRALPH_SERVER";
+/**
+ * Env var naming a file that holds the job token (kept current by the agent),
+ * for long-lived job processes whose `OMNIRALPH_JOB_TOKEN` would expire.
+ */
+export const JOB_TOKEN_FILE_ENV = "OMNIRALPH_JOB_TOKEN_FILE";
 
 /**
  * The environment for a process a capability spawns for a job: the agent's
