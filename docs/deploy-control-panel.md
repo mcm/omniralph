@@ -135,7 +135,7 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `AUTH_GITLAB_ID`, `AUTH_GITLAB_SECRET`, `AUTH_GITLAB_URL` | A GitLab OAuth application (`read_user`), callback `<APP_URL>/api/auth/callback/gitlab` |
 | `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). The only instance-wide access setting: there are no instance admins. |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
-| `BOT_HANDLE` | Optional, default `omniralph` |
+| `BOT_HANDLE` | Optional, default `omniralph`. GitHub only: GitLab uses each connection's bot username |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
 
 Configure at least one sign-in provider. Redeploy after changing variables

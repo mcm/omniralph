@@ -25,7 +25,8 @@ Setting ralph up takes five steps:
 5. [Delegate an issue](#5-delegate-an-issue).
 
 The code host needs the write permissions described in [github-app.md](github-app.md) (Contents and
-Pull requests: Read and write) or [gitlab.md](gitlab.md) (`api` and `write_repository`).
+Pull requests: Read and write) or [gitlab.md](gitlab.md) (a service account's token with `api`,
+Maintainer on the project).
 
 ## 1. Create the Linear OAuth app
 

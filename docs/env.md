@@ -34,7 +34,7 @@ put them in `apps/web/.env.local`.
 | -- | -- | -- | -- |
 | `ENCRYPTION_KEY` | yes | — | 32-byte AES-256-GCM key (base64 or hex) encrypting SCM and Linear credentials at rest: `openssl rand -base64 32`. Changing it makes stored GitLab and Linear tokens unreadable (reconnect GitLab and Linear). |
 | `APP_URL` | yes (except Vercel production) | `https://$VERCEL_PROJECT_PRODUCTION_URL` on Vercel | Public base URL of the control panel. Webhook URLs, review links in summary comments and the enrollment command use it. |
-| `BOT_HANDLE` | no | `omniralph` | The `@handle` for mention commands (`@omniralph review`, `dismiss`, questions, and on ralph PRs/MRs `fix` and other requests to ralph). GitLab connections use their bot user's username instead. A leading `@` is ignored. |
+| `BOT_HANDLE` | no | `omniralph` | The `@handle` for mention commands on GitHub (`@omniralph review`, `dismiss`, questions, and on ralph PRs `fix` and other requests to ralph). GitHub only: on GitLab the handle is the connection's bot username. A leading `@` is ignored. |
 
 ### Sign-in (Auth.js)
 

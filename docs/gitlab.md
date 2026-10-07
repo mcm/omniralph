@@ -13,53 +13,91 @@ application (`AUTH_GITLAB_*`, see [env.md](env.md)).
 
 ## The bot token
 
-Use one of:
+The bot token is the **personal access token of a GitLab service account**: a user that exists
+only for automation, doesn't take a license seat and isn't tied to a person. Name it after the bot
+(e.g. `omniralph`): its username is the bot's `@` handle.
 
-- a **group access token** on the group that contains the projects (one token for all of them), or
-- a **project access token** per project, or
-- a **personal access token** of a dedicated service user (e.g. `omniralph-bot`) that's a member of
-  the projects. Use this on gitlab.com Free, where group and project access tokens aren't available.
+- **Self-managed** (Premium or Ultimate): an administrator creates an instance service account in
+  the Admin area's **Service accounts** page (or with `POST /api/v4/service_accounts`), then a
+  personal access token for it with scope `api` (from that page, or with
+  `POST /api/v4/users/:id/personal_access_tokens`).
+- **gitlab.com** (Premium or Ultimate): an Owner of the top-level group creates a group service
+  account under the group's **Settings › Service accounts** (or with
+  `POST /api/v4/groups/:id/service_accounts`), then a personal access token for it with scope `api`
+  from its **Manage access tokens** menu (or with
+  `POST /api/v4/groups/:id/service_accounts/:user_id/personal_access_tokens`).
+
+Then add the service account as a **Maintainer** of the projects (or of their group).
+
+Without service accounts (e.g. GitLab Free), use the personal access token of a **dedicated real
+user** (e.g. `omniralph-bot`) that nobody signs in as for anything else.
+
+**Group and project access tokens are not supported.** Agents clone and push with project access
+tokens that the bot mints, and GitLab doesn't let an access token's bot user create access tokens:
+every clone would fail with `400 User does not have permission to create project access token`.
+**Connect GitLab** rejects them, and an existing connection that uses one is flagged on the
+connection (see [Connection health](#connection-health)): connect GitLab again with a service
+account's token.
 
 Requirements:
 
-| Requirement                                     | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scope **`api`**                                 | Post MR discussions and notes, resolve threads, read members, manage webhooks, create project access tokens, and open/update ralph runs' merge requests. The connect dialog rejects a token without it.                                                                                                                                                                                                                                                                                                                                  |
-| Scope **`write_repository`**                    | Ralph: the bot's token mints `write_repository` project access tokens for ralph jobs to push with, and can't grant more than it has.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Role **Maintainer** (or Owner) on every project | Creating the project webhook and **creating project access tokens** both need Maintainer.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Project access tokens allowed                   | The credential broker creates a `read_repository` project access token (Reporter role, named `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached encrypted and is replaced when it's within 2 hours of expiry. For running `ralph` jobs only, it likewise creates a `write_repository` token (Developer role, named `omniralph-write-repository`), cached and rotated separately; review jobs never get it. Make sure no instance or group setting blocks project access token creation. |
+| Requirement                                     | Why                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope **`api`** (the only one needed)           | Everything the bot does through the API, including minting project access tokens and rotating itself. The minted tokens' rights come from the bot's role, not its scopes. |
+| Role **Maintainer** (or Owner) on every project | Creating the project webhook and minting project access tokens. The project picker only lists projects the bot maintains.                                                 |
+| Project access tokens allowed                   | Make sure no instance or group setting blocks project access token creation. On gitlab.com they need Premium or Ultimate.                                                 |
 
-Pick a sensible expiry for the bot token itself and put a reminder in your calendar: when it expires,
-reviews and clones stop. To rotate it, create a new token and connect GitLab again with it.
+The expiry you pick when creating the token only has to last until the first daily rotation (see
+[Token rotation](#token-rotation)).
 
-The bot's `@` handle on GitLab is the bot user's username (shown on the connection as
-`<username> @ <host>`), so mentions autocomplete in MR comments, e.g.
-`@service_account_group_42_omniralph review`. `BOT_HANDLE` isn't used for GitLab connections.
+What the bot does, and the role each action needs:
+
+| Action                                                           | Role needed    |
+| ---------------------------------------------------------------- | -------------- |
+| Create, delete and check project webhooks                        | **Maintainer** |
+| Mint project access tokens for agents' clones and ralph's pushes | **Maintainer** |
+| Read merge requests, diffs, members, pipelines and job logs      | Reporter       |
+| Post reviews as MR discussions, reply to and resolve threads     | Developer      |
+| Open, update and mark ready ralph's merge requests               | Developer      |
+
+The credential broker mints a `read_repository` project access token (Reporter role, named
+`omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached
+encrypted and is replaced when it's within 2 hours of expiry. For running `ralph` jobs only, it
+likewise mints a `write_repository` token (Developer role, named `omniralph-write-repository`),
+cached and rotated separately; review jobs never get it. Neither needs anything on the bot token
+beyond `api`.
+
+The bot's `@` handle on GitLab is the service account's username (shown on the connection as
+`<username> @ <host>`), so mentions autocomplete in MR comments, e.g. `@omniralph review`. There is
+nothing to configure: `BOT_HANDLE` only applies to GitHub.
 
 ## Connecting projects
 
 1. As an admin of the Omniralph organization, open **Repositories › Connect GitLab**.
 2. Enter the base URL (`https://gitlab.com` or your instance, without `/api/v4`) and the bot token.
-3. The control panel validates the token (user and `api` scope), stores the connection and opens
-   its project list: every unarchived project the bot's user is a **Maintainer** (or Owner) of, up
-   to 1,000. Tick the projects to review and **Save**.
-4. For each connected project it creates a project webhook at `<APP_URL>/api/webhooks/gitlab` for
-   merge request, comment (note) and **Pipeline events**, with SSL verification on and a generated
-   secret (checked against `X-Gitlab-Token`).
+3. The control panel checks the token (it works, has the `api` scope and isn't a group or project
+   access token), stores the connection and opens its project picker: every unarchived project the
+   bot is a **Maintainer** (or Owner) of, up to 1,000. Tick the projects to review and **Save**.
+4. For each newly ticked project it first mints a clone token, so a project the bot can't mint for
+   fails here instead of at the first agent clone. It then creates a project webhook at
+   `<APP_URL>/api/webhooks/gitlab` for merge request, comment (note) and **Pipeline events**, with
+   SSL verification on and a generated secret (checked against `X-Gitlab-Token`). Projects that
+   fail are named in a warning with GitLab's message and aren't connected; the others are.
 
-To change the projects later, use **Repositories › Code-host connections › Choose projects**:
-ticking a project connects it (or re-enables it), unticking a connected one disables its reviews
-(its webhook stays, so re-enabling is instant). A project missing from the list isn't maintained by
-the bot's user: make it a Maintainer on GitLab, or, past the 1,000-project limit, connect it by
-path with **Connect GitLab** using the same token. Saving the list never disables a connected
-project the list doesn't show. Entering paths again under **Connect GitLab**
-replaces those projects' webhooks (e.g. to pick up new events).
+The picker is the only way to choose projects. To change them later, use **Repositories ›
+Code-host connections › Choose projects**: ticking a project connects it (or re-enables it),
+unticking a connected one disables its reviews (its webhook stays, so re-enabling is instant).
+Saving never disables a connected project the picker doesn't show. A project missing from the
+picker isn't maintained by the bot: make the service account a Maintainer of it on GitLab.
+
+Connecting GitLab again with a new token of the same bot user (e.g. after a lost token) updates
+the existing connection's token and keeps its projects and webhooks.
 
 The connection (the instance's base URL plus the bot token's user) belongs to that organization:
 its projects, reviews and jobs are only visible to its members and handled by its agents. The same
 bot user on the same instance can't be connected to a second organization ("already connected to
-another organization"); give each organization its own bot token, or remove the connection from
-the first organization.
+another organization"); give each organization its own service account, or remove the connection
+from the first organization.
 
 **Repositories › Code-host connections › Remove** (admins) deletes a connection: the webhooks of
 its connected projects are deleted from GitLab (a webhook that can't be deleted is reported, so you
@@ -70,14 +108,49 @@ this or another organization.
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
 skipped unless the repository's settings include drafts) in enabled projects are then reviewed.
 
+## Token rotation
+
+A daily cron (`/api/cron/gitlab-maintenance`, 04:45 UTC) rotates each connection's bot token with
+GitLab's `POST /personal_access_tokens/self/rotate`: the new token expires 7 days later and is
+stored encrypted in place of the old one, which GitLab revokes at once. No admin action is needed,
+and the token you pasted stops working after the first rotation, so don't use it anywhere else.
+Requests that were using the old token retry once with the new one.
+
+- If the instance has no self-rotation (older than GitLab 16.10), the token isn't rotated: the
+  connection shows a warning with the token's expiry. Connect GitLab again with a new token before
+  it expires.
+- If a rotation fails, the connection shows it with GitLab's message, and the next day's run tries
+  again. If GitLab rotated the token but storing it failed, the old token is revoked and the new one
+  lost: the connection shows that the token is rejected. Create a new token for the service account
+  and connect GitLab again.
+
+## Connection health
+
+After rotating, the same cron checks each connection (read-only). **Repositories › Code-host
+connections** shows each GitLab connection's token expiry, when it was last checked ("Not checked
+yet" before the first run) and a warning listing its problems:
+
+| Problem                       | What to do                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Token rejected                | It's invalid, expired or revoked: connect GitLab again with a new token.                                       |
+| Missing `api` scope           | Connect GitLab again with a token that has `api`.                                                              |
+| Group or project access token | Agents' clones and pushes fail. Connect GitLab again with a service account's personal access token.           |
+| Token expiring (≤ 3 days)     | Normally rotation prevents this; if it isn't rotated in time, connect GitLab again with a new token.           |
+| Rotation unsupported / failed | See [Token rotation](#token-rotation).                                                                         |
+| Webhook missing               | The project's webhook was deleted (or never created): reviews and replies won't trigger. **Recreate webhook**. |
+| Webhook outdated              | It lacks merge request, comment or pipeline events, or SSL verification. **Recreate webhook**.                 |
+
+Webhooks are never changed automatically, since one may have been removed or edited on purpose.
+**Recreate webhook** (admins, next to each webhook problem) deletes the project's stored webhook if
+it still exists, creates a new one with the current events and secret, and clears the problem.
+
 ## Ralph
 
-Nothing beyond the requirements above: a bot token with `api` and `write_repository`, Maintainer
-on the project, and ralph enabled under **Repository › Settings › Ralph**. Merge requests are
-opened as drafts by the bot (titled `Draft: …`) and marked ready when the run finishes. If the
-project protects the run's branch, or only allows Maintainers to push, the Developer-role write
-token can't push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by
-Developers.
+Nothing beyond the requirements above: the service account's token with `api`, Maintainer on the
+project, and ralph enabled under **Repository › Settings › Ralph**. Merge requests are opened as
+drafts by the bot (titled `Draft: …`) and marked ready when the run finishes. If the project
+protects the run's branch, or only allows Maintainers to push, the Developer-role write token can't
+push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by Developers.
 
 Omniralph's own review findings on a ralph MR, and `@bot fix [text]` (or any other `@bot` request
 outside a finding's thread) from users with at least Developer access, become requests that ralph
@@ -89,16 +162,13 @@ its worktree and local branch on the agent (the reconcile cron is the fallback);
 needed for it.
 
 Ralph's CI-fix loop reads the MR's head pipeline, its failed jobs and their traces with the bot
-token (scope `api`), and learns that a pipeline finished from the webhook's **Pipeline events** (the
-reconcile cron is the fallback). Projects connected before then have webhooks without pipeline
-events: connect GitLab again (which replaces each project's webhook) or tick **Pipeline events** on
-the project's webhook (**Settings › Webhooks**).
+token, and learns that a pipeline finished from the webhook's **Pipeline events** (the reconcile
+cron is the fallback). A webhook without pipeline events is reported as outdated on the connection:
+use **Recreate webhook** there (or tick **Pipeline events** on the project's **Settings ›
+Webhooks**).
 
 Unlike cyralph, agents need no `glab` login and no `gitlabHosts` entry: the connection's base URL
 says where each project lives ([cutover-from-cyralph.md](cutover-from-cyralph.md)).
-
-A bot token connected before ralph (scope `api` only) keeps working for reviews. Ralph pushes then
-fail until you connect GitLab again with a token that also has `write_repository`.
 
 ## Self-managed GitLab
 
@@ -109,8 +179,9 @@ fail until you connect GitLab again with a token that also has `write_repository
 - **TLS.** Webhooks are created with SSL verification on; `APP_URL` needs a valid certificate (the
   Vercel domain has one). The control panel and agents verify the instance's certificate, so it
   must chain to a public CA (or the hosts must trust your CA).
-- **Version.** Project access tokens need GitLab 13.10 or later; token scope validation uses
-  `/personal_access_tokens/self` (14.x and later; older versions skip that check).
+- **Version.** Daily token rotation needs GitLab 16.10 or later (older versions keep the token and
+  warn before it expires); token scope and expiry checks use `/personal_access_tokens/self` (older
+  versions skip them).
 - **Outbound webhook settings.** If the instance restricts webhook targets (**Admin › Settings ›
   Network › Outbound requests**), allow the control panel's domain.
 - **Sign-in.** To sign in with the same instance, register an OAuth application there (scope
