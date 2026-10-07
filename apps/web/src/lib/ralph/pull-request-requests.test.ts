@@ -400,6 +400,27 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     expect((await getRun(db, run.id))?.status).toBe("completed");
   });
 
+  it("leaves findings open when the session reported an error", async () => {
+    const { run } = await reviewedEpic();
+    const reviewed = await review();
+    const [finding] = (await listReviewFindings(db, reviewed.id)).filter(
+      (f) => f.status === "open",
+    );
+    await db.update(findings).set({ scmCommentId: "c-1" }).where(eq(findings.id, finding!.id));
+    await onReviewForRalph(db, reviewed.id, deps());
+    await finish(
+      await start(run.id),
+      requestResult({
+        error: "the push failed",
+        findings: [{ findingId: finding!.id, outcome: "fixed", comment: "Done." }],
+      }),
+    );
+    const [row] = await db.select().from(findings).where(eq(findings.id, finding!.id));
+    expect(row?.status).toBe("open");
+    expect(scm.replies).toEqual([]);
+    expect(scm.resolvedThreads).toEqual([]);
+  });
+
   it("ignores other PRs, other repositories, stale commits, closed PRs and repositories that opted out", async () => {
     const { run } = await reviewedEpic();
     expect(await respondToReview(deps(), (await review({ prNumber: 99 })).id)).toEqual({
