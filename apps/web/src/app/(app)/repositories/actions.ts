@@ -18,6 +18,7 @@ import {
   GitLabSetupError,
   listInstallationRepos,
   type GitLabProject,
+  type ScmAdapter,
 } from "@omniralph/scm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
@@ -25,6 +26,7 @@ import { gitlabWebhookUrl } from "@/lib/app-url";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
 
 const REPOSITORIES_PATH = "/repositories";
@@ -46,11 +48,16 @@ function errorMessage(error: unknown): string {
 /**
  * Creates the project webhook of every project and connects it to the GitLab connection
  * (or re-enables it). A project that's already connected keeps its webhook; otherwise the
- * new one replaces any old one, so there is exactly one per project. Returns the projects
- * that couldn't be connected, with the reason.
+ * new one replaces any old one, so there is exactly one per project. Before a project is
+ * connected or re-enabled, its read-only clone credential is fetched through `adapter`
+ * (minting a project access token, or reusing a valid cached one), so a project agents
+ * couldn't clone is never connected. Returns the projects that couldn't be connected, with
+ * the reason.
  */
 async function connectGitLabProjects(
   gitlab: GitLabSetupClient,
+  adapter: ScmAdapter,
+  organizationId: string,
   connectionId: string,
   webhookSecret: string,
   projects: GitLabProject[],
@@ -62,35 +69,44 @@ async function connectGitLabProjects(
   );
   const failed: string[] = [];
   for (const project of projects) {
-    const previous = known.get(String(project.id));
-    if (previous && !previous.disconnectedAt && previous.webhookId) {
-      await connectRepository(db, {
-        connectionId,
-        provider: "gitlab",
-        externalId: String(project.id),
-        fullPath: project.fullPath,
-      });
-      continue;
-    }
-    let hookId: number;
-    try {
-      hookId = await gitlab.createProjectHook(project.id, {
-        url: webhookUrl,
-        secret: webhookSecret,
-      });
-    } catch (error) {
-      failed.push(`${project.fullPath}: ${errorMessage(error)}`);
-      continue;
-    }
-    await connectRepository(db, {
+    const input = {
       connectionId,
       provider: "gitlab",
       externalId: String(project.id),
       fullPath: project.fullPath,
-      webhookId: String(hookId),
-    });
-    if (previous?.webhookId) {
-      await gitlab.deleteProjectHook(project.id, Number(previous.webhookId)).catch(() => undefined);
+    } as const;
+    const previous = known.get(input.externalId);
+    const hooked = Boolean(previous && !previous.disconnectedAt && previous.webhookId);
+    if (hooked && previous?.enabled) {
+      await connectRepository(db, input);
+      continue;
+    }
+
+    // The credential cache needs the repository's row, so a new project gets one with reviews
+    // off until it's checked; it's disconnected again if it can't be connected.
+    const added = previous ? null : await connectRepository(db, { ...input, enabled: false });
+    try {
+      await adapter.getReadOnlyCloneCredential({
+        fullPath: project.fullPath,
+        externalId: input.externalId,
+      });
+      if (hooked) {
+        await connectRepository(db, input);
+        continue;
+      }
+      const hookId = await gitlab.createProjectHook(project.id, {
+        url: webhookUrl,
+        secret: webhookSecret,
+      });
+      await connectRepository(db, { ...input, webhookId: String(hookId) });
+      if (previous?.webhookId) {
+        await gitlab
+          .deleteProjectHook(project.id, Number(previous.webhookId))
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      failed.push(`${project.fullPath}: ${errorMessage(error)}`);
+      if (added) await disconnectRepositoryRow(db, organizationId, added.id);
     }
   }
   return failed;
@@ -276,7 +292,9 @@ export async function saveGitHubRepositories(
 /**
  * Saves which projects of a GitLab connection get reviews: selected ones are connected (a
  * project webhook is created for those without one) or re-enabled, other listed connected ones
- * are disabled; connected projects the list doesn't show are left alone. Only projects the bot token's user maintains are accepted.
+ * are disabled; connected projects the list doesn't show are left alone. Only projects the bot
+ * token's user maintains are accepted, and only once a clone token can be minted for them: the
+ * others are named in the result's warning.
  */
 export async function saveGitLabProjects(
   connectionId: string,
@@ -301,6 +319,8 @@ export async function saveGitLabProjects(
     const selected = new Set(selectedProjectIds.map(String));
     const failed = await connectGitLabProjects(
       gitlab,
+      scmAdapterFor(db, connection),
+      organizationId,
       connectionId,
       webhookSecret,
       available.filter((project) => selected.has(String(project.id))),
