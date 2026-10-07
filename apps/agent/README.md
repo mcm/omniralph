@@ -1,4 +1,4 @@
-# @iamthemcmaster/omniralph-agent
+# @omniralph/agent
 
 `omniralph-agent` is the Omniralph agent host daemon. It pulls review jobs from an Omniralph
 control panel and runs them with the Claude Agent SDK. It needs Node 22 and git ≥ 2.40.
@@ -10,8 +10,8 @@ the Claude login, systemd, tmux or pm2), see
 ## Install
 
 The package is private (restricted) on the public npm registry. The installing user needs an
-`~/.npmrc` with a token that can read the `@iamthemcmaster` scope. This is the same auth that
-`@iamthemcmaster/ui` uses. A granular access token with read-only access to the package is enough:
+`~/.npmrc` with a token that can read the `@omniralph` scope. A granular access token with
+read-only access to the package is enough:
 
 ```sh
 echo "//registry.npmjs.org/:_authToken=<read-only npm token>" >> ~/.npmrc
@@ -22,7 +22,7 @@ To install globally without root, point npm's prefix at your home:
 
 ```sh
 npm config set prefix ~/.local     # binaries go to ~/.local/bin; put it on PATH
-npm install -g @iamthemcmaster/omniralph-agent
+npm install -g @omniralph/agent
 omniralph-agent --version
 ```
 
@@ -51,12 +51,27 @@ To run it as a service, see the systemd, tmux and pm2 sections in
 Stop the agent, then:
 
 ```sh
-npm install -g @iamthemcmaster/omniralph-agent@latest
+npm install -g @omniralph/agent@latest
 omniralph-agent --version
 ```
 
 Start it again. Upgrading keeps the config and the repo cache. The version shows on the agent's
 row on the **Agents** page after its next heartbeat.
+
+### From 0.3.0 or earlier (`@iamthemcmaster/omniralph-agent`)
+
+Up to 0.3.0 the package was `@iamthemcmaster/omniralph-agent`; from 0.3.1 it's `@omniralph/agent`.
+Agents on 0.3.0 or earlier can't self-update across the rename (they'd install the old package
+name), so upgrade them by hand once. Both packages install the `omniralph-agent` binary, so remove
+the old one first. Make sure the host's `~/.npmrc` token can read the `@omniralph` scope.
+
+```sh
+npm uninstall -g @iamthemcmaster/omniralph-agent
+npm install -g @omniralph/agent@latest
+omniralph-agent --version
+```
+
+Under pm2, run `pm2 restart omniralph-agent` afterwards. Self-update works again from 0.3.1 on.
 
 ## Releasing
 

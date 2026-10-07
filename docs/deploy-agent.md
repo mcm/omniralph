@@ -48,8 +48,8 @@ templates) can still become `omniralph`; remove that if you need a hard boundary
 
 ## 2. Install
 
-The agent is published as the private npm package `@iamthemcmaster/omniralph-agent`. The agent's
-user needs an `~/.npmrc` with a token that can read the `@iamthemcmaster` scope (a read-only
+The agent is published as the private npm package `@omniralph/agent`. The agent's
+user needs an `~/.npmrc` with a token that can read the `@omniralph` scope (a read-only
 granular token is enough):
 
 ```sh
@@ -57,13 +57,18 @@ sudo -iu omniralph
 echo "//registry.npmjs.org/:_authToken=<read-only npm token>" > ~/.npmrc && chmod 600 ~/.npmrc
 npm config set prefix ~/.local                    # global installs go to ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"              # also add this to ~/.profile
-npm install -g @iamthemcmaster/omniralph-agent
+npm install -g @omniralph/agent
 omniralph-agent --version
 ```
 
-To upgrade by hand: stop the agent, run `npm install -g @iamthemcmaster/omniralph-agent@latest`,
+To upgrade by hand: stop the agent, run `npm install -g @omniralph/agent@latest`,
 then start it again. Agents run under pm2 can update themselves instead (see
 [Self-update](#self-update-pm2)). See [apps/agent/README.md](../apps/agent/README.md) for the release procedure.
+
+Up to 0.3.0 the package was `@iamthemcmaster/omniralph-agent`. Hosts on 0.3.0 or earlier can't
+self-update to `@omniralph/agent`: upgrade them by hand once
+(`npm uninstall -g @iamthemcmaster/omniralph-agent && npm install -g @omniralph/agent@latest`, then
+restart the agent). See [apps/agent/README.md](../apps/agent/README.md#from-030-or-earlier-iamthemcmasteromniralph-agent).
 
 ## 3. Give the agent's user its own Claude login
 
@@ -127,7 +132,7 @@ Environment=OMNIRALPH_LOG_LEVEL=info
 Environment=PATH=/home/omniralph/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Optional overrides (ANTHROPIC_API_KEY=… or CLAUDE_CODE_OAUTH_TOKEN=…); root-owned, mode 0600.
 EnvironmentFile=-/etc/omniralph/agent.env
-ExecStart=/usr/bin/node /home/omniralph/.local/lib/node_modules/@iamthemcmaster/omniralph-agent/dist/cli.js start --healthz-port 9310
+ExecStart=/usr/bin/node /home/omniralph/.local/lib/node_modules/@omniralph/agent/dist/cli.js start --healthz-port 9310
 # SIGTERM: stop polling, give running jobs up to 60s; unfinished jobs are redelivered.
 KillSignal=SIGTERM
 TimeoutStopSec=90
@@ -212,7 +217,7 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
   `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
   `pm2 restart omniralph-agent --update-env`.
 - To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below).
-  By hand: `npm install -g @iamthemcmaster/omniralph-agent@latest && pm2 restart omniralph-agent`.
+  By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
 - Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
   self-update and relies on pm2 to start it again.
 
@@ -225,7 +230,7 @@ An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates i
    failed list, the agent stops taking new jobs and lets running ones finish, for up to 2 hours.
    Heartbeats go on meanwhile (jobs keep their tokens and Linear replies). Jobs still running after
    2 hours are aborted; their queue messages aren't acknowledged, so they're redelivered.
-2. It runs `npm i -g @iamthemcmaster/omniralph-agent@<version>` as the agent's user, with the same
+2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, with the same
    `~/.npmrc` as the [install](#2-install): the npm auth the host needs is unchanged.
 3. It writes `update-state.json` next to `agent.json` (mode 0600):
    `{ previous, pending, startsSincePending, failed }`.

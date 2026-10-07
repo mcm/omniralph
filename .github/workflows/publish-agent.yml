@@ -1,6 +1,6 @@
 name: Publish agent
 
-# Publishes @iamthemcmaster/omniralph-agent through npm trusted publishing (OIDC).
+# Publishes @omniralph/agent through npm trusted publishing (OIDC).
 # The trusted publisher on npmjs.com is registered against this filename: don't rename it.
 on:
   push:
@@ -52,7 +52,7 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test
 
       - name: Build
-        run: pnpm turbo run build --filter=@iamthemcmaster/omniralph-agent
+        run: pnpm turbo run build --filter=@omniralph/agent
 
       - name: Smoke-test the agent package
         run: ./scripts/smoke-agent-package.sh

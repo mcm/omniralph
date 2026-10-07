@@ -103,7 +103,7 @@ export function effectiveCapabilityLimits(
 }
 
 /** The npm package agents run and update themselves to. */
-export const AGENT_PACKAGE = "@iamthemcmaster/omniralph-agent";
+export const AGENT_PACKAGE = "@omniralph/agent";
 
 /** A semantic version (semver 2.0, no leading `v`), e.g. `1.4.0` or `1.5.0-beta.1`. */
 export const SEMVER_PATTERN =
