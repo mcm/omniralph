@@ -16,7 +16,7 @@ function shellQuote(value: string): string {
   return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Installs the agent on a host (needs npm auth for the private `@iamthemcmaster` scope). */
+/** Installs the agent on a host (the package is public: no npm auth needed). */
 export const AGENT_INSTALL_COMMAND = "npm install -g @omniralph/agent";
 
 /** The command an admin runs on the agent host to redeem an enrollment token. */

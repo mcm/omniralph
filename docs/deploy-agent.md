@@ -48,13 +48,11 @@ templates) can still become `omniralph`; remove that if you need a hard boundary
 
 ## 2. Install
 
-The agent is published as the private npm package `@omniralph/agent`. The agent's
-user needs an `~/.npmrc` with a token that can read the `@omniralph` scope (a read-only
-granular token is enough):
+The agent is published as the public npm package `@omniralph/agent`; installing it needs no npm
+token:
 
 ```sh
 sudo -iu omniralph
-echo "//registry.npmjs.org/:_authToken=<read-only npm token>" > ~/.npmrc && chmod 600 ~/.npmrc
 npm config set prefix ~/.local                    # global installs go to ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"              # also add this to ~/.profile
 npm install -g @omniralph/agent
@@ -230,8 +228,8 @@ An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates i
    failed list, the agent stops taking new jobs and lets running ones finish, for up to 2 hours.
    Heartbeats go on meanwhile (jobs keep their tokens and Linear replies). Jobs still running after
    2 hours are aborted; their queue messages aren't acknowledged, so they're redelivered.
-2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, with the same
-   `~/.npmrc` as the [install](#2-install): the npm auth the host needs is unchanged.
+2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, like the
+   [install](#2-install) (the package is public, so no npm auth is needed).
 3. It writes `update-state.json` next to `agent.json` (mode 0600):
    `{ previous, pending, startsSincePending, failed }`.
 4. It exits with code 0 and pm2 starts the new version.
@@ -253,8 +251,8 @@ needs.
 - **Settings › Agents** (admins) holds the organization's desired version (it applies to the
   organization's agents only), e.g. `1.4.0` (semver). Blank means
   versions aren't managed: agents keep whatever they run. **Use latest on npm** sets it to the
-  package's `latest` dist-tag; it's shown only when the control panel has `NPM_TOKEN` (an npm token
-  that can read the restricted package; see [env.md](env.md)).
+  package's `latest` dist-tag; it's shown only when the control panel has `NPM_TOKEN` (a read-only npm
+  token; see [env.md](env.md)).
 - **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
   or to pin a host to an older version. Clear the override to follow the organization's version again.
 - To pin every agent, set the organization's version to an exact version and don't use **Use latest on

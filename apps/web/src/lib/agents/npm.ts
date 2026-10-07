@@ -4,7 +4,7 @@ import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
 /** The agent package's registry document (`@` kept, `/` escaped, as npm does). */
 export const AGENT_REGISTRY_URL = `https://registry.npmjs.org/${AGENT_PACKAGE.replace("/", "%2f")}`;
 
-/** `NPM_TOKEN`, which can read the restricted agent package; null when unset. */
+/** `NPM_TOKEN`, a read-only npm token; null when unset. */
 export function npmToken(): string | null {
   return process.env.NPM_TOKEN?.trim() || null;
 }
@@ -15,7 +15,7 @@ export class NpmRegistryError extends Error {
 
 /**
  * The agent package's `latest` dist-tag, read from the npm registry with
- * `NPM_TOKEN` (the package is restricted).
+ * `NPM_TOKEN`.
  */
 export async function latestAgentVersion(
   token: string,
@@ -38,7 +38,7 @@ export async function latestAgentVersion(
     );
   }
   if (response.status === 401 || response.status === 403 || response.status === 404) {
-    // npm answers 404 for restricted packages the token can't read.
+    // npm answers 404 for packages the token can't read (or that don't exist yet).
     throw new NpmRegistryError(
       `the npm registry answered ${response.status}; check that NPM_TOKEN can read ${AGENT_PACKAGE}`,
     );

@@ -18,7 +18,7 @@ put them in `apps/web/.env.local`.
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
 | `NPM_RC` | yes (Vercel) | — | Full `.npmrc` contents Vercel writes before installing, so the private `@iamthemcmaster/ui` package installs: `//registry.npmjs.org/:_authToken=<token>`. Set it for every environment (Production, Preview, Development). |
-| `NPM_TOKEN` | yes (CI); optional (Vercel) | — | GitHub Actions secret: `ci.yml` writes it to `.npmrc` before `pnpm install`. Never commit an `.npmrc` with a token. As a Vercel variable (runtime, read-only token is enough), it lets **Settings › Agents › Use latest on npm** read the restricted `@omniralph/agent` package's latest version from `registry.npmjs.org`; without it the button is hidden and versions are typed in. |
+| `NPM_TOKEN` | yes (CI); optional (Vercel) | — | GitHub Actions secret: `ci.yml` writes it to `.npmrc` before `pnpm install`. Never commit an `.npmrc` with a token. As a Vercel variable (runtime, read-only token is enough), it lets **Settings › Agents › Use latest on npm** read the `@omniralph/agent` package's latest version from `registry.npmjs.org`; without it the button is hidden and versions are typed in. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database
@@ -127,7 +127,7 @@ fetch credentials; whatever else the agent's environment holds, they can read.
 
 Ralph needs no extra agent variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
 [deploy-agent.md](deploy-agent.md#ralph)). Self-update under pm2 needs none either: it detects pm2 by
-the `pm_id` variable pm2 sets, and installs with the agent user's `~/.npmrc`.
+the `pm_id` variable pm2 sets, and installs the public package without npm auth.
 
 cyralph's variables (`LINEAR_ACCESS_TOKEN`, `CYRALPH_*`, …) and their equivalents are listed in
 [cutover-from-cyralph.md](cutover-from-cyralph.md#environment-variables).

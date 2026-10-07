@@ -9,16 +9,8 @@ the Claude login, systemd, tmux or pm2), see
 
 ## Install
 
-The package is private (restricted) on the public npm registry. The installing user needs an
-`~/.npmrc` with a token that can read the `@omniralph` scope. A granular access token with
-read-only access to the package is enough:
-
-```sh
-echo "//registry.npmjs.org/:_authToken=<read-only npm token>" >> ~/.npmrc
-chmod 600 ~/.npmrc
-```
-
-To install globally without root, point npm's prefix at your home:
+The package is public on the npm registry: installing it needs no npm token. To install globally
+without root, point npm's prefix at your home:
 
 ```sh
 npm config set prefix ~/.local     # binaries go to ~/.local/bin; put it on PATH
@@ -63,7 +55,7 @@ row on the **Agents** page after its next heartbeat.
 Up to 0.3.0 the package was `@iamthemcmaster/omniralph-agent`; from 0.3.1 it's `@omniralph/agent`.
 Agents on 0.3.0 or earlier can't self-update across the rename (they'd install the old package
 name), so upgrade them by hand once. Both packages install the `omniralph-agent` binary, so remove
-the old one first. Make sure the host's `~/.npmrc` token can read the `@omniralph` scope.
+the old one first.
 
 ```sh
 npm uninstall -g @iamthemcmaster/omniralph-agent
