@@ -119,7 +119,9 @@ describe("installation tokens", () => {
       ),
     );
     await expect(adapter.getReadOnlyCloneCredential(REPO)).rejects.toMatchObject({ status: 500 });
-    await expect(adapter.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({ token: "ghs_1" });
+    await expect(adapter.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({
+      token: "ghs_1",
+    });
   });
 });
 
@@ -129,7 +131,10 @@ describe("getReadOnlyCloneCredential", () => {
     const credential = await adapter.getReadOnlyCloneCredential(REPO);
 
     expect(tokenRequests).toHaveLength(1);
-    expect(tokenRequests[0]?.body).toEqual({ repositories: ["widgets"], permissions: { contents: "read" } });
+    expect(tokenRequests[0]?.body).toEqual({
+      repositories: ["widgets"],
+      permissions: { contents: "read" },
+    });
     expect(credential).toEqual({
       cloneUrl: "https://github.com/acme/widgets.git",
       username: "x-access-token",
@@ -149,7 +154,10 @@ describe("getReadOnlyCloneCredential", () => {
   it("derives the clone host for GitHub Enterprise Server", async () => {
     server.use(
       http.post("https://ghe.example.com/api/v3/app/installations/9/access_tokens", () =>
-        HttpResponse.json({ token: "ghs_ghe", expires_at: new Date(now + 3_600_000).toISOString() }),
+        HttpResponse.json({
+          token: "ghs_ghe",
+          expires_at: new Date(now + 3_600_000).toISOString(),
+        }),
       ),
     );
     const adapter = new GitHubAdapter({
@@ -198,7 +206,8 @@ describe("getWriteCloneCredential", () => {
       http.post(`${API}/app/installations/42/access_tokens`, () =>
         HttpResponse.json(
           {
-            message: "The level of access for permissions requested are not granted to this installation.",
+            message:
+              "The level of access for permissions requested are not granted to this installation.",
             status: "422",
           },
           { status: 422 },
@@ -217,6 +226,26 @@ describe("getWriteCloneCredential", () => {
       name: "CloneCredentialPermissionError",
       access: "read",
     });
+  });
+
+  it("passes through a 422 that isn't about permissions", async () => {
+    server.use(
+      http.post(`${API}/app/installations/42/access_tokens`, () =>
+        HttpResponse.json(
+          {
+            message:
+              "There is at least one repository that does not exist or is not accessible to the parent installation.",
+            status: "422",
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const error = await makeAdapter()
+      .getWriteCloneCredential(REPO)
+      .catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(CloneCredentialPermissionError);
+    expect(error).toMatchObject({ status: 422 });
   });
 });
 
@@ -273,20 +302,23 @@ describe("postReview", () => {
     server.use(
       pullHandler(),
       http.get(`${API}/repos/acme/widgets/pulls/7/files`, () =>
-        HttpResponse.json([
-          { filename: "src/app.ts", patch: PATCH },
-          { filename: "logo.png" },
-        ]),
+        HttpResponse.json([{ filename: "src/app.ts", patch: PATCH }, { filename: "logo.png" }]),
       ),
       http.post(`${API}/repos/acme/widgets/pulls/7/reviews`, async ({ request }) => {
         reviewBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ id: 900 });
       }),
       http.get(`${API}/repos/acme/widgets/pulls/7/reviews/900/comments`, () => {
-        const comments = (reviewBody?.comments ?? []) as { path: string; line: number; side: string }[];
+        const comments = (reviewBody?.comments ?? []) as {
+          path: string;
+          line: number;
+          side: string;
+        }[];
         // Returned newest first to check the ID matching doesn't rely on order.
         return HttpResponse.json(
-          comments.map((c, i) => ({ id: 1000 + i, path: c.path, line: c.line, side: c.side })).reverse(),
+          comments
+            .map((c, i) => ({ id: 1000 + i, path: c.path, line: c.line, side: c.side }))
+            .reverse(),
         );
       }),
     );
@@ -298,7 +330,13 @@ describe("postReview", () => {
       inlineComments: [
         { path: "src/app.ts", line: 12, body: "Check d." },
         { path: "src/app.ts", line: 99, body: "Outside the diff." },
-        { path: "src/app.ts", startLine: 11, line: 12, body: "Simplify.", suggestion: "const cd = 1;" },
+        {
+          path: "src/app.ts",
+          startLine: 11,
+          line: 12,
+          body: "Simplify.",
+          suggestion: "const cd = 1;",
+        },
         { path: "src/app.ts", line: 11, side: "old", body: "Why remove b?" },
         { path: "logo.png", line: 1, body: "Binary." },
       ],
@@ -352,7 +390,10 @@ describe("postReview", () => {
   });
 
   it("posts a summary-only review without listing comments", async () => {
-    const posted = await makeAdapter().postReview(REPO, 7, { summary: "No findings.", inlineComments: [] });
+    const posted = await makeAdapter().postReview(REPO, 7, {
+      summary: "No findings.",
+      inlineComments: [],
+    });
     expect(reviewBody).toMatchObject({ body: "No findings.", comments: [] });
     expect(posted.inlineCommentIds).toEqual([]);
   });
@@ -379,7 +420,9 @@ describe("replyToComment and resolveThread", () => {
         return HttpResponse.json({ id: 1234 }, { status: 201 });
       }),
     );
-    await expect(makeAdapter().replyToComment(REPO, 7, "1000", "Thanks!")).resolves.toEqual({ id: "1234" });
+    await expect(makeAdapter().replyToComment(REPO, 7, "1000", "Thanks!")).resolves.toEqual({
+      id: "1234",
+    });
     expect(replied).toEqual({ body: "Thanks!" });
   });
 
@@ -390,7 +433,9 @@ describe("replyToComment and resolveThread", () => {
         const op = (await request.json()) as { query: string; variables: Record<string, unknown> };
         operations.push(op);
         if (op.query.includes("resolveReviewThread")) {
-          return HttpResponse.json({ data: { resolveReviewThread: { thread: { id: op.variables.threadId } } } });
+          return HttpResponse.json({
+            data: { resolveReviewThread: { thread: { id: op.variables.threadId } } },
+          });
         }
         const firstPage = op.variables.cursor === null;
         return HttpResponse.json({
@@ -401,7 +446,13 @@ describe("replyToComment and resolveThread", () => {
                   pageInfo: { hasNextPage: firstPage, endCursor: firstPage ? "c1" : null },
                   nodes: firstPage
                     ? [{ id: "T1", isResolved: false, comments: { nodes: [{ databaseId: 1 }] } }]
-                    : [{ id: "T2", isResolved: false, comments: { nodes: [{ databaseId: 1000 }] } }],
+                    : [
+                        {
+                          id: "T2",
+                          isResolved: false,
+                          comments: { nodes: [{ databaseId: 1000 }] },
+                        },
+                      ],
                 },
               },
             },
@@ -411,7 +462,12 @@ describe("replyToComment and resolveThread", () => {
     );
     await makeAdapter().resolveThread(REPO, 7, "1000");
     expect(operations).toHaveLength(3);
-    expect(operations[1]?.variables).toMatchObject({ cursor: "c1", owner: "acme", repo: "widgets", number: 7 });
+    expect(operations[1]?.variables).toMatchObject({
+      cursor: "c1",
+      owner: "acme",
+      repo: "widgets",
+      number: 7,
+    });
     expect(operations[2]?.variables).toEqual({ threadId: "T2" });
   });
 });
@@ -449,18 +505,31 @@ describe("verifyWebhook", () => {
 
   it("accepts a valid X-Hub-Signature-256 (string or bytes, any header casing)", async () => {
     const adapter = makeAdapter();
-    await expect(adapter.verifyWebhook({ "X-Hub-Signature-256": sign(body) }, body)).resolves.toBe(true);
+    await expect(adapter.verifyWebhook({ "X-Hub-Signature-256": sign(body) }, body)).resolves.toBe(
+      true,
+    );
     await expect(
-      adapter.verifyWebhook(new Headers({ "x-hub-signature-256": sign(body) }), new TextEncoder().encode(body)),
+      adapter.verifyWebhook(
+        new Headers({ "x-hub-signature-256": sign(body) }),
+        new TextEncoder().encode(body),
+      ),
     ).resolves.toBe(true);
   });
 
   it("rejects invalid, tampered or missing signatures", async () => {
     const adapter = makeAdapter();
-    await expect(adapter.verifyWebhook({ "x-hub-signature-256": sign(body, "wrong") }, body)).resolves.toBe(false);
-    await expect(adapter.verifyWebhook({ "x-hub-signature-256": sign(body) }, `${body} `)).resolves.toBe(false);
-    await expect(adapter.verifyWebhook({ "x-hub-signature-256": "sha256=zz" }, body)).resolves.toBe(false);
-    await expect(adapter.verifyWebhook({ "x-hub-signature-256": "garbage" }, body)).resolves.toBe(false);
+    await expect(
+      adapter.verifyWebhook({ "x-hub-signature-256": sign(body, "wrong") }, body),
+    ).resolves.toBe(false);
+    await expect(
+      adapter.verifyWebhook({ "x-hub-signature-256": sign(body) }, `${body} `),
+    ).resolves.toBe(false);
+    await expect(adapter.verifyWebhook({ "x-hub-signature-256": "sha256=zz" }, body)).resolves.toBe(
+      false,
+    );
+    await expect(adapter.verifyWebhook({ "x-hub-signature-256": "garbage" }, body)).resolves.toBe(
+      false,
+    );
     await expect(adapter.verifyWebhook({}, body)).resolves.toBe(false);
   });
 });
@@ -474,7 +543,9 @@ describe("pull request operations", () => {
   }
 
   it("reads the default branch", async () => {
-    server.use(http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json({ default_branch: "trunk" })));
+    server.use(
+      http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json({ default_branch: "trunk" })),
+    );
     await expect(makeAdapter({ installationId: 42 }).getDefaultBranch(REPO)).resolves.toBe("trunk");
   });
 
@@ -550,12 +621,22 @@ describe("pull request operations", () => {
         HttpResponse.json(
           {
             message: "Validation Failed",
-            errors: [{ resource: "PullRequest", code: "custom", message: "A pull request already exists for acme:ralph/epic." }],
+            errors: [
+              {
+                resource: "PullRequest",
+                code: "custom",
+                message: "A pull request already exists for acme:ralph/epic.",
+              },
+            ],
           },
           { status: 422 },
         ),
       ),
-      http.get(PULLS, () => HttpResponse.json([{ number: 9, html_url: "https://github.com/acme/widgets/pull/9", draft: false }])),
+      http.get(PULLS, () =>
+        HttpResponse.json([
+          { number: 9, html_url: "https://github.com/acme/widgets/pull/9", draft: false },
+        ]),
+      ),
     );
     const created = await makeAdapter({ installationId: 42 }).createChangeRequest(REPO, {
       sourceBranch: "ralph/epic",
@@ -564,14 +645,21 @@ describe("pull request operations", () => {
       body: "",
       draft: true,
     });
-    expect(created).toEqual({ number: 9, url: "https://github.com/acme/widgets/pull/9", created: false });
+    expect(created).toEqual({
+      number: 9,
+      url: "https://github.com/acme/widgets/pull/9",
+      created: false,
+    });
   });
 
   it("propagates other validation errors", async () => {
     server.use(
       http.post(PULLS, () =>
         HttpResponse.json(
-          { message: "Validation Failed", errors: [{ message: "No commits between main and ralph/epic" }] },
+          {
+            message: "Validation Failed",
+            errors: [{ message: "No commits between main and ralph/epic" }],
+          },
           { status: 422 },
         ),
       ),
@@ -602,21 +690,32 @@ describe("pull request operations", () => {
   });
 
   it("throws ChangeRequestNotFoundError when updating a missing pull request", async () => {
-    server.use(http.patch(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })));
+    server.use(
+      http.patch(`${PULLS}/404`, () =>
+        HttpResponse.json({ message: "Not Found" }, { status: 404 }),
+      ),
+    );
     const error = await makeAdapter({ installationId: 42 })
       .updateChangeRequest(REPO, 404, { body: "x" })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ChangeRequestNotFoundError);
-    expect(error).toMatchObject({ number: 404, message: "Change request acme/widgets#404 not found" });
+    expect(error).toMatchObject({
+      number: 404,
+      message: "Change request acme/widgets#404 not found",
+    });
   });
 
   it("marks a draft ready through the GraphQL mutation", async () => {
     const graphql: { query: string; variables: Record<string, unknown> }[] = [];
     server.use(
-      http.get(`${PULLS}/12`, () => HttpResponse.json({ number: 12, node_id: "PR_node12", draft: true })),
+      http.get(`${PULLS}/12`, () =>
+        HttpResponse.json({ number: 12, node_id: "PR_node12", draft: true }),
+      ),
       http.post(`${API}/graphql`, async ({ request }) => {
         graphql.push((await request.json()) as (typeof graphql)[number]);
-        return HttpResponse.json({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } });
+        return HttpResponse.json({
+          data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+        });
       }),
     );
     await makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 12);
@@ -628,7 +727,9 @@ describe("pull request operations", () => {
   it("does nothing when the pull request isn't a draft", async () => {
     let mutations = 0;
     server.use(
-      http.get(`${PULLS}/12`, () => HttpResponse.json({ number: 12, node_id: "PR_node12", draft: false })),
+      http.get(`${PULLS}/12`, () =>
+        HttpResponse.json({ number: 12, node_id: "PR_node12", draft: false }),
+      ),
       http.post(`${API}/graphql`, () => {
         mutations += 1;
         return HttpResponse.json({ data: {} });
@@ -639,10 +740,12 @@ describe("pull request operations", () => {
   });
 
   it("throws ChangeRequestNotFoundError when marking a missing pull request ready", async () => {
-    server.use(http.get(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })));
-    await expect(makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 404)).rejects.toBeInstanceOf(
-      ChangeRequestNotFoundError,
+    server.use(
+      http.get(`${PULLS}/404`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })),
     );
+    await expect(
+      makeAdapter({ installationId: 42 }).markChangeRequestReady(REPO, 404),
+    ).rejects.toBeInstanceOf(ChangeRequestNotFoundError);
   });
 });
 

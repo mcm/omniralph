@@ -118,16 +118,32 @@ function deriveWebUrl(apiUrl: string): string {
 }
 
 function hasStatus(error: unknown, status: number): boolean {
-  return typeof error === "object" && error !== null && "status" in error && error.status === status;
+  return (
+    typeof error === "object" && error !== null && "status" in error && error.status === status
+  );
 }
 
 /** The 422 GitHub returns when an open PR already exists for the head branch. */
 function isPullRequestExists(error: unknown): boolean {
   if (!hasStatus(error, 422)) return false;
-  const data = (error as { response?: { data?: { message?: unknown; errors?: { message?: unknown }[] } } }).response
-    ?.data;
+  const data = (
+    error as { response?: { data?: { message?: unknown; errors?: { message?: unknown }[] } } }
+  ).response?.data;
   const messages = [data?.message, ...(data?.errors ?? []).map((e) => e.message)];
   return messages.some((m) => typeof m === "string" && /pull request already exists/i.test(m));
+}
+
+/**
+ * The 422 GitHub returns when an installation token asks for permissions the
+ * installation isn't granted. The same endpoint also answers 422 for other
+ * problems (e.g. a requested repository the installation can't access), so
+ * match the message rather than the status alone.
+ */
+function isPermissionNotGranted(error: unknown): boolean {
+  if (!hasStatus(error, 422)) return false;
+  const message = (error as { response?: { data?: { message?: unknown } } }).response?.data
+    ?.message;
+  return typeof message === "string" && /level of access for permissions/i.test(message);
 }
 
 /** Workflow run and job conclusions that count as a CI failure. */
@@ -186,7 +202,15 @@ export class GitHubAdapter implements ScmAdapter {
 
     const { data: pr } = await octokit.pulls.get({ owner, repo: name, pull_number: number });
     const commitSha = review.commitSha ?? pr.head.sha;
-    const files = await this.diffFiles(octokit, owner, name, number, pr.base.sha, pr.head.sha, commitSha);
+    const files = await this.diffFiles(
+      octokit,
+      owner,
+      name,
+      number,
+      pr.base.sha,
+      pr.head.sha,
+      commitSha,
+    );
     const index = buildDiffLineIndex(files);
 
     const inline: { comment: InlineComment; inputIndex: number }[] = [];
@@ -229,11 +253,19 @@ export class GitHubAdapter implements ScmAdapter {
       // Match posted comments back to inputs by anchor, in creation order.
       const byKey = new Map<string, number[]>();
       for (const comment of [...posted].sort((a, b) => a.id - b.id)) {
-        const key = commentKey(comment.path, comment.side ?? "RIGHT", comment.line ?? comment.original_line);
+        const key = commentKey(
+          comment.path,
+          comment.side ?? "RIGHT",
+          comment.line ?? comment.original_line,
+        );
         byKey.set(key, [...(byKey.get(key) ?? []), comment.id]);
       }
       for (const { comment, inputIndex } of inline) {
-        const key = commentKey(comment.path, comment.side === "old" ? "LEFT" : "RIGHT", comment.line);
+        const key = commentKey(
+          comment.path,
+          comment.side === "old" ? "LEFT" : "RIGHT",
+          comment.line,
+        );
         const id = byKey.get(key)?.shift();
         inlineCommentIds[inputIndex] = id === undefined ? null : String(id);
       }
@@ -283,17 +315,23 @@ export class GitHubAdapter implements ScmAdapter {
     const wanted = Number(commentId);
     let cursor: string | null = null;
     for (;;) {
-      const page: ReviewThreadsPage = await octokit.graphql<ReviewThreadsPage>(REVIEW_THREADS_QUERY, {
-        owner,
-        repo: name,
-        number,
-        cursor,
-      });
+      const page: ReviewThreadsPage = await octokit.graphql<ReviewThreadsPage>(
+        REVIEW_THREADS_QUERY,
+        {
+          owner,
+          repo: name,
+          number,
+          cursor,
+        },
+      );
       const threads = page.repository?.pullRequest?.reviewThreads;
       if (!threads) throw new Error(`Pull request ${repo.fullPath}#${number} not found`);
-      const thread = threads.nodes.find((t) => t.comments.nodes.some((c) => c.databaseId === wanted));
+      const thread = threads.nodes.find((t) =>
+        t.comments.nodes.some((c) => c.databaseId === wanted),
+      );
       if (thread) {
-        if (!thread.isResolved) await octokit.graphql(RESOLVE_THREAD_MUTATION, { threadId: thread.id });
+        if (!thread.isResolved)
+          await octokit.graphql(RESOLVE_THREAD_MUTATION, { threadId: thread.id });
         return;
       }
       if (!threads.pageInfo.hasNextPage) break;
@@ -315,7 +353,10 @@ export class GitHubAdapter implements ScmAdapter {
     return this.cloneCredential(repo, "write");
   }
 
-  private async cloneCredential(repo: RepoRef, contents: "read" | "write"): Promise<CloneCredential> {
+  private async cloneCredential(
+    repo: RepoRef,
+    contents: "read" | "write",
+  ): Promise<CloneCredential> {
     const { owner, repo: name } = splitRepoPath(repo);
     const installationId = await this.resolveInstallationId(owner, name);
     let installationToken: InstallationToken;
@@ -328,7 +369,7 @@ export class GitHubAdapter implements ScmAdapter {
       // 422 "The level of access for permissions requested are not granted to
       // this installation": the App (or the installation, which hasn't accepted
       // the App's updated permissions) lacks Contents: Read and write.
-      if (hasStatus(error, 422)) {
+      if (isPermissionNotGranted(error)) {
         const level = contents === "write" ? "Read and write" : "Read";
         throw new CloneCredentialPermissionError(
           repo,
@@ -354,7 +395,11 @@ export class GitHubAdapter implements ScmAdapter {
     const { owner, repo: name } = splitRepoPath(repo);
     const octokit = await this.client(repo);
     try {
-      const { data } = await octokit.repos.getCollaboratorPermissionLevel({ owner, repo: name, username });
+      const { data } = await octokit.repos.getCollaboratorPermissionLevel({
+        owner,
+        repo: name,
+        username,
+      });
       return (
         data.permission === "admin" ||
         data.permission === "write" ||
@@ -373,7 +418,10 @@ export class GitHubAdapter implements ScmAdapter {
     return data.default_branch;
   }
 
-  async findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null> {
+  async findOpenChangeRequest(
+    repo: RepoRef,
+    sourceBranch: string,
+  ): Promise<OpenChangeRequest | null> {
     const { owner, repo: name } = splitRepoPath(repo);
     const octokit = await this.client(repo);
     // `head` is `owner:branch`, so PRs from forks with the same branch name don't match.
@@ -388,7 +436,10 @@ export class GitHubAdapter implements ScmAdapter {
     return pr ? { number: pr.number, url: pr.html_url, draft: pr.draft ?? false } : null;
   }
 
-  async createChangeRequest(repo: RepoRef, request: NewChangeRequest): Promise<CreatedChangeRequest> {
+  async createChangeRequest(
+    repo: RepoRef,
+    request: NewChangeRequest,
+  ): Promise<CreatedChangeRequest> {
     const { owner, repo: name } = splitRepoPath(repo);
     const octokit = await this.client(repo);
     try {
@@ -410,7 +461,11 @@ export class GitHubAdapter implements ScmAdapter {
     }
   }
 
-  async updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void> {
+  async updateChangeRequest(
+    repo: RepoRef,
+    number: number,
+    update: ChangeRequestUpdate,
+  ): Promise<void> {
     const { owner, repo: name } = splitRepoPath(repo);
     const octokit = await this.client(repo);
     try {
@@ -422,7 +477,8 @@ export class GitHubAdapter implements ScmAdapter {
         ...(update.body !== undefined ? { body: capLength(update.body, MAX_BODY_LENGTH) } : {}),
       });
     } catch (error) {
-      if (hasStatus(error, 404)) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      if (hasStatus(error, 404))
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
   }
@@ -435,7 +491,8 @@ export class GitHubAdapter implements ScmAdapter {
     try {
       ({ data: pr } = await octokit.pulls.get({ owner, repo: name, pull_number: number }));
     } catch (error) {
-      if (hasStatus(error, 404)) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      if (hasStatus(error, 404))
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
     if (!pr.draft) return;
