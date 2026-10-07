@@ -3,6 +3,8 @@ export const SESSION_COOKIES = ["authjs.session-token", "__Secure-authjs.session
 
 export const SIGN_IN_PATH = "/sign-in";
 export const ACCESS_DENIED_PATH = "/access-denied";
+/** Where signed-in users without an active organization create, accept or join one. */
+export const ONBOARDING_PATH = "/onboarding";
 
 /** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */
 const SELF_AUTHENTICATED_PREFIXES = ["/api/agent", "/api/webhooks", "/api/cron", "/api/auth"];

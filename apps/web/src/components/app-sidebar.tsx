@@ -29,6 +29,9 @@ import {
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
+import { OrganizationSwitcher, type OrganizationOption } from "./organization-switcher";
+
+export type { OrganizationOption };
 
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
@@ -43,7 +46,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   agentSettings: IconServerCog,
 };
 
-export function AppSidebar() {
+export function AppSidebar({ organizations }: { organizations: OrganizationOption[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const { collapsed } = useSidebar();
@@ -103,6 +106,12 @@ export function AppSidebar() {
 
       <SidebarContent>
         {collapsed && <SidebarTrigger style={{ margin: "var(--space-2) auto" }} />}
+
+        <div
+          style={{ padding: collapsed ? "var(--space-1) 0" : "var(--space-2) var(--space-2) 0" }}
+        >
+          <OrganizationSwitcher organizations={organizations} collapsed={collapsed} />
+        </div>
 
         {navGroupsForRole(user.role).map((group) => (
           <SidebarGroup key={group.label} label={group.label}>

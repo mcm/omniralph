@@ -44,8 +44,8 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
         </CardHeader>
         <CardContent style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
           {forbidden
-            ? "Ask an admin to change your role if you need access."
-            : "Sign-in is limited to approved email domains and addresses an admin has added. Ask an admin to add your email, then try again."}
+            ? "Ask an admin of your organization to change your role if you need access."
+            : "Sign-in is limited to approved email domains and people invited to an organization. Ask an organization admin to invite your email, then try again."}
         </CardContent>
         <CardFooter style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
           <Button asChild variant={forbidden ? "secondary" : "primary"}>

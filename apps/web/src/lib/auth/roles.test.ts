@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { assertRole, AuthorizationError, checkUserChange, hasRole, isRole } from "./roles";
+import {
+  assertOrgRole,
+  assertRole,
+  AuthorizationError,
+  checkUserChange,
+  hasRole,
+  isRole,
+} from "./roles";
 
-const admin = { id: "a", role: "admin" as const };
-const member = { id: "m", role: "member" as const };
+const admin = { id: "a", role: "admin" as const, organization: { id: "org-1" } };
+const member = { id: "m", role: "member" as const, organization: { id: "org-1" } };
+const noOrg = { id: "n", role: null, organization: null };
 
 describe("hasRole", () => {
   it("lets admins do everything", () => {
@@ -13,6 +21,11 @@ describe("hasRole", () => {
   it("limits members to member access", () => {
     expect(hasRole(member, "member")).toBe(true);
     expect(hasRole(member, "admin")).toBe(false);
+  });
+
+  it("denies users without an active organization", () => {
+    expect(hasRole(noOrg, "member")).toBe(false);
+    expect(hasRole(noOrg, "admin")).toBe(false);
   });
 
   it("denies a missing user", () => {
@@ -48,6 +61,40 @@ describe("assertRole", () => {
   });
 });
 
+describe("assertRole without an organization", () => {
+  it("asks the user to create or join an organization", () => {
+    expect(() => assertRole(noOrg, "member")).toThrow(
+      expect.objectContaining({
+        reason: "forbidden",
+        message: "Create or join an organization first.",
+      }),
+    );
+  });
+});
+
+describe("assertOrgRole", () => {
+  it("checks the role in the given organization only", () => {
+    expect(assertOrgRole(admin, "org-1", "admin")).toBe(admin);
+    expect(assertOrgRole(member, "org-1", "member")).toBe(member);
+    expect(() => assertOrgRole(member, "org-1", "admin")).toThrow(
+      expect.objectContaining({ reason: "forbidden" }),
+    );
+  });
+
+  it("rejects an admin acting on another organization", () => {
+    expect(() => assertOrgRole(admin, "org-2", "member")).toThrow(
+      expect.objectContaining({
+        reason: "forbidden",
+        message: "You are not a member of this organization.",
+      }),
+    );
+    expect(() => assertOrgRole(noOrg, "org-1", "member")).toThrow(AuthorizationError);
+    expect(() => assertOrgRole(null, "org-1", "member")).toThrow(
+      expect.objectContaining({ reason: "unauthenticated" }),
+    );
+  });
+});
+
 describe("isRole", () => {
   it("accepts only known roles", () => {
     expect(isRole("admin")).toBe(true);
@@ -75,7 +122,7 @@ describe("checkUserChange", () => {
     ).toBeNull();
   });
 
-  it("never leaves the panel without an admin", () => {
+  it("never leaves the organization without an admin", () => {
     expect(checkUserChange({ actorId: "a", target: admin, newRole: "member", adminCount: 1 })).toBe(
       "There must be at least one admin.",
     );

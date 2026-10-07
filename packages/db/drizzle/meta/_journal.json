@@ -211,6 +211,13 @@
       "when": 1791338498084,
       "tag": "0029_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791339014976,
+      "tag": "0030_users_active_organization",
+      "breakpoints": true
     }
   ]
 }

@@ -41,13 +41,26 @@ function toIntegration(row: IntegrationRow): Integration {
   return rest;
 }
 
-function withCredentials<C>(row: IntegrationRow, key: EncryptionKey): IntegrationWithCredentials<C> {
-  return { ...toIntegration(row), credentials: JSON.parse(decrypt(row.encryptedCredentials, key)) as C };
+function withCredentials<C>(
+  row: IntegrationRow,
+  key: EncryptionKey,
+): IntegrationWithCredentials<C> {
+  return {
+    ...toIntegration(row),
+    credentials: JSON.parse(decrypt(row.encryptedCredentials, key)) as C,
+  };
 }
 
 /** The provider's installed integration (without credentials), or null. */
-export async function getIntegration(db: Database, provider: IntegrationProvider): Promise<Integration | null> {
-  const [row] = await db.select().from(integrations).where(eq(integrations.provider, provider)).limit(1);
+export async function getIntegration(
+  db: Database,
+  provider: IntegrationProvider,
+): Promise<Integration | null> {
+  const [row] = await db
+    .select()
+    .from(integrations)
+    .where(eq(integrations.provider, provider))
+    .limit(1);
   return row ? toIntegration(row) : null;
 }
 
@@ -57,7 +70,11 @@ export async function getIntegrationWithCredentials<C>(
   provider: IntegrationProvider,
   key?: EncryptionKey,
 ): Promise<IntegrationWithCredentials<C> | null> {
-  const [row] = await db.select().from(integrations).where(eq(integrations.provider, provider)).limit(1);
+  const [row] = await db
+    .select()
+    .from(integrations)
+    .where(eq(integrations.provider, provider))
+    .limit(1);
   return row ? withCredentials<C>(row, key) : null;
 }
 
@@ -75,7 +92,12 @@ export async function saveIntegration<C>(
   return db.transaction(async (tx) => {
     await tx
       .delete(integrations)
-      .where(and(eq(integrations.provider, input.provider), ne(integrations.externalId, input.externalId)));
+      .where(
+        and(
+          eq(integrations.provider, input.provider),
+          ne(integrations.externalId, input.externalId),
+        ),
+      );
     const [row] = await tx
       .insert(integrations)
       .values({ ...input, encryptedCredentials })
@@ -100,7 +122,10 @@ export async function deleteIntegration<C>(
   provider: IntegrationProvider,
   key?: EncryptionKey,
 ): Promise<IntegrationWithCredentials<C> | null> {
-  const [row] = await db.delete(integrations).where(eq(integrations.provider, provider)).returning();
+  const [row] = await db
+    .delete(integrations)
+    .where(eq(integrations.provider, provider))
+    .returning();
   return row ? withCredentials<C>(row, key) : null;
 }
 

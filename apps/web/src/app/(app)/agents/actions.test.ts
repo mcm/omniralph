@@ -111,8 +111,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     db = createDb(container.getConnectionUri());
     state.db = db;
     await db.insert(users).values([
-      { id: adminId, email: "admin@example.com", role: "admin" },
-      { id: "member-1", email: "member@example.com", role: "member" },
+      { id: adminId, email: "admin@example.com" },
+      { id: "member-1", email: "member@example.com" },
     ]);
     const connection = await upsertScmConnection(db, {
       provider: "gitlab",

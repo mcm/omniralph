@@ -21,25 +21,26 @@ export function emailDomain(email: string): string | null {
     .toLowerCase();
 }
 
-/** Basic shape check for emails an admin adds to the allowlist. */
+/** Basic shape check for emails an admin invites. */
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 /**
  * Sign-in gate: an email may sign in when its domain is exactly one of `allowedDomains`
- * (subdomains are not included) or an admin has pre-added it (`isAllowlisted`).
- * Accounts without an email are always denied.
+ * (`ALLOWED_EMAIL_DOMAINS`; subdomains are not included) or it has a pending, unexpired
+ * invitation to an organization (`hasPendingInvitation`). Accounts without an email are
+ * always denied.
  */
 export async function isEmailAllowed(input: {
   email: string | null | undefined;
   allowedDomains: readonly string[];
-  isAllowlisted: (email: string) => boolean | Promise<boolean>;
+  hasPendingInvitation: (email: string) => boolean | Promise<boolean>;
 }): Promise<boolean> {
   const email = input.email?.trim().toLowerCase();
   if (!email) return false;
   const domain = emailDomain(email);
   if (!domain) return false;
   if (input.allowedDomains.includes(domain)) return true;
-  return input.isAllowlisted(email);
+  return input.hasPendingInvitation(email);
 }

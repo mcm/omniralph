@@ -3,12 +3,21 @@ import type { UiTheme } from "@omniralph/db";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { auth } from "@/auth";
-import { assertRole, hasRole, type Role } from "./roles";
-import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "./routes";
+import { assertRole, AuthorizationError, hasRole, type Role } from "./roles";
+import { ACCESS_DENIED_PATH, ONBOARDING_PATH, SIGN_IN_PATH } from "./routes";
+
+/** The organization the user is working in. */
+export interface ActiveOrganization {
+  id: string;
+  name: string;
+}
 
 export interface CurrentUser {
   id: string;
-  role: Role;
+  /** The active organization; `null` until the user creates, joins or picks one. */
+  organization: ActiveOrganization | null;
+  /** The user's role in the active organization; `null` without one. */
+  role: Role | null;
   name: string | null;
   email: string | null;
   image: string | null;
@@ -16,27 +25,53 @@ export interface CurrentUser {
   theme: UiTheme | null;
 }
 
+/** A signed-in user working in an organization. */
+export type OrgUser = CurrentUser & { organization: ActiveOrganization; role: Role };
+
 /** The signed-in user, or `null`. Cached per request: the root and `(app)` layouts both need it. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, role, name, email, image, theme } = session.user;
-  return { id, role, name: name ?? null, email: email ?? null, image: image ?? null, theme };
+  const { id, organization, name, email, image, theme } = session.user;
+  return {
+    id,
+    organization: organization ? { id: organization.id, name: organization.name } : null,
+    role: organization?.role ?? null,
+    name: name ?? null,
+    email: email ?? null,
+    image: image ?? null,
+    theme,
+  };
 });
 
-/** For pages: the signed-in user with `role` (default `member`); redirects otherwise. */
-export async function requirePageUser(role: Role = "member"): Promise<CurrentUser> {
+/**
+ * For pages: the signed-in user with `role` (default `member`) in their active
+ * organization. Redirects to sign-in, to onboarding (no active organization) or to
+ * access denied otherwise.
+ */
+export async function requirePageUser(role: Role = "member"): Promise<OrgUser> {
   const user = await getCurrentUser();
   if (!user) redirect(SIGN_IN_PATH);
+  if (!user.organization || !user.role) redirect(ONBOARDING_PATH);
   if (!hasRole(user, role)) redirect(`${ACCESS_DENIED_PATH}?reason=forbidden`);
-  return user;
+  return user as OrgUser;
 }
 
 /**
- * For server actions and route handlers: the signed-in user with `role`; throws
- * `AuthorizationError` otherwise. Every mutating action for settings, repos, agents and
- * users must call `requireUser("admin")` first.
+ * For server actions and route handlers: the signed-in user with `role` in their
+ * active organization; throws `AuthorizationError` otherwise. Every mutating action
+ * for settings, repos, agents and members must call `requireUser("admin")` first.
  */
-export async function requireUser(role: Role = "member"): Promise<CurrentUser> {
-  return assertRole(await getCurrentUser(), role);
+export async function requireUser(role: Role = "member"): Promise<OrgUser> {
+  return assertRole(await getCurrentUser(), role) as OrgUser;
+}
+
+/**
+ * For actions any signed-in user may take, with or without an organization (creating,
+ * joining or switching organizations, the theme); throws `AuthorizationError` otherwise.
+ */
+export async function requireSignedInUser(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!user) throw new AuthorizationError("You must be signed in.", "unauthenticated");
+  return user;
 }

@@ -107,8 +107,8 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     await runMigrations(container.getConnectionUri());
     state.db = createDb(container.getConnectionUri());
     await state.db.insert(users).values([
-      { id: adminId, email: "admin@example.com", role: "admin" },
-      { id: "member-1", email: "member@example.com", role: "member" },
+      { id: adminId, email: "admin@example.com" },
+      { id: "member-1", email: "member@example.com" },
     ]);
     // After Testcontainers is done talking to Docker over HTTP.
     server.listen({ onUnhandledFrame: "error" });

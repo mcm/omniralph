@@ -40,45 +40,49 @@ describe("isValidEmail", () => {
 describe("isEmailAllowed", () => {
   const allowedDomains = ["mcmaster.io"];
 
-  it("allows emails in an allowed domain without consulting the allowlist", async () => {
-    const isAllowlisted = vi.fn(() => false);
+  it("allows emails in an allowed domain without looking up invitations", async () => {
+    const hasPendingInvitation = vi.fn(() => false);
     await expect(
-      isEmailAllowed({ email: "Steve@McMaster.io", allowedDomains, isAllowlisted }),
+      isEmailAllowed({ email: "Steve@McMaster.io", allowedDomains, hasPendingInvitation }),
     ).resolves.toBe(true);
-    expect(isAllowlisted).not.toHaveBeenCalled();
+    expect(hasPendingInvitation).not.toHaveBeenCalled();
   });
 
   it("does not treat subdomains or look-alike domains as allowed", async () => {
-    const isAllowlisted = () => false;
+    const hasPendingInvitation = () => false;
     for (const email of ["a@evil.mcmaster.io", "a@mcmaster.io.evil.com", "a@notmcmaster.io"]) {
-      await expect(isEmailAllowed({ email, allowedDomains, isAllowlisted })).resolves.toBe(false);
+      await expect(isEmailAllowed({ email, allowedDomains, hasPendingInvitation })).resolves.toBe(
+        false,
+      );
     }
   });
 
-  it("allows emails an admin pre-added, passing them lower-cased", async () => {
-    const isAllowlisted = vi.fn(async (email: string) => email === "guest@example.com");
+  it("allows emails with a pending invitation, passing them lower-cased", async () => {
+    const hasPendingInvitation = vi.fn(async (email: string) => email === "guest@example.com");
     await expect(
-      isEmailAllowed({ email: "Guest@Example.com", allowedDomains, isAllowlisted }),
+      isEmailAllowed({ email: "Guest@Example.com", allowedDomains, hasPendingInvitation }),
     ).resolves.toBe(true);
-    expect(isAllowlisted).toHaveBeenCalledWith("guest@example.com");
+    expect(hasPendingInvitation).toHaveBeenCalledWith("guest@example.com");
     await expect(
-      isEmailAllowed({ email: "other@example.com", allowedDomains, isAllowlisted }),
+      isEmailAllowed({ email: "other@example.com", allowedDomains, hasPendingInvitation }),
     ).resolves.toBe(false);
   });
 
-  it("works with only the allowlist (no domains)", async () => {
+  it("works with only invitations (no domains)", async () => {
     await expect(
-      isEmailAllowed({ email: "a@b.io", allowedDomains: [], isAllowlisted: () => true }),
+      isEmailAllowed({ email: "a@b.io", allowedDomains: [], hasPendingInvitation: () => true }),
     ).resolves.toBe(true);
     await expect(
-      isEmailAllowed({ email: "a@b.io", allowedDomains: [], isAllowlisted: () => false }),
+      isEmailAllowed({ email: "a@b.io", allowedDomains: [], hasPendingInvitation: () => false }),
     ).resolves.toBe(false);
   });
 
   it("denies accounts without a usable email", async () => {
-    const isAllowlisted = () => true;
+    const hasPendingInvitation = () => true;
     for (const email of [null, undefined, "", "not-an-email"]) {
-      await expect(isEmailAllowed({ email, allowedDomains, isAllowlisted })).resolves.toBe(false);
+      await expect(isEmailAllowed({ email, allowedDomains, hasPendingInvitation })).resolves.toBe(
+        false,
+      );
     }
   });
 });

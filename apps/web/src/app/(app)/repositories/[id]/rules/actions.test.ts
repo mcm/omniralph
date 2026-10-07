@@ -88,8 +88,8 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
     db = createDb(container.getConnectionUri());
     state.db = db;
     await db.insert(users).values([
-      { id: "admin-1", name: "Ada Admin", email: "ada@example.com", role: "admin" },
-      { id: "member-1", name: "Mia Member", email: "mia@example.com", role: "member" },
+      { id: "admin-1", name: "Ada Admin", email: "ada@example.com" },
+      { id: "member-1", name: "Mia Member", email: "mia@example.com" },
     ]);
     const connection = await upsertScmConnection(db, {
       provider: "gitlab",

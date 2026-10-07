@@ -21,18 +21,16 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  InlineCode,
-  Input,
   Muted,
   NativeSelect,
   Separator,
 } from "@iamthemcmaster/ui";
-import { IconMail, IconTrash, IconUserPlus } from "@tabler/icons-react";
+import { IconTrash } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { isRole, type Role } from "@/lib/auth/roles";
 import { userDisplayName, userInitials } from "@/lib/user-display";
-import { allowEmail, changeUserRole, disallowEmail, removeUser } from "./actions";
+import { changeUserRole, removeUser } from "./actions";
 
 export interface UserRow {
   id: string;
@@ -44,18 +42,10 @@ export interface UserRow {
   createdAt: string;
 }
 
-export interface AllowedEmailRow {
-  email: string;
-  role: Role;
-  /** A user with this email exists. */
-  signedUp: boolean;
-}
-
 interface UsersViewProps {
   currentUserId: string;
-  allowedDomains: string[];
+  organizationName: string;
   users: UserRow[];
-  allowedEmails: AllowedEmailRow[];
 }
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
@@ -174,7 +164,7 @@ function TeamMember({ user, isSelf }: { user: UserRow; isSelf: boolean }) {
             textOverflow: "ellipsis",
           }}
         >
-          {user.email ?? "no email"} · joined {new Date(user.createdAt).toLocaleDateString()}
+          {user.email ?? "no email"} · member since {new Date(user.createdAt).toLocaleDateString()}
         </div>
       </div>
       <RoleSelect
@@ -192,92 +182,8 @@ function TeamMember({ user, isSelf }: { user: UserRow; isSelf: boolean }) {
         label={`Remove ${name}`}
         disabled={pending || isSelf}
         title={`Remove ${name}?`}
-        description="They are signed out and lose access. Their email is removed from the allowlist; if their domain is allowed they can still sign in again as a member."
+        description="They lose access to this organization. Their account and other organizations are kept."
         onConfirm={() => run(() => removeUser(user.id), `Removed ${name}`)}
-      />
-    </div>
-  );
-}
-
-// ── Allowlist ────────────────────────────────────────────────────────────────
-
-function AllowEmailForm() {
-  const { pending, run } = useAction();
-  const [email, setEmail] = React.useState("");
-  const [role, setRole] = React.useState<Role>("member");
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const value = email.trim();
-    if (!value) return;
-    run(
-      () => allowEmail(value, role),
-      `${value} can now sign in`,
-      () => {
-        setEmail("");
-        setRole("member");
-      },
-    );
-  };
-
-  return (
-    <form onSubmit={submit} style={{ display: "flex", gap: "var(--space-2)" }}>
-      <Input
-        type="email"
-        required
-        placeholder="name@example.com"
-        aria-label="Email to allow"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        style={{ flex: 1 }}
-      />
-      <RoleSelect aria-label="Role on first sign-in" value={role} onChange={setRole} />
-      <Button type="submit" variant="primary" disabled={pending || !email.trim()}>
-        <IconUserPlus size={14} />
-        Add
-      </Button>
-    </form>
-  );
-}
-
-function AllowedEmail({ entry }: { entry: AllowedEmailRow }) {
-  const { pending, run } = useAction();
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-3)",
-        padding: "var(--space-3) var(--space-4)",
-        background: "var(--bg-raised)",
-        borderRadius: "var(--radius-md)",
-        border: "1px solid var(--border-subtle)",
-      }}
-    >
-      <IconMail size={14} style={{ color: "var(--glacier-500)", flexShrink: 0 }} />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--text-sm)",
-          color: "var(--text-primary)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {entry.email}
-      </div>
-      <Badge variant={entry.signedUp ? "success" : "neutral"}>
-        {entry.signedUp ? "Signed up" : "Pending"}
-      </Badge>
-      <Badge variant="outline">{roleLabel[entry.role]}</Badge>
-      <ConfirmRemove
-        label={`Remove ${entry.email} from the allowlist`}
-        disabled={pending}
-        title={`Remove ${entry.email} from the allowlist?`}
-        description="They can no longer sign in unless their email domain is allowed. An existing account is kept; remove the user to revoke access."
-        onConfirm={() => run(() => disallowEmail(entry.email), `Removed ${entry.email}`)}
       />
     </div>
   );
@@ -285,7 +191,7 @@ function AllowedEmail({ entry }: { entry: AllowedEmailRow }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export function UsersView({ currentUserId, allowedDomains, users, allowedEmails }: UsersViewProps) {
+export function UsersView({ currentUserId, organizationName, users }: UsersViewProps) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Admin" }, { label: "Users" }]} />
@@ -302,15 +208,15 @@ export function UsersView({ currentUserId, allowedDomains, users, allowedEmails 
         <div>
           <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Users</h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Manage who can sign in and what they can do. Admins manage repositories, agents and
-            users; members have read access.
+            Manage the members of {organizationName} and what they can do. Admins manage
+            repositories, agents and members; members have read access.
           </Muted>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Team members</CardTitle>
-            <CardDescription>Everyone who has signed in to this control panel.</CardDescription>
+            <CardDescription>Everyone who belongs to {organizationName}.</CardDescription>
           </CardHeader>
           <CardContent>
             <div style={{ display: "flex", flexDirection: "column" }}>
@@ -321,38 +227,6 @@ export function UsersView({ currentUserId, allowedDomains, users, allowedEmails 
                 </React.Fragment>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Allowed emails</CardTitle>
-            <CardDescription>
-              {allowedDomains.length > 0 ? (
-                <>
-                  Anyone with an email at{" "}
-                  {allowedDomains.map((domain, i) => (
-                    <React.Fragment key={domain}>
-                      {i > 0 && ", "}
-                      <InlineCode>{domain}</InlineCode>
-                    </React.Fragment>
-                  ))}{" "}
-                  can sign in. Add other people by email; they get the chosen role on first sign-in.
-                </>
-              ) : (
-                <>
-                  No email domains are allowed (<InlineCode>ALLOWED_EMAIL_DOMAINS</InlineCode> is
-                  empty), so only the emails below can sign in. They get the chosen role on first
-                  sign-in.
-                </>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            <AllowEmailForm />
-            {allowedEmails.map((entry) => (
-              <AllowedEmail key={entry.email} entry={entry} />
-            ))}
           </CardContent>
         </Card>
       </main>

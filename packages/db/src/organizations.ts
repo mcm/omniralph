@@ -7,7 +7,7 @@
  *   email in one of them (existing members are kept when the domains change);
  * - invitations are pending until accepted, revoked or {@link INVITATION_TTL_MS} after creation.
  */
-import { and, asc, count, eq, gt, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, gt, inArray, isNull, notExists, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   organizationEmailDomains,
@@ -73,7 +73,10 @@ async function countOrgAdmins(tx: Tx, organizationId: string): Promise<number> {
 
 // ── Organizations ────────────────────────────────────────────────────────────
 
-/** Creates an organization with its creator as its first `admin`. */
+/**
+ * Creates an organization with its creator as its first `admin`, and makes it
+ * the creator's active organization.
+ */
 export async function createOrganization(
   db: Database,
   input: { name: string; createdBy: string },
@@ -87,6 +90,10 @@ export async function createOrganization(
     await tx
       .insert(organizationMembers)
       .values({ organizationId: organization.id, userId: input.createdBy, role: "admin" });
+    await tx
+      .update(users)
+      .set({ activeOrganizationId: organization.id })
+      .where(eq(users.id, input.createdBy));
     return organization;
   });
 }
@@ -108,6 +115,67 @@ export async function listOrganizationsForUser(
     .where(eq(organizationMembers.userId, userId))
     .orderBy(asc(organizations.name), asc(organizations.createdAt));
   return rows.map((r) => ({ ...r.organization, role: r.role }));
+}
+
+export interface ActiveOrganization {
+  id: string;
+  name: string;
+  /** The user's role in it. */
+  role: OrganizationRole;
+}
+
+/**
+ * The user's active organization with their role in it, or `null` when they have
+ * none (or are no longer a member of the one they last chose).
+ */
+export async function getActiveOrganization(
+  db: Database,
+  userId: string,
+): Promise<ActiveOrganization | null> {
+  const [row] = await db
+    .select({ id: organizations.id, name: organizations.name, role: organizationMembers.role })
+    .from(users)
+    .innerJoin(organizations, eq(organizations.id, users.activeOrganizationId))
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.organizationId, organizations.id),
+        eq(organizationMembers.userId, users.id),
+      ),
+    )
+    .where(eq(users.id, userId));
+  return row ?? null;
+}
+
+/**
+ * Switches the user's active organization. Returns `false` (and changes nothing)
+ * unless the user is a member of it.
+ */
+export async function setActiveOrganization(
+  db: Database,
+  input: { userId: string; organizationId: string },
+): Promise<boolean> {
+  const updated = await db
+    .update(users)
+    .set({ activeOrganizationId: input.organizationId })
+    .where(
+      and(
+        eq(users.id, input.userId),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.organizationId, input.organizationId),
+                eq(organizationMembers.userId, input.userId),
+              ),
+            ),
+        ),
+      ),
+    )
+    .returning({ id: users.id });
+  return updated.length > 0;
 }
 
 export type UpdateOrganizationResult = "updated" | "not_found" | "no_domains";
@@ -400,6 +468,20 @@ export async function listPendingInvitationsForOrganization(
     .orderBy(sql`${organizationInvitations.createdAt} desc`);
 }
 
+/** Whether `email` has a pending invitation to any organization (the sign-in gate). */
+export async function hasPendingInvitation(
+  db: Database,
+  email: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: organizationInvitations.id })
+    .from(organizationInvitations)
+    .where(and(eq(organizationInvitations.email, normalizeEmail(email)), pendingInvitation(now)))
+    .limit(1);
+  return row !== undefined;
+}
+
 export type AcceptInvitationResult =
   | "accepted"
   | "not_found"
@@ -476,6 +558,33 @@ export async function revokeInvitation(
       .returning({ id: organizationInvitations.id });
     return revoked.length > 0 ? "revoked" : "not_pending";
   });
+}
+
+export type DeclineInvitationResult = "declined" | "not_found";
+
+/** Declines (revokes) a pending invitation addressed to the user's email. */
+export async function declineInvitation(
+  db: Database,
+  input: { invitationId: string; userId: string; now?: Date },
+): Promise<DeclineInvitationResult> {
+  const now = input.now ?? new Date();
+  const [user] = await db
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, input.userId));
+  if (!user?.email) return "not_found";
+  const declined = await db
+    .update(organizationInvitations)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(organizationInvitations.id, input.invitationId),
+        eq(organizationInvitations.email, normalizeEmail(user.email)),
+        pendingInvitation(now),
+      ),
+    )
+    .returning({ id: organizationInvitations.id });
+  return declined.length > 0 ? "declined" : "not_found";
 }
 
 // ── Joining by email domain ──────────────────────────────────────────────────
