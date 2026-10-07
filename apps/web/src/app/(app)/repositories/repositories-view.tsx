@@ -171,7 +171,7 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
           <DialogHeader>
             <DialogTitle>Connect GitLab projects</DialogTitle>
             <DialogDescription>
-              Use a group or project access token for the bot identity with the{" "}
+              Use a service account&apos;s personal access token for the bot identity with the{" "}
               <InlineCode>api</InlineCode> scope and the Maintainer role. Omniralph validates it,
               stores it encrypted and adds a webhook for merge request and comment events to each
               project. Leave the project paths empty to pick the projects from a list next.

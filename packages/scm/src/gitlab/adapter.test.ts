@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MemoryCredentialCache } from "../credential-cache.js";
-import { ChangeRequestNotFoundError } from "../types.js";
+import { ChangeRequestNotFoundError, CloneCredentialPermissionError } from "../types.js";
 import { GitLabAdapter, stripDraftPrefix } from "./adapter.js";
 
 const HOST = "https://gitlab.example.com";
@@ -419,6 +419,37 @@ describe("getReadOnlyCloneCredential", () => {
     );
     await expect(failing.getReadOnlyCloneCredential(REPO)).rejects.toThrow();
     await expect(failing.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({ token: "glpat-read-2" });
+  });
+});
+
+describe("clone token minting permission", () => {
+  it.each([400, 403])("maps GitLab's %i for a bot that can't create project access tokens", async (status) => {
+    server.use(
+      http.post(
+        `${API}/access_tokens`,
+        () =>
+          HttpResponse.json(
+            { message: `${status} User does not have permission to create project access token` },
+            { status },
+          ),
+        { once: true },
+      ),
+    );
+    const result = makeAdapter().getWriteCloneCredential(REPO);
+    await expect(result).rejects.toBeInstanceOf(CloneCredentialPermissionError);
+    await expect(result).rejects.toMatchObject({ repo: REPO, access: "write" });
+    await expect(result).rejects.toThrow(/service account's \(or real user's\) personal access token with the Maintainer role/);
+  });
+
+  it("leaves other mint failures alone", async () => {
+    server.use(
+      http.post(`${API}/access_tokens`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }), {
+        once: true,
+      }),
+    );
+    const result = makeAdapter().getReadOnlyCloneCredential(REPO);
+    await expect(result).rejects.toThrow();
+    await expect(result).rejects.not.toBeInstanceOf(CloneCredentialPermissionError);
   });
 });
 

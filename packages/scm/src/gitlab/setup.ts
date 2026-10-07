@@ -39,6 +39,24 @@ export interface GitLabHookOptions {
   secret: string;
 }
 
+/** Usernames of the bot users behind group and project access tokens. */
+const ACCESS_TOKEN_BOT_USERNAME = /^(project|group)_\d+_bot(_[0-9a-f]+)?$/;
+
+/**
+ * Whether `username` is a group or project access token's bot user. GitLab
+ * doesn't let those bots create access tokens, so their tokens can't mint the
+ * project access tokens agents clone and push with.
+ */
+export function isAccessTokenBotUsername(username: string): boolean {
+  return ACCESS_TOKEN_BOT_USERNAME.test(username);
+}
+
+/** Why a group or project access token can't be the bot token. */
+export const ACCESS_TOKEN_BOT_MESSAGE =
+  "This is a group or project access token. GitLab doesn't let those create the project access tokens " +
+  "agents clone and push with. Use a service account's personal access token (api scope, Maintainer on " +
+  "the projects) instead.";
+
 function statusOf(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const cause = (error as { cause?: { response?: { status?: unknown } } }).cause;
@@ -80,8 +98,9 @@ export class GitLabSetupClient {
   }
 
   /**
-   * Checks the token works and has the `api` scope (needed to post reviews,
-   * create webhooks and mint clone tokens). Returns the token's user.
+   * Checks the token works, has the `api` scope (needed to post reviews,
+   * create webhooks and mint clone tokens) and isn't a group or project access
+   * token (those can't mint clone tokens). Returns the token's user.
    */
   async validateToken(): Promise<GitLabTokenOwner> {
     let user;
@@ -96,6 +115,10 @@ export class GitLabSetupClient {
         throw new GitLabSetupError(`${this.baseUrl} doesn't look like a GitLab instance (no /api/v4/user).`, status);
       }
       throw new GitLabSetupError(`Couldn't reach GitLab at ${this.baseUrl}: ${(error as Error).message}`, status);
+    }
+
+    if (isAccessTokenBotUsername(user.username)) {
+      throw new GitLabSetupError(ACCESS_TOKEN_BOT_MESSAGE);
     }
 
     let scopes: string[] | null = null;

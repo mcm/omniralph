@@ -39,8 +39,10 @@ export type { GitLabAdapterOptions } from "./gitlab/adapter.js";
 export { buildGitLabDiffIndex, buildPosition, lineCode, parseFileLines } from "./gitlab/positions.js";
 export type { DiffRefs, GitLabDiffFile, GitLabDiffIndex, TextPosition } from "./gitlab/positions.js";
 export {
+  ACCESS_TOKEN_BOT_MESSAGE,
   GitLabSetupClient,
   GitLabSetupError,
+  isAccessTokenBotUsername,
   MAX_LISTED_GITLAB_PROJECTS,
   normalizeGitLabUrl,
 } from "./gitlab/setup.js";
