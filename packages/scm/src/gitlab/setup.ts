@@ -57,7 +57,8 @@ export const ACCESS_TOKEN_BOT_MESSAGE =
   "agents clone and push with. Use a service account's personal access token (api scope, Maintainer on " +
   "the projects) instead.";
 
-function statusOf(error: unknown): number | undefined {
+/** HTTP status of a gitbeaker request error. */
+export function statusOf(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const cause = (error as { cause?: { response?: { status?: unknown } } }).cause;
   const status = cause?.response?.status;
@@ -109,12 +110,21 @@ export class GitLabSetupClient {
     } catch (error) {
       const status = statusOf(error);
       if (status === 401 || status === 403) {
-        throw new GitLabSetupError("GitLab rejected the access token (invalid, expired or revoked).", status);
+        throw new GitLabSetupError(
+          "GitLab rejected the access token (invalid, expired or revoked).",
+          status,
+        );
       }
       if (status === 404) {
-        throw new GitLabSetupError(`${this.baseUrl} doesn't look like a GitLab instance (no /api/v4/user).`, status);
+        throw new GitLabSetupError(
+          `${this.baseUrl} doesn't look like a GitLab instance (no /api/v4/user).`,
+          status,
+        );
       }
-      throw new GitLabSetupError(`Couldn't reach GitLab at ${this.baseUrl}: ${(error as Error).message}`, status);
+      throw new GitLabSetupError(
+        `Couldn't reach GitLab at ${this.baseUrl}: ${(error as Error).message}`,
+        status,
+      );
     }
 
     if (isAccessTokenBotUsername(user.username)) {
@@ -157,7 +167,10 @@ export class GitLabSetupClient {
     } catch (error) {
       const status = statusOf(error);
       if (status === 401 || status === 403) {
-        throw new GitLabSetupError("GitLab rejected the access token (invalid, expired or revoked).", status);
+        throw new GitLabSetupError(
+          "GitLab rejected the access token (invalid, expired or revoked).",
+          status,
+        );
       }
       throw error;
     }
