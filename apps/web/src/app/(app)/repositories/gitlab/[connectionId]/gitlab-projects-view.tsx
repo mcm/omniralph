@@ -34,7 +34,7 @@ export function GitLabProjectsView({
           archived projects aren&apos;t. To add a project, make the bot a Maintainer of it on
           GitLab.
           {truncated &&
-            ` Only the first ${projects.length} projects are shown; connect others by path with Connect GitLab.`}
+            ` Only the first ${projects.length} projects are shown.`}
         </>
       }
       emptyIcon={<IconBrandGitlab size={24} />}

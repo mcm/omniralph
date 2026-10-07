@@ -43,7 +43,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Textarea,
 } from "@iamthemcmaster/ui";
 import {
   IconBrandGithub,
@@ -135,25 +134,21 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
   const [open, setOpen] = React.useState(false);
   const [baseUrl, setBaseUrl] = React.useState(defaultUrl);
   const [token, setToken] = React.useState("");
-  const [projectPaths, setProjectPaths] = React.useState("");
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const pickProjects = !projectPaths.trim();
     let connectionId: string | undefined;
     run(
       async () => {
-        const result = await connectGitLab({ baseUrl, token, projectPaths });
+        const result = await connectGitLab({ baseUrl, token });
         connectionId = result.ok ? result.connectionId : undefined;
         return result;
       },
-      pickProjects ? "GitLab connected. Pick its projects." : "GitLab projects connected",
+      "GitLab connected. Pick its projects.",
       () => {
         setOpen(false);
         setToken("");
-        setProjectPaths("");
-        // Without paths, continue to the connection's project list.
-        if (pickProjects && connectionId) router.push(`/repositories/gitlab/${connectionId}`);
+        if (connectionId) router.push(`/repositories/gitlab/${connectionId}`);
       },
     );
   };
@@ -169,12 +164,12 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Connect GitLab projects</DialogTitle>
+            <DialogTitle>Connect GitLab</DialogTitle>
             <DialogDescription>
               Use a service account&apos;s personal access token for the bot identity with the{" "}
-              <InlineCode>api</InlineCode> scope and the Maintainer role. Omniralph validates it,
-              stores it encrypted and adds a webhook for merge request and comment events to each
-              project. Leave the project paths empty to pick the projects from a list next.
+              <InlineCode>api</InlineCode> scope and the Maintainer role. Omniralph validates it and
+              stores it encrypted; you then pick the projects to review, and each gets a webhook
+              for merge request and comment events.
             </DialogDescription>
           </DialogHeader>
           <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -202,20 +197,6 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="glpat-…"
-              />
-            </Field>
-            <Field
-              label="Project paths"
-              htmlFor="gitlab-projects"
-              hint="Optional. One per line, e.g. group/subgroup/project."
-            >
-              <Textarea
-                id="gitlab-projects"
-                rows={4}
-                value={projectPaths}
-                onChange={(e) => setProjectPaths(e.target.value)}
-                placeholder={"group/project\ngroup/subgroup/other-project"}
-                style={{ fontFamily: "var(--font-mono)" }}
               />
             </Field>
           </DialogBody>
