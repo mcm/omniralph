@@ -54,17 +54,17 @@ async function auditAuthFailure(
 }
 
 /**
- * A failed authentication attempt: counts towards the IP's lockout, writes a
- * sampled `auth_failed` audit row and returns 401.
+ * A failed authentication attempt: counts towards the IP's lockout (unless
+ * `lockout` is false), writes a sampled `auth_failed` audit row and returns 401.
  */
 export async function authFailure(
   db: Database,
   req: Request,
-  input: { agentId?: string | null; reason: string; error?: string },
+  input: { agentId?: string | null; reason: string; error?: string; lockout?: boolean },
   now: Date = new Date(),
 ): Promise<Response> {
   const ip = clientIp(req);
-  await recordAuthFailure(db, ip, now);
+  if (input.lockout !== false) await recordAuthFailure(db, ip, now);
   await auditAuthFailure(
     db,
     { agentId: input.agentId ?? null, ip, reason: input.reason, path: new URL(req.url).pathname },
