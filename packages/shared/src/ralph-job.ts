@@ -319,6 +319,16 @@ export const RalphPullRequestAction = z.object({
 });
 export type RalphPullRequestAction = z.infer<typeof RalphPullRequestAction>;
 
+export const RALPH_FINDING_OUTCOMES = ["fixed", "skipped"] as const;
+
+/** What a request session did with a review finding; the control panel replies in its thread. */
+export const RalphFindingOutcome = z.object({
+  findingId: z.uuid(),
+  outcome: z.enum(RALPH_FINDING_OUTCOMES),
+  comment: z.string().trim().min(1).max(2000),
+});
+export type RalphFindingOutcome = z.infer<typeof RalphFindingOutcome>;
+
 /** Result of a `ralph.request` job. */
 export const RalphRequestResult = z.object({
   /** For the Linear thread: what the session did, or why it couldn't (`error`). */
@@ -328,6 +338,8 @@ export const RalphRequestResult = z.object({
   /** The Claude session, resumed by the lane's next request on the same agent. */
   sessionId: z.string().min(1).max(200).nullable(),
   pullRequest: RalphPullRequestAction.optional(),
+  /** The review findings the session fixed or skipped. */
+  findings: z.array(RalphFindingOutcome).max(50).optional(),
   /** What the session left uncommitted, stashed. */
   stashSha: CommitSha.optional(),
   usage: TokenUsage,

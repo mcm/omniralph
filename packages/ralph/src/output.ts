@@ -141,13 +141,41 @@ export const RequestAgentOutput = z.object({
     .describe(
       "A change to the branch's pull/merge request for the orchestrator to make; push the branch first.",
     ),
+  findings: z
+    .array(
+      z.object({
+        id: z.string().describe("The finding's ID, as given in the request."),
+        outcome: z
+          .enum(["fixed", "skipped"])
+          .describe("fixed: you changed the code for it. skipped: it's wrong or not worth it."),
+        comment: z
+          .string()
+          .describe(
+            "Posted in the finding's thread: one or two sentences on the change, or on why you skipped it.",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "What you did with each review finding the request lists by ID. Omniralph replies in the threads and resolves the fixed ones.",
+    ),
 });
 export type RequestAgentOutput = z.infer<typeof RequestAgentOutput>;
 
 /** `outputFormat` schema of a request session. */
 export const REQUEST_OUTPUT_SCHEMA = jsonSchema(RequestAgentOutput);
 
-/** A request session's result (summary trimmed), or the problem with it. */
+/** The most finding outcomes kept from one request session. */
+export const MAX_FINDING_OUTCOMES = 50;
+/** The longest finding comment kept. */
+export const MAX_FINDING_COMMENT = 2000;
+
+const FindingId = z.uuid();
+
+/**
+ * A request session's result (summary trimmed), or the problem with it. Finding outcomes
+ * without a comment or a finding ID are dropped, and only the first per finding is kept.
+ */
 export function readRequestResult(
   structured: unknown,
 ): { result: RequestAgentOutput } | { problem: string } {
@@ -156,12 +184,20 @@ export function readRequestResult(
   const { pullRequest } = parsed.data;
   const title = pullRequest?.title?.replace(/\s+/g, " ").trim();
   const body = pullRequest?.body?.trim();
+  const findings: NonNullable<RequestAgentOutput["findings"]> = [];
+  for (const f of parsed.data.findings ?? []) {
+    const id = f.id.trim().toLowerCase();
+    const comment = f.comment.trim();
+    if (!comment || !FindingId.safeParse(id).success || findings.some((x) => x.id === id)) continue;
+    findings.push({ id, outcome: f.outcome, comment: comment.slice(0, MAX_FINDING_COMMENT) });
+  }
   return {
     result: {
       summary: parsed.data.summary.trim(),
       ...(pullRequest && {
         pullRequest: { action: pullRequest.action, ...(title && { title }), ...(body && { body }) },
       }),
+      ...(findings.length > 0 && { findings: findings.slice(0, MAX_FINDING_OUTCOMES) }),
     },
   };
 }

@@ -5,7 +5,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { DEFAULT_STORY_TEMPLATE, RALPH_SYSTEM_APPEND } from "@omniralph/ralph";
-import type { JobPayload, JobRepository, RalphRequestPayload } from "@omniralph/shared";
+import {
+  RalphRequestResult,
+  type JobPayload,
+  type JobRepository,
+  type RalphRequestPayload,
+} from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentLogger } from "../../logger.js";
 import { firstPrompt } from "../../test/fake-query.js";
@@ -369,6 +374,34 @@ describe("ralph.request", { timeout: 60_000 }, () => {
       title: "Add priorities",
       body: "Adds them.",
     });
+  });
+
+  it("returns what the session did with the review findings, dropping unknown and repeated ones", async () => {
+    const fixed = "0b0f6f5e-6d0a-4c39-9a37-6f2f3e9e0a11";
+    const skipped = "7c1e2d3f-4a5b-4c6d-8e7f-901234567890";
+    const { query } = fakeQuery(async function* () {
+      yield result({
+        summary: "Fixed one finding.",
+        findings: [
+          { id: ` ${fixed.toUpperCase()} `, outcome: "fixed", comment: "  Guarded `load()`. " },
+          { id: fixed, outcome: "skipped", comment: "A repeat." },
+          { id: skipped, outcome: "skipped", comment: "The value can't be null here." },
+          { id: "finding-3", outcome: "fixed", comment: "Not an ID." },
+          { id: skipped.replace("7c", "8c"), outcome: "fixed", comment: "   " },
+        ],
+      });
+    });
+    const out = await runRequest(job(), context(), options(query));
+    expect(out.findings).toEqual([
+      { findingId: fixed, outcome: "fixed", comment: "Guarded `load()`." },
+      { findingId: skipped, outcome: "skipped", comment: "The value can't be null here." },
+    ]);
+    expect(RalphRequestResult.safeParse(out).success).toBe(true);
+
+    const none = fakeQuery(async function* () {
+      yield result({ summary: "Nothing to fix." });
+    });
+    expect((await runRequest(job(), context(), options(none.query))).findings).toBeUndefined();
   });
 
   it("resumes the lane's request conversation, and starts fresh when the resume fails without a session", async () => {

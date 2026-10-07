@@ -14,6 +14,7 @@ import {
   getRunBySession,
   jobs,
   listPendingRequests,
+  listReviewFindings,
   listMessages,
   ralphRuns,
   reviews,
@@ -23,6 +24,7 @@ import {
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
   type Database,
+  type FindingRow,
   type Job,
   type RalphRun,
   organizations,
@@ -315,6 +317,87 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     await finish(await start(run.id), requestResult());
     expect((await getRun(db, run.id))?.status).toBe("completed");
     expect(linear.bodies(sessionId, "response").at(-1)).toContain("Fixed the findings.");
+  });
+
+  it("replies in the threads of the findings the session reported on, and resolves the fixed ones", async () => {
+    const { run, sessionId } = await reviewedEpic();
+    const reviewed = await review({ count: 3 });
+    const rows = (await listReviewFindings(db, reviewed.id)).filter((f) => f.status === "open");
+    const [fixed, skipped, summaryOnly] = rows as [FindingRow, FindingRow, FindingRow];
+    await db.update(findings).set({ scmCommentId: "c-fixed" }).where(eq(findings.id, fixed.id));
+    await db.update(findings).set({ scmCommentId: "c-skipped" }).where(eq(findings.id, skipped.id));
+    // A finding of another PR's review is never touched.
+    const other = await review({ prNumber: 99 });
+    const [foreign] = (await listReviewFindings(db, other.id)).filter((f) => f.status === "open");
+    await db
+      .update(findings)
+      .set({ scmCommentId: "c-foreign" })
+      .where(eq(findings.id, foreign!.id));
+    await onReviewForRalph(db, reviewed.id, deps());
+
+    const [job] = await requestJobs(run.id);
+    const text = RalphRequestPayload.parse(job!.payload).requests[0]!.text;
+    expect(text).toContain(`[finding \`${fixed.id}\`]`);
+    expect(text).toContain("structured result's `findings`");
+
+    await finish(
+      await start(run.id),
+      requestResult({
+        findings: [
+          { findingId: fixed.id, outcome: "fixed", comment: "Guarded `load()` before use." },
+          { findingId: skipped.id, outcome: "skipped", comment: "It can't be undefined here." },
+          { findingId: summaryOnly.id, outcome: "fixed", comment: "Fixed too." },
+          { findingId: foreign!.id, outcome: "fixed", comment: "Not this PR's." },
+        ],
+      }),
+    );
+
+    const status = async (id: string) =>
+      (await db.select().from(findings).where(eq(findings.id, id)))[0]?.status;
+    expect(await status(fixed.id)).toBe("resolved");
+    expect(await status(summaryOnly.id)).toBe("resolved");
+    expect(await status(skipped.id)).toBe("open");
+    expect(await status(foreign!.id)).toBe("open");
+    expect(scm.replies).toEqual([
+      {
+        fullPath: "acme/api",
+        number: 1,
+        commentId: "c-fixed",
+        body: "Fixed: Guarded `load()` before use.",
+      },
+      {
+        fullPath: "acme/api",
+        number: 1,
+        commentId: "c-skipped",
+        body: "Not changed: It can't be undefined here.",
+      },
+    ]);
+    expect(scm.resolvedThreads).toEqual(["c-fixed"]);
+    expect(linear.bodies(sessionId, "response").at(-1)).toContain(
+      "Resolved 2 fixed review findings.",
+    );
+  });
+
+  it("keeps a fixed finding resolved when its thread can't be replied to or resolved", async () => {
+    const { run } = await reviewedEpic();
+    const reviewed = await review();
+    const [finding] = (await listReviewFindings(db, reviewed.id)).filter(
+      (f) => f.status === "open",
+    );
+    await db.update(findings).set({ scmCommentId: "c-1" }).where(eq(findings.id, finding!.id));
+    await onReviewForRalph(db, reviewed.id, deps());
+    scm.failures.set("replyToComment", "boom");
+    scm.failures.set("resolveThread", "boom");
+    await finish(
+      await start(run.id),
+      requestResult({
+        findings: [{ findingId: finding!.id, outcome: "fixed", comment: "Done." }],
+      }),
+    );
+    const [row] = await db.select().from(findings).where(eq(findings.id, finding!.id));
+    expect(row?.status).toBe("resolved");
+    expect(scm.calls).toEqual(expect.arrayContaining(["replyToComment", "resolveThread"]));
+    expect((await getRun(db, run.id))?.status).toBe("completed");
   });
 
   it("ignores other PRs, other repositories, stale commits, closed PRs and repositories that opted out", async () => {

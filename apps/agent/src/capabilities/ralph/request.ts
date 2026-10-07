@@ -243,7 +243,13 @@ export async function runRequest(
               error: clip(why),
             };
           }
-          log.info({ pullRequest: read.result.pullRequest?.action ?? null }, "request done");
+          log.info(
+            {
+              pullRequest: read.result.pullRequest?.action ?? null,
+              findings: read.result.findings?.length ?? 0,
+            },
+            "request done",
+          );
           return {
             ...base,
             summary: clip(read.result.summary),
@@ -258,6 +264,13 @@ export async function runRequest(
                   body: clip(read.result.pullRequest.body, 60_000),
                 }),
               },
+            }),
+            ...(read.result.findings && {
+              findings: read.result.findings.map((f) => ({
+                findingId: f.id,
+                outcome: f.outcome,
+                comment: f.comment,
+              })),
             }),
           };
         } catch (error) {

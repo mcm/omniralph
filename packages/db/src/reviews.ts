@@ -70,6 +70,41 @@ export async function getFindingOrganizationId(
   return row?.organizationId ?? null;
 }
 
+/** The open findings with these IDs of the reviews of one PR/MR, oldest first. */
+export async function listOpenPullRequestFindings(
+  db: Database,
+  input: { repositoryId: string; prNumber: number; findingIds: readonly string[] },
+): Promise<FindingRow[]> {
+  if (input.findingIds.length === 0) return [];
+  const rows = await db
+    .select({ finding: findings })
+    .from(findings)
+    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+    .where(
+      and(
+        inArray(findings.id, [...input.findingIds]),
+        eq(reviews.repositoryId, input.repositoryId),
+        eq(reviews.prNumber, input.prNumber),
+        eq(findings.status, "open"),
+      ),
+    )
+    .orderBy(asc(findings.createdAt), asc(findings.id));
+  return rows.map((r) => r.finding);
+}
+
+/** Marks open findings `resolved` (they were fixed); returns the ones that were still open. */
+export async function resolveOpenFindings(
+  db: Database,
+  findingIds: readonly string[],
+): Promise<FindingRow[]> {
+  if (findingIds.length === 0) return [];
+  return db
+    .update(findings)
+    .set({ status: "resolved" })
+    .where(and(inArray(findings.id, [...findingIds]), eq(findings.status, "open")))
+    .returning();
+}
+
 export async function listReviewFindings(db: Database, reviewId: string): Promise<FindingRow[]> {
   return db
     .select()

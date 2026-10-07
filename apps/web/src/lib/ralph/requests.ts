@@ -39,6 +39,7 @@ import {
   RalphRequestResult,
   type RalphPullRequestAction,
 } from "@omniralph/shared";
+import { settleFindingThreads } from "./finding-threads";
 import { errorMessage, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
 import {
@@ -195,7 +196,8 @@ export async function takeRequestOutput(
  * one), the lane keeps the Claude session for follow-ups on the agent that
  * ran it, a stash of what the session left uncommitted is recorded, the
  * PR/MR change it asked for is made, an open PR/MR for the branch is adopted,
- * and what it said is added to the run's request output (prefixed with the
+ * the review findings it fixed or skipped get a reply in their threads (the
+ * fixed ones resolved), and what it said is added to the run's request output (prefixed with the
  * repository when the run has several lanes). Returns whether the job is
  * still queued or running.
  */
@@ -251,6 +253,14 @@ export async function applyRequestJob(
         if (note) notes.push(note);
       }
       await adoptPullRequest(deps, tx, run, lane);
+      if (result.findings?.length) {
+        const current = (await listLanes(tx, run.id)).find((l) => l.id === lane.id) ?? lane;
+        const settled = await settleFindingThreads(deps, current, result.findings);
+        const n = settled.resolved.length;
+        if (n > 0) {
+          notes.push(`Resolved ${n} fixed review finding${n === 1 ? "" : "s"}.`);
+        }
+      }
     }
     const stashed = result.stashSha
       ? `The session left uncommitted changes, which I stashed as \`${result.stashSha.slice(0, 10)}\`.`
