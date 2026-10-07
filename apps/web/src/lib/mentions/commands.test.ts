@@ -2,6 +2,7 @@ import { MAX_REPLY_QUESTION_LENGTH } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
 import {
   botHandle,
+  connectionBotHandle,
   isOwnComment,
   MAX_DISMISS_NOTE_LENGTH,
   MAX_FIX_TEXT_LENGTH,
@@ -207,6 +208,23 @@ describe("parseBotCommand", () => {
       fresh: false,
       profileId: "quick",
     });
+  });
+});
+
+describe("connectionBotHandle", () => {
+  it("is a GitLab connection's bot username, otherwise the fallback", () => {
+    const gitlab = { provider: "gitlab", botUsername: "service_account_group_12_bot" };
+    expect(connectionBotHandle(gitlab, "omniralph")).toBe("service_account_group_12_bot");
+    expect(connectionBotHandle({ provider: "gitlab", botUsername: null }, "reviewbot")).toBe(
+      "reviewbot",
+    );
+    expect(connectionBotHandle({ provider: "gitlab", botUsername: " " }, "reviewbot")).toBe(
+      "reviewbot",
+    );
+    // GitHub keeps BOT_HANDLE.
+    expect(connectionBotHandle({ provider: "github", botUsername: "someone" }, "reviewbot")).toBe(
+      "reviewbot",
+    );
   });
 });
 

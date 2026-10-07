@@ -28,11 +28,13 @@ export interface ScmConnectionInput {
   /** GitHub App installation ID, or the GitLab token user's ID. */
   externalId: string;
   credentials: Record<string, unknown>;
+  /** GitLab: the token user's username (the bot's `@` handle). */
+  botUsername?: string | null;
   createdBy?: string | null;
 }
 
 /**
- * Creates the connection, or updates name and credentials of the one with the same
+ * Creates the connection, or updates name, credentials and bot username of the one with the same
  * provider, base URL and external ID. A connection belongs to one organization:
  * returns null (and changes nothing) when that one belongs to another organization.
  */
@@ -51,11 +53,12 @@ export async function upsertScmConnection(
       baseUrl: input.baseUrl,
       externalId: input.externalId,
       encryptedCredentials,
+      botUsername: input.botUsername ?? null,
       createdBy: input.createdBy ?? null,
     })
     .onConflictDoUpdate({
       target: [scmConnections.provider, scmConnections.baseUrl, scmConnections.externalId],
-      set: { name: input.name, encryptedCredentials },
+      set: { name: input.name, encryptedCredentials, botUsername: input.botUsername ?? null },
       setWhere: eq(scmConnections.organizationId, input.organizationId),
     })
     .returning();

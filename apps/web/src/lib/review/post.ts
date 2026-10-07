@@ -11,7 +11,7 @@ import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
 import type { Finding, ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
 import { getAppUrl } from "@/lib/app-url";
-import { botHandle } from "@/lib/mentions/commands";
+import { connectionBotHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -41,6 +41,7 @@ async function repositoryTarget(db: Database, review: Review, payload: ReviewJob
   };
   return {
     adapter: scmAdapterFor(db, connection),
+    handle: connectionBotHandle(connection),
     repo: { fullPath: repository.fullPath, externalId: repository.externalId },
     sanitize,
   };
@@ -84,7 +85,7 @@ export async function postReview(
 ): Promise<boolean> {
   const { posted } = await postReviewOnce(db, input.reviewId, async (review, rows) => {
     if (review.status !== "completed" && review.status !== "budget_exhausted") return null;
-    const { adapter, repo, sanitize } = await repositoryTarget(db, review, input.payload);
+    const { adapter, handle, repo, sanitize } = await repositoryTarget(db, review, input.payload);
     const { profile } = input.payload.reviewConfig;
     const summaryInput: ReviewResult = {
       profile: { id: profile.id, name: profile.name },
@@ -97,9 +98,7 @@ export async function postReview(
       discarded: input.result.discarded,
     };
     const posted = await adapter.postReview(repo, review.prNumber, {
-      summary: capSummary(
-        renderSummary(summaryInput, reviewUrl(review.id), { botHandle: botHandle() }),
-      ),
+      summary: capSummary(renderSummary(summaryInput, reviewUrl(review.id), { botHandle: handle })),
       inlineComments: rows.map((row) => inlineComment(row, sanitize)),
       commitSha: review.headSha,
     });

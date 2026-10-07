@@ -16,7 +16,7 @@ import {
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { botHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
+import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -83,7 +83,7 @@ export interface WebhookDeps {
    * timeout. Defaults to running it before responding.
    */
   defer?: (task: () => Promise<void>) => void | Promise<void>;
-  /** `BOT_HANDLE` (default `omniralph`). */
+  /** The handle where the connection has no bot username (GitHub): default `BOT_HANDLE`. */
   handle?: string;
   /** The Linear workspace, for `@bot` requests to ralph runs; default: the connected one. */
   linear?: () => Promise<LinearGateway>;
@@ -249,7 +249,7 @@ async function handleComment(
   },
 ): Promise<Response> {
   const { db, repository, delivery, comment } = input;
-  const handle = input.handle ?? botHandle();
+  const handle = connectionBotHandle(input.connection, input.handle);
   if (isOwnComment(comment.author, handle)) return ignored("own_comment");
   const command = parseBotCommand(comment.body, handle);
   if (!command) return ignored("no_mention");
