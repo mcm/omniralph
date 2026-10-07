@@ -5,6 +5,7 @@ import { capLength, capTitle, renderInlineComment, summaryWithFallbacks } from "
 import { buildDiffLineIndex, isCommentInDiff } from "../diff-lines.js";
 import {
   ChangeRequestNotFoundError,
+  CloneCredentialPermissionError,
   getHeader,
   type ChangeRequest,
   type ChangeRequestUpdate,
@@ -19,7 +20,7 @@ import {
   type ScmAdapter,
   type WebhookHeaders,
 } from "../types.js";
-import { GitHubAppAuth, GITHUB_API_URL } from "./app-auth.js";
+import { GitHubAppAuth, GITHUB_API_URL, type InstallationToken } from "./app-auth.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
 /** GitHub rejects comment, review and PR bodies longer than this. */
@@ -317,10 +318,30 @@ export class GitHubAdapter implements ScmAdapter {
   private async cloneCredential(repo: RepoRef, contents: "read" | "write"): Promise<CloneCredential> {
     const { owner, repo: name } = splitRepoPath(repo);
     const installationId = await this.resolveInstallationId(owner, name);
-    const { token, expiresAt } = await this.auth.getInstallationToken(installationId, {
-      repositories: [name],
-      permissions: { contents },
-    });
+    let installationToken: InstallationToken;
+    try {
+      installationToken = await this.auth.getInstallationToken(installationId, {
+        repositories: [name],
+        permissions: { contents },
+      });
+    } catch (error) {
+      // 422 "The level of access for permissions requested are not granted to
+      // this installation": the App (or the installation, which hasn't accepted
+      // the App's updated permissions) lacks Contents: Read and write.
+      if (hasStatus(error, 422)) {
+        const level = contents === "write" ? "Read and write" : "Read";
+        throw new CloneCredentialPermissionError(
+          repo,
+          contents,
+          `The GitHub App installation ${installationId} on ${owner}/${name} isn't granted Contents: ${level}. ` +
+            "Give the App that permission under Permissions & events and accept it on the installation " +
+            "(Settings › Applications › Configure).",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    const { token, expiresAt } = installationToken;
     return {
       cloneUrl: `${this.webUrl}/${owner}/${name}.git`,
       username: "x-access-token",

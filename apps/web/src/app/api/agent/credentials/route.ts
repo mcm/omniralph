@@ -1,12 +1,13 @@
 import { getJobForAgent, getRepositoryWithConnection, writeAgentAudit } from "@omniralph/db";
+import { CloneCredentialPermissionError, type CloneCredential } from "@omniralph/scm";
 import type { CloneCredentialResponse } from "@omniralph/shared";
 import { clientIp } from "@/lib/agent-auth/request";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { getDb } from "@/lib/db";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 
-function forbidden(error: string): Response {
-  return Response.json({ error }, { status: 403 });
+function forbidden(error: string, message?: string): Response {
+  return Response.json(message ? { error, message } : { error }, { status: 403 });
 }
 
 /**
@@ -16,8 +17,11 @@ function forbidden(error: string): Response {
  * agent (else 401); jobs of another organization than the agent's, or
  * without a usable repository (in the job's organization), get 403. The credential
  * is read-only unless the job token has `credentials:write` *and* the job row
- * is a `ralph` job; then it can push. The request body is ignored. Every
- * issuance is audited as `credential_issued` with its `access`.
+ * is a `ralph` job; then it can push. When the code host hasn't granted the
+ * connection that access (e.g. the GitHub App installation lacks Contents:
+ * Read and write), 403 `scm_permission_missing` with a `message` saying what
+ * to change. The request body is ignored. Every issuance is audited as
+ * `credential_issued` with its `access`.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireJob(req, "credentials:read");
@@ -35,10 +39,19 @@ export async function POST(req: Request): Promise<Response> {
     principal.scopes.includes("credentials:write") && job.capability === "ralph" ? "write" : "read";
   const adapter = scmAdapterFor(db, connection);
   const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
-  const credential =
-    access === "write"
-      ? await adapter.getWriteCloneCredential(repo)
-      : await adapter.getReadOnlyCloneCredential(repo);
+  let credential: CloneCredential;
+  try {
+    credential =
+      access === "write"
+        ? await adapter.getWriteCloneCredential(repo)
+        : await adapter.getReadOnlyCloneCredential(repo);
+  } catch (error) {
+    if (error instanceof CloneCredentialPermissionError) {
+      console.warn(`credential broker: ${error.message}`);
+      return forbidden("scm_permission_missing", error.message);
+    }
+    throw error;
+  }
   await writeAgentAudit(db, {
     agentId: principal.agentId,
     event: "credential_issued",

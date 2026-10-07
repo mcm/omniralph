@@ -132,6 +132,23 @@ export class ChangeRequestNotFoundError extends Error {
   }
 }
 
+/**
+ * The code host refused to issue a clone credential with the access asked
+ * for, because the connection (e.g. the GitHub App installation) hasn't been
+ * granted that permission. Fixed by an admin on the code host, not by retrying.
+ */
+export class CloneCredentialPermissionError extends Error {
+  constructor(
+    readonly repo: RepoRef,
+    readonly access: "read" | "write",
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "CloneCredentialPermissionError";
+  }
+}
+
 /** Webhook request headers, either a Fetch `Headers` or a plain record. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 

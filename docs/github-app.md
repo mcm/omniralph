@@ -68,7 +68,9 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 - **Upgrading an existing App** (created before ralph, with `Contents: Read`): change
   **Contents** to **Read and write** under the App's **Permissions & events**, then accept the new
   permissions on each installation (**Settings › Applications › Configure**). Until then, ralph
-  jobs can't push; reviews keep working. Apps created before reviews posted replies may also have
+  jobs get no git credential at all (GitHub refuses the `contents: write` token): the credential
+  broker answers `403 scm_permission_missing` and the agent's git credential helper prints which
+  installation and permission to fix. Reviews keep working. Apps created before reviews posted replies may also have
   **Pull requests: Read** only; ralph needs **Read and write** to open its PRs.
 - **Upgrading an existing App** (created before ralph's CI-fix loop): add **Actions: Read** under
   **Permissions & events**, subscribe to the **Workflow run** event, and accept the new permissions

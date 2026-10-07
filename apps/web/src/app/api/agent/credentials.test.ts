@@ -371,6 +371,48 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         expect((await issued(agentId)).map((e) => e.detail.access)).toEqual(["read", "read"]);
       });
 
+      it("answers 403 scm_permission_missing when the GitHub installation lacks Contents: Read and write", async () => {
+        server.use(
+          http.post("https://api.github.com/app/installations/4343/access_tokens", () =>
+            HttpResponse.json(
+              {
+                message: "The level of access for permissions requested are not granted to this installation.",
+                status: "422",
+              },
+              { status: 422 },
+            ),
+          ),
+        );
+        const github = (await upsertScmConnection(db, {
+          organizationId: orgId,
+          provider: "github",
+          name: "readonly",
+          baseUrl: "https://api.github.com",
+          externalId: "4343",
+          credentials: {},
+        }))!;
+        const repositoryId = (
+          await connectRepository(db, {
+            connectionId: github.id,
+            provider: "github",
+            externalId: "101",
+            fullPath: "readonly/app",
+          })
+        ).id;
+        const agentId = await newAgent();
+        const jobId = await newJob({ ...ralphJob, status: "running", agentId, repositoryId });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const res = await credentials(
+          credentialRequest(await jobToken(jobId, agentId, RALPH_SCOPES)),
+        );
+        warn.mockRestore();
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { error: string; message: string };
+        expect(body.error).toBe("scm_permission_missing");
+        expect(body.message).toContain("Contents: Read and write");
+        expect(await issued(agentId)).toHaveLength(0);
+      });
+
       it("gives a ralph job whose token lacks credentials:write only a read credential", async () => {
         const agentId = await newAgent();
         const jobId = await newJob({
