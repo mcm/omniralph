@@ -44,6 +44,11 @@ export class FakeScmAdapter {
   /** `getCiJobLog` answers by job ID; `""` when missing. */
   readonly ciJobLogs = new Map<string, string>();
 
+  /** Replies made with `replyToComment`, in order. */
+  readonly replies: { fullPath: string; number: number; commentId: string; body: string }[] = [];
+  /** Comment IDs whose threads `resolveThread` resolved, in order. */
+  readonly resolvedThreads: string[] = [];
+
   /** What `verifyWebhook` answers. */
   webhookValid = true;
 
@@ -150,6 +155,22 @@ export class FakeScmAdapter {
       headSha: request.headSha ?? "head",
       mergeSha: request.state === "merged" ? (request.mergeSha ?? null) : null,
     };
+  }
+
+  async replyToComment(
+    repo: RepoRef,
+    number: number,
+    commentId: string,
+    body: string,
+  ): Promise<{ id: string }> {
+    this.call("replyToComment");
+    this.replies.push({ fullPath: repo.fullPath, number, commentId, body });
+    return { id: `reply-${this.replies.length}` };
+  }
+
+  async resolveThread(_repo: RepoRef, _number: number, commentId: string): Promise<void> {
+    this.call("resolveThread");
+    this.resolvedThreads.push(commentId);
   }
 
   /** As the `ScmAdapter` the orchestrator expects. */

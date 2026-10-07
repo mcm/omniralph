@@ -42,6 +42,22 @@ describe("buildReviewRequest", () => {
     expect(text).toContain("Suggested change:\n```\nif (!x) return;\n```");
   });
 
+  it("lists finding IDs and asks the session to report each finding's outcome", () => {
+    const text = buildReviewRequest({
+      findings: [finding(3, { id: "11111111-1111-4111-8111-111111111111" }), finding(4)],
+      prNumber: 7,
+      prUrl: "https://github.com/acme/app/pull/7",
+      branch: "b",
+    });
+    expect(text).toContain(
+      "1. `src/f3.ts:3` (high): **Finding 3** [finding `11111111-1111-4111-8111-111111111111`]",
+    );
+    expect(text).toContain("2. `src/f4.ts:4` (high): **Finding 4**\n");
+    expect(text).toContain(
+      "- Report every finding listed below in your structured result's `findings`, by its ID: `fixed` with a short comment on the change, or `skipped` with why. Omniralph replies in each finding's thread on the pull request with your comment and resolves the fixed ones.",
+    );
+  });
+
   it("caps bodies at 1,500 chars and lists at most 25 findings", () => {
     const findings = Array.from({ length: 27 }, (_, i) =>
       finding(i + 1, { body: "x".repeat(MAX_FINDING_BODY + 100) }),
@@ -91,5 +107,22 @@ describe("buildPullRequestCommentRequest", () => {
     expect(text).toContain("in the thread of one of Omniralph's review findings:");
     expect(text).toContain("Fix this finding.");
     expect(text).toContain("The finding:\n`src/f4.ts:4` (high): **Missing null check**");
+    expect(text).not.toContain("structured result's `findings`");
+  });
+
+  it("asks for the outcome of the thread's finding by its ID", () => {
+    const text = buildPullRequestCommentRequest({
+      author: "maintainer",
+      text: null,
+      finding: finding(4, { id: "11111111-1111-4111-8111-111111111111" }),
+      prNumber: 3,
+      prUrl: "https://gitlab.com/acme/app/-/merge_requests/3",
+      branch: "eng-1",
+      term: "merge request",
+    });
+    expect(text).toContain(
+      "Report the finding in your structured result's `findings`, by its ID: `fixed` with a short comment on the change, or `skipped` with why. Omniralph replies in each finding's thread on the merge request with your comment and resolves the fixed ones.",
+    );
+    expect(text).toContain("[finding `11111111-1111-4111-8111-111111111111`]");
   });
 });
