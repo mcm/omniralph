@@ -65,16 +65,26 @@ webhook secret, every Linear webhook is rejected.
 
 ## 3. Connect from Settings › Integrations
 
-As an admin, open **Settings › Integrations** and click **Connect Linear**. Linear shows its consent
+As an admin of the Omniralph organization that should use the workspace, open **Settings ›
+Integrations** and click **Connect Linear**. Linear shows its consent
 screen for the workspace you're signed in to; approve it and you return to the Integrations page,
 which then shows the connected workspace. Finish within 10 minutes of clicking (the sign-in link
 expires) and from the same browser.
 
-- One Linear workspace can be connected at a time. Webhooks from any other workspace are ignored.
+- The Linear workspace is connected **per organization**: each organization connects at most one
+  workspace, and a workspace belongs to one organization. Connecting a workspace that another
+  organization already has is refused ("This Linear workspace belongs to another organization");
+  disconnect it there first. Webhooks are routed to the organization that connected the
+  workspace and ignored for workspaces no organization connected.
+- Runs, routing and ralph's repositories are per organization too: a delegated issue is only
+  routed to repositories of the workspace's organization, and its jobs only go to that
+  organization's agents. Only its members see the runs under **Ralph runs**.
 - **Disconnect** deletes the stored tokens. Runs can't advance (their stories are re-read from
   Linear before each one) until Linear is connected again. Stopping a run from **Ralph runs** still
   works.
 - To move to another workspace, disconnect, then connect again while signed in to the other one.
+  To move a workspace to another organization, disconnect it in the first and connect it from the
+  second (runs stay with the organization that started them).
 
 ## 4. Configure routing
 

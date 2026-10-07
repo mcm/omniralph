@@ -29,7 +29,9 @@ delivers jobs.**
   inserts the row (deduped by `dedupe_key` among queued/running jobs), then
   publishes:
   - to the job's organization's `<capability>-jobs-org-<organizationId>`
-    (e.g. `review-jobs-org-<organizationId>`), or
+    (e.g. `review-jobs-org-<organizationId>`; see
+    [ADR 0004: organizations](0004-organizations.md#per-organization-topics)
+    for topic naming), or
   - to `<capability>-jobs-agent-<agentId>` when the repo is pinned (only to
     agents of the job's organization). With several
     pinned agents it picks the non-revoked one with the fewest active jobs,
@@ -54,8 +56,9 @@ delivers jobs.**
   - **Operations:** only ReceiveMessages (`POST …/topic/<t>/consumer/<g>`),
     AcknowledgeMessage (`DELETE …/lease/<receipt>`) and ExtendLease
     (`PATCH …/lease/<receipt>`). Send and receive-by-ID are refused.
-  - **Topics:** the shared topics of the agent's enabled capabilities, plus its
-    own pinned topics.
+  - **Topics:** the shared topics of the agent's enabled capabilities in its
+    own organization, plus its own pinned topics
+    ([ADR 0004](0004-organizations.md#per-organization-topics)).
   - **Consumer group:** `agents` only.
   - **Regions:** those in `QUEUE_REGIONS`. The upstream host is always
     `{region}.vercel-queue.com`.

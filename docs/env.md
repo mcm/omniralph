@@ -46,11 +46,12 @@ put them in `apps/web/.env.local`.
 | `AUTH_GITLAB_ID` | one provider | — | GitLab OAuth application ID, scope `read_user` (callback `<APP_URL>/api/auth/callback/gitlab`). |
 | `AUTH_GITLAB_SECRET` | with `AUTH_GITLAB_ID` | — | GitLab OAuth application secret. |
 | `AUTH_GITLAB_URL` | no | `https://gitlab.com` | Self-managed GitLab instance for sign-in. |
-| `ALLOWED_EMAIL_DOMAINS` | yes | — (nobody but invited emails) | Comma-separated email domains allowed to sign in (exact match, no subdomains), in addition to emails with a pending invitation to an organization. Nobody becomes admin automatically: signed-in users create or join organizations. |
+| `ALLOWED_EMAIL_DOMAINS` | yes | — (nobody but invited emails) | Comma-separated email domains allowed to sign in (exact match, no subdomains), in addition to emails with a pending, unexpired invitation to an organization. The only instance-wide access setting: there are no instance admins. Signed-in users create organizations (becoming their admin) or join them; roles and organization email domains are managed per organization under **Settings › Organization** and never widen this gate. |
 
 ### GitHub App
 
-See [github-app.md](github-app.md).
+See [github-app.md](github-app.md). One GitHub App serves the whole deployment; each of its
+installations is connected to one organization.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
@@ -61,13 +62,14 @@ See [github-app.md](github-app.md).
 | `GITHUB_APP_PRIVATE_KEY` | one of these two | — | Fallback / local dev: the App's PEM private key (PKCS#1 or PKCS#8; literal `\n` accepted). |
 | `GITHUB_API_URL` | no | `https://api.github.com` | GitHub Enterprise Server REST base URL, e.g. `https://ghe.example.com/api/v3`. |
 
-GitLab has no env vars: the base URL, bot token and webhook secret are entered under
-**Repositories › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
+GitLab has no env vars: the base URL, bot token and webhook secret are entered per organization
+under **Repositories › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
 
 ### Linear app (ralph)
 
-See [linear.md](linear.md). An OAuth application in Linear (**Settings › API › OAuth applications**) that admins install from
-**Settings › Integrations**. Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
+See [linear.md](linear.md). One OAuth application in Linear (**Settings › API › OAuth applications**) for the whole
+deployment, which each organization's admins install into their organization's Linear workspace
+from **Settings › Integrations** (one workspace per organization, one organization per workspace). Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
 webhooks to `<APP_URL>/api/webhooks/linear` with the **Agent session events** and **Issues** events.
 The app is installed with `actor=app` and scopes `read,write,app:assignable,app:mentionable`; its
 tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
@@ -107,7 +109,9 @@ which needs no variable either.
 
 Set these in the agent's environment (the systemd unit, or the shell that starts tmux or pm2), never
 on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
-config file, and everything else comes from the control panel. See [deploy-agent.md](deploy-agent.md).
+config file, and everything else comes from the control panel, including the organization the agent
+was enrolled into (sent with each heartbeat; there's no variable for it). See
+[deploy-agent.md](deploy-agent.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |

@@ -16,7 +16,7 @@ there).
 - git ≥ 2.40 (2.44+ recommended: older versions lazily fetch commits while checking whether they're
   cached).
 - `sudo` on the instance (to create the user and install the unit).
-- An admin account on the control panel.
+- An admin account in the control panel organization the agent should serve.
 - For the `ralph` capability, also a git identity and the target repositories' toolchains: see
   [Ralph](#ralph).
 
@@ -81,7 +81,12 @@ including the note on Anthropic's terms for subscription auth.
 
 ## 4. Enroll
 
-As an admin, open **Agents › Enroll agent** in the control panel. It shows a one-time command with
+Agents belong to an **organization**: the one active when the enrollment token was created. An
+agent only receives, and only gets credentials for, that organization's jobs, and only its members
+see it. To serve several organizations from one host, enroll one agent per organization (each as
+its own user or with its own `--config` and `--workspace-root`).
+
+As an admin of that organization, open **Agents › Enroll agent** in the control panel. It shows a one-time command with
 an enrollment token (single use, valid for 1 hour). Run it as `omniralph`:
 
 ```sh
@@ -240,13 +245,14 @@ needs.
 
 **Choosing the version.**
 
-- **Settings › Agents** (admins) holds the global desired version, e.g. `1.4.0` (semver). Blank means
+- **Settings › Agents** (admins) holds the organization's desired version (it applies to the
+  organization's agents only), e.g. `1.4.0` (semver). Blank means
   versions aren't managed: agents keep whatever they run. **Use latest on npm** sets it to the
   package's `latest` dist-tag; it's shown only when the control panel has `NPM_TOKEN` (an npm token
   that can read the restricted package; see [env.md](env.md)).
 - **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
-  or to pin a host to an older version. Clear the override to follow the global version again.
-- To pin every agent, set the global version to an exact version and don't use **Use latest on
+  or to pin a host to an older version. Clear the override to follow the organization's version again.
+- To pin every agent, set the organization's version to an exact version and don't use **Use latest on
   npm**; agents never move on their own.
 
 The **Agents** list and each agent's page show the reported version, the desired version, the
@@ -298,7 +304,8 @@ Linear attachments through the control panel and cache them in `<workspaceRoot>/
 
 New agents only run reviews. To let an agent run ralph jobs, open **Agents › <agent>**, tick
 `ralph` under **Enabled capabilities** and save; it applies with the next heartbeat (no restart).
-The agent then also polls the `ralph-jobs` topic and its own `ralph-jobs-agent-<id>` topic.
+The agent then also polls its organization's `ralph-jobs-org-<orgId>` topic and its own
+`ralph-jobs-agent-<id>` topic (see [ADR 0004](adr/0004-organizations.md#per-organization-topics)).
 
 - A run sticks to the agent that started it: all its later jobs go to that agent's topic, so keep
   `ralph` enabled on it until its runs finish. If you disable `ralph` on it or revoke it, the run's
@@ -416,7 +423,7 @@ again` when the control panel rejects its refresh token:
   alert. Causes: the config file was copied to another host or restored from a backup, two
   processes ran with the same config, or the agent crashed between receiving and saving a rotated
   token.
-- **Revoked**: an admin revoked the agent on the **Agents** page.
+- **Revoked**: an admin of its organization revoked the agent on the **Agents** page.
 
 What to do:
 
@@ -426,7 +433,8 @@ What to do:
    reused token came from), whether another host or process uses a copy of `agent.json`, and
    delete any copies. If you can't explain it, treat the host as compromised: rotate the Claude
    credentials on it and check the agent user's files.
-3. Enroll again with a new enrollment token from **Agents › Enroll agent**, as the agent's user. This
+3. Enroll again with a new enrollment token from **Agents › Enroll agent** (in the same
+   organization), as the agent's user. This
    creates a **new agent** (new ID) and overwrites `agent.json`; the revoked agent stays in the list
    for its history.
 4. Re-apply the old agent's central config to the new one: max concurrency, poll interval,

@@ -129,9 +129,22 @@ key, generate a new one on the App, import it into a **new** issuer and update t
 
 ## Installing and connecting repositories
 
-As an admin, open **Repositories › Connect GitHub**, install the App on the account or organization
-and pick the repositories. GitHub returns to the control panel, which lists the installation's
-repositories; select the ones to review and save. New and updated PRs are then reviewed with each
+As an admin of the Omniralph organization, open **Repositories › Connect GitHub**, install the App
+on the GitHub account or organization and pick the repositories. GitHub returns to the control
+panel, which lists the installation's repositories; select the ones to review and save.
+
+The App itself (its ID, key and webhook secret) is shared by the whole deployment, but each
+**installation belongs to one Omniralph organization**, the one whose admin connected it. Its
+repositories, reviews and jobs are only visible to that organization's members, and its webhooks
+are handled for that organization. The install link carries a signed state for your active
+organization, so start from **Connect GitHub** (not from GitHub's install page) and finish within
+the link's lifetime, in the same browser:
+
+- An installation already connected to another organization is refused ("Installation belongs to
+  another organization"). Installations can't be moved between organizations (disconnecting its
+  repositories keeps the installation with its organization).
+- "GitHub installation not connected" means the callback didn't come from a **Connect GitHub**
+  started in your active organization, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
 repository's profile (Standard by default).
 
 ## GitHub Enterprise Server
