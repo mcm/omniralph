@@ -89,6 +89,7 @@ export {
   setRepositoryEnabled,
   setScmConnectionHealth,
   unpinRepositoryFromAgent,
+  updateScmConnectionCredentials,
   upsertScmConnection,
   type ConnectRepositoryInput,
   type PinRepositoryResult,

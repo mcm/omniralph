@@ -12,7 +12,10 @@ export type GitLabProblemCode =
   | "access_token_bot"
   | "token_expiring"
   | "webhook_missing"
-  | "webhook_events_outdated";
+  | "webhook_events_outdated"
+  /** Set by the rotation that runs before the check (`rotateGitLabToken`). */
+  | "rotation_unsupported"
+  | "rotation_failed";
 
 export interface GitLabProblem {
   code: GitLabProblemCode;

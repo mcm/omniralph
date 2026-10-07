@@ -62,12 +62,19 @@ export type {
   GitLabProblemCode,
 } from "./gitlab/health.js";
 export {
+  BOT_TOKEN_LIFETIME_DAYS,
+  rotatedTokenExpiry,
+  rotateGitLabToken,
+} from "./gitlab/rotation.js";
+export type { GitLabRotation } from "./gitlab/rotation.js";
+export {
   ACCESS_TOKEN_BOT_MESSAGE,
   GitLabSetupClient,
   GitLabSetupError,
   isAccessTokenBotUsername,
   MAX_LISTED_GITLAB_PROJECTS,
   normalizeGitLabUrl,
+  statusOf as gitLabErrorStatus,
 } from "./gitlab/setup.js";
 export type { GitLabHookOptions, GitLabProject, GitLabTokenOwner } from "./gitlab/setup.js";
 export {

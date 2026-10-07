@@ -177,6 +177,36 @@ export function connectionCredentials<T extends Record<string, unknown>>(
   return JSON.parse(decrypt(connection.encryptedCredentials, key)) as T;
 }
 
+/**
+ * Updates a connection's credentials under a row lock (`SELECT … FOR UPDATE`):
+ * `update` gets the credentials as they are once the lock is held and returns
+ * the new ones (or null to leave them). The new credentials are written in the
+ * same transaction, so concurrent callers see each other's writes. Returns
+ * whether credentials were written; false also when the connection is gone.
+ */
+export async function updateScmConnectionCredentials<T extends Record<string, unknown>>(
+  db: Database,
+  id: string,
+  update: (credentials: T) => Promise<T | null>,
+  key?: EncryptionKey,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [connection] = await tx
+      .select({ encryptedCredentials: scmConnections.encryptedCredentials })
+      .from(scmConnections)
+      .where(eq(scmConnections.id, id))
+      .for("update");
+    if (!connection) return false;
+    const credentials = await update(connectionCredentials<T>(connection, key));
+    if (!credentials) return false;
+    await tx
+      .update(scmConnections)
+      .set({ encryptedCredentials: encrypt(JSON.stringify(credentials), key) })
+      .where(eq(scmConnections.id, id));
+    return true;
+  });
+}
+
 export interface ConnectRepositoryInput {
   connectionId: string;
   provider: ScmProvider;
