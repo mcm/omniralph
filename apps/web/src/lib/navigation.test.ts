@@ -11,7 +11,7 @@ describe("navGroups", () => {
       "Agents",
       "Jobs",
       "Analytics",
-      "Users",
+      "Organization",
       "Profiles",
       "Integrations",
       "Agent settings",
@@ -26,13 +26,14 @@ describe("navGroupsForRole", () => {
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Agents", "Jobs", "Analytics"]],
-      ["Admin", ["Users", "Profiles", "Integrations", "Agent settings"]],
+      ["Settings", ["Organization", "Profiles", "Integrations", "Agent settings"]],
     ]);
   });
 
-  it("hides admin pages and empty groups from members", () => {
+  it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Agents", "Jobs", "Analytics"]],
+      ["Settings", ["Organization"]],
     ]);
   });
 });

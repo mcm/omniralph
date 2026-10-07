@@ -41,6 +41,21 @@ export function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase().replace(/^@/, "");
 }
 
+const DOMAIN_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
+
+/**
+ * Whether `domain` (normalized) is a syntactically valid domain name: at least two
+ * dot-separated labels of letters, digits and inner hyphens, a non-numeric top-level
+ * label, at most 253 characters.
+ */
+export function isValidDomain(domain: string): boolean {
+  if (domain.length === 0 || domain.length > 253) return false;
+  const labels = domain.split(".");
+  if (labels.length < 2) return false;
+  if (!labels.every((label) => DOMAIN_LABEL.test(label))) return false;
+  return !/^[0-9]+$/.test(labels[labels.length - 1]!);
+}
+
 /** Whether the organization's domains allow `email`; any email is allowed when it has none. */
 async function isEmailAllowedIn(db: Queryable, organizationId: string, email: string | null) {
   const domains = await listOrganizationDomains(db, organizationId);
@@ -249,6 +264,60 @@ export async function setOrganizationDomains(
   });
 }
 
+export type AddOrganizationDomainResult = "added" | "already_added" | "invalid" | "not_found";
+
+/** Adds an email domain to the organization; it must be a valid domain name. */
+export async function addOrganizationDomain(
+  db: Database,
+  organizationId: string,
+  domain: string,
+): Promise<AddOrganizationDomainResult> {
+  const normalized = normalizeDomain(domain);
+  if (!isValidDomain(normalized)) return "invalid";
+  return db.transaction(async (tx) => {
+    if (!(await lockOrganization(tx, organizationId))) return "not_found";
+    const inserted = await tx
+      .insert(organizationEmailDomains)
+      .values({ organizationId, domain: normalized })
+      .onConflictDoNothing()
+      .returning({ domain: organizationEmailDomains.domain });
+    return inserted.length > 0 ? "added" : "already_added";
+  });
+}
+
+export type RemoveOrganizationDomainResult = "removed" | "not_found";
+
+/**
+ * Removes an email domain from the organization. Removing the last one also turns
+ * off joining by email domain. Existing members are kept.
+ */
+export async function removeOrganizationDomain(
+  db: Database,
+  organizationId: string,
+  domain: string,
+): Promise<RemoveOrganizationDomainResult> {
+  return db.transaction(async (tx) => {
+    if (!(await lockOrganization(tx, organizationId))) return "not_found";
+    const removed = await tx
+      .delete(organizationEmailDomains)
+      .where(
+        and(
+          eq(organizationEmailDomains.organizationId, organizationId),
+          eq(organizationEmailDomains.domain, normalizeDomain(domain)),
+        ),
+      )
+      .returning({ domain: organizationEmailDomains.domain });
+    if (removed.length === 0) return "not_found";
+    if ((await listOrganizationDomains(tx, organizationId)).length === 0) {
+      await tx
+        .update(organizations)
+        .set({ allowDomainJoin: false, updatedAt: new Date() })
+        .where(eq(organizations.id, organizationId));
+    }
+    return "removed";
+  });
+}
+
 // ── Members ──────────────────────────────────────────────────────────────────
 
 export async function getMembership(
@@ -376,12 +445,12 @@ const pendingInvitation = (now: Date) =>
 
 export type CreateInvitationResult =
   | { status: "created"; invitation: OrganizationInvitation }
-  | { status: "email_not_allowed" | "already_member" | "unknown_organization" };
+  | { status: "email_not_allowed" | "already_member" | "already_invited" | "unknown_organization" };
 
 /**
- * Invites an email to an organization, replacing (revoking) any pending
- * invitation of that email to it. The email must match the organization's
- * domains when it has any.
+ * Invites an email to an organization. Members and emails with a pending
+ * invitation to it can't be invited (revoke the pending one first). The email
+ * must match the organization's domains when it has any.
  */
 export async function createInvitation(
   db: Database,
@@ -410,9 +479,9 @@ export async function createInvitation(
         and(eq(organizationMembers.organizationId, input.organizationId), eq(users.email, email)),
       );
     if (member) return { status: "already_member" };
-    await tx
-      .update(organizationInvitations)
-      .set({ revokedAt: now })
+    const [pending] = await tx
+      .select({ id: organizationInvitations.id })
+      .from(organizationInvitations)
       .where(
         and(
           eq(organizationInvitations.organizationId, input.organizationId),
@@ -420,6 +489,7 @@ export async function createInvitation(
           pendingInvitation(now),
         ),
       );
+    if (pending) return { status: "already_invited" };
     const [invitation] = await tx
       .insert(organizationInvitations)
       .values({

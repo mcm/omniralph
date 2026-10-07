@@ -16,6 +16,7 @@ import {
 } from "@iamthemcmaster/ui";
 import {
   IconAdjustments,
+  IconBuildingCommunity,
   IconChartBar,
   IconGitPullRequest,
   IconHistory,
@@ -24,7 +25,6 @@ import {
   IconRepeat,
   IconServer,
   IconServerCog,
-  IconUsers,
 } from "@tabler/icons-react";
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
@@ -40,7 +40,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   agents: IconServer,
   jobs: IconListCheck,
   analytics: IconChartBar,
-  users: IconUsers,
+  organization: IconBuildingCommunity,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
   agentSettings: IconServerCog,

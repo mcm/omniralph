@@ -7,6 +7,7 @@ import { runMigrations } from "./migrate.js";
 import {
   acceptInvitation,
   addMember,
+  addOrganizationDomain,
   createInvitation,
   createOrganization,
   declineInvitation,
@@ -16,6 +17,7 @@ import {
   getOrganization,
   hasPendingInvitation,
   INVITATION_TTL_MS,
+  isValidDomain,
   joinOrganization,
   listJoinableOrganizations,
   listMembers,
@@ -25,6 +27,7 @@ import {
   listPendingInvitationsForOrganization,
   normalizeDomain,
   removeMember,
+  removeOrganizationDomain,
   revokeInvitation,
   setActiveOrganization,
   setOrganizationDomains,
@@ -38,6 +41,30 @@ describe("emailDomain / normalizeDomain", () => {
     expect(emailDomain(" Steve@McMaster.IO ")).toBe("mcmaster.io");
     expect(emailDomain("nodomain")).toBe("");
     expect(normalizeDomain(" @Example.COM ")).toBe("example.com");
+  });
+
+  it("validates domain names", () => {
+    for (const ok of ["example.com", "sub.acme.io", "xn--bcher-kva.de", "a-b.c0.co"]) {
+      expect(isValidDomain(ok)).toBe(true);
+    }
+    for (const bad of [
+      "",
+      "localhost",
+      "example",
+      "-acme.io",
+      "acme-.io",
+      "acme..io",
+      ".acme.io",
+      "acme.io.",
+      "ac me.io",
+      "acme_io.com",
+      "user@acme.io",
+      "10.0.0.1",
+      "Acme.io",
+      `${"a".repeat(64)}.io`,
+    ]) {
+      expect(isValidDomain(bad)).toBe(false);
+    }
   });
 });
 
@@ -230,7 +257,23 @@ describe.skipIf(!dockerAvailable)("organization queries", () => {
     if (created.status !== "created") throw new Error();
     expect(INVITATION_TTL_MS).toBe(14 * 24 * 60 * 60 * 1000);
 
-    // Re-inviting replaces the pending invitation.
+    // An email with a pending invitation can't be invited again until it's revoked.
+    expect(
+      await createInvitation(db, {
+        organizationId: org.id,
+        email: "NEW@invites.io",
+        role: "member",
+        invitedBy: admin.id,
+        now,
+      }),
+    ).toEqual({ status: "already_invited" });
+    expect(
+      await revokeInvitation(db, {
+        organizationId: org.id,
+        invitationId: created.invitation.id,
+        now,
+      }),
+    ).toBe("revoked");
     const replacement = await invite(org.id, "new@invites.io", now);
     expect(
       (await listPendingInvitationsForEmail(db, "NEW@invites.io", now)).map((i) => [
@@ -378,6 +421,32 @@ describe.skipIf(!dockerAvailable)("organization queries", () => {
     await setOrganizationDomains(db, open.id, []);
     expect(await getOrganization(db, open.id)).toMatchObject({ allowDomainJoin: false });
     expect(await listJoinableOrganizations(db, "dave@join.io")).toEqual([]);
+  });
+
+  it("adds and removes email domains; removing the last one turns joining off", async () => {
+    const admin = await user("admin@domains.io");
+    const org = await createOrganization(db, { name: "Domains", createdBy: admin.id });
+    const member = await user("member@domains.io");
+    await addMember(db, { organizationId: org.id, userId: member.id, role: "member" });
+
+    expect(await addOrganizationDomain(db, org.id, "not a domain")).toBe("invalid");
+    expect(await addOrganizationDomain(db, org.id, " @Domains.IO ")).toBe("added");
+    expect(await addOrganizationDomain(db, org.id, "domains.io")).toBe("already_added");
+    expect(await addOrganizationDomain(db, org.id, "other.io")).toBe("added");
+    expect(await addOrganizationDomain(db, "00000000-0000-0000-0000-000000000000", "x.io")).toBe(
+      "not_found",
+    );
+    expect(await listOrganizationDomains(db, org.id)).toEqual(["domains.io", "other.io"]);
+    expect(await updateOrganization(db, org.id, { allowDomainJoin: true })).toBe("updated");
+
+    expect(await removeOrganizationDomain(db, org.id, "nope.io")).toBe("not_found");
+    expect(await removeOrganizationDomain(db, org.id, "Other.io")).toBe("removed");
+    expect(await getOrganization(db, org.id)).toMatchObject({ allowDomainJoin: true });
+    expect(await removeOrganizationDomain(db, org.id, "domains.io")).toBe("removed");
+    expect(await listOrganizationDomains(db, org.id)).toEqual([]);
+    expect(await getOrganization(db, org.id)).toMatchObject({ allowDomainJoin: false });
+    // Members are kept.
+    expect(await getMembership(db, org.id, member.id)).toMatchObject({ role: "member" });
   });
 
   it("makes a new organization its creator's active one and only switches to member organizations", async () => {
