@@ -34,7 +34,7 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    await db.insert(users).values({ id: "admin-1", email: "admin@example.com", role: "admin" });
+    await db.insert(users).values({ id: "admin-1", email: "admin@example.com" });
   }, 180_000);
 
   afterAll(async () => {
@@ -87,14 +87,12 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
   it("allows at most one integration per provider in the database", async () => {
     await install("org-1", "Acme", "t1");
     await expect(
-      db
-        .insert(integrations)
-        .values({
-          provider: "linear",
-          externalId: "org-2",
-          name: "Other",
-          encryptedCredentials: "x",
-        }),
+      db.insert(integrations).values({
+        provider: "linear",
+        externalId: "org-2",
+        name: "Other",
+        encryptedCredentials: "x",
+      }),
     ).rejects.toThrow();
     expect((await db.select().from(integrations)).map((r) => r.externalId)).toEqual(["org-1"]);
   });
@@ -148,14 +146,12 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
     ).toBe("t2");
 
     await expect(
-      db
-        .insert(integrations)
-        .values({
-          provider: "linear",
-          externalId: "org-1",
-          name: "dup",
-          encryptedCredentials: "x",
-        }),
+      db.insert(integrations).values({
+        provider: "linear",
+        externalId: "org-1",
+        name: "dup",
+        encryptedCredentials: "x",
+      }),
     ).rejects.toThrow();
   });
 

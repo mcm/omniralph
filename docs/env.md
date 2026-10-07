@@ -46,7 +46,7 @@ put them in `apps/web/.env.local`.
 | `AUTH_GITLAB_ID` | one provider | — | GitLab OAuth application ID, scope `read_user` (callback `<APP_URL>/api/auth/callback/gitlab`). |
 | `AUTH_GITLAB_SECRET` | with `AUTH_GITLAB_ID` | — | GitLab OAuth application secret. |
 | `AUTH_GITLAB_URL` | no | `https://gitlab.com` | Self-managed GitLab instance for sign-in. |
-| `ALLOWED_EMAIL_DOMAINS` | yes | — (nobody but invited emails) | Comma-separated email domains allowed to sign in (exact match, no subdomains), in addition to emails added under **Admin › Users**. The first person to sign in becomes admin. |
+| `ALLOWED_EMAIL_DOMAINS` | yes | — (nobody but invited emails) | Comma-separated email domains allowed to sign in (exact match, no subdomains), in addition to emails with a pending invitation to an organization. Nobody becomes admin automatically: signed-in users create or join organizations. |
 
 ### GitHub App
 

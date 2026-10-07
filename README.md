@@ -79,7 +79,8 @@ code-host and Linear API call for both.
 1. **Deploy the control panel** on Vercel: Neon Postgres, `NPM_RC`, a KMS issuer per environment,
    `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and the other variables in [`.env.example`](.env.example).
    → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
-2. **Sign in.** The first allowed user (`ALLOWED_EMAIL_DOMAINS`) becomes admin.
+2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` can sign
+   in and create an organization, becoming its admin.
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
    **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).

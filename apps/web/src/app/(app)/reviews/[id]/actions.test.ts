@@ -72,8 +72,8 @@ describe.skipIf(!dockerAvailable)("finding dismiss and restore: server actions",
     db = createDb(container.getConnectionUri());
     state.db = db;
     await db.insert(users).values([
-      { id: "member-1", name: "Mia Member", email: "mia@example.com", role: "member" },
-      { id: "member-2", name: null, email: "sam@example.com", role: "member" },
+      { id: "member-1", name: "Mia Member", email: "mia@example.com" },
+      { id: "member-2", name: null, email: "sam@example.com" },
     ]);
     const connection = await upsertScmConnection(db, {
       provider: "gitlab",

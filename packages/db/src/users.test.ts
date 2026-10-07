@@ -3,34 +3,16 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
+import { getActiveOrganization, listOrganizationsForUser } from "./organizations.js";
 import { accounts, sessions } from "./schema.js";
 import {
-  addAllowedEmail,
-  countAdmins,
-  createUserWithInitialRole,
+  createUser,
   deleteUser,
   getUserById,
-  initialUserRole,
-  isEmailAllowlisted,
-  listAllowedEmails,
   listUsers,
   normalizeEmail,
-  setUserRole,
   setUserTheme,
 } from "./users.js";
-
-describe("initialUserRole", () => {
-  it("makes the first user an admin", () => {
-    expect(initialUserRole({ isFirstUser: true })).toBe("admin");
-    expect(initialUserRole({ isFirstUser: true, allowlistedRole: "member" })).toBe("admin");
-  });
-
-  it("uses the allowlisted role, defaulting to member", () => {
-    expect(initialUserRole({ isFirstUser: false })).toBe("member");
-    expect(initialUserRole({ isFirstUser: false, allowlistedRole: null })).toBe("member");
-    expect(initialUserRole({ isFirstUser: false, allowlistedRole: "admin" })).toBe("admin");
-  });
-});
 
 describe("normalizeEmail", () => {
   it("trims and lower-cases", () => {
@@ -58,36 +40,20 @@ describe.skipIf(!dockerAvailable)("user queries", () => {
     await container?.stop();
   });
 
-  it("makes only the first of several concurrent sign-ups an admin", async () => {
-    const created = await Promise.all(
-      ["a@x.io", "b@x.io", "c@x.io", "d@x.io"].map((email) =>
-        createUserWithInitialRole(db, { email, name: email }),
-      ),
-    );
-    expect(created.filter((u) => u.role === "admin")).toHaveLength(1);
-    expect(await countAdmins(db)).toBe(1);
-  });
-
-  it("applies the allowlisted role to new users and stores emails lower-cased", async () => {
-    await addAllowedEmail(db, { email: "Boss@Example.com", role: "admin", addedBy: null });
-    expect(await isEmailAllowlisted(db, "boss@example.COM")).toBe(true);
-    expect(await isEmailAllowlisted(db, "nobody@example.com")).toBe(false);
-
-    const user = await createUserWithInitialRole(db, { email: "BOSS@example.com" });
-    expect(user).toMatchObject({ email: "boss@example.com", role: "admin" });
-  });
-
-  it("updates an existing allowlist entry's role", async () => {
-    await addAllowedEmail(db, { email: "x@y.io", role: "member", addedBy: null });
-    await addAllowedEmail(db, { email: "x@y.io", role: "admin", addedBy: null });
-    const entries = await listAllowedEmails(db);
-    expect(entries.filter((e) => e.email === "x@y.io")).toEqual([
-      expect.objectContaining({ role: "admin" }),
-    ]);
+  it("creates users, the first one included, without any organization or admin role", async () => {
+    const first = await createUser(db, { email: "First@X.io", name: "First" });
+    const second = await createUser(db, { email: "second@x.io" });
+    for (const user of [first, second]) {
+      expect(user).not.toHaveProperty("role");
+      expect(user.activeOrganizationId).toBeNull();
+      expect(await getActiveOrganization(db, user.id)).toBeNull();
+      expect(await listOrganizationsForUser(db, user.id)).toEqual([]);
+    }
+    expect(first.email).toBe("first@x.io");
   });
 
   it("remembers a user's theme, following the OS until one is chosen", async () => {
-    const user = await createUserWithInitialRole(db, { email: "theme@example.com" });
+    const user = await createUser(db, { email: "theme@example.com" });
     expect(user.theme).toBeNull();
     await setUserTheme(db, user.id, "dark");
     expect((await getUserById(db, user.id))?.theme).toBe("dark");
@@ -95,12 +61,8 @@ describe.skipIf(!dockerAvailable)("user queries", () => {
     expect((await getUserById(db, user.id))?.theme).toBe("light");
   });
 
-  it("changes roles and deletes users with their accounts, sessions and allowlist entry", async () => {
-    await addAllowedEmail(db, { email: "gone@example.com", role: "member", addedBy: null });
-    const user = await createUserWithInitialRole(db, { email: "gone@example.com" });
-    await setUserRole(db, user.id, "admin");
-    expect((await listUsers(db)).find((u) => u.id === user.id)?.role).toBe("admin");
-
+  it("deletes users with their accounts and sessions", async () => {
+    const user = await createUser(db, { email: "gone@example.com" });
     await db.insert(accounts).values({
       userId: user.id,
       type: "oauth",
@@ -111,7 +73,6 @@ describe.skipIf(!dockerAvailable)("user queries", () => {
 
     await deleteUser(db, user.id);
     expect((await listUsers(db)).some((u) => u.id === user.id)).toBe(false);
-    expect(await isEmailAllowlisted(db, "gone@example.com")).toBe(false);
     expect(await db.select().from(accounts)).toEqual([]);
     expect(await db.select().from(sessions)).toEqual([]);
   });

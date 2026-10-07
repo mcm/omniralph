@@ -14,7 +14,10 @@ export interface WebhookDeliveryRef {
 }
 
 const deliveryWhere = (ref: WebhookDeliveryRef) =>
-  and(eq(webhookDeliveries.provider, ref.provider), eq(webhookDeliveries.deliveryId, ref.deliveryId));
+  and(
+    eq(webhookDeliveries.provider, ref.provider),
+    eq(webhookDeliveries.deliveryId, ref.deliveryId),
+  );
 
 /** Records the delivery; false when it was already recorded (a redelivery). */
 export async function claimWebhookDelivery(
@@ -23,7 +26,11 @@ export async function claimWebhookDelivery(
 ): Promise<boolean> {
   const rows = await db
     .insert(webhookDeliveries)
-    .values({ provider: ref.provider, deliveryId: ref.deliveryId, repositoryId: ref.repositoryId ?? null })
+    .values({
+      provider: ref.provider,
+      deliveryId: ref.deliveryId,
+      repositoryId: ref.repositoryId ?? null,
+    })
     .onConflictDoNothing()
     .returning({ deliveryId: webhookDeliveries.deliveryId });
   return rows.length > 0;

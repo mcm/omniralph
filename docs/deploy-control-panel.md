@@ -132,7 +132,7 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `AUTH_SECRET` | `openssl rand -base64 32` |
 | `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | A GitHub **OAuth app**, callback `<APP_URL>/api/auth/callback/github` |
 | `AUTH_GITLAB_ID`, `AUTH_GITLAB_SECRET`, `AUTH_GITLAB_URL` | A GitLab OAuth application (`read_user`), callback `<APP_URL>/api/auth/callback/gitlab` |
-| `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Set it before the first deploy: the first person to sign in becomes admin. |
+| `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
 | `BOT_HANDLE` | Optional, default `omniralph` |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
@@ -143,8 +143,8 @@ Configure at least one sign-in provider. Redeploy after changing variables
 
 ## 9. First sign-in and connecting code hosts
 
-1. Open `APP_URL` and sign in. The first allowed user becomes admin; add others under
-   **Admin › Users**.
+1. Open `APP_URL` and sign in, then create an organization: you become its admin. Members
+   are managed per organization under **Admin › Users**.
 2. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)).
 3. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md).

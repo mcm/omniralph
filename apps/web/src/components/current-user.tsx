@@ -6,6 +6,9 @@ import type { Role } from "@/lib/auth/roles";
 /** Serializable view of the signed-in user, provided by the `(app)` layout. */
 export interface SessionUser {
   id: string;
+  /** The active organization. */
+  organization: { id: string; name: string };
+  /** The user's role in the active organization. */
   role: Role;
   name: string | null;
   email: string | null;

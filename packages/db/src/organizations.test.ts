@@ -9,9 +9,12 @@ import {
   addMember,
   createInvitation,
   createOrganization,
+  declineInvitation,
   emailDomain,
+  getActiveOrganization,
   getMembership,
   getOrganization,
+  hasPendingInvitation,
   INVITATION_TTL_MS,
   joinOrganization,
   listJoinableOrganizations,
@@ -23,6 +26,7 @@ import {
   normalizeDomain,
   removeMember,
   revokeInvitation,
+  setActiveOrganization,
   setOrganizationDomains,
   updateMemberRole,
   updateOrganization,
@@ -374,5 +378,66 @@ describe.skipIf(!dockerAvailable)("organization queries", () => {
     await setOrganizationDomains(db, open.id, []);
     expect(await getOrganization(db, open.id)).toMatchObject({ allowDomainJoin: false });
     expect(await listJoinableOrganizations(db, "dave@join.io")).toEqual([]);
+  });
+
+  it("makes a new organization its creator's active one and only switches to member organizations", async () => {
+    const alice = await user("alice@active.io");
+    const bob = await user("bob@active.io");
+    expect(await getActiveOrganization(db, alice.id)).toBeNull();
+
+    const first = await createOrganization(db, { name: "First", createdBy: alice.id });
+    expect(await getActiveOrganization(db, alice.id)).toEqual({
+      id: first.id,
+      name: "First",
+      role: "admin",
+    });
+    const second = await createOrganization(db, { name: "Second", createdBy: alice.id });
+    expect((await getActiveOrganization(db, alice.id))?.id).toBe(second.id);
+
+    expect(await setActiveOrganization(db, { userId: alice.id, organizationId: first.id })).toBe(
+      true,
+    );
+    expect((await getActiveOrganization(db, alice.id))?.id).toBe(first.id);
+
+    // Bob isn't a member of First: switching is refused and changes nothing.
+    const bobs = await createOrganization(db, { name: "Bob's", createdBy: bob.id });
+    expect(await setActiveOrganization(db, { userId: bob.id, organizationId: first.id })).toBe(
+      false,
+    );
+    expect((await getActiveOrganization(db, bob.id))?.id).toBe(bobs.id);
+
+    // The role follows the membership; a removed member has no active organization.
+    await addMember(db, { organizationId: first.id, userId: bob.id, role: "member" });
+    expect(await setActiveOrganization(db, { userId: bob.id, organizationId: first.id })).toBe(
+      true,
+    );
+    expect(await getActiveOrganization(db, bob.id)).toMatchObject({ role: "member" });
+    await removeMember(db, { organizationId: first.id, userId: bob.id });
+    expect(await getActiveOrganization(db, bob.id)).toBeNull();
+  });
+
+  it("finds pending invitations for the sign-in gate and lets the invitee decline them", async () => {
+    const admin = await user("admin@gate.io");
+    const guest = await user("guest@elsewhere.io");
+    const org = await createOrganization(db, { name: "Gate", createdBy: admin.id });
+    const now = new Date();
+    expect(await hasPendingInvitation(db, "guest@elsewhere.io", now)).toBe(false);
+
+    const invitation = await invite(org.id, "Guest@Elsewhere.io", now);
+    expect(await hasPendingInvitation(db, " GUEST@elsewhere.io ", now)).toBe(true);
+    const later = new Date(now.getTime() + INVITATION_TTL_MS + 1);
+    expect(await hasPendingInvitation(db, "guest@elsewhere.io", later)).toBe(false);
+
+    // Only the invited email can decline.
+    expect(await declineInvitation(db, { invitationId: invitation.id, userId: admin.id })).toBe(
+      "not_found",
+    );
+    expect(await declineInvitation(db, { invitationId: invitation.id, userId: guest.id })).toBe(
+      "declined",
+    );
+    expect(await hasPendingInvitation(db, "guest@elsewhere.io")).toBe(false);
+    expect(await declineInvitation(db, { invitationId: invitation.id, userId: guest.id })).toBe(
+      "not_found",
+    );
   });
 });

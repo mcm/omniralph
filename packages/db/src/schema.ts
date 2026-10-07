@@ -32,7 +32,6 @@ const updatedAt = () =>
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export const userRole = pgEnum("user_role", ["admin", "member"]);
 export const uiTheme = pgEnum("ui_theme", ["light", "dark"]);
 export const organizationRole = pgEnum("organization_role", ["admin", "member"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
@@ -125,22 +124,16 @@ export const users = pgTable("users", {
   email: text("email").unique(),
   emailVerified: timestamp("email_verified", { mode: "date", withTimezone: true }),
   image: text("image"),
-  /** `admin` manages repos, agents and users; `member` has read access. The first user is `admin`. */
-  role: userRole("role").notNull().default("member"),
+  /**
+   * The organization the user is working in; `null` until they create or join one
+   * (they're sent to onboarding). Roles live on `organization_members`.
+   */
+  activeOrganizationId: uuid("active_organization_id").references(
+    (): AnyPgColumn => organizations.id,
+    { onDelete: "set null" },
+  ),
   /** The user's chosen control panel theme; `null` follows the OS preference. */
   theme: uiTheme("theme"),
-  createdAt: createdAt(),
-});
-
-/**
- * Emails an admin has allowed to sign in (in addition to `ALLOWED_EMAIL_DOMAINS`).
- * `role` is applied when that person first signs in.
- */
-export const allowedEmails = pgTable("allowed_emails", {
-  /** Lower-cased email address. */
-  email: text("email").primaryKey(),
-  role: userRole("role").notNull().default("member"),
-  addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 

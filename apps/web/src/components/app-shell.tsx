@@ -8,10 +8,19 @@ import {
   TooltipProvider,
 } from "@iamthemcmaster/ui";
 import { SonnerToaster } from "@iamthemcmaster/ui";
-import { AppSidebar } from "./app-sidebar";
+import { AppSidebar, type OrganizationOption } from "./app-sidebar";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 
-export function AppShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
+export function AppShell({
+  user,
+  organizations,
+  children,
+}: {
+  user: SessionUser;
+  /** The user's organizations, for the switcher. */
+  organizations: OrganizationOption[];
+  children: React.ReactNode;
+}) {
   return (
     <CurrentUserProvider user={user}>
       <TooltipProvider>
@@ -24,7 +33,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
             {/* The field lives at z-0, so the shell must establish its own
               stacking context above it. */}
             <div style={{ display: "flex", minHeight: "100vh", position: "relative", zIndex: 1 }}>
-              <AppSidebar />
+              <AppSidebar organizations={organizations} />
               <div
                 style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}
               >

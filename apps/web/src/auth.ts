@@ -2,8 +2,9 @@ import "server-only";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import {
   accounts,
-  createUserWithInitialRole,
-  isEmailAllowlisted,
+  createUser,
+  getActiveOrganization,
+  hasPendingInvitation,
   sessions,
   type UiTheme,
   users,
@@ -13,18 +14,22 @@ import type { AdapterUser } from "next-auth/adapters";
 import GitHub from "next-auth/providers/github";
 import GitLab from "next-auth/providers/gitlab";
 import { isEmailAllowed, parseAllowedDomains } from "@/lib/auth/allowlist";
-import { isRole, type Role } from "@/lib/auth/roles";
+import type { Role } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { getDb } from "@/lib/db";
 import { parseTheme } from "@/lib/theme";
 
 declare module "next-auth" {
   interface User {
-    role?: Role;
     theme?: UiTheme | null;
   }
   interface Session {
-    user: { id: string; role: Role; theme: UiTheme | null } & DefaultSession["user"];
+    user: {
+      id: string;
+      /** The active organization and the user's role in it; `null` sends them to onboarding. */
+      organization: { id: string; name: string; role: Role } | null;
+      theme: UiTheme | null;
+    } & DefaultSession["user"];
   }
 }
 
@@ -58,12 +63,13 @@ function authConfig(): NextAuthConfig {
   return {
     adapter: {
       ...adapter,
-      // Assigns the role: the first user becomes admin, others get their allowlisted role.
-      // `signIn` has already rejected accounts without an email, so `email` is set.
+      // New users belong to no organization; they're sent to onboarding. `signIn` has
+      // already rejected accounts without an email, so `email` is set.
       createUser: async ({ name, email, emailVerified, image }) =>
-        (await createUserWithInitialRole(db, { name, email, emailVerified, image })) as AdapterUser,
+        (await createUser(db, { name, email, emailVerified, image })) as AdapterUser,
     },
-    // Database sessions: removing a user or changing their role takes effect on the next request.
+    // Database sessions: removing a member, changing their role or switching organizations
+    // takes effect on the next request.
     session: { strategy: "database" },
     providers: [
       GitHub({
@@ -83,13 +89,13 @@ function authConfig(): NextAuthConfig {
         const allowed = await isEmailAllowed({
           email: user.email,
           allowedDomains: parseAllowedDomains(process.env.ALLOWED_EMAIL_DOMAINS),
-          isAllowlisted: (email) => isEmailAllowlisted(db, email),
+          hasPendingInvitation: (email) => hasPendingInvitation(db, email),
         });
         return allowed || ACCESS_DENIED_PATH;
       },
-      session({ session, user }) {
+      async session({ session, user }) {
         session.user.id = user.id;
-        session.user.role = isRole(user.role) ? user.role : "member";
+        session.user.organization = await getActiveOrganization(db, user.id);
         session.user.theme = parseTheme(user.theme);
         return session;
       },

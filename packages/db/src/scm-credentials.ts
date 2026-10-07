@@ -32,10 +32,16 @@ export async function getScmCredential(
   const [row] = await db
     .select()
     .from(scmCredentialCache)
-    .where(and(eq(scmCredentialCache.repositoryId, repositoryId), eq(scmCredentialCache.scope, scope)))
+    .where(
+      and(eq(scmCredentialCache.repositoryId, repositoryId), eq(scmCredentialCache.scope, scope)),
+    )
     .limit(1);
   if (!row) return null;
-  return { token: decrypt(row.encryptedToken, key), expiresAt: row.expiresAt, externalId: row.externalId };
+  return {
+    token: decrypt(row.encryptedToken, key),
+    expiresAt: row.expiresAt,
+    externalId: row.externalId,
+  };
 }
 
 /** Stores (or replaces) the credential for a repository and scope. */
