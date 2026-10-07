@@ -173,8 +173,9 @@ Do the steps in order. Each has a check, and [Rollback](#rollback) says how to u
   ([deploy-control-panel.md](deploy-control-panel.md)).
 - The GitHub App has **Contents: Read and write**, **Pull requests: Read and write**, **Actions:
   Read** and the `workflow_run` event, and every installation accepted them
-  ([github-app.md](github-app.md)). GitLab bot tokens have `api` and `write_repository`, and the
-  project webhooks include **Pipeline events** ([gitlab.md](gitlab.md)).
+  ([github-app.md](github-app.md)). GitLab bot tokens are service accounts' personal access
+  tokens with `api`, and the project webhooks include **Pipeline events** (the connection shows any
+  that don't, with **Recreate webhook**; [gitlab.md](gitlab.md)).
 - Keep a copy of cyralph's `config.json`: it's the source for the mapping and for a rollback.
 
 ### 1. Enable ralph and set the settings per repository

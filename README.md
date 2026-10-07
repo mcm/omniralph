@@ -159,7 +159,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 | [cutover-from-cyralph.md](docs/cutover-from-cyralph.md) | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback |
 | [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
 | [github-app.md](docs/github-app.md) | GitHub App manifest, permissions (incl. Actions: read for ralph's CI fixes), events (incl. `workflow_run`), KMS-held private key |
-| [gitlab.md](docs/gitlab.md) | Bot token scopes and role, webhook events (incl. Pipeline events), ralph's merge requests and their follow-up, self-managed GitLab |
+| [gitlab.md](docs/gitlab.md) | Service account bot token (`api`, Maintainer), project picker, daily token rotation, connection health and webhooks, ralph's merge requests, self-managed GitLab |
 | [env.md](docs/env.md) | Every environment variable for the control panel and the agent |
 | [evals/README.md](evals/README.md) | The review eval harness (`pnpm eval`): precision, recall and tokens per profile against a baseline |
 | [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
