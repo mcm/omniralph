@@ -466,5 +466,32 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
       // Other IPs are fine.
       expect(await requireAgent(authed(accessToken, newIp()))).toEqual({ agentId });
     });
+
+    it("doesn't lock an IP out for stale tokens it issued (TOOL-136)", async () => {
+      const { agentId, accessToken } = await accessTokenFor();
+      const ip = newIp();
+      // A job token still used after its job was canceled, and an expired access token:
+      // both carry our signature, so they're stale clients, not guessing attempts.
+      const jobId = await runningJob(agentId);
+      const jobToken = await getTokenSigner().signJobToken({
+        jobId,
+        agentId,
+        scopes: ["credentials:read"],
+      });
+      await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, jobId));
+      const past = new LocalTokenSigner({
+        privateKey: SIGNING_KEY,
+        env: {},
+        now: () => Date.now() - 901_000,
+      });
+      const expired = await past.signAccessToken(agentId);
+      for (let i = 0; i < 30; i++) {
+        const res = await requireJob(authed(jobToken, ip), "credentials:read");
+        expect((res as Response).status).toBe(401);
+        expect(((await requireAgent(authed(expired, ip))) as Response).status).toBe(401);
+      }
+      // Agents behind that IP can still poll.
+      expect(await requireAgent(authed(accessToken, ip))).toEqual({ agentId });
+    });
   });
 });
