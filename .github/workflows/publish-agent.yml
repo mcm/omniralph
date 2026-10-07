@@ -69,4 +69,4 @@ jobs:
 
       # No NODE_AUTH_TOKEN/NPM_TOKEN here: npm exchanges the job's OIDC token for a short-lived one.
       - name: Publish
-        run: npm publish "${{ steps.pack.outputs.tarball }}" --access restricted
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public

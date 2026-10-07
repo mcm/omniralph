@@ -86,7 +86,7 @@ export interface Installer {
   install(version: string): Promise<void>;
 }
 
-/** `npm i -g @omniralph/agent@<version>`, with the host's npm auth. */
+/** `npm i -g @omniralph/agent@<version>` (a public package: no npm auth needed). */
 export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
   return {
     install: (version) =>
