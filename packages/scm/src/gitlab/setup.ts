@@ -1,4 +1,4 @@
-import { Gitlab } from "@gitbeaker/rest";
+import { AccessLevel, Gitlab } from "@gitbeaker/rest";
 import { GITLAB_URL } from "./adapter.js";
 
 /** A user-facing problem connecting GitLab (bad token, unknown project, missing permission). */
@@ -25,7 +25,13 @@ export interface GitLabProject {
   id: number;
   fullPath: string;
   webUrl: string;
+  /** `public`, `internal` or `private`. */
+  visibility: string;
 }
+
+/** Most projects {@link GitLabSetupClient.listProjects} returns. */
+export const MAX_LISTED_GITLAB_PROJECTS = 1000;
+const LIST_PAGE_SIZE = 100;
 
 export interface GitLabHookOptions {
   url: string;
@@ -38,6 +44,20 @@ function statusOf(error: unknown): number | undefined {
   const cause = (error as { cause?: { response?: { status?: unknown } } }).cause;
   const status = cause?.response?.status;
   return typeof status === "number" ? status : undefined;
+}
+
+function toProject(project: {
+  id: number;
+  path_with_namespace: string;
+  web_url: string;
+  visibility?: unknown;
+}): GitLabProject {
+  return {
+    id: project.id,
+    fullPath: project.path_with_namespace,
+    webUrl: project.web_url,
+    visibility: typeof project.visibility === "string" ? project.visibility : "private",
+  };
 }
 
 /** Normalizes a GitLab instance URL (no trailing slash or `/api/v4`). */
@@ -99,7 +119,7 @@ export class GitLabSetupClient {
     const fullPath = path.trim().replace(/^\/+|\/+$/g, "").replace(/\.git$/, "");
     try {
       const project = await this.api.Projects.show(fullPath);
-      return { id: project.id, fullPath: project.path_with_namespace, webUrl: project.web_url };
+      return toProject(project);
     } catch (error) {
       const status = statusOf(error);
       if (status === 404 || status === 403) {
@@ -110,6 +130,33 @@ export class GitLabSetupClient {
       }
       throw error;
     }
+  }
+
+  /**
+   * Projects the token's user can connect: those it's a member of with at least the
+   * Maintainer role (needed for webhooks and project access tokens), archived ones
+   * excluded, sorted by path. At most {@link MAX_LISTED_GITLAB_PROJECTS}.
+   */
+  async listProjects(): Promise<GitLabProject[]> {
+    let projects;
+    try {
+      projects = await this.api.Projects.all({
+        membership: true,
+        minAccessLevel: AccessLevel.MAINTAINER,
+        archived: false,
+        orderBy: "id",
+        sort: "asc",
+        perPage: LIST_PAGE_SIZE,
+        maxPages: MAX_LISTED_GITLAB_PROJECTS / LIST_PAGE_SIZE,
+      });
+    } catch (error) {
+      const status = statusOf(error);
+      if (status === 401 || status === 403) {
+        throw new GitLabSetupError("GitLab rejected the access token (invalid, expired or revoked).", status);
+      }
+      throw error;
+    }
+    return projects.map(toProject).sort((a, b) => a.fullPath.localeCompare(b.fullPath));
   }
 
   /**

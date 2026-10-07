@@ -3,7 +3,10 @@ import { normalizeGitLabUrl } from "@omniralph/scm";
 export interface GitLabConnectForm {
   baseUrl: string;
   token: string;
-  /** Project paths, one per line (commas and spaces also separate). */
+  /**
+   * Project paths, one per line (commas and spaces also separate). Optional: without
+   * them, the projects are picked from a list after connecting.
+   */
   projectPaths: string;
 }
 
@@ -58,7 +61,6 @@ export function parseGitLabConnectForm(
         .filter(Boolean),
     ),
   ];
-  if (projectPaths.length === 0) return { ok: false, error: "Enter at least one project path." };
   if (projectPaths.length > MAX_GITLAB_PROJECTS) {
     return { ok: false, error: `Connect at most ${MAX_GITLAB_PROJECTS} projects at a time.` };
   }

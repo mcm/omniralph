@@ -65,6 +65,9 @@ vi.mock("./[id]/settings/repository-settings-view", () => ({
 }));
 vi.mock("./[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("./github/[connectionId]/github-repos-view", () => ({ GitHubReposView: () => null }));
+vi.mock("./gitlab/[connectionId]/gitlab-projects-view", () => ({
+  GitLabProjectsView: () => null,
+}));
 vi.mock("../reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("../reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
@@ -80,6 +83,7 @@ const { default: RepositorySettingsPage } = await import("./[id]/settings/page")
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
 const { default: RepositoryReviewsPage } = await import("./[id]/reviews/page");
 const { default: GitHubInstallationPage } = await import("./github/[connectionId]/page");
+const { default: GitLabConnectionPage } = await import("./gitlab/[connectionId]/page");
 const { default: ReviewsPage } = await import("../reviews/page");
 const { default: ReviewPage } = await import("../reviews/[id]/page");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
@@ -221,6 +225,9 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
     await expect(
       GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
+    ).rejects.toMatchObject(notFound);
+    await expect(
+      GitLabConnectionPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
     ).rejects.toMatchObject(notFound);
   });
 

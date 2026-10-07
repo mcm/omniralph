@@ -38,7 +38,12 @@ export {
 export type { GitLabAdapterOptions } from "./gitlab/adapter.js";
 export { buildGitLabDiffIndex, buildPosition, lineCode, parseFileLines } from "./gitlab/positions.js";
 export type { DiffRefs, GitLabDiffFile, GitLabDiffIndex, TextPosition } from "./gitlab/positions.js";
-export { GitLabSetupClient, GitLabSetupError, normalizeGitLabUrl } from "./gitlab/setup.js";
+export {
+  GitLabSetupClient,
+  GitLabSetupError,
+  MAX_LISTED_GITLAB_PROJECTS,
+  normalizeGitLabUrl,
+} from "./gitlab/setup.js";
 export type { GitLabHookOptions, GitLabProject, GitLabTokenOwner } from "./gitlab/setup.js";
 export { appInstallUrl, getAppSlug, getInstallation, listInstallationRepos } from "./github/installations.js";
 export type { GitHubInstallation, GitHubInstallationRepo } from "./github/installations.js";
