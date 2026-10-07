@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { JOB_TOKEN_FILE_ENV, SERVER_ENV, withoutJobEnv } from "../../job-env.js";
@@ -35,7 +35,14 @@ export async function sessionGitAccess(
     const token = ctx.jobToken();
     if (token === written) return;
     written = token;
-    pending = pending.then(() => writeFile(file, token, { mode: 0o600 })).catch(() => {});
+    // Write-then-rename so a helper reading mid-refresh never sees a truncated file.
+    pending = pending
+      .then(async () => {
+        const tmp = `${file}.tmp`;
+        await writeFile(tmp, token, { mode: 0o600 });
+        await rename(tmp, file);
+      })
+      .catch(() => {});
   }, options.refreshMs ?? REFRESH_MS);
   timer.unref();
   return {
