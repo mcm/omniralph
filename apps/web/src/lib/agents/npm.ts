@@ -4,28 +4,16 @@ import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
 /** The agent package's registry document (`@` kept, `/` escaped, as npm does). */
 export const AGENT_REGISTRY_URL = `https://registry.npmjs.org/${AGENT_PACKAGE.replace("/", "%2f")}`;
 
-/** `NPM_TOKEN`, a read-only npm token; null when unset. */
-export function npmToken(): string | null {
-  return process.env.NPM_TOKEN?.trim() || null;
-}
-
 export class NpmRegistryError extends Error {
   override name = "NpmRegistryError";
 }
 
-/**
- * The agent package's `latest` dist-tag, read from the npm registry with
- * `NPM_TOKEN`.
- */
-export async function latestAgentVersion(
-  token: string,
-  fetchFn: typeof fetch = fetch,
-): Promise<string> {
+/** The agent package's `latest` dist-tag, read from the npm registry (the package is public). */
+export async function latestAgentVersion(fetchFn: typeof fetch = fetch): Promise<string> {
   let response: Response;
   try {
     response = await fetchFn(AGENT_REGISTRY_URL, {
       headers: {
-        authorization: `Bearer ${token}`,
         // The abbreviated metadata document: dist-tags without every version's manifest.
         accept: "application/vnd.npm.install-v1+json",
       },
@@ -37,11 +25,8 @@ export async function latestAgentVersion(
       `couldn't reach the npm registry (${error instanceof Error ? error.message : String(error)})`,
     );
   }
-  if (response.status === 401 || response.status === 403 || response.status === 404) {
-    // npm answers 404 for packages the token can't read (or that don't exist yet).
-    throw new NpmRegistryError(
-      `the npm registry answered ${response.status}; check that NPM_TOKEN can read ${AGENT_PACKAGE}`,
-    );
+  if (response.status === 404) {
+    throw new NpmRegistryError(`the npm registry doesn't know ${AGENT_PACKAGE} (404)`);
   }
   if (!response.ok) throw new NpmRegistryError(`the npm registry answered ${response.status}`);
   const body = (await response.json().catch(() => null)) as {

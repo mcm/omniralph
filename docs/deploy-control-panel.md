@@ -137,7 +137,6 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
 | `BOT_HANDLE` | Optional, default `omniralph` |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
-| `NPM_TOKEN` | Optional: a read-only npm token, for **Settings › Agents › Use latest on npm** |
 
 Configure at least one sign-in provider. Redeploy after changing variables
 (`vercel --prod` or **Deployments › Redeploy**).

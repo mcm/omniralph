@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -39,10 +39,6 @@ const user = (role: Role) => ({
 });
 
 describe("Settings › Agents page", () => {
-  afterEach(() => {
-    delete process.env.NPM_TOKEN;
-  });
-
   it("is for admins only", async () => {
     state.user = null;
     await expect(AgentSettingsPage()).rejects.toThrow();
@@ -50,15 +46,12 @@ describe("Settings › Agents page", () => {
     await expect(AgentSettingsPage()).rejects.toThrow();
   });
 
-  it('offers "Use latest on npm" only when NPM_TOKEN is set', async () => {
+  it("shows the organization's version", async () => {
     state.user = user("admin");
     expect((await AgentSettingsPage()).props).toEqual({
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
       packageName: "@omniralph/agent",
-      npmConfigured: false,
     });
-    process.env.NPM_TOKEN = "npm_secret";
-    expect((await AgentSettingsPage()).props.npmConfigured).toBe(true);
   });
 });

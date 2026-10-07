@@ -251,8 +251,7 @@ needs.
 - **Settings › Agents** (admins) holds the organization's desired version (it applies to the
   organization's agents only), e.g. `1.4.0` (semver). Blank means
   versions aren't managed: agents keep whatever they run. **Use latest on npm** sets it to the
-  package's `latest` dist-tag; it's shown only when the control panel has `NPM_TOKEN` (a read-only npm
-  token; see [env.md](env.md)).
+  package's `latest` dist-tag, read from the npm registry without a token (the package is public).
 - **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
   or to pin a host to an older version. Clear the override to follow the organization's version again.
 - To pin every agent, set the organization's version to an exact version and don't use **Use latest on
