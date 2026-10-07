@@ -10,7 +10,9 @@ import {
   getRepository,
   getScmConnection,
   listConnectionRepositories,
+  removeScmConnectionProblems,
   setRepositoryEnabled as setRepositoryEnabledRow,
+  setRepositoryWebhookId,
   upsertScmConnection,
 } from "@omniralph/db";
 import {
@@ -41,8 +43,24 @@ interface GitLabCredentials extends Record<string, unknown> {
   webhookSecret: string;
 }
 
+/** Health problems about a project's webhook, which {@link recreateGitLabWebhook} fixes. */
+const WEBHOOK_PROBLEMS = ["webhook_missing", "webhook_events_outdated"];
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Creates the Omniralph webhook of a GitLab project. Returns its ID. */
+async function createGitLabWebhook(
+  gitlab: GitLabSetupClient,
+  projectId: number,
+  webhookSecret: string,
+): Promise<string> {
+  const hookId = await gitlab.createProjectHook(projectId, {
+    url: gitlabWebhookUrl(),
+    secret: webhookSecret,
+  });
+  return String(hookId);
 }
 
 /**
@@ -63,7 +81,6 @@ async function connectGitLabProjects(
   projects: GitLabProject[],
 ): Promise<string[]> {
   const db = getDb();
-  const webhookUrl = gitlabWebhookUrl();
   const known = new Map(
     (await listConnectionRepositories(db, connectionId)).map((repo) => [repo.externalId, repo]),
   );
@@ -94,11 +111,8 @@ async function connectGitLabProjects(
         await connectRepository(db, input);
         continue;
       }
-      const hookId = await gitlab.createProjectHook(project.id, {
-        url: webhookUrl,
-        secret: webhookSecret,
-      });
-      await connectRepository(db, { ...input, webhookId: String(hookId) });
+      const webhookId = await createGitLabWebhook(gitlab, project.id, webhookSecret);
+      await connectRepository(db, { ...input, webhookId });
       if (previous?.webhookId) {
         await gitlab
           .deleteProjectHook(project.id, Number(previous.webhookId))
@@ -202,6 +216,55 @@ export async function disconnectRepository(id: string): Promise<ActionResult> {
     await disconnectRepositoryRow(db, organizationId, id);
     revalidatePath(REPOSITORIES_PATH);
     return { ok: true, warning };
+  });
+}
+
+/**
+ * Recreates the webhook of a connected GitLab project (for the health check's
+ * `webhook_missing` / `webhook_events_outdated`): deletes the stored webhook if GitLab still
+ * has it, creates a new one the same way as the project picker, stores its ID and removes the
+ * project's webhook problems from the connection's health. Webhooks are only ever recreated
+ * by an admin, never automatically.
+ */
+export async function recreateGitLabWebhook(repositoryId: string): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    const organizationId = admin.organization.id;
+    const repo = await getRepository(db, repositoryId, organizationId);
+    if (!repo || repo.disconnectedAt || repo.provider !== "gitlab") {
+      return { ok: false, error: "That GitLab project isn't connected." };
+    }
+    const connection = await getScmConnection(db, organizationId, repo.connectionId);
+    if (!connection) return { ok: false, error: "That GitLab connection doesn't exist." };
+    const { token, webhookSecret } = connectionCredentials<GitLabCredentials>(connection);
+    const gitlab = new GitLabSetupClient({ baseUrl: connection.baseUrl, token });
+    const projectId = Number(repo.externalId);
+
+    if (repo.webhookId) {
+      try {
+        await gitlab.deleteProjectHook(projectId, Number(repo.webhookId));
+      } catch (error) {
+        return {
+          ok: false,
+          error: `Couldn't delete the old webhook of ${repo.fullPath} (ID ${repo.webhookId}): ${errorMessage(error)}`,
+        };
+      }
+    }
+    let webhookId: string | null = null;
+    try {
+      webhookId = await createGitLabWebhook(gitlab, projectId, webhookSecret);
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Couldn't create the webhook of ${repo.fullPath}: ${errorMessage(error)}`,
+      };
+    } finally {
+      // The old webhook is gone either way.
+      await setRepositoryWebhookId(db, organizationId, repo.id, webhookId);
+    }
+    await removeScmConnectionProblems(db, connection.id, repo.id, WEBHOOK_PROBLEMS);
+
+    revalidatePath(REPOSITORIES_PATH);
   });
 }
 

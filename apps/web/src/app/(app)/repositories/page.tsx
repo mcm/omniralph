@@ -56,7 +56,12 @@ export default async function RepositoriesPage({
         pinnedAgents: repo.pinnedAgents,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       }))}
-      connections={connections.map((c) => ({ id: c.id, provider: c.provider, name: c.name }))}
+      connections={connections.map((c) => ({
+        id: c.id,
+        provider: c.provider,
+        name: c.name,
+        health: c.health,
+      }))}
       // Installations start at our install route, which adds the signed `state`.
       githubInstallUrl={githubInstallUrl ? GITHUB_INSTALL_PATH : null}
       defaultGitLabUrl={process.env.AUTH_GITLAB_URL?.replace(/\/+$/, "") || GITLAB_URL}
