@@ -72,9 +72,11 @@ export {
 export {
   connectionCredentials,
   connectRepository,
+  deleteScmConnection,
   disconnectRepository,
   findRepositoriesByExternalId,
   findScmConnection,
+  findScmConnectionsByExternalId,
   getRepository,
   getRepositoryWithConnection,
   getScmConnection,

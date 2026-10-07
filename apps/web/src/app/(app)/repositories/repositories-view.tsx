@@ -53,6 +53,7 @@ import {
   IconHistory,
   IconListCheck,
   IconSettings,
+  IconTrash,
   IconUnlink,
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
@@ -60,7 +61,12 @@ import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
 import { useAction } from "@/components/use-action";
 import { pageRange, totalPages } from "@/lib/pagination";
-import { connectGitLab, disconnectRepository, setRepositoryEnabled } from "./actions";
+import {
+  connectGitLab,
+  disconnectRepository,
+  removeScmConnection,
+  setRepositoryEnabled,
+} from "./actions";
 
 export interface RepositoryRow {
   id: string;
@@ -74,6 +80,12 @@ export interface RepositoryRow {
   lastReviewAt: string | null;
 }
 
+export interface ConnectionRow {
+  id: string;
+  provider: "github" | "gitlab";
+  name: string;
+}
+
 export type GitHubNotice =
   "requested" | "invalid" | "invalid_state" | "other_organization" | "error";
 
@@ -85,8 +97,8 @@ interface RepositoriesViewProps {
   pageSize: number;
   /** Connected repositories across all pages. */
   total: number;
-  /** Admins only: stored GitHub App installations. */
-  githubInstallations: { id: string; name: string }[];
+  /** Admins only: the organization's GitHub App installations and GitLab connections. */
+  connections: ConnectionRow[];
   /** Admins only: the app's installation page, or null when the app isn't configured. */
   githubInstallUrl: string | null;
   defaultGitLabUrl: string;
@@ -364,6 +376,76 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
   );
 }
 
+// ── Connection row ───────────────────────────────────────────────────────────
+
+function ConnectionItem({ connection }: { connection: ConnectionRow }) {
+  const { pending, run } = useAction();
+  const kind = connection.provider === "github" ? "GitHub installation" : "GitLab connection";
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        padding: "var(--space-3) var(--space-4)",
+        background: "var(--bg-raised)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border-subtle)",
+      }}
+    >
+      <ProviderIcon provider={connection.provider} size={14} />
+      <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
+        {connection.name}
+      </span>
+      {connection.provider === "github" && (
+        <Button asChild variant="ghost" size="sm">
+          <Link href={`/repositories/github/${connection.id}`}>
+            <IconSettings size={14} />
+            Choose repositories
+          </Link>
+        </Button>
+      )}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={pending}
+            aria-label={`Remove ${connection.name}`}
+            title={`Remove ${connection.name}`}
+            style={{ color: "var(--error)" }}
+          >
+            <IconTrash size={14} />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {connection.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The {kind} and all of its repositories are removed from this organization, together
+              with their reviews, rules, agent pins and ralph runs
+              {connection.provider === "gitlab"
+                ? ". The project webhooks are deleted from GitLab"
+                : ". The app stays installed on GitHub until you uninstall it there"}
+              . It can then be connected again, from this or another organization.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                run(() => removeScmConnection(connection.id), `Removed ${connection.name}`)
+              }
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 function repositoriesHref(page: number): string {
   return page > 1 ? `/repositories?page=${page}` : "/repositories";
 }
@@ -395,7 +477,7 @@ const githubNotices: Record<
     variant: "destructive",
     title: "Installation belongs to another organization",
     description:
-      "This GitHub App installation is already connected to another Omniralph organization. An installation can only be connected to one organization.",
+      "This GitHub App installation is already connected to another Omniralph organization. An installation can only be connected to one organization: an admin there has to remove it under Code-host connections (or uninstall the app on GitHub) first.",
   },
   error: {
     variant: "destructive",
@@ -410,7 +492,7 @@ export function RepositoriesView({
   page,
   pageSize,
   total,
-  githubInstallations,
+  connections,
   githubInstallUrl,
   defaultGitLabUrl,
   githubNotice,
@@ -534,45 +616,22 @@ export function RepositoriesView({
           </CardContent>
         </Card>
 
-        {isAdmin && githubInstallations.length > 0 && (
+        {isAdmin && connections.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>GitHub installations</CardTitle>
+              <CardTitle>Code-host connections</CardTitle>
               <CardDescription>
-                Choose which repositories of each installation are reviewed.
+                Choose which repositories of each GitHub installation are reviewed. Removing a
+                connection deletes its repositories and their history from this organization.
               </CardDescription>
             </CardHeader>
             <CardContent
               style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
             >
-              {githubInstallations.map((installation) => (
-                <div
-                  key={installation.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-3)",
-                    padding: "var(--space-3) var(--space-4)",
-                    background: "var(--bg-raised)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <ProviderIcon provider="github" size={14} />
-                  <span
-                    style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}
-                  >
-                    {installation.name}
-                  </span>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/repositories/github/${installation.id}`}>
-                      <IconSettings size={14} />
-                      Choose repositories
-                    </Link>
-                  </Button>
-                </div>
+              {connections.map((connection) => (
+                <ConnectionItem key={connection.id} connection={connection} />
               ))}
-              {githubInstallUrl && (
+              {githubInstallUrl && connections.some((c) => c.provider === "github") && (
                 <Muted style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                   <IconExternalLink size={12} />
                   Repositories missing? Add them to the installation on GitHub via Connect GitHub.

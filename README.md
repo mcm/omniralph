@@ -41,8 +41,9 @@ of it; nobody outside it sees any of it, and its jobs only ever reach its own ag
   A signed-in user without an organization lands on onboarding: create one, accept an
   invitation, or join one that allows their email domain.
 - A GitHub App installation, a GitLab bot user on an instance and a Linear workspace each belong
-  to one organization. A Linear workspace can be disconnected and connected elsewhere; code-host
-  connections can't be moved (use another GitLab bot token per organization).
+  to one organization. To move one, disconnect or remove it in the first organization
+  (**Repositories › Code-host connections › Remove** deletes the connection with its repositories;
+  uninstalling the GitHub App does the same), then connect it from the other.
 
 See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 

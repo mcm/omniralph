@@ -1,9 +1,11 @@
 import "server-only";
 import {
   claimWebhookDelivery,
+  deleteScmConnection,
   findLaneByBranch,
   findLaneByPullRequest,
   findRepositoriesByExternalId,
+  findScmConnectionsByExternalId,
   releaseWebhookDelivery,
   setWebhookDeliveryJob,
   type Database,
@@ -27,6 +29,7 @@ import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
   parseGitHubEvent,
+  parseGitHubInstallationDeleted,
   parseGitHubMergeEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
@@ -91,10 +94,34 @@ type Outcome =
   | { status: "duplicate"; jobId?: string }
   | { status: "accepted"; command: string }
   | { status: "accepted"; event: "ci_failure" | "merged" }
+  | { status: "removed"; connections: number }
   | { status: "ignored"; reason: string };
 
 const reply = (outcome: Outcome) => Response.json(outcome);
 const ignored = (reason: string) => reply({ status: "ignored", reason });
+
+/**
+ * A GitHub App uninstall: verifies the delivery (signed with the app's webhook secret) and
+ * removes the installation's connection with its repositories, so the installation is no
+ * longer tied to an organization.
+ */
+async function handleInstallationDeleted(
+  deps: WebhookDeps,
+  req: Request,
+  rawBody: string,
+  installationId: string,
+): Promise<Response> {
+  const { db, adapterFor = scmAdapterFor } = deps;
+  const connections = await findScmConnectionsByExternalId(db, "github", installationId);
+  if (connections.length === 0) return ignored("unknown_installation");
+  if (!(await adapterFor(db, connections[0]!).verifyWebhook(req.headers, rawBody))) {
+    return Response.json({ error: "invalid_signature" }, { status: 401 });
+  }
+  for (const connection of connections) {
+    await deleteScmConnection(db, connection.organizationId, connection.id);
+  }
+  return reply({ status: "removed", connections: connections.length });
+}
 
 /**
  * Handles a GitHub/GitLab webhook delivery: finds the connected repository,
@@ -104,6 +131,7 @@ const ignored = (reason: string) => reply({ status: "ignored", reason });
  * publishes (no review work), so it answers well within the code host's
  * timeout. Unknown, disabled or disconnected repos and irrelevant events get
  * 200 without side effects; a delivery ID that was already acted on is a no-op.
+ * A GitHub App uninstall removes the installation's connection.
  */
 export async function handleWebhook(
   provider: ScmProvider,
@@ -118,6 +146,11 @@ export async function handleWebhook(
     body = JSON.parse(rawBody);
   } catch {
     return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  if (provider === "github") {
+    const installationId = parseGitHubInstallationDeleted(req.headers.get(spec.eventHeader), body);
+    if (installationId) return handleInstallationDeleted(deps, req, rawBody, installationId);
   }
 
   const externalId = webhookRepositoryId(provider, body);

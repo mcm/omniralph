@@ -32,12 +32,12 @@ export default async function RepositoriesPage({
   const isAdmin = hasRole(user, "admin");
   const db = getDb();
   const { github, page } = await searchParams;
-  const [repos, githubConnections, githubInstallUrl] = await Promise.all([
+  const [repos, connections, githubInstallUrl] = await Promise.all([
     listRepositoryOverviewPage(db, user.organization.id, {
       page: parsePage(page),
       pageSize: REPOSITORY_PAGE_SIZE,
     }),
-    isAdmin ? listScmConnections(db, user.organization.id, "github") : [],
+    isAdmin ? listScmConnections(db, user.organization.id) : [],
     isAdmin ? getGitHubInstallUrl() : null,
   ]);
 
@@ -56,7 +56,7 @@ export default async function RepositoriesPage({
         pinnedAgents: repo.pinnedAgents,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       }))}
-      githubInstallations={githubConnections.map((c) => ({ id: c.id, name: c.name }))}
+      connections={connections.map((c) => ({ id: c.id, provider: c.provider, name: c.name }))}
       // Installations start at our install route, which adds the signed `state`.
       githubInstallUrl={githubInstallUrl ? GITHUB_INSTALL_PATH : null}
       defaultGitLabUrl={process.env.AUTH_GITLAB_URL?.replace(/\/+$/, "") || GITLAB_URL}

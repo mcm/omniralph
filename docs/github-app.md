@@ -141,11 +141,23 @@ organization, so start from **Connect GitHub** (not from GitHub's install page) 
 the link's lifetime, in the same browser:
 
 - An installation already connected to another organization is refused ("Installation belongs to
-  another organization"). Installations can't be moved between organizations (disconnecting its
-  repositories keeps the installation with its organization).
+  another organization"). Disconnecting its repositories keeps the installation with its
+  organization; to move it, an admin of that organization removes it first (see below).
 - "GitHub installation not connected" means the callback didn't come from a **Connect GitHub**
   started in your active organization, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
 repository's profile (Standard by default).
+
+### Removing an installation
+
+**Repositories › Code-host connections › Remove** (admins) deletes the installation's connection
+from the organization together with its repositories and their reviews, rules, agent pins and
+ralph runs (jobs are kept, without their repository). The App stays installed on GitHub; connect
+it again with **Connect GitHub**, from the same or another organization.
+
+Uninstalling the App on GitHub (**Settings › Applications › Configure › Uninstall**) does the
+same: GitHub sends an `installation` `deleted` event to the App's webhook (installation events
+are always delivered, whatever the subscribed events), and the control panel removes the
+connection of that installation in whichever organization had it. Suspending the App is ignored.
 
 ## GitHub Enterprise Server
 

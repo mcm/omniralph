@@ -356,3 +356,21 @@ export function githubInstallationId(body: unknown): string | null {
   const parsed = z.object({ installation: z.object({ id: z.number().int() }) }).safeParse(body);
   return parsed.success ? String(parsed.data.installation.id) : null;
 }
+
+const GitHubInstallationDeletedEvent = z.object({
+  action: z.literal("deleted"),
+  installation: z.object({ id: z.number().int() }),
+});
+
+/**
+ * The installation ID of a GitHub App uninstall (`X-GitHub-Event: installation`, action
+ * `deleted`), or null.
+ */
+export function parseGitHubInstallationDeleted(
+  eventName: string | null,
+  body: unknown,
+): string | null {
+  if (eventName !== "installation") return null;
+  const parsed = GitHubInstallationDeletedEvent.safeParse(body);
+  return parsed.success ? String(parsed.data.installation.id) : null;
+}

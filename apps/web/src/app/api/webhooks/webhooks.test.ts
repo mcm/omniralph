@@ -2,6 +2,7 @@ import { createHmac, generateKeyPairSync, randomBytes, randomUUID } from "node:c
 import {
   connectRepository,
   closeDb,
+  getScmConnection,
   createDb,
   jobs,
   repositories,
@@ -651,6 +652,64 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       expect(await prJobs(betaGithubRepo.id, betaPr.prNumber)).toHaveLength(1);
       expect(await prJobs(gitlabRepoId, betaMr.prNumber)).toHaveLength(0);
       expect(await prJobs(githubRepoId, betaPr.prNumber)).toHaveLength(0);
+    });
+  });
+  describe("GitHub App uninstall", () => {
+    it("removes the installation's connection and repositories so another organization can connect it", async () => {
+      const connection = (await upsertScmConnection(db, {
+        organizationId: orgId,
+        provider: "github",
+        name: "uninstalled",
+        baseUrl: "https://api.github.com",
+        externalId: "6060",
+        credentials: {},
+      }))!;
+      const repo = await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "github",
+        externalId: "606",
+        fullPath: "acme/uninstalled",
+      });
+      const uninstall = { action: "deleted", installation: { id: 6060 } };
+
+      // Unsigned deliveries change nothing; other installation actions are ignored.
+      const forged = await github(
+        githubRequest(uninstall, { event: "installation", secret: "wrong" }),
+      );
+      expect(forged.status).toBe(401);
+      expect(
+        await github(
+          githubRequest({ ...uninstall, action: "suspend" }, { event: "installation" }),
+        ).then((r) => r.json()),
+      ).toMatchObject({ status: "ignored" });
+      expect(await getScmConnection(db, orgId, connection.id)).not.toBeNull();
+
+      const res = await github(githubRequest(uninstall, { event: "installation" }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ status: "removed", connections: 1 });
+      expect(await getScmConnection(db, orgId, connection.id)).toBeNull();
+      expect(await db.select().from(repositories).where(eq(repositories.id, repo.id))).toEqual([]);
+      // The other connections of the organization are untouched.
+      expect(
+        await db.select().from(repositories).where(eq(repositories.id, githubRepoId)),
+      ).toHaveLength(1);
+
+      // A redelivery (or an unknown installation) is a no-op.
+      expect(
+        await github(githubRequest(uninstall, { event: "installation" })).then((r) => r.json()),
+      ).toEqual({ status: "ignored", reason: "unknown_installation" });
+
+      // Installed again, the installation can be connected from another organization.
+      const [beta] = await db.insert(organizations).values({ name: "Gamma" }).returning();
+      const moved = await upsertScmConnection(db, {
+        organizationId: beta!.id,
+        provider: "github",
+        name: "uninstalled",
+        baseUrl: "https://api.github.com",
+        externalId: "6060",
+        credentials: {},
+      });
+      expect(moved?.organizationId).toBe(beta!.id);
     });
   });
 });

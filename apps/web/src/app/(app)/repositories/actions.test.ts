@@ -43,8 +43,13 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => state.githubAuth }));
 
-const { connectGitLab, disconnectRepository, saveGitHubRepositories, setRepositoryEnabled } =
-  await import("./actions");
+const {
+  connectGitLab,
+  disconnectRepository,
+  removeScmConnection,
+  saveGitHubRepositories,
+  setRepositoryEnabled,
+} = await import("./actions");
 
 const GITLAB = "https://gitlab.example.com";
 const API = `${GITLAB}/api/v4`;
@@ -395,5 +400,95 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     expect(deletedHooks).toEqual([]);
     const [after] = await state.db.select().from(repositories);
     expect(after).toMatchObject({ enabled: true, disconnectedAt: null });
+  });
+  describe("removing a connection", () => {
+    it("deletes the GitLab webhooks, repositories and connection so another organization can connect it", async () => {
+      expect(await connectGitLab(form)).toEqual({ ok: true });
+      const [connection] = await state.db.select().from(scmConnections);
+      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos).toHaveLength(2);
+      // A disconnected repository has no webhook left to delete.
+      expect(await disconnectRepository(repos[1]!.id)).toMatchObject({ ok: true });
+      deletedHooks.length = 0;
+
+      // Members and other organizations can't remove it.
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await removeScmConnection(connection!.id)).toEqual({
+        ok: false,
+        error: expect.stringContaining("admin"),
+      });
+      state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
+      state.orgId = otherOrgId;
+      expect(await removeScmConnection(connection!.id)).toEqual({
+        ok: false,
+        error: "That connection doesn't exist.",
+      });
+      expect(deletedHooks).toEqual([]);
+      expect(await state.db.select().from(scmConnections)).toHaveLength(1);
+
+      state.orgId = orgId;
+      expect(await removeScmConnection(connection!.id)).toEqual({ ok: true });
+      expect(deletedHooks).toEqual([`101/${repos[0]!.webhookId}`]);
+      expect(await state.db.select().from(scmConnections)).toEqual([]);
+      expect(await state.db.select().from(repositories)).toEqual([]);
+
+      // The same instance and token user can now be connected from another organization.
+      state.orgId = otherOrgId;
+      expect(await connectGitLab({ ...form, projectPaths: "acme/api" })).toEqual({ ok: true });
+      const [moved] = await state.db.select().from(scmConnections);
+      expect(moved).toMatchObject({ organizationId: otherOrgId, externalId: "77" });
+      const [movedRepo] = await state.db.select().from(repositories);
+      expect(movedRepo).toMatchObject({ organizationId: otherOrgId, fullPath: "acme/api" });
+    });
+
+    it("still removes the connection when a webhook can't be deleted, with a warning", async () => {
+      await connectGitLab({ ...form, projectPaths: "acme/api" });
+      const [connection] = await state.db.select().from(scmConnections);
+      server.use(
+        http.delete(`${API}/projects/:id/hooks/:hookId`, () =>
+          HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+        ),
+      );
+      const result = await removeScmConnection(connection!.id);
+      expect(result).toEqual({ ok: true, warning: expect.stringContaining("acme/api") });
+      expect(await state.db.select().from(scmConnections)).toEqual([]);
+    });
+
+    it("removes a GitHub installation with its repositories and reviews", async () => {
+      const [connection] = await state.db
+        .insert(scmConnections)
+        .values({
+          organizationId: orgId,
+          provider: "github",
+          name: "acme",
+          baseUrl: "https://api.github.com",
+          externalId: "8",
+          encryptedCredentials: "x",
+        })
+        .returning();
+      const [repo] = await state.db
+        .insert(repositories)
+        .values({
+          organizationId: orgId,
+          provider: "github",
+          externalId: "1",
+          fullPath: "acme/one",
+          connectionId: connection!.id,
+        })
+        .returning();
+      await state.db.insert(reviews).values({
+        repositoryId: repo!.id,
+        prNumber: 1,
+        headSha: "a",
+        baseSha: "b",
+        trigger: "webhook",
+        budget: 1,
+      });
+
+      expect(await removeScmConnection(connection!.id)).toEqual({ ok: true });
+      expect(await state.db.select().from(scmConnections)).toEqual([]);
+      expect(await state.db.select().from(repositories)).toEqual([]);
+      expect(await state.db.select().from(reviews)).toEqual([]);
+    });
   });
 });

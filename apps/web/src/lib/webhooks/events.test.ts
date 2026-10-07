@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
+  parseGitHubInstallationDeleted,
   parseGitHubMergeEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
@@ -209,5 +210,16 @@ describe("merge events", () => {
     expect(parseGitLabMergeEvent("Merge Request Hook", mr("close", "closed"))).toBeNull();
     expect(parseGitLabMergeEvent("Merge Request Hook", mr("update", "merged"))).toBeNull();
     expect(parseGitLabMergeEvent("Pipeline Hook", mr("merge", "merged"))).toBeNull();
+  });
+});
+
+describe("parseGitHubInstallationDeleted", () => {
+  it("returns the installation ID of an uninstall only", () => {
+    const body = (action: string) => ({ action, installation: { id: 42 } });
+    expect(parseGitHubInstallationDeleted("installation", body("deleted"))).toBe("42");
+    expect(parseGitHubInstallationDeleted("installation", body("suspend"))).toBeNull();
+    expect(parseGitHubInstallationDeleted("installation", body("created"))).toBeNull();
+    expect(parseGitHubInstallationDeleted("pull_request", body("deleted"))).toBeNull();
+    expect(parseGitHubInstallationDeleted("installation", { action: "deleted" })).toBeNull();
   });
 });
