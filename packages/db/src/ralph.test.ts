@@ -110,7 +110,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     ).id;
     [{ id: agentId }] = (await db
       .insert(agents)
-      .values({ name: "coder-1" })
+      .values({ organizationId: orgId, name: "coder-1" })
       .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 

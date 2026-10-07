@@ -24,19 +24,24 @@ const REVOKED = "Agent revoked";
  * revoked agent's lease lapses. Jobs published to the agent's own topics (which
  * nobody else reads) are published again: `repo.sync` jobs are skipped, the
  * rest go wherever the repo's remaining pins send them. Returns false for
- * unknown agents.
+ * unknown agents (with `organizationId`, also for another organization's).
  */
 export async function revokeAgent(
   agentId: string,
   options: {
     revokedBy?: string | null;
     ip?: string | null;
+    /** Only revoke an agent of this organization. */
+    organizationId?: string;
     db?: Database;
     dispatcher?: JobDispatcher;
   } = {},
 ): Promise<boolean> {
   const db = options.db ?? getDb();
-  const revoked = await revokeAgentRow(db, agentId, { maxDeliveries: MAX_JOB_DELIVERIES });
+  const revoked = await revokeAgentRow(db, agentId, {
+    maxDeliveries: MAX_JOB_DELIVERIES,
+    organizationId: options.organizationId,
+  });
   if (!revoked) return false;
   await writeAgentAudit(db, {
     agentId,

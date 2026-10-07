@@ -195,7 +195,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   async function newAgent(values: Partial<typeof agents.$inferInsert> = {}) {
     const [agent] = await db
       .insert(agents)
-      .values({ name: "coder-1", ...values })
+      .values({ organizationId: orgId, name: "coder-1", ...values })
       .returning();
     return agent!.id;
   }

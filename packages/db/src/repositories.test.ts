@@ -99,7 +99,10 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       externalId: "555",
       fullPath: "acme/web",
     });
-    const [agent] = await db.insert(agents).values({ name: "coder-1" }).returning();
+    const [agent] = await db
+      .insert(agents)
+      .values({ organizationId: orgId, name: "coder-1" })
+      .returning();
     await db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo.id });
     const reviewedAt = new Date("2026-10-01T12:00:00Z");
     await db.insert(reviews).values([

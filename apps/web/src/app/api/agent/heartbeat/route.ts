@@ -23,7 +23,7 @@ import { exchangeJobMessages } from "@/lib/ralph/messages";
  * self-update state, applies the acknowledged job messages and returns the central
  * configuration, the running jobs the agent must cancel, fresh job tokens and
  * undelivered messages (`jobMessages`) for the ones it keeps running, and the
- * version it should run (its override, else the global setting).
+ * version it should run (its override, else its organization's setting).
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireAgent(req);
@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
   const [pinnedRepoIds, running, globalVersion] = await Promise.all([
     listAgentPinnedRepositoryIds(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
-    agent.desiredVersion ? null : getDesiredAgentVersion(db),
+    agent.desiredVersion ? null : getDesiredAgentVersion(db, agent.organizationId),
   ]);
   const jobTokens = await Promise.all(running.keep.map((job) => signJobToken(job, agentId)));
   let jobMessages: JobMessageDelivery[] = [];

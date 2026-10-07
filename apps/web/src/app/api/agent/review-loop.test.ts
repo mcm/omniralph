@@ -272,7 +272,10 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   }
 
   async function newAgent() {
-    const [agent] = await db.insert(agents).values({ name: "coder-1" }).returning();
+    const [agent] = await db
+      .insert(agents)
+      .values({ organizationId: orgId, name: "coder-1" })
+      .returning();
     return { agentId: agent!.id, accessToken: await getTokenSigner().signAccessToken(agent!.id) };
   }
 

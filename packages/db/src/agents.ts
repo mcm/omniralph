@@ -95,20 +95,29 @@ async function withJobsAndPins(db: Database, rows: AgentRow[]): Promise<AgentOve
   }));
 }
 
-/** Every agent (active first, then revoked; by name) with its running jobs and pins. */
-export async function listAgentOverview(db: Database): Promise<AgentOverview[]> {
+/** The organization's agents (active first, then revoked; by name) with their running jobs and pins. */
+export async function listAgentOverview(
+  db: Database,
+  organizationId: string,
+): Promise<AgentOverview[]> {
   const rows = await db
     .select()
     .from(agents)
+    .where(eq(agents.organizationId, organizationId))
     .orderBy(asc(sql`${agents.revokedAt} is not null`), asc(agents.name), asc(agents.createdAt));
   return withJobsAndPins(db, rows);
 }
 
+/** One of the organization's agents (null for unknown agents and other organizations'). */
 export async function getAgentOverview(
   db: Database,
+  organizationId: string,
   agentId: string,
 ): Promise<AgentOverview | null> {
-  const rows = await db.select().from(agents).where(eq(agents.id, agentId));
+  const rows = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.organizationId, organizationId), eq(agents.id, agentId)));
   const [agent] = await withJobsAndPins(db, rows);
   return agent ?? null;
 }
@@ -123,10 +132,12 @@ export interface AgentConfigInput {
 
 /**
  * Updates an agent's central configuration. The agent picks it up from its
- * next heartbeat response. Returns null for unknown or revoked agents.
+ * next heartbeat response. Returns null for unknown or revoked agents and
+ * agents of another organization.
  */
 export async function updateAgentConfig(
   db: Database,
+  organizationId: string,
   agentId: string,
   input: AgentConfigInput,
 ): Promise<AgentRow | null> {
@@ -138,24 +149,37 @@ export async function updateAgentConfig(
       enabledCapabilities: [...new Set(input.enabledCapabilities)],
       ...(input.capabilityLimits && { capabilityLimits: input.capabilityLimits }),
     })
-    .where(and(eq(agents.id, agentId), isNull(agents.revokedAt)))
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
+      ),
+    )
     .returning();
   return row ?? null;
 }
 
 /**
  * Sets (or, with null, clears) an agent's desired-version override. Returns
- * null for unknown or revoked agents.
+ * null for unknown or revoked agents and agents of another organization.
  */
 export async function setAgentDesiredVersion(
   db: Database,
+  organizationId: string,
   agentId: string,
   version: string | null,
 ): Promise<AgentRow | null> {
   const [row] = await db
     .update(agents)
     .set({ desiredVersion: version })
-    .where(and(eq(agents.id, agentId), isNull(agents.revokedAt)))
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
+      ),
+    )
     .returning();
   return row ?? null;
 }

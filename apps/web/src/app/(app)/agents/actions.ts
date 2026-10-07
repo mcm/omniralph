@@ -54,13 +54,14 @@ export type EnrollmentActionResult =
 
 const EnrollmentName = z.string().trim().max(100);
 
-/** Creates a one-time enrollment token (valid for 1 hour) for a new agent. */
+/** Creates a one-time enrollment token (valid for 1 hour) for a new agent of the active organization. */
 export async function createEnrollment(name: string): Promise<EnrollmentActionResult> {
   let created: Extract<EnrollmentActionResult, { ok: true }> | undefined;
   const result = await runAdminAction(async (admin) => {
     const parsed = EnrollmentName.safeParse(name);
     if (!parsed.success) return { ok: false, error: "Names can be at most 100 characters." };
     const enrollment = await createAgentEnrollment(getDb(), {
+      organizationId: admin.organization.id,
       name: parsed.data || null,
       createdBy: admin.id,
     });
@@ -108,7 +109,7 @@ export async function updateAgentConfig(
   agentId: string,
   input: AgentConfigForm,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const parsed = AgentConfig.safeParse(input);
     if (!parsed.success) {
       return {
@@ -117,7 +118,7 @@ export async function updateAgentConfig(
           "Max concurrency must be 1–32, the poll interval 1–300 seconds, capabilities known ones, and each capability limit 1 to the max concurrency for an enabled capability.",
       };
     }
-    if (!(await updateAgentConfigRow(getDb(), agentId, parsed.data))) {
+    if (!(await updateAgentConfigRow(getDb(), admin.organization.id, agentId, parsed.data))) {
       return { ok: false, error: "That agent doesn't exist or was revoked." };
     }
     revalidate(agentId);
@@ -132,13 +133,20 @@ export async function setAgentDesiredVersion(
   agentId: string,
   version: string,
 ): Promise<ActionResult> {
-  return runAdminAction(async () => {
+  return runAdminAction(async (admin) => {
     const trimmed = version.trim().replace(/^v(?=\d)/, "");
     const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
     if (parsed && !parsed.success) {
       return { ok: false, error: "Enter a version like 1.4.0, or leave it blank." };
     }
-    if (!(await setAgentDesiredVersionRow(getDb(), agentId, parsed?.data ?? null))) {
+    if (
+      !(await setAgentDesiredVersionRow(
+        getDb(),
+        admin.organization.id,
+        agentId,
+        parsed?.data ?? null,
+      ))
+    ) {
       return { ok: false, error: "That agent doesn't exist or was revoked." };
     }
     revalidate(agentId);
@@ -153,7 +161,13 @@ export async function revokeAgent(agentId: string): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
     const h = await headers();
     const ip = h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-    if (!(await revokeAgentWithJobs(agentId, { revokedBy: admin.id, ip }))) {
+    if (
+      !(await revokeAgentWithJobs(agentId, {
+        revokedBy: admin.id,
+        ip,
+        organizationId: admin.organization.id,
+      }))
+    ) {
       return { ok: false, error: "That agent doesn't exist." };
     }
     revalidate(agentId);

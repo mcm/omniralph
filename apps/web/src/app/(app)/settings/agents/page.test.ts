@@ -4,7 +4,14 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 vi.mock("server-only", () => ({}));
 
 const state = vi.hoisted(() => ({
-  user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
+  user: null as {
+    id: string;
+    role: Role;
+    organization: { id: string; name: string };
+    name: null;
+    email: null;
+    image: null;
+  } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
@@ -22,7 +29,14 @@ vi.mock("./agent-settings-view", () => ({ AgentSettingsView: () => null }));
 
 const { default: AgentSettingsPage } = await import("./page");
 
-const user = (role: Role) => ({ id: `${role}-1`, role, name: null, email: null, image: null });
+const user = (role: Role) => ({
+  id: `${role}-1`,
+  role,
+  organization: { id: "org-1", name: "Acme" },
+  name: null,
+  email: null,
+  image: null,
+});
 
 describe("Settings › Agents page", () => {
   afterEach(() => {

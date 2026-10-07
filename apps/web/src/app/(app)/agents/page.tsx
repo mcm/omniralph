@@ -8,12 +8,12 @@ import { AgentsView } from "./agents-view";
 export const metadata: Metadata = { title: "Agents · Omniralph" };
 
 export default async function AgentsPage() {
-  await requirePageUser();
+  const user = await requirePageUser();
   const now = new Date();
   const db = getDb();
   const [agents, desiredVersion] = await Promise.all([
-    listAgentOverview(db),
-    getDesiredAgentVersion(db),
+    listAgentOverview(db, user.organization.id),
+    getDesiredAgentVersion(db, user.organization.id),
   ]);
   return (
     <AgentsView

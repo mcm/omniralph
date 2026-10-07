@@ -7,6 +7,7 @@ import {
   createDb,
   jobs,
   listAgentAudit,
+  organizations,
   runMigrations,
   type Database,
 } from "@omniralph/db";
@@ -74,12 +75,15 @@ function authed(accessToken: string, ip: string): Request {
 describe.skipIf(!dockerAvailable)("agent auth", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
+  let orgId: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
     state.db = db;
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    orgId = org!.id;
     // Rate limits use fixed windows: freeze the clock just after a window starts so a
     // test can't straddle a window boundary.
     vi.useFakeTimers({ toFake: ["Date"], now: nextWindowStart() });
@@ -92,7 +96,7 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
   });
 
   async function enrollNew(ip = newIp()) {
-    const enrollment = await createAgentEnrollment(db, { name: null });
+    const enrollment = await createAgentEnrollment(db, { organizationId: orgId, name: null });
     const res = await enroll(
       post(
         "enroll",
@@ -130,7 +134,10 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
 
   describe("POST /api/agent/enroll", () => {
     it("consumes the enrollment token, creates the agent and audits it", async () => {
-      const enrollment = await createAgentEnrollment(db, { name: "Build box" });
+      const enrollment = await createAgentEnrollment(db, {
+        organizationId: orgId,
+        name: "Build box",
+      });
       const ip = newIp();
       const body = {
         enrollmentToken: enrollment.token,
@@ -147,7 +154,9 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
       expect(refreshToken).toMatch(/^orr_[\w-]{43}$/);
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      // The agent joins the enrollment's organization.
       expect(agent).toMatchObject({
+        organizationId: orgId,
         name: "Build box",
         reportedVersion: "0.1.0",
         reportedCapabilities: ["review"],
@@ -171,6 +180,7 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
 
     it("rejects expired and unknown enrollment tokens", async () => {
       const expired = await createAgentEnrollment(db, {
+        organizationId: orgId,
         now: new Date(Date.now() - 61 * 60 * 1000),
       });
       const base = { name: "x", version: "0.1.0", capabilities: [] };

@@ -374,26 +374,32 @@ export type PinRepositoryResult =
 
 /**
  * Pins a connected repository to an agent: its jobs then go to that agent's
- * topic (see `pinnedAgentFor`). Revoked agents and disconnected repositories
- * can't be pinned.
+ * topic (see `pinnedAgentFor`). Revoked agents, disconnected repositories and
+ * agents of another organization than the repository's can't be pinned.
  */
 export async function pinRepositoryToAgent(
   db: Database,
   input: { agentId: string; repositoryId: string },
 ): Promise<PinRepositoryResult> {
   return db.transaction(async (tx) => {
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, input.agentId), isNull(agents.revokedAt)))
-      .limit(1);
-    if (!agent) return "unknown_agent";
     const [repo] = await tx
-      .select({ id: repositories.id })
+      .select({ organizationId: repositories.organizationId })
       .from(repositories)
       .where(and(eq(repositories.id, input.repositoryId), isNull(repositories.disconnectedAt)))
       .limit(1);
     if (!repo) return "unknown_repository";
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, input.agentId),
+          eq(agents.organizationId, repo.organizationId),
+          isNull(agents.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (!agent) return "unknown_agent";
     const inserted = await tx
       .insert(agentRepoPins)
       .values({ agentId: input.agentId, repositoryId: input.repositoryId })

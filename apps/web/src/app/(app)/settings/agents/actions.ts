@@ -14,7 +14,7 @@ function revalidate(): void {
 }
 
 /**
- * Sets the version every agent should run (agents with their own override
+ * Sets the version every agent of the organization should run (agents with their own override
  * keep it); blank clears it. Agents under pm2 update themselves to it.
  */
 export async function setGlobalAgentVersion(version: string): Promise<ActionResult> {
@@ -24,7 +24,7 @@ export async function setGlobalAgentVersion(version: string): Promise<ActionResu
     if (parsed && !parsed.success) {
       return { ok: false, error: "Enter a version like 1.4.0, or leave it blank." };
     }
-    await setDesiredAgentVersion(getDb(), parsed?.data ?? null, admin.id);
+    await setDesiredAgentVersion(getDb(), admin.organization.id, parsed?.data ?? null, admin.id);
     revalidate();
   });
 }
@@ -45,7 +45,7 @@ export async function applyLatestAgentVersion(): Promise<LatestVersionResult> {
       }
       throw error;
     }
-    await setDesiredAgentVersion(getDb(), version, admin.id);
+    await setDesiredAgentVersion(getDb(), admin.organization.id, version, admin.id);
     revalidate();
   });
   return result.ok ? { ...result, version } : result;

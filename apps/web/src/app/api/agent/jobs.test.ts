@@ -178,7 +178,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   async function newAgent(values: Partial<typeof agents.$inferInsert> = {}) {
     const [agent] = await db
       .insert(agents)
-      .values({ name: "coder-1", ...values })
+      .values({ organizationId: orgId, name: "coder-1", ...values })
       .returning();
     const accessToken = await getTokenSigner().signAccessToken(agent!.id);
     return { agentId: agent!.id, accessToken };

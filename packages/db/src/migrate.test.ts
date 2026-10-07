@@ -14,6 +14,7 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
 import { seedReviewProfiles } from "./settings.js";
 import {
+  appSettings,
   jobs,
   organizationEmailDomains,
   organizations,
@@ -146,6 +147,24 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       .values({ organizationId: org!.id, domain: "acme.io" });
     await expect(
       db.insert(organizationEmailDomains).values({ organizationId: org!.id, domain: "acme.io" }),
+    ).rejects.toThrow();
+  });
+
+  it("keys app settings by organization and puts agents in an organization (0033)", async () => {
+    const [a] = await db.insert(organizations).values({ name: "Settings A" }).returning();
+    const [b] = await db.insert(organizations).values({ name: "Settings B" }).returning();
+    await db.insert(appSettings).values([
+      { organizationId: a!.id, key: "agent.desiredVersion", value: "1.0.0" },
+      { organizationId: b!.id, key: "agent.desiredVersion", value: "2.0.0" },
+    ]);
+    await expect(
+      db
+        .insert(appSettings)
+        .values({ organizationId: a!.id, key: "agent.desiredVersion", value: 1 }),
+    ).rejects.toThrow();
+    await expect(db.execute(sql`insert into agents (name) values ('no-org')`)).rejects.toThrow();
+    await expect(
+      db.execute(sql`insert into agent_enrollments (token_hash, expires_at) values ('h', now())`),
     ).rejects.toThrow();
   });
 

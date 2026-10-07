@@ -9,8 +9,8 @@ import { AgentSettingsView } from "./agent-settings-view";
 export const metadata: Metadata = { title: "Agent settings · Omniralph" };
 
 export default async function AgentSettingsPage() {
-  await requirePageUser("admin");
-  const setting = await getAppSetting(getDb(), DESIRED_AGENT_VERSION_KEY);
+  const admin = await requirePageUser("admin");
+  const setting = await getAppSetting(getDb(), admin.organization.id, DESIRED_AGENT_VERSION_KEY);
   return (
     <AgentSettingsView
       desiredVersion={typeof setting?.value === "string" ? setting.value : null}

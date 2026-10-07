@@ -96,7 +96,7 @@ describe.skipIf(!dockerAvailable)("GET /api/agent/jobs/{id}/attachments/{attachm
     ).id;
     const [agent] = await db
       .insert(agents)
-      .values({ name: "coder-1", enabledCapabilities: ["review", "ralph"] })
+      .values({ organizationId: orgId, name: "coder-1", enabledCapabilities: ["review", "ralph"] })
       .returning();
     agentId = agent!.id;
   }, 180_000);

@@ -29,7 +29,7 @@ export default async function RepositorySettingsPage({
   if (!found || found.repository.disconnectedAt) notFound();
   const [profiles, agents, pinnedAgentIds] = await Promise.all([
     listReviewProfiles(db, user.organization.id),
-    listPinnableAgents(db),
+    listPinnableAgents(db, user.organization.id),
     listRepositoryPinnedAgentIds(db, id),
   ]);
   const { repository, connection } = found;
