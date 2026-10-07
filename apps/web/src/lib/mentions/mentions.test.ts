@@ -504,7 +504,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         threadCommentId: commentId,
         finding: { path: "src/app.ts", startLine: 3, endLine: 4, title: "Missing null check" },
       });
-      expect(state.sends.some((s) => s.topic === "review-jobs")).toBe(true);
+      expect(state.sends.some((s) => s.topic === `review-jobs-org-${orgId}`)).toBe(true);
       // The answer is the reply; nothing is posted yet.
       expect(state.scm.calls.replyToComment).toHaveLength(0);
     });
@@ -624,6 +624,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         prUrl: `https://github.com/acme/app/pull/${number}`,
       });
       await db.insert(jobs).values({
+        organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
         ralphRunId: run.id,

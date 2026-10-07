@@ -1,4 +1,4 @@
-import { getJob, getRun } from "@omniralph/db";
+import { getJobForAgent, getRun } from "@omniralph/db";
 import { MAX_ATTACHMENT_BYTES, RalphAttachmentId } from "@omniralph/shared";
 import { z } from "zod";
 import { requireJob } from "@/lib/agent-auth/verify";
@@ -58,7 +58,7 @@ export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Re
   const attachmentId = RalphAttachmentId.safeParse((await ctx.params).attachmentId);
   if (!attachmentId.success) return notFound();
   const db = getDb();
-  const job = await getJob(db, jobId);
+  const job = await getJobForAgent(db, jobId, principal.agentId);
   if (!job) return notFound();
   if (!isRalphJob(job) || !job.ralphRunId) return forbidden("not_a_ralph_job");
   const listed = PayloadAttachments.safeParse(job.payload);

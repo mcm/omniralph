@@ -77,6 +77,9 @@ const { POST: heartbeat } = await import("./heartbeat/route");
 const { POST: start } = await import("./jobs/[id]/start/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
+const { POST: credentials } = await import("./credentials/route");
+const { POST: activities } = await import("./jobs/[id]/activities/route");
+const { GET: attachment } = await import("./jobs/[id]/attachments/[attachmentId]/route");
 const queueRoute = await import("./queue/[region]/[...path]/route");
 const { GET: expireJobs } = await import("../cron/expire-jobs/route");
 
@@ -126,6 +129,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   let db: Database;
   let repositoryId: string;
   let orgId: string;
+  /** The organization's shared review topic. */
+  const reviewTopic = () => `review-jobs-org-${orgId}`;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -190,6 +195,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
   async function newJob(input: { repositoryId?: string; dedupeKey?: string } = {}) {
     const { job } = await dispatcher().createAndPublish({
+      organizationId: orgId,
       capability: "review",
       type: "review.run",
       payload: { prNumber: 7 },
@@ -217,6 +223,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   describe("VercelQueuesDispatcher", () => {
     it("publishes { jobId } deploymentless with idempotencyKey = jobId and 24h retention", async () => {
       const { job, created } = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         dedupeKey: "review:publish",
@@ -225,7 +232,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       expect(state.clients).toEqual([{ region: "iad1", deploymentId: null }]);
       expect(state.sends).toEqual([
         {
-          topic: "review-jobs",
+          topic: reviewTopic(),
           payload: { jobId: job.id },
           options: { idempotencyKey: job.id, retentionSeconds: 86_400 },
         },
@@ -233,18 +240,20 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const row = await jobRow(job.id);
       expect(row).toMatchObject({
         status: "queued",
-        topic: "review-jobs",
+        topic: reviewTopic(),
         queueMessageId: "msg-1",
       });
     });
 
     it("dedupes on dedupeKey while a job is queued or running", async () => {
       const first = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         dedupeKey: "review:dedupe",
       });
       const second = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         dedupeKey: "review:dedupe",
@@ -259,6 +268,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       // Once the job is finished, the key can be used again.
       await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, first.job.id));
       const third = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         dedupeKey: "review:dedupe",
@@ -271,6 +281,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       state.sendError = new Error("queue down");
       await expect(
         dispatcher().createAndPublish({
+          organizationId: orgId,
           capability: "review",
           type: "review.run",
           dedupeKey: "review:publish-failed",
@@ -278,6 +289,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       ).rejects.toThrow("queue down");
       state.sendError = null;
       const retried = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         dedupeKey: "review:publish-failed",
@@ -288,7 +300,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         idempotencyKey: retried.job.id,
         retentionSeconds: 86_400,
       });
-      expect((await jobRow(retried.job.id)).topic).toBe("review-jobs");
+      expect((await jobRow(retried.job.id)).topic).toBe(reviewTopic());
     });
 
     it("publishes pinned repos' jobs to the pinned agent's topic", async () => {
@@ -301,6 +313,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         { agentId: revoked.agentId, repositoryId },
       ]);
       await db.insert(jobs).values({
+        organizationId: orgId,
         capability: "review",
         type: "review.run",
         status: "running",
@@ -312,6 +325,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
       // Explicit targets (e.g. `repo.sync` pre-clones) win.
       await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "repo.sync",
         repositoryId,
@@ -321,7 +335,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
       await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
       await newJob({ repositoryId });
-      expect(state.sends.at(-1)!.topic).toBe("review-jobs");
+      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
     });
 
     it("cancels queued jobs at once and flags running ones", async () => {
@@ -566,6 +580,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         .values({ findingId: finding!.id, source: "ui", reason: "false_positive" })
         .returning();
       const { job } = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.learn-rule",
         repositoryId,
@@ -652,6 +667,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         })
         .returning();
       const { job } = await dispatcher().createAndPublish({
+        organizationId: orgId,
         capability: "review",
         type: "review.reply",
         repositoryId,
@@ -758,7 +774,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         pollIntervalSeconds: 7,
         enabledCapabilities: ["review"],
         pinnedRepoIds: [repositoryId],
-        topics: [`review-jobs-agent-${agentId}`, "review-jobs", `system-jobs-agent-${agentId}`],
+        organizationId: orgId,
+        topics: [`review-jobs-agent-${agentId}`, reviewTopic(), `system-jobs-agent-${agentId}`],
         queueRegion: "iad1",
       });
       expect(body.cancelJobIds.sort()).toEqual([canceled, takenOver].sort());
@@ -799,6 +816,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const [job] = await db
         .insert(jobs)
         .values({
+          organizationId: orgId,
           capability: "ralph",
           type: "ralph.story",
           status: "running",
@@ -872,20 +890,20 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
     it("forwards the agent's topics with the control panel's OIDC token", async () => {
       const { agentId, accessToken } = await newAgent();
-      for (const topic of ["review-jobs", `review-jobs-agent-${agentId}`]) {
+      for (const topic of [reviewTopic(), `review-jobs-agent-${agentId}`]) {
         const res = await queueRoute.POST(
           proxyRequest(`${base}/${topic}/consumer/agents`, accessToken),
         );
         expect(res.status).toBe(204);
       }
       const ack = await queueRoute.DELETE(
-        proxyRequest(`${base}/review-jobs/consumer/agents/lease/rh-1`, accessToken, "DELETE"),
+        proxyRequest(`${base}/${reviewTopic()}/consumer/agents/lease/rh-1`, accessToken, "DELETE"),
       );
       expect(ack.status).toBe(204);
       expect(upstreamCalls).toEqual([
         {
           method: "POST",
-          url: "https://iad1.vercel-queue.com/api/v3/topic/review-jobs/consumer/agents",
+          url: `https://iad1.vercel-queue.com/api/v3/topic/${reviewTopic()}/consumer/agents`,
           authorization: "Bearer control-panel-oidc",
         },
         {
@@ -895,7 +913,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         },
         {
           method: "DELETE",
-          url: "https://iad1.vercel-queue.com/api/v3/topic/review-jobs/consumer/agents/lease/rh-1",
+          url: `https://iad1.vercel-queue.com/api/v3/topic/${reviewTopic()}/consumer/agents/lease/rh-1`,
           authorization: "Bearer control-panel-oidc",
         },
       ]);
@@ -909,10 +927,14 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         queueRoute.POST(
           proxyRequest(`${base}/review-jobs-agent-${other.agentId}/consumer/agents`, accessToken),
         ),
-        queueRoute.POST(proxyRequest(`${base}/review-jobs/consumer/agents`, disabled.accessToken)),
-        queueRoute.POST(proxyRequest(`${base}/review-jobs/consumer/workers`, accessToken)),
-        queueRoute.GET(proxyRequest(`${base}/review-jobs/consumer/agents`, accessToken, "GET")),
-        queueRoute.PUT(proxyRequest(`${base}/review-jobs`, accessToken, "PUT")),
+        queueRoute.POST(
+          proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, disabled.accessToken),
+        ),
+        queueRoute.POST(proxyRequest(`${base}/${reviewTopic()}/consumer/workers`, accessToken)),
+        queueRoute.GET(
+          proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, accessToken, "GET"),
+        ),
+        queueRoute.PUT(proxyRequest(`${base}/${reviewTopic()}`, accessToken, "PUT")),
       ];
       for (const res of await Promise.all(denied)) expect(res.status).toBe(403);
       expect(upstreamCalls).toHaveLength(0);
@@ -941,9 +963,239 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     });
 
     it("requires an agent access token", async () => {
-      const res = await queueRoute.POST(proxyRequest(`${base}/review-jobs/consumer/agents`, "x"));
+      const res = await queueRoute.POST(
+        proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, "x"),
+      );
       expect(res.status).toBe(401);
       expect(upstreamCalls).toHaveLength(0);
+    });
+  });
+
+  describe("organization isolation", () => {
+    let otherOrgId: string;
+    let otherRepositoryId: string;
+
+    beforeAll(async () => {
+      const [org] = await db.insert(organizations).values({ name: "Globex" }).returning();
+      otherOrgId = org!.id;
+      await seedReviewProfiles(db, otherOrgId);
+      const [connection] = await db
+        .insert(scmConnections)
+        .values({
+          organizationId: otherOrgId,
+          provider: "github",
+          name: "globex",
+          baseUrl: "https://api.github.com",
+          externalId: "2",
+          encryptedCredentials: "unused",
+        })
+        .returning();
+      const [repo] = await db
+        .insert(repositories)
+        .values({
+          organizationId: otherOrgId,
+          provider: "github",
+          externalId: "200",
+          fullPath: "globex/app",
+          connectionId: connection!.id,
+        })
+        .returning();
+      otherRepositoryId = repo!.id;
+    });
+
+    async function otherAgent(values: Partial<typeof agents.$inferInsert> = {}) {
+      return newAgent({ organizationId: otherOrgId, name: "globex-1", ...values });
+    }
+
+    /** A job of the other organization, published by the dispatcher. */
+    async function otherJob(input: { repositoryId?: string; capability?: string } = {}) {
+      const { job } = await dispatcher().createAndPublish({
+        organizationId: otherOrgId,
+        capability: input.capability ?? "review",
+        type: "review.run",
+        repositoryId: input.repositoryId ?? null,
+        dedupeKey: randomUUID(),
+      });
+      return job.id;
+    }
+
+    it("publishes each job to its own organization's topic, never another's", async () => {
+      const ours = await newJob({ repositoryId });
+      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+      const theirs = await otherJob({ repositoryId: otherRepositoryId });
+      expect(state.sends.at(-1)!.topic).toBe(`review-jobs-org-${otherOrgId}`);
+      expect((await jobRow(ours)).organizationId).toBe(orgId);
+      expect((await jobRow(theirs)).organizationId).toBe(otherOrgId);
+    });
+
+    it("never sends a job to a pinned or targeted agent of another organization", async () => {
+      // A pin can't be created across organizations; even if one existed it's ignored.
+      const foreign = await otherAgent();
+      await db.insert(agentRepoPins).values({ agentId: foreign.agentId, repositoryId });
+      try {
+        await newJob({ repositoryId });
+        expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+      } finally {
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, foreign.agentId));
+      }
+
+      await expect(
+        dispatcher().createAndPublish({
+          organizationId: orgId,
+          capability: "review",
+          type: "repo.sync",
+          repositoryId,
+          targetAgentId: foreign.agentId,
+        }),
+      ).rejects.toThrow(/organization/);
+      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+    });
+
+    it("gives agents only their organization's topics and refuses the other's in the proxy", async () => {
+      const ours = await newAgent();
+      const theirs = await otherAgent();
+      const beat = async (accessToken: string) => {
+        const res = await heartbeat(
+          agentRequest("heartbeat", accessToken, {
+            body: { version: "0.2.0", capabilities: ["review"], runningJobIds: [], freeSlots: 1 },
+          }),
+        );
+        return (await res.json()) as HeartbeatResponse;
+      };
+      const ourConfig = await beat(ours.accessToken);
+      expect(ourConfig.organizationId).toBe(orgId);
+      expect(ourConfig.topics).toContain(reviewTopic());
+      expect(ourConfig.topics).not.toContain(`review-jobs-org-${otherOrgId}`);
+      const theirConfig = await beat(theirs.accessToken);
+      expect(theirConfig.organizationId).toBe(otherOrgId);
+      expect(theirConfig.topics).toContain(`review-jobs-org-${otherOrgId}`);
+      expect(theirConfig.topics).not.toContain(reviewTopic());
+
+      const base = "http://localhost/api/agent/queue/iad1/api/v3/topic";
+      const proxied = (url: string, accessToken: string, method = "POST") =>
+        new Request(url, {
+          method,
+          headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": newIp() },
+        });
+      const denied = [
+        queueRoute.POST(proxied(`${base}/${reviewTopic()}/consumer/agents`, theirs.accessToken)),
+        queueRoute.DELETE(
+          proxied(
+            `${base}/${reviewTopic()}/consumer/agents/lease/rh-1`,
+            theirs.accessToken,
+            "DELETE",
+          ),
+        ),
+        queueRoute.POST(
+          proxied(`${base}/review-jobs-org-${otherOrgId}/consumer/agents`, ours.accessToken),
+        ),
+        queueRoute.POST(
+          proxied(`${base}/review-jobs-agent-${ours.agentId}/consumer/agents`, theirs.accessToken),
+        ),
+      ];
+      for (const res of await Promise.all(denied)) expect(res.status).toBe(403);
+      expect(upstreamCalls).toHaveLength(0);
+    });
+
+    it("never starts, completes or fails another organization's job", async () => {
+      const foreign = await otherAgent();
+      const jobId = await newJob();
+
+      expect(await startAs(jobId, foreign.accessToken)).toEqual({
+        action: "skip",
+        reason: "not_found",
+      });
+      expect(await jobRow(jobId)).toMatchObject({
+        status: "queued",
+        agentId: null,
+        deliveryCount: 0,
+      });
+
+      // Even a job (wrongly) marked running on the foreign agent can't be reported on.
+      await db
+        .update(jobs)
+        .set({ status: "running", agentId: foreign.agentId, deliveryCount: 1 })
+        .where(eq(jobs.id, jobId));
+      const res = await result(
+        agentRequest(`jobs/${jobId}/result`, foreign.accessToken, { body: { result: {} } }),
+        ctx(jobId),
+      );
+      expect(res.status).toBe(404);
+      expect((await failAs(jobId, foreign.accessToken, { retryable: false })).status).toBe(404);
+      expect(await jobRow(jobId)).toMatchObject({ status: "running", result: null });
+    });
+
+    it("refuses credentials and job routes for a job of another organization", async () => {
+      const foreign = await otherAgent({ enabledCapabilities: ["review", "ralph"] });
+      const jobId = await newJob({ repositoryId });
+      await db
+        .update(jobs)
+        .set({ status: "running", agentId: foreign.agentId, deliveryCount: 1, capability: "ralph" })
+        .where(eq(jobs.id, jobId));
+      const token = await getTokenSigner().signJobToken({
+        jobId,
+        agentId: foreign.agentId,
+        scopes: ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"],
+      });
+      const jobRequest = (path: string, method = "POST", body?: unknown) =>
+        new Request(`http://localhost/api/agent/${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+            "x-real-ip": newIp(),
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+
+      expect((await credentials(jobRequest("credentials"))).status).toBe(401);
+      expect(
+        (
+          await activities(
+            jobRequest(`jobs/${jobId}/activities`, "POST", { type: "thought", body: "hi" }),
+            ctx(jobId),
+          )
+        ).status,
+      ).toBe(401);
+      expect(
+        (
+          await attachment(jobRequest(`jobs/${jobId}/attachments/a-1`, "GET"), {
+            params: Promise.resolve({ id: jobId, attachmentId: "a-1" }),
+          })
+        ).status,
+      ).toBe(401);
+      const audit = await listAgentAudit(db, {
+        agentId: foreign.agentId,
+        event: "credential_issued",
+      });
+      expect(audit).toEqual([]);
+    });
+
+    it("expires stale queued jobs of every organization", async () => {
+      const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      const [ours, theirs] = await db
+        .insert(jobs)
+        .values([
+          { organizationId: orgId, capability: "review", type: "review.run", createdAt: dayAgo },
+          {
+            organizationId: otherOrgId,
+            capability: "review",
+            type: "review.run",
+            createdAt: dayAgo,
+          },
+        ])
+        .returning({ id: jobs.id });
+      const res = await expireJobs(
+        new Request("http://localhost/api/cron/expire-jobs", {
+          headers: { authorization: "Bearer cron-secret" },
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(await jobRow(ours!.id)).toMatchObject({ status: "expired", organizationId: orgId });
+      expect(await jobRow(theirs!.id)).toMatchObject({
+        status: "expired",
+        organizationId: otherOrgId,
+      });
     });
   });
 
@@ -959,9 +1211,15 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const [stale, fresh, oldRunning] = await db
         .insert(jobs)
         .values([
-          { capability: "review", type: "review.run", createdAt: dayAgo },
-          { capability: "review", type: "review.run" },
-          { capability: "review", type: "review.run", status: "running", createdAt: dayAgo },
+          { organizationId: orgId, capability: "review", type: "review.run", createdAt: dayAgo },
+          { organizationId: orgId, capability: "review", type: "review.run" },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            status: "running",
+            createdAt: dayAgo,
+          },
         ])
         .returning({ id: jobs.id });
 

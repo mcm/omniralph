@@ -282,7 +282,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     it("enabling ralph lets the agent read the ralph topics", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(before.topics).not.toContain("ralph-jobs");
+      expect(before.topics).not.toContain(`ralph-jobs-org-${orgId}`);
       expect(before.topics).not.toContain(`ralph-jobs-agent-${agentId}`);
 
       expect(
@@ -297,8 +297,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(after.topics).toEqual([
         `review-jobs-agent-${agentId}`,
         `ralph-jobs-agent-${agentId}`,
-        "review-jobs",
-        "ralph-jobs",
+        `review-jobs-org-${orgId}`,
+        `ralph-jobs-org-${orgId}`,
         `system-jobs-agent-${agentId}`,
       ]);
     });
@@ -464,22 +464,25 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         .insert(jobs)
         .values([
           {
+            organizationId: orgId,
             capability: "review",
             type: "review.run",
             status: "running",
             agentId,
             deliveryCount: 1,
-            topic: "review-jobs",
+            topic: `review-jobs-org-${orgId}`,
           },
           {
+            organizationId: orgId,
             capability: "review",
             type: "review.run",
             status: "running",
             agentId,
             deliveryCount: 3,
-            topic: "review-jobs",
+            topic: `review-jobs-org-${orgId}`,
           },
           {
+            organizationId: orgId,
             capability: "review",
             type: "review.run",
             status: "running",
@@ -488,6 +491,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             cancelRequested: true,
           },
           {
+            organizationId: orgId,
             capability: "review",
             type: "review.run",
             status: "queued",
@@ -495,6 +499,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             topic: `review-jobs-agent-${agentId}`,
           },
           {
+            organizationId: orgId,
             capability: "system",
             type: "repo.sync",
             status: "queued",
@@ -542,11 +547,11 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       // Jobs only it could read are re-published (to the shared topic now) or skipped.
       expect(await jobRow(queuedOnOwnTopic!.id)).toMatchObject({
         status: "queued",
-        topic: "review-jobs",
+        topic: `review-jobs-org-${orgId}`,
       });
       expect(state.sends).toEqual([
         {
-          topic: "review-jobs",
+          topic: `review-jobs-org-${orgId}`,
           payload: { jobId: queuedOnOwnTopic!.id },
           options: expect.objectContaining({ idempotencyKey: queuedOnOwnTopic!.id }),
         },
@@ -609,9 +614,21 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       const [queued, running, done] = await db
         .insert(jobs)
         .values([
-          { capability: "review", type: "review.run", status: "queued" },
-          { capability: "review", type: "review.run", status: "running", agentId },
-          { capability: "review", type: "review.run", status: "completed", agentId },
+          { organizationId: orgId, capability: "review", type: "review.run", status: "queued" },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            status: "running",
+            agentId,
+          },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            status: "completed",
+            agentId,
+          },
         ])
         .returning();
 
@@ -629,7 +646,12 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       const [another] = await db
         .insert(jobs)
-        .values({ capability: "review", type: "review.run", status: "queued" })
+        .values({
+          organizationId: orgId,
+          capability: "review",
+          type: "review.run",
+          status: "queued",
+        })
         .returning();
       expect(await cancelJob(another!.id)).toMatchObject({ ok: false });
       expect(await jobRow(another!.id)).toMatchObject({ status: "queued" });

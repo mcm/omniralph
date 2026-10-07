@@ -150,6 +150,7 @@ export {
   insertJob,
   listAgentPinnedRepositoryIds,
   markJobPublished,
+  getJobForAgent,
   pinnedAgentFor,
   postJobCommentOnce,
   recordAgentHeartbeat,

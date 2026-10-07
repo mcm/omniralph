@@ -22,9 +22,12 @@ export const HEARTBEAT_INTERVAL_SECONDS = 20;
 /** Longest lease extension Vercel Queues accepts (`visibilityTimeoutSeconds`). */
 export const MAX_LEASE_SECONDS = 3600;
 
-/** The shared topic for a capability, e.g. `review-jobs`. */
-export function capabilityTopic(capability: string): string {
-  return `${capability}-jobs`;
+/**
+ * An organization's shared topic for a capability, e.g.
+ * `review-jobs-org-<organizationId>`: only that organization's agents poll it.
+ */
+export function capabilityTopic(capability: string, organizationId: string): string {
+  return `${capability}-jobs-org-${organizationId}`;
 }
 
 /** The topic for jobs of repos pinned to one agent, e.g. `review-jobs-agent-<agentId>`. */
@@ -191,6 +194,8 @@ export const HeartbeatResponse = z.object({
   capabilityLimits: CapabilityLimits.default({}),
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
   pinnedRepoIds: z.array(z.uuid()),
+  /** The agent's organization: its capability topics are that organization's. */
+  organizationId: z.uuid(),
   /** Topics to poll, in consumer group `QUEUE_CONSUMER_GROUP`. */
   topics: z.array(z.string()),
   /** Vercel Queues region the topics live in (the proxy's `{region}` path segment). */
@@ -202,8 +207,8 @@ export const HeartbeatResponse = z.object({
   /** Undelivered messages for the agent's running jobs, oldest first. */
   jobMessages: z.array(JobMessageDelivery).default([]),
   /**
-   * The version the agent should run (the agent's override, else the global
-   * setting); null when none is chosen. Agents under pm2 update themselves to it.
+   * The version the agent should run (the agent's override, else its
+   * organization's setting); null when none is chosen. Agents under pm2 update themselves to it.
    */
   desiredVersion: AgentVersion.nullable().default(null),
 });

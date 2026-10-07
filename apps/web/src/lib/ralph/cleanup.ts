@@ -123,7 +123,7 @@ async function enqueueCleanupJob(
   if (!found || found.repository.disconnectedAt) {
     return { why: "the repository is no longer connected" };
   }
-  const agentId = await stickyAgentId(deps.db, run.agentId);
+  const agentId = await stickyAgentId(deps.db, run);
   if (!agentId) return { why: "the agent that holds the branch can't take ralph jobs anymore" };
   const { repository, connection } = found;
   const payload = RalphCleanupPayload.parse({
@@ -137,6 +137,7 @@ async function enqueueCleanupJob(
     action,
   });
   const { job } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_CLEANUP_JOB_TYPE,
     payload,

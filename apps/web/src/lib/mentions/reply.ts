@@ -78,6 +78,7 @@ export async function enqueueReply(
     threadCommentId: finding.scmCommentId,
   } satisfies ReviewReplyJobPayload);
   const { job, created } = await dispatcher.createAndPublish({
+    organizationId: found.repository.organizationId,
     capability: REVIEW_REPLY_CAPABILITY,
     type: REVIEW_REPLY_JOB_TYPE,
     payload,

@@ -126,6 +126,7 @@ describe.skipIf(!dockerAvailable)("POST /api/agent/jobs/{id}/activities", () => 
     const [job] = await db
       .insert(jobs)
       .values({
+        organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
         status: "running",

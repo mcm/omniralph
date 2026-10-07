@@ -227,7 +227,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
         type: "review.learn-rule",
         repositoryId: repoId,
         status: "queued",
-        topic: "review-jobs",
+        topic: `review-jobs-org-${orgId}`,
       });
       const payload = LearnRuleJobPayload.parse(job.payload);
       expect(payload).toMatchObject({
@@ -248,7 +248,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
       });
       expect(LEARN_RULE_TOKEN_CAP).toBe(5000);
       expect(state.sends).toEqual([
-        expect.objectContaining({ topic: "review-jobs", payload: { jobId: job.id } }),
+        expect.objectContaining({ topic: `review-jobs-org-${orgId}`, payload: { jobId: job.id } }),
       ]);
     });
 

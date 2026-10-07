@@ -28,8 +28,10 @@ delivers jobs.**
   how jobs are delivered. `VercelQueuesDispatcher.createAndPublish(job)`
   inserts the row (deduped by `dedupe_key` among queued/running jobs), then
   publishes:
-  - to `<capability>-jobs` (e.g. `review-jobs`), or
-  - to `<capability>-jobs-agent-<agentId>` when the repo is pinned. With several
+  - to the job's organization's `<capability>-jobs-org-<organizationId>`
+    (e.g. `review-jobs-org-<organizationId>`), or
+  - to `<capability>-jobs-agent-<agentId>` when the repo is pinned (only to
+    agents of the job's organization). With several
     pinned agents it picks the non-revoked one with the fewest active jobs,
     then the latest heartbeat. `repo.sync` jobs name their agent explicitly.
   - with `idempotencyKey = jobId`, `retentionSeconds = 86400`, and

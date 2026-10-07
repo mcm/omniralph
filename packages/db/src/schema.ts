@@ -808,6 +808,10 @@ export const jobs = pgTable(
   "jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Only agents of this organization receive the job and its credentials. */
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     /** Capability that runs the job, e.g. `review`. */
     capability: text("capability").notNull(),
     /** Job type within the capability, e.g. `review.run` or `repo.sync`. */
@@ -847,6 +851,7 @@ export const jobs = pgTable(
     index("jobs_status_created_at_idx").on(t.status, t.createdAt),
     index("jobs_agent_id_idx").on(t.agentId),
     index("jobs_ralph_run_id_idx").on(t.ralphRunId),
+    index("jobs_organization_created_at_idx").on(t.organizationId, t.createdAt),
   ],
 );
 

@@ -15,8 +15,9 @@ import {
 const ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 
 describe("protocol", () => {
-  it("names topics per capability and per agent", () => {
-    expect(capabilityTopic("review")).toBe("review-jobs");
+  it("names topics per capability, per organization and per agent", () => {
+    expect(capabilityTopic("review", ID)).toBe(`review-jobs-org-${ID}`);
+    expect(capabilityTopic("review", ID)).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(agentTopic("review", ID)).toBe(`review-jobs-agent-${ID}`);
     // Vercel Queues topic names are [A-Za-z0-9_-]+.
     expect(agentTopic("review", ID)).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -75,12 +76,28 @@ describe("protocol", () => {
       pollIntervalSeconds: 5,
       enabledCapabilities: [],
       pinnedRepoIds: [],
+      organizationId: ID,
       topics: [],
       queueRegion: "iad1",
       cancelJobIds: [],
       jobTokens: [],
     });
     expect(response.capabilityLimits).toEqual({});
+  });
+
+  it("requires the agent's organization in the heartbeat response", () => {
+    const response = {
+      maxConcurrency: 1,
+      pollIntervalSeconds: 5,
+      enabledCapabilities: [],
+      pinnedRepoIds: [],
+      topics: [],
+      queueRegion: "iad1",
+      cancelJobIds: [],
+      jobTokens: [],
+    };
+    expect(HeartbeatResponse.safeParse(response).success).toBe(false);
+    expect(HeartbeatResponse.parse({ ...response, organizationId: ID }).organizationId).toBe(ID);
   });
 });
 
@@ -109,6 +126,7 @@ describe("self-update protocol", () => {
       pollIntervalSeconds: 5,
       enabledCapabilities: [],
       pinnedRepoIds: [],
+      organizationId: ID,
       topics: [],
       queueRegion: "iad1",
       cancelJobIds: [],

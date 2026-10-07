@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  getAgent,
   getJob,
   insertJob,
   markJobPublished,
@@ -20,7 +21,10 @@ import { QueueClient } from "@vercel/queue";
 import { publishRegion } from "./config";
 
 export interface DispatchJobInput extends NewJobInput {
-  /** Send to this agent's topic regardless of pins (e.g. `repo.sync` pre-clones). */
+  /**
+   * Send to this agent's topic regardless of pins (e.g. `repo.sync` pre-clones).
+   * Must be an agent of the job's organization.
+   */
   targetAgentId?: string;
 }
 
@@ -59,8 +63,10 @@ export interface QueuePublisher {
 /**
  * `JobDispatcher` on Vercel Queues (poll mode). Messages are published
  * deploymentless (`deploymentId: null`) so they survive redeploys, with
- * `idempotencyKey = jobId` and 24h retention, to `<capability>-jobs`, or to
- * `<capability>-jobs-agent-<agentId>` when the repo is pinned.
+ * `idempotencyKey = jobId` and 24h retention, to the job's organization's
+ * `<capability>-jobs-org-<organizationId>`, or to
+ * `<capability>-jobs-agent-<agentId>` when the repo is pinned (to an agent of
+ * that organization).
  */
 export class VercelQueuesDispatcher implements JobDispatcher {
   private readonly db: Database;
@@ -104,9 +110,19 @@ export class VercelQueuesDispatcher implements JobDispatcher {
   }
 
   private async topicFor(job: Job, targetAgentId: string | undefined): Promise<string> {
-    const agentId =
-      targetAgentId ?? (job.repositoryId ? await pinnedAgentFor(this.db, job.repositoryId) : null);
-    return agentId ? agentTopic(job.capability, agentId) : capabilityTopic(job.capability);
+    if (targetAgentId) {
+      const target = await getAgent(this.db, targetAgentId);
+      if (target?.organizationId !== job.organizationId) {
+        throw new Error(`Agent ${targetAgentId} isn't in job ${job.id}'s organization`);
+      }
+      return agentTopic(job.capability, targetAgentId);
+    }
+    const pinned = job.repositoryId
+      ? await pinnedAgentFor(this.db, job.organizationId, job.repositoryId)
+      : null;
+    return pinned
+      ? agentTopic(job.capability, pinned)
+      : capabilityTopic(job.capability, job.organizationId);
   }
 
   private getPublisher(): QueuePublisher {

@@ -168,8 +168,20 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     ).rejects.toThrow();
   });
 
+  it("puts jobs in an organization (0034)", async () => {
+    await expect(
+      db.execute(sql`insert into jobs (capability, type) values ('review', 'review.run')`),
+    ).rejects.toThrow();
+  });
+
   it("allows one queued/running job per dedupe key", async () => {
-    const job = { capability: "review", type: "review.run", dedupeKey: "repo:1:pr:2" };
+    const [org] = await db.insert(organizations).values({ name: "Jobs" }).returning();
+    const job = {
+      organizationId: org!.id,
+      capability: "review",
+      type: "review.run",
+      dedupeKey: "repo:1:pr:2",
+    };
     const [first] = await db.insert(jobs).values(job).returning();
     await expect(db.insert(jobs).values(job)).rejects.toThrow();
 

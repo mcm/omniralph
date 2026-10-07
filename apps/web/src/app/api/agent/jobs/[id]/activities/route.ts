@@ -1,4 +1,4 @@
-import { getJob } from "@omniralph/db";
+import { getJobForAgent } from "@omniralph/db";
 import { RalphActivity } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireJob } from "@/lib/agent-auth/verify";
@@ -26,7 +26,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   if (!jobId) return notFound();
   if (jobId !== principal.jobId) return forbidden("job_mismatch");
   const db = getDb();
-  const job = await getJob(db, jobId);
+  const job = await getJobForAgent(db, jobId, principal.agentId);
   if (!job) return notFound();
   if (!isRalphJob(job)) return forbidden("not_a_ralph_job");
   const activity = RalphActivity.safeParse(await readJson(req));

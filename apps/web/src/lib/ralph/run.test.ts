@@ -230,6 +230,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   ): Promise<RalphStoryPayload> {
     const job = await activeJob(runId);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId,
       enabledCapabilities: ["ralph"],
@@ -276,6 +277,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(runId);
     expect(job.type).toBe("ralph.describe-pr");
     await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId,
       enabledCapabilities: ["ralph"],
@@ -335,7 +337,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       type: "ralph.story",
       repositoryId: repoId,
       ralphRunId: run.id,
-      topic: "ralph-jobs",
+      topic: `ralph-jobs-org-${orgId}`,
     });
     const payload = RalphStoryPayload.parse(first.payload);
     expect(payload).toMatchObject({
@@ -504,21 +506,22 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const second = await activeJob(run.id);
     expect(second.topic).toBe(`ralph-jobs-agent-${agentA}`);
 
-    // A is revoked while the job waits on its topic: it's published again to `ralph-jobs`.
+    // A is revoked while the job waits on its topic: it's published again to the org's ralph topic.
     await revokeAgent(agentA, { db, dispatcher });
-    expect(publisher.sent.at(-1)).toEqual({ topic: "ralph-jobs", jobId: second.id });
+    expect(publisher.sent.at(-1)).toEqual({ topic: `ralph-jobs-org-${orgId}`, jobId: second.id });
     await work(run.id, {}, agentB);
     expect((await getRun(db, run.id))?.agentId).toBe(agentB);
     expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-agent-${agentB}`);
   });
 
-  it("goes back to ralph-jobs when the sticky agent was revoked before the next job", async () => {
+  it("goes back to the organization's ralph topic when the sticky agent was revoked before the next job", async () => {
     const epic = linear.add({ identifier: "ENG-15", title: "Epic" });
     linear.add({ identifier: "ENG-16", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
     linear.add({ identifier: "ENG-17", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
     await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],
@@ -528,7 +531,32 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
     await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentA));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).topic).toBe("ralph-jobs");
+    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-org-${orgId}`);
+  });
+
+  it("never sticks to an agent of another organization", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
+    const [foreign] = await db
+      .insert(agents)
+      .values({ organizationId: other!.id, name: "globex-1", enabledCapabilities: ["ralph"] })
+      .returning();
+    const epic = linear.add({ identifier: "ENG-18", title: "Epic" });
+    linear.add({ identifier: "ENG-19", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
+    linear.add({ identifier: "ENG-29", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
+    const run = await delegate(epic.id);
+    const job = await activeJob(run.id);
+    await startJob(db, {
+      organizationId: orgId,
+      jobId: job.id,
+      agentId: agentA,
+      enabledCapabilities: ["ralph"],
+      maxDeliveries: MAX_JOB_DELIVERIES,
+    });
+    await onRalphJobStarted(db, job, agentA);
+    await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
+    await db.update(ralphRuns).set({ agentId: foreign!.id }).where(eq(ralphRuns.id, run.id));
+    await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-org-${orgId}`);
   });
 
   it("retries a failed attempt with its feedback and completes", async () => {
@@ -568,6 +596,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(run.id);
     for (let delivery = 1; delivery <= MAX_JOB_DELIVERIES; delivery += 1) {
       const started = await startJob(db, {
+        organizationId: orgId,
         jobId: job.id,
         agentId: agentA,
         enabledCapabilities: ["ralph"],
@@ -579,6 +608,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect((await activeJob(run.id)).id).toBe(job.id);
     }
     const gaveUp = await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],
@@ -613,6 +643,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
     await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],
@@ -1045,6 +1076,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
     // The job completes, but its outcome hook never ran (e.g. the control panel crashed).
     await startJob(db, {
+      organizationId: orgId,
       jobId: job.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],

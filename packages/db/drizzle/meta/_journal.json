@@ -239,6 +239,13 @@
       "when": 1791343071685,
       "tag": "0033_org_scoped_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791343664992,
+      "tag": "0034_org_scoped_jobs",
+      "breakpoints": true
     }
   ]
 }

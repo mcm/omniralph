@@ -5,7 +5,10 @@ import { agentTopics } from "./config";
 import { parseQueueRequest, proxyQueueRequest, type QueueProxyOptions } from "./queue-proxy";
 
 const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
+const ORG_ID = "0b6c1f47-9d3e-4f5a-8c2b-7e1d0a9f3c64";
 const OWN_TOPIC = `review-jobs-agent-${AGENT_ID}`;
+const REVIEW_TOPIC = `review-jobs-org-${ORG_ID}`;
+const RALPH_TOPIC = `ralph-jobs-org-${ORG_ID}`;
 const BASE = "https://omniralph.test/api/agent/queue";
 const UPSTREAM = "https://iad1.vercel-queue.com";
 const BOUNDARY = "vqs-test";
@@ -54,15 +57,15 @@ const getOidcToken = vi.fn(async () => "oidc-token");
 function options(overrides: Partial<QueueProxyOptions> = {}): QueueProxyOptions {
   return {
     regions: ["iad1"],
-    allowedTopics: ["review-jobs", OWN_TOPIC],
+    allowedTopics: [REVIEW_TOPIC, OWN_TOPIC],
     getOidcToken,
     ...overrides,
   };
 }
 
-const receivePath = (topic = "review-jobs", group = "agents", region = "iad1") =>
+const receivePath = (topic = REVIEW_TOPIC, group = "agents", region = "iad1") =>
   `${BASE}/${region}/api/v3/topic/${topic}/consumer/${group}`;
-const leasePath = (handle = "rh-abc.123", topic = "review-jobs") =>
+const leasePath = (handle = "rh-abc.123", topic = REVIEW_TOPIC) =>
   `${receivePath(topic)}/lease/${handle}`;
 
 function request(url: string, init: RequestInit = {}): Request {
@@ -114,7 +117,7 @@ describe("proxyQueueRequest", () => {
     expect(upstreamCalls).toHaveLength(1);
     const [call] = upstreamCalls;
     expect(call!.method).toBe("POST");
-    expect(call!.url).toBe(`${UPSTREAM}/api/v3/topic/review-jobs/consumer/agents`);
+    expect(call!.url).toBe(`${UPSTREAM}/api/v3/topic/${REVIEW_TOPIC}/consumer/agents`);
     expect(call!.headers.get("authorization")).toBe("Bearer oidc-token");
     expect(call!.headers.get("accept")).toBe("multipart/mixed");
     expect(call!.headers.get("vqs-visibility-timeout-seconds")).toBe("300");
@@ -151,7 +154,7 @@ describe("proxyQueueRequest", () => {
     // Publishing (POST /api/v3/topic/<topic>) is the control panel's job only.
     await expectForbidden(
       await proxyQueueRequest(
-        request(`${BASE}/iad1/api/v3/topic/review-jobs`, { body: "{}" }),
+        request(`${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}`, { body: "{}" }),
         options(),
       ),
     );
@@ -174,10 +177,10 @@ describe("proxyQueueRequest", () => {
         options(),
       ),
     );
-    await expectForbidden(await proxyQueueRequest(request(receivePath("ralph-jobs")), options()));
+    await expectForbidden(await proxyQueueRequest(request(receivePath(RALPH_TOPIC)), options()));
     await expectForbidden(
       await proxyQueueRequest(
-        request(leasePath("rh", "ralph-jobs"), { method: "DELETE" }),
+        request(leasePath("rh", RALPH_TOPIC), { method: "DELETE" }),
         options(),
       ),
     );
@@ -185,13 +188,21 @@ describe("proxyQueueRequest", () => {
 
   it("allows ralph topics only to agents with ralph enabled", async () => {
     const ralphTopic = `ralph-jobs-agent-${AGENT_ID}`;
-    const reviewOnly = agentTopics({ id: AGENT_ID, enabledCapabilities: ["review"] });
-    const withRalph = agentTopics({ id: AGENT_ID, enabledCapabilities: ["review", "ralph"] });
-    expect(reviewOnly).not.toContain("ralph-jobs");
+    const reviewOnly = agentTopics({
+      id: AGENT_ID,
+      organizationId: ORG_ID,
+      enabledCapabilities: ["review"],
+    });
+    const withRalph = agentTopics({
+      id: AGENT_ID,
+      organizationId: ORG_ID,
+      enabledCapabilities: ["review", "ralph"],
+    });
+    expect(reviewOnly).not.toContain(RALPH_TOPIC);
     expect(reviewOnly).not.toContain(ralphTopic);
-    expect(withRalph).toEqual(expect.arrayContaining(["ralph-jobs", ralphTopic, "review-jobs"]));
+    expect(withRalph).toEqual(expect.arrayContaining([RALPH_TOPIC, ralphTopic, REVIEW_TOPIC]));
 
-    for (const topic of ["ralph-jobs", ralphTopic]) {
+    for (const topic of [RALPH_TOPIC, ralphTopic]) {
       await expectForbidden(
         await proxyQueueRequest(
           request(receivePath(topic)),
@@ -212,7 +223,7 @@ describe("proxyQueueRequest", () => {
         options({ allowedTopics: withRalph }),
       ),
     );
-    for (const topic of ["ralph-jobs", ralphTopic]) {
+    for (const topic of [RALPH_TOPIC, ralphTopic]) {
       const received = await proxyQueueRequest(
         request(receivePath(topic)),
         options({ allowedTopics: withRalph }),
@@ -220,31 +231,65 @@ describe("proxyQueueRequest", () => {
       expect(received.status).toBe(200);
     }
     expect(upstreamCalls.map((c) => new URL(c.url).pathname)).toEqual([
-      "/api/v3/topic/ralph-jobs/consumer/agents",
+      `/api/v3/topic/${RALPH_TOPIC}/consumer/agents`,
       `/api/v3/topic/${ralphTopic}/consumer/agents`,
     ]);
   });
 
-  it("derives no topics from unknown capabilities", () => {
-    expect(agentTopics({ id: AGENT_ID, enabledCapabilities: ["deploy"] })).toEqual([
+  it("allows only the agent's own organization's capability topics", async () => {
+    const OTHER_ORG = "3f0e2d1c-4b5a-4968-8776-a5b4c3d2e1f0";
+    const topics = agentTopics({
+      id: AGENT_ID,
+      organizationId: ORG_ID,
+      enabledCapabilities: ["review", "ralph"],
+    });
+    expect(topics).toEqual([
+      OWN_TOPIC,
+      `ralph-jobs-agent-${AGENT_ID}`,
+      REVIEW_TOPIC,
+      RALPH_TOPIC,
       `system-jobs-agent-${AGENT_ID}`,
     ]);
+    for (const topic of [
+      `review-jobs-org-${OTHER_ORG}`,
+      `ralph-jobs-org-${OTHER_ORG}`,
+      "review-jobs",
+      "ralph-jobs",
+    ]) {
+      expect(topics).not.toContain(topic);
+      await expectForbidden(
+        await proxyQueueRequest(request(receivePath(topic)), options({ allowedTopics: topics })),
+      );
+      await expectForbidden(
+        await proxyQueueRequest(
+          request(leasePath("rh", topic), { method: "PATCH", body: "{}" }),
+          options({ allowedTopics: topics }),
+        ),
+      );
+    }
+    expect(upstreamCalls).toEqual([]);
+  });
+
+  it("derives no topics from unknown capabilities", () => {
+    expect(
+      agentTopics({ id: AGENT_ID, organizationId: ORG_ID, enabledCapabilities: ["deploy"] }),
+    ).toEqual([`system-jobs-agent-${AGENT_ID}`]);
   });
 
   it("denies consumer groups other than agents", async () => {
     await expectForbidden(
-      await proxyQueueRequest(request(receivePath("review-jobs", "other")), options()),
+      await proxyQueueRequest(request(receivePath(REVIEW_TOPIC, "other")), options()),
     );
   });
 
   it("denies regions outside QUEUE_REGIONS", async () => {
     await expectForbidden(
-      await proxyQueueRequest(request(receivePath("review-jobs", "agents", "sfo1")), options()),
+      await proxyQueueRequest(request(receivePath(REVIEW_TOPIC, "agents", "sfo1")), options()),
     );
     // Hostname injection through the region segment.
     await expectForbidden(
       await proxyQueueRequest(
-        request(receivePath("review-jobs", "agents", "evil.example.com%2F")),
+        request(receivePath(REVIEW_TOPIC, "agents", "evil.example.com%2F")),
         options({ regions: ["iad1", "evil.example.com%2F"] }),
       ),
     );
@@ -252,16 +297,16 @@ describe("proxyQueueRequest", () => {
 
   it("denies traversal and encoded slashes", async () => {
     const attempts = [
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents/lease/../../../../topic/x`,
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents/lease/%2e%2e%2fx`,
-      `${BASE}/iad1/api/v3/topic/review-jobs%2Fconsumer%2Fagents`,
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents%2F..%2F..%2Fother`,
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents/lease/a%2Fb`,
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents/lease/a%5Cb`,
-      `${BASE}/iad1/api/v3/topic/review-jobs/consumer/agents?x=1`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents/lease/../../../../topic/x`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents/lease/%2e%2e%2fx`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}%2Fconsumer%2Fagents`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents%2F..%2F..%2Fother`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents/lease/a%2Fb`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents/lease/a%5Cb`,
+      `${BASE}/iad1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents?x=1`,
       // `Request` normalises dot segments; the result must still be rejected.
-      `${BASE}/../../../api/v3/topic/review-jobs/consumer/agents`,
-      `${BASE}/iad1/%2e%2e/sfo1/api/v3/topic/review-jobs/consumer/agents`,
+      `${BASE}/../../../api/v3/topic/${REVIEW_TOPIC}/consumer/agents`,
+      `${BASE}/iad1/%2e%2e/sfo1/api/v3/topic/${REVIEW_TOPIC}/consumer/agents`,
     ];
     for (const url of attempts) {
       const method = url.includes("/lease/") ? "DELETE" : "POST";

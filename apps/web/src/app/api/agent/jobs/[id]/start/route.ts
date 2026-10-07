@@ -1,4 +1,4 @@
-import { getAgent, getJob, startJob } from "@omniralph/db";
+import { getAgent, getJob, getJobForAgent, startJob } from "@omniralph/db";
 import { MAX_JOB_DELIVERIES, type JobStartResponse } from "@omniralph/shared";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import {
@@ -24,7 +24,10 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const db = getDb();
   const { agentId } = principal;
   const jobId = await jobIdParam(ctx);
-  const [agent, job] = jobId ? await Promise.all([getAgent(db, agentId), getJob(db, jobId)]) : [];
+  // Another organization's job is "not found": its message never reaches this agent's topics.
+  const [agent, job] = jobId
+    ? await Promise.all([getAgent(db, agentId), getJobForAgent(db, jobId, agentId)])
+    : [];
   if (!agent || !job) {
     return Response.json({ action: "skip", reason: "not_found" } satisfies JobStartResponse);
   }
@@ -34,6 +37,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const started = await startJob(db, {
     jobId: job.id,
     agentId,
+    organizationId: agent.organizationId,
     enabledCapabilities: runnableCapabilities(agent.enabledCapabilities),
     maxDeliveries: MAX_JOB_DELIVERIES,
   });

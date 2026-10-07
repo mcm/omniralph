@@ -28,6 +28,7 @@ export async function pinRepository(
     repository: jobRepository(found.repository, found.connection),
   };
   const { job } = await dispatcher.createAndPublish({
+    organizationId: found.repository.organizationId,
     capability: SYSTEM_CAPABILITY,
     type: REPO_SYNC_JOB_TYPE,
     payload,

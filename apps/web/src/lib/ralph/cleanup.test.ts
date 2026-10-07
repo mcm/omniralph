@@ -155,6 +155,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(job, "the run has a queued job").toBeDefined();
     expect(more).toEqual([]);
     const started = await startJob(db, {
+      organizationId: orgId,
       jobId: job!.id,
       agentId: agentA,
       enabledCapabilities: ["ralph"],
