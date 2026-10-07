@@ -253,7 +253,9 @@ export async function applyRequestJob(
         if (note) notes.push(note);
       }
       await adoptPullRequest(deps, tx, run, lane);
-      if (result.findings?.length) {
+      // A failed session's "fixed" is only its own claim (e.g. the push may
+      // have failed), so its findings stay open.
+      if (result.findings?.length && !result.error) {
         const current = (await listLanes(tx, run.id)).find((l) => l.id === lane.id) ?? lane;
         const settled = await settleFindingThreads(deps, current, result.findings);
         const n = settled.resolved.length;
