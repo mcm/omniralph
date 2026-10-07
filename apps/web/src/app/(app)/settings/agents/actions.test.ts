@@ -38,7 +38,7 @@ vi.mock("@omniralph/db", () => ({
 
 const { applyLatestAgentVersion, setGlobalAgentVersion } = await import("./actions");
 
-const REGISTRY = "https://registry.npmjs.org/@iamthemcmaster%2fomniralph-agent";
+const REGISTRY = "https://registry.npmjs.org/@omniralph%2fagent";
 const requests: { authorization: string | null; accept: string | null }[] = [];
 let registry: () => Response = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
 const server = setupServer(
@@ -127,7 +127,7 @@ describe("Settings › Agents actions", () => {
     expect(await applyLatestAgentVersion()).toEqual({
       ok: false,
       error: expect.stringContaining(
-        "check that NPM_TOKEN can read @iamthemcmaster/omniralph-agent",
+        "check that NPM_TOKEN can read @omniralph/agent",
       ),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });

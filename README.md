@@ -172,7 +172,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 | Path              | Package                           | Purpose                                                      |
 | ----------------- | --------------------------------- | ------------------------------------------------------------ |
 | `apps/web`        | `@omniralph/web`                  | Control panel UI, agent API, queue proxy, webhooks           |
-| `apps/agent`      | `@iamthemcmaster/omniralph-agent` | Agent daemon (`bin: omniralph-agent`)                        |
+| `apps/agent`      | `@omniralph/agent`                | Agent daemon (`bin: omniralph-agent`)                        |
 | `packages/engine` | `@omniralph/engine`               | Review core: diff parsing, budgets, prompts, Claude provider |
 | `packages/scm`    | `@omniralph/scm`                  | SCM adapter interface + GitHub and GitLab implementations    |
 | `packages/db`     | `@omniralph/db`                   | Drizzle schema, migrations, typed queries                    |

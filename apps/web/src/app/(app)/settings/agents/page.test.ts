@@ -55,7 +55,7 @@ describe("Settings › Agents page", () => {
     expect((await AgentSettingsPage()).props).toEqual({
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
-      packageName: "@iamthemcmaster/omniralph-agent",
+      packageName: "@omniralph/agent",
       npmConfigured: false,
     });
     process.env.NPM_TOKEN = "npm_secret";

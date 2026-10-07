@@ -1,7 +1,7 @@
 /**
  * Self-update under pm2: when the heartbeat's `desiredVersion` differs from
  * the running one, the agent drains (no new jobs, running ones get up to 2h),
- * runs `npm i -g @iamthemcmaster/omniralph-agent@<version>`, records the
+ * runs `npm i -g @omniralph/agent@<version>`, records the
  * update in `update-state.json` next to its config and exits; pm2 starts the
  * new version. A version that keeps dying on start (more than 3 starts before
  * staying up for 60s) is rolled back to the previous one and never tried
@@ -86,7 +86,7 @@ export interface Installer {
   install(version: string): Promise<void>;
 }
 
-/** `npm i -g @iamthemcmaster/omniralph-agent@<version>`, with the host's npm auth. */
+/** `npm i -g @omniralph/agent@<version>`, with the host's npm auth. */
 export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
   return {
     install: (version) =>
