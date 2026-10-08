@@ -3,8 +3,8 @@
 `omniralph-agent` is the Omniralph agent host daemon. It pulls review jobs from an Omniralph
 control panel and runs them with the Claude Agent SDK. It needs Node 22 and git ≥ 2.40.
 
-This README covers installing and releasing the package. To set up a host (a dedicated Unix user,
-the Claude login, systemd, tmux or pm2), see
+This README covers installing and releasing the package. To set up a host (the agent's user, the
+Claude login, pm2, tmux or systemd), see
 [docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
 ## Install

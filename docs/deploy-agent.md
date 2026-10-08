@@ -5,59 +5,83 @@ the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control pan
 proxy) and to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
 push with brokered write tokens). It opens no port except an optional `/healthz` on `127.0.0.1`.
 
-This guide sets one up on a Coder instance, running as a **dedicated Unix user** so the agent's
-refresh token and Claude login are kept away from your dev sessions (and cyralph, if it still runs
-there).
+This guide sets one up on a Coder workspace, running as the **workspace user** (`coder`): the
+agent's config, repo cache and Claude login live in that user's home, which the workspace persists.
+On a dedicated or shared server you may want a **dedicated Unix user** instead, to keep the
+agent's refresh token and Claude login away from other sessions on the host (see
+[Optional: a dedicated user](#optional-a-dedicated-user)). The rest of this guide calls whichever
+user runs the agent *the agent's user*.
 
 ## Prerequisites
 
-- Node 22 (≥ 22.12) installed system-wide (e.g. `/usr/bin/node`), so a dedicated user and systemd can
-  use it. A Node installed with nvm under `/home/coder` won't be visible to the agent's user.
+- Node 22 (≥ 22.12) on the agent user's `PATH`. On Coder the workspace's Node (system-wide or
+  nvm) is fine. For a dedicated user or a systemd unit, install it system-wide (e.g.
+  `/usr/bin/node`): a Node installed with nvm under `/home/coder` isn't visible to other users.
 - git ≥ 2.40 (2.44+ recommended: older versions lazily fetch commits while checking whether they're
   cached).
-- `sudo` on the instance (to create the user and install the unit).
+- `sudo` on the host only if you create a dedicated user or install a systemd unit.
 - An admin account in the control panel organization the agent should serve.
 - For the `ralph` capability, also a git identity and the target repositories' toolchains: see
   [Ralph](#ralph).
 
 ### Coder specifics
 
-- Coder workspaces usually persist only the workspace user's home volume (`/home/coder`). A user
-  created with `useradd`, `/etc/systemd/system` and `/home/omniralph` are lost when the workspace is
-  rebuilt (and for container templates, on every restart). Either use a VM-based template, or
-  re-create the user and unit from the template's startup script and keep the agent's home on
-  persistent storage (e.g. `useradd --home-dir /home/coder/.omniralph-agent/home …`, mode 0700).
-- Container-based workspaces often have no systemd. Use tmux there (see below).
+- Coder workspaces usually persist only the workspace user's home volume (`/home/coder`). Running
+  as `coder` keeps the agent's config (`~/.config/omniralph/`), repo cache (`~/.omniralph/repos`)
+  and Claude login across rebuilds and restarts.
+- `/etc/systemd/system` and anything outside `/home/coder` (including users created with
+  `useradd`) are lost when the workspace is rebuilt, and for container templates on every restart.
+  Container-based workspaces often have no systemd at all: use pm2 or tmux there (see below), started
+  from the template's startup script.
 - The agent is identified by its config file, not by the machine. A rebuilt workspace that kept the
   agent's home keeps working; one that lost it has to be enrolled again.
 
-## 1. Create the agent's user
+## 1. Choose the agent's user
+
+On a Coder workspace, run the agent as the workspace user: there's nothing to create, and
+everything it writes stays on the persistent home volume. The config file is mode 0600 (the agent
+refuses to start if group or others can read it).
+
+Running as your own user means the agent's sessions can reach whatever that user can: your files,
+and any `gh`/`glab` logins, SSH keys and registry credentials in your home. Review sessions are
+read-only, but ralph sessions run commands with full permissions in their worktree (see
+[Host prerequisites](#host-prerequisites)). If that matters on the workspace, use a dedicated user.
+
+### Optional: a dedicated user
+
+On a dedicated server (or a host shared with other people or tools), run the agent as its own
+Unix user:
 
 ```sh
 sudo useradd --system --create-home --home-dir /home/omniralph --shell /bin/bash omniralph
 sudo chmod 700 /home/omniralph
+sudo -iu omniralph                                # run the steps below as this user
 ```
 
-The home is 0700 and the config file 0600 (the agent refuses to start if group or others can read
-it), so cyralph, your dev sessions and their shells, which run as `coder`, can't read
-`~omniralph/.config/omniralph/agent.json` or the agent's Claude login.
+The home is 0700 and the config file 0600, so other users and their shells can't read
+`~omniralph/.config/omniralph/agent.json` or the agent's Claude login, and the agent can't read
+their homes. This separation protects against accidental and tool-driven access (a prompt-injected
+session reading files it shouldn't). A user with passwordless `sudo` can still become `omniralph`;
+remove that if you need a hard boundary.
 
-This separation protects against accidental and tool-driven access (a prompt-injected session
-reading files it shouldn't). A user with passwordless `sudo` (the default `coder` user on many
-templates) can still become `omniralph`; remove that if you need a hard boundary.
+On Coder, a dedicated user doesn't survive a rebuild: re-create it (and any unit) from the
+template's startup script and keep its home on persistent storage (e.g.
+`useradd --home-dir /home/coder/.omniralph-agent/home …`, mode 0700).
 
 ## 2. Install
 
 The agent is published as the public npm package `@omniralph/agent`; installing it needs no npm
-token:
+token. As the agent's user:
 
 ```sh
-sudo -iu omniralph
 npm config set prefix ~/.local                    # global installs go to ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"              # also add this to ~/.profile
 npm install -g @omniralph/agent
 omniralph-agent --version
 ```
+
+If the user's npm already installs global packages somewhere it can write (e.g. an nvm-managed
+Node), skip the `prefix` line.
 
 To upgrade by hand: stop the agent, run `npm install -g @omniralph/agent@latest`,
 then start it again. Agents run under pm2 can update themselves instead (see
@@ -68,29 +92,30 @@ self-update to `@omniralph/agent`: upgrade them by hand once
 (`npm uninstall -g @iamthemcmaster/omniralph-agent && npm install -g @omniralph/agent@latest`, then
 restart the agent). See [apps/agent/README.md](../apps/agent/README.md#from-030-or-earlier-iamthemcmasteromniralph-agent).
 
-## 3. Give the agent's user its own Claude login
+## 3. Log the agent's user in to Claude
 
-Still as `omniralph`:
+As the agent's user:
 
 ```sh
-curl -fsSL https://claude.ai/install.sh | bash    # installs claude to ~/.local/bin
+curl -fsSL https://claude.ai/install.sh | bash    # installs claude to ~/.local/bin, if not installed yet
 claude                                            # log in, then /exit
 claude -p "say ok"                                # works non-interactively
 ```
 
-The Agent SDK bundles Claude Code and uses this login. Alternatively set `ANTHROPIC_API_KEY` or
-`CLAUDE_CODE_OAUTH_TOKEN` in the unit's environment file. See [claude-auth.md](claude-auth.md),
-including the note on Anthropic's terms for subscription auth.
+The Agent SDK bundles Claude Code and uses this login. On a Coder workspace where you already use
+`claude`, the agent uses your existing login (and shares its rate limits). Alternatively set
+`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in the agent's environment. See
+[claude-auth.md](claude-auth.md), including the note on Anthropic's terms for subscription auth.
 
 ## 4. Enroll
 
 Agents belong to an **organization**: the one active when the enrollment token was created. An
 agent only receives, and only gets credentials for, that organization's jobs, and only its members
-see it. To serve several organizations from one host, enroll one agent per organization (each as
-its own user or with its own `--config` and `--workspace-root`).
+see it. To serve several organizations from one host, enroll one agent per organization (each with
+its own `--config` and `--workspace-root`, or as its own user).
 
 As an admin of that organization, open **Agents › Enroll agent** in the control panel. It shows a one-time command with
-an enrollment token (single use, valid for 1 hour). Run it as `omniralph`:
+an enrollment token (single use, valid for 1 hour). Run it as the agent's user:
 
 ```sh
 omniralph-agent enroll --server https://omniralph.example.com --token <enrollment-token> \
@@ -109,7 +134,64 @@ theft and revokes the agent (see *Re-enrollment*). To run another agent, enroll 
 
 ## 5. Run it
 
-### systemd (recommended)
+On a Coder workspace, use pm2 (restarts on exit, [self-updates](#self-update-pm2)) or tmux,
+started from the template's startup script. Use systemd on hosts that have it, typically with a
+dedicated user.
+
+### pm2
+
+pm2 restarts the agent when it exits and keeps its logs. Install it as the agent's user
+(`npm install -g pm2`), enroll first (`start` exits at once without `agent.json`), then, as the
+agent's user:
+
+```sh
+pm2 start "$(command -v omniralph-agent)" --name omniralph-agent \
+  --kill-timeout 90000 --restart-delay 30000 --max-restarts 5 \
+  -- start --healthz-port 9310
+pm2 save                                   # remember it for `pm2 resurrect`
+pm2 logs omniralph-agent                   # pino JSON logs
+curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…}
+```
+
+- `--kill-timeout 90000`: pm2 sends SIGINT (handled like SIGTERM) and by default kills the process
+  after 1.6s. The agent gives running jobs up to 60s, so allow 90s.
+- `--restart-delay 30000`: wait 30s between restarts, so a crashing agent doesn't hammer the
+  control panel.
+- `--max-restarts 5`: pm2 only counts restarts within `min_uptime` (default 1s; the CLI has no flag
+  for it). A "re-enrollment required" exit can take longer than that, so pm2 may keep restarting
+  the agent every 30s. That's harmless, but stop it (`pm2 stop omniralph-agent`) before enrolling
+  again.
+- After a reboot or workspace restart, run `pm2 resurrect`: put it in the Coder template's startup
+  script. On hosts with systemd, `pm2 startup` can do this instead.
+- pm2 captures the environment when the process is first started. After changing
+  `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
+  `pm2 restart omniralph-agent --update-env`.
+- To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below),
+  or trigger an update with **Update now** on the agent's page or `omniralph-agent update` on the
+  host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
+- Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
+  self-update and relies on pm2 to start it again.
+
+### tmux
+
+As the agent's user:
+
+```sh
+tmux new-session -d -s omniralph-agent \
+  'omniralph-agent start --healthz-port 9310 2>&1 | tee -a ~/agent.log'
+tmux attach -t omniralph-agent             # Ctrl-b d to detach
+```
+
+tmux doesn't restart the agent when it exits, and doesn't start it after a reboot or workspace
+restart: put the first command in the Coder template's startup script. Stop it with `Ctrl-c` in the
+session (SIGINT is handled like SIGTERM). With a dedicated user, prefix both commands with
+`sudo -iu omniralph`.
+
+### systemd
+
+On hosts with systemd, a unit restarts the agent and starts it at boot. This example runs it as
+the dedicated `omniralph` user from [Optional: a dedicated user](#optional-a-dedicated-user); for
+another user, change `User=`, `Group=` and the `/home/omniralph` paths.
 
 `/etc/systemd/system/omniralph-agent.service`:
 
@@ -166,59 +248,14 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
 Notes on the unit:
 
 - `ProtectHome=tmpfs` + `BindPaths=` is the tuned form: `ProtectHome=yes` or `read-only` would stop
-  the agent from writing its config (token rotation), repo cache and Claude session files. If you
-  moved the agent's home (e.g. under `/home/coder/...` on Coder), bind that path instead.
+  the agent from writing its config (token rotation), repo cache and Claude session files. If the
+  agent's home is elsewhere (e.g. `/home/coder`, or under `/home/coder/...` on Coder), bind that
+  path instead.
 - Node and git must come from outside `/home` (`/usr/bin`, `/usr/local/bin`) or from the agent's
   own home, because every other home is hidden.
 - `ProtectSystem=strict` makes the rest of the file system read-only; the agent only writes in its
   home and `/tmp` (private).
 - `StartLimit*` stops the restart loop when the agent exits because it has to be re-enrolled.
-
-### tmux (no systemd)
-
-```sh
-sudo -iu omniralph tmux new-session -d -s omniralph-agent \
-  'omniralph-agent start --healthz-port 9310 2>&1 | tee -a ~/agent.log'
-sudo -iu omniralph tmux attach -t omniralph-agent      # Ctrl-b d to detach
-```
-
-tmux doesn't restart the agent when it exits, and doesn't start it after a reboot or workspace
-restart: put the first command in the Coder template's startup script. Stop it with `Ctrl-c` in the
-session (SIGINT is handled like SIGTERM).
-
-### pm2 (no systemd)
-
-pm2 restarts the agent when it exits and keeps its logs. Install it as the agent's user
-(`npm install -g pm2`), enroll first (`start` exits at once without `agent.json`), then:
-
-```sh
-sudo -iu omniralph
-pm2 start "$(command -v omniralph-agent)" --name omniralph-agent \
-  --kill-timeout 90000 --restart-delay 30000 --max-restarts 5 \
-  -- start --healthz-port 9310
-pm2 save                                   # remember it for `pm2 resurrect`
-pm2 logs omniralph-agent                   # pino JSON logs
-curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…}
-```
-
-- `--kill-timeout 90000`: pm2 sends SIGINT (handled like SIGTERM) and by default kills the process
-  after 1.6s. The agent gives running jobs up to 60s, so allow 90s.
-- `--restart-delay 30000`: wait 30s between restarts, so a crashing agent doesn't hammer the
-  control panel.
-- `--max-restarts 5`: pm2 only counts restarts within `min_uptime` (default 1s; the CLI has no flag
-  for it). A "re-enrollment required" exit can take longer than that, so pm2 may keep restarting
-  the agent every 30s. That's harmless, but stop it (`pm2 stop omniralph-agent`) before enrolling
-  again.
-- After a reboot or workspace restart, run `pm2 resurrect`: put it in the Coder template's startup
-  script. On hosts with systemd, `pm2 startup` can do this instead.
-- pm2 captures the environment when the process is first started. After changing
-  `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
-  `pm2 restart omniralph-agent --update-env`.
-- To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below),
-  or trigger an update with **Update now** on the agent's page or `omniralph-agent update` on the
-  host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
-- Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
-  self-update and relies on pm2 to start it again.
 
 ### Self-update (pm2)
 
@@ -342,15 +379,17 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
 (`bypassPermissions`) inside the branch worktree, as the agent's user:
 
 - **A git identity for commits.** Story commits use the agent user's git identity. Set one, as the
-  agent's user:
+  agent's user, if it has none yet:
 
   ```sh
   git config --global user.name "Omniralph"
   git config --global user.email "omniralph@example.com"   # e.g. an address the code host links to the bot
   ```
 
-  Without one, commits are made as `Omniralph <omniralph@localhost>`. With systemd's
-  `ProtectHome=tmpfs`, `~/.gitconfig` must be in the bound home (it is, at `/home/omniralph`).
+  Without one, commits are made as `Omniralph <omniralph@localhost>`. Running as your workspace
+  user, that's your own global identity, so story commits are made as you; use a dedicated user if
+  they should carry a separate one. With systemd's `ProtectHome=tmpfs`, `~/.gitconfig` must be in
+  the bound home.
 - **The target repositories' toolchains.** The PRD's quality gates (`pnpm typecheck`, `cargo test`,
   …) and the repository's **Setup command** run on the host, so everything they need must be
   installed for the agent's user and on the unit's `PATH`: Node/pnpm (e.g. `corepack enable` as the
@@ -359,11 +398,14 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
   (`ProtectSystem=strict`, `PrivateTmp`, `ProtectHome=tmpfs`) applies to them too: tools that
   write outside the agent's home and `/tmp` need extra `ReadWritePaths=`. A gate that can't run fails every attempt.
 - **Package registry access.** Private registries the setup command installs from need their
-  credentials in the agent user's home (e.g. `~/.npmrc`), since the agent can't read yours.
+  credentials in the agent user's home (e.g. `~/.npmrc`). Running as your workspace user, your
+  existing credentials are used; a dedicated user needs its own.
 - **No `gh` or `glab` login.** The agent never uses code-host CLIs or API tokens. It pushes with
   the brokered, job-scoped `git-credential` helper (a write token for that one repository, only for
-  running `ralph` jobs), and the control panel opens and updates the PR/MR itself. Don't log the
-  agent's user in to `gh`/`glab`: sessions would be able to use those credentials.
+  running `ralph` jobs), and the control panel opens and updates the PR/MR itself. Sessions can
+  use any `gh`/`glab` login, SSH key or API token the agent's user has. Running as your workspace
+  user, that includes yours: if ralph sessions shouldn't be able to act as you on the code host,
+  log out of them on that workspace or use a dedicated user.
 
 Claude Code sessions in a ralph job load the agent user's `~/.claude/` settings, skills and
 `CLAUDE.md` plus the repository's `.claude/` settings and `CLAUDE.md`
@@ -407,7 +449,7 @@ agent isn't running a job for it, then `git -C <workspaceRoot>/<provider>/<repo 
 - There's no automatic eviction yet. To reclaim space, stop the agent and delete a repository's
   directory (it's re-cloned on the next job), or the whole workspace root.
 - Rough sizing: the sum of your repositories' blobless clone sizes, plus `max concurrency` × your
-  largest checkout, plus headroom. Watch it with `du -sh ~omniralph/.omniralph/repos/*`.
+  largest checkout, plus headroom. Watch it with `du -sh ~/.omniralph/repos/*` as the agent's user.
 
 ## Coexisting with cyralph
 
@@ -418,12 +460,14 @@ project or label in both, and don't point the agent's `--workspace-root` at cyra
 ## Coexisting with manual dev work
 
 - **Separate workspace root.** The agent's cache lives in the agent user's `~/.omniralph/repos`,
-  separate from your manual checkouts. Never point `--workspace-root` at a directory you work in:
+  separate from your manual checkouts, even when the agent runs as you. Never point `--workspace-root` at a directory you work in:
   worktrees there get pruned and repos fetched under you.
 - **Separate credentials.** Job git commands reset `credential.helper` and use
   `omniralph-agent git-credential` (brokered, one repository, short-lived; read-only except for
-  running `ralph` jobs), never your `gh`/`glab` logins or SSH keys. The dedicated user makes this
-  structural: the agent can't read `/home/coder`.
+  running `ralph` jobs), never your `gh`/`glab` logins or SSH keys. Ralph sessions run as the
+  agent's user, though, so when that's you they could use those credentials themselves (see
+  [Host prerequisites](#host-prerequisites)); a dedicated user makes the separation structural,
+  since it can't read `/home/coder`.
 - **Separate worktrees.** Don't work on a branch Omniralph is building from a manual checkout: the
   next story's push would be rejected as diverged. Ask for changes with an @mention or a reply
   instead.

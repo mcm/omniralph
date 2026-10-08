@@ -198,8 +198,8 @@ is delegated to Omniralph yet, so nothing runs.
 
 1. Prepare the agent hosts as in [deploy-agent.md › Ralph](deploy-agent.md#ralph): a git identity
    for commits, the repositories' toolchains (everything the verify commands, PRD gates and setup
-   commands call), and private registry credentials, all for the agent's user. Don't log that
-   user in to `gh`/`glab`.
+   commands call), and private registry credentials, all for the agent's user. Sessions can use
+   any `gh`/`glab` login that user has (see the linked section).
 2. On **Agents › <agent>**, tick `ralph` under **Enabled capabilities**, set **Max concurrency**
    (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `ralph` limit under
    **Concurrency per capability**.
