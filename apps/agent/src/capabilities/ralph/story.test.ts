@@ -262,7 +262,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
       tools: { type: "preset", preset: "claude_code" },
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      settingSources: ["project", "local"],
+      settingSources: ["user", "project", "local"],
       outputFormat: { type: "json_schema" },
       persistSession: false,
     });
@@ -394,7 +394,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
       disallowedTools: ["WebFetch"],
       // Only the listed calls run: nothing else is approved without asking, and nobody can be asked.
       permissionMode: "dontAsk",
-      settingSources: ["project", "local"],
+      settingSources: ["user", "project", "local"],
     });
     expect(call!.options.allowDangerouslySkipPermissions).toBeUndefined();
   });

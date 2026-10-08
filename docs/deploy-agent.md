@@ -347,8 +347,9 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
   running `ralph` jobs), and the control panel opens and updates the PR/MR itself. Don't log the
   agent's user in to `gh`/`glab`: sessions would be able to use those credentials.
 
-Claude Code sessions in a ralph job load the repository's `.claude/` settings and `CLAUDE.md`
-(`settingSources: ["project", "local"]`) like a local session would, but they never see the job
+Claude Code sessions in a ralph job load the agent user's `~/.claude/` settings, skills and
+`CLAUDE.md` plus the repository's `.claude/` settings and `CLAUDE.md`
+(`settingSources: ["user", "project", "local"]`) like a local session would, but they never see the job
 token, so they can't fetch credentials themselves; only the job's own git commands can.
 
 ### Branch worktrees

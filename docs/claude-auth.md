@@ -17,7 +17,9 @@ claude -p "say ok"          # check it works non-interactively
 
 The login lives in that user's home (`~/.claude/`, `~/.claude.json`), so each Unix user has its own.
 Review sessions run with `settingSources: []`: they use the login but never load `~/.claude`
-settings, skills, MCP servers or `CLAUDE.md` files.
+settings, skills, MCP servers or `CLAUDE.md` files. Ralph sessions (stories and requests) do load
+them (`settingSources: ["user", "project", "local"]`), so skills installed in the agent user's
+`~/.claude/skills/` are available to them.
 
 If the login is missing or expired, reviews fail with "Log in once on this host with `claude` …".
 Log in again as the agent's user; no restart is needed.

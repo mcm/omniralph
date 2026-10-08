@@ -97,7 +97,7 @@ describe("sdkPermissions", () => {
     expect(await guardDecision(exploring, "/etc/passwd")).toBe("deny");
   });
 
-  it("gives ralph story sessions Claude Code's tools without prompts, with project settings, in the worktree", () => {
+  it("gives ralph story sessions Claude Code's tools without prompts, with user and project settings, in the worktree", () => {
     const permissions = sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: true });
     expect(permissions).toStrictEqual({
       cwd,
@@ -106,7 +106,7 @@ describe("sdkPermissions", () => {
       disallowedTools: [],
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      settingSources: ["project", "local"],
+      settingSources: ["user", "project", "local"],
       hooks: {},
     });
   });

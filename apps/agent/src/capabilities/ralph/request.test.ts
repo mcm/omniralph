@@ -216,7 +216,7 @@ describe("ralph.request", { timeout: 60_000 }, () => {
       cwd: worktreePath(),
       model: "opus",
       permissionMode: "bypassPermissions",
-      settingSources: ["project", "local"],
+      settingSources: ["user", "project", "local"],
       persistSession: true,
     });
     expect(call!.options.resume).toBeUndefined();

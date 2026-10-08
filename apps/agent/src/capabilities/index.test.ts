@@ -45,7 +45,7 @@ describe("capability registry", () => {
     expect(RALPH_TOOL_POLICY).toMatchObject({
       tools: "claude_code",
       permissionMode: "bypassPermissions",
-      settingSources: ["project", "local"],
+      settingSources: ["user", "project", "local"],
       writable: true,
     });
     expect(toolPolicyFor(ralphCapability, "ralph.story")).toBe(RALPH_TOOL_POLICY);
