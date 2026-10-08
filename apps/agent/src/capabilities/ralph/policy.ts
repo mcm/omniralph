@@ -3,8 +3,9 @@ import type { ToolPolicy } from "../index.js";
 
 /**
  * Story sessions build the story in the epic's branch worktree: Claude Code's
- * default tools without permission prompts, with the repository's project and
- * local settings (`CLAUDE.md`, skills, hooks). They commit nothing themselves;
+ * default tools without permission prompts, with the agent user's settings
+ * (`~/.claude`: skills, `CLAUDE.md`, plugins, MCP servers) and the repository's
+ * project and local settings (`CLAUDE.md`, skills, hooks). They commit nothing themselves;
  * the job commits and pushes after the quality gates. `ralph.request` sessions
  * use it too, and may commit and push their branch (a `pre-push` hook rejects
  * any other ref).
@@ -15,7 +16,7 @@ export const RALPH_TOOL_POLICY: ToolPolicy = {
   disallowedTools: [],
   fileScope: "cwd",
   permissionMode: "bypassPermissions",
-  settingSources: ["project", "local"],
+  settingSources: ["user", "project", "local"],
   writable: true,
 };
 
