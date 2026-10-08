@@ -32,7 +32,8 @@ function normalizeCommand(cmd: string): string {
 export const RALPH_SYSTEM_APPEND = `You are "Omniralph", an autonomous engineer working a Linear epic one user story at a time (the Ralph loop).
 - Work only on the single story you are given; other stories get their own sessions.
 - Never run git commit, git push, or open pull requests: the orchestrator handles version control and Linear updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
-- Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.`;
+- Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.
+- You may run subagents and commands in the background. To wait for them, end your turn with the status "waiting": the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.`;
 
 /** A stash entry offered to a story session for review (see `## Stashed Work`). */
 export interface OfferedStash {
@@ -189,6 +190,7 @@ Your session ends with a structured result (the JSON schema you were given). It 
 - \`status: "complete"\` only when every acceptance criterion is met and the quality gates pass. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
 - \`status: "blocked"\` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in \`summary\` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with \`commit: { summary }\`.
 - \`status: "incomplete"\` when the story is just unfinished: it gets another attempt.
+- \`status: "waiting"\` only to end your turn while background work you started (subagents, commands) still runs: you are resumed when it finishes, and then report one of the statuses above.
 - \`summary\` is posted to Linear: what you did, or what is in the way.
 {{#if followUps}}
 
@@ -423,7 +425,8 @@ export function requestSystemAppend(historyRewrite: HistoryRewritePolicy = "when
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
 - Only push the epic branch you are on. Never push to, or force-push, the base branch or any other branch.
 ${rewrite}
-- The \`summary\` of your structured result is posted to the Linear thread: summarise what you did, with links (e.g. the PR/MR URL).`;
+- The \`summary\` of your structured result is posted to the Linear thread: summarise what you did, with links (e.g. the PR/MR URL).
+- You may run subagents and commands in the background. To wait for them, end your turn with \`waiting: true\` in your structured result: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.`;
 }
 
 export interface RequestPromptContext {

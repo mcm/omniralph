@@ -5,6 +5,7 @@ import {
   buildStoryPrompt,
   parseStoryBody,
   RALPH_SYSTEM_APPEND,
+  isWaitingStory,
   readStoryOutcome,
   STORY_OUTPUT_SCHEMA,
   uniqueCommands,
@@ -261,6 +262,7 @@ export async function runStory(
             policy: RALPH_TOOL_POLICY,
             systemAppend: RALPH_SYSTEM_APPEND,
             outputSchema: STORY_OUTPUT_SCHEMA,
+            isWaiting: isWaitingStory,
             model: payload.settings.model ?? DEFAULT_STORY_MODEL,
             ...(payload.settings.fallbackModel && {
               fallbackModel: payload.settings.fallbackModel,
@@ -358,6 +360,14 @@ export async function runStory(
               feedback: `${feedback}\n\nIts work so far is committed on the branch as \`${kept.sha.slice(0, 10)}\`.`,
               commitSha: kept.sha,
             });
+          }
+          if (outcome.status === "waiting") {
+            // The session stopped waiting for its background work (see `runQuery`).
+            return notDone(
+              "incomplete",
+              `The previous session was stopped while it waited for background work (${session.error ?? "it gave up waiting"}). Its summary was:\n\n${quote(tail(summary, 3000))}`,
+              "waiting",
+            );
           }
           if (outcome.status === "incomplete") {
             return notDone(

@@ -6,6 +6,7 @@ import {
   type MessageInjector,
   type SessionQueryFn,
   type SessionRequest,
+  WAIT_NUDGE_TEXT,
 } from "./session.js";
 
 type Behaviour = "separate-turns" | "folded" | "silent-after-result";
@@ -155,5 +156,237 @@ describe("session runner streaming input", () => {
     // The earlier turn's result counts.
     expect(result).toMatchObject({ stop: "completed", output: "answered story" });
     expect(r.hasInjector()).toBe(false);
+  });
+});
+
+/** What a scripted fake session can do: read the runner's input, and see what it sent. */
+interface Script {
+  next: () => Promise<SDKUserMessage | undefined>;
+  sent: SDKUserMessage[];
+}
+
+/** A fake SDK `query()` that yields what `script` yields, so a test controls every message. */
+function scriptedQuery(script: (io: Script) => AsyncGenerator<unknown>): {
+  query: SessionQueryFn;
+  sent: SDKUserMessage[];
+} {
+  const sent: SDKUserMessage[] = [];
+  const query: SessionQueryFn = ({ prompt, options }) =>
+    (async function* () {
+      const it = prompt[Symbol.asyncIterator]();
+      const next = async () => {
+        const r = await it.next();
+        if (r.done) return undefined;
+        sent.push(r.value);
+        return r.value;
+      };
+      const signal = options?.abortController?.signal;
+      const gen = script({ next, sent });
+      for (;;) {
+        // Like the SDK, an aborted session stops yielding.
+        const step = await Promise.race([
+          gen.next(),
+          new Promise<"aborted">((r) => {
+            if (signal?.aborted) r("aborted");
+            signal?.addEventListener("abort", () => r("aborted"), { once: true });
+          }),
+        ]);
+        if (step === "aborted") throw new Error("aborted");
+        if (step.done) return;
+        yield step.value as SDKMessage;
+      }
+    })();
+  return { query, sent };
+}
+
+const turn = () => ({ type: "system", subtype: "init" });
+const say = (t: string, parent: string | null = null) => ({
+  type: "assistant",
+  parent_tool_use_id: parent,
+  message: { content: [{ type: "text", text: t }] },
+});
+const tasks = (...live: { id: string; ambient?: boolean }[]) => ({
+  type: "system",
+  subtype: "background_tasks_changed",
+  tasks: live.map((t) => ({
+    task_id: t.id,
+    task_type: "local_agent",
+    description: t.id,
+    ...(t.ambient && { ambient: true }),
+  })),
+});
+const result = (status: string, answers?: SDKUserMessage[]) => ({
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  result: status,
+  structured_output: { status },
+  ...(answers && { user_message_uuids: answers.map((m) => m.uuid) }),
+  modelUsage: {},
+});
+const isWaiting = (s: unknown) => (s as { status?: string }).status === "waiting";
+
+function run(script: (io: Script) => AsyncGenerator<unknown>, extra: Partial<SessionRequest> = {}) {
+  const fake = scriptedQuery(script);
+  const done = createSessionRunner(fake.query)({
+    prompt: "story",
+    cwd: process.cwd(),
+    policy: RALPH_TOOL_POLICY,
+    systemAppend: "",
+    outputSchema: { type: "object" },
+    env: {},
+    signal: new AbortController().signal,
+    isWaiting,
+    idleTimeoutMs: 30,
+    ...extra,
+  });
+  return { done, sent: fake.sent };
+}
+
+describe("session runner background work", () => {
+  it("keeps a waiting session open, silent past the idle timeout, until its next turn", async () => {
+    const r = run(async function* ({ next }) {
+      const prompt = (await next())!;
+      yield turn();
+      yield tasks({ id: "a1" });
+      yield result("waiting", [prompt]);
+      // Background work: no messages for longer than the idle timeout.
+      await wait(80);
+      yield tasks();
+      // Claude Code starts a turn for the task notification; it answers none of our messages.
+      yield turn();
+      yield say("the assessments are in");
+      yield result("complete");
+    });
+    const result_ = await r.done;
+    expect(result_).toMatchObject({ stop: "completed", structured: { status: "complete" } });
+    expect(result_.error).toBeUndefined();
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it("doesn't count a background subagent's messages as the session's turn", async () => {
+    const r = run(async function* ({ next }) {
+      const prompt = (await next())!;
+      yield tasks({ id: "a1" });
+      yield result("waiting", [prompt]);
+      yield say("subagent working", "toolu_1");
+      await wait(80);
+      yield tasks();
+      yield turn();
+      yield result("complete");
+    });
+    expect(await r.done).toMatchObject({ stop: "completed", structured: { status: "complete" } });
+  });
+
+  it("returns the waiting result when the background work outlasts the wait timeout", async () => {
+    const r = run(
+      async function* ({ next }) {
+        const prompt = (await next())!;
+        yield tasks({ id: "a1" });
+        yield result("waiting", [prompt]);
+        await wait(10_000);
+      },
+      { backgroundWaitTimeoutMs: 50 },
+    );
+    const result_ = await r.done;
+    expect(result_).toMatchObject({ stop: "completed", structured: { status: "waiting" } });
+    expect(result_.error).toMatch(/background work took longer than/);
+  });
+
+  it("nudges a session that waits with nothing running", async () => {
+    const r = run(
+      async function* ({ next }) {
+        const prompt = (await next())!;
+        // Only an ambient task (e.g. a watcher) runs: that's nothing to wait for.
+        yield tasks({ id: "watch", ambient: true });
+        yield result("waiting", [prompt]);
+        const nudge = (await next())!;
+        yield turn();
+        yield result("complete", [nudge]);
+      },
+      { waitNudgeDelayMs: 20 },
+    );
+    expect(await r.done).toMatchObject({ stop: "completed", structured: { status: "complete" } });
+    expect(r.sent.map((m) => [text(m), m.priority])).toEqual([
+      ["story", undefined],
+      [WAIT_NUDGE_TEXT, "next"],
+    ]);
+  });
+
+  it("gives up on a session that keeps waiting with nothing running", async () => {
+    const r = run(
+      async function* ({ next }) {
+        const prompt = (await next())!;
+        yield result("waiting", [prompt]);
+        const nudge = (await next())!;
+        yield turn();
+        yield result("waiting", [nudge]);
+        await wait(10_000);
+      },
+      { waitNudgeDelayMs: 20 },
+    );
+    const result_ = await r.done;
+    expect(result_).toMatchObject({ stop: "completed", structured: { status: "waiting" } });
+    expect(result_.error).toMatch(/kept waiting with nothing running/);
+    expect(r.sent).toHaveLength(2);
+  });
+
+  it("gives up when no turn takes the nudge", async () => {
+    const r = run(
+      async function* ({ next }) {
+        const prompt = (await next())!;
+        yield result("waiting", [prompt]);
+        await next(); // the nudge, which never gets a turn
+        await wait(10_000);
+      },
+      { waitNudgeDelayMs: 20 },
+    );
+    const result_ = await r.done;
+    expect(result_).toMatchObject({ stop: "completed", structured: { status: "waiting" } });
+    expect(result_.error).toMatch(/kept waiting with nothing running/);
+    expect(r.sent.map(text)).toEqual(["story", WAIT_NUDGE_TEXT]);
+  });
+
+  it("ends the session on a result that doesn't wait, even while background work runs", async () => {
+    const r = run(async function* ({ next }) {
+      const prompt = (await next())!;
+      yield tasks({ id: "dev-server" });
+      yield result("complete", [prompt]);
+      await wait(10_000);
+    });
+    expect(await r.done).toMatchObject({ stop: "completed", structured: { status: "complete" } });
+  });
+
+  it("still times out a turn that goes silent while background work runs", async () => {
+    const r = run(async function* ({ next }) {
+      await next();
+      yield tasks({ id: "a1" });
+      yield say("thinking");
+      await wait(10_000);
+    });
+    expect(await r.done).toMatchObject({ stop: "idle" });
+  });
+
+  it("answers an injected message while it waits", async () => {
+    let inject: MessageInjector | undefined;
+    const r = run(
+      async function* ({ next }) {
+        const prompt = (await next())!;
+        yield tasks({ id: "a1" });
+        yield result("waiting", [prompt]);
+        const reply = (await next())!;
+        yield turn();
+        yield result("waiting", [reply]);
+        await wait(80);
+        yield tasks();
+        yield turn();
+        yield result("complete");
+      },
+      { onInjector: (fn) => (inject = fn) },
+    );
+    await wait(5);
+    expect(inject?.("how is it going?")).toBe(true);
+    expect(await r.done).toMatchObject({ stop: "completed", structured: { status: "complete" } });
+    expect(r.sent.map(text)).toEqual(["story", "how is it going?"]);
   });
 });

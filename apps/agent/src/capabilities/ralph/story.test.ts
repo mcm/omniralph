@@ -589,6 +589,29 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(stashes[0]).toContain("push-failed");
   });
 
+  it("treats a session that stopped while still waiting for background work as incomplete", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "half.txt"), "half\n");
+      yield result({ status: "waiting", summary: "Assessments running.", followUps: [] });
+      // The session ends before any background work reports back.
+    });
+    const out = await runStory(job(), context(), options(query));
+    expect(out).toMatchObject({ status: "incomplete", summary: "Assessments running." });
+    expect(out.feedback).toContain("stopped while it waited for background work");
+    expect(storyStashes()).toHaveLength(1);
+  });
+
+  it('tells the session it may wait for background work with the status "waiting"', async () => {
+    let options_: Options | undefined;
+    const { query } = fakeQuery(async function* (call) {
+      options_ = call.options;
+      yield result({ status: "incomplete", summary: "Later.", followUps: [] });
+    });
+    await runStory(job(), context(), options(query));
+    const append = (options_?.systemPrompt as { append?: string } | undefined)?.append ?? "";
+    expect(append).toContain('end your turn with the status "waiting"');
+  });
+
   it("stashes the work of an incomplete attempt and returns the summary as feedback, with follow-ups", async () => {
     activityStatus = 500; // relay failures never fail the job
     const { query } = fakeQuery(async function* (call) {

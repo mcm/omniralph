@@ -8,6 +8,8 @@ import {
 } from "./progress.js";
 import {
   PR_DESCRIPTION_SCHEMA,
+  isWaitingRequest,
+  isWaitingStory,
   STORY_OUTPUT_SCHEMA,
   StoryAgentOutput,
   readPullRequestDescription,
@@ -409,8 +411,18 @@ describe("structured results", () => {
     });
     expect(
       (STORY_OUTPUT_SCHEMA.properties as Record<string, { enum?: string[] }>).status?.enum,
-    ).toEqual(["complete", "blocked", "incomplete"]);
+    ).toEqual(["complete", "blocked", "incomplete", "waiting"]);
     expect(STORY_OUTPUT_SCHEMA).not.toHaveProperty("$schema");
+  });
+
+  it("tells a result that waits for background work apart", () => {
+    expect(isWaitingStory({ status: "waiting", summary: "", followUps: [] })).toBe(true);
+    expect(isWaitingStory({ status: "incomplete" })).toBe(false);
+    expect(isWaitingStory(undefined)).toBe(false);
+    expect(isWaitingStory(null)).toBe(false);
+    expect(isWaitingRequest({ summary: "", waiting: true })).toBe(true);
+    expect(isWaitingRequest({ summary: "" })).toBe(false);
+    expect(isWaitingRequest(undefined)).toBe(false);
   });
 
   it("reads follow-ups, drops repeats by title, and caps the count", () => {

@@ -468,6 +468,14 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     expect(out.summary).toBe("Done.");
   });
 
+  it("reports a session that stopped while still waiting for background work as an error", async () => {
+    const { query } = fakeQuery(async function* () {
+      yield result({ summary: "Checks running.", waiting: true });
+    });
+    const out = await runRequest(job(), context(), options(query));
+    expect(out.error).toContain("stopped while it waited for background work");
+  });
+
   it("throws a retryable error on a Claude rate limit", async () => {
     const { query } = fakeQuery(async function* () {
       yield {
