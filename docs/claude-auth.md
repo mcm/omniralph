@@ -6,16 +6,20 @@ holds no Claude credentials.
 
 ## Default: the host's `claude` login
 
-Log in once as the user the agent runs as (see *Run as a dedicated user* in
-[deploy-agent.md](deploy-agent.md)):
+Log in once as the user the agent runs as (see *Choose the agent's user* in
+[deploy-agent.md](deploy-agent.md#1-choose-the-agents-user)). On a Coder workspace that's usually
+the workspace user, so if you already use `claude` there, the agent uses that login and nothing
+else is needed. Otherwise, as the agent's user (e.g. after `sudo -iu omniralph` for a dedicated
+user):
 
 ```sh
-sudo -iu omniralph          # the agent's user
 claude                      # follow the login prompt, then /exit
 claude -p "say ok"          # check it works non-interactively
 ```
 
 The login lives in that user's home (`~/.claude/`, `~/.claude.json`), so each Unix user has its own.
+An agent running as your user shares your login, and with it your subscription's rate limits (see
+[Shared rate limits](#shared-rate-limits)).
 Review sessions run with `settingSources: []`: they use the login but never load `~/.claude`
 settings, skills, MCP servers or `CLAUDE.md` files. Ralph sessions (stories and requests) do load
 them (`settingSources: ["user", "project", "local"]`), so skills installed in the agent user's
@@ -52,8 +56,8 @@ interactive work apart:
 
 - lower the agent's **Max concurrency** under **Agents › <agent>** (central config, no restart),
 - use cheaper profiles (Quick) on busy repositories (**Repository › Settings**), or
-- give the agent its own credentials: an `ANTHROPIC_API_KEY`, or a separate subscription's
-  `claude` login for the agent's user.
+- give the agent its own credentials: an `ANTHROPIC_API_KEY` in its environment, or a separate
+  subscription's `claude` login for a dedicated agent user.
 
 ## Check the terms first
 

@@ -122,8 +122,8 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
    **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
-4. **Run an agent** on a Coder instance as a dedicated user with its own `claude` login, enrolled
-   from **Agents › Enroll agent** and run under systemd, tmux or pm2
+4. **Run an agent** on a Coder workspace as the workspace user, logged in with `claude`, enrolled
+   from **Agents › Enroll agent** and run under pm2, tmux or systemd
    → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
 
    ```bash
@@ -155,7 +155,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 | Doc | Covers |
 | -- | -- |
 | [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
-| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, dedicated user and systemd/tmux/pm2, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
+| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
 | [linear.md](docs/linear.md) | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments |
 | [cutover-from-cyralph.md](docs/cutover-from-cyralph.md) | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback |
 | [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
