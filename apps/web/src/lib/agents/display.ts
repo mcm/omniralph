@@ -55,6 +55,7 @@ export type AuditEventName =
   | "token_refresh"
   | "refresh_reuse"
   | "revoke"
+  | "delete"
   | "credential_issued"
   | "result_submitted"
   | "auth_failed";
@@ -66,6 +67,7 @@ export const AUDIT_EVENT_LABELS: Record<AuditEventName, { label: string; tone: A
   token_refresh: { label: "Token refresh", tone: "neutral" },
   refresh_reuse: { label: "Refresh token reuse", tone: "danger" },
   revoke: { label: "Revoked", tone: "danger" },
+  delete: { label: "Deleted", tone: "danger" },
   credential_issued: { label: "Credential issued", tone: "info" },
   result_submitted: { label: "Result submitted", tone: "info" },
   auth_failed: { label: "Auth failure", tone: "warning" },
@@ -104,6 +106,8 @@ export function auditDetailSummary(event: AuditEventName, detail: Record<string,
         .filter(Boolean)
         .join(", ");
     }
+    case "delete":
+      return str(detail.deletedBy) ? "By an admin" : "";
     case "enroll": {
       const name = str(detail.name);
       const version = str(detail.version);

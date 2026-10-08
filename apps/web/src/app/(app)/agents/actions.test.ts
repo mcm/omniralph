@@ -9,6 +9,7 @@ import {
   getAgentOverview,
   jobs,
   listAgentAudit,
+  listAgentOverview,
   listRecentAgentAudit,
   runMigrations,
   setDesiredAgentVersion,
@@ -71,6 +72,7 @@ process.env.APP_URL = "https://omniralph.example.com/";
 
 const {
   createEnrollment,
+  deleteAgent,
   pinRepository,
   requestAgentUpdate,
   revokeAgent,
@@ -643,6 +645,65 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(agent!.revokedAt).toBeNull();
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       expect(await revokeAgent(randomUUID())).toMatchObject({ ok: false });
+    });
+  });
+
+  describe("delete", () => {
+    it("revokes an active agent, then hides it from the agent list", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      await pinRepository(agentId, repoA);
+      const [running] = await db
+        .insert(jobs)
+        .values({
+          organizationId: orgId,
+          capability: "review",
+          type: "review.run",
+          status: "running",
+          agentId,
+          deliveryCount: 1,
+          topic: `review-jobs-org-${orgId}`,
+        })
+        .returning();
+
+      expect(await deleteAgent(agentId)).toEqual({ ok: true });
+
+      expect((await sendHeartbeat(accessToken)).status).toBe(401);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).not.toBeNull();
+      expect(agent!.deletedAt).not.toBeNull();
+      expect(await jobRow(running!.id)).toMatchObject({ status: "queued", agentId: null });
+      expect(
+        await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agentId)),
+      ).toEqual([]);
+      expect((await listAgentOverview(db, orgId)).map((a) => a.id)).not.toContain(agentId);
+      expect(await getAgentOverview(db, orgId, agentId)).toBeNull();
+      expect(await listAgentAudit(db, { agentId, event: "revoke" })).toHaveLength(1);
+      const [audit] = await listAgentAudit(db, { agentId, event: "delete" });
+      expect(audit!.detail).toEqual({ deletedBy: adminId });
+
+      // Gone: it can't be deleted or revoked again.
+      expect(await deleteAgent(agentId)).toMatchObject({ ok: false });
+    });
+
+    it("deletes an already revoked agent without revoking it again", async () => {
+      const { agentId } = await enrolledAgent();
+      expect(await revokeAgent(agentId)).toEqual({ ok: true });
+      const [before] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(await deleteAgent(agentId)).toEqual({ ok: true });
+      const [after] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(after!.revokedAt).toEqual(before!.revokedAt);
+      expect(after!.deletedAt).not.toBeNull();
+      expect(await listAgentAudit(db, { agentId, event: "revoke" })).toHaveLength(1);
+    });
+
+    it("is admin-only and reports unknown agents", async () => {
+      const { agentId } = await enrolledAgent();
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await deleteAgent(agentId)).toMatchObject({ ok: false });
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent).toMatchObject({ revokedAt: null, deletedAt: null });
+      state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
+      expect(await deleteAgent(randomUUID())).toMatchObject({ ok: false });
     });
   });
 

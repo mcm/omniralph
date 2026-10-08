@@ -77,6 +77,7 @@ const { default: AgentPage } = await import("./[id]/page");
 const { default: AgentSettingsPage } = await import("../settings/agents/page");
 const {
   createEnrollment,
+  deleteAgent,
   pinRepository,
   revokeAgent,
   setAgentDesiredVersion,
@@ -184,6 +185,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
     expect(await updateAgentConfig(b.agentId, config)).toMatchObject({ ok: false });
     expect(await setAgentDesiredVersion(b.agentId, "9.9.9")).toMatchObject({ ok: false });
     expect(await revokeAgent(b.agentId)).toMatchObject({ ok: false });
+    expect(await deleteAgent(b.agentId)).toMatchObject({ ok: false });
     // Neither the other's agent with our repository nor our agent with the other's repository.
     expect(await pinRepository(b.agentId, a.repoId)).toMatchObject({ ok: false });
     expect(await pinRepository(a.agentId, b.repoId)).toMatchObject({ ok: false });

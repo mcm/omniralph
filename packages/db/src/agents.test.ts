@@ -1,11 +1,13 @@
 // Agents, enrollments and agent settings are scoped to organizations.
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAgentEnrollment, enrollAgent, revokeAgent } from "./agent-auth.js";
 import {
   getAgentOverview,
   listAgentOverview,
+  markAgentDeleted,
   requestAgentUpdate,
   setAgentDesiredVersion,
   updateAgentConfig,
@@ -14,6 +16,7 @@ import { getDesiredAgentVersion, setDesiredAgentVersion } from "./app-settings.j
 import { closeDb, createDb, type Database } from "./client.js";
 import { recordAgentHeartbeat } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
+import { getResourceOrganizationId } from "./resource-organization.js";
 import { connectRepository, pinRepositoryToAgent } from "./repositories.js";
 import { agents, organizations, scmConnections } from "./schema.js";
 import { filterActiveAgentIds, listPinnableAgents, seedReviewProfiles } from "./settings.js";
@@ -85,6 +88,21 @@ describe.skipIf(!dockerAvailable)("organization-scoped agents", () => {
     expect(await revokeAgent(db, a, { organizationId: orgB })).toBeNull();
     expect((await getAgentOverview(db, orgA, a))?.revokedAt).toBeNull();
     expect(await revokeAgent(db, a, { organizationId: orgA })).not.toBeNull();
+  });
+
+  it("soft-deletes only revoked agents of the organization and hides them", async () => {
+    const a = await enroll(orgA, "a-delete");
+    expect(await markAgentDeleted(db, orgA, a)).toBe(false);
+    await revokeAgent(db, a, { organizationId: orgA });
+    expect(await markAgentDeleted(db, orgB, a)).toBe(false);
+    expect(await markAgentDeleted(db, orgA, a)).toBe(true);
+    expect(await markAgentDeleted(db, orgA, a)).toBe(false);
+
+    expect((await listAgentOverview(db, orgA)).map((r) => r.id)).not.toContain(a);
+    expect(await getAgentOverview(db, orgA, a)).toBeNull();
+    expect(await getResourceOrganizationId(db, "agent", a)).toBeNull();
+    const [row] = await db.select().from(agents).where(eq(agents.id, a));
+    expect(row?.deletedAt).toBeInstanceOf(Date);
   });
 
   it("keeps an update request until the agent reports it handled", async () => {

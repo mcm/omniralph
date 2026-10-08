@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -33,6 +34,7 @@ import {
   IconDeviceFloppy,
   IconPin,
   IconPinnedOff,
+  IconTrash,
 } from "@tabler/icons-react";
 import { defaultCapabilityLimit } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
@@ -40,6 +42,7 @@ import { useAction } from "@/components/use-action";
 import type { AgentRow } from "@/lib/agents/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
 import {
+  deleteAgent,
   pinRepository,
   requestAgentUpdate,
   revokeAgent,
@@ -489,6 +492,61 @@ function RevokeCard({ agent }: { agent: AgentRow }) {
   );
 }
 
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+function DeleteCard({ agent }: { agent: AgentRow }) {
+  const router = useRouter();
+  const { pending, run } = useAction();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Delete</CardTitle>
+        <CardDescription>
+          Deleting removes the agent from the Agents pages for good
+          {agent.revoked ? "." : ", revoking it first."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" disabled={pending}>
+              <IconTrash size={14} />
+              Delete agent
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This can&apos;t be undone.{" "}
+                {agent.revoked
+                  ? "It disappears from the agent list."
+                  : agent.runningJobs.length > 0
+                    ? `It's revoked and its ${agent.runningJobs.length} running job${agent.runningJobs.length === 1 ? "" : "s"} will be retried by other agents.`
+                    : "It's revoked and disappears from the agent list."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  run(
+                    () => deleteAgent(agent.id),
+                    `Deleted ${agent.name}`,
+                    () => router.push("/agents"),
+                  )
+                }
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AgentDetailView({
@@ -603,6 +661,7 @@ export function AgentDetailView({
         </Card>
 
         {!agent.revoked && <RevokeCard agent={agent} />}
+        <DeleteCard agent={agent} />
       </main>
     </>
   );

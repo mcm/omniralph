@@ -74,6 +74,7 @@ export const agentAuditEvent = pgEnum("agent_audit_event", [
   "token_refresh",
   "refresh_reuse",
   "revoke",
+  "delete",
   "credential_issued",
   "result_submitted",
   "auth_failed",
@@ -602,6 +603,8 @@ export const agents = pgTable(
     updateRequestedAt: timestamp("update_requested_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /** Soft delete (always after revoking): deleted agents are hidden everywhere. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
