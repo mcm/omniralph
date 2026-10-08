@@ -260,6 +260,13 @@
       "when": 1791406798321,
       "tag": "0036_gitlab_connection_health",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791493669070,
+      "tag": "0037_agent_update_request",
+      "breakpoints": true
     }
   ]
 }

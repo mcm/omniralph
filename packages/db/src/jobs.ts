@@ -6,6 +6,7 @@
  * See `docs/adr/0001-job-dispatch.md`.
  */
 import { and, asc, count, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { agentRepoPins, agents, jobs, type AgentUpdateState } from "./schema.js";
 
@@ -389,9 +390,14 @@ export async function recordAgentHeartbeat(
     selfUpdate?: "supported" | "unsupported";
     update?: AgentUpdateState;
     failedVersions?: string[];
+    /** The update request the agent acted on: cleared when it's still the pending one. */
+    handledUpdateRequestId?: string | null;
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
+  const handled = input.handledUpdateRequestId ?? null;
+  const clearIfHandled = (column: AnyPgColumn) =>
+    sql`case when ${agents.updateRequestId} = ${handled}::uuid then null else ${column} end`;
   const [row] = await db
     .update(agents)
     .set({
@@ -400,6 +406,11 @@ export async function recordAgentHeartbeat(
       selfUpdate: input.selfUpdate ?? null,
       updateState: input.update ?? null,
       failedVersions: input.failedVersions ?? [],
+      ...(handled !== null && {
+        updateRequestId: clearIfHandled(agents.updateRequestId),
+        updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
+        updateRequestedAt: clearIfHandled(agents.updateRequestedAt),
+      }),
       lastHeartbeatAt: input.now ?? new Date(),
     })
     .where(eq(agents.id, agentId))

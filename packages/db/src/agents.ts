@@ -184,6 +184,37 @@ export async function setAgentDesiredVersion(
   return row ?? null;
 }
 
+/**
+ * Asks an agent to update to `version` now (an admin's "Update now"), replacing
+ * any request it hasn't acted on yet. The agent gets it with its next heartbeat
+ * and reports it handled, which clears it. Returns null for unknown or revoked
+ * agents and agents of another organization.
+ */
+export async function requestAgentUpdate(
+  db: Database,
+  organizationId: string,
+  agentId: string,
+  version: string,
+  now: Date = new Date(),
+): Promise<AgentRow | null> {
+  const [row] = await db
+    .update(agents)
+    .set({
+      updateRequestId: sql`gen_random_uuid()`,
+      updateRequestVersion: version,
+      updateRequestedAt: now,
+    })
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
 /** An agent's most recent audit events, newest first. */
 export async function listRecentAgentAudit(
   db: Database,

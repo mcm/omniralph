@@ -53,6 +53,7 @@ const HEARTBEAT: HeartbeatResponse = {
   jobTokens: [],
   jobMessages: [],
   desiredVersion: null,
+  updateRequest: null,
 };
 
 describe("omniralph-agent CLI", () => {
@@ -185,6 +186,14 @@ describe("omniralph-agent CLI", () => {
     });
   });
 
+  describe("update", () => {
+    it("needs an enrolled agent", async () => {
+      const { out, io } = capture();
+      expect(await main(["update", "--config", configPath], { io })).toBe(1);
+      expect(out.stderr).toContain("run 'omniralph-agent enroll' first");
+    });
+  });
+
   describe("start", () => {
     const config: AgentConfig = {
       server: "https://omniralph.example",
@@ -309,6 +318,40 @@ describe("omniralph-agent CLI", () => {
       expect(server.calls.find((c) => c.path === "/api/agent/heartbeat")?.body).toMatchObject({
         version: "1.0.0",
         selfUpdate: "supported",
+      });
+    });
+
+    it("acts on 'omniralph-agent update': retries a failed desired version", async () => {
+      await writeConfig(configPath, config);
+      const statePath = path.join(path.dirname(configPath), "update-state.json");
+      await writeFile(statePath, JSON.stringify({ failed: ["9.9.9"] }));
+      const requestPath = path.join(path.dirname(configPath), "update-request.json");
+
+      const { out, io } = capture();
+      expect(await main(["update", "--config", configPath], { io })).toBe(0);
+      expect(out.stdout).toContain("Update requested");
+      expect((await stat(requestPath)).mode & 0o777).toBe(0o600);
+
+      const installs: string[] = [];
+      const server = fakeServer({
+        "/api/agent/token": () =>
+          Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
+        "/api/agent/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
+      });
+      const exit = main(["start", "--config", configPath], {
+        io: capture().io,
+        ...startDeps(server, {
+          env: { pm_id: "3" },
+          version: "1.0.0",
+          installer: { install: async (version) => void installs.push(version) },
+        }),
+      });
+      expect(await exit).toBe(0);
+      expect(installs).toEqual(["9.9.9"]);
+      await expect(stat(requestPath)).rejects.toThrow();
+      expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+        pending: "9.9.9",
+        failed: [],
       });
     });
 

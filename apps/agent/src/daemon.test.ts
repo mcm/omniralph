@@ -45,6 +45,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     jobTokens: [],
     jobMessages: [],
     desiredVersion: null,
+    updateRequest: null,
     ...overrides,
   };
 }

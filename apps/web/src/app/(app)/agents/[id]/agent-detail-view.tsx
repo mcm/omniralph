@@ -27,7 +27,13 @@ import {
   Muted,
   NativeSelect,
 } from "@iamthemcmaster/ui";
-import { IconBan, IconDeviceFloppy, IconPin, IconPinnedOff } from "@tabler/icons-react";
+import {
+  IconBan,
+  IconCloudDownload,
+  IconDeviceFloppy,
+  IconPin,
+  IconPinnedOff,
+} from "@tabler/icons-react";
 import { defaultCapabilityLimit } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
@@ -35,6 +41,7 @@ import type { AgentRow } from "@/lib/agents/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
 import {
   pinRepository,
+  requestAgentUpdate,
   revokeAgent,
   setAgentDesiredVersion,
   unpinRepository,
@@ -221,12 +228,36 @@ function ConfigCard({
               </div>
             </div>
           )}
-          <div>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <Button type="submit" variant="primary" disabled={disabled}>
               <IconDeviceFloppy size={14} />
               {pending ? "Saving…" : "Save"}
             </Button>
+            {agent.selfUpdate === "supported" && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={disabled}
+                title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
+                onClick={() =>
+                  run(
+                    () => requestAgentUpdate(agent.id),
+                    `${agent.name} will update with its next heartbeat.`,
+                  )
+                }
+              >
+                <IconCloudDownload size={14} />
+                Update now
+              </Button>
+            )}
           </div>
+          {agent.updateRequest && (
+            <Muted>
+              Update to {agent.updateRequest.version} requested{" "}
+              {formatDateTime(agent.updateRequest.requestedAt)}; the agent starts it with its next
+              heartbeat.
+            </Muted>
+          )}
         </form>
       </CardContent>
     </Card>
@@ -262,7 +293,7 @@ function VersionCard({
         <CardTitle>Version</CardTitle>
         <CardDescription>
           {agent.selfUpdate === "supported"
-            ? "This agent runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and never tried again here."
+            ? "This agent runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
             : "This agent can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."}
         </CardDescription>
       </CardHeader>

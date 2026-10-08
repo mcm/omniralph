@@ -35,6 +35,13 @@ describe("agentUpdateStatus", () => {
     expect(agentUpdateStatus({ ...base, failedVersions: ["1.1.0"] })).toBe("failed");
   });
 
+  it("is updating once an admin asked for an update, even of a failed version", () => {
+    const requested = { ...base, updateRequested: true };
+    expect(agentUpdateStatus({ ...requested, failedVersions: ["1.1.0"] })).toBe("updating");
+    expect(agentUpdateStatus({ ...requested, desiredVersion: null })).toBe("updating");
+    expect(agentUpdateStatus({ ...requested, selfUpdate: "unsupported" })).toBe("manual");
+  });
+
   it("says to update manually when the agent can't update itself", () => {
     expect(agentUpdateStatus({ ...base, selfUpdate: "unsupported" })).toBe("manual");
     expect(agentUpdateStatus({ ...base, selfUpdate: null })).toBe("manual");

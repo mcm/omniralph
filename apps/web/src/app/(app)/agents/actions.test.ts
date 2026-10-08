@@ -47,6 +47,10 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
+vi.mock("@/lib/agents/npm", () => ({
+  NpmRegistryError: class extends Error {},
+  latestAgentVersion: async () => "2.0.0",
+}));
 vi.mock("@vercel/queue", () => ({
   QueueClient: class {
     async send(topic: string, payload: unknown, options: unknown) {
@@ -68,6 +72,7 @@ process.env.APP_URL = "https://omniralph.example.com/";
 const {
   createEnrollment,
   pinRepository,
+  requestAgentUpdate,
   revokeAgent,
   setAgentDesiredVersion,
   unpinRepository,
@@ -410,6 +415,54 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         error: expect.any(String),
       });
       await setDesiredAgentVersion(db, orgId, null, adminId);
+    });
+
+    it("Update now sends an update request until the agent reports it handled", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const respond = async (body: object = HEARTBEAT) =>
+        (await (await sendHeartbeat(accessToken, body)).json()) as HeartbeatResponse;
+      const supported = { ...HEARTBEAT, selfUpdate: "supported" };
+
+      // Older agents and agents outside pm2 can't update themselves.
+      await respond();
+      expect(await requestAgentUpdate(agentId)).toEqual({ ok: false, error: expect.any(String) });
+      expect((await respond(supported)).updateRequest).toBeNull();
+
+      // No version chosen: the latest on npm.
+      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.0.0" });
+      const { updateRequest } = await respond(supported);
+      expect(updateRequest).toEqual({ id: expect.any(String), version: "2.0.0" });
+      const row = agentRow((await getAgentOverview(db, orgId, agentId))!);
+      expect(row).toMatchObject({
+        updateRequest: { version: "2.0.0", requestedAt: expect.any(String) },
+        updateStatus: "updating",
+      });
+
+      // The desired version, even one that failed on the agent.
+      expect(await setAgentDesiredVersion(agentId, "1.5.0")).toEqual({ ok: true });
+      await respond({ ...supported, failedVersions: ["1.5.0"] });
+      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "1.5.0" });
+      const second = (await respond(supported)).updateRequest;
+      expect(second).toEqual({ id: expect.any(String), version: "1.5.0" });
+      expect(second!.id).not.toBe(updateRequest!.id);
+
+      // Handled: the request is cleared (an older one doesn't clear it).
+      expect(
+        (await respond({ ...supported, handledUpdateRequestId: updateRequest!.id })).updateRequest,
+      ).toEqual(second);
+      expect(
+        (await respond({ ...supported, handledUpdateRequestId: second!.id })).updateRequest,
+      ).toBeNull();
+      expect(agentRow((await getAgentOverview(db, orgId, agentId))!).updateRequest).toBeNull();
+
+      // Nothing to do on the desired version; members can't ask.
+      await respond({ ...supported, version: "1.5.0" });
+      expect(await requestAgentUpdate(agentId)).toEqual({
+        ok: false,
+        error: expect.stringContaining("already runs 1.5.0"),
+      });
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await requestAgentUpdate(agentId)).toEqual({ ok: false, error: expect.any(String) });
     });
 
     it("pinning enqueues a repo.sync job on the agent's topic", async () => {

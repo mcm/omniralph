@@ -214,8 +214,9 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
 - pm2 captures the environment when the process is first started. After changing
   `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
   `pm2 restart omniralph-agent --update-env`.
-- To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below).
-  By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
+- To upgrade: choose a version on **Settings › Agents** and the agent updates itself (see below),
+  or trigger an update with **Update now** on the agent's page or `omniralph-agent update` on the
+  host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
 - Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
   self-update and relies on pm2 to start it again.
 
@@ -231,7 +232,7 @@ An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates i
 2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, like the
    [install](#2-install) (the package is public, so no npm auth is needed).
 3. It writes `update-state.json` next to `agent.json` (mode 0600):
-   `{ previous, pending, startsSincePending, failed }`.
+   `{ previous, pending, startsSincePending, failed, lastError, handledRequestId }`.
 4. It exits with code 0 and pm2 starts the new version.
 
 If the install fails, the version is added to `failed` and the agent keeps running (and taking jobs
@@ -242,8 +243,7 @@ has heartbeated successfully for 60 seconds it's confirmed (`pending` is cleared
 fourth time without that (it crashes, or can't reach the control panel), the agent reinstalls
 `previous`, adds the pending version to `failed` and exits, so pm2 starts the previous version.
 Failed versions are reported in the heartbeat, shown on the agent's page and never retried by that
-agent; to try one again after fixing the host, remove it from `failed` in `update-state.json` and
-`pm2 restart omniralph-agent`. With `--max-restarts 5`, pm2 still allows the four starts a rollback
+agent on its own; to try one again after fixing the host, [trigger an update](#triggering-an-update). With `--max-restarts 5`, pm2 still allows the four starts a rollback
 needs.
 
 **Choosing the version.**
@@ -263,6 +263,24 @@ failed on that agent, **Update manually**) and the failed versions.
 
 Agents not run by pm2 (systemd, tmux) report `selfUpdate: "unsupported"`, never install anything
 and show **Update manually**: upgrade them by hand as in [Install](#2-install).
+
+#### Triggering an update
+
+An update can also be started on demand, from either side:
+
+- **Agents › <agent> › Version › Update now** (admins; only for agents under pm2). The control panel
+  sends an update request with every heartbeat until the agent reports it handled; meanwhile the
+  agent shows **Updating** (*<version> requested*).
+- `omniralph-agent update` on the host (as the agent's user, with the same `--config` as `start`).
+  It writes `update-request.json` next to `agent.json` (mode 0600); the running agent picks it up
+  with its next heartbeat and removes it. If the agent isn't running, it acts on it once started.
+
+Either way the agent updates (drain, install, restart, rollback as above) to the desired version,
+or to the package's `latest` on npm when none is chosen, and retries that version even if it's in
+`failed` (it's taken off the list first). A request for the version already running does nothing.
+Choosing a different version than the desired one isn't possible this way: the agent would
+update back to the desired version straight away, so change the desired version instead. Agents
+not under pm2 only log the request and show it as the last update error.
 
 ## Central config
 

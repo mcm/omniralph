@@ -23,7 +23,8 @@ import { exchangeJobMessages } from "@/lib/ralph/messages";
  * self-update state, applies the acknowledged job messages and returns the central
  * configuration, the running jobs the agent must cancel, fresh job tokens and
  * undelivered messages (`jobMessages`) for the ones it keeps running, and the
- * version it should run (its override, else its organization's setting).
+ * version it should run (its override, else its organization's setting) and
+ * an admin's pending "Update now" (cleared once the agent reports it handled).
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireAgent(req);
@@ -39,6 +40,7 @@ export async function POST(req: Request): Promise<Response> {
     selfUpdate: body.data.selfUpdate,
     update: body.data.update,
     failedVersions: body.data.failedVersions,
+    handledUpdateRequestId: body.data.handledUpdateRequestId,
   });
   if (!agent) return badRequest("unknown_agent");
   const [pinnedRepoIds, running, globalVersion] = await Promise.all([
@@ -80,5 +82,9 @@ export async function POST(req: Request): Promise<Response> {
     jobTokens,
     jobMessages,
     desiredVersion: agent.desiredVersion ?? globalVersion,
+    updateRequest:
+      agent.updateRequestId && agent.updateRequestVersion
+        ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
+        : null,
   } satisfies HeartbeatResponse);
 }

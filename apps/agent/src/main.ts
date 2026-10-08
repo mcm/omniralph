@@ -27,7 +27,9 @@ import {
   SelfUpdater,
   npmInstaller,
   runningUnderPm2,
+  updateRequestPath,
   updateStatePath,
+  writeUpdateRequest,
   type Installer,
 } from "./update.js";
 import { AGENT_VERSION } from "./version.js";
@@ -44,6 +46,9 @@ Commands:
                     --workspace-root <dir>  Repo cache directory (default: ~/.omniralph/repos)
   start           Run the agent daemon
                     --healthz-port <port>   Serve GET /healthz on 127.0.0.1:<port>
+  update          Ask the running agent (under pm2) to update with its next heartbeat:
+                  to the desired version, else the latest on npm, even one that
+                  failed before
   git-credential  Git credential helper for job git commands (\`get\` only; reads
                   OMNIRALPH_JOB_TOKEN, set by the agent for in-job processes)
 
@@ -128,6 +133,8 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
         return await runEnroll(values, configPath, deps);
       case "start":
         return await runStart(values, configPath, deps);
+      case "update":
+        return await runUpdate(configPath, deps);
       case "git-credential":
         return await runGitCredential(
           positionals[1],
@@ -199,6 +206,20 @@ async function runEnroll(
   return 0;
 }
 
+async function runUpdate(configPath: string, deps: MainDeps): Promise<number> {
+  // Only for an enrolled agent: the request goes next to its config.
+  await readConfig(configPath);
+  const file = updateRequestPath(configPath);
+  await writeUpdateRequest(file, deps.now ? new Date(deps.now()) : undefined);
+  deps.io.stdout(
+    `Update requested (${file}).\n` +
+      `The running agent picks it up with its next heartbeat: it stops taking jobs, lets running ones\n` +
+      `finish, installs the desired version (or the latest on npm when none is set) and restarts.\n` +
+      `Only agents under pm2 update themselves; others log a warning and keep running.\n`,
+  );
+  return 0;
+}
+
 async function runStart(
   values: { "healthz-port"?: string },
   configPath: string,
@@ -218,6 +239,7 @@ async function runStart(
 
   const updater = new SelfUpdater({
     statePath: updateStatePath(configPath),
+    requestPath: updateRequestPath(configPath),
     runningVersion: version,
     underPm2: runningUnderPm2(deps.env),
     installer: deps.installer ?? npmInstaller(deps.env),
