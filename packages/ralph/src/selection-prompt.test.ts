@@ -18,7 +18,10 @@ import {
 import {
   buildDescribePrPrompt,
   buildStoryPrompt,
+  GOOD_NEIGHBOR_RULE,
+  RALPH_SYSTEM_APPEND,
   renderTemplate,
+  requestSystemAppend,
   uniqueCommands,
 } from "./prompt.js";
 import { blockedStories, isEpicComplete, selectNextStory } from "./selection.js";
@@ -283,6 +286,15 @@ describe("prompt", () => {
     expect(p).toContain("`git stash show -p --include-untracked <sha>`");
     expect(p).toContain("`git stash apply <sha>`");
     expect(p).toContain("`appliedStashes`");
+  });
+
+  it("tells story and request sessions to share the machine's resources", () => {
+    expect(GOOD_NEIGHBOR_RULE).toContain("never assume what resources are available");
+    expect(GOOD_NEIGHBOR_RULE).toContain("saturating all cores");
+    expect(GOOD_NEIGHBOR_RULE).toContain("running several instances of a test suite");
+    expect(RALPH_SYSTEM_APPEND).toContain(GOOD_NEIGHBOR_RULE);
+    expect(requestSystemAppend("when-asked")).toContain(GOOD_NEIGHBOR_RULE);
+    expect(requestSystemAppend("never")).toContain(GOOD_NEIGHBOR_RULE);
   });
 });
 

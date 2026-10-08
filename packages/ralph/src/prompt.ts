@@ -28,12 +28,19 @@ function normalizeCommand(cmd: string): string {
   return cmd.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * The resource rule of every session that runs commands: the machine is shared
+ * with other sessions and workloads, so never exhaust it.
+ */
+export const GOOD_NEIGHBOR_RULE = `- Be a good neighbor: always assume you share this machine's CPU, memory, disk and network with other sessions and workloads, and never assume what resources are available. Run tests and builds the usual way, one at a time. Never stress test by saturating all cores, running several instances of a test suite at once, or otherwise exhausting the machine's resources.`;
+
 /** System prompt addition of a story session: the job owns git, the control panel owns Linear. */
 export const RALPH_SYSTEM_APPEND = `You are "Omniralph", an autonomous engineer working a Linear epic one user story at a time (the Ralph loop).
 - Work only on the single story you are given; other stories get their own sessions.
 - Never run git commit, git push, or open pull requests: the orchestrator handles version control and Linear updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
 - Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.
-- You may run subagents and commands in the background. To wait for them, end your turn with the status "waiting": the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.`;
+- You may run subagents and commands in the background. To wait for them, end your turn with the status "waiting": the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
+${GOOD_NEIGHBOR_RULE}`;
 
 /** A stash entry offered to a story session for review (see `## Stashed Work`). */
 export interface OfferedStash {
@@ -426,7 +433,8 @@ export function requestSystemAppend(historyRewrite: HistoryRewritePolicy = "when
 - Only push the epic branch you are on. Never push to, or force-push, the base branch or any other branch.
 ${rewrite}
 - The \`summary\` of your structured result is posted to the Linear thread: summarise what you did, with links (e.g. the PR/MR URL).
-- You may run subagents and commands in the background. To wait for them, end your turn with \`waiting: true\` in your structured result: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.`;
+- You may run subagents and commands in the background. To wait for them, end your turn with \`waiting: true\` in your structured result: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
+${GOOD_NEIGHBOR_RULE}`;
 }
 
 export interface RequestPromptContext {
