@@ -30,9 +30,9 @@ function problemWith(error: z.ZodError | undefined): string {
 /** The structured result a story session must end with: it decides the story's outcome. */
 export const StoryAgentOutput = z.object({
   status: z
-    .enum(["complete", "blocked", "incomplete"])
+    .enum(["complete", "blocked", "incomplete", "waiting"])
     .describe(
-      "complete: every acceptance criterion is met. blocked: a retry can't get past an obstacle. incomplete: unfinished; try again.",
+      "complete: every acceptance criterion is met. blocked: a retry can't get past an obstacle. incomplete: unfinished; try again. waiting: you are ending your turn to wait for background work you started; you are resumed when it finishes.",
     ),
   summary: z
     .string()
@@ -68,6 +68,11 @@ export const StoryAgentOutput = z.object({
     ),
 });
 export type StoryAgentOutput = z.infer<typeof StoryAgentOutput>;
+
+/** Whether a story session's structured result says it waits for background work. */
+export function isWaitingStory(structured: unknown): boolean {
+  return (structured as { status?: unknown } | null | undefined)?.status === "waiting";
+}
 
 /** A story session's result after `readStoryOutcome`'s clean-up. */
 export type StoryOutcome = Omit<StoryAgentOutput, "followUps"> & { followUps: FollowUp[] };
@@ -159,8 +164,19 @@ export const RequestAgentOutput = z.object({
     .describe(
       "What you did with each review finding the request lists by ID. Omniralph replies in the threads and resolves the fixed ones.",
     ),
+  waiting: z
+    .boolean()
+    .optional()
+    .describe(
+      "True only when you are ending your turn to wait for background work you started; you are resumed when it finishes.",
+    ),
 });
 export type RequestAgentOutput = z.infer<typeof RequestAgentOutput>;
+
+/** Whether a request session's structured result says it waits for background work. */
+export function isWaitingRequest(structured: unknown): boolean {
+  return (structured as { waiting?: unknown } | null | undefined)?.waiting === true;
+}
 
 /** `outputFormat` schema of a request session. */
 export const REQUEST_OUTPUT_SCHEMA = jsonSchema(RequestAgentOutput);

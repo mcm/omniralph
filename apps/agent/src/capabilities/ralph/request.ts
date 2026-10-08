@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   buildRequestPrompt,
+  isWaitingRequest,
   readRequestResult,
   REQUEST_OUTPUT_SCHEMA,
   requestSystemAppend,
@@ -179,6 +180,7 @@ export async function runRequest(
             policy: RALPH_TOOL_POLICY,
             systemAppend: requestSystemAppend(payload.historyRewrite),
             outputSchema: REQUEST_OUTPUT_SCHEMA,
+            isWaiting: isWaitingRequest,
             model: payload.settings.model ?? DEFAULT_STORY_MODEL,
             ...(payload.settings.fallbackModel && {
               fallbackModel: payload.settings.fallbackModel,
@@ -233,10 +235,14 @@ export async function runRequest(
             usage: session.usage,
             durationMs: Date.now() - started,
           };
-          if (!read || "problem" in read) {
-            const why = read
-              ? `it ended without a valid structured result (${read.problem})`
-              : sessionError(session);
+          const stoppedWaiting =
+            session.stop === "completed" && isWaitingRequest(session.structured);
+          if (!read || "problem" in read || stoppedWaiting) {
+            const why = stoppedWaiting
+              ? `the session was stopped while it waited for background work: ${session.error ?? "it gave up waiting"}`
+              : read && "problem" in read
+                ? `it ended without a valid structured result (${read.problem})`
+                : sessionError(session);
             return {
               ...base,
               summary: clip(tail(session.output, 2000)),

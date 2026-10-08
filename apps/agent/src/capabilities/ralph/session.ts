@@ -15,6 +15,16 @@ export const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;
 /** If an injected message never gets answered, the session stops waiting for it after this long. */
 export const INJECTION_IDLE_TIMEOUT_MS = 5 * 60_000;
 
+/** How long a session waits for background work it reported `waiting` for. */
+export const BACKGROUND_WAIT_TIMEOUT_MS = 60 * 60_000;
+
+/** A waiting session with nothing running in the background is nudged after this long. */
+export const WAIT_NUDGE_DELAY_MS = 30_000;
+
+/** Sent to a session that reported `waiting` while nothing runs in the background. */
+export const WAIT_NUDGE_TEXT =
+  "Nothing is running in the background any more, so there is nothing left to wait for. Check the results of the background work you started, finish the task, and report your structured result.";
+
 const RATE_LIMIT_TEXT = /rate[_ ]limit|usage limit|\b429\b|too many requests/i;
 
 /** What a session shows while it runs (relayed to the Linear agent session). */
@@ -43,6 +53,16 @@ export interface SessionRequest {
   idleTimeoutMs?: number;
   /** How long a finished turn waits for an injected message's turn (default `INJECTION_IDLE_TIMEOUT_MS`). */
   injectionIdleTimeoutMs?: number;
+  /**
+   * Whether a turn's structured result says the session ended its turn to wait
+   * for background work (subagents, commands). Such a turn doesn't end the
+   * session: Claude Code starts another turn when the work finishes.
+   */
+  isWaiting?: (structured: unknown) => boolean;
+  /** How long a waiting session waits for its background work (default `BACKGROUND_WAIT_TIMEOUT_MS`). */
+  backgroundWaitTimeoutMs?: number;
+  /** How long a waiting session with nothing running waits before it is nudged (default `WAIT_NUDGE_DELAY_MS`). */
+  waitNudgeDelayMs?: number;
   onEvent?: (event: SessionEvent) => void;
   /**
    * Called with a function that injects a message into the live session (or
@@ -69,6 +89,7 @@ export interface SessionResult {
    * timeout) or `aborted` (the request's signal).
    */
   stop: "completed" | "error" | "rate_limited" | "idle" | "aborted";
+  /** On `completed`, a waiting result (see `isWaiting`) when the session stopped waiting for it. */
   structured?: unknown;
   /** The final message, or the last streamed text when there was none. */
   output: string;
@@ -182,9 +203,12 @@ export type SessionQueryFn = (params: {
  * events. Messages injected through `onInjector` go into the live session as
  * user messages with priority `next`; the session stays open until every one
  * is answered (the last turn's result counts), but stops waiting for an
- * answer after `injectionIdleTimeoutMs`. The session is aborted when the
- * request's signal fires or no message arrives for the idle timeout while a
- * turn runs.
+ * answer after `injectionIdleTimeoutMs`. A turn whose result `isWaiting` (it
+ * waits for background work) doesn't end the session either: it waits up to
+ * `backgroundWaitTimeoutMs` for the next turn, nudging a session that waits
+ * with nothing running, and returns the waiting result if it gives up. The
+ * session is aborted when the request's signal fires or no message arrives
+ * for the idle timeout while a turn runs.
  */
 export function createSessionRunner(
   query: SessionQueryFn = sdkQuery as SessionQueryFn,
@@ -194,6 +218,20 @@ export function createSessionRunner(
     const result = await runQuery(query, request, seen);
     return seen.sessionId ? { ...result, sessionId: seen.sessionId } : result;
   };
+}
+
+/** Whether a message belongs to a turn of the session itself (not a subagent's or a task's). */
+function startsTurn(message: SDKMessage): boolean {
+  switch (message.type) {
+    case "assistant":
+    case "user":
+    case "stream_event":
+      return message.parent_tool_use_id === null;
+    case "system":
+      return message.subtype === "init";
+    default:
+      return false;
+  }
 }
 
 /** One session of `createSessionRunner`; the session ID it reports goes into `seen`. */
@@ -243,14 +281,63 @@ async function runQuery(
   });
   controller.signal.addEventListener("abort", finishInput, { once: true });
 
+  // A turn that reported `waiting` ends without ending the session: Claude Code starts the next
+  // turn when the background work finishes. No turn runs meanwhile, so the idle timeout is off.
+  const live = new Set<string>();
+  let waiting = false;
+  let nudged = false;
+  let waitStopped: string | undefined;
+  let waitTimer: NodeJS.Timeout | undefined;
+  let nudgeTimer: NodeJS.Timeout | undefined;
+  const backgroundWaitTimeoutMs = request.backgroundWaitTimeoutMs ?? BACKGROUND_WAIT_TIMEOUT_MS;
+  const waitNudgeDelayMs = request.waitNudgeDelayMs ?? WAIT_NUDGE_DELAY_MS;
+  const stopWaiting = (why: string) => {
+    waitStopped = why;
+    controller.abort(new Error(why));
+  };
+  // Waiting with nothing running: nudge once, then give up rather than wait out the timeout.
+  const watchNothingRunning = () => {
+    clearTimeout(nudgeTimer);
+    if (!waiting || live.size > 0) return;
+    nudgeTimer = setTimeout(() => {
+      if (nudged) {
+        stopWaiting("the session kept waiting with nothing running in the background");
+        return;
+      }
+      nudged = true;
+      send(WAIT_NUDGE_TEXT, "next");
+      // If no turn takes the nudge either, the next quiet period gives up.
+      watchNothingRunning();
+    }, waitNudgeDelayMs);
+  };
+  const startWaiting = () => {
+    waiting = true;
+    clearTimeout(idleTimer);
+    clearTimeout(waitTimer);
+    waitTimer = setTimeout(
+      () =>
+        stopWaiting(
+          `the background work took longer than ${Math.round(backgroundWaitTimeoutMs / 60_000)} minutes`,
+        ),
+      backgroundWaitTimeoutMs,
+    );
+    watchNothingRunning();
+  };
+  const endWaiting = () => {
+    waiting = false;
+    clearTimeout(waitTimer);
+    clearTimeout(nudgeTimer);
+  };
+
   const texts: string[] = [];
   const last = () => texts.at(-1) ?? "";
   let rateLimited = false;
   let retryAfterMs: number | undefined;
-  /** A turn's successful result while an injected message is still unanswered. */
+  /** A turn's successful result while an injected message is unanswered or background work runs. */
   let answered: SessionResult | undefined;
   const stopped = (): SessionResult | undefined => {
     if (request.signal.aborted) return { stop: "aborted", output: last(), usage };
+    if (waitStopped && answered) return { ...answered, error: waitStopped };
     if (idle) {
       return {
         stop: "idle",
@@ -266,8 +353,18 @@ async function runQuery(
   try {
     const messages = query({ prompt: input, options: sessionOptions(request, controller) });
     for await (const message of messages) {
-      clearTimeout(injectionTimer);
-      resetIdle();
+      if (message.type === "system" && message.subtype === "background_tasks_changed") {
+        live.clear();
+        for (const task of message.tasks) if (!task.ambient) live.add(task.task_id);
+        if (live.size > 0) nudged = false;
+        watchNothingRunning();
+      }
+      // While waiting, background tasks report on their own; only a new turn is activity.
+      if (!waiting || startsTurn(message)) {
+        clearTimeout(injectionTimer);
+        endWaiting();
+        resetIdle();
+      }
       if ("session_id" in message && message.session_id) seen.sessionId = message.session_id;
       switch (message.type) {
         case "assistant": {
@@ -312,11 +409,13 @@ async function runQuery(
               message.user_message_uuids ??
               (message.user_message_uuid ? [message.user_message_uuid] : [...outstanding]);
             for (const id of ids) outstanding.delete(id);
-            if (outstanding.size === 0) return result;
-            // An injected message starts another turn; until it does, only the injection timeout runs.
+            const waits = request.isWaiting?.(message.structured_output) === true;
+            if (!waits && outstanding.size === 0) return result;
             answered = result;
             clearTimeout(idleTimer);
-            injectionTimer = setTimeout(finishInput, injectionIdleTimeoutMs);
+            if (waits) startWaiting();
+            // An injected message starts another turn; until it does, only the injection timeout runs.
+            else injectionTimer = setTimeout(finishInput, injectionIdleTimeoutMs);
             break;
           }
           const detail =
@@ -363,6 +462,7 @@ async function runQuery(
     return { stop: "error", output: last(), error: text, usage };
   } finally {
     clearTimeout(idleTimer);
+    endWaiting();
     finishInput();
     request.signal.removeEventListener("abort", onAbort);
     controller.signal.removeEventListener("abort", finishInput);
