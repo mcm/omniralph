@@ -1,6 +1,6 @@
 {
   "name": "@omniralph/agent",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Omniralph agent host daemon",
   "type": "module",
   "repository": {
