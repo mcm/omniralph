@@ -6,6 +6,7 @@ import {
   type JobPayload,
 } from "@omniralph/shared";
 import type { JobContext } from "../index.js";
+import { jobGitAccess } from "./git-access.js";
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -36,7 +37,9 @@ export async function runCleanup(job: JobPayload, ctx: JobContext): Promise<Ralp
     branch,
     action: action.kind,
   });
-  const git = { env: ctx.env(), signal: ctx.signal };
+  // The job token comes from a file kept current, in case waiting for the repository's locks takes long.
+  const access = await jobGitAccess(ctx);
+  const git = { env: access.env, signal: ctx.signal };
   const result = (fields: Partial<RalphCleanupResult>) =>
     RalphCleanupResult.parse({ ...fields, durationMs: Date.now() - started });
 
@@ -88,5 +91,7 @@ export async function runCleanup(job: JobPayload, ctx: JobContext): Promise<Ralp
     ctx.signal.throwIfAborted();
     log.warn({ err: error }, "cleanup failed");
     return result({ error: errorText(error).slice(0, 20_000) });
+  } finally {
+    await access.close();
   }
 }
