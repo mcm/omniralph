@@ -77,8 +77,9 @@ publishing. No npm publish token is stored anywhere.
    git tag agent-v0.2.0 && git push origin agent-v0.2.0
    ```
 
-The workflow runs the quality gates and `scripts/smoke-agent-package.sh`, then publishes. It fails
-if the tag version doesn't match `package.json`.
+The workflow installs and checks only this package and the workspace packages it bundles (the web
+app and db are left to CI), runs `scripts/smoke-agent-package.sh`, then publishes the tarball the
+smoke script tested. It fails if the tag version doesn't match `package.json`.
 
 The build (`tsup`) inlines the workspace packages (`@omniralph/engine`, `@omniralph/shared`) into
 `dist/cli.js`. Third-party packages stay external. A third-party package that the bundle imports

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Packs apps/agent, checks the tarball's contents, installs it into a clean
 # directory outside the workspace and runs the binary. Run after `pnpm install`.
+# Usage: smoke-agent-package.sh [keep-dir]
+# With keep-dir, the smoke-tested tarball is copied there (for publishing it as is).
 set -euo pipefail
+
+keep_dir="${1:-}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 agent_dir="$repo_root/apps/agent"
@@ -40,5 +44,11 @@ mkdir "$work/install"
   "$bin" --version
   "$bin" --help >/dev/null
 )
+
+if [[ -n "$keep_dir" ]]; then
+  mkdir -p "$keep_dir"
+  cp "$tarball" "$keep_dir/"
+  echo "Kept $keep_dir/$(basename "$tarball")"
+fi
 
 echo "smoke-agent-package: OK"

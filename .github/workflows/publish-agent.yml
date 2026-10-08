@@ -41,31 +41,23 @@ jobs:
             exit 1
           fi
 
-      # @iamthemcmaster/ui is a private package on the public npm registry. The token is only
-      # for installing: it's removed before publishing, which authenticates through OIDC.
-      - name: Authenticate to npm for install
-        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Only the agent and the workspace packages it bundles (plus the root's tooling) are
+      # installed and checked: the web app, db and their Testcontainers suites aren't part of
+      # the published package, and CI already covers them on main. This also skips the web
+      # app's private @iamthemcmaster/ui dependency, so no npm token is needed to install.
+      - name: Install
+        run: pnpm install --frozen-lockfile --filter='@omniralph/agent...' --filter=omniralph
 
-      - name: Install, typecheck, lint and test
-        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test
+      - name: Typecheck, lint and test
+        run: pnpm turbo run typecheck lint test --filter='@omniralph/agent...'
 
-      - name: Build
-        run: pnpm turbo run build --filter=@omniralph/agent
-
-      - name: Smoke-test the agent package
-        run: ./scripts/smoke-agent-package.sh
-
-      - name: Remove the install token
-        run: rm -f .npmrc
-
-      - name: Pack
+      # Builds (tsup, bundling the workspace packages from source), packs and smoke-tests the
+      # package, keeping the tested tarball for the publish step.
+      - name: Build, pack and smoke-test
         id: pack
-        working-directory: apps/agent
         run: |
-          pnpm pack --pack-destination "$RUNNER_TEMP"
-          echo "tarball=$(ls "$RUNNER_TEMP"/*.tgz)" >> "$GITHUB_OUTPUT"
+          ./scripts/smoke-agent-package.sh "$RUNNER_TEMP/pack"
+          echo "tarball=$(ls "$RUNNER_TEMP"/pack/*.tgz)" >> "$GITHUB_OUTPUT"
 
       # No NODE_AUTH_TOKEN/NPM_TOKEN here: npm exchanges the job's OIDC token for a short-lived one.
       - name: Publish
