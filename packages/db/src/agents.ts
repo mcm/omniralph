@@ -2,7 +2,7 @@
  * Agents and Jobs pages: the fleet overview, central agent configuration
  * (returned to the agent in its next heartbeat), the audit log and the job list.
  */
-import { and, asc, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -95,7 +95,10 @@ async function withJobsAndPins(db: Database, rows: AgentRow[]): Promise<AgentOve
   }));
 }
 
-/** The organization's agents (active first, then revoked; by name) with their running jobs and pins. */
+/**
+ * The organization's agents (active first, then revoked; by name) with their
+ * running jobs and pins. Deleted agents are left out.
+ */
 export async function listAgentOverview(
   db: Database,
   organizationId: string,
@@ -103,12 +106,12 @@ export async function listAgentOverview(
   const rows = await db
     .select()
     .from(agents)
-    .where(eq(agents.organizationId, organizationId))
+    .where(and(eq(agents.organizationId, organizationId), isNull(agents.deletedAt)))
     .orderBy(asc(sql`${agents.revokedAt} is not null`), asc(agents.name), asc(agents.createdAt));
   return withJobsAndPins(db, rows);
 }
 
-/** One of the organization's agents (null for unknown agents and other organizations'). */
+/** One of the organization's agents (null for unknown and deleted agents and other organizations'). */
 export async function getAgentOverview(
   db: Database,
   organizationId: string,
@@ -117,7 +120,13 @@ export async function getAgentOverview(
   const rows = await db
     .select()
     .from(agents)
-    .where(and(eq(agents.organizationId, organizationId), eq(agents.id, agentId)));
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.deletedAt),
+      ),
+    );
   const [agent] = await withJobsAndPins(db, rows);
   return agent ?? null;
 }
@@ -213,6 +222,32 @@ export async function requestAgentUpdate(
     )
     .returning();
   return row ?? null;
+}
+
+/**
+ * Soft-deletes a revoked agent: it's hidden from the Agents pages from then on.
+ * Returns false for unknown, active or already deleted agents and agents of
+ * another organization.
+ */
+export async function markAgentDeleted(
+  db: Database,
+  organizationId: string,
+  agentId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const rows = await db
+    .update(agents)
+    .set({ deletedAt: now })
+    .where(
+      and(
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNotNull(agents.revokedAt),
+        isNull(agents.deletedAt),
+      ),
+    )
+    .returning({ id: agents.id });
+  return rows.length > 0;
 }
 
 /** An agent's most recent audit events, newest first. */

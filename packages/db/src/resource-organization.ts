@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { agents, ralphRuns, repositories, reviews, scmConnections } from "./schema.js";
 
@@ -22,7 +22,7 @@ export async function getResourceOrganizationId(
         return db
           .select({ organizationId: agents.organizationId })
           .from(agents)
-          .where(eq(agents.id, id));
+          .where(and(eq(agents.id, id), isNull(agents.deletedAt)));
       case "ralph_run":
         return db
           .select({ organizationId: ralphRuns.organizationId })

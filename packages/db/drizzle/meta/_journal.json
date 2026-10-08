@@ -267,6 +267,13 @@
       "when": 1791493669070,
       "tag": "0037_agent_update_request",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791497807393,
+      "tag": "0038_agent_soft_delete",
+      "breakpoints": true
     }
   ]
 }

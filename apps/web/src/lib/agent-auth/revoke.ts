@@ -1,6 +1,8 @@
 import "server-only";
 import {
+  getAgentOverview,
   listQueuedJobsOnAgentTopics,
+  markAgentDeleted,
   revokeAgent as revokeAgentRow,
   skipJob,
   writeAgentAudit,
@@ -72,6 +74,47 @@ export async function revokeAgent(
       console.error(`Failed to redispatch job ${job.id} of revoked agent ${agentId}`, error);
     }
   }
+  return true;
+}
+
+/**
+ * Deletes an agent of the organization (Agents page): revokes it first unless
+ * it already is (see `revokeAgent`), then soft-deletes it so it's hidden from
+ * the Agents pages, and writes a `delete` audit row. Returns false for unknown,
+ * already deleted and other organizations' agents.
+ */
+export async function deleteAgent(
+  agentId: string,
+  options: {
+    organizationId: string;
+    deletedBy?: string | null;
+    ip?: string | null;
+    db?: Database;
+    dispatcher?: JobDispatcher;
+  },
+): Promise<boolean> {
+  const db = options.db ?? getDb();
+  const agent = await getAgentOverview(db, options.organizationId, agentId);
+  if (!agent) return false;
+  if (
+    !agent.revokedAt &&
+    !(await revokeAgent(agentId, {
+      revokedBy: options.deletedBy,
+      ip: options.ip,
+      organizationId: options.organizationId,
+      db,
+      dispatcher: options.dispatcher,
+    }))
+  ) {
+    return false;
+  }
+  if (!(await markAgentDeleted(db, options.organizationId, agentId))) return false;
+  await writeAgentAudit(db, {
+    agentId,
+    event: "delete",
+    ip: options.ip ?? null,
+    detail: { deletedBy: options.deletedBy ?? null },
+  });
   return true;
 }
 

@@ -15,7 +15,10 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
-import { revokeAgent as revokeAgentWithJobs } from "@/lib/agent-auth/revoke";
+import {
+  deleteAgent as deleteAgentWithRevoke,
+  revokeAgent as revokeAgentWithJobs,
+} from "@/lib/agent-auth/revoke";
 import { enrollCommand } from "@/lib/agents/display";
 import { latestAgentVersion, NpmRegistryError } from "@/lib/agents/npm";
 import { pinRepository as pinRepositoryWithSync } from "@/lib/agents/pins";
@@ -42,6 +45,11 @@ async function serverUrl(): Promise<string> {
       (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https");
     return `${proto}://${host}`;
   }
+}
+
+async function clientIp(): Promise<string | null> {
+  const h = await headers();
+  return h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 }
 
 export type EnrollmentActionResult =
@@ -209,13 +217,32 @@ export async function requestAgentUpdate(agentId: string): Promise<AgentUpdateAc
  */
 export async function revokeAgent(agentId: string): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
-    const h = await headers();
-    const ip = h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    const ip = await clientIp();
     if (
       !(await revokeAgentWithJobs(agentId, {
         revokedBy: admin.id,
         ip,
         organizationId: admin.organization.id,
+      }))
+    ) {
+      return { ok: false, error: "That agent doesn't exist." };
+    }
+    revalidate(agentId);
+    revalidatePath("/jobs");
+  });
+}
+
+/**
+ * Deletes an agent: revokes it if it isn't already (see `revokeAgent`), then
+ * removes it from the Agents pages for good.
+ */
+export async function deleteAgent(agentId: string): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    if (
+      !(await deleteAgentWithRevoke(agentId, {
+        organizationId: admin.organization.id,
+        deletedBy: admin.id,
+        ip: await clientIp(),
       }))
     ) {
       return { ok: false, error: "That agent doesn't exist." };

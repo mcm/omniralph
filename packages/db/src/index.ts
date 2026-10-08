@@ -132,6 +132,7 @@ export {
   listQueuedJobsOnAgentTopics,
   listRecentAgentAudit,
   listRecentJobs,
+  markAgentDeleted,
   requestAgentUpdate,
   setAgentDesiredVersion,
   updateAgentConfig,
