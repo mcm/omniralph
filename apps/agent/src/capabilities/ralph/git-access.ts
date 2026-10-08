@@ -6,26 +6,26 @@ import type { JobContext } from "../index.js";
 
 const REFRESH_MS = 30_000;
 
-export interface SessionGitAccess {
-  /** `env` for the session: git authenticates through the agent's `git-credential` helper. */
+export interface GitAccess {
+  /** `env` for git: the agent's `git-credential` helper reads the job token from a file. */
   env: NodeJS.ProcessEnv;
   /** Stops refreshing the token file and removes it. */
   close(): Promise<void>;
 }
 
 /**
- * Git access for a Claude session that fetches and pushes itself (a
- * `ralph.request` session; story sessions leave pushing to the job): the
- * session's environment gets the agent's `git-credential` helper, no askpass
- * or prompts, the server URL and `OMNIRALPH_JOB_TOKEN_FILE` naming a private
- * file with the job token. The token in the file follows `ctx.jobToken()`
- * (refreshed by heartbeats), so pushes late in a long session still
- * authenticate; `OMNIRALPH_JOB_TOKEN` itself stays out of the session.
+ * Git access for a job's own git commands (fetches, the story's push, the
+ * cleanup's pushes): the job's environment with the server URL and
+ * `OMNIRALPH_JOB_TOKEN_FILE` naming a private file with the job token instead
+ * of `OMNIRALPH_JOB_TOKEN`. The token in the file follows `ctx.jobToken()`
+ * (refreshed by heartbeats), so a push at the end of a long story still
+ * authenticates, where the token in an environment taken at the start would
+ * have expired.
  */
-export async function sessionGitAccess(
-  ctx: Pick<JobContext, "env" | "jobToken" | "server" | "repos">,
+export async function jobGitAccess(
+  ctx: Pick<JobContext, "env" | "jobToken" | "server">,
   options: { refreshMs?: number } = {},
-): Promise<SessionGitAccess> {
+): Promise<GitAccess> {
   const dir = await mkdtemp(path.join(tmpdir(), "omniralph-job-token-"));
   const file = path.join(dir, "token");
   let written = ctx.jobToken();
@@ -47,7 +47,7 @@ export async function sessionGitAccess(
   timer.unref();
   return {
     env: {
-      ...ctx.repos.gitEnv(withoutJobEnv(ctx.env())),
+      ...withoutJobEnv(ctx.env()),
       [SERVER_ENV]: ctx.server,
       [JOB_TOKEN_FILE_ENV]: file,
     },
@@ -57,4 +57,19 @@ export async function sessionGitAccess(
       await rm(dir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Git access for a Claude session that fetches and pushes itself (a
+ * `ralph.request` session; story sessions leave pushing to the job): like
+ * `jobGitAccess`, with only the agent's `git-credential` helper and no
+ * askpass or prompts, so pushes late in a long session still authenticate;
+ * `OMNIRALPH_JOB_TOKEN` itself stays out of the session.
+ */
+export async function sessionGitAccess(
+  ctx: Pick<JobContext, "env" | "jobToken" | "server" | "repos">,
+  options: { refreshMs?: number } = {},
+): Promise<GitAccess> {
+  const access = await jobGitAccess(ctx, options);
+  return { ...access, env: ctx.repos.gitEnv(access.env) };
 }

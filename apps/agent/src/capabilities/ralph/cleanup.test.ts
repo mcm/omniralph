@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -245,6 +245,18 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
     expect(await run(job({ kind: "branch", push: true }))).toMatchObject({ error: null });
     expect(git(remote.bare, "rev-parse", branch)).toBe(tip);
     expect(branchExists()).toBe(false);
+  });
+
+  it("pushes with the job token read from a file the agent keeps current", async () => {
+    await aheadEpic();
+    const seen = path.join(root, "push-env");
+    await writeFile(
+      path.join(remote.bare, "hooks", "pre-receive"),
+      `#!/bin/sh\n{ echo "env=\${OMNIRALPH_JOB_TOKEN:-none}"; echo "file=$(cat "$OMNIRALPH_JOB_TOKEN_FILE")"; } > '${seen}'\n`,
+      { mode: 0o755 },
+    );
+    expect(await run(job({ kind: "branch", push: true }))).toMatchObject({ error: null });
+    expect(await readFile(seen, "utf8")).toBe("env=none\nfile=job-token\n");
   });
 
   it("deletes the kept branch when told to, and reports a push that fails", async () => {

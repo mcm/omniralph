@@ -31,6 +31,7 @@ import { CommandError, GitError, runShell } from "../../workspace/git.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { ActivityRelay } from "./activities.js";
 import { controlPanelFetcher, jobAttachments } from "./attachments.js";
+import { jobGitAccess } from "./git-access.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import { createSessionRunner, type SessionResult, type SessionRunner } from "./session.js";
 
@@ -52,6 +53,8 @@ export interface StoryOptions {
   /** Retry delay for rate limits whose reset time is unknown. */
   defaultRetryAfterSeconds?: number;
   idleTimeoutMs?: number;
+  /** How often the job token file git reads is refreshed (see `jobGitAccess`). */
+  tokenRefreshMs?: number;
   now?: () => Date;
 }
 
@@ -187,8 +190,9 @@ export async function runStory(
     ...(options.fetch && { fetch: options.fetch }),
   });
   const runSession = options.runSession ?? createSessionRunner();
-  const env = ctx.env();
-  const plainEnv = sessionEnv(env);
+  const plainEnv = sessionEnv(ctx.env());
+  // The job's own git commands read the job token from a file kept current: the push comes after the session.
+  const git = await jobGitAccess(ctx, { refreshMs: options.tokenRefreshMs });
   const prefix = stashPrefix(payload);
   const label = (reason: string) => `${prefix}${reason} (attempt ${payload.attempt})`;
 
@@ -199,7 +203,7 @@ export async function runStory(
         branch: payload.branch,
         baseBranch: payload.baseBranch,
         ...(payload.settings.setupCommand && { setupCommand: payload.settings.setupCommand }),
-        env,
+        env: git.env,
         signal: ctx.signal,
       },
       async (worktree) => {
@@ -428,6 +432,7 @@ export async function runStory(
       },
     );
   } finally {
+    await git.close();
     await relay.flush();
   }
 }

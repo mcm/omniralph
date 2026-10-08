@@ -589,6 +589,33 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(stashes[0]).toContain("push-failed");
   });
 
+  it("pushes with the job token refreshed during the session, read from a file", async () => {
+    const seen = path.join(root, "push-env");
+    const hook = path.join(remote.bare, "hooks", "pre-receive");
+    await writeFile(
+      hook,
+      `#!/bin/sh\n{ echo "env=\${OMNIRALPH_JOB_TOKEN:-none}"; echo "file=$(cat "$OMNIRALPH_JOB_TOKEN_FILE")"; } > '${seen}'\n`,
+    );
+    await chmod(hook, 0o755);
+    let token = "token-1";
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      // A heartbeat refreshes the job token while the session runs.
+      token = "token-2";
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const ctx: JobContext = {
+      ...context(),
+      jobToken: () => token,
+      env: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "token-1", ...extra }),
+    };
+
+    const out = await runStory(job(), ctx, options(query, { tokenRefreshMs: 5 }));
+    expect(out.status).toBe("complete");
+    expect(await readFile(seen, "utf8")).toBe("env=none\nfile=token-2\n");
+  });
+
   it("treats a session that stopped while still waiting for background work as incomplete", async () => {
     const { query } = fakeQuery(async function* (call) {
       await writeFile(path.join(cwdOf(call), "half.txt"), "half\n");
