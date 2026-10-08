@@ -23,6 +23,8 @@ export interface AgentRow {
   selfUpdate: SelfUpdateSupport | null;
   update: AgentUpdateReport | null;
   failedVersions: string[];
+  /** An admin's "Update now" the agent hasn't acted on yet (`requestedAt` is ISO). */
+  updateRequest: { version: string; requestedAt: string } | null;
   updateStatus: AgentUpdateStatus;
   reportedCapabilities: string[];
   enabledCapabilities: string[];
@@ -56,6 +58,13 @@ export function agentRow(
 ): AgentRow {
   const desiredVersion = agent.desiredVersion ?? globalDesiredVersion;
   const update = agent.updateState ?? null;
+  const updateRequest =
+    agent.updateRequestVersion && agent.updateRequestedAt
+      ? {
+          version: agent.updateRequestVersion,
+          requestedAt: agent.updateRequestedAt.toISOString(),
+        }
+      : null;
   return {
     id: agent.id,
     name: agent.name,
@@ -67,12 +76,14 @@ export function agentRow(
     selfUpdate: agent.selfUpdate,
     update,
     failedVersions: agent.failedVersions,
+    updateRequest,
     updateStatus: agentUpdateStatus({
       version: agent.reportedVersion,
       desiredVersion,
       selfUpdate: agent.selfUpdate,
       update,
       failedVersions: agent.failedVersions,
+      updateRequested: updateRequest !== null,
     }),
     reportedCapabilities: agent.reportedCapabilities ?? [],
     enabledCapabilities: agent.enabledCapabilities,

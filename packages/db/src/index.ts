@@ -132,6 +132,7 @@ export {
   listQueuedJobsOnAgentTopics,
   listRecentAgentAudit,
   listRecentJobs,
+  requestAgentUpdate,
   setAgentDesiredVersion,
   updateAgentConfig,
   type AgentConfigInput,

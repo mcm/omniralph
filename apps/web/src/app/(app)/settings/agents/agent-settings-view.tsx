@@ -76,9 +76,9 @@ export function AgentSettingsView({
             <CardDescription>
               The version of <InlineCode>{packageName}</InlineCode> agents should run. Agents under
               pm2 stop taking jobs, let running ones finish (up to 2 hours), install it and restart;
-              a version that doesn&apos;t stay up is rolled back and never tried again on that
-              agent. Other agents show &quot;Update manually&quot;. An agent&apos;s own override (on
-              its page) wins over this one.
+              a version that doesn&apos;t stay up is rolled back and not tried again on that agent
+              unless you use &quot;Update now&quot; on its page. Other agents show &quot;Update
+              manually&quot;. An agent&apos;s own override (on its page) wins over this one.
             </CardDescription>
           </CardHeader>
           <CardContent>

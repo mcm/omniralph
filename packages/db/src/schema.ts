@@ -592,6 +592,14 @@ export const agents = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /**
+     * An admin's "Update now", sent with every heartbeat until the agent reports
+     * it handled (`handledUpdateRequestId`); null when none is pending.
+     */
+    updateRequestId: uuid("update_request_id"),
+    /** The version requested: the desired version then, else the latest on npm. */
+    updateRequestVersion: text("update_request_version"),
+    updateRequestedAt: timestamp("update_requested_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),

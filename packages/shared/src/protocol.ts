@@ -141,6 +141,17 @@ export const AgentUpdateReport = z.object({
 });
 export type AgentUpdateReport = z.infer<typeof AgentUpdateReport>;
 
+/**
+ * An admin's "Update now" from the control panel: the agent updates to
+ * `version` at once, even if it failed before (it's taken off the failed
+ * versions), and reports `id` back as `handledUpdateRequestId`.
+ */
+export const AgentUpdateRequest = z.object({
+  id: z.uuid(),
+  version: AgentVersion,
+});
+export type AgentUpdateRequest = z.infer<typeof AgentUpdateRequest>;
+
 /** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
@@ -159,6 +170,8 @@ export const Heartbeat = z.object({
   update: AgentUpdateReport.optional(),
   /** Versions that failed to install or to stay up; the agent never retries them. */
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
+  /** The last `updateRequest` the agent acted on; the control panel then clears it. */
+  handledUpdateRequestId: z.uuid().nullable().optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -211,6 +224,8 @@ export const HeartbeatResponse = z.object({
    * organization's setting); null when none is chosen. Agents under pm2 update themselves to it.
    */
   desiredVersion: AgentVersion.nullable().default(null),
+  /** An update an admin asked for and the agent hasn't acted on yet. */
+  updateRequest: AgentUpdateRequest.nullable().default(null),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

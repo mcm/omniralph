@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
@@ -8,7 +8,9 @@ import {
   SelfUpdater,
   readUpdateState,
   runningUnderPm2,
+  updateRequestPath,
   updateStatePath,
+  writeUpdateRequest,
   writeUpdateState,
   type DrainableDaemon,
   type Installer,
@@ -29,17 +31,19 @@ function config(desiredVersion: string | null): HeartbeatResponse {
     jobTokens: [],
     jobMessages: [],
     desiredVersion,
+    updateRequest: null,
   };
 }
 
 /** Records installs; `fail` makes the next installs of those versions throw. */
-function fakeInstaller(fail: string[] = []) {
+function fakeInstaller(fail: string[] = [], latest = "1.2.0") {
   const installs: string[] = [];
   const installer: Installer = {
     install: async (version) => {
       installs.push(version);
       if (fail.includes(version)) throw new Error(`npm ERR! 404 ${version} not found`);
     },
+    latest: async () => latest,
   };
   return { installs, installer };
 }
@@ -67,10 +71,12 @@ function fakeClock(start = 1_000_000) {
 describe("SelfUpdater", () => {
   let dir: string;
   let statePath: string;
+  let requestPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "omniralph-update-"));
     statePath = updateStatePath(path.join(dir, "agent.json"));
+    requestPath = updateRequestPath(path.join(dir, "agent.json"));
   });
 
   afterEach(async () => {
@@ -88,6 +94,7 @@ describe("SelfUpdater", () => {
     const clock = options.clock ?? fakeClock();
     return new SelfUpdater({
       statePath,
+      requestPath,
       runningVersion: options.version ?? "1.0.0",
       underPm2: options.underPm2 ?? true,
       installer: options.installer ?? fakeInstaller().installer,
@@ -128,6 +135,7 @@ describe("SelfUpdater", () => {
         error: null,
       },
       failedVersions: [],
+      handledUpdateRequestId: null,
     });
   });
 
@@ -154,6 +162,7 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
+      handledRequestId: null,
     });
     expect((await stat(statePath)).mode & 0o777).toBe(0o600);
   });
@@ -186,6 +195,7 @@ describe("SelfUpdater", () => {
         error: "Installing 1.1.0 failed: npm ERR! 404 1.1.0 not found",
       },
       failedVersions: ["1.1.0"],
+      handledUpdateRequestId: null,
     });
     expect(await readState()).toMatchObject({ pending: null, failed: ["1.1.0"] });
 
@@ -252,6 +262,7 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
+      handledRequestId: null,
     });
     expect(u.report().update?.state).toBe("idle");
   });
@@ -300,6 +311,7 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: ["0.9.0", "1.1.0"],
       lastError: "1.1.0 didn't stay up after 3 starts; rolled back to 1.0.0",
+      handledRequestId: null,
     });
 
     // The previous version starts normally, reports the failure and never retries 1.1.0.
@@ -338,6 +350,7 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
+      handledRequestId: null,
     });
     await writeFile(statePath, "{not json");
     expect((await readUpdateState(statePath)).pending).toBeNull();
@@ -351,5 +364,120 @@ describe("SelfUpdater", () => {
     await u.start();
     await u.onHeartbeat({ ...config(null), desiredVersion: "latest; rm -rf /" }, daemon);
     expect(installs).toEqual([]);
+  });
+
+  describe("requested updates", () => {
+    const REQUEST_ID = "0b6f2c1e-6a43-4b8e-9d55-3f1f0c9a7e21";
+    const requested = (desired: string | null, version: string, id = REQUEST_ID) => ({
+      ...config(desired),
+      updateRequest: { id, version },
+    });
+    const exists = (file: string) =>
+      access(file).then(
+        () => true,
+        () => false,
+      );
+
+    it("updates to the control panel's version, even one that failed, and reports the request handled", async () => {
+      await writeUpdateState(statePath, {
+        failed: ["1.1.0"],
+        lastError: "Installing 1.1.0 failed",
+      });
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      const u = updater({ installer });
+      await u.start();
+      // Without a request the failed version stays untried.
+      await u.onHeartbeat(config("1.1.0"), daemon);
+      expect(installs).toEqual([]);
+
+      await u.onHeartbeat(requested("1.1.0", "1.1.0"), daemon);
+      expect(installs).toEqual(["1.1.0"]);
+      expect(calls).toEqual([`drain ${2 * 60 * 60 * 1000}`, "exit"]);
+      expect(await readState()).toMatchObject({
+        previous: "1.0.0",
+        pending: "1.1.0",
+        failed: [],
+        lastError: null,
+        handledRequestId: REQUEST_ID,
+      });
+
+      // The new version reports it handled and doesn't act on it again.
+      const next = updater({ version: "1.1.0", installer });
+      await next.start();
+      expect(next.report().handledUpdateRequestId).toBe(REQUEST_ID);
+      await next.onHeartbeat(requested("1.1.0", "1.1.0"), fakeDaemon().daemon);
+      expect(installs).toEqual(["1.1.0"]);
+    });
+
+    it("updates when `omniralph-agent update` asks: to the desired version, else the latest on npm", async () => {
+      const { installs, installer } = fakeInstaller([], "1.3.0");
+      const { calls, daemon } = fakeDaemon();
+      const u = updater({ installer });
+      await u.start();
+      await u.onHeartbeat(config(null), daemon);
+      expect(installs).toEqual([]);
+
+      await writeUpdateRequest(requestPath);
+      await u.onHeartbeat(config(null), daemon);
+      expect(installs).toEqual(["1.3.0"]);
+      expect(calls).toEqual([`drain ${2 * 60 * 60 * 1000}`, "exit"]);
+      expect(await exists(requestPath)).toBe(false);
+      expect(await readState()).toMatchObject({ pending: "1.3.0", handledRequestId: null });
+
+      // A desired version wins over npm's latest, and is retried even after failing.
+      await writeUpdateState(statePath, { failed: ["1.1.0"] });
+      const again = updater({ installer });
+      await again.start();
+      await writeUpdateRequest(requestPath);
+      await again.onHeartbeat(config("1.1.0"), fakeDaemon().daemon);
+      expect(installs).toEqual(["1.3.0", "1.1.0"]);
+    });
+
+    it("only reports a request when it can't update itself or already runs the version", async () => {
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      const manual = updater({ installer, underPm2: false });
+      await manual.start();
+      await manual.onHeartbeat(requested(null, "1.1.0"), daemon);
+      await writeUpdateRequest(requestPath);
+      await manual.onHeartbeat(config(null), daemon);
+      expect(manual.report()).toMatchObject({
+        handledUpdateRequestId: REQUEST_ID,
+        update: { error: expect.stringContaining("isn't running under pm2") },
+      });
+      expect(await exists(requestPath)).toBe(false);
+
+      const current = updater({ installer });
+      await current.start();
+      await current.onHeartbeat(
+        requested(null, "1.0.0", "7d1e0f4a-2b3c-4d5e-8f90-a1b2c3d4e5f6"),
+        daemon,
+      );
+      expect(current.report().handledUpdateRequestId).toBe("7d1e0f4a-2b3c-4d5e-8f90-a1b2c3d4e5f6");
+      expect(installs).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("starts one update while heartbeats keep coming during the drain", async () => {
+      const { installs, installer } = fakeInstaller();
+      let release!: () => void;
+      const drained = new Promise<void>((resolve) => (release = resolve));
+      const { calls, daemon } = fakeDaemon();
+      daemon.drain = async () => {
+        calls.push("drain");
+        await drained;
+      };
+      const u = updater({ installer });
+      await u.start();
+      const first = u.onHeartbeat(requested("1.1.0", "1.1.0"), daemon);
+      await writeUpdateRequest(requestPath);
+      await u.onHeartbeat(requested("1.1.0", "1.1.0"), daemon);
+      await u.onHeartbeat(config("1.1.0"), daemon);
+      release();
+      await first;
+      expect(calls).toEqual(["drain", "exit"]);
+      expect(installs).toEqual(["1.1.0"]);
+    });
   });
 });

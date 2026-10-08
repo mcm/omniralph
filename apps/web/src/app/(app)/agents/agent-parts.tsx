@@ -110,16 +110,21 @@ const UPDATE_STATE_LABELS: Record<NonNullable<AgentRow["update"]>["state"], stri
 export function UpdateStatusBadge({
   agent,
 }: {
-  agent: Pick<AgentRow, "updateStatus" | "update" | "desiredVersion" | "selfUpdate">;
+  agent: Pick<
+    AgentRow,
+    "updateStatus" | "update" | "updateRequest" | "desiredVersion" | "selfUpdate"
+  >;
 }) {
-  const step = agent.update ? UPDATE_STATE_LABELS[agent.update.state] : null;
+  const step =
+    (agent.update && UPDATE_STATE_LABELS[agent.update.state]) ??
+    (agent.updateRequest && `${agent.updateRequest.version} requested`);
   const title =
     agent.updateStatus === "manual"
       ? agent.selfUpdate === null
         ? "This agent version can't update itself; install the desired version on the host."
         : "Not running under pm2, so it can't update itself; install the desired version on the host."
       : agent.updateStatus === "failed"
-        ? `${agent.desiredVersion} failed on this agent, so it won't try it again.`
+        ? `${agent.desiredVersion} failed on this agent, so it won't try it again unless you use Update now on its page.`
         : undefined;
   return (
     <Badge variant={UPDATE_STATUS_VARIANTS[agent.updateStatus]} title={title}>
@@ -131,6 +136,7 @@ export function UpdateStatusBadge({
 
 /** The reported version, and the desired one when it differs. */
 export function AgentVersionCell({ agent }: { agent: AgentRow }) {
+  const target = agent.updateRequest?.version ?? agent.desiredVersion;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
       {agent.version ? (
@@ -142,8 +148,8 @@ export function AgentVersionCell({ agent }: { agent: AgentRow }) {
           }}
         >
           {agent.version}
-          {agent.desiredVersion && agent.desiredVersion !== agent.version && (
-            <span style={{ color: "var(--text-tertiary)" }}> → {agent.desiredVersion}</span>
+          {target && target !== agent.version && (
+            <span style={{ color: "var(--text-tertiary)" }}> → {target}</span>
           )}
         </span>
       ) : (

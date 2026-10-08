@@ -147,7 +147,8 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
    excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
    shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days,
    plus ralph's tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
-   Agents**.
+   Agents**, and trigger an update with **Update now** on an agent's page or `omniralph-agent update`
+   on its host.
 
 ## Documentation
 

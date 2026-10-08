@@ -2,7 +2,10 @@
 
 import {
   createAgentEnrollment,
+  getAgentOverview,
+  getDesiredAgentVersion,
   getRepository,
+  requestAgentUpdate as requestAgentUpdateRow,
   setAgentDesiredVersion as setAgentDesiredVersionRow,
   unpinRepositoryFromAgent,
   updateAgentConfig as updateAgentConfigRow,
@@ -14,6 +17,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { revokeAgent as revokeAgentWithJobs } from "@/lib/agent-auth/revoke";
 import { enrollCommand } from "@/lib/agents/display";
+import { latestAgentVersion, NpmRegistryError } from "@/lib/agents/npm";
 import { pinRepository as pinRepositoryWithSync } from "@/lib/agents/pins";
 import { getAppUrl } from "@/lib/app-url";
 import { runAdminAction } from "@/lib/auth/admin-action";
@@ -151,6 +155,52 @@ export async function setAgentDesiredVersion(
     }
     revalidate(agentId);
   });
+}
+
+export type AgentUpdateActionResult = ActionResult & { version?: string };
+
+/**
+ * "Update now": asks the agent to update with its next heartbeat to its desired
+ * version (its override, else the organization's), or to the latest on npm when
+ * none is chosen. Unlike the automatic update it also retries a version that
+ * failed on the agent. Only agents under pm2 can update themselves.
+ */
+export async function requestAgentUpdate(agentId: string): Promise<AgentUpdateActionResult> {
+  let version: string | undefined;
+  const result = await runAdminAction(async (admin) => {
+    const db = getDb();
+    const agent = await getAgentOverview(db, admin.organization.id, agentId);
+    if (!agent || agent.revokedAt) {
+      return { ok: false, error: "That agent doesn't exist or was revoked." };
+    }
+    if (agent.selfUpdate !== "supported") {
+      return {
+        ok: false,
+        error:
+          "This agent can't update itself (it isn't running under pm2). Update it on the host.",
+      };
+    }
+    let target = agent.desiredVersion ?? (await getDesiredAgentVersion(db, admin.organization.id));
+    if (!target) {
+      try {
+        target = await latestAgentVersion();
+      } catch (error) {
+        if (error instanceof NpmRegistryError) {
+          return { ok: false, error: `Couldn't read the latest version: ${error.message}.` };
+        }
+        throw error;
+      }
+    }
+    if (target === agent.reportedVersion) {
+      return { ok: false, error: `${agent.name} already runs ${target}.` };
+    }
+    if (!(await requestAgentUpdateRow(db, admin.organization.id, agentId, target))) {
+      return { ok: false, error: "That agent doesn't exist or was revoked." };
+    }
+    version = target;
+    revalidate(agentId);
+  });
+  return result.ok ? { ...result, version } : result;
 }
 
 /**

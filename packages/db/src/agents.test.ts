@@ -6,11 +6,13 @@ import { createAgentEnrollment, enrollAgent, revokeAgent } from "./agent-auth.js
 import {
   getAgentOverview,
   listAgentOverview,
+  requestAgentUpdate,
   setAgentDesiredVersion,
   updateAgentConfig,
 } from "./agents.js";
 import { getDesiredAgentVersion, setDesiredAgentVersion } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
+import { recordAgentHeartbeat } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import { connectRepository, pinRepositoryToAgent } from "./repositories.js";
 import { agents, organizations, scmConnections } from "./schema.js";
@@ -83,6 +85,35 @@ describe.skipIf(!dockerAvailable)("organization-scoped agents", () => {
     expect(await revokeAgent(db, a, { organizationId: orgB })).toBeNull();
     expect((await getAgentOverview(db, orgA, a))?.revokedAt).toBeNull();
     expect(await revokeAgent(db, a, { organizationId: orgA })).not.toBeNull();
+  });
+
+  it("keeps an update request until the agent reports it handled", async () => {
+    const a = await enroll(orgA, "a-update");
+    expect(await requestAgentUpdate(db, orgB, a, "2.0.0")).toBeNull();
+    const first = await requestAgentUpdate(db, orgA, a, "2.0.0");
+    expect(first).toMatchObject({ updateRequestVersion: "2.0.0" });
+    expect(first?.updateRequestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(first?.updateRequestedAt).toBeInstanceOf(Date);
+    // Asking again replaces the pending request.
+    const second = await requestAgentUpdate(db, orgA, a, "2.0.1");
+    expect(second?.updateRequestId).not.toBe(first?.updateRequestId);
+
+    const heartbeat = (handledUpdateRequestId?: string | null) =>
+      recordAgentHeartbeat(db, a, { version: "1.0.0", capabilities: [], handledUpdateRequestId });
+    expect(await heartbeat()).toMatchObject({ updateRequestId: second!.updateRequestId });
+    // An older request is handled: the new one stays.
+    expect(await heartbeat(first!.updateRequestId)).toMatchObject({
+      updateRequestId: second!.updateRequestId,
+      updateRequestVersion: "2.0.1",
+    });
+    expect(await heartbeat(second!.updateRequestId)).toMatchObject({
+      updateRequestId: null,
+      updateRequestVersion: null,
+      updateRequestedAt: null,
+    });
+
+    await revokeAgent(db, a, { organizationId: orgA });
+    expect(await requestAgentUpdate(db, orgA, a, "2.0.0")).toBeNull();
   });
 
   it("pins a repository only to an agent of its own organization", async () => {
