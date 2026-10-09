@@ -45,9 +45,15 @@ export function systemPrompt(input: SystemPromptInput): string {
 /**
  * The thread's recorded messages as model messages. User messages carry their
  * author; a history cut in the middle of a tool exchange starts at the first
- * user message.
+ * user message. Without `includeTools` (a turn with no tools), tool calls and
+ * results are left out and assistant messages keep only their text: models
+ * reject tool blocks when no tools are defined, and an unlinked user mustn't
+ * see raw tool results another member's turn fetched.
  */
-export function historyMessages(rows: ChatMessage[]): ModelMessage[] {
+export function historyMessages(
+  rows: ChatMessage[],
+  { includeTools = true }: { includeTools?: boolean } = {},
+): ModelMessage[] {
   const messages: ModelMessage[] = [];
   for (const row of rows) {
     if (messages.length === 0 && row.role !== "user") continue;
@@ -55,10 +61,28 @@ export function historyMessages(rows: ChatMessage[]): ModelMessage[] {
       const author = row.authorName || row.externalUserId || "someone";
       messages.push({ role: "user", content: `${author}: ${String(row.content)}` });
     } else if (row.role === "assistant") {
-      messages.push({ role: "assistant", content: row.content as never });
-    } else {
+      if (includeTools) {
+        messages.push({ role: "assistant", content: row.content as never });
+        continue;
+      }
+      const text = assistantText(row.content);
+      if (text) messages.push({ role: "assistant", content: text });
+    } else if (includeTools) {
       messages.push({ role: "tool", content: row.content as never });
     }
   }
   return messages;
+}
+
+/** The text of a recorded assistant message (a string or AI SDK content parts). */
+function assistantText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(
+      (p): p is { type: "text"; text: string } => p?.type === "text" && typeof p.text === "string",
+    )
+    .map((p) => p.text)
+    .join("\n")
+    .trim();
 }

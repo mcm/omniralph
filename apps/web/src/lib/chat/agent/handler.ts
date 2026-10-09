@@ -117,7 +117,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             appUrl,
             now: now(),
           }),
-          messages: historyMessages(history),
+          messages: historyMessages(history, { includeTools: Object.keys(tools).length > 0 }),
           tools,
           stopWhen: stepCountIs(deps.maxSteps ?? CHAT_AGENT_MAX_STEPS),
           maxRetries: 1,
@@ -142,9 +142,9 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         await reply(ERROR_REPLY).catch((postError: unknown) =>
           logger.error("Couldn't post the chat agent apology", { threadId: thread.id, postError }),
         );
-        return;
       }
 
+      // Also after an error: a user who needs a link should still get it.
       if (linkNeeded) await requireMember(context);
     },
   };

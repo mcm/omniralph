@@ -392,6 +392,23 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       expect(await db.select().from(chatThreads)).toEqual([]);
     });
 
+    it("ignores direct messages to the bot, even from a connected workspace", async () => {
+      const res = await slack(
+        slackEvent("T1", {
+          type: "message",
+          channel_type: "im",
+          user: "U1",
+          text: "what is running?",
+          ts: "1700000003.000100",
+          channel: "D1",
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(handled).toEqual([]);
+      expect(posts).toEqual([]);
+      expect(await db.select().from(chatThreads)).toEqual([]);
+    });
+
     it("rejects a bad signature before anything is handled", async () => {
       const res = await deliver(handleSlackWebhook, slackRequest(slackMention("T1"), "wrong"));
       expect(res.status).toBe(401);
@@ -522,6 +539,21 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       const res = await discord(
         discordMessage("G9", { id: "M1", channel: "CH1", content: "hi", mention: true }),
       );
+      expect(res.status).toBe(200);
+      expect(handled).toEqual([]);
+      expect(posts).toEqual([]);
+      expect(await db.select().from(chatThreads)).toEqual([]);
+    });
+
+    it("ignores direct messages to the bot and opens no thread", async () => {
+      const dm = discordMessage("G1", {
+        id: "M1",
+        channel: "DM1",
+        content: `<@${DISCORD_APP_ID}> hi`,
+        mention: true,
+      });
+      const { guild_id: _guild, ...data } = dm.data;
+      const res = await discord({ ...dm, data: { ...data, channel_type: 1 } });
       expect(res.status).toBe(200);
       expect(handled).toEqual([]);
       expect(posts).toEqual([]);
