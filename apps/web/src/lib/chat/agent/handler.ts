@@ -14,7 +14,8 @@ import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
 import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
 import { historyMessages, systemPrompt } from "./prompt";
-import { chatTools, toAiTools, type ChatToolRegistry } from "./tools";
+import { chatTools } from "./registry";
+import { toAiTools, type ChatToolRegistry } from "./tools";
 
 /**
  * The control-panel agent: answers each message of a thread the bot is part
@@ -103,7 +104,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         const appUrl = getAppUrl(deps.env);
         const organization = await getOrganization(db, organizationId);
         const history = await listChatMessages(db, chatThread.id, CHAT_AGENT_HISTORY_LIMIT);
-        const tools = toAiTools(registry, { db, organizationId, actor, thread }, () => {
+        const tools = toAiTools(registry, { db, organizationId, actor, thread, appUrl }, () => {
           linkNeeded = true;
         });
         const result = await generateText({

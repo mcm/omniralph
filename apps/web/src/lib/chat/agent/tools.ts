@@ -9,7 +9,7 @@ import type { ChatActor } from "../identity";
  * - `read`: linked members, and unlinked Slack users whose email domain is one
  *   of the organization's (`domain` actors);
  * - `action`: linked members only.
- * Later epics add tools by registering them in {@link chatTools}.
+ * Tools are registered in `./registry` (`chatTools`).
  */
 
 export type ChatToolTier = "read" | "action";
@@ -20,6 +20,8 @@ export interface ChatToolContext {
   organizationId: string;
   actor: ChatActor;
   thread: Thread;
+  /** The control panel's base URL (no trailing slash), for links to its pages. */
+  appUrl: string;
 }
 
 export interface ChatTool<S extends z.ZodType = z.ZodType> {
@@ -34,9 +36,6 @@ export type ChatToolRegistry = Readonly<Record<string, ChatTool>>;
 export function defineChatTool<S extends z.ZodType>(definition: ChatTool<S>): ChatTool<S> {
   return definition;
 }
-
-/** The registered tools (names are what the model sees). */
-export const chatTools: ChatToolRegistry = {};
 
 /** Whether `actor` may use a tool of `tier`. */
 export function tierAllowed(tier: ChatToolTier, actor: ChatActor): boolean {
