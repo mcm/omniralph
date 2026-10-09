@@ -1,15 +1,13 @@
 import "server-only";
 import { consumeOAuthState, saveChatConnection } from "@omniralph/db";
 import { NextResponse, type NextRequest } from "next/server";
-import { AuthorizationError } from "@/lib/auth/roles";
-import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
-import { requireUser, type OrgUser } from "@/lib/auth/session";
 import {
   createSignedState,
   readSignedState,
   SIGNED_STATE_TTL_SECONDS,
 } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
+import { INTEGRATIONS_PATH, requireInstallAdmin } from "./install-auth";
 import {
   exchangeSlackCode,
   SLACK_CALLBACK_PATH,
@@ -21,19 +19,6 @@ import {
   type SlackCredentials,
 } from "./slack-oauth";
 
-const INTEGRATIONS_PATH = "/settings/integrations";
-
-async function requireAdmin(to: (path: string) => NextResponse): Promise<OrgUser | NextResponse> {
-  try {
-    return await requireUser("admin");
-  } catch (error) {
-    if (!(error instanceof AuthorizationError)) throw error;
-    return to(
-      error.reason === "unauthenticated" ? SIGN_IN_PATH : `${ACCESS_DENIED_PATH}?reason=forbidden`,
-    );
-  }
-}
-
 /**
  * Settings › Integrations › Connect Slack: sends an admin to Slack's install
  * screen with a signed `state` naming their active organization, bound to
@@ -41,7 +26,7 @@ async function requireAdmin(to: (path: string) => NextResponse): Promise<OrgUser
  */
 export async function slackConnect(request: NextRequest): Promise<NextResponse> {
   const to = (path: string) => NextResponse.redirect(new URL(path, request.url));
-  const admin = await requireAdmin(to);
+  const admin = await requireInstallAdmin(to);
   if (admin instanceof NextResponse) return admin;
   const config = slackOAuthConfig();
   if (!config) return to(`${INTEGRATIONS_PATH}?slack=not_configured`);
@@ -86,7 +71,7 @@ export async function slackCallback(
     return response;
   };
   const notice = (value: string) => to(`${INTEGRATIONS_PATH}?slack=${value}`);
-  const admin = await requireAdmin(to);
+  const admin = await requireInstallAdmin(to);
   if (admin instanceof NextResponse) return admin;
 
   const params = request.nextUrl.searchParams;

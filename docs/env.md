@@ -95,6 +95,23 @@ Without all three variables, **Connect Slack** is disabled.
 | `SLACK_CLIENT_SECRET` | for Slack | — | The Slack app's client secret (OAuth code exchange). |
 | `SLACK_SIGNING_SECRET` | for Slack | — | The Slack app's signing secret; verifies Slack's request signatures. |
 
+### Discord (chat)
+
+One Discord application for the whole deployment (Discord Developer Portal), with a bot user. Each
+organization's admins add the bot to their server from **Settings › Integrations › Connect
+Discord** (a server belongs to one organization). Add the redirect
+`<APP_URL>/api/integrations/discord/callback` under **OAuth2 › Redirects**; set the **Interactions
+Endpoint URL** to `<APP_URL>/api/webhooks/discord`. The deployment-wide bot token is used for every
+server, so nothing per-server is stored. Without all four variables, **Connect Discord** is
+disabled.
+
+| Variable | Required | Default | Description |
+| -- | -- | -- | -- |
+| `DISCORD_APPLICATION_ID` | for Discord | — | The application ID (**General Information**); also the OAuth2 client ID. |
+| `DISCORD_CLIENT_SECRET` | for Discord | — | The OAuth2 client secret (code exchange when a server adds the bot). |
+| `DISCORD_BOT_TOKEN` | for Discord | — | The bot's token (**Bot › Token**); posts replies and leaves servers on disconnect. |
+| `DISCORD_PUBLIC_KEY` | for Discord | — | The application's public key; verifies Discord's interaction signatures (Ed25519). |
+
 ### Agent tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).
