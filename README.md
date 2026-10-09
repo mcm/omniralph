@@ -6,10 +6,10 @@ Self-hosted AI code review and Linear-driven builds for GitHub and GitLab.
 
 Agents run jobs for one or more **capabilities**, enabled per agent under **Agents › <agent>**:
 
-| Capability | Jobs | What it does |
-| -- | -- | -- |
-| `review` (default) | `review.run`, `review.reply`, `review.learn-rule` | PRs/MRs in connected repositories are reviewed automatically (or on `@omniralph review`) with a configurable depth profile. Findings are posted inline, and dismissed false positives turn into learned rules for later reviews. Read-only: sessions can't write, run commands or push. |
-| `ralph` | `ralph.story`, `ralph.describe-pr`, `ralph.prepare`, `ralph.request`, `ralph.cleanup` | The ralph loop, ported from cyralph: delegate a Linear epic (or issue) to the Omniralph Linear app and it's built story by story, one Claude session per story, with quality gates, a `feat(<ID>)` commit and a push after each, and ends with a PR/MR to the default branch with an agent-written description; stories routed to other repositories get their own branch and PR/MR (lanes). @mention the app for a single request instead, and reply to steer a running session live. Ralph then looks after its PRs/MRs: it fixes Omniralph's review findings, `@omniralph fix` requests and failed CI (within capped rounds) and cleans up the worktree after the merge. Opt-in per repository, with cyralph's per-repository settings; see [docs/linear.md](docs/linear.md). Moving from cyralph: [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md). |
+| Capability         | Jobs                                                                                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review` (default) | `review.run`, `review.reply`, `review.learn-rule`                                     | PRs/MRs in connected repositories are reviewed automatically (or on `@omniralph review`) with a configurable depth profile. Findings are posted inline, and dismissed false positives turn into learned rules for later reviews. Read-only: sessions can't write, run commands or push.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `ralph`            | `ralph.story`, `ralph.describe-pr`, `ralph.prepare`, `ralph.request`, `ralph.cleanup` | The ralph loop, ported from cyralph: delegate a Linear epic (or issue) to the Omniralph Linear app and it's built story by story, one Claude session per story, with quality gates, a `feat(<ID>)` commit and a push after each, and ends with a PR/MR to the default branch with an agent-written description; stories routed to other repositories get their own branch and PR/MR (lanes). @mention the app for a single request instead, and reply to steer a running session live. Ralph then looks after its PRs/MRs: it fixes Omniralph's review findings, `@omniralph fix` requests and failed CI (within capped rounds) and cleans up the worktree after the merge. Opt-in per repository, with cyralph's per-repository settings; see [docs/linear.md](docs/linear.md). Moving from cyralph: [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md). |
 
 Both share the control panel, job dispatch, agents, repo cache and credential broker. Only `ralph`
 jobs can get write credentials (one repository, short-lived), and the control panel performs every
@@ -53,6 +53,12 @@ of it; nobody outside it sees any of it, and its jobs only ever reach its own ag
   uninstalling the GitHub App does the same), then connect it from the other.
 
 See [ADR 0004: organizations](docs/adr/0004-organizations.md).
+
+**Terms of service and privacy policy.** The control panel serves them at `<APP_URL>/terms` and
+`<APP_URL>/privacy`, without sign-in, and links them from the sign-in page; use those URLs where
+GitHub, GitLab, Linear, Slack or Discord app settings ask for them. They are written for the
+operator of the deployment; edit `apps/web/src/app/(legal)` to name yourself and add contact
+details.
 
 ## Architecture
 
@@ -175,36 +181,36 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 
 ## Documentation
 
-| Doc | Covers |
-| -- | -- |
-| [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, deploying from GitHub Actions, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
-| [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
-| [linear.md](docs/linear.md) | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments |
-| [chat.md](docs/chat.md) | The Slack app (manifest, distribution) and Discord application (bot, Message Content intent), the AI Gateway, connecting workspaces and servers, asking questions, access levels, account linking and opting out of automatic linking, the Discord Gateway cron and its Vercel plan requirement |
-| [cutover-from-cyralph.md](docs/cutover-from-cyralph.md) | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback |
-| [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
-| [github-app.md](docs/github-app.md) | GitHub App manifest, permissions (incl. Actions: read for ralph's CI fixes), events (incl. `workflow_run`), KMS-held private key |
-| [gitlab.md](docs/gitlab.md) | Service account bot token (`api`, Maintainer), project picker, daily token rotation, connection health and webhooks, ralph's merge requests, self-managed GitLab |
-| [env.md](docs/env.md) | Every environment variable for the control panel and the agent |
-| [evals/README.md](evals/README.md) | The review eval harness (`pnpm eval`): precision, recall and tokens per profile against a baseline |
-| [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md) | Postgres job state + Vercel Queues delivery through the proxy |
-| [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
-| [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update |
-| [ADR 0004: organizations](docs/adr/0004-organizations.md) | The tenancy model, per-org roles, invitations and email domains, per-org topics, uniqueness rules |
-| [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md) | Chat SDK, our tables owning installations, the Discord Gateway cron, the control-panel agent on the AI Gateway, tool tiers and access levels |
+| Doc                                                                   | Covers                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [deploy-control-panel.md](docs/deploy-control-panel.md)               | Vercel, deploying from GitHub Actions, Neon and migrations, KMS issuers, Vercel Queues regions, Cron                                                                                                                                                                                                   |
+| [deploy-agent.md](docs/deploy-agent.md)                               | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
+| [linear.md](docs/linear.md)                                           | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments                                           |
+| [chat.md](docs/chat.md)                                               | The Slack app (manifest, distribution) and Discord application (bot, Message Content intent), the AI Gateway, connecting workspaces and servers, asking questions, access levels, account linking and opting out of automatic linking, the Discord Gateway cron and its Vercel plan requirement        |
+| [cutover-from-cyralph.md](docs/cutover-from-cyralph.md)               | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback                                                                                                                                                                                              |
+| [claude-auth.md](docs/claude-auth.md)                                 | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms                                                                                                                                                                                                    |
+| [github-app.md](docs/github-app.md)                                   | GitHub App manifest, permissions (incl. Actions: read for ralph's CI fixes), events (incl. `workflow_run`), KMS-held private key                                                                                                                                                                       |
+| [gitlab.md](docs/gitlab.md)                                           | Service account bot token (`api`, Maintainer), project picker, daily token rotation, connection health and webhooks, ralph's merge requests, self-managed GitLab                                                                                                                                       |
+| [env.md](docs/env.md)                                                 | Every environment variable for the control panel and the agent                                                                                                                                                                                                                                         |
+| [evals/README.md](evals/README.md)                                    | The review eval harness (`pnpm eval`): precision, recall and tokens per profile against a baseline                                                                                                                                                                                                     |
+| [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md)               | Postgres job state + Vercel Queues delivery through the proxy                                                                                                                                                                                                                                          |
+| [ADR 0002: agent auth](docs/adr/0002-agent-auth.md)                   | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection                                                                                                                                                                                                                          |
+| [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update                                                                                                                |
+| [ADR 0004: organizations](docs/adr/0004-organizations.md)             | The tenancy model, per-org roles, invitations and email domains, per-org topics, uniqueness rules                                                                                                                                                                                                      |
+| [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md)         | Chat SDK, our tables owning installations, the Discord Gateway cron, the control-panel agent on the AI Gateway, tool tiers and access levels                                                                                                                                                           |
 
 ## Layout
 
-| Path              | Package                           | Purpose                                                      |
-| ----------------- | --------------------------------- | ------------------------------------------------------------ |
-| `apps/web`        | `@omniralph/web`                  | Control panel UI, agent API, queue proxy, webhooks           |
-| `apps/agent`      | `@omniralph/agent`                | Agent daemon (`bin: omniralph-agent`)                        |
-| `packages/engine` | `@omniralph/engine`               | Review core: diff parsing, budgets, prompts, Claude provider |
-| `packages/scm`    | `@omniralph/scm`                  | SCM adapter interface + GitHub and GitLab implementations    |
-| `packages/db`     | `@omniralph/db`                   | Drizzle schema, migrations, typed queries                    |
-| `packages/ralph`  | `@omniralph/ralph`                | Ralph loop logic: PRD parsing, story selection, prompts      |
-| `packages/shared` | `@omniralph/shared`               | zod schemas and shared types                                 |
-| `evals`           |                                   | Review eval corpus and baseline (`pnpm eval`)                |
+| Path              | Package             | Purpose                                                      |
+| ----------------- | ------------------- | ------------------------------------------------------------ |
+| `apps/web`        | `@omniralph/web`    | Control panel UI, agent API, queue proxy, webhooks           |
+| `apps/agent`      | `@omniralph/agent`  | Agent daemon (`bin: omniralph-agent`)                        |
+| `packages/engine` | `@omniralph/engine` | Review core: diff parsing, budgets, prompts, Claude provider |
+| `packages/scm`    | `@omniralph/scm`    | SCM adapter interface + GitHub and GitLab implementations    |
+| `packages/db`     | `@omniralph/db`     | Drizzle schema, migrations, typed queries                    |
+| `packages/ralph`  | `@omniralph/ralph`  | Ralph loop logic: PRD parsing, story selection, prompts      |
+| `packages/shared` | `@omniralph/shared` | zod schemas and shared types                                 |
+| `evals`           |                     | Review eval corpus and baseline (`pnpm eval`)                |
 
 ## Development
 

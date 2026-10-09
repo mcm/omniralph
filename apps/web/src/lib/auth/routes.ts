@@ -5,10 +5,12 @@ export const SIGN_IN_PATH = "/sign-in";
 export const ACCESS_DENIED_PATH = "/access-denied";
 /** Where signed-in users without an active organization create, accept or join one. */
 export const ONBOARDING_PATH = "/onboarding";
+export const TERMS_PATH = "/terms";
+export const PRIVACY_PATH = "/privacy";
 
 /** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */
 const SELF_AUTHENTICATED_PREFIXES = ["/api/agent", "/api/webhooks", "/api/cron", "/api/auth"];
-const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH];
+const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH, TERMS_PATH, PRIVACY_PATH];
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -16,7 +18,8 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 
 /**
  * How the proxy treats a request path:
- * - `public`: no session needed (sign-in/access-denied pages, self-authenticated APIs)
+ * - `public`: no session needed (sign-in, access-denied, terms and privacy pages,
+ *   self-authenticated APIs)
  * - `api`: other API routes; unauthenticated requests get a 401
  * - `page`: UI; unauthenticated requests are redirected to sign-in
  */
