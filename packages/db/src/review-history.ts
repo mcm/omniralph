@@ -28,6 +28,8 @@ export interface ReviewListFilter {
   organizationId: string;
   /** Only this repository's reviews; all repositories when omitted. */
   repositoryId?: string;
+  /** Only reviews of this PR/MR number (meaningful with `repositoryId`). */
+  prNumber?: number;
   status?: Review["status"];
   trigger?: ReviewTrigger;
   /** 1-based page number. */
@@ -119,6 +121,7 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
   const page = Math.max(1, Math.floor(filter.page ?? 1));
   const conditions: SQL[] = [eq(repositories.organizationId, filter.organizationId)];
   if (filter.repositoryId) conditions.push(eq(reviews.repositoryId, filter.repositoryId));
+  if (filter.prNumber !== undefined) conditions.push(eq(reviews.prNumber, filter.prNumber));
   if (filter.status) conditions.push(eq(reviews.status, filter.status));
   if (filter.trigger) conditions.push(eq(reviews.trigger, filter.trigger));
   const where = and(...conditions);

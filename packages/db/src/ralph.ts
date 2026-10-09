@@ -315,6 +315,8 @@ export const RALPH_RUN_PAGE_SIZE = 25;
 export interface RalphRunListFilter {
   status?: RalphRunStatus | readonly RalphRunStatus[];
   repositoryId?: string;
+  /** Only runs of this Linear issue (e.g. `ENG-42`). */
+  linearIdentifier?: string;
   /** 1-based. */
   page?: number;
   pageSize?: number;
@@ -350,7 +352,7 @@ export interface RalphRunListPage {
   pageSize: number;
 }
 
-/** The organization's runs, newest first, optionally filtered by status and repository. */
+/** The organization's runs, newest first, optionally filtered by status, repository and Linear issue. */
 export async function listRuns(
   db: Executor,
   organizationId: string,
@@ -360,6 +362,9 @@ export async function listRuns(
   const page = Math.max(1, Math.floor(filter.page ?? 1));
   const conditions: SQL[] = [eq(ralphRuns.organizationId, organizationId)];
   if (filter.repositoryId) conditions.push(eq(ralphRuns.repositoryId, filter.repositoryId));
+  if (filter.linearIdentifier) {
+    conditions.push(eq(ralphRuns.linearIdentifier, filter.linearIdentifier));
+  }
   if (typeof filter.status === "string") conditions.push(eq(ralphRuns.status, filter.status));
   else if (filter.status) conditions.push(inArray(ralphRuns.status, [...filter.status]));
   const where = and(...conditions);

@@ -391,6 +391,7 @@ export interface RepositoryOverview {
   provider: ScmProvider;
   fullPath: string;
   enabled: boolean;
+  ralphEnabled: boolean;
   connectionId: string;
   connectionName: string;
   /** Instance URL (GitLab) or API URL (GitHub). */
@@ -418,6 +419,7 @@ const overviewColumns = {
   provider: repositories.provider,
   fullPath: repositories.fullPath,
   enabled: repositories.enabled,
+  ralphEnabled: repositories.ralphEnabled,
   connectionId: repositories.connectionId,
   connectionName: scmConnections.name,
   baseUrl: scmConnections.baseUrl,

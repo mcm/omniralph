@@ -280,17 +280,18 @@ export interface JobListEntry {
   finishedAt: Date | null;
 }
 
-/** An organization's recent jobs across capabilities, newest first, optionally of some statuses only. */
+/** An organization's recent jobs across capabilities, newest first, optionally of some statuses and types only. */
 export async function listRecentJobs(
   db: Database,
   organizationId: string,
-  filter: { statuses?: JobStatus[]; limit?: number } = {},
+  filter: { statuses?: JobStatus[]; types?: string[]; limit?: number } = {},
 ): Promise<JobListEntry[]> {
   const where = and(
     eq(jobs.organizationId, organizationId),
     filter.statuses && filter.statuses.length > 0
       ? inArray(jobs.status, filter.statuses)
       : undefined,
+    filter.types && filter.types.length > 0 ? inArray(jobs.type, filter.types) : undefined,
   );
   const rows = await db
     .select({
