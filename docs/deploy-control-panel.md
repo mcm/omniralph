@@ -6,47 +6,75 @@ proxies the agents' queue calls, signs agent tokens with Vercel KMS and brokers 
 credentials. Every variable mentioned below is described in [env.md](env.md).
 
 Prerequisites: a Vercel team with Queues and KMS available (both in beta), the Vercel CLI
-(`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, and admin access
-to the GitHub organization and/or GitLab projects you'll connect.
+(`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, a Neon API key, and
+admin access to this repository and to the GitHub organization and/or GitLab projects you'll connect.
+
+Vercel doesn't build the control panel: GitHub Actions does (`.github/workflows/deploy-web.yml`) and
+uploads the output with `vercel deploy --prebuilt` (see *Deploying from GitHub Actions*).
 
 ## 1. Create the Vercel project
 
 1. **Add New › Project**, import the GitHub repository (`mcm/omniralph`).
 2. **Root Directory:** `apps/web`. Vercel detects Next.js and the pnpm workspace. Leave the build
-   command alone: `apps/web/vercel.json` sets it to
-   `pnpm --filter @omniralph/db migrate && turbo run build` (see *Migrations*).
+   command alone: `apps/web/vercel.json` sets it to `turbo run build`, and turns off deployments
+   from Git pushes (`"git": { "deploymentEnabled": false }`), so connecting the repository doesn't
+   make Vercel build it too.
 3. **Node.js version:** 22.x (**Settings › Build and Deployment**).
 4. **Function region** (**Settings › Functions**): the region you'll use for Queues (e.g. `iad1`
    Washington, D.C.), close to your Neon database.
-5. Link a local checkout for the CLI steps below: `cd apps/web && vercel link`.
+5. Link a local checkout for the CLI steps below: `cd apps/web && vercel link`. Note the
+   `orgId` and `projectId` in `apps/web/.vercel/project.json` for the next step.
 
-## 2. The private UI package (`NPM_RC`)
+## 2. Deploying from GitHub Actions
 
-`@iamthemcmaster/ui` is a private package on the public npm registry. Vercel reads `NPM_RC` and
-writes it to `.npmrc` before installing. Add it for **Production, Preview and Development**:
+`.github/workflows/deploy-web.yml` builds and deploys the control panel:
 
-```sh
-vercel env add NPM_RC production   # paste: //registry.npmjs.org/:_authToken=<npm token>
-vercel env add NPM_RC preview
-vercel env add NPM_RC development
-```
+- **Pushes to `main`** (and manual runs of the workflow on `main`) deploy to **production**.
+- **Pull requests** from branches of this repository deploy a **preview** with their own Neon
+  branch (`preview/<branch>`), deleted when the pull request closes. Pull requests from forks and
+  Dependabot get no preview: they can't read the secrets.
 
-Use a read-only (or granular, read-only on `@iamthemcmaster`) npm token. Never commit an `.npmrc`
-with a token. CI uses the `NPM_TOKEN` Actions secret instead (`.github/workflows/ci.yml`).
+Each run pulls the Vercel environment's settings and variables (`vercel pull`), builds with
+`vercel build`, migrates the database (see *Migrations*) and uploads the output with
+`vercel deploy --prebuilt`. The deployment URL is on the run's summary and its GitHub environment
+(`production` or `preview`). Production runs queue up; a newer push to a pull request cancels its
+running preview deploy.
+
+Set these under the repository's **Settings › Secrets and variables › Actions**:
+
+| Name | Kind | Value |
+| -- | -- | -- |
+| `VERCEL_TOKEN` | secret | A Vercel access token (**Account Settings › Tokens**) scoped to the team that owns the project |
+| `VERCEL_ORG_ID` | variable | `orgId` from `.vercel/project.json` (the team ID) |
+| `VERCEL_PROJECT_ID` | variable | `projectId` from `.vercel/project.json` |
+| `NPM_TOKEN` | secret | npm token that can read `@iamthemcmaster/ui` (also used by CI) |
+| `NEON_API_KEY` | secret | A Neon API key (**Neon Console › Account settings › API keys**) |
+| `NEON_PROJECT_ID` | variable | The Neon project's ID (**Project settings › General**) |
+| `NEON_DATABASE`, `NEON_ROLE` | variables, optional | Database and role of preview connection strings; default `neondb` and `neondb_owner`, the Neon integration's names |
+
+`@iamthemcmaster/ui` is a private package on the public npm registry: the workflow writes
+`NPM_TOKEN` to `.npmrc` before building. Use a read-only (or granular, read-only on
+`@iamthemcmaster`) npm token. Never commit an `.npmrc` with a token. Vercel no longer installs
+anything, so the project doesn't need `NPM_RC`.
 
 ## 3. Postgres (Neon)
 
-1. **Storage › Neon › Create** (Vercel Marketplace) and connect it to the project. Enable
-   **preview branches** so each preview deployment gets its own Neon branch.
+1. **Storage › Neon › Create** (Vercel Marketplace) and connect it to the project for
+   **Production and Development**. Leave the integration's **preview branches** off: the deploy
+   workflow creates each pull request's Neon branch itself, because the integration only branches
+   on deployments Vercel builds.
 2. The integration injects `DATABASE_URL` (pooled, used by the app) and `DATABASE_URL_UNPOOLED`
-   (direct, used by migrations). Neon Auth isn't used; don't enable it.
+   (direct, used by migrations). Previews get their branch's URLs as deployment variables from the
+   workflow instead. Neon Auth isn't used; don't enable it.
 
 ### Migrations
 
-Every Vercel build runs `pnpm --filter @omniralph/db migrate` before building, so each deployment
-migrates the database it's connected to (its own Neon branch for previews, the main branch for
-production). It runs outside `turbo` so the remote cache can't skip it. Migrations apply before the
-new deployment serves traffic, so they must stay compatible with the code that's still live.
+The deploy workflow runs `pnpm --filter @omniralph/db migrate` after a successful build and before
+uploading, so each deployment migrates the database it's connected to: the production variables'
+database for production, the pull request's Neon branch (created from the default branch on its
+first deploy) for previews. It runs outside `turbo` so the remote cache can't skip it. Migrations
+apply before the new deployment serves traffic, so they must stay compatible with the code that's
+still live.
 
 To migrate by hand (e.g. a local database): `DATABASE_URL=… pnpm --filter @omniralph/db migrate`.
 It prefers `DATABASE_URL_UNPOOLED` when that's set.
@@ -139,8 +167,8 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `BOT_HANDLE` | Optional, default `omniralph`. GitHub only: GitLab uses each connection's bot username |
 | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
 
-Configure at least one sign-in provider. Redeploy after changing variables
-(`vercel --prod` or **Deployments › Redeploy**).
+Configure at least one sign-in provider. Redeploy after changing variables: run the **Deploy web**
+workflow on `main` (**Actions › Deploy web › Run workflow**) or push again to the pull request.
 
 ## 9. First sign-in, organizations and connecting code hosts
 
@@ -170,8 +198,12 @@ summary comment links back to `/reviews/<id>`.
 
 ## Troubleshooting
 
-- **Install fails with 401/404 for `@iamthemcmaster/ui`:** `NPM_RC` is missing for that environment,
-  or the token can't read the package.
+- **Install fails with 401/404 for `@iamthemcmaster/ui`:** the `NPM_TOKEN` Actions secret is
+  missing, or the token can't read the package.
+- **The deploy workflow fails at `vercel pull`:** `VERCEL_TOKEN` is missing or can't access the
+  team, or `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are wrong.
+- **Vercel also builds every push:** `apps/web/vercel.json`'s `git.deploymentEnabled: false` was
+  removed, or the project's root directory isn't `apps/web`.
 - **Agents get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no
   grant for this project and environment.
 - **GitHub installation callback fails with KMS but works with the PEM:** the issuer is RS512.
