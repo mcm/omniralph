@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
+    "@chat-adapter/discord": "4.41.1",
+    "@chat-adapter/slack": "4.41.1",
+    "@chat-adapter/state-pg": "4.41.1",
     "@iamthemcmaster/ui": "~1.0.0",
     "@linear/sdk": "^97.0.0",
     "@omniralph/db": "workspace:*",
@@ -23,6 +26,7 @@
     "@vercel/kms": "^0.3.2",
     "@vercel/oidc": "^3.8.10",
     "@vercel/queue": "^0.7.0",
+    "chat": "4.41.1",
     "drizzle-orm": "^0.45.3",
     "jose": "^6.2.12",
     "next": "^16.1.6",
@@ -34,6 +38,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@chat-adapter/tests": "4.41.1",
     "@testcontainers/postgresql": "^12.2.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",

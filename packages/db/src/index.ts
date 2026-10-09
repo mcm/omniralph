@@ -232,6 +232,7 @@ export {
 export {
   appendChatMessage,
   deleteChatConnection,
+  deleteChatConnectionByExternalId,
   ensureChatThread,
   getChatConnectionByExternalId,
   getChatConnectionWithCredentials,
