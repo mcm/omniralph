@@ -1,0 +1,42 @@
+# Slack app manifest for the Omniralph chat front door: one app per deployment,
+# installed into each organization's workspace from Settings › Integrations ›
+# Connect Slack (OAuth v2). Create the app at https://api.slack.com/apps ›
+# Create New App › From a manifest, replace https://omniralph.example.com with
+# the control panel's APP_URL, then set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and
+# SLACK_SIGNING_SECRET from Basic Information (docs/env.md).
+#
+# The bot scopes must match SLACK_BOT_SCOPES in apps/web/src/lib/chat/slack-oauth.ts.
+display_information:
+  name: Omniralph
+  description: Ask Omniralph about ralph runs, reviews, jobs, agents and repositories.
+features:
+  bot_user:
+    display_name: Omniralph
+    always_online: true
+oauth_config:
+  redirect_urls:
+    - https://omniralph.example.com/api/integrations/slack/callback
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - reactions:read
+      - reactions:write
+      - users:read
+      - users:read.email
+settings:
+  event_subscriptions:
+    request_url: https://omniralph.example.com/api/webhooks/slack
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - app_uninstalled
+      - tokens_revoked
+  org_deploy_enabled: true
+  socket_mode_enabled: false
+  token_rotation_enabled: false

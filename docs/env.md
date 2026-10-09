@@ -80,6 +80,21 @@ tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
 | `LINEAR_CLIENT_SECRET` | for ralph | — | The Linear OAuth application's client secret (code exchange and token refresh). |
 | `LINEAR_WEBHOOK_SECRET` | for ralph | — | The Linear app's webhook signing secret; verifies the `Linear-Signature` HMAC-SHA256 header. Unset → Linear webhooks are rejected. |
 
+### Slack (chat)
+
+One Slack app for the whole deployment, created from [slack-app-manifest.yaml](slack-app-manifest.yaml)
+(replace the placeholder URLs with `APP_URL`). Each organization's admins install it into their
+workspace from **Settings › Integrations › Connect Slack** (a workspace belongs to one
+organization). Redirect URL `<APP_URL>/api/integrations/slack/callback`; events go to
+`<APP_URL>/api/webhooks/slack`. Each workspace's bot token is stored encrypted (`ENCRYPTION_KEY`).
+Without all three variables, **Connect Slack** is disabled.
+
+| Variable | Required | Default | Description |
+| -- | -- | -- | -- |
+| `SLACK_CLIENT_ID` | for Slack | — | The Slack app's client ID (**Basic Information › App Credentials**). |
+| `SLACK_CLIENT_SECRET` | for Slack | — | The Slack app's client secret (OAuth code exchange). |
+| `SLACK_SIGNING_SECRET` | for Slack | — | The Slack app's signing secret; verifies Slack's request signatures. |
+
 ### Agent tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).
