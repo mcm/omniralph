@@ -21,6 +21,7 @@ import {
   IconGitPullRequest,
   IconHistory,
   IconListCheck,
+  IconMessageCircleUser,
   IconPlugConnected,
   IconRepeat,
   IconServer,
@@ -44,6 +45,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
   agentSettings: IconServerCog,
+  chatAccounts: IconMessageCircleUser,
 };
 
 export function AppSidebar({ organizations }: { organizations: OrganizationOption[] }) {

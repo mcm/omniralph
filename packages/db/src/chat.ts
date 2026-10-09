@@ -10,9 +10,11 @@ import { decrypt, encrypt } from "./crypto.js";
 import {
   chatConnections,
   chatIdentities,
+  chatIdentityOptOuts,
   chatMessages,
   chatThreads,
   chatUserProfiles,
+  organizations,
 } from "./schema.js";
 
 export type ChatPlatform = (typeof chatConnections.$inferSelect)["platform"];
@@ -56,6 +58,12 @@ export interface LinkChatIdentityInput {
   externalUserId: string;
   userId: string;
   source: ChatIdentitySource;
+  /** The chat user's display name, for display. */
+  displayName?: string | null;
+}
+
+export interface ChatIdentityWithOrganization extends ChatIdentity {
+  organizationName: string;
 }
 
 export interface SaveChatUserProfileInput {
@@ -166,6 +174,20 @@ export async function getChatConnectionByExternalId(
   return row ? toChatConnection(row) : null;
 }
 
+/** An organization's connection by ID (without credentials), or null. */
+export async function getChatConnection(
+  db: Database,
+  organizationId: string,
+  id: string,
+): Promise<ChatConnection | null> {
+  const [row] = await db
+    .select()
+    .from(chatConnections)
+    .where(and(eq(chatConnections.organizationId, organizationId), eq(chatConnections.id, id)))
+    .limit(1);
+  return row ? toChatConnection(row) : null;
+}
+
 /** The connection of a workspace or server with its decrypted credentials, or null. */
 export async function getChatConnectionWithCredentials<C>(
   db: Database,
@@ -231,24 +253,47 @@ export async function deleteChatConnectionByExternalId(
 
 // ── Identities ───────────────────────────────────────────────────────────────
 
-/** Links a chat user to a member of the organization, replacing any previous link. */
+/**
+ * Links a chat user to a member of the organization, replacing any previous
+ * link. A manual link also withdraws the chat user's opt-out of automatic
+ * linking.
+ */
 export async function linkChatIdentity(
   db: Database,
   input: LinkChatIdentityInput,
 ): Promise<ChatIdentity> {
-  const [row] = await db
-    .insert(chatIdentities)
-    .values(input)
-    .onConflictDoUpdate({
-      target: [
-        chatIdentities.organizationId,
-        chatIdentities.platform,
-        chatIdentities.externalUserId,
-      ],
-      set: { userId: input.userId, source: input.source, linkedAt: sql`now()` },
-    })
-    .returning();
-  return row!;
+  const displayName = input.displayName ?? null;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(chatIdentities)
+      .values({ ...input, displayName })
+      .onConflictDoUpdate({
+        target: [
+          chatIdentities.organizationId,
+          chatIdentities.platform,
+          chatIdentities.externalUserId,
+        ],
+        set: {
+          userId: input.userId,
+          source: input.source,
+          displayName: sql`coalesce(excluded.display_name, ${chatIdentities.displayName})`,
+          linkedAt: sql`now()`,
+        },
+      })
+      .returning();
+    if (input.source === "manual") {
+      await tx
+        .delete(chatIdentityOptOuts)
+        .where(
+          and(
+            eq(chatIdentityOptOuts.organizationId, input.organizationId),
+            eq(chatIdentityOptOuts.platform, input.platform),
+            eq(chatIdentityOptOuts.externalUserId, input.externalUserId),
+          ),
+        );
+    }
+    return row!;
+  });
 }
 
 /** The member a chat user is linked to in the organization, or null. */
@@ -272,7 +317,10 @@ export async function getChatIdentity(
   return row ?? null;
 }
 
-/** Removes a user's link of a chat identity; false when there was none. */
+/**
+ * Removes a user's link of a chat identity and records the chat user's
+ * opt-out of automatic linking by email; false when there was no such link.
+ */
 export async function unlinkChatIdentity(
   db: Database,
   userId: string,
@@ -280,27 +328,60 @@ export async function unlinkChatIdentity(
   platform: ChatPlatform,
   externalUserId: string,
 ): Promise<boolean> {
-  const rows = await db
-    .delete(chatIdentities)
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(chatIdentities)
+      .where(
+        and(
+          eq(chatIdentities.userId, userId),
+          eq(chatIdentities.organizationId, organizationId),
+          eq(chatIdentities.platform, platform),
+          eq(chatIdentities.externalUserId, externalUserId),
+        ),
+      )
+      .returning({ userId: chatIdentities.userId });
+    if (rows.length === 0) return false;
+    await tx
+      .insert(chatIdentityOptOuts)
+      .values({ organizationId, platform, externalUserId })
+      .onConflictDoNothing();
+    return true;
+  });
+}
+
+/** Whether the chat user unlinked their identity (and so is never linked automatically). */
+export async function hasChatIdentityOptOut(
+  db: Database,
+  organizationId: string,
+  platform: ChatPlatform,
+  externalUserId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ createdAt: chatIdentityOptOuts.createdAt })
+    .from(chatIdentityOptOuts)
     .where(
       and(
-        eq(chatIdentities.userId, userId),
-        eq(chatIdentities.organizationId, organizationId),
-        eq(chatIdentities.platform, platform),
-        eq(chatIdentities.externalUserId, externalUserId),
+        eq(chatIdentityOptOuts.organizationId, organizationId),
+        eq(chatIdentityOptOuts.platform, platform),
+        eq(chatIdentityOptOuts.externalUserId, externalUserId),
       ),
     )
-    .returning({ userId: chatIdentities.userId });
-  return rows.length > 0;
+    .limit(1);
+  return row !== undefined;
 }
 
 /** The chat identities linked to a user, in every organization, oldest first. */
-export async function listChatIdentities(db: Database, userId: string): Promise<ChatIdentity[]> {
-  return db
-    .select()
+export async function listChatIdentities(
+  db: Database,
+  userId: string,
+): Promise<ChatIdentityWithOrganization[]> {
+  const rows = await db
+    .select({ identity: chatIdentities, organizationName: organizations.name })
     .from(chatIdentities)
+    .innerJoin(organizations, eq(organizations.id, chatIdentities.organizationId))
     .where(eq(chatIdentities.userId, userId))
     .orderBy(asc(chatIdentities.linkedAt), asc(chatIdentities.externalUserId));
+  return rows.map((r) => ({ ...r.identity, organizationName: r.organizationName }));
 }
 
 // ── User profiles ────────────────────────────────────────────────────────────

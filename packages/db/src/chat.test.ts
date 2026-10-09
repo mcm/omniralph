@@ -16,6 +16,7 @@ import {
   getChatConnectionWithCredentials,
   getChatIdentity,
   getChatUserProfile,
+  hasChatIdentityOptOut,
   linkChatIdentity,
   listChatConnections,
   listChatIdentities,
@@ -222,8 +223,9 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
       externalUserId: "U1",
       userId: "member-1",
       source: "manual",
+      displayName: "Ada",
     });
-    expect(relinked).toMatchObject({ userId: "member-1", source: "manual" });
+    expect(relinked).toMatchObject({ userId: "member-1", source: "manual", displayName: "Ada" });
     expect(await db.select().from(chatIdentities)).toHaveLength(1);
 
     await linkChatIdentity(db, {
@@ -234,10 +236,14 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
       source: "manual",
     });
     expect(
-      (await listChatIdentities(db, "member-1")).map((i) => [i.organizationId, i.externalUserId]),
+      (await listChatIdentities(db, "member-1")).map((i) => [
+        i.organizationId,
+        i.organizationName,
+        i.externalUserId,
+      ]),
     ).toEqual([
-      [orgId, "U1"],
-      [otherOrgId, "D1"],
+      [orgId, "Acme", "U1"],
+      [otherOrgId, "Other", "D1"],
     ]);
     expect(await listChatIdentities(db, "admin-1")).toEqual([]);
 
@@ -246,6 +252,36 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
     expect(await unlinkChatIdentity(db, "member-1", orgId, "slack", "U1")).toBe(true);
     expect(await getChatIdentity(db, orgId, "slack", "U1")).toBeNull();
     expect(await unlinkChatIdentity(db, "member-1", orgId, "slack", "U1")).toBe(false);
+  });
+
+  it("records an opt-out on unlink that a manual link withdraws", async () => {
+    const link = (source: "email" | "manual", displayName?: string) =>
+      linkChatIdentity(db, {
+        organizationId: orgId,
+        platform: "slack",
+        externalUserId: "U1",
+        userId: "member-1",
+        source,
+        displayName,
+      });
+    await link("email", "Ada");
+    expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(false);
+    // Another user's unlink attempt records nothing.
+    await unlinkChatIdentity(db, "admin-1", orgId, "slack", "U1");
+    expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(false);
+
+    expect(await unlinkChatIdentity(db, "member-1", orgId, "slack", "U1")).toBe(true);
+    expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(true);
+    expect(await hasChatIdentityOptOut(db, otherOrgId, "slack", "U1")).toBe(false);
+    expect(await hasChatIdentityOptOut(db, orgId, "discord", "U1")).toBe(false);
+
+    // Linking by email keeps the opt-out; linking manually withdraws it.
+    await link("email");
+    expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(true);
+    expect(await link("manual", "Bea")).toMatchObject({ source: "manual", displayName: "Bea" });
+    expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(false);
+    // A link without a display name keeps the known one.
+    expect(await link("email")).toMatchObject({ source: "email", displayName: "Bea" });
   });
 
   it("caches chat user profiles per connection", async () => {

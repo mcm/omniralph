@@ -1,14 +1,17 @@
 import { createHmac, generateKeyPairSync, randomBytes } from "node:crypto";
 import { createMockLogger, createMockState } from "@chat-adapter/tests";
 import {
+  chatIdentities,
   chatMessages,
   chatThreads,
   closeDb,
   createDb,
   getChatConnectionByExternalId,
+  organizationMembers,
   organizations,
   runMigrations,
   saveChatConnection,
+  users,
   type ChatConnection,
   type Database,
 } from "@omniralph/db";
@@ -25,7 +28,8 @@ import type { SlackCredentials } from "./slack-oauth";
 vi.mock("server-only", () => ({}));
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { ACKNOWLEDGEMENT, acknowledgementHandler, createChatBot } = await import("./bot");
+const { ACKNOWLEDGEMENT, acknowledgementHandler, createChatBot, requireMember } =
+  await import("./bot");
 const {
   DISCORD_GATEWAY_TOKEN_HEADER,
   handleDiscordWebhook,
@@ -49,9 +53,21 @@ const DISCORD = {
   publicKey: discordKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex"),
 };
 
+const ENV = {
+  APP_URL: "https://omniralph.example.com",
+  AUTH_SECRET: "test-auth-secret",
+} as unknown as NodeJS.ProcessEnv;
+
 // ── Fake Slack and Discord APIs ──────────────────────────────────────────────
 
-const posts: Array<{ platform: string; channel: string; text: string; thread?: string }> = [];
+const posts: Array<{
+  platform: string;
+  channel: string;
+  text: string;
+  thread?: string;
+  /** Set for Slack ephemeral messages: who sees it. */
+  ephemeralTo?: string;
+}> = [];
 const server = setupServer(
   http.post("https://slack.com/api/users.info", async ({ request }) => {
     const user = new URLSearchParams(await request.text()).get("user");
@@ -69,6 +85,17 @@ const server = setupServer(
       thread: body.get("thread_ts") ?? undefined,
     });
     return HttpResponse.json({ ok: true, channel: body.get("channel"), ts: "1700000099.000100" });
+  }),
+  http.post("https://slack.com/api/chat.postEphemeral", async ({ request }) => {
+    const body = new URLSearchParams(await request.text());
+    posts.push({
+      platform: "slack",
+      channel: body.get("channel")!,
+      text: body.get("text")!,
+      thread: body.get("thread_ts") ?? undefined,
+      ephemeralTo: body.get("user")!,
+    });
+    return HttpResponse.json({ ok: true, message_ts: "1700000098.000100" });
   }),
   http.post(
     "https://discord.com/api/v10/channels/:channel/messages/:message/threads",
@@ -226,6 +253,7 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       logger: createMockLogger(),
       encryptionKey: ENCRYPTION_KEY,
       slackOptions: { webClientOptions: { retryConfig: { retries: 0 } } },
+      env: ENV,
     });
   };
 
@@ -283,9 +311,13 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       .returning();
     orgId = org!.id;
     otherOrgId = other!.id;
+    await db.insert(users).values({ id: "ada", email: "ada@acme.test", name: "Ada" });
+    await db.insert(organizationMembers).values({ organizationId: orgId, userId: "ada" });
   });
 
   beforeEach(async () => {
+    await db.delete(chatIdentities);
+    await db.execute("DELETE FROM chat_identity_opt_outs");
     await db.delete(chatThreads);
     await db.delete(chatMessages);
     await db.execute("DELETE FROM chat_connections");
@@ -545,6 +577,118 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       expect(await getChatConnectionByExternalId(db, "discord", "G1")).not.toBeNull();
       await discord({ type: "GATEWAY_GUILD_DELETE", timestamp: Date.now(), data: { id: "G1" } });
       expect(await getChatConnectionByExternalId(db, "discord", "G1")).toBeNull();
+    });
+  });
+
+  describe("identities", () => {
+    /** Slack's `users.info` answering `email` for U1. */
+    const slackEmail = (email: string) =>
+      server.use(
+        http.post("https://slack.com/api/users.info", async ({ request }) => {
+          const user = new URLSearchParams(await request.text()).get("user");
+          return HttpResponse.json({
+            ok: true,
+            user: {
+              id: user,
+              name: `user-${user}`,
+              real_name: `User ${user}`,
+              profile: user === "U1" ? { email } : {},
+            },
+          });
+        }),
+      );
+
+    /** Records what `requireMember` returned for each message. */
+    const requiring = (results: unknown[]): ChatConversationHandler => ({
+      async handle(thread, message, context) {
+        handled.push({ threadId: thread.id, text: message.text, context });
+        results.push(await requireMember(context));
+      },
+    });
+
+    it("links a Slack user with a member's email automatically and tells them once, privately", async () => {
+      slackEmail("Ada@Acme.test");
+      await slack(slackMention("T1"));
+      expect(handled[0]!.context.actor).toEqual({
+        kind: "member",
+        userId: "ada",
+        role: "member",
+        name: "Ada",
+        autoLinked: { email: "Ada@Acme.test" },
+      });
+      expect(posts).toEqual([
+        {
+          platform: "slack",
+          channel: "C1",
+          thread: MENTION_TS,
+          ephemeralTo: "U1",
+          text: expect.stringContaining(
+            "because both use Ada@Acme.test. To unlink it, open https://omniralph.example.com/settings/chat-accounts",
+          ),
+        },
+      ]);
+
+      await slack(slackReply("T1", "and the reviews?", "1700000001.000100"));
+      expect(handled[1]!.context.actor).toEqual({
+        kind: "member",
+        userId: "ada",
+        role: "member",
+        name: "Ada",
+      });
+      expect(posts).toHaveLength(1);
+    });
+
+    it("lets a linked member through requireMember without a prompt", async () => {
+      slackEmail("ada@acme.test");
+      const results: unknown[] = [];
+      build(requiring(results));
+      await slack(slackMention("T1"));
+      expect(results).toEqual([expect.objectContaining({ kind: "member", userId: "ada" })]);
+      // Only the auto-link note.
+      expect(posts).toHaveLength(1);
+    });
+
+    it("sends an unlinked Slack user an ephemeral link prompt from requireMember", async () => {
+      const results: unknown[] = [];
+      build(requiring(results));
+      await slack(slackMention("T1"));
+      expect(handled[0]!.context.actor).toEqual({ kind: "unlinked" });
+      expect(results).toEqual([null]);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]).toMatchObject({ channel: "C1", thread: MENTION_TS, ephemeralTo: "U1" });
+      const url = /https:\/\/\S+/.exec(posts[0]!.text)![0];
+      expect(url.startsWith("https://omniralph.example.com/chat/link?state=")).toBe(true);
+      const { readLinkState } = await import("./link");
+      expect(await readLinkState(new URL(url).searchParams.get("state"), ENV)).toEqual({
+        ok: true,
+        state: {
+          organizationId: orgId,
+          connectionId: slackConnection.id,
+          platform: "slack",
+          externalUserId: "U1",
+          displayName: "User U1",
+        },
+      });
+    });
+
+    it("mentions an unlinked Discord user in the thread with the link prompt", async () => {
+      const results: unknown[] = [];
+      build(requiring(results));
+      await discord(
+        discordMessage("G1", {
+          id: "M1",
+          channel: "CH1",
+          content: `<@${DISCORD_APP_ID}> hi`,
+          mention: true,
+        }),
+      );
+      expect(handled[0]!.context.actor).toEqual({ kind: "unlinked" });
+      expect(results).toEqual([null]);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]).toMatchObject({ platform: "discord", channel: "thread-of-M1" });
+      expect(posts[0]!.text).toMatch(
+        /^<@D1> .*Link your Discord account .*https:\/\/omniralph\.example\.com\/chat\/link\?state=/,
+      );
     });
   });
 

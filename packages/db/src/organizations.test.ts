@@ -13,6 +13,7 @@ import {
   declineInvitation,
   emailDomain,
   getActiveOrganization,
+  getMemberByEmail,
   getMembership,
   getOrganization,
   hasPendingInvitation,
@@ -171,6 +172,23 @@ describe.skipIf(!dockerAvailable)("organization queries", () => {
     expect(await removeMember(db, { organizationId: org.id, userId: admin.id })).toBe("removed");
     expect(await getMembership(db, org.id, admin.id)).toBeNull();
     expect(await removeMember(db, { organizationId: org.id, userId: admin.id })).toBe("not_member");
+  });
+
+  it("finds a member by sign-in email, case-insensitively", async () => {
+    const admin = await user("admin@byemail.io");
+    const carol = await user("carol@byemail.io");
+    const outsider = await user("outsider@byemail.io");
+    const org = await createOrganization(db, { name: "By email", createdBy: admin.id });
+    await addMember(db, { organizationId: org.id, userId: carol.id, role: "member" });
+
+    expect(await getMemberByEmail(db, org.id, " Carol@ByEmail.IO ")).toMatchObject({
+      userId: carol.id,
+      role: "member",
+      name: "carol@byemail.io",
+      email: "carol@byemail.io",
+    });
+    expect(await getMemberByEmail(db, org.id, outsider.email!)).toBeNull();
+    expect(await getMemberByEmail(db, org.id, "nobody@byemail.io")).toBeNull();
   });
 
   it("never removes or demotes the last admin", async () => {

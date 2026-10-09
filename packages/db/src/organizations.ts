@@ -339,6 +339,30 @@ export async function getMembership(
   return row ?? null;
 }
 
+/**
+ * The member of the organization whose sign-in email is `email`
+ * (case-insensitive), with their name, or null.
+ */
+export async function getMemberByEmail(
+  db: Database,
+  organizationId: string,
+  email: string,
+): Promise<(OrganizationMembership & { name: string | null; email: string }) | null> {
+  const [row] = await db
+    .select({ membership: organizationMembers, name: users.name, email: users.email })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(
+      and(
+        eq(organizationMembers.organizationId, organizationId),
+        sql`lower(${users.email}) = ${normalizeEmail(email)}`,
+      ),
+    )
+    .orderBy(asc(organizationMembers.createdAt))
+    .limit(1);
+  return row?.email ? { ...row.membership, name: row.name, email: row.email } : null;
+}
+
 export interface OrganizationMember extends OrganizationMembership {
   name: string | null;
   email: string | null;
