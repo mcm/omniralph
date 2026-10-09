@@ -17,16 +17,20 @@ import { IconCloudDownload, IconDeviceFloppy } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
-import { applyLatestAgentVersion, setGlobalAgentVersion } from "./actions";
+import { setGlobalAgentVersion, trackLatestAgentVersion } from "./actions";
 
 export function AgentSettingsView({
   desiredVersion,
   updatedAt,
+  latest,
   packageName,
 }: {
+  /** A version, `latest` or null. */
   desiredVersion: string | null;
   /** ISO timestamp of the last change. */
   updatedAt: string | null;
+  /** Tracking `latest`: the version last read from npm (`checkedAt` is ISO), or why reading failed. */
+  latest: { version: string | null; error: string | null; checkedAt: string | null } | null;
   packageName: string;
 }) {
   const { pending, run } = useAction();
@@ -34,13 +38,25 @@ export function AgentSettingsView({
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = version.trim();
     run(
       () => setGlobalAgentVersion(version),
-      version.trim()
-        ? `Agents will update to ${version.trim()} with their next heartbeat.`
-        : "Cleared. Agents keep the version they run.",
+      trimmed.toLowerCase() === "latest"
+        ? "Agents will follow the latest version on npm."
+        : trimmed
+          ? `Agents will update to ${trimmed} with their next heartbeat.`
+          : "Cleared. Agents keep the version they run.",
     );
   };
+
+  const changed = updatedAt ? ` Last changed ${formatDateTime(updatedAt)}.` : "";
+  let hint = `Semver, e.g. 1.4.0, or latest to follow the latest on npm. Leave blank to not manage versions.${changed}`;
+  if (latest) {
+    const read = latest.checkedAt ? ` (read ${formatDateTime(latest.checkedAt)})` : "";
+    hint = latest.error
+      ? `Following the latest on npm, but reading it failed: ${latest.error}.${latest.version ? ` Agents stay on ${latest.version} meanwhile.` : ""}${changed}`
+      : `Following the latest on npm: ${latest.version ?? "not read yet"}${read}. npm is read again every few minutes.${changed}`;
+  }
 
   return (
     <>
@@ -74,9 +90,10 @@ export function AgentSettingsView({
           <CardHeader>
             <CardTitle>Agent version</CardTitle>
             <CardDescription>
-              The version of <InlineCode>{packageName}</InlineCode> agents should run. Agents under
-              pm2 stop taking jobs, let running ones finish (up to 2 hours), install it and restart;
-              a version that doesn&apos;t stay up is rolled back and not tried again on that agent
+              The version of <InlineCode>{packageName}</InlineCode> agents should run, or{" "}
+              <InlineCode>latest</InlineCode> to update them with each release. Agents under pm2
+              stop taking jobs, let running ones finish (up to 2 hours), install it and restart; a
+              version that doesn&apos;t stay up is rolled back and not tried again on that agent
               unless you use &quot;Update now&quot; on its page. Other agents show &quot;Update
               manually&quot;. An agent&apos;s own override (on its page) wins over this one.
             </CardDescription>
@@ -86,15 +103,7 @@ export function AgentSettingsView({
               onSubmit={save}
               style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
             >
-              <Field
-                label="Desired version"
-                htmlFor="desired-version"
-                hint={
-                  updatedAt
-                    ? `Semver, e.g. 1.4.0. Leave blank to not manage versions. Last changed ${formatDateTime(updatedAt)}.`
-                    : "Semver, e.g. 1.4.0. Leave blank to not manage versions."
-                }
-              >
+              <Field label="Desired version" htmlFor="desired-version" hint={hint}>
                 <Input
                   id="desired-version"
                   placeholder="Not set"
@@ -115,14 +124,14 @@ export function AgentSettingsView({
                   disabled={pending}
                   onClick={() =>
                     run(async () => {
-                      const result = await applyLatestAgentVersion();
-                      if (result.ok && result.version) setVersion(result.version);
+                      const result = await trackLatestAgentVersion();
+                      if (result.ok) setVersion("latest");
                       return result;
-                    }, "Set to the latest version on npm.")
+                    }, "Agents will follow the latest version on npm.")
                   }
                 >
                   <IconCloudDownload size={14} />
-                  Use latest on npm
+                  Track latest on npm
                 </Button>
               </div>
             </form>

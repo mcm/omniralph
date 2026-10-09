@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
     email: null;
     image: null;
   } | null,
+  desired: "1.4.0",
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
@@ -19,10 +20,17 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@omniralph/db", () => ({
   DESIRED_AGENT_VERSION_KEY: "agent.desiredVersion",
+  TRACK_LATEST_AGENT_VERSION: "latest",
   getAppSetting: async () => ({
-    value: "1.4.0",
+    value: state.desired,
     updatedBy: "admin-1",
     updatedAt: new Date("2026-10-01T00:00:00Z"),
+  }),
+  getDesiredAgentVersion: async () => state.desired,
+  getLatestAgentVersionCheck: async () => ({
+    version: "1.5.0",
+    error: null,
+    checkedAt: new Date(Date.now() - 1000),
   }),
 }));
 vi.mock("./agent-settings-view", () => ({ AgentSettingsView: () => null }));
@@ -51,7 +59,17 @@ describe("Settings › Agents page", () => {
     expect((await AgentSettingsPage()).props).toEqual({
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
+      latest: null,
       packageName: "@omniralph/agent",
+    });
+  });
+
+  it("shows the version read from npm when the organization tracks latest", async () => {
+    state.user = user("admin");
+    state.desired = "latest";
+    expect((await AgentSettingsPage()).props).toMatchObject({
+      desiredVersion: "latest",
+      latest: { version: "1.5.0", error: null, checkedAt: expect.any(String) },
     });
   });
 });

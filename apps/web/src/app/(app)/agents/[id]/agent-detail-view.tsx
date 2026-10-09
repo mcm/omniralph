@@ -67,7 +67,7 @@ interface AgentDetailViewProps {
   /** Connected repositories (for pinning). */
   repositories: { id: string; provider: "github" | "gitlab"; fullPath: string }[];
   audit: AuditRow[];
-  /** Settings › Agents version, used when the agent has no override. */
+  /** Settings › Agents version (described when it tracks npm's latest), used when the agent has no override. */
   globalDesiredVersion: string | null;
 }
 
@@ -604,8 +604,10 @@ export function AgentDetailView({
               <Fact label="Version">{agent.version ?? "Unknown"}</Fact>
               <Fact label="Desired version">
                 {agent.desiredVersion
-                  ? `${agent.desiredVersion}${agent.desiredVersionOverride ? " (override)" : " (organization)"}`
-                  : "Not set"}
+                  ? `${agent.desiredVersion}${agent.desiredVersionOverride ? " (override)" : agent.tracksLatest ? " (latest on npm)" : " (organization)"}`
+                  : agent.tracksLatest
+                    ? "Latest on npm (not read yet)"
+                    : "Not set"}
               </Fact>
               <Fact label="Update status">
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>

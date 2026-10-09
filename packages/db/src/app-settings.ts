@@ -3,7 +3,10 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { appSettings } from "./schema.js";
 
-/** The version every agent of the organization should run unless it has its own override; a string or absent. */
+/**
+ * The version every agent of the organization should run unless it has its own override: a
+ * version, `latest` (`TRACK_LATEST_AGENT_VERSION`: the package's `latest` on npm) or absent.
+ */
 export const DESIRED_AGENT_VERSION_KEY = "agent.desiredVersion";
 
 export interface AppSetting<T> {
@@ -48,7 +51,7 @@ export async function setAppSetting(
     });
 }
 
-/** The organization's desired agent version, or null when none is chosen. */
+/** The organization's desired agent version (possibly `latest`), or null when none is chosen. */
 export async function getDesiredAgentVersion(
   db: Database,
   organizationId: string,
@@ -65,4 +68,45 @@ export async function setDesiredAgentVersion(
   updatedBy: string | null,
 ): Promise<void> {
   await setAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY, version, updatedBy);
+}
+
+/** The organization's desired agent version when its agents follow the package's `latest` on npm. */
+export const TRACK_LATEST_AGENT_VERSION = "latest";
+
+/**
+ * The `latest` version last read from npm for an organization that tracks it
+ * (`{ version, error }`; `updatedAt` is when it was read). Kept in the database
+ * so every control panel instance hands agents the same version.
+ */
+export const LATEST_AGENT_VERSION_KEY = "agent.latestVersion";
+
+export interface LatestAgentVersionCheck {
+  /** The last version read, kept when a later read failed; null when none was read yet. */
+  version: string | null;
+  /** Why the last read failed, or null. */
+  error: string | null;
+  checkedAt: Date;
+}
+
+export async function getLatestAgentVersionCheck(
+  db: Database,
+  organizationId: string,
+): Promise<LatestAgentVersionCheck | null> {
+  const setting = await getAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY);
+  if (!setting || typeof setting.value !== "object" || setting.value === null) return null;
+  const { version, error } = setting.value as { version?: unknown; error?: unknown };
+  return {
+    version: typeof version === "string" ? version : null,
+    error: typeof error === "string" ? error : null,
+    checkedAt: setting.updatedAt,
+  };
+}
+
+/** Records a read of npm's `latest` (now). */
+export async function setLatestAgentVersionCheck(
+  db: Database,
+  organizationId: string,
+  check: { version: string | null; error: string | null },
+): Promise<void> {
+  await setAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY, check, null);
 }

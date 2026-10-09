@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  getAgentOverview,
-  getDesiredAgentVersion,
-  listRecentAgentAudit,
-  listRepositoryOverview,
-} from "@omniralph/db";
+import { getAgentOverview, listRecentAgentAudit, listRepositoryOverview } from "@omniralph/db";
 import { CAPABILITIES } from "@omniralph/shared";
+import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { agentRow } from "@/lib/agents/rows";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
@@ -27,19 +23,23 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   await enterResourceOrganization(await requirePageUser(), "agent", id, `/agents/${id}`);
   const admin = await requirePageUser("admin");
   const db = getDb();
-  const [agent, audit, repositories, globalVersion] = await Promise.all([
+  const [agent, audit, repositories, organizationVersion] = await Promise.all([
     getAgentOverview(db, admin.organization.id, id),
     listRecentAgentAudit(db, id, AUDIT_LIMIT),
     listRepositoryOverview(db, admin.organization.id),
-    getDesiredAgentVersion(db, admin.organization.id),
+    organizationAgentVersion(db, admin.organization.id),
   ]);
   if (!agent) notFound();
   const now = new Date();
 
   return (
     <AgentDetailView
-      agent={agentRow(agent, now, globalVersion)}
-      globalDesiredVersion={globalVersion}
+      agent={agentRow(agent, now, organizationVersion.version, organizationVersion.tracksLatest)}
+      globalDesiredVersion={
+        organizationVersion.tracksLatest
+          ? `latest on npm, ${organizationVersion.version ?? "not read yet"}`
+          : organizationVersion.version
+      }
       now={now.getTime()}
       knownCapabilities={[...CAPABILITIES]}
       repositories={repositories.map((repo) => ({

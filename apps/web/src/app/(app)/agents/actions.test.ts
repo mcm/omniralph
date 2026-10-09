@@ -38,6 +38,7 @@ const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   sends: [] as { topic: string; payload: unknown; options: unknown }[],
+  latest: "2.0.0",
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -50,7 +51,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@/lib/agents/npm", () => ({
   NpmRegistryError: class extends Error {},
-  latestAgentVersion: async () => "2.0.0",
+  latestAgentVersion: async () => state.latest,
 }));
 vi.mock("@vercel/queue", () => ({
   QueueClient: class {
@@ -416,6 +417,37 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         ok: false,
         error: expect.any(String),
       });
+      await setDesiredAgentVersion(db, orgId, null, adminId);
+    });
+
+    it("tracking latest sends npm's latest, which Update now refreshes", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const supported = { ...HEARTBEAT, selfUpdate: "supported" };
+      const respond = async () =>
+        (await (await sendHeartbeat(accessToken, supported)).json()) as HeartbeatResponse;
+
+      state.latest = "2.0.0";
+      await setDesiredAgentVersion(db, orgId, "latest", adminId);
+      expect((await respond()).desiredVersion).toBe("2.0.0");
+      expect(
+        agentRow((await getAgentOverview(db, orgId, agentId))!, new Date(), "2.0.0", true),
+      ).toMatchObject({ desiredVersion: "2.0.0", tracksLatest: true, updateStatus: "updating" });
+
+      // A new release is picked up once the stored read is old; until then heartbeats agree.
+      state.latest = "2.1.0";
+      expect((await respond()).desiredVersion).toBe("2.0.0");
+      // Update now reads npm at once and records it, so heartbeats don't send the agent back.
+      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.1.0" });
+      expect(await respond()).toMatchObject({
+        desiredVersion: "2.1.0",
+        updateRequest: { version: "2.1.0" },
+      });
+
+      // An override still wins.
+      expect(await setAgentDesiredVersion(agentId, "1.9.0")).toEqual({ ok: true });
+      expect((await respond()).desiredVersion).toBe("1.9.0");
+
+      state.latest = "2.0.0";
       await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
