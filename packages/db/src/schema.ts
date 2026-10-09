@@ -39,6 +39,10 @@ export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
 /** Sources of webhook deliveries: the code hosts plus Linear. */
 export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "linear"]);
 export const integrationProvider = pgEnum("integration_provider", ["linear"]);
+export const chatPlatform = pgEnum("chat_platform", ["slack", "discord"]);
+/** How a chat identity was linked: by the member (`manual`) or by a matching email (`email`). */
+export const chatIdentitySource = pgEnum("chat_identity_source", ["manual", "email"]);
+export const chatMessageRole = pgEnum("chat_message_role", ["user", "assistant", "tool"]);
 export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
   "queued",
@@ -364,6 +368,129 @@ export const oauthStateUses = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("oauth_state_uses_expires_at_idx").on(t.expiresAt)],
+);
+
+// ── Chat (Slack and Discord) ─────────────────────────────────────────────────
+
+/**
+ * A Slack workspace or Discord server connected to an organization
+ * (`external_id` = the Slack team or enterprise ID, or the Discord guild ID).
+ */
+export const chatConnections = pgTable(
+  "chat_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    platform: chatPlatform("platform").notNull(),
+    externalId: text("external_id").notNull(),
+    /** Workspace or server name, for display. */
+    name: text("name").notNull(),
+    /**
+     * JSON credentials (Slack: the workspace's bot token) encrypted with
+     * `encrypt()` (AES-256-GCM). Null for Discord, which uses the deployment's bot token.
+     */
+    encryptedCredentials: text("encrypted_credentials"),
+    installedByUserId: text("installed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    /** A workspace or server belongs to one organization; events resolve the organization from it. */
+    uniqueIndex("chat_connections_platform_external_id_uq").on(t.platform, t.externalId),
+    index("chat_connections_organization_id_idx").on(t.organizationId),
+  ],
+);
+
+/** A chat user linked to an Omniralph member of the organization. */
+export const chatIdentities = pgTable(
+  "chat_identities",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    platform: chatPlatform("platform").notNull(),
+    /** The Slack or Discord user ID. */
+    externalUserId: text("external_user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: chatIdentitySource("source").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.platform, t.externalUserId] }),
+    index("chat_identities_user_id_idx").on(t.userId),
+  ],
+);
+
+/** A chat user's profile as last fetched from the platform (Slack `users.info`), cached. */
+export const chatUserProfiles = pgTable(
+  "chat_user_profiles",
+  {
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => chatConnections.id, { onDelete: "cascade" }),
+    externalUserId: text("external_user_id").notNull(),
+    /** The verified email, when the platform exposes it (never for Discord). */
+    email: text("email"),
+    displayName: text("display_name").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.connectionId, t.externalUserId] })],
+);
+
+/** A conversation with the control-panel agent: a thread started by mentioning the bot. */
+export const chatThreads = pgTable(
+  "chat_threads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => chatConnections.id, { onDelete: "cascade" }),
+    platform: chatPlatform("platform").notNull(),
+    /** The Chat SDK thread ID. */
+    externalThreadId: text("external_thread_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    startedByExternalUserId: text("started_by_external_user_id").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("chat_threads_connection_id_external_thread_id_uq").on(
+      t.connectionId,
+      t.externalThreadId,
+    ),
+    index("chat_threads_organization_id_idx").on(t.organizationId),
+  ],
+);
+
+/** A message of a chat thread's conversation history. */
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    role: chatMessageRole("role").notNull(),
+    /** The chat user who wrote it (`user` messages). */
+    externalUserId: text("external_user_id"),
+    authorName: text("author_name"),
+    /** The message content (e.g. AI SDK model message content). */
+    content: jsonb("content").$type<unknown>().notNull(),
+    /** `clock_timestamp()`, so messages appended in one transaction keep their order. */
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  (t) => [index("chat_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt)],
 );
 
 /**
