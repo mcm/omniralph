@@ -54,6 +54,20 @@ export const AGENT_RATE_LIMITS = {
   }),
 } as const;
 
+/** Control-panel agent turns in chat threads (TOOL-188). */
+export const CHAT_AGENT_RATE_LIMITS = {
+  perOrganization: (organizationId: string): RateLimit => ({
+    key: `chat_agent:org:${organizationId}`,
+    limit: 60,
+    windowSeconds: 10 * 60,
+  }),
+  perChatUser: (organizationId: string, platform: string, externalUserId: string): RateLimit => ({
+    key: `chat_agent:user:${organizationId}:${platform}:${externalUserId}`,
+    limit: 10,
+    windowSeconds: 60,
+  }),
+} as const;
+
 /** After this many failed auth attempts from one IP within the window, the IP is locked out. */
 export const AUTH_FAILURE_LIMIT = 20;
 export const AUTH_FAILURE_WINDOW_SECONDS = 10 * 60;

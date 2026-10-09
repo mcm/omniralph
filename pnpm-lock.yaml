@@ -40,7 +40,7 @@ importers:
         version: 8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: ^5.0.3
-        version: 5.0.3(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.3(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/agent:
     dependencies:
@@ -49,7 +49,7 @@ importers:
         version: 0.3.289(@anthropic-ai/sdk@0.131.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(zod@4.6.5)
       '@vercel/queue':
         specifier: ^0.7.0
-        version: 0.7.0
+        version: 0.7.0(@opentelemetry/api@1.9.0)
       fastest-levenshtein:
         specifier: ^1.0.16
         version: 1.0.16
@@ -92,13 +92,13 @@ importers:
         version: 1.11.3
       '@chat-adapter/discord':
         specifier: 4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       '@chat-adapter/slack':
         specifier: 4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       '@chat-adapter/state-pg':
         specifier: 4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       '@iamthemcmaster/ui':
         specifier: ~1.0.0
         version: 1.0.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)
@@ -131,22 +131,25 @@ importers:
         version: 3.8.10
       '@vercel/queue':
         specifier: ^0.7.0
-        version: 0.7.0
+        version: 0.7.0(@opentelemetry/api@1.9.0)
+      ai:
+        specifier: 5.0.273
+        version: 5.0.273(zod@4.6.5)
       chat:
         specifier: 4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       drizzle-orm:
         specifier: ^0.45.3
-        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.1)
+        version: 0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1)
       jose:
         specifier: ^6.2.12
         version: 6.2.12
       next:
         specifier: ^16.1.6
-        version: 16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       next-auth:
         specifier: 5.0.0-beta.32
-        version: 5.0.0-beta.32(next@16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        version: 5.0.0-beta.32(next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       react:
         specifier: ^19.0.0
         version: 19.3.0
@@ -165,7 +168,7 @@ importers:
     devDependencies:
       '@chat-adapter/tests':
         specifier: 4.41.1
-        version: 4.41.1(chat@4.41.1(zod@4.6.5))(vitest@5.0.3(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))
+        version: 4.41.1(chat@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5))(vitest@5.0.3(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))
       '@testcontainers/postgresql':
         specifier: ^12.2.0
         version: 12.2.0
@@ -189,14 +192,17 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.45.3
-        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.1)
+        version: 0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1)
       pg:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
       '@chat-adapter/state-pg':
         specifier: 4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
+      '@opentelemetry/api':
+        specifier: 1.9.0
+        version: 1.9.0
       '@testcontainers/postgresql':
         specifier: ^12.2.0
         version: 12.2.0
@@ -273,6 +279,22 @@ importers:
         version: 4.6.5
 
 packages:
+
+  '@ai-sdk/gateway@2.0.164':
+    resolution: {integrity: sha512-pol4Klaj4v1sO7s5P3L5NXfNPVLBBwseRzUGjs7gge4TMTK3Xdsu7CqiVzLVCFU7bCbm+mMy7TTxiL1Qkmw/6Q==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider-utils@3.0.41':
+    resolution: {integrity: sha512-xpURVGQud+AEOZ/uRZTBU0eVy2+dt/y/dUEp9ewjW3eTM6yu0vThzTvduhOSabpn6AExewg8WJW04P4D6USVXw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider@2.0.5':
+    resolution: {integrity: sha512-cmG40u10QFEUrYXWYom6Lo6DLR+pND3wWABTTT9Nf7zg9F7BD46KNj+STekndp9Kg5ZAIPA0WxmTI0IwRvKvvQ==}
+    engines: {node: '>=18'}
 
   '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.289':
     resolution: {integrity: sha512-A1iK70JJgj6GhSkGnaVC02B1hX0aPvWTbn3a1Fp9iKhXt1a6eZwAhkqdP+F/rzAVUcQG24ehG/LBF2Ec8tBL0Q==}
@@ -1146,6 +1168,10 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
+  '@fastify/busboy@2.1.1':
+    resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
+    engines: {node: '>=14'}
+
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
 
@@ -1620,6 +1646,10 @@ packages:
 
   '@open-draft/until@3.0.1':
     resolution: {integrity: sha512-s7/9ELP4aP9YZtW7RJaa0Xf3RISaRH9+EFN18FtykJYRHGNrl8f9ymvoNXzjhrjmftFvkQudtuDU9RYhk0xs3A==}
+
+  '@opentelemetry/api@1.9.0':
+    resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
+    engines: {node: '>=8.0.0'}
 
   '@oxc-project/types@0.152.0':
     resolution: {integrity: sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw==}
@@ -2987,6 +3017,10 @@ packages:
     resolution: {integrity: sha512-5IQpOEGWc0o9uY1TJibpz2N4XNzRqwSHYh6UUldDAH9VP6TmvyC2flok9DX4nnCEIl6EOW5W7gSgadxnBJN2CQ==}
     engines: {node: '>= 20'}
 
+  '@vercel/oidc@3.1.0':
+    resolution: {integrity: sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w==}
+    engines: {node: '>= 20'}
+
   '@vercel/oidc@3.8.10':
     resolution: {integrity: sha512-sPw1kIfQEA6/2dB+zlAJHnhhNBRJ8t/t4HfFvKO+g0EPBA7NbCKyGovuhgAV6Mnl865ka7HqCEguIy596czdAw==}
     engines: {node: '>= 20'}
@@ -3046,6 +3080,12 @@ packages:
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
+
+  ai@5.0.273:
+    resolution: {integrity: sha512-/rVEn93YcPAugzgKBJykrlWM/lPZuASrG+qvyjbV42/DJb0rEBJa7kg3wC/aKhdxGPppr8+O/pOdpYcXjtsDCQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
@@ -4501,6 +4541,9 @@ packages:
   json-schema-typed@8.0.2:
     resolution: {integrity: sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==}
 
+  json-schema@0.4.0:
+    resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
+
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
 
@@ -5940,6 +5983,10 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici@5.29.0:
+    resolution: {integrity: sha512-raqeBD6NQK4SkWhQzeYKd1KmIG6dllBOTt55Rmkt4HtI9mwdWtJljnrXjAFUBLTSN67HWrOIZ3EPF4kjUw80Bg==}
+    engines: {node: '>=14.0'}
+
   undici@6.29.0:
     resolution: {integrity: sha512-R+RODBqp6i2pPflGdq+xIOUkl+RNfGgHwoinecKu/JCuf2uO06cOKoDbI2P7Dn6KcswdKwrczbU6IYJ6K8X+wg==}
     engines: {node: '>=18.17'}
@@ -6246,6 +6293,25 @@ packages:
 
 snapshots:
 
+  '@ai-sdk/gateway@2.0.164(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 2.0.5
+      '@ai-sdk/provider-utils': 3.0.41(zod@4.6.5)
+      '@vercel/oidc': 3.1.0
+      zod: 4.6.5
+
+  '@ai-sdk/provider-utils@3.0.41(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 2.0.5
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.1
+      undici: 5.29.0
+      zod: 4.6.5
+
+  '@ai-sdk/provider@2.0.5':
+    dependencies:
+      json-schema: 0.4.0
+
   '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.289':
     optional: true
 
@@ -6412,10 +6478,10 @@ snapshots:
 
   '@balena/dockerignore@1.0.2': {}
 
-  '@chat-adapter/discord@4.41.1(zod@4.6.5)':
+  '@chat-adapter/discord@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      '@chat-adapter/shared': 4.41.1(zod@4.6.5)
-      chat: 4.41.1(zod@4.6.5)
+      '@chat-adapter/shared': 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
+      chat: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       discord-api-types: 0.38.56
       discord-interactions: 4.4.0
       discord.js: 14.27.0
@@ -6427,21 +6493,21 @@ snapshots:
       - workflow
       - zod
 
-  '@chat-adapter/shared@4.41.1(zod@4.6.5)':
+  '@chat-adapter/shared@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      chat: 4.41.1(zod@4.6.5)
+      chat: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
     transitivePeerDependencies:
       - ai
       - supports-color
       - workflow
       - zod
 
-  '@chat-adapter/slack@4.41.1(zod@4.6.5)':
+  '@chat-adapter/slack@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      '@chat-adapter/shared': 4.41.1(zod@4.6.5)
+      '@chat-adapter/shared': 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       '@slack/socket-mode': 2.0.7
       '@slack/web-api': 7.19.0
-      chat: 4.41.1(zod@4.6.5)
+      chat: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
     transitivePeerDependencies:
       - ai
       - bufferutil
@@ -6451,9 +6517,9 @@ snapshots:
       - workflow
       - zod
 
-  '@chat-adapter/state-pg@4.41.1(zod@4.6.5)':
+  '@chat-adapter/state-pg@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      chat: 4.41.1(zod@4.6.5)
+      chat: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
       pg: 8.23.1
     transitivePeerDependencies:
       - ai
@@ -6462,10 +6528,10 @@ snapshots:
       - workflow
       - zod
 
-  '@chat-adapter/tests@4.41.1(chat@4.41.1(zod@4.6.5))(vitest@5.0.3(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))':
+  '@chat-adapter/tests@4.41.1(chat@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5))(vitest@5.0.3(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))':
     dependencies:
-      chat: 4.41.1(zod@4.6.5)
-      vitest: 5.0.3(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+      chat: 4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5)
+      vitest: 5.0.3(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
   '@date-fns/tz@1.5.0': {}
 
@@ -6901,6 +6967,8 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@fastify/busboy@2.1.1': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:
@@ -7374,6 +7442,8 @@ snapshots:
   '@octokit/webhooks-methods@6.0.0': {}
 
   '@open-draft/until@3.0.1': {}
+
+  '@opentelemetry/api@1.9.0': {}
 
   '@oxc-project/types@0.152.0': {}
 
@@ -8674,6 +8744,8 @@ snapshots:
     dependencies:
       '@vercel/oidc': 4.0.0
 
+  '@vercel/oidc@3.1.0': {}
+
   '@vercel/oidc@3.8.10':
     dependencies:
       '@vercel/cli-config': 0.3.1
@@ -8686,12 +8758,14 @@ snapshots:
       '@vercel/cli-exec': 1.0.1
       jose: 5.10.0
 
-  '@vercel/queue@0.7.0':
+  '@vercel/queue@0.7.0(@opentelemetry/api@1.9.0)':
     dependencies:
       '@vercel/oidc': 3.8.10
       minimatch: 10.2.6
       mixpart: 0.0.6
       picocolors: 1.1.1
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.0
 
   '@vitest/mocker@5.0.3(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -8729,6 +8803,14 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  ai@5.0.273(zod@4.6.5):
+    dependencies:
+      '@ai-sdk/gateway': 2.0.164(zod@4.6.5)
+      '@ai-sdk/provider': 2.0.5
+      '@ai-sdk/provider-utils': 3.0.41(zod@4.6.5)
+      '@opentelemetry/api': 1.9.0
+      zod: 4.6.5
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
@@ -9047,7 +9129,7 @@ snapshots:
 
   character-entities@2.0.2: {}
 
-  chat@4.41.1(zod@4.6.5):
+  chat@4.41.1(ai@5.0.273(zod@4.6.5))(zod@4.6.5):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
@@ -9057,6 +9139,7 @@ snapshots:
       remend: 1.4.0
       unified: 11.0.5
     optionalDependencies:
+      ai: 5.0.273(zod@4.6.5)
       zod: 4.6.5
     transitivePeerDependencies:
       - supports-color
@@ -9333,8 +9416,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.15
 
-  drizzle-orm@0.45.3(@types/pg@8.23.1)(pg@8.23.1):
+  drizzle-orm@0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1):
     optionalDependencies:
+      '@opentelemetry/api': 1.9.0
       '@types/pg': 8.23.1
       pg: 8.23.1
 
@@ -10358,6 +10442,8 @@ snapshots:
 
   json-schema-typed@8.0.2: {}
 
+  json-schema@0.4.0: {}
+
   json-stable-stringify-without-jsonify@1.0.1: {}
 
   json-with-bigint@3.5.12: {}
@@ -10899,13 +10985,13 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next-auth@5.0.0-beta.32(next@16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0):
+  next-auth@5.0.0-beta.32(next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0):
     dependencies:
       '@auth/core': 0.41.3
-      next: 16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      next: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react: 19.3.0
 
-  next@16.3.8(@babel/core@7.29.7)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@next/env': 16.3.8
       '@swc/helpers': 0.5.23
@@ -10924,6 +11010,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.3.8
       '@next/swc-win32-arm64-msvc': 16.3.8
       '@next/swc-win32-x64-msvc': 16.3.8
+      '@opentelemetry/api': 1.9.0
       sharp: 0.35.5(@types/node@22.20.5)
     transitivePeerDependencies:
       - '@babel/core'
@@ -12187,6 +12274,10 @@ snapshots:
 
   undici-types@6.21.0: {}
 
+  undici@5.29.0:
+    dependencies:
+      '@fastify/busboy': 2.1.1
+
   undici@6.29.0: {}
 
   undici@8.11.2: {}
@@ -12336,7 +12427,7 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.1
 
-  vitest@5.0.3(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)):
+  vitest@5.0.3(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.3(msw@3.0.2(@types/node@22.20.5)(graphql@17.0.2)(typescript@5.9.3)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
@@ -12353,6 +12444,7 @@ snapshots:
       vite: 8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
+      '@opentelemetry/api': 1.9.0
       '@types/node': 22.20.5
     transitivePeerDependencies:
       - msw

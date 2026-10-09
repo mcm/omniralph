@@ -23,8 +23,11 @@ import {
   type StateAdapter,
   type Thread,
 } from "chat";
+import { gateway } from "ai";
 import { getAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import { chatAgentConfig } from "./agent/config";
+import { createChatAgentHandler } from "./agent/handler";
 import { discordOAuthConfig, type DiscordOAuthConfig } from "./discord-oauth";
 import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identity";
 import { createLinkUrl } from "./link";
@@ -98,23 +101,6 @@ export async function requireMember(
 /** The one-time note to a Slack user linked automatically by email. */
 export function autoLinkedNote(platform: ChatPlatform, email: string, appUrl: string): string {
   return `I linked your ${PLATFORM_NAMES[platform]} account to your Omniralph account because both use ${email}. To unlink it, open ${appUrl}${CHAT_ACCOUNTS_PATH}.`;
-}
-
-export const ACKNOWLEDGEMENT =
-  "Thanks, I got your message. I can't answer questions here yet, but I will soon.";
-
-/** Replies with {@link ACKNOWLEDGEMENT} and records the reply. */
-export function acknowledgementHandler(db: Database): ChatConversationHandler {
-  return {
-    async handle(thread, _message, { chatThread }) {
-      await thread.post(ACKNOWLEDGEMENT);
-      await appendChatMessage(db, {
-        threadId: chatThread.id,
-        role: "assistant",
-        content: ACKNOWLEDGEMENT,
-      });
-    },
-  };
 }
 
 export interface ChatBotDeps {
@@ -316,17 +302,18 @@ let bot: ChatBot | undefined;
 
 /**
  * The deployment's bot (built on first use from the env): Postgres state on
- * the migration-owned Chat SDK tables, the acknowledgement handler.
+ * the migration-owned Chat SDK tables, the control-panel agent as handler.
  */
 export function getChatBot(): ChatBot {
   if (!bot) {
     const db = getDb();
+    const agent = chatAgentConfig();
     bot = createChatBot({
       db,
       slack: slackOAuthConfig(),
       discord: discordOAuthConfig(),
       state: createPostgresState({ client: db.$client, autoCreateSchema: false }),
-      handler: acknowledgementHandler(db),
+      handler: createChatAgentHandler({ db, model: agent && gateway(agent.model) }),
     });
   }
   return bot;
