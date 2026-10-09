@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   appendChatMessage,
   deleteChatConnection,
+  deleteChatConnectionByExternalId,
   ensureChatThread,
   getChatConnectionByExternalId,
   getChatConnectionWithCredentials,
@@ -188,6 +189,17 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
     expect(removed).toMatchObject({ id: slack.id, credentials: { botToken: "xoxb" } });
     expect(await getChatConnectionByExternalId(db, "slack", "T1")).toBeNull();
     expect(await deleteChatConnection(db, orgId, slack.id, key)).toBeNull();
+  });
+
+  it("deletes a workspace's connection by its external ID", async () => {
+    const discord = await connect("discord", "G1", null);
+    expect(await deleteChatConnectionByExternalId(db, "slack", "G1")).toBeNull();
+    expect(await deleteChatConnectionByExternalId(db, "discord", "G1")).toMatchObject({
+      id: discord.id,
+      organizationId: orgId,
+    });
+    expect(await getChatConnectionByExternalId(db, "discord", "G1")).toBeNull();
+    expect(await deleteChatConnectionByExternalId(db, "discord", "G1")).toBeNull();
   });
 
   it("links, relinks and unlinks chat identities", async () => {

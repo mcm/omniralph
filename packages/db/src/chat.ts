@@ -212,6 +212,23 @@ export async function deleteChatConnection<C>(
   return row ? withCredentials<C>(row, key) : null;
 }
 
+/**
+ * Removes the connection of a workspace or server, whichever organization has
+ * it (the platform told us the app was uninstalled or the bot removed);
+ * returns the removed connection, or null when none was connected.
+ */
+export async function deleteChatConnectionByExternalId(
+  db: Database,
+  platform: ChatPlatform,
+  externalId: string,
+): Promise<ChatConnection | null> {
+  const [row] = await db
+    .delete(chatConnections)
+    .where(and(eq(chatConnections.platform, platform), eq(chatConnections.externalId, externalId)))
+    .returning();
+  return row ? toChatConnection(row) : null;
+}
+
 // ── Identities ───────────────────────────────────────────────────────────────
 
 /** Links a chat user to a member of the organization, replacing any previous link. */
