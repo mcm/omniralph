@@ -46,3 +46,4 @@ evals/reports/
 
 # packed npm tarballs
 *.tgz
+.env*
