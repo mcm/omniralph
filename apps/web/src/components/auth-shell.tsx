@@ -1,8 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { AuroraField } from "@iamthemcmaster/ui";
+import { PRIVACY_PATH, TERMS_PATH } from "@/lib/auth/routes";
 
-/** Signed-out frame: a centered column over the full-strength `AuroraField` backdrop. */
+/**
+ * Signed-out frame: a centered column over the full-strength `AuroraField` backdrop, with links
+ * to the terms of service and privacy policy.
+ */
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <>
@@ -18,7 +23,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           padding: "var(--space-6)",
         }}
       >
-        <div style={{ width: "100%", maxWidth: 420 }}>{children}</div>
+        <div style={{ width: "100%", maxWidth: 420 }}>
+          {children}
+          <LegalLinks style={{ marginTop: "var(--space-4)" }} />
+        </div>
       </main>
     </>
   );
@@ -69,5 +77,29 @@ export function AuthBrand() {
         OMNIRALPH
       </span>
     </div>
+  );
+}
+
+/** Links to the terms of service and privacy policy, for signed-out pages. */
+export function LegalLinks({ style }: { style?: React.CSSProperties }) {
+  const linkStyle: React.CSSProperties = { color: "var(--text-tertiary)", textDecoration: "none" };
+  return (
+    <nav
+      aria-label="Legal"
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        gap: "var(--space-4)",
+        fontSize: "var(--text-xs)",
+        ...style,
+      }}
+    >
+      <Link href={TERMS_PATH} style={linkStyle}>
+        Terms of service
+      </Link>
+      <Link href={PRIVACY_PATH} style={linkStyle}>
+        Privacy policy
+      </Link>
+    </nav>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Alert,
   AlertDescription,
@@ -15,6 +16,7 @@ import {
 import { IconAlertTriangle, IconBrandGithub, IconBrandGitlab } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
 import { signInWithProvider } from "@/lib/auth/actions";
+import { PRIVACY_PATH, TERMS_PATH } from "@/lib/auth/routes";
 
 type ProviderId = "github" | "gitlab";
 
@@ -92,6 +94,24 @@ export function SignInView({ providers, callbackUrl, error }: SignInViewProps) {
               </Button>
             );
           })}
+          <p
+            style={{
+              margin: 0,
+              fontSize: "var(--text-xs)",
+              color: "var(--text-tertiary)",
+              textAlign: "center",
+            }}
+          >
+            By signing in, you agree to the{" "}
+            <Link href={TERMS_PATH} style={{ color: "inherit" }}>
+              terms of service
+            </Link>{" "}
+            and the{" "}
+            <Link href={PRIVACY_PATH} style={{ color: "inherit" }}>
+              privacy policy
+            </Link>
+            .
+          </p>
         </CardContent>
       </Card>
     </>

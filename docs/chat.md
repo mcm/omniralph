@@ -44,6 +44,7 @@ A preview deployment that should receive Slack events needs its own app.
    hard-coded information, use HTTPS redirect URLs) › **Activate Public Distribution**. This doesn't
    list the app in the Slack Marketplace; it only allows OAuth installs from other workspaces.
    Without it, only the workspace that owns the app can connect.
+   If Slack asks for a privacy policy URL (as the Slack Marketplace does), use `<APP_URL>/privacy`.
 
 Slack verifies the event request URL when you save it. If the control panel isn't deployed with
 the signing secret yet, Slack reports the URL as failing; set the env vars, redeploy and click
@@ -62,7 +63,8 @@ server, and the same bot token is used for every server.
 2. **General Information**: copy the **Application ID** (`DISCORD_APPLICATION_ID`) and the
    **Public Key** (`DISCORD_PUBLIC_KEY`). Set the **Interactions Endpoint URL** to
    `<APP_URL>/api/webhooks/discord` (Discord checks it when you save, so do this after deploying
-   with the env vars).
+   with the env vars). Set the **Terms of Service URL** to `<APP_URL>/terms` and the **Privacy
+   Policy URL** to `<APP_URL>/privacy`.
 3. **OAuth2**: copy the **Client Secret** (`DISCORD_CLIENT_SECRET`) and add the redirect
    `<APP_URL>/api/integrations/discord/callback` under **Redirects**.
 4. **Bot**: **Reset Token** and copy it (`DISCORD_BOT_TOKEN`). Keep **Public Bot** on so admins of
@@ -110,17 +112,17 @@ that the assistant isn't configured on this deployment.
 
 On the Vercel project (per environment; [env.md](env.md#slack-chat)), then redeploy:
 
-| Variable | Value |
-| -- | -- |
-| `SLACK_CLIENT_ID` | The Slack app's client ID |
-| `SLACK_CLIENT_SECRET` | The Slack app's client secret |
-| `SLACK_SIGNING_SECRET` | The Slack app's signing secret |
-| `DISCORD_APPLICATION_ID` | The Discord application ID |
-| `DISCORD_CLIENT_SECRET` | The Discord OAuth2 client secret |
-| `DISCORD_BOT_TOKEN` | The Discord bot token |
-| `DISCORD_PUBLIC_KEY` | The Discord application's public key |
-| `AI_GATEWAY_API_KEY` | Only off Vercel: an AI Gateway API key |
-| `CHAT_AGENT_MODEL` | Optional: the AI Gateway model id (default `anthropic/claude-haiku-5.5`) |
+| Variable                 | Value                                                                    |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `SLACK_CLIENT_ID`        | The Slack app's client ID                                                |
+| `SLACK_CLIENT_SECRET`    | The Slack app's client secret                                            |
+| `SLACK_SIGNING_SECRET`   | The Slack app's signing secret                                           |
+| `DISCORD_APPLICATION_ID` | The Discord application ID                                               |
+| `DISCORD_CLIENT_SECRET`  | The Discord OAuth2 client secret                                         |
+| `DISCORD_BOT_TOKEN`      | The Discord bot token                                                    |
+| `DISCORD_PUBLIC_KEY`     | The Discord application's public key                                     |
+| `AI_GATEWAY_API_KEY`     | Only off Vercel: an AI Gateway API key                                   |
+| `CHAT_AGENT_MODEL`       | Optional: the AI Gateway model id (default `anthropic/claude-haiku-5.5`) |
 
 Each platform needs all of its variables. With any missing, its card under **Settings ›
 Integrations** shows a "not configured" notice with a disabled **Connect** button, and its webhook
@@ -171,11 +173,11 @@ Who may ask what depends on whether Omniralph knows who's asking. Each tool the 
 tier: `read` (questions about the organization) or `action` (changing something, for later
 features).
 
-| Who | Gets |
-| -- | -- |
-| **Linked member**: a chat user [linked](#account-linking) to an Omniralph account that is a member of the organization owning the connection | `read` and `action` tools |
-| **Slack user on the organization's email domains**: not linked, but their Slack profile email's domain is one of the organization's email domains (**Settings › Organization**) | `read` tools only |
-| **Everyone else** | No tools; the bot answers without organization data and posts a link prompt |
+| Who                                                                                                                                                                             | Gets                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Linked member**: a chat user [linked](#account-linking) to an Omniralph account that is a member of the organization owning the connection                                    | `read` and `action` tools                                                   |
+| **Slack user on the organization's email domains**: not linked, but their Slack profile email's domain is one of the organization's email domains (**Settings › Organization**) | `read` tools only                                                           |
+| **Everyone else**                                                                                                                                                               | No tools; the bot answers without organization data and posts a link prompt |
 
 - An organization without email domains grants no domain-based access, and the deployment-wide
   `ALLOWED_EMAIL_DOMAINS` is never used for chat.
@@ -217,11 +219,11 @@ the opt-out. Leaving the organization ends the link's access straight away.
 
 ## Troubleshooting
 
-| Symptom | Check |
-| -- | -- |
-| **Connect** is disabled | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them. |
-| Slack install fails for other workspaces | Public distribution is activated (step 1.3). |
-| The bot doesn't react to a Slack mention | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**. |
-| The bot doesn't react to a Discord mention | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
-| "The Omniralph assistant isn't configured" | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel. |
-| The bot asks to link although you're a member | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand. |
+| Symptom                                       | Check                                                                                                                                                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Connect** is disabled                       | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
+| Slack install fails for other workspaces      | Public distribution is activated (step 1.3).                                                                                                                                                                 |
+| The bot doesn't react to a Slack mention      | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
+| The bot doesn't react to a Discord mention    | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
+| "The Omniralph assistant isn't configured"    | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
+| The bot asks to link although you're a member | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |

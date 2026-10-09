@@ -19,6 +19,12 @@ describe("classifyPath", () => {
     expect(classifyPath("/access-denied")).toBe("public");
   });
 
+  it("lets the terms of service and privacy policy through", () => {
+    expect(classifyPath("/terms")).toBe("public");
+    expect(classifyPath("/privacy")).toBe("public");
+    expect(classifyPath("/privacy-settings")).toBe("page");
+  });
+
   it("protects other APIs and every UI page", () => {
     expect(classifyPath("/api/other")).toBe("api");
     expect(classifyPath("/api/agentx")).toBe("api");
