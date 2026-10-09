@@ -13,7 +13,10 @@ export const PRIVACY_PATH = "/privacy";
  * notice a switch made in another tab.
  */
 export const ORGANIZATION_COOKIE = "omniralph-organization";
-/** Switches this device to `?organization=` and redirects to `?next=` (pages can't set cookies). */
+/**
+ * Switches this device to the organization in a signed `?token=` and redirects to its next
+ * path (pages can't set cookies). See `lib/organizations/enter.ts`.
+ */
 export const ENTER_ORGANIZATION_PATH = "/api/organizations/enter";
 
 /** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */

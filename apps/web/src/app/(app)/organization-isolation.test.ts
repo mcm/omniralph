@@ -42,6 +42,7 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 import { ENTER_ORGANIZATION_PATH, ORGANIZATION_COOKIE } from "@/lib/auth/routes";
 
 vi.mock("server-only", () => ({}));
+vi.stubEnv("AUTH_SECRET", "organization-isolation-test-secret");
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
@@ -149,6 +150,7 @@ const { default: AgentSettingsPage } = await import("./settings/agents/page");
 const { default: IntegrationsPage } = await import("./settings/integrations/page");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { cancelJob } = await import("./jobs/actions");
+const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -178,6 +180,12 @@ interface Tenant {
 const notFound = { digest: expect.stringContaining("404") };
 /** Next.js `redirect(path)` throws an error whose digest carries the path. */
 const redirectTo = (path: string) => ({ digest: expect.stringContaining(`;${path};`) });
+/** Where `page` redirects (`NEXT_REDIRECT;<type>;<url>;<status>;`). */
+const redirectLocation = (page: Promise<unknown>) =>
+  page.then(
+    () => expect.unreachable("expected a redirect"),
+    (error: { digest?: string }) => error.digest?.split(";")[2],
+  );
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const search = (query: Record<string, string> = {}) => ({ searchParams: Promise.resolve(query) });
@@ -484,11 +492,19 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
-    const enter = new URLSearchParams({ organization: b.orgId, next: "/" });
-    const refused = await enterOrganization(
-      new NextRequest(`http://localhost${ENTER_ORGANIZATION_PATH}?${enter}`),
-    );
-    expect(refused.status).toBe(404);
+    const enter = async (url: string) =>
+      (await enterOrganization(new NextRequest(`http://localhost${url}`))).status;
+    // Unsigned (a link from another site), signed for someone else, or signed for a.
+    const unsigned = new URLSearchParams({ organization: b.orgId, next: "/" });
+    expect(await enter(`${ENTER_ORGANIZATION_PATH}?${unsigned}`)).toBe(404);
+    for (const userId of [b.userId, a.userId]) {
+      const signed = await createEnterOrganizationPath({
+        userId,
+        organizationId: b.orgId,
+        next: "/",
+      });
+      expect(await enter(signed)).toBe(404);
+    }
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
     expect(state.cookies.get(ORGANIZATION_COOKIE)).toBeUndefined();
   });
@@ -534,8 +550,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       );
       // The page sends the browser to switch to the resource's organization (pages can't
       // set cookies), which then reloads the page, showing the resource.
-      const enter = `${ENTER_ORGANIZATION_PATH}?${new URLSearchParams({ organization: b.orgId, next: path })}`;
-      await expect(open(), path).rejects.toMatchObject(redirectTo(enter));
+      const enter = await redirectLocation(open());
+      expect(enter, path).toMatch(new RegExp(`^${ENTER_ORGANIZATION_PATH}\\?token=`));
       expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
       const response = await enterOrganization(new NextRequest(`http://localhost${enter}`));
       expect(response.headers.get("location"), path).toBe(`http://localhost${path}`);
