@@ -26,6 +26,7 @@
     "@vercel/kms": "^0.3.2",
     "@vercel/oidc": "^3.8.10",
     "@vercel/queue": "^0.7.0",
+    "ai": "5.0.273",
     "chat": "4.41.1",
     "drizzle-orm": "^0.45.3",
     "jose": "^6.2.12",

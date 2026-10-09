@@ -114,6 +114,19 @@ cron keeps connected (every 9 minutes, each run listening for 10, so runs overla
 | `DISCORD_BOT_TOKEN` | for Discord | — | The bot's token (**Bot › Token**); posts replies and leaves servers on disconnect. |
 | `DISCORD_PUBLIC_KEY` | for Discord | — | The application's public key; verifies Discord's interaction signatures (Ed25519). |
 
+### Chat assistant (control-panel agent)
+
+Answers in Slack and Discord threads with a model from the
+[Vercel AI Gateway](https://vercel.com/docs/ai-gateway). On Vercel the gateway authenticates with
+the deployment's OIDC token, so no key is needed; elsewhere set `AI_GATEWAY_API_KEY`. Without
+either, the bot answers once per thread that the assistant isn't configured. Turns are
+rate-limited per organization (60 per 10 minutes) and per chat user (10 per minute).
+
+| Variable | Required | Default | Description |
+| -- | -- | -- | -- |
+| `AI_GATEWAY_API_KEY` | off Vercel, for the chat assistant | — | AI Gateway API key (Vercel dashboard › **AI Gateway › API keys**). |
+| `CHAT_AGENT_MODEL` | no | `anthropic/claude-haiku-5.5` | AI Gateway model id the chat assistant uses. |
+
 ### Agent tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).
@@ -134,8 +147,9 @@ See [ADR 0001](adr/0001-job-dispatch.md).
 
 ### Set by Vercel
 
-The control panel also reads `VERCEL_ENV` (refuses the local agent-token signer in `production`) and
-`VERCEL_PROJECT_PRODUCTION_URL` (the `APP_URL` default). Vercel sets both; don't set them yourself.
+The control panel also reads `VERCEL_ENV` (refuses the local agent-token signer in `production`),
+`VERCEL_PROJECT_PRODUCTION_URL` (the `APP_URL` default), and `VERCEL` / `VERCEL_OIDC_TOKEN` (the
+chat assistant uses the AI Gateway through OIDC). Vercel sets them; don't set them yourself.
 Publishing jobs, the queue proxy and KMS calls authenticate with the deployment's Vercel OIDC token,
 which needs no variable either.
 

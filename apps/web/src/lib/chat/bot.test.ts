@@ -17,6 +17,7 @@ import {
 } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { Message, Thread } from "chat";
+import { MockLanguageModelV2 } from "ai/test";
 import { asc, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -28,8 +29,8 @@ import type { SlackCredentials } from "./slack-oauth";
 vi.mock("server-only", () => ({}));
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { ACKNOWLEDGEMENT, acknowledgementHandler, createChatBot, requireMember } =
-  await import("./bot");
+const { createChatBot, requireMember } = await import("./bot");
+const { createChatAgentHandler } = await import("./agent/handler");
 const {
   DISCORD_GATEWAY_TOKEN_HEADER,
   handleDiscordWebhook,
@@ -81,7 +82,7 @@ const server = setupServer(
     posts.push({
       platform: "slack",
       channel: body.get("channel")!,
-      text: body.get("text")!,
+      text: (body.get("text") ?? body.get("markdown_text"))!,
       thread: body.get("thread_ts") ?? undefined,
     });
     return HttpResponse.json({ ok: true, channel: body.get("channel"), ts: "1700000099.000100" });
@@ -436,11 +437,26 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       expect(recorded?.messages.map((m) => m.content)).toEqual([MENTION_TEXT, "one", "two"]);
     });
 
-    it("answers in the thread with the acknowledgement and records it", async () => {
-      build(acknowledgementHandler(db));
+    it("answers in the thread with the control-panel agent and records it", async () => {
+      const model = new MockLanguageModelV2({
+        doGenerate: {
+          content: [{ type: "text", text: "Nothing is running right now." }],
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+          warnings: [],
+        },
+      });
+      build(createChatAgentHandler({ db, model, tools: {}, env: ENV }));
       await slack(slackMention("T1"));
-      expect(posts).toEqual([
-        { platform: "slack", channel: "C1", text: ACKNOWLEDGEMENT, thread: MENTION_TS },
+      expect(posts[0]).toEqual({
+        platform: "slack",
+        channel: "C1",
+        text: "Nothing is running right now.",
+        thread: MENTION_TS,
+      });
+      // U1 isn't linked: the link follows, only for them.
+      expect(posts.slice(1)).toEqual([
+        expect.objectContaining({ ephemeralTo: "U1", thread: MENTION_TS }),
       ]);
       const recorded = await threadMessages(`slack:C1:${MENTION_TS}`);
       expect(recorded?.messages.map((m) => m.role)).toEqual(["user", "assistant"]);

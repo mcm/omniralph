@@ -1,0 +1,150 @@
+import "server-only";
+import {
+  appendChatMessage,
+  getOrganization,
+  listChatMessages,
+  type ChatMessageRole,
+  type Database,
+} from "@omniralph/db";
+import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
+import { ConsoleLogger, type Logger } from "chat";
+import { getAppUrl } from "@/lib/app-url";
+import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
+import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
+import { requireMember, type ChatConversationHandler } from "../bot";
+import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
+import { historyMessages, systemPrompt } from "./prompt";
+import { chatTools, toAiTools, type ChatToolRegistry } from "./tools";
+
+/**
+ * The control-panel agent: answers each message of a thread the bot is part
+ * of with a model from the AI Gateway, using the tools the author's access
+ * level allows.
+ */
+
+export const NOT_CONFIGURED_REPLY =
+  "The Omniralph assistant isn't configured on this deployment yet, so I can't answer here. Ask your Omniralph admin to set it up.";
+export const RATE_LIMITED_REPLY =
+  "I'm getting a lot of questions right now, so I'm taking a short break. Please ask again in a few minutes.";
+export const ERROR_REPLY =
+  "Sorry, something went wrong while I was working on that. Please try again.";
+export const EMPTY_REPLY = "Sorry, I don't have an answer to that.";
+
+export interface ChatAgentDeps {
+  db: Database;
+  /** Null when the agent isn't configured (`chatAgentConfig()`): the bot says so once per thread. */
+  model: LanguageModel | null;
+  tools?: ChatToolRegistry;
+  maxSteps?: number;
+  logger?: Logger;
+  /** `APP_URL` (tests). */
+  env?: NodeJS.ProcessEnv;
+  now?: () => Date;
+  rateLimits?: {
+    perOrganization: (organizationId: string) => RateLimit;
+    perChatUser: (organizationId: string, platform: string, externalUserId: string) => RateLimit;
+  };
+}
+
+interface AgentThreadState {
+  /** Set once the thread was told the agent isn't configured. */
+  notConfiguredNoticeSent?: boolean;
+}
+
+/** The text parts of a model message replaced by `text` (what was actually posted). */
+function withPostedText(message: ModelMessage, text: string): ModelMessage["content"] {
+  if (typeof message.content === "string") return text;
+  const others = (message.content as Array<{ type: string }>).filter((p) => p.type !== "text");
+  return [...others, { type: "text", text }] as ModelMessage["content"];
+}
+
+export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHandler {
+  const { db } = deps;
+  const logger = deps.logger ?? new ConsoleLogger("info", "chat-agent");
+  const rateLimits = deps.rateLimits ?? CHAT_AGENT_RATE_LIMITS;
+  const registry = deps.tools ?? chatTools;
+  const now = () => deps.now?.() ?? new Date();
+
+  return {
+    async handle(thread, message, context) {
+      const { organizationId, connection, chatThread, actor } = context;
+      const record = (role: ChatMessageRole, content: unknown) =>
+        appendChatMessage(db, { threadId: chatThread.id, role, content });
+      const reply = async (text: string) => {
+        await thread.post(text);
+        await record("assistant", text);
+      };
+
+      if (!deps.model) {
+        const state = (await thread.state) as AgentThreadState | null;
+        if (state?.notConfiguredNoticeSent) return;
+        await reply(NOT_CONFIGURED_REPLY);
+        await thread.setState({ notConfiguredNoticeSent: true } satisfies AgentThreadState);
+        return;
+      }
+
+      const rules = [
+        rateLimits.perChatUser(organizationId, connection.platform, message.author.userId),
+        rateLimits.perOrganization(organizationId),
+      ];
+      const hits = [];
+      for (const rule of rules) hits.push({ rule, ...(await hitRateLimit(db, rule, now())) });
+      if (hits.some((h) => h.limited)) {
+        // Say so once, on the hit that crosses a limit; stay quiet after that.
+        if (hits.some((h) => h.count === h.rule.limit + 1)) await reply(RATE_LIMITED_REPLY);
+        logger.info("Chat agent turn rate-limited", { organizationId, threadId: thread.id });
+        return;
+      }
+
+      await thread.startTyping().catch(() => undefined);
+
+      let linkNeeded = actor.kind === "unlinked";
+      try {
+        const appUrl = getAppUrl(deps.env);
+        const organization = await getOrganization(db, organizationId);
+        const history = await listChatMessages(db, chatThread.id, CHAT_AGENT_HISTORY_LIMIT);
+        const tools = toAiTools(registry, { db, organizationId, actor, thread }, () => {
+          linkNeeded = true;
+        });
+        const result = await generateText({
+          model: deps.model,
+          system: systemPrompt({
+            organizationName: organization?.name ?? "your organization",
+            platform: connection.platform,
+            userName: message.author.fullName || message.author.userName || message.author.userId,
+            actor,
+            appUrl,
+            now: now(),
+          }),
+          messages: historyMessages(history),
+          tools,
+          stopWhen: stepCountIs(deps.maxSteps ?? CHAT_AGENT_MAX_STEPS),
+          maxRetries: 1,
+        });
+
+        const text = sanitizeCapped(
+          result.text.trim() || EMPTY_REPLY,
+          { allowedHosts: [new URL(appUrl).host] },
+          MAX_BODY_CHARS,
+        );
+        await thread.post({ markdown: text });
+        const responses = result.response.messages;
+        const last = responses.at(-1);
+        for (const m of responses) {
+          const content =
+            m === last && m.role === "assistant" ? withPostedText(m, text) : m.content;
+          await record(m.role === "tool" ? "tool" : "assistant", content);
+        }
+        if (last?.role !== "assistant") await record("assistant", text);
+      } catch (error) {
+        logger.error("Chat agent turn failed", { organizationId, threadId: thread.id, error });
+        await reply(ERROR_REPLY).catch((postError: unknown) =>
+          logger.error("Couldn't post the chat agent apology", { threadId: thread.id, postError }),
+        );
+        return;
+      }
+
+      if (linkNeeded) await requireMember(context);
+    },
+  };
+}

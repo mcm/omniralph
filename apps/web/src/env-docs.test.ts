@@ -58,6 +58,8 @@ function sourceEnvVars(dirs: string[]): Set<string> {
 const NOT_CONFIGURED = new Set([
   "VERCEL_ENV",
   "VERCEL_PROJECT_PRODUCTION_URL",
+  "VERCEL",
+  "VERCEL_OIDC_TOKEN",
   "OMNIRALPH_JOB_ID",
   "OMNIRALPH_JOB_TOKEN",
   "HOME",
