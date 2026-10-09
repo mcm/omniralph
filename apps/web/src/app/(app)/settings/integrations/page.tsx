@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getIntegration, getUserById, listChatConnections } from "@omniralph/db";
 import { requirePageUser } from "@/lib/auth/session";
+import { discordOAuthConfig } from "@/lib/chat/discord-oauth";
 import { slackOAuthConfig } from "@/lib/chat/slack-oauth";
 import { getDb } from "@/lib/db";
 import { linearOAuthConfig } from "@/lib/linear/oauth";
@@ -23,20 +24,21 @@ const toNotice = (value: string | undefined) => (value ? (NOTICES[value] ?? null
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ linear?: string; slack?: string }>;
+  searchParams: Promise<{ linear?: string; slack?: string; discord?: string }>;
 }) {
   const admin = await requirePageUser("admin");
-  const { linear, slack } = await searchParams;
+  const { linear, slack, discord } = await searchParams;
   const db = getDb();
   const [integration, chatConnections] = await Promise.all([
     getIntegration(db, admin.organization.id, "linear"),
     listChatConnections(db, admin.organization.id),
   ]);
   const slackConnections = chatConnections.filter((c) => c.platform === "slack");
+  const discordConnections = chatConnections.filter((c) => c.platform === "discord");
   // The installer may have left the organization since, so look them up as a user.
   const installers = new Map(
     await Promise.all(
-      [...new Set(slackConnections.map((c) => c.installedByUserId))]
+      [...new Set(chatConnections.map((c) => c.installedByUserId))]
         .filter((id): id is string => id !== null)
         .map(async (id) => {
           const user = await getUserById(db, id);
@@ -67,6 +69,15 @@ export default async function IntegrationsPage({
       }))}
       slackConfigured={slackOAuthConfig() !== null}
       slackNotice={toNotice(slack)}
+      discord={discordConnections.map((c) => ({
+        id: c.id,
+        name: c.name,
+        serverId: c.externalId,
+        installedBy: (c.installedByUserId && installers.get(c.installedByUserId)) ?? null,
+        connectedAt: c.updatedAt.toISOString(),
+      }))}
+      discordConfigured={discordOAuthConfig() !== null}
+      discordNotice={toNotice(discord)}
     />
   );
 }

@@ -27,7 +27,8 @@ import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
-import { disconnectLinear, disconnectSlack } from "./actions";
+import type { ActionResult } from "@/lib/action-result";
+import { disconnectDiscord, disconnectLinear, disconnectSlack } from "./actions";
 
 export type IntegrationNotice =
   | "connected"
@@ -124,6 +125,47 @@ const slackNotices: Notices = {
   },
 };
 
+const discordNotices: Notices = {
+  connected: {
+    variant: "success",
+    title: "Discord connected",
+    description: "Mention the Omniralph bot in a channel to start a conversation.",
+  },
+  denied: {
+    variant: "warning",
+    title: "Discord wasn't connected",
+    description: "Adding the bot was cancelled on Discord's authorization screen.",
+  },
+  invalid: {
+    variant: "destructive",
+    title: "Discord didn't return an authorization code",
+    description: "Click Connect Discord to try again.",
+  },
+  invalid_state: {
+    variant: "destructive",
+    title: "The Discord sign-in link was invalid or expired",
+    description:
+      "For your safety the request was rejected. Click Connect Discord again from this browser and finish within 10 minutes.",
+  },
+  other_organization: {
+    variant: "destructive",
+    title: "This Discord server belongs to another organization",
+    description:
+      "A Discord server can be connected to one organization only. Disconnect it there first, or connect a different server.",
+  },
+  not_configured: {
+    variant: "warning",
+    title: "Discord app not configured",
+    description:
+      "Set DISCORD_APPLICATION_ID, DISCORD_CLIENT_SECRET, DISCORD_BOT_TOKEN and DISCORD_PUBLIC_KEY, then connect again.",
+  },
+  error: {
+    variant: "destructive",
+    title: "Connecting Discord failed",
+    description: "Discord rejected the authorization or couldn't be reached. Try again.",
+  },
+};
+
 export interface SlackWorkspace {
   /** The chat connection's ID. */
   id: string;
@@ -131,6 +173,18 @@ export interface SlackWorkspace {
   /** Slack team ID (or enterprise ID for an org-wide install). */
   workspaceId: string;
   /** Name or email of the admin who installed it, null when unknown. */
+  installedBy: string | null;
+  /** ISO timestamp. */
+  connectedAt: string;
+}
+
+export interface DiscordServer {
+  /** The chat connection's ID. */
+  id: string;
+  name: string;
+  /** Discord guild ID. */
+  serverId: string;
+  /** Name or email of the admin who added the bot, null when unknown. */
   installedBy: string | null;
   /** ISO timestamp. */
   connectedAt: string;
@@ -150,6 +204,9 @@ export function IntegrationsView({
   slack,
   slackConfigured,
   slackNotice,
+  discord,
+  discordConfigured,
+  discordNotice,
 }: {
   linear: LinearConnection | null;
   linearConfigured: boolean;
@@ -157,6 +214,9 @@ export function IntegrationsView({
   slack: SlackWorkspace[];
   slackConfigured: boolean;
   slackNotice: IntegrationNotice | null;
+  discord: DiscordServer[];
+  discordConfigured: boolean;
+  discordNotice: IntegrationNotice | null;
 }) {
   const { pending, run } = useAction();
 
@@ -199,6 +259,12 @@ export function IntegrationsView({
           <Alert variant={slackNotices[slackNotice].variant}>
             <AlertTitle>{slackNotices[slackNotice].title}</AlertTitle>
             <AlertDescription>{slackNotices[slackNotice].description}</AlertDescription>
+          </Alert>
+        )}
+        {discordNotice && (
+          <Alert variant={discordNotices[discordNotice].variant}>
+            <AlertTitle>{discordNotices[discordNotice].title}</AlertTitle>
+            <AlertDescription>{discordNotices[discordNotice].description}</AlertDescription>
           </Alert>
         )}
 
@@ -288,101 +354,162 @@ export function IntegrationsView({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              Slack
-              {slack.length > 0 ? (
-                <Badge variant="success" size="sm">
-                  Connected
-                </Badge>
-              ) : (
-                <Badge variant="neutral" size="sm">
-                  Not connected
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Install the Omniralph app in a Slack workspace, then mention it in a channel to ask
-              about runs, reviews, jobs, agents and repositories.
-            </CardDescription>
-          </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            {!slackConfigured && (
-              <Alert variant="info">
-                <AlertTitle>Slack app not configured</AlertTitle>
-                <AlertDescription>
-                  Set <InlineCode>SLACK_CLIENT_ID</InlineCode>,{" "}
-                  <InlineCode>SLACK_CLIENT_SECRET</InlineCode> and{" "}
-                  <InlineCode>SLACK_SIGNING_SECRET</InlineCode> to connect Slack (see docs/env.md).
-                </AlertDescription>
-              </Alert>
-            )}
-            {slack.map((workspace) => (
-              <div
-                key={workspace.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "var(--space-3)",
-                }}
-              >
-                <div>
-                  <strong>{workspace.name}</strong>
-                  <Muted style={{ display: "block" }}>
-                    Connected {formatDateTime(workspace.connectedAt)}
-                    {workspace.installedBy && <> by {workspace.installedBy}</>}
-                  </Muted>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={pending}>
-                      <IconUnlink size={14} />
-                      Disconnect
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Disconnect {workspace.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Omniralph forgets the workspace&apos;s bot token and its conversations, and
-                        revokes the token. Mentions in Slack are ignored until you connect again.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() =>
-                          run(() => disconnectSlack(workspace.id), `Disconnected ${workspace.name}`)
-                        }
-                      >
-                        Disconnect
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              {slackConfigured ? (
-                <Button asChild variant={slack.length > 0 ? "secondary" : "primary"}>
-                  {/* A plain link: the route redirects to Slack's install screen. */}
-                  <a href="/api/integrations/slack/connect">
-                    <IconPlugConnected size={14} />
-                    {slack.length > 0 ? "Connect another workspace" : "Connect Slack"}
-                  </a>
-                </Button>
-              ) : (
-                <Button variant="primary" disabled>
-                  <IconPlugConnected size={14} />
-                  Connect Slack
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <ChatPlatformCard
+          platform="Slack"
+          description="Install the Omniralph app in a Slack workspace, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
+          envVars={["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET", "SLACK_SIGNING_SECRET"]}
+          configured={slackConfigured}
+          connections={slack}
+          connectHref="/api/integrations/slack/connect"
+          connectAnother="Connect another workspace"
+          disconnectDescription="Omniralph forgets the workspace's bot token and its conversations, and revokes the token. Mentions in Slack are ignored until you connect again."
+          disconnect={disconnectSlack}
+          pending={pending}
+          run={run}
+        />
+
+        <ChatPlatformCard
+          platform="Discord"
+          description="Add the Omniralph bot to a Discord server, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
+          envVars={[
+            "DISCORD_APPLICATION_ID",
+            "DISCORD_CLIENT_SECRET",
+            "DISCORD_BOT_TOKEN",
+            "DISCORD_PUBLIC_KEY",
+          ]}
+          configured={discordConfigured}
+          connections={discord}
+          connectHref="/api/integrations/discord/connect"
+          connectAnother="Connect another server"
+          disconnectDescription="Omniralph forgets the server and its conversations, and the bot leaves it. Mentions in Discord are ignored until you connect again."
+          disconnect={disconnectDiscord}
+          pending={pending}
+          run={run}
+        />
       </main>
     </>
+  );
+}
+
+/** A chat platform's card: its connections with Disconnect each, and Connect. */
+function ChatPlatformCard({
+  platform,
+  description,
+  envVars,
+  configured,
+  connections,
+  connectHref,
+  connectAnother,
+  disconnectDescription,
+  disconnect,
+  pending,
+  run,
+}: {
+  platform: string;
+  description: string;
+  envVars: string[];
+  configured: boolean;
+  connections: Array<{ id: string; name: string; installedBy: string | null; connectedAt: string }>;
+  connectHref: string;
+  connectAnother: string;
+  disconnectDescription: string;
+  disconnect: (connectionId: string) => Promise<ActionResult>;
+  pending: boolean;
+  run: ReturnType<typeof useAction>["run"];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {platform}
+          {connections.length > 0 ? (
+            <Badge variant="success" size="sm">
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="neutral" size="sm">
+              Not connected
+            </Badge>
+          )}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+        {!configured && (
+          <Alert variant="info">
+            <AlertTitle>{platform} app not configured</AlertTitle>
+            <AlertDescription>
+              Set{" "}
+              {envVars.map((name, i) => (
+                <span key={name}>
+                  {i > 0 && (i === envVars.length - 1 ? " and " : ", ")}
+                  <InlineCode>{name}</InlineCode>
+                </span>
+              ))}{" "}
+              to connect {platform} (see docs/env.md).
+            </AlertDescription>
+          </Alert>
+        )}
+        {connections.map((connection) => (
+          <div
+            key={connection.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--space-3)",
+            }}
+          >
+            <div>
+              <strong>{connection.name}</strong>
+              <Muted style={{ display: "block" }}>
+                Connected {formatDateTime(connection.connectedAt)}
+                {connection.installedBy && <> by {connection.installedBy}</>}
+              </Muted>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={pending}>
+                  <IconUnlink size={14} />
+                  Disconnect
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Disconnect {connection.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>{disconnectDescription}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() =>
+                      run(() => disconnect(connection.id), `Disconnected ${connection.name}`)
+                    }
+                  >
+                    Disconnect
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+          {configured ? (
+            <Button asChild variant={connections.length > 0 ? "secondary" : "primary"}>
+              {/* A plain link: the route redirects to the platform's install screen. */}
+              <a href={connectHref}>
+                <IconPlugConnected size={14} />
+                {connections.length > 0 ? connectAnother : `Connect ${platform}`}
+              </a>
+            </Button>
+          ) : (
+            <Button variant="primary" disabled>
+              <IconPlugConnected size={14} />
+              Connect {platform}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
     id: string;
     organizationId: string;
     platform: "slack" | "discord";
+    externalId?: string;
     name: string;
     credentials: { botToken: string } | null;
   }>,
@@ -43,12 +44,14 @@ vi.mock("@omniralph/db", () => ({
   },
 }));
 
-const { disconnectLinear, disconnectSlack } = await import("./actions");
+const { disconnectDiscord, disconnectLinear, disconnectSlack } = await import("./actions");
 
 const revoked: string[] = [];
 let revokeStatus = 200;
 const slackRevoked: string[] = [];
 let slackRevoke: () => Response;
+const discordLeft: Array<{ guildId: string; authorization: string }> = [];
+let discordLeave: () => Response;
 const server = setupServer(
   http.post("https://api.linear.app/oauth/revoke", ({ request }) => {
     revoked.push(request.headers.get("authorization") ?? "");
@@ -57,6 +60,13 @@ const server = setupServer(
   http.post("https://slack.com/api/auth.revoke", ({ request }) => {
     slackRevoked.push(request.headers.get("authorization") ?? "");
     return slackRevoke();
+  }),
+  http.delete("https://discord.com/api/v10/users/@me/guilds/:guildId", ({ request, params }) => {
+    discordLeft.push({
+      guildId: String(params.guildId),
+      authorization: request.headers.get("authorization") ?? "",
+    });
+    return discordLeave();
   }),
 );
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
@@ -173,5 +183,87 @@ describe("disconnectSlack", () => {
     state.user = user("member");
     expect(await disconnectSlack("s1")).toMatchObject({ ok: false });
     expect(state.chatDeletes).toEqual([]);
+  });
+});
+
+describe("disconnectDiscord", () => {
+  const discord = (id: string, organizationId = "org-a") => ({
+    id,
+    organizationId,
+    platform: "discord" as const,
+    externalId: `guild-${id}`,
+    name: `Server ${id}`,
+    credentials: null,
+  });
+  const ENV = {
+    DISCORD_APPLICATION_ID: "app-1",
+    DISCORD_CLIENT_SECRET: "secret-1",
+    DISCORD_BOT_TOKEN: "bot-token-1",
+    DISCORD_PUBLIC_KEY: "public-key-1",
+  };
+
+  beforeEach(() => {
+    Object.assign(process.env, ENV);
+    state.user = user("admin");
+    state.chat = [
+      discord("d1"),
+      discord("d2"),
+      discord("foreign", "org-b"),
+      { ...discord("s1"), platform: "slack", credentials: { botToken: "xoxb-s1" } },
+    ];
+    state.chatDeletes = [];
+    discordLeft.length = 0;
+    discordLeave = () => new HttpResponse(null, { status: 204 });
+  });
+  afterEach(() => {
+    for (const name of Object.keys(ENV)) delete process.env[name];
+  });
+
+  it("removes the server and makes the bot leave it", async () => {
+    expect(await disconnectDiscord("d1")).toEqual({ ok: true });
+    expect(state.chat.map((c) => c.id)).toEqual(["d2", "foreign", "s1"]);
+    expect(state.chatDeletes).toEqual([["org-a", "d1"]]);
+    expect(discordLeft).toEqual([{ guildId: "guild-d1", authorization: "Bot bot-token-1" }]);
+  });
+
+  it("treats a server the bot already left as left", async () => {
+    discordLeave = () => HttpResponse.json({ code: 10004 }, { status: 404 });
+    expect(await disconnectDiscord("d1")).toEqual({ ok: true });
+  });
+
+  it("still disconnects, with a warning, when leaving fails or Discord isn't configured", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    discordLeave = () => new HttpResponse(null, { status: 500 });
+    expect(await disconnectDiscord("d1")).toMatchObject({
+      ok: true,
+      warning: expect.stringContaining("Server d1"),
+    });
+    delete process.env.DISCORD_BOT_TOKEN;
+    expect(await disconnectDiscord("d2")).toMatchObject({
+      ok: true,
+      warning: expect.stringContaining("Server d2"),
+    });
+    consoleError.mockRestore();
+    expect(state.chat.map((c) => c.id)).toEqual(["foreign", "s1"]);
+    expect(discordLeft.map((l) => l.guildId)).toEqual(["guild-d1"]);
+  });
+
+  it("only disconnects the active organization's Discord servers", async () => {
+    for (const id of ["foreign", "s1", "missing"]) {
+      expect(await disconnectDiscord(id)).toEqual({
+        ok: false,
+        error: "That Discord server isn't connected.",
+      });
+    }
+    expect(state.chatDeletes).toEqual([]);
+    expect(state.chat).toHaveLength(4);
+    expect(discordLeft).toEqual([]);
+  });
+
+  it("is admin-only", async () => {
+    state.user = user("member");
+    expect(await disconnectDiscord("d1")).toMatchObject({ ok: false });
+    expect(state.chatDeletes).toEqual([]);
+    expect(discordLeft).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import { deleteChatConnection, deleteIntegration, listChatConnections } from "@o
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
+import { discordOAuthConfig, leaveDiscordGuild } from "@/lib/chat/discord-oauth";
 import { revokeSlackToken, type SlackCredentials } from "@/lib/chat/slack-oauth";
 import { getDb } from "@/lib/db";
 import { revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
@@ -60,6 +61,37 @@ export async function disconnectSlack(connectionId: string): Promise<ActionResul
         ok: true,
         warning: `Disconnected ${removed.name}, but Slack didn't confirm revoking the token. Remove the app in Slack's settings if it's still installed.`,
       };
+    }
+  });
+}
+
+/**
+ * Disconnects one of the active organization's Discord servers: forgets it (and its threads) and
+ * makes the bot leave it (best effort). Its messages are ignored from then on.
+ */
+export async function disconnectDiscord(connectionId: string): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const db = getDb();
+    const organizationId = admin.organization.id;
+    const connections = await listChatConnections(db, organizationId);
+    const connection = connections.find((c) => c.id === connectionId && c.platform === "discord");
+    if (!connection) return { ok: false, error: "That Discord server isn't connected." };
+    const removed = await deleteChatConnection(db, organizationId, connection.id);
+    if (!removed) return { ok: false, error: "That Discord server isn't connected." };
+    revalidatePath("/settings/integrations");
+    const warning = {
+      ok: true,
+      warning: `Disconnected ${removed.name}, but the bot couldn't leave the server. Remove it in Discord's server settings if it's still there.`,
+    } as const;
+    const config = discordOAuthConfig();
+    if (!config) return warning;
+    try {
+      await leaveDiscordGuild(config, removed.externalId);
+    } catch (error) {
+      console.error("Leaving the Discord server failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return warning;
     }
   });
 }
