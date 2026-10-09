@@ -10,12 +10,9 @@ out/
 # production
 build/
 
-# env
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# env (templates like .env.example are committed)
+.env*
+!.env.example
 
 # misc
 .DS_Store
@@ -46,4 +43,3 @@ evals/reports/
 
 # packed npm tarballs
 *.tgz
-.env*
