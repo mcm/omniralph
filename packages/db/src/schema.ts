@@ -446,6 +446,21 @@ export const chatIdentityOptOuts = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.platform, t.externalUserId] })],
 );
 
+/**
+ * Account-link states (`/chat/link`) that were used, so each links once.
+ * Kept until the state expires; expired rows are purged on later uses.
+ */
+export const chatLinkStateUses = pgTable(
+  "chat_link_state_uses",
+  {
+    /** The state's `jti`. */
+    id: uuid("id").primaryKey(),
+    usedAt: timestamp("used_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("chat_link_state_uses_expires_at_idx").on(t.expiresAt)],
+);
+
 /** A chat user's profile as last fetched from the platform (Slack `users.info`), cached. */
 export const chatUserProfiles = pgTable(
   "chat_user_profiles",

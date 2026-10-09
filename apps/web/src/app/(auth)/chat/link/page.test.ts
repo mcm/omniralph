@@ -51,9 +51,15 @@ describe("/chat/link", () => {
     expect((await render({ state: "s" })).props).toEqual({
       problem: "This link has expired. Mention the bot again to get a new one.",
     });
+    state.check = { status: "used" };
+    expect((await render({ state: "s" })).props).toEqual({
+      problem:
+        "This link was used already. Each link works once: mention the bot again to get a new one.",
+    });
     state.check = { status: "not_member", organizationName: "Acme" };
     expect((await render({ state: "s" })).props.problem).toMatch(/^You aren't a member of Acme/);
     expect(state.checked).toEqual([
+      ["ada", "s"],
       ["ada", "s"],
       ["ada", "s"],
     ]);

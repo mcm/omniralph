@@ -3,7 +3,8 @@ import {
   getChatConnection,
   getMembership,
   getOrganization,
-  linkChatIdentity,
+  isChatLinkStateUsed,
+  linkChatIdentityWithState,
   type ChatPlatform,
   type Database,
 } from "@omniralph/db";
@@ -14,7 +15,7 @@ import { readLinkState, type ChatLinkState } from "./link";
  * be used, or the confirmation (`ready`).
  */
 export type ChatLinkCheck =
-  | { status: "expired" | "invalid" | "not_connected" }
+  | { status: "expired" | "invalid" | "used" | "not_connected" }
   | { status: "not_member"; organizationName: string }
   | {
       status: "ready";
@@ -26,8 +27,8 @@ export type ChatLinkCheck =
 
 /**
  * Checks a link for `userId`: the state is ours and current, its workspace or
- * server is still connected to its organization, and the user is a member of
- * that organization.
+ * server is still connected to its organization, the user is a member of
+ * that organization, and the link wasn't used yet.
  */
 export async function checkChatLink(
   db: Database,
@@ -39,6 +40,7 @@ export async function checkChatLink(
   const read = await readLinkState(rawState, env, now);
   if (!read.ok) return { status: read.reason };
   const { state } = read;
+  if (await isChatLinkStateUsed(db, state.id)) return { status: "used" };
   const organization = await getOrganization(db, state.organizationId);
   if (!organization) return { status: "not_connected" };
   if (!(await getMembership(db, organization.id, userId))) {
@@ -60,7 +62,8 @@ export type LinkChatAccountResult =
 
 /**
  * Links the link's chat user to `userId` (a manual link, replacing any link
- * to another user and withdrawing an opt-out of automatic linking).
+ * to another user and withdrawing an opt-out of automatic linking). The
+ * link's state is used up in the same transaction, so a replay fails.
  */
 export async function linkChatAccount(
   db: Database,
@@ -72,14 +75,21 @@ export async function linkChatAccount(
   const check = await checkChatLink(db, userId, rawState, env, now);
   if (check.status !== "ready") return { ok: false, check };
   const { state } = check;
-  await linkChatIdentity(db, {
-    organizationId: state.organizationId,
-    platform: state.platform,
-    externalUserId: state.externalUserId,
-    userId,
-    source: "manual",
-    displayName: state.displayName,
-  });
+  const linked = await linkChatIdentityWithState(
+    db,
+    {
+      organizationId: state.organizationId,
+      platform: state.platform,
+      externalUserId: state.externalUserId,
+      userId,
+      source: "manual",
+      displayName: state.displayName,
+    },
+    { id: state.id, expiresAt: state.expiresAt },
+    now,
+  );
+  // Used by a concurrent request since the check.
+  if (!linked) return { ok: false, check: { status: "used" } };
   return {
     ok: true,
     platform: state.platform,
@@ -95,6 +105,8 @@ export function chatLinkProblem(check: Exclude<ChatLinkCheck, { status: "ready" 
       return "This link has expired. Mention the bot again to get a new one.";
     case "invalid":
       return "This link isn't valid. Mention the bot again to get a new one.";
+    case "used":
+      return "This link was used already. Each link works once: mention the bot again to get a new one.";
     case "not_connected":
       return "The workspace or server this link came from is no longer connected to Omniralph.";
     case "not_member":

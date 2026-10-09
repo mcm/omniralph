@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { ChatPlatform } from "@omniralph/db";
 import { errors, jwtVerify, SignJWT } from "jose";
 import { getAppUrl } from "@/lib/app-url";
@@ -11,15 +12,20 @@ import { CHAT_LINK_PATH } from "./link-paths";
  * it signed in. The state is signed (so the chat user and organization come
  * from the bot, never from the browser) and expires after
  * {@link CHAT_LINK_TTL_SECONDS}. Whoever opens it links the chat user to
- * their own account, after a confirmation naming the chat user.
+ * their own account, after a confirmation naming the chat user. Each state
+ * has a unique id (`jti`) and links once (`chat_link_state_uses`).
  */
 export const CHAT_LINK_TTL_SECONDS = 15 * 60;
 
 const PURPOSE = "chat-link";
 const AUDIENCE = `omniralph:${PURPOSE}`;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLATFORMS: readonly ChatPlatform[] = ["slack", "discord"];
 
 export interface ChatLinkState {
+  /** The state's unique id (`jti`), recorded when it is used. */
+  id: string;
+  expiresAt: Date;
   organizationId: string;
   /** The connection the chat user wrote through. */
   connectionId: string;
@@ -30,7 +36,7 @@ export interface ChatLinkState {
 
 /** `${APP_URL}/chat/link?state=…` for the chat user, valid for 15 minutes. */
 export async function createLinkUrl(
-  input: ChatLinkState,
+  input: Omit<ChatLinkState, "id" | "expiresAt">,
   env: NodeJS.ProcessEnv = process.env,
   now: Date = new Date(),
 ): Promise<string> {
@@ -44,6 +50,7 @@ export async function createLinkUrl(
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(input.externalUserId)
     .setAudience(AUDIENCE)
+    .setJti(randomUUID())
     .setIssuedAt(issuedAt)
     .setExpirationTime(issuedAt + CHAT_LINK_TTL_SECONDS)
     .sign(stateKey(PURPOSE, env));
@@ -67,10 +74,13 @@ export async function readLinkState(
       algorithms: ["HS256"],
       audience: AUDIENCE,
       currentDate: now,
-      requiredClaims: ["exp", "sub"],
+      requiredClaims: ["exp", "sub", "jti"],
     });
-    const { org, conn, platform, name, sub } = payload;
+    const { org, conn, platform, name, sub, jti, exp } = payload;
     if (
+      typeof jti !== "string" ||
+      !UUID.test(jti) ||
+      typeof exp !== "number" ||
       typeof org !== "string" ||
       typeof conn !== "string" ||
       typeof name !== "string" ||
@@ -82,6 +92,8 @@ export async function readLinkState(
     return {
       ok: true,
       state: {
+        id: jti,
+        expiresAt: new Date(exp * 1000),
         organizationId: org,
         connectionId: conn,
         platform: platform as ChatPlatform,

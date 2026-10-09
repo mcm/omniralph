@@ -182,8 +182,9 @@ features).
 - **Discord never exposes emails to bots**, so Discord users always need an explicit link,
   whatever their email.
 - When someone without access asks for something that needs it, the bot replies with a link
-  prompt: privately in Slack (an ephemeral message only they see), as a mention in the thread in
-  Discord.
+  prompt: privately in Slack (an ephemeral message only they see), by direct message in Discord
+  (with a "check your DMs" note in the thread). If Discord refuses the DM (the user blocks DMs
+  from server members), the prompt is posted in the thread as a mention and a warning is logged.
 - The organization always comes from the workspace or server the message arrived in, never from
   the message itself, and every tool only reads that organization's data. Messages are treated as
   untrusted input, and everything the bot posts goes through the same output sanitizer as review
@@ -195,7 +196,7 @@ A chat identity (a Slack or Discord user in one organization) can be linked to o
 member.
 
 - **Linking by hand.** The link prompt contains a link to `<APP_URL>/chat/link` that works for 15
-  minutes. Open it, sign in if needed, and confirm **Link** on "Link <platform> user <name> to your
+  minutes and only once: after it was used, opening it again says so. Open it, sign in if needed, and confirm **Link** on "Link <platform> user <name> to your
   account in <organization>?". You must be a member of the organization, and the workspace or
   server must still be connected to it. Linking an identity that another account had replaces
   that link.
