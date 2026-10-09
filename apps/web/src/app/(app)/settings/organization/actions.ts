@@ -8,7 +8,6 @@ import {
   removeMember,
   removeOrganizationDomain,
   revokeInvitation,
-  setActiveOrganization,
   updateMemberRole,
   updateOrganization,
   type CreateInvitationResult,
@@ -20,6 +19,7 @@ import { isValidEmail } from "@/lib/auth/allowlist";
 import { checkUserChange, isRole, type Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { activateOrganization } from "@/lib/organizations/active";
 import { checkOrganizationName } from "@/lib/organizations/name";
 
 const SETTINGS_PATH = "/settings/organization";
@@ -186,7 +186,7 @@ export async function leaveOrganization(): Promise<ActionResult> {
       };
     }
     const [next] = await listOrganizationsForUser(db, user.id);
-    if (next) await setActiveOrganization(db, { userId: user.id, organizationId: next.id });
+    if (next) await activateOrganization(user.id, next.id);
     revalidateAll();
   });
 }

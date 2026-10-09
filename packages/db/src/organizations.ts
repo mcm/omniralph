@@ -165,6 +165,27 @@ export async function getActiveOrganization(
 }
 
 /**
+ * `organizationId` with the user's role in it, or `null` unless they're a member of it
+ * (an organization picked on one device, which may be stale).
+ */
+export async function getMemberOrganization(
+  db: Database,
+  input: { userId: string; organizationId: string },
+): Promise<ActiveOrganization | null> {
+  const [row] = await db
+    .select({ id: organizations.id, name: organizations.name, role: organizationMembers.role })
+    .from(organizationMembers)
+    .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+    .where(
+      and(
+        eq(organizationMembers.organizationId, input.organizationId),
+        eq(organizationMembers.userId, input.userId),
+      ),
+    );
+  return row ?? null;
+}
+
+/**
  * Switches the user's active organization. Returns `false` (and changes nothing)
  * unless the user is a member of it.
  */

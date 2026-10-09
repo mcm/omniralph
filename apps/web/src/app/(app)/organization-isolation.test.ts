@@ -37,7 +37,9 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import type { JSX } from "react";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import { ENTER_ORGANIZATION_PATH, ORGANIZATION_COOKIE } from "@/lib/auth/routes";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -45,6 +47,17 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   userId: null as string | null,
+  cookies: new Map<string, string>(),
+}));
+// This browser's cookies.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const value = state.cookies.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
+    set: (name: string, value: string) => void state.cookies.set(name, value),
+  }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 // The signed-in user with their real role in their active organization.
@@ -68,6 +81,7 @@ vi.mock("@/lib/auth/session", async () => {
     );
   };
   return {
+    getCurrentUser: async () => (state.userId === null ? null : { id: state.userId }),
     requireUser: async (role: Role = "member") => current(role),
     requirePageUser: async (role: Role = "member") => current(role),
   };
@@ -113,6 +127,7 @@ vi.mock("./settings/organization/organization-settings-view", () => ({
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
+const { GET: enterOrganization } = await import("../api/organizations/enter/route");
 const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
 const { default: RepositoriesPage } = await import("./repositories/page");
@@ -467,8 +482,15 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
     await expect(AgentPage(params(b.agentId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
-    // Nothing switched.
+    // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
+    const enter = new URLSearchParams({ organization: b.orgId, next: "/" });
+    const refused = await enterOrganization(
+      new NextRequest(`http://localhost${ENTER_ORGANIZATION_PATH}?${enter}`),
+    );
+    expect(refused.status).toBe(404);
+    expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBeUndefined();
   });
 
   it("switches to the resource's organization when the user is a member of it", async () => {
@@ -510,8 +532,14 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId })).toBe(
         true,
       );
-      // The page switches to the resource's organization and reloads, then shows it.
-      await expect(open(), path).rejects.toMatchObject(redirectTo(path));
+      // The page sends the browser to switch to the resource's organization (pages can't
+      // set cookies), which then reloads the page, showing the resource.
+      const enter = `${ENTER_ORGANIZATION_PATH}?${new URLSearchParams({ organization: b.orgId, next: path })}`;
+      await expect(open(), path).rejects.toMatchObject(redirectTo(enter));
+      expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
+      const response = await enterOrganization(new NextRequest(`http://localhost${enter}`));
+      expect(response.headers.get("location"), path).toBe(`http://localhost${path}`);
+      expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
       expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
       expect(JSON.stringify((await open()).props), path).toContain(id);
     }

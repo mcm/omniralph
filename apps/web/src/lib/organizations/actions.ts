@@ -5,13 +5,13 @@ import {
   createOrganization,
   declineInvitation,
   joinOrganization,
-  setActiveOrganization,
   type AcceptInvitationResult,
 } from "@omniralph/db";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
 import { runSignedInAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
+import { activateOrganization } from "./active";
 import { checkOrganizationName } from "./name";
 
 const ACCEPT_ERRORS: Record<Exclude<AcceptInvitationResult, "accepted">, string> = {
@@ -29,7 +29,7 @@ function revalidateAll() {
 }
 
 async function activate(userId: string, organizationId: string): Promise<ActionResult | void> {
-  if (!(await setActiveOrganization(getDb(), { userId, organizationId }))) {
+  if (!(await activateOrganization(userId, organizationId))) {
     return { ok: false, error: "You are not a member of that organization." };
   }
   revalidateAll();
@@ -40,8 +40,11 @@ export async function createOrganizationAction(name: string): Promise<ActionResu
   return runSignedInAction(async (user) => {
     const checked = checkOrganizationName(name);
     if ("error" in checked) return { ok: false, error: checked.error };
-    await createOrganization(getDb(), { name: checked.name, createdBy: user.id });
-    revalidateAll();
+    const organization = await createOrganization(getDb(), {
+      name: checked.name,
+      createdBy: user.id,
+    });
+    return activate(user.id, organization.id);
   });
 }
 

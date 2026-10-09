@@ -3,7 +3,6 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import {
   accounts,
   createUser,
-  getActiveOrganization,
   hasPendingInvitation,
   sessions,
   type UiTheme,
@@ -14,7 +13,6 @@ import type { AdapterUser } from "next-auth/adapters";
 import GitHub from "next-auth/providers/github";
 import GitLab from "next-auth/providers/gitlab";
 import { isEmailAllowed, parseAllowedDomains } from "@/lib/auth/allowlist";
-import type { Role } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { getDb } from "@/lib/db";
 import { parseTheme } from "@/lib/theme";
@@ -26,8 +24,6 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string;
-      /** The active organization and the user's role in it; `null` sends them to onboarding. */
-      organization: { id: string; name: string; role: Role } | null;
       theme: UiTheme | null;
     } & DefaultSession["user"];
   }
@@ -68,8 +64,9 @@ function authConfig(): NextAuthConfig {
       createUser: async ({ name, email, emailVerified, image }) =>
         (await createUser(db, { name, email, emailVerified, image })) as AdapterUser,
     },
-    // Database sessions: removing a member, changing their role or switching organizations
-    // takes effect on the next request.
+    // Database sessions: signing out or deleting a session takes effect on the next request.
+    // The active organization isn't part of the session: `getCurrentUser` resolves it per
+    // request, from this device's choice.
     session: { strategy: "database" },
     providers: [
       GitHub({
@@ -95,7 +92,6 @@ function authConfig(): NextAuthConfig {
       },
       async session({ session, user }) {
         session.user.id = user.id;
-        session.user.organization = await getActiveOrganization(db, user.id);
         session.user.theme = parseTheme(user.theme);
         return session;
       },

@@ -17,6 +17,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthorizationError } from "@/lib/auth/roles";
+import { ORGANIZATION_COOKIE } from "@/lib/auth/routes";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -24,6 +25,17 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   user: null as { id: string } | null,
+  cookies: new Map<string, string>(),
+}));
+// This browser's cookies.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const value = state.cookies.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
+    set: (name: string, value: string) => void state.cookies.set(name, value),
+  }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -64,6 +76,7 @@ describe.skipIf(!dockerAvailable)("organization actions", () => {
 
   beforeEach(() => {
     state.user = null;
+    state.cookies.clear();
   });
 
   async function signUp(email: string) {
@@ -82,10 +95,9 @@ describe.skipIf(!dockerAvailable)("organization actions", () => {
       error: "Enter a name for the organization.",
     });
     expect(await createOrganizationAction(" Acme ")).toEqual({ ok: true });
-    expect(await getActiveOrganization(db, user.id)).toMatchObject({
-      name: "Acme",
-      role: "admin",
-    });
+    const created = await getActiveOrganization(db, user.id);
+    expect(created).toMatchObject({ name: "Acme", role: "admin" });
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(created!.id);
   });
 
   it("switches only to organizations the user is a member of", async () => {
@@ -99,6 +111,8 @@ describe.skipIf(!dockerAvailable)("organization actions", () => {
     expect(await switchOrganization(theirs.id)).toEqual({ ok: true });
     expect((await getActiveOrganization(db, other.id))?.id).toBe(theirs.id);
     expect((await getActiveOrganization(db, other.id))?.id).not.toBe(second.id);
+    // This browser picks it, and other devices default to it.
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(theirs.id);
 
     state.user = { id: alice.id };
     expect(await switchOrganization(theirs.id)).toEqual({
@@ -109,6 +123,7 @@ describe.skipIf(!dockerAvailable)("organization actions", () => {
       ok: false,
     });
     expect((await getActiveOrganization(db, alice.id))?.id).toBe(mine.id);
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(theirs.id);
 
     state.user = null;
     expect(await switchOrganization(mine.id)).toEqual({
