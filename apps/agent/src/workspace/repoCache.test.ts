@@ -723,6 +723,35 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     expect(git(wtPath, "symbolic-ref", "--short", "HEAD")).toBe("feat/TOOL-1");
   });
 
+  it("keeps a moved repository and relinks a branch worktree that can't be moved", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    const wtPath = await repos.withBranchWorktree(repo, feature, async (wt) => wt.path);
+    const dir = repos.repoDir(repo);
+    const legacyDir = path.join(workspaceRoot, "github", "acme", "app");
+    const legacyWt = path.join(workspaceRoot, ".branches", "github", "acme", "app", "feat__TOOL-1");
+    await mkdir(path.dirname(legacyDir), { recursive: true });
+    await mkdir(path.dirname(legacyWt), { recursive: true });
+    await rename(dir, legacyDir);
+    await rename(wtPath, legacyWt);
+    git(legacyDir, "worktree", "repair", legacyWt);
+    git(legacyDir, "config", "--unset", "omniralph.hostDir");
+    await rm(path.join(workspaceRoot, "github", "file"), { recursive: true });
+    // Something already occupies the worktree's new path.
+    await mkdir(wtPath, { recursive: true });
+    await writeFile(path.join(wtPath, "in-the-way.txt"), "x\n");
+
+    await repos.pruneStaleWorktrees();
+    expect(await exists(legacyDir)).toBe(false);
+    expect(git(dir, "config", "omniralph.hostDir")).toBe("file");
+    expect(git(legacyWt, "symbolic-ref", "--short", "HEAD")).toBe("feat/TOOL-1");
+    expect(git(dir, "worktree", "list", "--porcelain")).toContain(`worktree ${legacyWt}`);
+
+    // The next startup leaves the repository where it is.
+    await repos.pruneStaleWorktrees();
+    expect(git(dir, "config", "omniralph.hostDir")).toBe("file");
+    expect(git(legacyWt, "symbolic-ref", "--short", "HEAD")).toBe("feat/TOOL-1");
+  });
+
   it("rejects invalid branch names", async () => {
     for (const branch of ["../x", "a..b", "-rf", "a b", ".hidden", "x/.y", ""]) {
       await expect(

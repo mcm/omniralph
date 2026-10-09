@@ -444,7 +444,8 @@ the agent isn't running a job for it, then
   `<workspaceRoot>/<provider>/<repo path>`: on startup, the agent moves each of them (and its branch
   worktrees under `.branches/`) to the new path, using the host of the repository's `origin` URL. A
   repository that can't be moved (e.g. its new path is taken) is left alone, logged, and cloned
-  again at its new path; delete the old directory once nothing needs it.
+  again at its new path; delete the old directory once nothing needs it. A branch worktree that
+  can't be moved stays at its old path, still linked to the moved repository.
 - Each job checks out a **git worktree** in `<repo>/.worktrees/<jobId>`, removed when the job ends
   and pruned on startup after a crash. Peak usage is roughly the cached clones plus one full
   checkout per concurrently running job.
