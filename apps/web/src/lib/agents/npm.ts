@@ -9,7 +9,10 @@ export class NpmRegistryError extends Error {
 }
 
 /** The agent package's `latest` dist-tag, read from the npm registry (the package is public). */
-export async function latestAgentVersion(fetchFn: typeof fetch = fetch): Promise<string> {
+export async function latestAgentVersion(
+  fetchFn: typeof fetch = fetch,
+  timeoutMs = 15_000,
+): Promise<string> {
   let response: Response;
   try {
     response = await fetchFn(AGENT_REGISTRY_URL, {
@@ -17,7 +20,7 @@ export async function latestAgentVersion(fetchFn: typeof fetch = fetch): Promise
         // The abbreviated metadata document: dist-tags without every version's manifest.
         accept: "application/vnd.npm.install-v1+json",
       },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
   } catch (error) {

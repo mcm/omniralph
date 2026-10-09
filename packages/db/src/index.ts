@@ -144,11 +144,16 @@ export {
 } from "./agents.js";
 export {
   DESIRED_AGENT_VERSION_KEY,
+  LATEST_AGENT_VERSION_KEY,
+  TRACK_LATEST_AGENT_VERSION,
   getAppSetting,
   getDesiredAgentVersion,
+  getLatestAgentVersionCheck,
   setAppSetting,
   setDesiredAgentVersion,
+  setLatestAgentVersionCheck,
   type AppSetting,
+  type LatestAgentVersionCheck,
 } from "./app-settings.js";
 export {
   classifyAgentRunningJobs,

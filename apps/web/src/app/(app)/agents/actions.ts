@@ -5,6 +5,7 @@ import {
   getAgentOverview,
   getDesiredAgentVersion,
   getRepository,
+  TRACK_LATEST_AGENT_VERSION,
   requestAgentUpdate as requestAgentUpdateRow,
   setAgentDesiredVersion as setAgentDesiredVersionRow,
   unpinRepositoryFromAgent,
@@ -19,6 +20,7 @@ import {
   deleteAgent as deleteAgentWithRevoke,
   revokeAgent as revokeAgentWithJobs,
 } from "@/lib/agent-auth/revoke";
+import { recordLatestAgentVersion } from "@/lib/agents/desired-version";
 import { enrollCommand } from "@/lib/agents/display";
 import { latestAgentVersion, NpmRegistryError } from "@/lib/agents/npm";
 import { pinRepository as pinRepositoryWithSync } from "@/lib/agents/pins";
@@ -170,7 +172,7 @@ export type AgentUpdateActionResult = ActionResult & { version?: string };
 /**
  * "Update now": asks the agent to update with its next heartbeat to its desired
  * version (its override, else the organization's), or to the latest on npm when
- * none is chosen. Unlike the automatic update it also retries a version that
+ * none is chosen or the organization tracks it. Unlike the automatic update it also retries a version that
  * failed on the agent. Only agents under pm2 can update themselves.
  */
 export async function requestAgentUpdate(agentId: string): Promise<AgentUpdateActionResult> {
@@ -188,7 +190,9 @@ export async function requestAgentUpdate(agentId: string): Promise<AgentUpdateAc
           "This agent can't update itself (it isn't running under pm2). Update it on the host.",
       };
     }
-    let target = agent.desiredVersion ?? (await getDesiredAgentVersion(db, admin.organization.id));
+    const desired =
+      agent.desiredVersion ?? (await getDesiredAgentVersion(db, admin.organization.id));
+    let target = desired === TRACK_LATEST_AGENT_VERSION ? null : desired;
     if (!target) {
       try {
         target = await latestAgentVersion();
@@ -197,6 +201,10 @@ export async function requestAgentUpdate(agentId: string): Promise<AgentUpdateAc
           return { ok: false, error: `Couldn't read the latest version: ${error.message}.` };
         }
         throw error;
+      }
+      // Heartbeats then hand out this version too, so the agent isn't sent back to an older one.
+      if (desired === TRACK_LATEST_AGENT_VERSION) {
+        await recordLatestAgentVersion(db, admin.organization.id, target);
       }
     }
     if (target === agent.reportedVersion) {

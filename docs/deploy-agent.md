@@ -286,13 +286,18 @@ needs.
 **Choosing the version.**
 
 - **Settings › Agents** (admins) holds the organization's desired version (it applies to the
-  organization's agents only), e.g. `1.4.0` (semver). Blank means
-  versions aren't managed: agents keep whatever they run. **Use latest on npm** sets it to the
-  package's `latest` dist-tag, read from the npm registry without a token (the package is public).
+  organization's agents only), e.g. `1.4.0` (semver), or `latest`. Blank means
+  versions aren't managed: agents keep whatever they run.
+- `latest` (**Track latest on npm**) follows the package's `latest` dist-tag, so agents update with
+  each release. The control panel reads it from the npm registry without a token (the package is
+  public) and keeps it in the database, reading it again once it's 5 minutes old; every heartbeat
+  then hands out that version. If the registry can't be read, agents get the last version read
+  (none before the first read: they stay where they are) and the error shows on Settings › Agents.
+  **Update now** reads npm at once and records that version too.
 - **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
   or to pin a host to an older version. Clear the override to follow the organization's version again.
-- To pin every agent, set the organization's version to an exact version and don't use **Use latest on
-  npm**; agents never move on their own.
+- To pin every agent, set the organization's version to an exact version instead of `latest`;
+  agents never move on their own.
 
 The **Agents** list and each agent's page show the reported version, the desired version, the
 update status (**Up to date**, **Updating** with the step, **Failed** when the desired version
@@ -313,7 +318,7 @@ An update can also be started on demand, from either side:
   with its next heartbeat and removes it. If the agent isn't running, it acts on it once started.
 
 Either way the agent updates (drain, install, restart, rollback as above) to the desired version,
-or to the package's `latest` on npm when none is chosen, and retries that version even if it's in
+or to the package's `latest` on npm when none is chosen or the organization tracks `latest`, and retries that version even if it's in
 `failed` (it's taken off the list first). A request for the version already running does nothing.
 Choosing a different version than the desired one isn't possible this way: the agent would
 update back to the desired version straight away, so change the desired version instead. Agents

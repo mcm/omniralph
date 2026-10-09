@@ -19,6 +19,8 @@ export interface AgentRow {
   desiredVersion: string | null;
   /** The agent's own desired version, overriding the global one. */
   desiredVersionOverride: string | null;
+  /** `desiredVersion` is the latest on npm (the global setting tracks it, no override). */
+  tracksLatest: boolean;
   /** Null for agents that don't report it (older versions). */
   selfUpdate: SelfUpdateSupport | null;
   update: AgentUpdateReport | null;
@@ -49,12 +51,13 @@ export interface AgentRow {
 
 /**
  * `globalDesiredVersion` is the Settings › Agents version, used by agents
- * without their own override.
+ * without their own override (`globalTracksLatest`: it's the latest on npm).
  */
 export function agentRow(
   agent: AgentOverview,
   now: Date = new Date(),
   globalDesiredVersion: string | null = null,
+  globalTracksLatest = false,
 ): AgentRow {
   const desiredVersion = agent.desiredVersion ?? globalDesiredVersion;
   const update = agent.updateState ?? null;
@@ -73,6 +76,7 @@ export function agentRow(
     version: agent.reportedVersion,
     desiredVersion,
     desiredVersionOverride: agent.desiredVersion,
+    tracksLatest: !agent.desiredVersion && globalTracksLatest,
     selfUpdate: agent.selfUpdate,
     update,
     failedVersions: agent.failedVersions,

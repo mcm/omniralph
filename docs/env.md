@@ -18,7 +18,7 @@ put them in `apps/web/.env.local`.
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
 | `NPM_RC` | yes (Vercel) | — | Full `.npmrc` contents Vercel writes before installing, so the private `@iamthemcmaster/ui` package installs: `//registry.npmjs.org/:_authToken=<token>`. Set it for every environment (Production, Preview, Development). |
-| `NPM_TOKEN` | yes (CI) | — | GitHub Actions secret: `ci.yml` writes it to `.npmrc` before `pnpm install`. Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agents › Use latest on npm** reads the public `@omniralph/agent` package without a token. |
+| `NPM_TOKEN` | yes (CI) | — | GitHub Actions secret: `ci.yml` writes it to `.npmrc` before `pnpm install`. Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agents** reads (to track `latest`) the public `@omniralph/agent` package without a token. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database

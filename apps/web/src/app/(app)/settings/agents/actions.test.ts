@@ -18,12 +18,23 @@ const state = vi.hoisted(() => ({
   organizationId: null as string | null,
   version: null as string | null,
   updatedBy: null as string | null,
+  latest: null as { version: string | null; error: string | null } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
 vi.mock("@omniralph/db", () => ({
+  TRACK_LATEST_AGENT_VERSION: "latest",
+  getDesiredAgentVersion: async () => state.version,
+  getLatestAgentVersionCheck: async () => null,
+  setLatestAgentVersionCheck: async (
+    _db: unknown,
+    _organizationId: string,
+    check: { version: string | null; error: string | null },
+  ) => {
+    state.latest = check;
+  },
   setDesiredAgentVersion: async (
     _db: unknown,
     organizationId: string,
@@ -36,7 +47,7 @@ vi.mock("@omniralph/db", () => ({
   },
 }));
 
-const { applyLatestAgentVersion, setGlobalAgentVersion } = await import("./actions");
+const { setGlobalAgentVersion, trackLatestAgentVersion } = await import("./actions");
 
 const REGISTRY = "https://registry.npmjs.org/@omniralph%2fagent";
 const requests: { authorization: string | null; accept: string | null }[] = [];
@@ -68,6 +79,7 @@ describe("Settings › Agents actions", () => {
     state.organizationId = null;
     state.version = null;
     state.updatedBy = null;
+    state.latest = null;
     requests.length = 0;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
   });
@@ -83,7 +95,7 @@ describe("Settings › Agents actions", () => {
     expect(await setGlobalAgentVersion("v1.5.0-beta.1")).toEqual({ ok: true });
     expect(state.version).toBe("1.5.0-beta.1");
 
-    for (const bad of ["latest", "1.4", "01.2.3", "1.2.3; rm -rf /"]) {
+    for (const bad of ["1.4", "01.2.3", "1.2.3; rm -rf /", "next"]) {
       expect(await setGlobalAgentVersion(bad)).toEqual({ ok: false, error: expect.any(String) });
     }
     expect(state.version).toBe("1.5.0-beta.1");
@@ -95,37 +107,47 @@ describe("Settings › Agents actions", () => {
   it("is admin-only", async () => {
     state.user = user("member");
     expect(await setGlobalAgentVersion("1.4.0")).toEqual({ ok: false, error: expect.any(String) });
-    expect(await applyLatestAgentVersion()).toEqual({ ok: false, error: expect.any(String) });
+    expect(await trackLatestAgentVersion()).toEqual({ ok: false, error: expect.any(String) });
+    expect(await setGlobalAgentVersion("latest")).toEqual({ ok: false, error: expect.any(String) });
     expect(state.version).toBeNull();
     expect(requests).toEqual([]);
   });
 
-  it("uses the latest version on npm, read without a token", async () => {
+  it("tracks the latest version on npm, read at once without a token", async () => {
     process.env.NPM_TOKEN = "npm_secret";
     try {
-      expect(await applyLatestAgentVersion()).toEqual({ ok: true, version: "1.4.2" });
+      expect(await trackLatestAgentVersion()).toEqual({ ok: true, version: "1.4.2" });
     } finally {
       delete process.env.NPM_TOKEN;
     }
-    expect(state.version).toBe("1.4.2");
+    // `latest` is stored, and the version read is recorded for heartbeats.
+    expect(state.version).toBe("latest");
+    expect(state.latest).toEqual({ version: "1.4.2", error: null });
     expect(requests).toEqual([
       { authorization: null, accept: "application/vnd.npm.install-v1+json" },
     ]);
+
+    // Typing it works too.
+    state.version = null;
+    registry = () => HttpResponse.json({ "dist-tags": { latest: "1.5.0" } });
+    expect(await setGlobalAgentVersion(" Latest ")).toEqual({ ok: true, version: "1.5.0" });
+    expect(state.version).toBe("latest");
+    expect(state.latest).toEqual({ version: "1.5.0", error: null });
   });
 
   it("reports registry errors and keeps the version", async () => {
     registry = () => HttpResponse.json({ error: "Not found" }, { status: 404 });
-    expect(await applyLatestAgentVersion()).toEqual({
+    expect(await trackLatestAgentVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("doesn't know @omniralph/agent"),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });
-    expect(await applyLatestAgentVersion()).toEqual({
+    expect(await trackLatestAgentVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("didn't list a latest version"),
     });
     registry = () => new HttpResponse("oops", { status: 500 });
-    expect(await applyLatestAgentVersion()).toEqual({
+    expect(await trackLatestAgentVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("answered 500"),
     });
