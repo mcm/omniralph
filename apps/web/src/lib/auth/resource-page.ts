@@ -6,7 +6,7 @@ import {
 } from "@omniralph/db";
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { ENTER_ORGANIZATION_PATH } from "./routes";
+import { createEnterOrganizationPath } from "@/lib/organizations/enter";
 import type { OrgUser } from "./session";
 
 /**
@@ -33,9 +33,11 @@ export async function enterResourceOrganization(
     for (const item of [value ?? []].flat()) query.append(key, item);
   }
   // Pages can't set cookies, so the switch happens in a route handler.
-  const enter = new URLSearchParams({
-    organization: organizationId,
-    next: query.size > 0 ? `${path}?${query}` : path,
-  });
-  redirect(`${ENTER_ORGANIZATION_PATH}?${enter}`);
+  redirect(
+    await createEnterOrganizationPath({
+      userId: user.id,
+      organizationId,
+      next: query.size > 0 ? `${path}?${query}` : path,
+    }),
+  );
 }

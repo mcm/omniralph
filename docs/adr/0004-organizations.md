@@ -33,7 +33,8 @@ Nothing was live yet, so this change wipes existing data and keeps no backwards 
   `getCurrentUser` uses the cookie only while the user is still a member of it. Every page and
   server action works on the active organization; a signed-in user without one lands on
   `/onboarding`. Detail URLs of another organization the user belongs to switch the active
-  organization (through `/api/organizations/enter`, since pages can't set cookies) and
+  organization (through `/api/organizations/enter`, since pages can't set cookies, with a
+  short-lived token signed for the user so another site's link can't switch it) and
   redirect; for non-members they 404 (`apps/web/src/lib/auth/resource-page.ts`). Tabs of one
   browser share the organization: a tab whose organization was switched in another tab blocks
   until it starts over from the dashboard (`OrganizationGuard`). Per-tab organizations (the
