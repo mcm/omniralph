@@ -1,0 +1,160 @@
+name: Deploy web
+
+# Builds the control panel (apps/web) here and uploads the output to Vercel with
+# `vercel deploy --prebuilt`: Vercel doesn't build (apps/web/vercel.json turns off Git deployments).
+# Pushes to main (and manual runs on main, e.g. after changing variables) deploy to production;
+# pull requests get a preview with their own Neon branch.
+# Setup (secrets, variables, Neon): docs/deploy-control-panel.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+
+# Production deploys queue up (never cancel a run mid-migration); a newer push to a PR replaces
+# its running preview deploy.
+concurrency:
+  group: deploy-web-${{ github.event_name != 'pull_request' && 'production' || github.head_ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  VERCEL_CLI_VERSION: "63"
+  NEONCTL_VERSION: "2"
+  # Same naming as Neon's Vercel integration, so branches it created are reused.
+  NEON_BRANCH: preview/${{ github.head_ref }}
+
+jobs:
+  deploy:
+    # Secrets aren't available to fork or Dependabot PRs: they get no preview.
+    if: >-
+      (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') ||
+      (github.event.action != 'closed' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ github.event_name != 'pull_request' && 'production' || 'preview' }}
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_ENVIRONMENT: ${{ github.event_name != 'pull_request' && 'production' || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # @iamthemcmaster/ui is a private package on the public npm registry.
+      # .npmrc is gitignored; never commit one containing a token.
+      - name: Authenticate to npm
+        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install the Vercel CLI
+        run: npm install -g "vercel@${VERCEL_CLI_VERSION}"
+
+      - name: Restore the Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      # Writes the project settings (root directory apps/web, build command from vercel.json) and
+      # the environment's variables to .vercel/, which `vercel build` reads.
+      - name: Pull the Vercel project settings
+        run: |
+          vercel pull --yes --environment="$VERCEL_ENVIRONMENT" \
+            ${GIT_BRANCH:+--git-branch="$GIT_BRANCH"} --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GIT_BRANCH: ${{ github.head_ref }}
+
+      - name: Build
+        run: vercel build ${PROD:+--prod} --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROD: ${{ github.event_name != 'pull_request' && '1' || '' }}
+
+      # Previews: a Neon branch per PR, created from the default branch on the first deploy and
+      # reused afterwards; cleanup-preview deletes it when the PR closes. neonctl rather than
+      # neondatabase/create-branch-action, whose outputs (the branch's password) aren't masked.
+      - name: Create the preview database branch
+        if: github.event_name == 'pull_request'
+        run: |
+          neon() { npx --yes "neonctl@${NEONCTL_VERSION}" "$@" --project-id="$NEON_PROJECT_ID" --no-analytics; }
+          if ! neon branches get "$NEON_BRANCH" > /dev/null 2>&1; then
+            neon branches create --name="$NEON_BRANCH" > /dev/null
+          fi
+          db=(--database-name="$NEON_DATABASE" --role-name="$NEON_ROLE")
+          unpooled="$(neon connection-string "$NEON_BRANCH" "${db[@]}")"
+          pooled="$(neon connection-string "$NEON_BRANCH" "${db[@]}" --pooled)"
+          echo "::add-mask::$unpooled"
+          echo "::add-mask::$pooled"
+          echo "DATABASE_URL=$pooled" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$unpooled" >> "$GITHUB_ENV"
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_DATABASE: ${{ vars.NEON_DATABASE || 'neondb' }}
+          NEON_ROLE: ${{ vars.NEON_ROLE || 'neondb_owner' }}
+
+      # Migrations run after a successful build and before the deployment serves traffic, so they
+      # must stay compatible with the code that's still live. Production migrates the database in
+      # the pulled production variables; previews migrate their Neon branch (DATABASE_URL* above).
+      - name: Migrate the database
+        run: |
+          if [ "$VERCEL_ENVIRONMENT" = production ]; then
+            pnpm --filter @omniralph/db exec tsx --env-file="$GITHUB_WORKSPACE/.vercel/.env.production.local" scripts/migrate.ts
+          else
+            pnpm --filter @omniralph/db migrate
+          fi
+
+      # Previews get their Neon branch's URLs as deployment variables, overriding the project's.
+      - name: Deploy
+        id: deploy
+        run: |
+          args=(--prebuilt --token="$VERCEL_TOKEN")
+          if [ "$VERCEL_ENVIRONMENT" = production ]; then
+            args+=(--prod)
+          else
+            args+=(--env DATABASE_URL="$DATABASE_URL" --env DATABASE_URL_UNPOOLED="$DATABASE_URL_UNPOOLED")
+          fi
+          url="$(vercel deploy "${args[@]}")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $url" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+  cleanup-preview:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # A PR whose deploys all failed early may have no branch.
+      - name: Delete the preview database branch
+        run: |
+          neon() { npx --yes "neonctl@${NEONCTL_VERSION}" "$@" --project-id="$NEON_PROJECT_ID" --no-analytics; }
+          if neon branches get "$NEON_BRANCH" > /dev/null 2>&1; then
+            neon branches delete "$NEON_BRANCH" > /dev/null
+            echo "Deleted Neon branch $NEON_BRANCH"
+          else
+            echo "No Neon branch $NEON_BRANCH"
+          fi
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}

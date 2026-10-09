@@ -130,8 +130,9 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 
 ## Quickstart
 
-1. **Deploy the control panel** on Vercel: Neon Postgres, `NPM_RC`, a KMS issuer per environment,
-   `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and the other variables in [`.env.example`](.env.example).
+1. **Deploy the control panel** on Vercel, built by GitHub Actions: Neon Postgres, the deploy
+   workflow's secrets, a KMS issuer per environment, `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and
+   the other variables in [`.env.example`](.env.example).
    → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
 2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` (or invited)
    can sign in and create an organization, becoming its admin. Invite teammates and set email
@@ -176,7 +177,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 
 | Doc | Covers |
 | -- | -- |
-| [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
+| [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, deploying from GitHub Actions, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
 | [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
 | [linear.md](docs/linear.md) | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments |
 | [chat.md](docs/chat.md) | The Slack app (manifest, distribution) and Discord application (bot, Message Content intent), the AI Gateway, connecting workspaces and servers, asking questions, access levels, account linking and opting out of automatic linking, the Discord Gateway cron and its Vercel plan requirement |
