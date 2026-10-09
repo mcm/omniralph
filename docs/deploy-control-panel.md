@@ -70,9 +70,10 @@ anything, so the project doesn't need `NPM_RC`.
 ### Migrations
 
 The deploy workflow runs `pnpm --filter @omniralph/db migrate` after a successful build and before
-uploading, so each deployment migrates the database it's connected to: the production variables'
-database for production, the pull request's Neon branch (created from the default branch on its
-first deploy) for previews. It runs outside `turbo` so the remote cache can't skip it. Migrations
+uploading, so each deployment migrates the database it's connected to: the Neon project's default
+branch for production, the pull request's Neon branch (created from the default branch on its first
+deploy) for previews. The workflow gets these URLs from Neon with `NEON_API_KEY`, because
+`vercel pull` writes the integration's sensitive variables as empty strings. It runs outside `turbo` so the remote cache can't skip it. Migrations
 apply before the new deployment serves traffic, so they must stay compatible with the code that's
 still live.
 
@@ -202,6 +203,8 @@ summary comment links back to `/reviews/<id>`.
   missing, or the token can't read the package.
 - **The deploy workflow fails at `vercel pull`:** `VERCEL_TOKEN` is missing or can't access the
   team, or `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are wrong.
+- **Migrations fail with `getaddrinfo EAI_AGAIN base`:** the database URL was empty (`pg` parses
+  `""` as host `base`), e.g. a sensitive variable read from `vercel pull`.
 - **Vercel also builds every push:** `apps/web/vercel.json`'s `git.deploymentEnabled: false` was
   removed, or the project's root directory isn't `apps/web`.
 - **Agents get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no

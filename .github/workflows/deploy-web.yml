@@ -87,19 +87,25 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PROD: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
-      # Previews: a Neon branch per PR, created from the default branch on the first deploy and
-      # reused afterwards; cleanup-preview deletes it when the PR closes. neonctl rather than
-      # neondatabase/create-branch-action, whose outputs (the branch's password) aren't masked.
-      - name: Create the preview database branch
-        if: github.event_name == 'pull_request'
+      # The database's URLs come from Neon, not `vercel pull`: the Neon integration's variables are
+      # sensitive, and Vercel pulls sensitive variables as empty strings.
+      # Production: the Neon project's default branch, the one the integration connects to
+      # production. Previews: a Neon branch per PR, created from the default branch on the first
+      # deploy and reused afterwards; cleanup-preview deletes it when the PR closes. neonctl rather
+      # than neondatabase/create-branch-action, whose outputs (the branch's password) aren't masked.
+      - name: Get the database URLs
         run: |
           neon() { npx --yes "neonctl@${NEONCTL_VERSION}" "$@" --project-id="$NEON_PROJECT_ID" --no-analytics; }
-          if ! neon branches get "$NEON_BRANCH" > /dev/null 2>&1; then
-            neon branches create --name="$NEON_BRANCH" > /dev/null
+          branch=()
+          if [ "$VERCEL_ENVIRONMENT" != production ]; then
+            if ! neon branches get "$NEON_BRANCH" > /dev/null 2>&1; then
+              neon branches create --name="$NEON_BRANCH" > /dev/null
+            fi
+            branch=("$NEON_BRANCH")
           fi
           db=(--database-name="$NEON_DATABASE" --role-name="$NEON_ROLE")
-          unpooled="$(neon connection-string "$NEON_BRANCH" "${db[@]}")"
-          pooled="$(neon connection-string "$NEON_BRANCH" "${db[@]}" --pooled)"
+          unpooled="$(neon connection-string "${branch[@]}" "${db[@]}")"
+          pooled="$(neon connection-string "${branch[@]}" "${db[@]}" --pooled)"
           echo "::add-mask::$unpooled"
           echo "::add-mask::$pooled"
           echo "DATABASE_URL=$pooled" >> "$GITHUB_ENV"
@@ -111,15 +117,9 @@ jobs:
           NEON_ROLE: ${{ vars.NEON_ROLE || 'neondb_owner' }}
 
       # Migrations run after a successful build and before the deployment serves traffic, so they
-      # must stay compatible with the code that's still live. Production migrates the database in
-      # the pulled production variables; previews migrate their Neon branch (DATABASE_URL* above).
+      # must stay compatible with the code that's still live.
       - name: Migrate the database
-        run: |
-          if [ "$VERCEL_ENVIRONMENT" = production ]; then
-            pnpm --filter @omniralph/db exec tsx --env-file="$GITHUB_WORKSPACE/.vercel/.env.production.local" scripts/migrate.ts
-          else
-            pnpm --filter @omniralph/db migrate
-          fi
+        run: pnpm --filter @omniralph/db migrate
 
       # Previews get their Neon branch's URLs as deployment variables, overriding the project's.
       - name: Deploy
