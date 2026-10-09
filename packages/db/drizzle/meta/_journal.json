@@ -274,6 +274,20 @@
       "when": 1791497807393,
       "tag": "0038_agent_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791508950375,
+      "tag": "0039_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791508952302,
+      "tag": "0040_chat_state",
+      "breakpoints": true
     }
   ]
 }
