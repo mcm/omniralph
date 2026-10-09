@@ -10,6 +10,7 @@ import {
   MAX_PREPARATION_COMMANDS,
   isStopRequest,
   matchPreparationAnswer,
+  parseContinueRequest,
   preparationHash,
   preparationQuestion,
 } from "./replies.js";
@@ -35,6 +36,17 @@ describe("reply intents", () => {
     expect(isStopRequest({ body: "Stop." })).toBe(true);
     expect(isStopRequest({ body: "stop working!" })).toBe(true);
     expect(isStopRequest({ body: "don't stop the tests" })).toBe(false);
+  });
+
+  it("parses /continue and the guidance after it", () => {
+    expect(parseContinueRequest("/continue")).toBe("");
+    expect(parseContinueRequest("  /Continue \n")).toBe("");
+    expect(parseContinueRequest("/continue Use the v2 API.\nAnd test it.")).toBe(
+      "Use the v2 API.\nAnd test it.",
+    );
+    expect(parseContinueRequest("/continued")).toBeNull();
+    expect(parseContinueRequest("/continue-later")).toBeNull();
+    expect(parseContinueRequest("please /continue")).toBeNull();
   });
 
   it("recognises start anyway", () => {

@@ -12,6 +12,15 @@ export function isStopRequest(reply: { body: string; signal?: string | undefined
   return reply.signal === "stop" || /^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(reply.body);
 }
 
+/**
+ * `/continue` at the start of a reply resets the run's iteration cap. Returns the text after it
+ * (the guidance, "" for a bare `/continue`), or null when the reply doesn't start with it.
+ */
+export function parseContinueRequest(reply: string): string | null {
+  const match = /^\s*\/continue(?![\w-])(.*)$/is.exec(reply);
+  return match ? match[1]!.trim() : null;
+}
+
 /** "start anyway", "ignore the blockers", "go ahead anyway"… */
 export function isStartAnywayRequest(reply: string): boolean {
   return /\b(start|go|proceed|run|work on it|go ahead)\s+anyway\b|\bignore\s+(the\s+)?block(er|ers|ing|ed)?\b/i.test(
