@@ -419,12 +419,31 @@ export const chatIdentities = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     source: chatIdentitySource("source").notNull(),
+    /** The chat user's display name when linked, for display. */
+    displayName: text("display_name"),
     linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     primaryKey({ columns: [t.organizationId, t.platform, t.externalUserId] }),
     index("chat_identities_user_id_idx").on(t.userId),
   ],
+);
+
+/**
+ * A chat user who unlinked their identity: never linked automatically by
+ * email again (linking it manually removes the opt-out).
+ */
+export const chatIdentityOptOuts = pgTable(
+  "chat_identity_opt_outs",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    platform: chatPlatform("platform").notNull(),
+    externalUserId: text("external_user_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.platform, t.externalUserId] })],
 );
 
 /** A chat user's profile as last fetched from the platform (Slack `users.info`), cached. */

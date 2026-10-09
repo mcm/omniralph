@@ -12,7 +12,7 @@ import { jwtVerify, SignJWT } from "jose";
 export const SIGNED_STATE_TTL_SECONDS = 10 * 60;
 
 /** HS256 key for `purpose`, derived from `AUTH_SECRET` (never the secret itself). */
-function stateKey(purpose: string, env: NodeJS.ProcessEnv): Uint8Array {
+export function stateKey(purpose: string, env: NodeJS.ProcessEnv): Uint8Array {
   const secret = env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET is not set");
   return createHmac("sha256", secret).update(`omniralph ${purpose} state`).digest();

@@ -10,6 +10,7 @@ export type NavIcon =
   | "organization"
   | "profiles"
   | "integrations"
+  | "chatAccounts"
   | "agentSettings";
 
 export interface NavItem {
@@ -55,6 +56,7 @@ export const navGroups: NavGroup[] = [
         icon: "agentSettings",
         adminOnly: true,
       },
+      { href: "/settings/chat-accounts", label: "Chat accounts", icon: "chatAccounts" },
     ],
   },
 ];
