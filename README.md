@@ -15,6 +15,13 @@ Both share the control panel, job dispatch, agents, repo cache and credential br
 jobs can get write credentials (one repository, short-lived), and the control panel performs every
 code-host and Linear API call for both.
 
+**Chat front door.** Connect a Slack workspace or Discord server under **Settings › Integrations**
+and mention the bot in a channel: the control-panel agent, an LLM running in the control panel on
+the Vercel AI Gateway, answers in a thread about the organization's ralph runs, reviews, jobs,
+agents and repositories, with links to the control panel. Replies in the thread continue the
+conversation. Linked members (and Slack users on the organization's email domains, read-only) get
+answers; everyone else is asked to link their chat account. See [docs/chat.md](docs/chat.md).
+
 ## Organizations
 
 Everything in Omniralph belongs to an **organization**: code-host connections, repositories,
@@ -58,7 +65,10 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
    │                            │ • queue proxy ◀─receive/ack────┼──────▶ │ Vercel Queues│
    │                            │ • agent API, credential broker │        │ (poll mode)  │
    │                            │ • Vercel KMS-signed tokens     │        └──────────────┘
-   │                            └───────────────▲────────────────┘
+   │ Slack / Discord ─webhooks─▶│ • chat bot (Chat SDK) and      │        ┌──────────────┐
+   │   ▲  (Discord Gateway cron)│   control-panel agent ─────────┼──────▶ │ Vercel AI    │
+   │   └──thread replies ────── │   (AI SDK)                     │        │ Gateway      │
+   │                            └───────────────▲────────────────┘        └──────────────┘
    │                                            │ outbound HTTPS only
    │                            ┌───────────────┴────────────────┐
    └──git clone/fetch ───────── │ Agent hosts (apps/agent)       │
@@ -85,6 +95,13 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
   topics and its agent topics). Crashed agents' leases lapse
   and jobs are redelivered; rate-limited jobs are retried after a backoff.
   See [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md).
+- **Chat runs in the control panel.** Slack events arrive as webhooks; Discord messages arrive over
+  its Gateway WebSocket, which a cron keeps connected and forwards to the Discord webhook route.
+  Chat SDK handles both platforms, with its state in Postgres; Slack bot tokens and the
+  workspace/server → organization mappings live in our own tables. The control-panel agent
+  answers with a model from the Vercel AI Gateway through `read`-tier tools scoped to the
+  connection's organization; `action`-tier tools (for later features) require a linked member.
+  See [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md).
 - **Agents make only outbound connections.** Each agent belongs to the organization it was
   enrolled in and only runs that organization's jobs. `omniralph-agent` runs on Coder instances, has no
   inbound port and a minimal local config (server, agent ID, rotating refresh token, workspace
@@ -143,7 +160,12 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
    on an agent, then delegate an epic to the app (or @mention it with a request)
    → [docs/linear.md](docs/linear.md). Runs show up under **Ralph runs**. Replacing cyralph?
    Follow [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md).
-7. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
+7. **Chat in Slack or Discord** (optional): create the Slack app from its manifest and/or the
+   Discord application, enable the AI Gateway, set the env vars, connect the workspace or server
+   under **Settings › Integrations** and mention the bot: `@Omniralph what ralph runs are active?`
+   Link your chat account when it asks (Slack users whose email matches their sign-in are linked
+   automatically) → [docs/chat.md](docs/chat.md).
+8. **Tune** profiles (**Settings › Profiles**), per-repo settings (profile, triggers, path
    excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
    shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days,
    plus ralph's tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
@@ -157,6 +179,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 | [deploy-control-panel.md](docs/deploy-control-panel.md) | Vercel, `NPM_RC`, Neon and migrations, KMS issuers, Vercel Queues regions, Cron |
 | [deploy-agent.md](docs/deploy-agent.md) | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, central config and per-capability concurrency, the `ralph` capability and its host prerequisites, branch worktrees, disk usage, re-enrollment |
 | [linear.md](docs/linear.md) | The Linear app, connecting a workspace, ralph's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on ralph PRs/MRs, attachments |
+| [chat.md](docs/chat.md) | The Slack app (manifest, distribution) and Discord application (bot, Message Content intent), the AI Gateway, connecting workspaces and servers, asking questions, access levels, account linking and opting out of automatic linking, the Discord Gateway cron and its Vercel plan requirement |
 | [cutover-from-cyralph.md](docs/cutover-from-cyralph.md) | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback |
 | [claude-auth.md](docs/claude-auth.md) | The host `claude` login, `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`, shared rate limits, terms |
 | [github-app.md](docs/github-app.md) | GitHub App manifest, permissions (incl. Actions: read for ralph's CI fixes), events (incl. `workflow_run`), KMS-held private key |
@@ -167,6 +190,7 @@ See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 | [ADR 0002: agent auth](docs/adr/0002-agent-auth.md) | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection |
 | [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md) | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update |
 | [ADR 0004: organizations](docs/adr/0004-organizations.md) | The tenancy model, per-org roles, invitations and email domains, per-org topics, uniqueness rules |
+| [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md) | Chat SDK, our tables owning installations, the Discord Gateway cron, the control-panel agent on the AI Gateway, tool tiers and access levels |
 
 ## Layout
 

@@ -114,6 +114,7 @@ only allows receive, acknowledge and extend-lease on the agent's topics in the `
 
 | Path | Schedule | Does |
 | -- | -- | -- |
+| `/api/cron/discord-gateway` | every 9 minutes | Holds the Discord Gateway connection for 10 minutes and forwards messages to the Discord webhook route; needs a Pro or Enterprise plan ([chat.md](chat.md#the-discord-gateway-cron)). Does nothing without the Discord env vars |
 | `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (their messages have left the queue) |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
