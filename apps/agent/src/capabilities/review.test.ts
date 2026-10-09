@@ -187,7 +187,9 @@ describe("review capability", () => {
     expect(request!.prompt).toContain("+  return xs[xs.length + 1];");
     // The worktree is gone afterwards; the cache stays.
     expect(await readdir(path.join(workspaceRoot, ".worktrees"))).toEqual([]);
-    expect(await readdir(path.join(workspaceRoot, "github", "acme", "app"))).toContain("HEAD");
+    expect(await readdir(path.join(workspaceRoot, "github", "file", "acme", "app"))).toContain(
+      "HEAD",
+    );
     // No code-host (or any other HTTP) calls.
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();

@@ -415,7 +415,7 @@ token, so they can't fetch credentials themselves; only the job's own git comman
 ### Branch worktrees
 
 Ralph jobs work in long-lived **branch worktrees** at
-`<workspaceRoot>/.branches/<provider>/<repo path>/<branch with / replaced by __>`. A worktree is
+`<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch with / replaced by __>`. A worktree is
 created from the remote branch if it exists (otherwise from `origin/<base>`), runs the setup
 command once, is reused by every job of the run and is locked while a job uses it. Uncommitted
 leftovers of a failed attempt are stashed (labelled `omniralph ralph <run> <story> …`) and offered
@@ -428,14 +428,23 @@ After the run's PR/MR merges, a `ralph.cleanup` job on the run's agent removes t
 and deletes the local branch (keeping a branch with unmerged commits until someone answers in
 Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). Worktrees of PRs/MRs
 closed without merging, of repositories with **Clean up after the merge** off, and of an agent that
-was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<repo path>/<branch>` while the
-agent isn't running a job for it, then `git -C <workspaceRoot>/<provider>/<repo path> worktree prune`.
+was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch>` while
+the agent isn't running a job for it, then
+`git -C <workspaceRoot>/<provider>/<host>/<repo path> worktree prune`.
 
 ## `workspaceRoot` and disk usage
 
-- Repositories are cached as **blobless bare clones** in `<workspaceRoot>/<provider>/<repo path>`
-  (default `~/.omniralph/repos`), cloned on the first job and fetched afterwards. Blobless clones
-  hold all commits and trees but only the blobs that were checked out, so they grow with use.
+- Repositories are cached as **blobless bare clones** in
+  `<workspaceRoot>/<provider>/<host>/<repo path>` (default `~/.omniralph/repos`), cloned on the
+  first job and fetched afterwards. `<host>` is the clone URL's host (with its port, if any), so
+  connections to different instances (e.g. github.com and a GitHub Enterprise Server) never share
+  a directory. Blobless clones hold all commits and trees but only the blobs that were checked
+  out, so they grow with use.
+- Agents from before the host was part of the path cached repositories in
+  `<workspaceRoot>/<provider>/<repo path>`: on startup, the agent moves each of them (and its branch
+  worktrees under `.branches/`) to the new path, using the host of the repository's `origin` URL. A
+  repository that can't be moved (e.g. its new path is taken) is left alone, logged, and cloned
+  again at its new path; delete the old directory once nothing needs it.
 - Each job checks out a **git worktree** in `<repo>/.worktrees/<jobId>`, removed when the job ends
   and pruned on startup after a crash. Peak usage is roughly the cached clones plus one full
   checkout per concurrently running job.
