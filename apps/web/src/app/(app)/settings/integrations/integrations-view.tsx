@@ -27,9 +27,9 @@ import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
-import { disconnectLinear } from "./actions";
+import { disconnectLinear, disconnectSlack } from "./actions";
 
-export type LinearNotice =
+export type IntegrationNotice =
   | "connected"
   | "denied"
   | "invalid"
@@ -38,10 +38,12 @@ export type LinearNotice =
   | "not_configured"
   | "error";
 
-const notices: Record<
-  LinearNotice,
+type Notices = Record<
+  IntegrationNotice,
   { title: string; description: string; variant: "success" | "warning" | "destructive" }
-> = {
+>;
+
+const linearNotices: Notices = {
   connected: {
     variant: "success",
     title: "Linear connected",
@@ -81,6 +83,59 @@ const notices: Record<
   },
 };
 
+const slackNotices: Notices = {
+  connected: {
+    variant: "success",
+    title: "Slack connected",
+    description: "Mention the Omniralph app in a channel to start a conversation.",
+  },
+  denied: {
+    variant: "warning",
+    title: "Slack wasn't connected",
+    description: "The installation was cancelled on Slack's install screen.",
+  },
+  invalid: {
+    variant: "destructive",
+    title: "Slack didn't return an authorization code",
+    description: "Click Connect Slack to try again.",
+  },
+  invalid_state: {
+    variant: "destructive",
+    title: "The Slack sign-in link was invalid or expired",
+    description:
+      "For your safety the request was rejected. Click Connect Slack again from this browser and finish within 10 minutes.",
+  },
+  other_organization: {
+    variant: "destructive",
+    title: "This Slack workspace belongs to another organization",
+    description:
+      "A Slack workspace can be connected to one organization only. Disconnect it there first, or connect a different workspace.",
+  },
+  not_configured: {
+    variant: "warning",
+    title: "Slack app not configured",
+    description:
+      "Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and SLACK_SIGNING_SECRET, then connect again.",
+  },
+  error: {
+    variant: "destructive",
+    title: "Connecting Slack failed",
+    description: "Slack rejected the authorization or couldn't be reached. Try again.",
+  },
+};
+
+export interface SlackWorkspace {
+  /** The chat connection's ID. */
+  id: string;
+  name: string;
+  /** Slack team ID (or enterprise ID for an org-wide install). */
+  workspaceId: string;
+  /** Name or email of the admin who installed it, null when unknown. */
+  installedBy: string | null;
+  /** ISO timestamp. */
+  connectedAt: string;
+}
+
 export interface LinearConnection {
   name: string;
   workspaceId: string;
@@ -92,10 +147,16 @@ export function IntegrationsView({
   linear,
   linearConfigured,
   notice,
+  slack,
+  slackConfigured,
+  slackNotice,
 }: {
   linear: LinearConnection | null;
   linearConfigured: boolean;
-  notice: LinearNotice | null;
+  notice: IntegrationNotice | null;
+  slack: SlackWorkspace[];
+  slackConfigured: boolean;
+  slackNotice: IntegrationNotice | null;
 }) {
   const { pending, run } = useAction();
 
@@ -123,15 +184,21 @@ export function IntegrationsView({
             Integrations
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Issue trackers Omniralph works from. Delegating a Linear issue to the Omniralph app
-            starts a ralph run.
+            Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating
+            a Linear issue to the Omniralph app starts a ralph run.
           </Muted>
         </div>
 
         {notice && (
-          <Alert variant={notices[notice].variant}>
-            <AlertTitle>{notices[notice].title}</AlertTitle>
-            <AlertDescription>{notices[notice].description}</AlertDescription>
+          <Alert variant={linearNotices[notice].variant}>
+            <AlertTitle>{linearNotices[notice].title}</AlertTitle>
+            <AlertDescription>{linearNotices[notice].description}</AlertDescription>
+          </Alert>
+        )}
+        {slackNotice && (
+          <Alert variant={slackNotices[slackNotice].variant}>
+            <AlertTitle>{slackNotices[slackNotice].title}</AlertTitle>
+            <AlertDescription>{slackNotices[slackNotice].description}</AlertDescription>
           </Alert>
         )}
 
@@ -216,6 +283,101 @@ export function IntegrationsView({
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+              Slack
+              {slack.length > 0 ? (
+                <Badge variant="success" size="sm">
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="neutral" size="sm">
+                  Not connected
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Install the Omniralph app in a Slack workspace, then mention it in a channel to ask
+              about runs, reviews, jobs, agents and repositories.
+            </CardDescription>
+          </CardHeader>
+          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            {!slackConfigured && (
+              <Alert variant="info">
+                <AlertTitle>Slack app not configured</AlertTitle>
+                <AlertDescription>
+                  Set <InlineCode>SLACK_CLIENT_ID</InlineCode>,{" "}
+                  <InlineCode>SLACK_CLIENT_SECRET</InlineCode> and{" "}
+                  <InlineCode>SLACK_SIGNING_SECRET</InlineCode> to connect Slack (see docs/env.md).
+                </AlertDescription>
+              </Alert>
+            )}
+            {slack.map((workspace) => (
+              <div
+                key={workspace.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--space-3)",
+                }}
+              >
+                <div>
+                  <strong>{workspace.name}</strong>
+                  <Muted style={{ display: "block" }}>
+                    Connected {formatDateTime(workspace.connectedAt)}
+                    {workspace.installedBy && <> by {workspace.installedBy}</>}
+                  </Muted>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={pending}>
+                      <IconUnlink size={14} />
+                      Disconnect
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Disconnect {workspace.name}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Omniralph forgets the workspace&apos;s bot token and its conversations, and
+                        revokes the token. Mentions in Slack are ignored until you connect again.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() =>
+                          run(() => disconnectSlack(workspace.id), `Disconnected ${workspace.name}`)
+                        }
+                      >
+                        Disconnect
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              {slackConfigured ? (
+                <Button asChild variant={slack.length > 0 ? "secondary" : "primary"}>
+                  {/* A plain link: the route redirects to Slack's install screen. */}
+                  <a href="/api/integrations/slack/connect">
+                    <IconPlugConnected size={14} />
+                    {slack.length > 0 ? "Connect another workspace" : "Connect Slack"}
+                  </a>
+                </Button>
+              ) : (
+                <Button variant="primary" disabled>
+                  <IconPlugConnected size={14} />
+                  Connect Slack
+                </Button>
               )}
             </div>
           </CardContent>
