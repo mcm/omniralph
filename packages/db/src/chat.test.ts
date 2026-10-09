@@ -17,7 +17,9 @@ import {
   getChatIdentity,
   getChatUserProfile,
   hasChatIdentityOptOut,
+  isChatLinkStateUsed,
   linkChatIdentity,
+  linkChatIdentityWithState,
   listChatConnections,
   listChatIdentities,
   listChatMessages,
@@ -33,6 +35,7 @@ import { migrationsFolder, runMigrations } from "./migrate.js";
 import {
   chatConnections,
   chatIdentities,
+  chatLinkStateUses,
   chatMessages,
   chatThreads,
   chatUserProfiles,
@@ -282,6 +285,48 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
     expect(await hasChatIdentityOptOut(db, orgId, "slack", "U1")).toBe(false);
     // A link without a display name keeps the known one.
     expect(await link("email")).toMatchObject({ source: "email", displayName: "Bea" });
+  });
+
+  it("uses a link state once, in the link's transaction", async () => {
+    const id = "6f1c1d1e-0000-4000-8000-000000000001";
+    const expiresAt = new Date(Date.now() + 15 * 60_000);
+    const link = (userId: string) =>
+      linkChatIdentityWithState(
+        db,
+        {
+          organizationId: orgId,
+          platform: "discord",
+          externalUserId: "D1",
+          userId,
+          source: "manual",
+        },
+        { id, expiresAt },
+      );
+    expect(await isChatLinkStateUsed(db, id)).toBe(false);
+    expect(await link("member-1")).toMatchObject({ userId: "member-1", source: "manual" });
+    expect(await isChatLinkStateUsed(db, id)).toBe(true);
+    // A replay links nothing: the chat user stays linked to the first user.
+    expect(await link("admin-1")).toBeNull();
+    expect(await getChatIdentity(db, orgId, "discord", "D1")).toMatchObject({ userId: "member-1" });
+
+    // Expired uses are purged by a later use.
+    const stale = "6f1c1d1e-0000-4000-8000-000000000002";
+    await db
+      .insert(chatLinkStateUses)
+      .values({ id: stale, expiresAt: new Date(Date.now() - 1000) });
+    await linkChatIdentityWithState(
+      db,
+      {
+        organizationId: orgId,
+        platform: "discord",
+        externalUserId: "D2",
+        userId: "admin-1",
+        source: "manual",
+      },
+      { id: "6f1c1d1e-0000-4000-8000-000000000003", expiresAt },
+    );
+    expect(await isChatLinkStateUsed(db, stale)).toBe(false);
+    expect(await isChatLinkStateUsed(db, id)).toBe(true);
   });
 
   it("caches chat user profiles per connection", async () => {

@@ -95,11 +95,28 @@ describe("link state", () => {
     const url = await createLinkUrl(input, env, now);
     expect(url.startsWith("https://omniralph.example.com/chat/link?state=")).toBe(true);
     const state = stateOf(url);
-    expect(await readLinkState(state, env, now)).toEqual({ ok: true, state: input });
+    expect(await readLinkState(state, env, now)).toEqual({
+      ok: true,
+      state: {
+        ...input,
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        expiresAt: new Date(now.getTime() + CHAT_LINK_TTL_SECONDS * 1000),
+      },
+    });
     const almost = new Date(now.getTime() + (CHAT_LINK_TTL_SECONDS - 1) * 1000);
     expect((await readLinkState(state, env, almost)).ok).toBe(true);
     const expired = new Date(now.getTime() + (CHAT_LINK_TTL_SECONDS + 1) * 1000);
     expect(await readLinkState(state, env, expired)).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it("has a unique id per link", async () => {
+    const read = async () => {
+      const result = await readLinkState(stateOf(await createLinkUrl(input, env)), env);
+      return result.ok ? result.state.id : null;
+    };
+    const [a, b] = [await read(), await read()];
+    expect(a).not.toBeNull();
+    expect(a).not.toEqual(b);
   });
 
   it("rejects tampered, foreign and missing states", async () => {
@@ -352,6 +369,31 @@ describe.skipIf(!dockerAvailable)("chat identities", () => {
     expect(await db.select().from(chatIdentities)).toHaveLength(1);
     expect(await resolve(discord, "D1")).toMatchObject({ kind: "member", userId: "ada" });
     expect(await listChatIdentities(db, "bob")).toEqual([]);
+  });
+
+  it("uses a link once: a replay by another member doesn't move the link", async () => {
+    const state = await linkState(discord, "D1");
+    expect(await linkChatAccount(db, "bob", state, env, now)).toMatchObject({ ok: true });
+    expect(await checkChatLink(db, "ada", state, env, now)).toEqual({ status: "used" });
+    expect(await linkChatAccount(db, "ada", state, env, now)).toEqual({
+      ok: false,
+      check: { status: "used" },
+    });
+    // Not even the member who used it can open it again.
+    expect(await checkChatLink(db, "bob", state, env, now)).toEqual({ status: "used" });
+    expect(await resolve(discord, "D1")).toMatchObject({ kind: "member", userId: "bob" });
+  });
+
+  it("links once when the same link is confirmed twice at the same time", async () => {
+    const state = await linkState(discord, "D1");
+    const results = await Promise.all([
+      linkChatAccount(db, "bob", state, env, now),
+      linkChatAccount(db, "ada", state, env, now),
+    ]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, check: { status: "used" } }]);
+    const winner = results[0]!.ok ? "bob" : "ada";
+    expect(await resolve(discord, "D1")).toMatchObject({ kind: "member", userId: winner });
   });
 
   it("rejects expired and tampered links", async () => {

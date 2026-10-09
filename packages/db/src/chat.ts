@@ -4,13 +4,14 @@
  * agent's threads and their messages. Connection credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
   chatConnections,
   chatIdentities,
   chatIdentityOptOuts,
+  chatLinkStateUses,
   chatMessages,
   chatThreads,
   chatUserProfiles,
@@ -262,38 +263,85 @@ export async function linkChatIdentity(
   db: Database,
   input: LinkChatIdentityInput,
 ): Promise<ChatIdentity> {
-  const displayName = input.displayName ?? null;
+  return db.transaction((tx) => linkInTransaction(tx, input));
+}
+
+/** A single-use account-link state (`/chat/link`): its `jti` and expiry. */
+export interface ChatLinkStateUse {
+  id: string;
+  expiresAt: Date;
+}
+
+/**
+ * Links a chat identity as {@link linkChatIdentity} does, recording that the
+ * link state was used in the same transaction. Null (and nothing linked)
+ * when the state was used already. Uses of states expired by `now` are
+ * purged.
+ */
+export async function linkChatIdentityWithState(
+  db: Database,
+  input: LinkChatIdentityInput,
+  linkState: ChatLinkStateUse,
+  now: Date = new Date(),
+): Promise<ChatIdentity | null> {
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(chatIdentities)
-      .values({ ...input, displayName })
-      .onConflictDoUpdate({
-        target: [
-          chatIdentities.organizationId,
-          chatIdentities.platform,
-          chatIdentities.externalUserId,
-        ],
-        set: {
-          userId: input.userId,
-          source: input.source,
-          displayName: sql`coalesce(excluded.display_name, ${chatIdentities.displayName})`,
-          linkedAt: sql`now()`,
-        },
-      })
-      .returning();
-    if (input.source === "manual") {
-      await tx
-        .delete(chatIdentityOptOuts)
-        .where(
-          and(
-            eq(chatIdentityOptOuts.organizationId, input.organizationId),
-            eq(chatIdentityOptOuts.platform, input.platform),
-            eq(chatIdentityOptOuts.externalUserId, input.externalUserId),
-          ),
-        );
-    }
-    return row!;
+    const used = await tx
+      .insert(chatLinkStateUses)
+      .values({ id: linkState.id, expiresAt: linkState.expiresAt })
+      .onConflictDoNothing()
+      .returning({ id: chatLinkStateUses.id });
+    if (used.length === 0) return null;
+    await tx.delete(chatLinkStateUses).where(lt(chatLinkStateUses.expiresAt, now));
+    return linkInTransaction(tx, input);
   });
+}
+
+/** Whether the account-link state `id` was used. */
+export async function isChatLinkStateUsed(db: Database, id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: chatLinkStateUses.id })
+    .from(chatLinkStateUses)
+    .where(eq(chatLinkStateUses.id, id))
+    .limit(1);
+  return row !== undefined;
+}
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function linkInTransaction(
+  tx: Transaction,
+  input: LinkChatIdentityInput,
+): Promise<ChatIdentity> {
+  const displayName = input.displayName ?? null;
+  const [row] = await tx
+    .insert(chatIdentities)
+    .values({ ...input, displayName })
+    .onConflictDoUpdate({
+      target: [
+        chatIdentities.organizationId,
+        chatIdentities.platform,
+        chatIdentities.externalUserId,
+      ],
+      set: {
+        userId: input.userId,
+        source: input.source,
+        displayName: sql`coalesce(excluded.display_name, ${chatIdentities.displayName})`,
+        linkedAt: sql`now()`,
+      },
+    })
+    .returning();
+  if (input.source === "manual") {
+    await tx
+      .delete(chatIdentityOptOuts)
+      .where(
+        and(
+          eq(chatIdentityOptOuts.organizationId, input.organizationId),
+          eq(chatIdentityOptOuts.platform, input.platform),
+          eq(chatIdentityOptOuts.externalUserId, input.externalUserId),
+        ),
+      );
+  }
+  return row!;
 }
 
 /** The member a chat user is linked to in the organization, or null. */

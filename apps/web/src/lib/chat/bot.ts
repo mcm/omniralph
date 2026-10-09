@@ -56,8 +56,9 @@ export interface ChatConversationContext {
   message: Message;
   /** Who wrote the message, in the connection's organization. */
   actor: ChatActor;
-  /** A link for the message's author to link their chat identity (valid 15 minutes). */
+  /** A link for the message's author to link their chat identity (valid 15 minutes, once). */
   linkUrl(): Promise<string>;
+  logger?: Logger;
 }
 
 /** Answers a message in a thread the bot is part of (the control-panel agent plugs in here). */
@@ -67,13 +68,37 @@ export interface ChatConversationHandler {
 
 const PLATFORM_NAMES: Record<ChatPlatform, string> = { slack: "Slack", discord: "Discord" };
 
+/** The thread note when `text` went to the author by DM. */
+export const SENT_BY_DM_NOTE = "I sent you a direct message: check your DMs.";
+
 /**
- * Posts `text` so only `message`'s author sees it, or, where the platform has
- * no ephemeral messages (Discord), as a thread reply mentioning them.
+ * Posts `text` so only `message`'s author sees it: ephemeral where the
+ * platform has it (Slack), else by DM with a short note in the thread
+ * (Discord). If the DM fails, it goes in the thread mentioning them, with a
+ * warning logged.
  */
-export async function postToAuthor(thread: Thread, message: Message, text: string): Promise<void> {
-  const ephemeral = await thread.postEphemeral(message.author, text, { fallbackToDM: false });
-  if (!ephemeral) await thread.post(`${thread.mentionUser(message.author.userId)} ${text}`);
+export async function postToAuthor(
+  thread: Thread,
+  message: Message,
+  text: string,
+  logger?: Logger,
+): Promise<void> {
+  const mention = thread.mentionUser(message.author.userId);
+  if (await thread.postEphemeral(message.author, text, { fallbackToDM: false })) return;
+  let error: unknown;
+  try {
+    if (await thread.postEphemeral(message.author, text, { fallbackToDM: true })) {
+      await thread.post(`${mention} ${SENT_BY_DM_NOTE}`);
+      return;
+    }
+  } catch (dmError) {
+    error = dmError;
+  }
+  (logger ?? console).warn("Couldn't DM a chat user: posting in the thread instead", {
+    threadId: thread.id,
+    error: error instanceof Error ? error.message : error,
+  });
+  await thread.post(`${mention} ${text}`);
 }
 
 /** The prompt asking a chat user to link their account, with the link. */
@@ -94,6 +119,7 @@ export async function requireMember(
     context.thread,
     context.message,
     linkPrompt(context.connection.platform, await context.linkUrl()),
+    context.logger,
   );
   return null;
 }
@@ -267,6 +293,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
         thread,
         message,
         autoLinkedNote(connection.platform, actor.autoLinked.email, getAppUrl(deps.env)),
+        logger,
       );
     }
     await handler.handle(thread, message, {
@@ -277,6 +304,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
       thread,
       message,
       actor,
+      logger,
       linkUrl: () =>
         createLinkUrl(
           {

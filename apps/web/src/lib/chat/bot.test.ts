@@ -29,7 +29,7 @@ import type { SlackCredentials } from "./slack-oauth";
 vi.mock("server-only", () => ({}));
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { createChatBot, requireMember } = await import("./bot");
+const { createChatBot, requireMember, SENT_BY_DM_NOTE } = await import("./bot");
 const { createChatAgentHandler } = await import("./agent/handler");
 const {
   DISCORD_GATEWAY_TOKEN_HEADER,
@@ -103,6 +103,10 @@ const server = setupServer(
     ({ params }) =>
       HttpResponse.json({ id: `thread-of-${String(params.message)}`, parent_id: params.channel }),
   ),
+  http.post("https://discord.com/api/v10/users/@me/channels", async ({ request }) => {
+    const body = (await request.json()) as { recipient_id: string };
+    return HttpResponse.json({ id: `dm-${body.recipient_id}`, type: 1 });
+  }),
   http.get("https://discord.com/api/v10/channels/:channel", ({ params }) =>
     HttpResponse.json({ id: params.channel, parent_id: "CH1", type: 11 }),
   ),
@@ -236,6 +240,7 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
   let tasks: Promise<unknown>[];
   let bot: ReturnType<typeof createChatBot>;
   let state: ReturnType<typeof createMockState>;
+  let logger: ReturnType<typeof createMockLogger>;
 
   const recordingHandler: ChatConversationHandler = {
     async handle(thread: Thread, message: Message, context) {
@@ -245,13 +250,14 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
 
   const build = (handler: ChatConversationHandler = recordingHandler) => {
     state = createMockState();
+    logger = createMockLogger();
     bot = createChatBot({
       db,
       slack: SLACK,
       discord: DISCORD,
       state,
       handler,
-      logger: createMockLogger(),
+      logger,
       encryptionKey: ENCRYPTION_KEY,
       slackOptions: { webClientOptions: { retryConfig: { retries: 0 } } },
       env: ENV,
@@ -710,6 +716,8 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       expect(await readLinkState(new URL(url).searchParams.get("state"), ENV)).toEqual({
         ok: true,
         state: {
+          id: expect.any(String),
+          expiresAt: expect.any(Date),
           organizationId: orgId,
           connectionId: slackConnection.id,
           platform: "slack",
@@ -719,10 +727,8 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       });
     });
 
-    it("mentions an unlinked Discord user in the thread with the link prompt", async () => {
-      const results: unknown[] = [];
-      build(requiring(results));
-      await discord(
+    const discordMention = () =>
+      discord(
         discordMessage("G1", {
           id: "M1",
           channel: "CH1",
@@ -730,12 +736,49 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
           mention: true,
         }),
       );
+
+    it("DMs an unlinked Discord user the link prompt and only notes it in the thread", async () => {
+      const results: unknown[] = [];
+      build(requiring(results));
+      await discordMention();
       expect(handled[0]!.context.actor).toEqual({ kind: "unlinked" });
+      expect(results).toEqual([null]);
+      expect(posts).toHaveLength(2);
+      const [dm, note] = posts;
+      expect(dm).toMatchObject({ platform: "discord", channel: "dm-D1" });
+      expect(dm!.text).toMatch(
+        /^To do that.*Link your Discord account .*https:\/\/omniralph\.example\.com\/chat\/link\?state=/,
+      );
+      expect(note).toEqual({
+        platform: "discord",
+        channel: "thread-of-M1",
+        text: `<@D1> ${SENT_BY_DM_NOTE}`,
+      });
+      expect(note!.text).not.toContain("/chat/link");
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the thread with a warning when the Discord DM fails", async () => {
+      server.use(
+        http.post("https://discord.com/api/v10/users/@me/channels", () =>
+          HttpResponse.json(
+            { message: "Cannot send messages to this user", code: 50007 },
+            { status: 403 },
+          ),
+        ),
+      );
+      const results: unknown[] = [];
+      build(requiring(results));
+      await discordMention();
       expect(results).toEqual([null]);
       expect(posts).toHaveLength(1);
       expect(posts[0]).toMatchObject({ platform: "discord", channel: "thread-of-M1" });
       expect(posts[0]!.text).toMatch(
         /^<@D1> .*Link your Discord account .*https:\/\/omniralph\.example\.com\/chat\/link\?state=/,
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Couldn't DM a chat user: posting in the thread instead",
+        expect.objectContaining({ threadId: expect.stringContaining("thread-of-M1") }),
       );
     });
   });
