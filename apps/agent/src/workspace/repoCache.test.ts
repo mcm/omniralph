@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -38,10 +38,11 @@ describe("RepoCache", { timeout: 30_000 }, () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("clones blobless into <workspaceRoot>/<provider>/<path> on first use, then fetches the needed SHAs", async () => {
+  it("clones blobless into <workspaceRoot>/<provider>/<host>/<path> on first use, then fetches the needed SHAs", async () => {
     const first = await remote.commit({ "README.md": "one\n" });
     const repos = cache();
-    const dir = path.join(workspaceRoot, "gitlab", "group", "sub", "app");
+    // A `file:` URL has no host: its scheme stands in.
+    const dir = path.join(workspaceRoot, "gitlab", "file", "group", "sub", "app");
     expect(repos.repoDir(repo)).toBe(dir);
 
     expect(await repos.sync(repo, { ...opts, shas: [first] })).toEqual({
@@ -216,7 +217,15 @@ describe("RepoCache", { timeout: 30_000 }, () => {
     const sha = await remote.commit({ "a.txt": "a\n" });
     const repos = cache();
     const dir = repos.repoDir(repo);
-    const lockfilePath = path.join(workspaceRoot, ".locks", "gitlab", "group", "sub", "app.lock");
+    const lockfilePath = path.join(
+      workspaceRoot,
+      ".locks",
+      "gitlab",
+      "file",
+      "group",
+      "sub",
+      "app.lock",
+    );
     await mkdir(path.dirname(lockfilePath), { recursive: true });
     const release = await lockfile.lock(dir, { realpath: false, lockfilePath });
     let done = false;
@@ -261,14 +270,45 @@ describe("RepoCache", { timeout: 30_000 }, () => {
     expect(await exists(path.join(root, "none"))).toBe(false);
   });
 
+  it("keys repositories by the host of their clone URL", () => {
+    const repos = cache();
+    const at = (cloneUrl: string): JobRepository => ({
+      provider: "github",
+      fullPath: "acme/app",
+      cloneUrl,
+    });
+    const cloud = at("https://github.com/acme/app.git");
+    const enterprise = at("https://GHE.example.com:8443/acme/app.git");
+    expect(repos.repoDir(cloud)).toBe(
+      path.join(workspaceRoot, "github", "github.com", "acme", "app"),
+    );
+    expect(repos.repoDir(enterprise)).toBe(
+      path.join(workspaceRoot, "github", "ghe.example.com:8443", "acme", "app"),
+    );
+    expect(repos.branchWorktreePath(cloud, "feat/x")).toBe(
+      path.join(workspaceRoot, ".branches", "github", "github.com", "acme", "app", "feat__x"),
+    );
+    expect(repos.branchWorktreePath(enterprise, "feat/x")).not.toBe(
+      repos.branchWorktreePath(cloud, "feat/x"),
+    );
+  });
+
   it("rejects repository paths and job IDs that would escape the workspace", () => {
     const repos = cache();
+    const cloneUrl = "https://github.com/a/b.git";
     for (const fullPath of ["../etc", "group/../../x", "/abs/path", "group/.git", "a//b"]) {
-      expect(() => repos.repoDir({ provider: "github", fullPath })).toThrow(
+      expect(() => repos.repoDir({ provider: "github", fullPath, cloneUrl })).toThrow(
         /invalid repository path/,
       );
     }
-    expect(() => repos.repoDir({ provider: "bitbucket" as "github", fullPath: "a/b" })).toThrow();
+    expect(() =>
+      repos.repoDir({ provider: "bitbucket" as "github", fullPath: "a/b", cloneUrl }),
+    ).toThrow();
+    for (const bad of ["not a url", "https://.hidden/a/b.git"]) {
+      expect(() => repos.repoDir({ provider: "github", fullPath: "a/b", cloneUrl: bad })).toThrow(
+        /invalid clone URL/,
+      );
+    }
     expect(() => repos.worktreePath("../x")).toThrow(/invalid job ID/);
   });
 
@@ -344,7 +384,7 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     const base = await remote.commit({ "README.md": "base\n" });
     const result = await repos.withBranchWorktree(repo, feature, async (wt) => {
       expect(wt.path).toBe(
-        path.join(workspaceRoot, ".branches", "github", "acme", "app", "feat__TOOL-1"),
+        path.join(workspaceRoot, ".branches", "github", "file", "acme", "app", "feat__TOOL-1"),
       );
       expect(wt.path).toBe(repos.branchWorktreePath(repo, "feat/TOOL-1"));
       expect(wt.created).toBe(true);
@@ -502,7 +542,7 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
   it("runs the setup command only when the worktree is created, and removes it when setup fails", async () => {
     await remote.commit({ "README.md": "base\n" });
     const setupCommand = 'echo "$PWD" >> ../setup.log && touch .setup-done';
-    const log = path.join(workspaceRoot, ".branches", "github", "acme", "app", "setup.log");
+    const log = path.join(workspaceRoot, ".branches", "github", "file", "acme", "app", "setup.log");
     await repos.withBranchWorktree(repo, { ...feature, setupCommand }, async (wt) => {
       expect(await exists(path.join(wt.path, ".setup-done"))).toBe(true);
     });
@@ -641,6 +681,46 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     // A fetch no longer touches the branch checked out in the worktree.
     pushToRemoteBranch("feat/TOOL-1", "remote.txt");
     await repos.sync(repo, opts);
+  });
+
+  it("moves repositories and branch worktrees cached without a host directory on startup", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    const wtPath = await repos.withBranchWorktree(repo, feature, async (wt) => {
+      await writeFile(path.join(wt.path, "wip.txt"), "uncommitted\n");
+      return wt.path;
+    });
+    const dir = repos.repoDir(repo);
+    // The layout before repositories were keyed by host.
+    const legacyDir = path.join(workspaceRoot, "github", "acme", "app");
+    const legacyWt = path.join(workspaceRoot, ".branches", "github", "acme", "app", "feat__TOOL-1");
+    await mkdir(path.dirname(legacyDir), { recursive: true });
+    await mkdir(path.dirname(legacyWt), { recursive: true });
+    await rename(dir, legacyDir);
+    await rename(wtPath, legacyWt);
+    git(legacyDir, "worktree", "repair", legacyWt);
+    git(legacyDir, "config", "--unset", "omniralph.hostDir");
+    await rm(path.join(workspaceRoot, "github", "file"), { recursive: true });
+    await rm(path.join(workspaceRoot, ".branches", "github", "file"), { recursive: true });
+    expect(git(legacyWt, "status", "--porcelain")).toBe("?? wip.txt");
+
+    expect(await repos.pruneStaleWorktrees()).toEqual([]);
+    expect(await exists(legacyDir)).toBe(false);
+    expect(await exists(path.join(workspaceRoot, "github", "acme"))).toBe(false);
+    expect(await exists(path.join(workspaceRoot, ".branches", "github", "acme"))).toBe(false);
+    expect(git(dir, "config", "omniralph.hostDir")).toBe("file");
+    expect(git(wtPath, "status", "--porcelain")).toBe("?? wip.txt");
+    const entry = git(dir, "worktree", "list", "--porcelain")
+      .split("\n\n")
+      .find((e) => e.includes(wtPath));
+    expect(entry).toMatch(/^locked/m);
+
+    // The moved worktree is reused, and a second startup leaves everything in place.
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      expect(wt.created).toBe(false);
+      expect(wt.path).toBe(wtPath);
+    });
+    await repos.pruneStaleWorktrees();
+    expect(git(wtPath, "symbolic-ref", "--short", "HEAD")).toBe("feat/TOOL-1");
   });
 
   it("rejects invalid branch names", async () => {

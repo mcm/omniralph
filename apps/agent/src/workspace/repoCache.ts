@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
@@ -26,6 +36,12 @@ const SETUP_PENDING = "omniralph-setup-pending";
 /** Clones are made here and renamed into place, so a crash never leaves a half clone. */
 const TMP_DIR = ".tmp";
 const PROVIDERS = ["github", "gitlab"] as const;
+/**
+ * Git config key of a cached repository: the host directory it's cached
+ * under. Caches made before repositories were keyed by host lack it (see
+ * `migrateLegacyRepos`).
+ */
+const HOST_CONFIG = "omniralph.hostDir";
 
 /**
  * The `pre-push` hook of the cached repositories (shared by their
@@ -120,7 +136,7 @@ export interface StashEntry {
 export interface BranchWorktree {
   branch: string;
   baseBranch: string;
-  /** `<workspaceRoot>/.branches/<provider>/<repo path>/<branch with "/" → "__">` */
+  /** `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch with "/" → "__">` */
   path: string;
   repoDir: string;
   /** True when this call created the worktree (and ran the setup command). */
@@ -221,6 +237,26 @@ function withCall(job: GitJobOptions, call: WorktreeCallOptions | undefined): Gi
   return { env: job.env, signal: call.signal ?? undefined };
 }
 
+/**
+ * The directory name of a clone URL's host (with its port, if any): two
+ * connections of a provider (e.g. github.com and a GitHub Enterprise Server)
+ * may both have a repository with the same path. URLs without a host (`file:`
+ * in tests) use their scheme.
+ */
+function hostDir(cloneUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(cloneUrl);
+  } catch {
+    throw new Error(`invalid clone URL ${cloneUrl}`);
+  }
+  const dir = url.host || url.protocol.replace(/:$/, "");
+  if (!dir || dir.startsWith(".") || /[/\\\0]/.test(dir)) {
+    throw new Error(`invalid clone URL ${cloneUrl}`);
+  }
+  return dir;
+}
+
 /** Keeps the agent's environment for git commands outside jobs, minus `OMNIRALPH_*`. */
 function hostEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
@@ -230,7 +266,7 @@ function hostEnv(): NodeJS.ProcessEnv {
 
 /**
  * The agent's repo cache: one blobless bare clone per repository under
- * `<workspaceRoot>/<provider>/<repo path>`, made on first use and fetched
+ * `<workspaceRoot>/<provider>/<host>/<repo path>`, made on first use and fetched
  * afterwards, and one git worktree per job under
  * `<workspaceRoot>/.worktrees/<jobId>`. Clone, fetch and worktree
  * bookkeeping are serialized per repository with a file lock (so several agent
@@ -258,8 +294,8 @@ export class RepoCache {
     this.lockStaleMs = options.lockStaleMs ?? 30_000;
   }
 
-  /** `<workspaceRoot>/<provider>/<repo path>` */
-  repoDir(repo: Pick<JobRepository, "provider" | "fullPath">): string {
+  /** `<workspaceRoot>/<provider>/<host>/<repo path>` (host with its port, if any) */
+  repoDir(repo: JobRepository): string {
     const segments = repo.fullPath.split("/");
     if (
       !PROVIDERS.includes(repo.provider) ||
@@ -269,7 +305,7 @@ export class RepoCache {
     ) {
       throw new Error(`invalid repository path ${repo.provider}/${repo.fullPath}`);
     }
-    return path.join(this.workspaceRoot, repo.provider, ...segments);
+    return path.join(this.workspaceRoot, repo.provider, hostDir(repo.cloneUrl), ...segments);
   }
 
   /**
@@ -287,8 +323,8 @@ export class RepoCache {
     return path.join(this.workspaceRoot, WORKTREES_DIR, jobId);
   }
 
-  /** `<workspaceRoot>/.branches/<provider>/<repo path>/<branch with "/" → "__">` */
-  branchWorktreePath(repo: Pick<JobRepository, "provider" | "fullPath">, branch: string): string {
+  /** `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch with "/" → "__">` */
+  branchWorktreePath(repo: JobRepository, branch: string): string {
     const relative = path.relative(this.workspaceRoot, this.repoDir(repo));
     return path.join(this.workspaceRoot, BRANCHES_DIR, relative, branch.replaceAll("/", "__"));
   }
@@ -602,7 +638,9 @@ export class RepoCache {
 
   /**
    * Startup cleanup after a crash: deletes every worktree under `.worktrees`
-   * (branch worktrees under `.branches` are kept) and leftover partial clones, then runs `git worktree prune` in each cached
+   * (branch worktrees under `.branches` are kept) and leftover partial clones,
+   * moves repositories cached before the host was part of their path (see
+   * `migrateLegacyRepos`), then runs `git worktree prune` in each cached
    * repository. Only call it while no job is running. Returns the removed
    * worktree paths.
    */
@@ -615,6 +653,7 @@ export class RepoCache {
       removed.push(stale);
     }
     await rm(path.join(this.workspaceRoot, TMP_DIR), { recursive: true, force: true });
+    await this.migrateLegacyRepos();
     for (const provider of PROVIDERS) {
       for (const dir of await this.findRepos(path.join(this.workspaceRoot, provider), 0)) {
         await this.withLock(dir, undefined, () =>
@@ -629,6 +668,97 @@ export class RepoCache {
   }
 
   // --- internals --------------------------------------------------------------------------
+
+  /**
+   * Moves repositories cached as `<provider>/<repo path>` (before the host
+   * was part of the path) to `<provider>/<host>/<repo path>`, with their
+   * branch worktrees from `.branches/<provider>/<repo path>/` to
+   * `.branches/<provider>/<host>/<repo path>/`, and repairs git's links
+   * between them. The host comes from the repository's `origin` URL. A
+   * repository that can't be moved is left in place (and cloned again at its
+   * new path when next needed).
+   */
+  private async migrateLegacyRepos(): Promise<void> {
+    for (const provider of PROVIDERS) {
+      const providerDir = path.join(this.workspaceRoot, provider);
+      for (const dir of await this.findRepos(providerDir, 0)) {
+        await this.withLock(dir, undefined, () =>
+          this.migrateLegacyRepo(provider, providerDir, dir),
+        ).catch((error: unknown) =>
+          this.logger?.warn({ err: error, repo: dir }, "moving a cached repository failed"),
+        );
+      }
+    }
+  }
+
+  /** Called with the (legacy) repo lock held. */
+  private async migrateLegacyRepo(
+    provider: (typeof PROVIDERS)[number],
+    providerDir: string,
+    dir: string,
+  ): Promise<void> {
+    const options = { env: hostEnv(), cwd: dir };
+    const config = (key: string) =>
+      this.runGit(["config", "--get", key], options).then(
+        (value) => value.trim(),
+        () => "",
+      );
+    // Gone (moved by another agent process), or already at its host path.
+    if (!(await exists(path.join(dir, "HEAD"))) || (await config(HOST_CONFIG))) return;
+    const cloneUrl = await config("remote.origin.url");
+    const fullPath = path.relative(providerDir, dir).split(path.sep).join("/");
+    const target = this.repoDir({ provider, fullPath, cloneUrl });
+    if (await exists(target)) {
+      throw new Error(`${target} already exists`);
+    }
+    const legacyBranches = path.join(
+      this.workspaceRoot,
+      BRANCHES_DIR,
+      provider,
+      ...fullPath.split("/"),
+    );
+    const targetBranches = path.join(
+      this.workspaceRoot,
+      BRANCHES_DIR,
+      path.relative(this.workspaceRoot, target),
+    );
+    // The first entry is the bare repository itself.
+    const worktrees = (await this.runGit(["worktree", "list", "--porcelain"], options))
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.slice("worktree ".length))
+      .slice(1);
+
+    await mkdir(path.dirname(target), { recursive: true });
+    await rename(dir, target);
+    const moved: string[] = [];
+    for (const worktree of worktrees) {
+      const relative = path.relative(legacyBranches, worktree);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        if (await exists(worktree)) moved.push(worktree);
+        continue;
+      }
+      const to = path.join(targetBranches, relative);
+      if (!(await exists(worktree))) continue;
+      await mkdir(path.dirname(to), { recursive: true });
+      await rename(worktree, to);
+      moved.push(to);
+    }
+    const repaired = { env: hostEnv(), cwd: target };
+    if (moved.length > 0) await this.runGit(["worktree", "repair", ...moved], repaired);
+    await this.runGit(["config", HOST_CONFIG, hostDir(cloneUrl)], repaired);
+    await this.removeEmptyDirs(path.dirname(dir), providerDir);
+    await this.removeEmptyDirs(legacyBranches, path.join(this.workspaceRoot, BRANCHES_DIR));
+    this.logger?.info({ from: dir, to: target, worktrees: moved }, "moved a cached repository");
+  }
+
+  /** Removes `dir` and its parents up to (not including) `stop`, while they're empty. */
+  private async removeEmptyDirs(dir: string, stop: string): Promise<void> {
+    for (let current = dir; current.startsWith(stop + path.sep); current = path.dirname(current)) {
+      if ((await readdir(current).catch(() => null))?.length !== 0) return;
+      await rmdir(current).catch(() => undefined);
+    }
+  }
 
   private async checkBranchName(branch: string): Promise<void> {
     // check-ref-format also rules out "..", leading dots and the like, which keeps paths safe.
@@ -953,6 +1083,7 @@ export class RepoCache {
       // Bare clones have no fetch refspec. Fetch branches as `origin/<branch>`, so a branch
       // checked out in a branch worktree is never overwritten by a fetch.
       await this.runGit(["config", "remote.origin.fetch", FETCH_REFSPEC], { ...options, cwd: tmp });
+      await this.runGit(["config", HOST_CONFIG, hostDir(repo.cloneUrl)], { ...options, cwd: tmp });
       await this.runGit(["fetch", "--quiet", "--filter=blob:none", "--no-tags", "origin"], {
         ...options,
         cwd: tmp,
