@@ -731,22 +731,38 @@ export class RepoCache {
 
     await mkdir(path.dirname(target), { recursive: true });
     await rename(dir, target);
+    const repaired = { env: hostEnv(), cwd: target };
+    // Mark the repository as moved straight away, so a later failure can't get it moved again
+    // (under a path that starts with its host) on the next startup.
+    try {
+      await this.runGit(["config", HOST_CONFIG, hostDir(cloneUrl)], repaired);
+    } catch (error) {
+      await rename(target, dir).catch(() => undefined);
+      throw error;
+    }
+    // Where each worktree is now: one that can't be moved stays at its legacy path.
     const moved: string[] = [];
+    let moveError: unknown;
     for (const worktree of worktrees) {
+      if (!(await exists(worktree))) continue;
       const relative = path.relative(legacyBranches, worktree);
       if (relative.startsWith("..") || path.isAbsolute(relative)) {
-        if (await exists(worktree)) moved.push(worktree);
+        moved.push(worktree);
         continue;
       }
       const to = path.join(targetBranches, relative);
-      if (!(await exists(worktree))) continue;
-      await mkdir(path.dirname(to), { recursive: true });
-      await rename(worktree, to);
-      moved.push(to);
+      try {
+        await mkdir(path.dirname(to), { recursive: true });
+        await rename(worktree, to);
+        moved.push(to);
+      } catch (error) {
+        moveError ??= error;
+        moved.push(worktree);
+      }
     }
-    const repaired = { env: hostEnv(), cwd: target };
+    // Relinks every worktree with the moved repository, including any left behind.
     if (moved.length > 0) await this.runGit(["worktree", "repair", ...moved], repaired);
-    await this.runGit(["config", HOST_CONFIG, hostDir(cloneUrl)], repaired);
+    if (moveError !== undefined) throw moveError;
     await this.removeEmptyDirs(path.dirname(dir), providerDir);
     await this.removeEmptyDirs(legacyBranches, path.join(this.workspaceRoot, BRANCHES_DIR));
     this.logger?.info({ from: dir, to: target, worktrees: moved }, "moved a cached repository");
