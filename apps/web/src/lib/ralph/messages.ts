@@ -63,9 +63,8 @@ export function undeliveredNote(mode: RalphRunMode): string {
 const SETTLED_STORY_STATUSES = new Set(["completed", "canceled", "manual"]);
 
 /**
- * Stores a reply as guidance for the next story attempts: the attempts of
- * the unfinished stories reset (exhausted ones get another go, as cyralph
- * resets `attempts`) and a waiting PR/MR step is retried.
+ * Stores a reply as guidance for the next story attempts, with fresh
+ * attempts (`freshAttempts`; cyralph resets `attempts`).
  */
 export async function applyGuidance(
   tx: RalphTransaction,
@@ -73,6 +72,14 @@ export async function applyGuidance(
   text: string,
 ): Promise<void> {
   await appendGuidance(tx, run.id, text);
+  await freshAttempts(tx, run);
+}
+
+/**
+ * The attempts of the unfinished stories reset (exhausted ones get another
+ * go) and a waiting PR/MR step is retried: guidance, or a bare `/continue`.
+ */
+export async function freshAttempts(tx: RalphTransaction, run: RalphRun): Promise<void> {
   for (const story of await listStories(tx, run.id)) {
     if (SETTLED_STORY_STATUSES.has(story.status)) continue;
     if (story.status === "exhausted") {

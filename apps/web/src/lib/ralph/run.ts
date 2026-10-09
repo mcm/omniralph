@@ -844,7 +844,9 @@ async function wait(
       `Paused with ${done}/${stories.length} stories complete on \`${await mainBranch(tx, run)}\`.`,
     ];
     if (hitCap) {
-      lines.push(`I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`);
+      lines.push(
+        `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts). Reply \`/continue\` to reset it and keep going; anything after \`/continue\` is added as guidance. Or say \`stop\`.`,
+      );
     }
     for (const s of stuck) {
       const row = feedback.get(s.issueId ?? s.key);
@@ -868,9 +870,11 @@ async function wait(
         `I'll also resume on my own when ${all.map((w) => w.identifier).join(", ")} is done.`,
       );
     }
-    lines.push(
-      "Reply with guidance (it will be added to every story prompt) and I'll retry, or say `stop`.",
-    );
+    if (!hitCap) {
+      lines.push(
+        "Reply with guidance (it will be added to every story prompt) and I'll retry, or say `stop`.",
+      );
+    }
     body = lines.join("\n\n");
   }
   const preparable = stories.filter(

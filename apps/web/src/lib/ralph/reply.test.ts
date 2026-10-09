@@ -18,6 +18,7 @@ import {
   startJob,
   updateLane,
   updateRepositoryRalphSettings,
+  updateRun,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
   type Database,
@@ -48,6 +49,7 @@ import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { exchangeJobMessages } from "./messages";
 import { handleReply, type ReplyResult } from "./reply";
+import { MAX_ITERATIONS_PER_RUN } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -576,6 +578,53 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         "OK, I'll ignore the open blockers and start anyway.",
       );
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
+    });
+  });
+
+  describe("/continue", () => {
+    /** A two-story epic whose run hit the iteration cap after Alpha. */
+    async function cappedRun(): Promise<RalphRun> {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
+      await work(run.id, { commitSha: sha(1) });
+      expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(last(run, "elicitation")).toContain("Reply `/continue`");
+      return run;
+    }
+
+    it("resets the iteration cap and continues without guidance", async () => {
+      const run = await cappedRun();
+      const result = await reply(run, " /continue ");
+      expect(result).toMatchObject({ kind: "continue", advanced: { action: "enqueued" } });
+      expect(await getRun(db, run.id)).toMatchObject({ iterations: 1, guidance: [] });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+        "OK, continuing with a fresh iteration budget.",
+      );
+      expect(await listPendingRequests(db, run.id)).toEqual([]);
+      expect(await work(run.id)).toMatchObject({ story: { identifier: "ENG-3" }, guidance: [] });
+    });
+
+    it("takes the text after it as guidance", async () => {
+      const run = await cappedRun();
+      const result = await reply(run, "/continue Use the v2 API.");
+      expect(result).toMatchObject({ kind: "guidance", advanced: { action: "enqueued" } });
+      expect(await getRun(db, run.id)).toMatchObject({ iterations: 1 });
+      expect(await work(run.id)).toMatchObject({
+        story: { identifier: "ENG-3" },
+        guidance: ["Use the v2 API."],
+      });
+    });
+
+    it("a guidance reply without it stays at the cap", async () => {
+      const run = await cappedRun();
+      expect(await reply(run, "Use the v2 API.")).toMatchObject({
+        kind: "guidance",
+        advanced: { action: "waiting" },
+      });
+      expect((await getRun(db, run.id))?.iterations).toBe(MAX_ITERATIONS_PER_RUN);
+      expect(await activeJobs(run.id)).toEqual([]);
     });
   });
 

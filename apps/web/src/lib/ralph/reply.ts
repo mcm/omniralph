@@ -9,6 +9,9 @@
  * 1b. While the run asks which repository to use, the answer to that
  *     (`repository-selection.ts`); an unmatched reply asks again.
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").
+ * 2a. `/continue` at the start resets the iteration cap. Bare, it also gives
+ *     the unfinished stories fresh attempts; otherwise the text after it is
+ *     handled as below.
  * 3. `rerun preparation` (epic mode): the earliest open manual story's preparation is asked about again.
  * 4. "start anyway" (epic mode): outside blockers are ignored from now on.
  * 5. Anything else, while a `ralph.story` or `ralph.request` job runs, is a
@@ -23,7 +26,7 @@
  *    request-mode run to epic mode.
  *
  * Every reply but stop, "Not yet" and a message for a running job advances
- * the run; one that asks for work (3 to 6) resumes a stopped run, and reopens
+ * the run; one that asks for work (2a to 6) resumes a stopped run, and reopens
  * a completed one (cyralph runs a reply on a finished session as a request).
  */
 import {
@@ -43,6 +46,7 @@ import {
   isStartAnywayRequest,
   isStopRequest,
   matchPreparationAnswer,
+  parseContinueRequest,
   parseInstruction,
   PREPARATION_LATER,
   PREPARATION_MYSELF,
@@ -53,7 +57,7 @@ import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
 import { answerCleanup } from "./cleanup";
-import { applyGuidance, queueLiveReply, undeliveredNote } from "./messages";
+import { applyGuidance, freshAttempts, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
@@ -78,6 +82,8 @@ export type ReplyKind =
   | "preparation_answer"
   | "rerun_preparation"
   | "start_anyway"
+  /** `/continue` without guidance: the iteration cap and story attempts start over. */
+  | "continue"
   /** Stored for the running job's live session. */
   | "live"
   /** A push/PR/MR request kept away from a running story agent. */
@@ -124,7 +130,10 @@ export async function handleReply(
   }
 
   const answer = matchPreparationAnswer(text);
-  const instruction = parseInstruction(text);
+  // `/continue [guidance]`: the rest of the reply is handled as usual.
+  const continued = parseContinueRequest(text);
+  const body = continued ?? text;
+  const instruction = parseInstruction(body);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (current.status === "failed") return null;
     const request = preparationOf(current).request;
@@ -132,7 +141,7 @@ export async function handleReply(
       return answerPreparation(tx, current, answer);
     }
     // A stopped run resumes; a finished one takes the reply as a direct request (cyralph).
-    const resumed =
+    let resumed =
       current.status === "stopped" || current.status === "completed"
         ? await resume(tx, current)
         : current;
@@ -146,7 +155,27 @@ export async function handleReply(
         },
       };
     }
-    if (resumed.mode === "epic" && isRerunPreparationRequest(text)) {
+    if (continued !== null) {
+      // The iteration cap starts over; a bare `/continue` goes on without guidance.
+      resumed = (await updateRun(tx, resumed.id, { iterations: 0 })) ?? resumed;
+      if (!instruction.text && !instruction.wantsLoop) {
+        await freshAttempts(tx, resumed);
+        return {
+          kind: "continue" as const,
+          advance: true,
+          note: {
+            type: "thought" as const,
+            body: await whenFree(
+              tx,
+              resumed,
+              "OK, I'll continue with a fresh iteration budget",
+              "OK, continuing with a fresh iteration budget.",
+            ),
+          },
+        };
+      }
+    }
+    if (resumed.mode === "epic" && isRerunPreparationRequest(body)) {
       const state = preparationOf(resumed);
       await updateRun(tx, resumed.id, { preparation: { ...state, rerun: true } });
       return {
@@ -163,7 +192,7 @@ export async function handleReply(
         },
       };
     }
-    if (resumed.mode === "epic" && isStartAnywayRequest(text)) {
+    if (resumed.mode === "epic" && isStartAnywayRequest(body)) {
       await updateRun(tx, resumed.id, { ignoreBlockers: true, waitingOn: null });
       return {
         kind: "start_anyway" as const,
