@@ -387,7 +387,7 @@ export const listRepositoriesTool = defineChatTool({
     return {
       repositories: page.repositories.map((repo) => ({
         id: repo.id,
-        url: `${appUrl}/repositories/${repo.id}`,
+        url: `${appUrl}/repositories/${repo.id}/settings`,
         fullPath: repo.fullPath,
         provider: repo.provider,
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),

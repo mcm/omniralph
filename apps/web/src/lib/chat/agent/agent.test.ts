@@ -418,6 +418,41 @@ describe.skipIf(!dockerAvailable)("control-panel agent", () => {
     expect(posts).toEqual(["ok", RATE_LIMITED_REPLY]);
   });
 
+  it("leaves earlier tool calls out of an unlinked user's turn, keeping the answers", async () => {
+    const first = scriptedModel(
+      toolCallResult("list_runs", { status: "running" }),
+      textResult("run-1 is running."),
+    );
+    await turn(build(first.model), "what is running?", member);
+
+    const { model, calls } = scriptedModel(textResult("Please link your account first."));
+    await turn(build(model), "and what failed?", unlinked, "D2");
+
+    expect(calls).toHaveLength(1);
+    const prompt = calls[0]!.prompt.filter((m) => m.role !== "system");
+    expect(prompt.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(JSON.stringify(prompt)).not.toContain("tool-call");
+    expect(JSON.stringify(prompt)).not.toContain("tool-result");
+    expect(JSON.stringify(prompt[1])).toContain("run-1 is running.");
+    expect(posts).toEqual(["run-1 is running.", "Please link your account first."]);
+    expect(ephemerals).toEqual([
+      { user: "D2", text: expect.stringContaining("/chat/link?state=s") },
+    ]);
+  });
+
+  it("still posts the link to an unlinked user when the model fails", async () => {
+    const model = new MockLanguageModelV2({
+      doGenerate: async () => {
+        throw new Error("gateway down");
+      },
+    });
+    await turn(build(model), "hi", unlinked);
+    expect(posts).toEqual([ERROR_REPLY]);
+    expect(ephemerals).toEqual([
+      { user: "D1", text: expect.stringContaining("/chat/link?state=s") },
+    ]);
+  });
+
   it("apologizes for a model error without leaking it and logs it", async () => {
     const model = new MockLanguageModelV2({
       doGenerate: async () => {

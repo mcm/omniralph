@@ -377,7 +377,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect(list.repositories).toEqual([
       expect.objectContaining({
         id: other.repositoryId,
-        url: `${APP_URL}/repositories/${other.repositoryId}`,
+        url: `${APP_URL}/repositories/${other.repositoryId}/settings`,
         fullPath: "other/api",
         webUrl: "https://github.com/other/api",
         reviewsEnabled: true,
