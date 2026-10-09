@@ -513,6 +513,13 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       });
       const forged = await deliver(handleDiscordWebhook, discordGatewayRequest(event, "wrong"));
       expect(forged.status).toBe(401);
+      // Without the token it's treated as an interaction, whose signature is missing.
+      const unsigned = new Request("https://omniralph.example.com/api/webhooks/discord", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(event),
+      });
+      expect((await deliver(handleDiscordWebhook, unsigned)).status).toBe(401);
 
       const body = JSON.stringify({ type: 1 });
       const timestamp = String(Math.floor(Date.now() / 1000));
