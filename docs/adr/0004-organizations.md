@@ -28,11 +28,16 @@ Nothing was live yet, so this change wipes existing data and keeps no backwards 
   `(organization_id, user_id)`) with a per-organization `organization_role`: `admin` or
   `member`. There is no global role and no super-admin; `users.role` and `allowed_emails` are
   gone. The last admin of an organization can't be demoted, removed or leave.
-- **The active organization is stored per user** (`users.active_organization_id`, no URL slug).
-  Every page and server action works on the active organization; a signed-in user without one
-  lands on `/onboarding`. Detail URLs of another organization the user belongs to switch the
-  active organization and redirect; for non-members they 404
-  (`apps/web/src/lib/auth/resource-page.ts`). Guards are org-aware: `assertOrgRole(user, orgId,
+- **The active organization is picked per browser** (the `omniralph-organization` cookie, no URL
+  slug), defaulting to the one the user last picked anywhere (`users.active_organization_id`).
+  `getCurrentUser` uses the cookie only while the user is still a member of it. Every page and
+  server action works on the active organization; a signed-in user without one lands on
+  `/onboarding`. Detail URLs of another organization the user belongs to switch the active
+  organization (through `/api/organizations/enter`, since pages can't set cookies) and
+  redirect; for non-members they 404 (`apps/web/src/lib/auth/resource-page.ts`). Tabs of one
+  browser share the organization: a tab whose organization was switched in another tab blocks
+  until it starts over from the dashboard (`OrganizationGuard`). Per-tab organizations (the
+  organization in the URL) are TOOL-210. Guards are org-aware: `assertOrgRole(user, orgId,
   role)` in `apps/web/src/lib/auth/roles.ts`.
 - **Anyone who can sign in can create an organization**, becoming its admin. Built-in review
   profiles are seeded into each new organization.

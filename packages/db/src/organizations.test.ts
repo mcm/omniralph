@@ -14,6 +14,7 @@ import {
   emailDomain,
   getActiveOrganization,
   getMemberByEmail,
+  getMemberOrganization,
   getMembership,
   getOrganization,
   hasPendingInvitation,
@@ -510,6 +511,25 @@ describe.skipIf(!dockerAvailable)("organization queries", () => {
     expect(await getActiveOrganization(db, bob.id)).toMatchObject({ role: "member" });
     await removeMember(db, { organizationId: first.id, userId: bob.id });
     expect(await getActiveOrganization(db, bob.id)).toBeNull();
+  });
+
+  it("looks up an organization chosen elsewhere only while the user is a member of it", async () => {
+    const carol = await user("carol@member-org.io");
+    const dave = await user("dave@member-org.io");
+    const org = await createOrganization(db, { name: "Chosen", createdBy: carol.id });
+
+    expect(await getMemberOrganization(db, { userId: carol.id, organizationId: org.id })).toEqual({
+      id: org.id,
+      name: "Chosen",
+      role: "admin",
+    });
+    expect(await getMemberOrganization(db, { userId: dave.id, organizationId: org.id })).toBeNull();
+    await addMember(db, { organizationId: org.id, userId: dave.id, role: "member" });
+    expect(
+      await getMemberOrganization(db, { userId: dave.id, organizationId: org.id }),
+    ).toMatchObject({ role: "member" });
+    await removeMember(db, { organizationId: org.id, userId: dave.id });
+    expect(await getMemberOrganization(db, { userId: dave.id, organizationId: org.id })).toBeNull();
   });
 
   it("finds pending invitations for the sign-in gate and lets the invitee decline them", async () => {

@@ -23,6 +23,7 @@ export {
   emailDomain,
   getActiveOrganization,
   getMemberByEmail,
+  getMemberOrganization,
   getMembership,
   getOrganization,
   hasPendingInvitation,

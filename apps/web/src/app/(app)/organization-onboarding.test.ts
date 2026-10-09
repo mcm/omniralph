@@ -30,6 +30,17 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   userId: null as string | null,
+  cookies: new Map<string, string>(),
+}));
+// This browser's cookies.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const value = state.cookies.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
+    set: (name: string, value: string) => void state.cookies.set(name, value),
+  }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 // The signed-in user as the session would build them: their real active organization and role.

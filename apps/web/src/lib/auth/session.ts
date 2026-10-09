@@ -1,10 +1,13 @@
 import "server-only";
-import type { UiTheme } from "@omniralph/db";
+import { getActiveOrganization, getMemberOrganization, type UiTheme } from "@omniralph/db";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { z } from "zod";
 import { auth } from "@/auth";
+import { getDb } from "@/lib/db";
 import { assertRole, AuthorizationError, hasRole, type Role } from "./roles";
-import { ACCESS_DENIED_PATH, ONBOARDING_PATH, SIGN_IN_PATH } from "./routes";
+import { ACCESS_DENIED_PATH, ONBOARDING_PATH, ORGANIZATION_COOKIE, SIGN_IN_PATH } from "./routes";
 
 /** The organization the user is working in. */
 export interface ActiveOrganization {
@@ -28,11 +31,25 @@ export interface CurrentUser {
 /** A signed-in user working in an organization. */
 export type OrgUser = CurrentUser & { organization: ActiveOrganization; role: Role };
 
+/**
+ * The organization picked on this device (the cookie) while the user is still a member
+ * of it, else the one they last picked anywhere.
+ */
+async function resolveOrganization(userId: string) {
+  const db = getDb();
+  const chosen = z.uuid().safeParse((await cookies()).get(ORGANIZATION_COOKIE)?.value);
+  const onDevice = chosen.success
+    ? await getMemberOrganization(db, { userId, organizationId: chosen.data })
+    : null;
+  return onDevice ?? (await getActiveOrganization(db, userId));
+}
+
 /** The signed-in user, or `null`. Cached per request: the root and `(app)` layouts both need it. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, organization, name, email, image, theme } = session.user;
+  const { id, name, email, image, theme } = session.user;
+  const organization = await resolveOrganization(id);
   return {
     id,
     organization: organization ? { id: organization.id, name: organization.name } : null,

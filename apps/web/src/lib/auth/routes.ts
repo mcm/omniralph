@@ -8,6 +8,14 @@ export const ONBOARDING_PATH = "/onboarding";
 export const TERMS_PATH = "/terms";
 export const PRIVACY_PATH = "/privacy";
 
+/**
+ * The organization picked on this device (its ID). Not `httpOnly`: open tabs read it to
+ * notice a switch made in another tab.
+ */
+export const ORGANIZATION_COOKIE = "omniralph-organization";
+/** Switches this device to `?organization=` and redirects to `?next=` (pages can't set cookies). */
+export const ENTER_ORGANIZATION_PATH = "/api/organizations/enter";
+
 /** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */
 const SELF_AUTHENTICATED_PREFIXES = ["/api/agent", "/api/webhooks", "/api/cron", "/api/auth"];
 const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH, TERMS_PATH, PRIVACY_PATH];
