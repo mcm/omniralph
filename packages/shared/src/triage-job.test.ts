@@ -49,6 +49,7 @@ const payload = {
 };
 
 const outcome = {
+  outcome: "prd",
   size: "L",
   title: "Triage capability: unattended PRD triage",
   description: "## Introduction\n\n…",
@@ -91,7 +92,8 @@ describe("TriageRunPayload", () => {
     expect(parsed.blockers[0]!.blocks).toBe("TOOL-152");
     expect(parsed.repository?.defaultBranch).toBe("main");
     expect(parsed.reply).toBe("1: the ralph:triage label");
-    expect(parsed.previousResult?.childUpdates).toEqual([]);
+    expect(parsed.previousResult?.stories).toEqual([]);
+    expect(parsed.previousResult?.subIssueUpdates).toEqual([]);
   });
 
   it("defaults the optional parts", () => {
@@ -118,6 +120,7 @@ describe("TriageRunPayload", () => {
       { ...payload, repository: { ...payload.repository, defaultBranch: "../main" } },
       { ...payload, repository: { ...payload.repository, repository: { provider: "svn" } } },
       { ...payload, previousResult: { ...outcome, size: "XXL" } },
+      { ...payload, previousResult: { ...outcome, outcome: "rewrite" } },
     ];
     for (const value of invalid) {
       expect(TriageRunPayload.safeParse(value).success).toBe(false);
@@ -131,12 +134,16 @@ describe("TriageRunResult", () => {
       ...result,
       outcome: {
         ...outcome,
-        childUpdates: [{ id: "child-1", title: "Add the capability", description: "As an admin…" }],
+        stories: [{ title: "Add the capability", body: "As an admin…", priority: 2 }],
+        subIssueUpdates: [
+          { id: "child-1", title: "Add the capability", body: "As an admin…", priority: 2 },
+        ],
       },
     });
     expect(parsed.error).toBeNull();
     expect(parsed.outcome?.size).toBe("L");
-    expect(parsed.outcome?.childUpdates).toHaveLength(1);
+    expect(parsed.outcome?.stories[0]).toMatchObject({ dependsOn: [], manual: false });
+    expect(parsed.outcome?.subIssueUpdates[0]!.blockedBy).toEqual([]);
   });
 
   it("parses a failure", () => {
