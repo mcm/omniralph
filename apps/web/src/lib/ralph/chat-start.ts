@@ -44,6 +44,11 @@ export interface ChatRequestInput {
   /** Who asked (their chat display name). */
   author: string | null;
   /**
+   * Ship the previous run's work (`/ship`): the job commits, pushes and opens
+   * the PR/MR. Only a follow-up in the same repository has work to ship.
+   */
+  ship?: boolean;
+  /**
    * Posts the handoff message to the thread, once the run exists and before
    * its job is enqueued.
    */
@@ -54,6 +59,8 @@ export type ChatRequestOutcome =
   | { status: "unknown_repository"; candidates: string[] }
   | { status: "already_running"; run: RalphRun }
   | { status: "failed"; error: string }
+  /** `ship` without an earlier run of the thread in that repository: there's no branch to ship. */
+  | { status: "nothing_to_ship" }
   | { status: "started"; run: RalphRun; repository: Repository; followUp: boolean };
 
 /** Normalizes a repository full path for matching (case, surrounding slashes). */
@@ -104,6 +111,8 @@ export async function startChatRequest(
       ? last
       : null;
 
+  if (input.ship && !previous) return { status: "nothing_to_ship" };
+
   let baseBranch = "";
   if (!previous) {
     try {
@@ -153,6 +162,7 @@ export async function startChatRequest(
         text: chatRequestText(input.request, input.quoted),
         author: input.author,
         wantsLoop: false,
+        ...(input.ship && { ship: true }),
       },
       applyGuidance,
     );

@@ -79,7 +79,8 @@ export type ChatRunMessageOutcome =
 /** Passes `text` to the thread's unfinished run (see the module comment). */
 export async function sendToChatRun(
   deps: RalphDeps,
-  input: { chatThreadId: string; text: string; author: string | null },
+  /** `ship`: a ship request even without a `/ship` prefix (the chat assistant's `ship` flag). */
+  input: { chatThreadId: string; text: string; author: string | null; ship?: boolean },
 ): Promise<ChatRunMessageOutcome> {
   const text = input.text.trim();
   const run = await getActiveRunByChatThread(deps.db, input.chatThreadId);
@@ -96,7 +97,7 @@ export async function sendToChatRun(
       return { status: "answered", run };
     }
   }
-  const ship = parseShipRequest(text);
+  const ship = parseShipRequest(text) ?? (input.ship ? text : null);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (FINISHED_RUN_STATUSES.has(current.status)) return null;
     if (ship === null) {

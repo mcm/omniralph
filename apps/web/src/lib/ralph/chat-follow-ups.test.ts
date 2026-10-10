@@ -508,6 +508,19 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       ship: true,
       jobId: null,
     });
+    // The chat assistant's `ship` flag ships without the `/ship` prefix.
+    expect(
+      await sendToChatRun(ralph(), {
+        chatThreadId: chatThread.id,
+        text: "Bump the version first.",
+        author: "Ada Lovelace",
+        ship: true,
+      }),
+    ).toMatchObject({ status: "queued" });
+    expect((await listPendingRequests(db, started.run.id)).at(-1)).toMatchObject({
+      text: "Bump the version first.",
+      ship: true,
+    });
     expect(linearCalls).toEqual([]);
   });
 });

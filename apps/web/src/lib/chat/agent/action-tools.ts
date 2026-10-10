@@ -63,6 +63,12 @@ export const startRalphRequest = defineChatTool({
       .describe(
         "The self-contained instruction for ralph: what to change, where and why, with every detail from the conversation it needs (ralph doesn't read the thread). The users' messages are quoted after it.",
       ),
+    ship: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the user asks to ship the work of this thread\'s last run in that repository ("ship it", commit and push it, open the PR): ralph then commits what it left, pushes the branch and opens the pull/merge request. `request` may add last notes (e.g. "bump the version first"), or just say to ship it.',
+      ),
   }),
   async execute(input, context: ChatToolContext) {
     const { db, thread, chatThread, appUrl } = context;
@@ -72,6 +78,7 @@ export const startRalphRequest = defineChatTool({
       request: input.request,
       quoted: context.turnMessages,
       author: context.turnMessages.at(-1)?.author ?? null,
+      ...(input.ship && { ship: true }),
       async announce(run, repository, followUp) {
         // The summary is the model's: sanitized like its answers.
         const text = sanitizeCapped(
@@ -113,6 +120,11 @@ export const startRalphRequest = defineChatTool({
         };
       case "failed":
         return { error: "start_failed", message: outcome.error };
+      case "nothing_to_ship":
+        return {
+          error: "nothing_to_ship",
+          message: `This thread has no earlier ralph run in \`${input.repository}\`, so there's no branch to ship. Tell the user, or hand ralph the change itself without \`ship\`.`,
+        };
       case "started":
         return {
           status: "started",
@@ -138,12 +150,19 @@ export const sendToSession = defineChatTool({
       .describe(
         "The message for the session: self-contained, with what the user asked for (quote them when it helps).",
       ),
+    ship: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the user asks to ship the run\'s work ("ship it", commit and push it, open the PR): after its current step, ralph commits the work, pushes the branch and opens the pull/merge request. `text` may add last notes.',
+      ),
   }),
   async execute(input, context: ChatToolContext) {
     const outcome = await sendToChatRun(await context.ralph(), {
       chatThreadId: context.chatThread.id,
       text: input.text,
       author: context.turnMessages.at(-1)?.author ?? null,
+      ...(input.ship && { ship: true }),
     });
     switch (outcome.status) {
       case "no_run":
