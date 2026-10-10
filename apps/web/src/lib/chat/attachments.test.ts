@@ -14,7 +14,13 @@ import {
 } from "./attachments";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
-const LIMITS = { perMessage: 2, maxImageBytes: 100, maxTextBytes: 20, perTurn: 2 };
+const LIMITS = {
+  perMessage: 2,
+  maxImageBytes: 100,
+  maxTextBytes: 20,
+  perTurn: 2,
+  fetchTimeoutMs: 1_000,
+};
 
 const meta = (over: Partial<ChatMessageAttachment> = {}): ChatMessageAttachment => ({
   type: "image",
@@ -114,17 +120,32 @@ describe("loadAttachment", () => {
     expect(text).toMatchObject({ status: "loaded", kind: "text", text: "boom" });
   });
 
-  it("skips an oversized file without fetching it when the platform gave its size", async () => {
+  it("skips an oversized file, or one of unknown size, without fetching it", async () => {
     const fetchData = vi.fn(async () => PNG);
     expect(await loadAttachment(meta({ size: 1_000 }), fetchData, LIMITS)).toEqual({
       status: "skipped",
       reason: "too large (1000 B; the limit is 100 B)",
     });
+    expect(await loadAttachment(meta({ size: null }), fetchData, LIMITS)).toEqual({
+      status: "skipped",
+      reason: "size unknown (the platform didn't report it)",
+    });
     expect(fetchData).not.toHaveBeenCalled();
     // Bigger than the platform said.
     expect(
-      await loadAttachment(meta({ size: null }), async () => Buffer.alloc(500), LIMITS),
+      await loadAttachment(meta({ size: 50 }), async () => Buffer.alloc(500), LIMITS),
     ).toMatchObject({ status: "skipped", reason: expect.stringContaining("too large") });
+  });
+
+  it("skips a fetch that doesn't finish in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = loadAttachment(meta(), () => new Promise<Buffer>(() => {}), LIMITS);
+      await vi.advanceTimersByTimeAsync(LIMITS.fetchTimeoutMs);
+      expect(await pending).toEqual({ status: "skipped", reason: "couldn't be fetched" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips unsupported types, failed fetches and bytes that don't match the type", async () => {

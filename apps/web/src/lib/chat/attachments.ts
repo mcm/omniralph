@@ -8,7 +8,8 @@ import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentLimits } from "./agent/confi
  * platform's adapter (`Attachment.fetchData()`, which handles Slack's
  * authenticated private URLs), within {@link ChatAttachmentLimits}. Images
  * (PNG, JPEG, GIF, WebP) and UTF-8 text files reach the model; anything else,
- * or a file that is too large or can't be fetched, is skipped with a note.
+ * a file that is too large or whose size the platform didn't report, or one
+ * that can't be fetched in time, is skipped with a note.
  */
 
 export const SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -164,10 +165,21 @@ function sniffImage(data: Uint8Array): string | null {
   return null;
 }
 
+/** Rejects when `promise` hasn't settled within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
- * Fetches and checks one attachment: unsupported types and files over the
- * size caps are skipped (before fetching when the platform gave the size),
- * as are failed fetches and images or text whose bytes don't match.
+ * Fetches and checks one attachment: unsupported types, files over the size
+ * caps and files of unknown size are skipped without fetching (`fetchData`
+ * buffers the whole file, so the caps must hold before it runs), as are
+ * fetches that fail or time out, files bigger than the platform said, and
+ * images or text whose bytes don't match.
  */
 export async function loadAttachment(
   meta: ChatMessageAttachment,
@@ -182,10 +194,13 @@ export async function loadAttachment(
     status: "skipped" as const,
     reason: `too large (${formatBytes(size)}; the limit is ${formatBytes(max)})`,
   });
-  if (meta.size !== null && meta.size > max) return tooLarge(meta.size);
+  if (meta.size === null) {
+    return { status: "skipped", reason: "size unknown (the platform didn't report it)" };
+  }
+  if (meta.size > max) return tooLarge(meta.size);
   let data: Uint8Array;
   try {
-    const raw = await fetchData(meta);
+    const raw = await withTimeout(fetchData(meta), limits.fetchTimeoutMs);
     data = raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw);
   } catch {
     return { status: "skipped", reason: "couldn't be fetched" };
@@ -260,7 +275,7 @@ export async function threadAttachments(
             : loadAttachment(meta, fetchData, limits)),
       };
       // Whether loading it fetches anything (else it's skipped up front).
-      const fetches = !overLimit && kind !== null && (meta.size === null || meta.size <= max);
+      const fetches = !overLimit && kind !== null && meta.size !== null && meta.size <= max;
       all.push({ attachment, fetches });
     });
   }
