@@ -40,6 +40,12 @@ function fakeServer(routes: Record<string, Route>) {
   return { fetch: fetchFn as unknown as FetchFn, fetchMock: fetchFn, calls };
 }
 
+/** Holds a claim until the agent aborts it or the request times out, then answers 204. */
+const holdClaim: Route = (_body, init) =>
+  new Promise((resolve) =>
+    init.signal?.addEventListener("abort", () => resolve(new Response(null, { status: 204 }))),
+  );
+
 const HEARTBEAT: HeartbeatResponse = {
   maxConcurrency: 1,
   pollIntervalSeconds: 5,
@@ -208,7 +214,6 @@ describe("omniralph-agent CLI", () => {
         // Not under pm2, whatever runs the tests.
         env: {},
         logger: silentLogger(),
-        queue: () => ({ receive: async () => ({ ok: false as const, reason: "empty" as const }) }),
         onShutdownSignal: () => {},
         ...extra,
       };
@@ -248,12 +253,18 @@ describe("omniralph-agent CLI", () => {
             : Response.json({ error: "refresh_token_reused" }, { status: 401 });
         },
         "/api/agent/heartbeat": () => Response.json(HEARTBEAT),
+        "/api/agent/claim": holdClaim,
       });
       const exit = main(["start", "--config", configPath], { io, ...startDeps(server) });
-      await vi.waitFor(() => expect(server.calls).toHaveLength(2));
-      expect(server.calls.slice(0, 2)).toEqual([
+      await vi.waitFor(() => expect(server.calls).toHaveLength(3));
+      expect(server.calls).toEqual([
         { path: "/api/agent/token", authorization: null, body: { refreshToken: "refresh-0" } },
         expect.objectContaining({ path: "/api/agent/heartbeat", authorization: "Bearer access-1" }),
+        {
+          path: "/api/agent/claim",
+          authorization: "Bearer access-1",
+          body: { capabilities: ["system", "review"] },
+        },
       ]);
       expect(JSON.parse(await readFile(configPath, "utf8")).refreshToken).toBe("refresh-1");
 

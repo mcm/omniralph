@@ -13,8 +13,8 @@ export const SYSTEM_TOOL_POLICY: ToolPolicy = {
 };
 
 /**
- * Built-in housekeeping, always enabled. `repo.sync` (enqueued on the agent's
- * own topic when a repo is pinned to it) clones the repo into the cache, or
+ * Built-in housekeeping, always enabled. `repo.sync` (targeted at the agent
+ * when a repo is pinned to it) clones the repo into the cache, or
  * fetches it if it's already there, and runs nothing else.
  */
 export const systemCapability: Capability = {

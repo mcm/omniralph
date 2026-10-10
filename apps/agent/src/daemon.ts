@@ -1,20 +1,17 @@
 import {
   HEARTBEAT_INTERVAL_SECONDS,
-  LEGACY_POLL_INTERVAL_SECONDS,
-  JobMessage,
-  QUEUE_CONSUMER_GROUP,
   SYSTEM_CAPABILITY,
-  agentTopic,
-  capabilityTopic,
   effectiveCapabilityLimit,
   type HeartbeatResponse,
   type JobFailure,
   type JobOutcomeResponse,
   type JobPayload,
+  type JobStartResponse,
 } from "@omniralph/shared";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
   RetryableJobError,
+  type Capability,
   type CapabilityRegistry,
   type JobContext,
   type JobOutput,
@@ -22,24 +19,17 @@ import {
 import { jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
-import type {
-  MessageMetadata,
-  QueueReceiver,
-  QueueReceiverFactory,
-  RetryDirective,
-} from "./queue.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
 
-/** Lease taken per receive; the SDK re-extends it every min(60s, lease/5) while the job runs. */
-export const VISIBILITY_TIMEOUT_SECONDS = 300;
 /** How long SIGTERM waits for running jobs before exiting. */
 export const SHUTDOWN_GRACE_MS = 60_000;
-/** Delay before redelivering a message whose `/start` call failed. */
-const START_FAILED_RETRY_SECONDS = 30;
+/** First and longest back-off between claims after an API error. */
+export const CLAIM_BACKOFF_MS = 1_000;
+export const MAX_CLAIM_BACKOFF_MS = 30_000;
 const REPORT_ATTEMPTS = 3;
 
-/** Aborts a job because the agent is shutting down: no report, no acknowledgement. */
+/** Aborts a job because the agent is shutting down: no report; its lease lapses. */
 export class ShutdownAbort extends Error {
   override name = "ShutdownAbort";
   constructor() {
@@ -55,14 +45,6 @@ export class JobCanceled extends Error {
   }
 }
 
-/** Thrown out of the receive handler: the SDK applies the directive instead of acknowledging. */
-class Redeliver extends Error {
-  override name = "Redeliver";
-  constructor(readonly directive: RetryDirective | undefined) {
-    super("message not acknowledged");
-  }
-}
-
 export interface DaemonOptions {
   server: string;
   workspaceRoot: string;
@@ -73,7 +55,6 @@ export interface DaemonOptions {
   /** Asked to refresh when an authenticated call gets 401. */
   tokens: { refresh(): Promise<string> };
   registry: CapabilityRegistry;
-  queue: QueueReceiverFactory;
   logger: Logger;
   heartbeatIntervalMs?: number;
   shutdownGraceMs?: number;
@@ -108,29 +89,26 @@ export interface DaemonStatus {
 
 /**
  * The agent's main loop: heartbeats (central config, cancellations, job
- * tokens), one poll worker per free slot, and the job lifecycle
- * (start → run → result/fail → acknowledge) inside the queue's receive handler.
+ * tokens; the control panel renews the running jobs' leases), a claim loop
+ * that long-polls for a job while a slot is free, and the job lifecycle
+ * (claim → run → result/fail).
  */
 export class AgentDaemon implements DrainableDaemon {
   private config: HeartbeatResponse | null = null;
   private lastHeartbeatAt: Date | null = null;
   private readonly running = new Map<string, RunningJob>();
-  /** Running receive handlers (for the shutdown wait). */
+  /** Running job handlers (for the shutdown wait). */
   private readonly handlers = new Set<Promise<unknown>>();
-  /** Poll workers; each holds at most one message, so this is the number of used slots. */
-  private workers = 0;
-  /**
-   * Workers receiving from (and so running a job of) each capability's topics.
-   * A worker only receives from a capability's topics while this is under the
-   * capability's limit.
-   */
-  private readonly capabilitySlots = new Map<string, number>();
+  /** The in-flight claim and the capabilities it asked for. */
+  private claim: { controller: AbortController; capabilities: string[] } | null = null;
+  /** Wakes the claim loop while it waits for a free slot. */
+  private wakeClaimLoop: (() => void) | null = null;
+  private claimBackoffMs = 0;
   private stopping = false;
-  /** Set by `drain()`: no new receives until `resume()`. */
+  /** Set by `drain()`: no new claims until `resume()`. */
   private draining = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly sleepers = new Set<() => void>();
-  private readonly receivers = new Map<string, QueueReceiver>();
   private resolveExit!: (code: number) => void;
   private readonly exit = new Promise<number>((resolve) => (this.resolveExit = resolve));
   private readonly heartbeatIntervalMs: number;
@@ -149,9 +127,12 @@ export class AgentDaemon implements DrainableDaemon {
     this.reportRetryDelayMs = options.reportRetryDelayMs ?? 2_000;
   }
 
-  /** Starts heartbeating and polling. Resolves with the exit code once the daemon stops. */
+  /** Starts heartbeating and claiming. Resolves with the exit code once the daemon stops. */
   run(): Promise<number> {
     void this.heartbeatLoop();
+    this.claimLoop().catch((error: unknown) =>
+      this.fail(error instanceof Error ? error : new Error(String(error))),
+    );
     return this.exit;
   }
 
@@ -167,9 +148,9 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * Graceful stop (SIGTERM): no more polling, running jobs are aborted and
-   * get up to `shutdownGraceMs` to finish. Unfinished messages are not
-   * acknowledged, so the queue redelivers them.
+   * Graceful stop (SIGTERM): no more claims, running jobs are aborted and
+   * get up to `shutdownGraceMs` to finish. Unfinished jobs aren't reported:
+   * their leases lapse and the control panel hands them out again.
    */
   async shutdown(): Promise<void> {
     if (this.stopping) return;
@@ -183,7 +164,7 @@ export class AgentDaemon implements DrainableDaemon {
       if (!(await this.waitForHandlers(this.shutdownGraceMs))) {
         this.options.logger.warn(
           { unfinishedJobIds: [...this.running.keys()] },
-          "exiting with unfinished jobs; their messages will be redelivered",
+          "exiting with unfinished jobs; they will be redelivered once their leases lapse",
         );
       }
     }
@@ -191,14 +172,16 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * Stops taking jobs (for a self-update) and waits up to `timeoutMs` for the
-   * running ones, then aborts the rest: their messages aren't acknowledged,
-   * so they're redelivered. Heartbeats go on, so running jobs keep their
-   * tokens and messages. Port of cyralph's `SessionManager.drain`.
+   * Stops taking jobs (for a self-update; the in-flight claim is aborted) and
+   * waits up to `timeoutMs` for the running ones, then aborts the rest: they
+   * aren't reported, so they're redelivered once their leases lapse.
+   * Heartbeats go on, so running jobs keep their leases, tokens and messages.
+   * Port of cyralph's `SessionManager.drain`.
    */
   async drain(timeoutMs: number): Promise<void> {
     this.draining = true;
     for (const wake of this.sleepers) wake();
+    this.refreshClaim();
     if (this.handlers.size === 0) return;
     const log = this.options.logger;
     log.info({ runningJobs: this.running.size, timeoutMs }, "draining; waiting for running jobs");
@@ -212,7 +195,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (!(await this.waitForHandlers(this.shutdownGraceMs))) {
       log.warn(
         { unfinishedJobIds: [...this.running.keys()] },
-        "aborted jobs didn't finish in time; their messages will be redelivered",
+        "aborted jobs didn't finish in time; they will be redelivered",
       );
     }
   }
@@ -222,7 +205,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (!this.draining) return;
     this.draining = false;
     this.options.logger.info("taking jobs again");
-    this.fillSlots();
+    this.refreshClaim();
   }
 
   /** Stops with exit code 0 after a self-update, so pm2 starts the new version. */
@@ -236,7 +219,7 @@ export class AgentDaemon implements DrainableDaemon {
     return this.stopping;
   }
 
-  /** Waits for the running receive handlers; false when `timeoutMs` passed first. */
+  /** Waits for the running job handlers; false when `timeoutMs` passed first. */
   private async waitForHandlers(timeoutMs: number): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;
     const finished = await Promise.race([
@@ -261,6 +244,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     this.heartbeatTimer = null;
     for (const wake of this.sleepers) wake();
+    this.refreshClaim();
   }
 
   // --- Heartbeat and central config -------------------------------------------------------
@@ -319,27 +303,25 @@ export class AgentDaemon implements DrainableDaemon {
     });
   }
 
-  /** Applies a heartbeat response without restarting anything. */
+  /**
+   * Applies a heartbeat response without restarting anything. The deprecated
+   * `topics`, `queueRegion` and `pollIntervalSeconds` are ignored.
+   */
   applyConfig(config: HeartbeatResponse): void {
     const previous = this.config;
     this.config = config;
     if (
       !previous ||
       previous.maxConcurrency !== config.maxConcurrency ||
-      previous.pollIntervalSeconds !== config.pollIntervalSeconds ||
-      previous.queueRegion !== config.queueRegion ||
-      (previous.topics ?? []).join() !== (config.topics ?? []).join() ||
       JSON.stringify(previous.capabilityLimits) !== JSON.stringify(config.capabilityLimits) ||
       previous.enabledCapabilities.join() !== config.enabledCapabilities.join()
     ) {
       this.options.logger.info(
         {
           maxConcurrency: config.maxConcurrency,
-          pollIntervalSeconds: config.pollIntervalSeconds,
           enabledCapabilities: config.enabledCapabilities,
           capabilityLimits: config.capabilityLimits,
-          topics: this.pollableTopics(),
-          queueRegion: config.queueRegion,
+          claimableCapabilities: this.claimableCapabilities(),
         },
         "applied central config",
       );
@@ -356,7 +338,7 @@ export class AgentDaemon implements DrainableDaemon {
       if (job) job.jobToken = token;
     }
     this.deliverMessages(config.jobMessages);
-    this.fillSlots();
+    this.refreshClaim();
   }
 
   /**
@@ -384,45 +366,15 @@ export class AgentDaemon implements DrainableDaemon {
     }
   }
 
-  // --- Polling ----------------------------------------------------------------------------
-
-  /**
-   * Topics to poll: those from the heartbeat whose capability this host has
-   * registered and the control panel has enabled (the built-in `system`
-   * capability is always enabled). Pinned (per-agent) topics first.
-   */
-  pollableTopics(): string[] {
-    const config = this.config;
-    if (!config) return [];
-    const topics = (config.topics ?? []).filter(
-      (topic) => this.topicCapability(topic) !== undefined,
-    );
-    return [
-      ...topics.filter((topic) => topic.includes("-agent-")),
-      ...topics.filter((topic) => !topic.includes("-agent-")),
-    ];
-  }
+  // --- Claiming --------------------------------------------------------------------------
 
   /** Capabilities this host has registered and the control panel has enabled (plus `system`). */
-  private pollableCapabilities(): string[] {
+  private enabledCapabilities(): string[] {
     const config = this.config;
     if (!config) return [];
     return this.options.registry
       .names()
       .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
-  }
-
-  /**
-   * The pollable capability whose jobs a topic carries, if any: its shared
-   * topic of the agent's organization, or a per-agent topic.
-   */
-  private topicCapability(topic: string): string | undefined {
-    const organizationId = this.config?.organizationId;
-    if (!organizationId) return undefined;
-    return this.pollableCapabilities().find(
-      (name) =>
-        topic === capabilityTopic(name, organizationId) || topic.startsWith(agentTopic(name, "")),
-    );
   }
 
   /**
@@ -435,18 +387,23 @@ export class AgentDaemon implements DrainableDaemon {
     return effectiveCapabilityLimit(capability, config.capabilityLimits, config.maxConcurrency);
   }
 
-  /**
-   * Jobs the agent could take right now: its free slots, but no more than the
-   * pollable capabilities still have room for under their limits.
-   */
-  freeSlots(): number {
-    const config = this.config;
-    if (!config || this.draining) return 0;
+  private runningByCapability(): Map<string, number> {
     const running = new Map<string, number>();
     for (const job of this.running.values()) {
       running.set(job.capability, (running.get(job.capability) ?? 0) + 1);
     }
-    const room = this.pollableCapabilities().reduce(
+    return running;
+  }
+
+  /**
+   * Jobs the agent could take right now: its free slots, but no more than the
+   * enabled capabilities still have room for under their limits.
+   */
+  freeSlots(): number {
+    const config = this.config;
+    if (!config || this.draining) return 0;
+    const running = this.runningByCapability();
+    const room = this.enabledCapabilities().reduce(
       (sum, name) => sum + Math.max(0, this.capabilityLimit(name) - (running.get(name) ?? 0)),
       0,
     );
@@ -454,86 +411,62 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * Takes one of a capability's slots for a receive (and the job it may run).
-   * Synchronous, so two workers can't both take the last slot. A lowered
-   * limit cancels nothing: receives just stop until the count drops below it.
+   * What to claim for now: the enabled capabilities still under their limits,
+   * while a slot is free. Empty while stopping or draining. A lowered limit
+   * cancels nothing: the capability just isn't claimed until it's under it.
    */
-  private takeCapabilitySlot(capability: string): boolean {
-    const used = this.capabilitySlots.get(capability) ?? 0;
-    if (used >= this.capabilityLimit(capability)) return false;
-    this.capabilitySlots.set(capability, used + 1);
-    return true;
+  claimableCapabilities(): string[] {
+    if (this.stopping || this.freeSlots() === 0) return [];
+    const running = this.runningByCapability();
+    return this.enabledCapabilities().filter(
+      (name) => (running.get(name) ?? 0) < this.capabilityLimit(name),
+    );
   }
 
-  private releaseCapabilitySlot(capability: string): void {
-    const used = (this.capabilitySlots.get(capability) ?? 1) - 1;
-    if (used > 0) this.capabilitySlots.set(capability, used);
-    else this.capabilitySlots.delete(capability);
-  }
-
-  private fillSlots(): void {
-    if (this.stopping || this.draining || !this.config || this.pollableTopics().length === 0) {
-      return;
+  /**
+   * Re-checks what to claim: aborts the in-flight claim when it asked for
+   * other capabilities (a limit, slot, drain or stop changed them) and wakes
+   * the loop, which claims again with the current ones.
+   */
+  private refreshClaim(): void {
+    const capabilities = this.claimableCapabilities();
+    if (this.claim && this.claim.capabilities.join() !== capabilities.join()) {
+      this.claim.controller.abort();
     }
-    while (this.workers < this.config.maxConcurrency) {
-      this.workers++;
-      void this.worker();
-    }
+    this.wakeClaimLoop?.();
   }
 
-  private receiver(region: string): QueueReceiver {
-    let receiver = this.receivers.get(region);
-    if (!receiver) {
-      receiver = this.options.queue(region);
-      this.receivers.set(region, receiver);
-    }
-    return receiver;
-  }
-
-  private async worker(): Promise<void> {
-    for (;;) {
-      const config = this.config;
-      const topics = this.pollableTopics();
-      // Leave synchronously (check and decrement together) so a lowered maxConcurrency
-      // retires exactly the surplus workers.
-      if (
-        this.stopping ||
-        this.draining ||
-        !config ||
-        this.workers > config.maxConcurrency ||
-        topics.length === 0
-      ) {
-        this.workers--;
-        return;
+  /**
+   * One claim at a time: long-polls while a slot is free, starts the job it
+   * gets and claims again at once. Backs off (up to 30s) on API errors.
+   */
+  private async claimLoop(): Promise<void> {
+    while (!this.stopping) {
+      const capabilities = this.claimableCapabilities();
+      if (capabilities.length === 0) {
+        await new Promise<void>((resolve) => (this.wakeClaimLoop = resolve));
+        this.wakeClaimLoop = null;
+        continue;
       }
-      let received = false;
-      for (const topic of topics) {
-        if (this.stopping || this.draining) break;
-        const capability = this.topicCapability(topic);
-        if (!capability || !this.takeCapabilitySlot(capability)) continue;
-        try {
-          const result = await this.receiver(config.queueRegion ?? "").receive(
-            topic,
-            QUEUE_CONSUMER_GROUP,
-            (message, metadata) => this.track(this.handleMessage(message, metadata)),
-            {
-              limit: 1,
-              visibilityTimeoutSeconds: VISIBILITY_TIMEOUT_SECONDS,
-              retry: (error) => (error instanceof Redeliver ? error.directive : undefined),
-            },
-          );
-          if (result.ok) {
-            received = true;
-            break;
-          }
-        } catch (error) {
-          if (!(error instanceof Redeliver)) this.onApiError(error, `receive from ${topic} failed`);
-        } finally {
-          this.releaseCapabilitySlot(capability);
-        }
+      const controller = new AbortController();
+      this.claim = { controller, capabilities };
+      let start: JobStartResponse | null;
+      try {
+        start = await this.options.api.claim({ capabilities }, controller.signal);
+        this.claimBackoffMs = 0;
+      } catch (error) {
+        if (controller.signal.aborted) continue;
+        this.onApiError(error, "claim failed");
+        this.claimBackoffMs = Math.min(
+          MAX_CLAIM_BACKOFF_MS,
+          Math.max(CLAIM_BACKOFF_MS, this.claimBackoffMs * 2),
+        );
+        await this.sleep(this.claimBackoffMs);
+        continue;
+      } finally {
+        this.claim = null;
       }
-      if (!received)
-        await this.sleep((config.pollIntervalSeconds ?? LEGACY_POLL_INTERVAL_SECONDS) * 1000);
+      if (start) this.startJob(start);
     }
   }
 
@@ -560,53 +493,59 @@ export class AgentDaemon implements DrainableDaemon {
   // --- Job lifecycle ----------------------------------------------------------------------
 
   /**
-   * Runs inside `receive()`: returning acknowledges the message, throwing
-   * `Redeliver` applies its directive (or leaves the lease to lapse).
+   * Takes a claimed job's slot (synchronously, so the next claim already
+   * counts it) and runs it in the background.
    */
-  private async handleMessage(message: unknown, metadata: MessageMetadata): Promise<void> {
-    const log = this.options.logger.child({ messageId: metadata.messageId });
-    if (this.stopping || this.draining) throw new Redeliver({ afterSeconds: 0 });
-    const parsed = JobMessage.safeParse(message);
-    if (!parsed.success) {
-      log.warn("dropping a malformed queue message");
-      return;
-    }
-    const { jobId } = parsed.data;
-
-    let start;
-    try {
-      start = await this.options.api.startJob(jobId);
-    } catch (error) {
-      this.onApiError(error, "job start failed");
-      throw new Redeliver({ afterSeconds: START_FAILED_RETRY_SECONDS });
-    }
+  private startJob(start: JobStartResponse): void {
+    const log = this.options.logger;
     if (start.action === "skip") {
-      log.info({ jobId, reason: start.reason }, "skipping job");
+      log.info({ reason: start.reason }, "skipping job");
       return;
     }
-
     const { job } = start;
-    const jobLog = log.child({ jobId, capability: job.capability, type: job.type });
+    const jobLog = log.child({ jobId: job.id, capability: job.capability, type: job.type });
+    if (this.stopping) {
+      // Claimed as the agent stopped: the lease lapses and the job is redelivered.
+      jobLog.info("not starting a job claimed during shutdown");
+      return;
+    }
     const capability = this.options.registry.forJob(job);
     if (!capability) {
       jobLog.error("unknown job type");
-      await this.report(job.id, jobLog, () =>
-        this.options.api.submitFailure(job.id, {
-          retryable: false,
-          error: `unknown job type ${job.capability}/${job.type}`,
-        }),
+      void this.track(
+        this.report(job.id, jobLog, () =>
+          this.options.api.submitFailure(job.id, {
+            retryable: false,
+            error: `unknown job type ${job.capability}/${job.type}`,
+          }),
+        ),
       );
       return;
     }
-
-    const controller = new AbortController();
     const running: RunningJob = {
       capability: job.capability,
-      controller,
+      controller: new AbortController(),
       jobToken: start.jobToken.token,
     };
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
+    void this.track(
+      this.runJob(job, capability, running, jobLog).catch((error: unknown) =>
+        jobLog.error({ err: error }, "job handler failed"),
+      ),
+    );
+  }
+
+  /**
+   * Runs a job and reports its outcome. A retryable failure is only reported:
+   * the control panel makes the job claimable again after `retryAfterSeconds`.
+   */
+  private async runJob(
+    job: JobPayload,
+    capability: Capability,
+    running: RunningJob,
+    jobLog: Logger,
+  ): Promise<void> {
     let output: JobOutput | undefined;
     let failure: unknown;
     try {
@@ -615,17 +554,18 @@ export class AgentDaemon implements DrainableDaemon {
       failure = error ?? new Error("job failed");
     } finally {
       this.running.delete(job.id);
+      this.refreshClaim();
     }
     if ([...this.pendingAcks.values()].some((ack) => ack.jobId === job.id)) {
       // Acknowledge the job's messages before its outcome, so none is taken for undelivered.
       await this.heartbeat();
     }
 
-    const reason: unknown = controller.signal.reason;
+    const reason: unknown = running.controller.signal.reason;
     if (failure !== undefined && reason instanceof ShutdownAbort) {
-      // Not acknowledged: the lease lapses and the job is redelivered.
+      // Not reported: the lease lapses and the job is redelivered.
       jobLog.info("job interrupted by shutdown");
-      throw new Redeliver(undefined);
+      return;
     }
     if (failure === undefined) {
       jobLog.info("job finished");
@@ -667,10 +607,9 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * Reports a job's outcome and settles its message: `retry` leaves it
-   * unacknowledged with the lease set to `retryAfterSeconds`; anything else
-   * acknowledges it. If reporting keeps failing the message isn't
-   * acknowledged, so the job runs again after redelivery.
+   * Reports a job's outcome. If reporting keeps failing the job stays
+   * running without a heartbeat to renew its lease, so it runs again once
+   * the lease lapses.
    */
   private async report(
     jobId: string,
@@ -692,14 +631,14 @@ export class AgentDaemon implements DrainableDaemon {
           return;
         }
         this.onApiError(error, "reporting the job outcome failed");
-        if (attempt >= REPORT_ATTEMPTS) throw new Redeliver(undefined);
+        if (attempt >= REPORT_ATTEMPTS) {
+          log.warn("giving up reporting the outcome; the job will be redelivered");
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, this.reportRetryDelayMs * attempt));
       }
     }
     log.info({ jobId, status: outcome.status }, "job outcome recorded");
-    if (outcome.status === "retry") {
-      throw new Redeliver({ afterSeconds: outcome.retryAfterSeconds });
-    }
   }
 }
 

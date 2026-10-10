@@ -5,8 +5,8 @@ import path from "node:path";
 import { z } from "zod";
 
 /**
- * The agent's only local configuration. Everything else (concurrency, poll
- * interval, capabilities, topics, pinned repos) comes from the control panel
+ * The agent's only local configuration. Everything else (concurrency,
+ * capabilities, limits, pinned repos) comes from the control panel
  * in every heartbeat response.
  */
 export const AgentConfig = z.object({
