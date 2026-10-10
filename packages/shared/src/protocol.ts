@@ -47,13 +47,14 @@ export type SystemCapability = typeof SYSTEM_CAPABILITY;
 export const REPO_SYNC_JOB_TYPE = "repo.sync";
 
 /**
- * The job token scopes each capability's jobs get. Review and repo sync are
- * read-only; ralph jobs push their commits, relay session activities and
+ * The job token scopes each capability's jobs get. Review, triage and repo
+ * sync are read-only; ralph jobs push their commits, relay session activities and
  * download Linear attachments through the control panel.
  */
 export const CAPABILITY_JOB_SCOPES: Record<Capability | SystemCapability, JobTokenScope[]> = {
   review: ["credentials:read"],
   ralph: ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"],
+  triage: ["credentials:read"],
   system: ["credentials:read"],
 };
 

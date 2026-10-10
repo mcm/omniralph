@@ -2,7 +2,7 @@
  * Capabilities an agent host can run: code review, and `ralph` (building a
  * Linear epic story by story, ported from cyralph).
  */
-export const CAPABILITIES = ["review", "ralph"] as const;
+export const CAPABILITIES = ["review", "ralph", "triage"] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -19,3 +19,4 @@ export * from "./rules.js";
 export * from "./reply.js";
 export * from "./rerun.js";
 export * from "./ralph-job.js";
+export * from "./triage-job.js";
