@@ -20,10 +20,9 @@ import {
   type Repository,
   type ScmProvider,
   isLinearRun,
-  linearSessionOf,
 } from "@omniralph/db";
 import { epicBranchName, parseRepoTags } from "@omniralph/ralph";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import { conversationFor, type RunConversation } from "./conversation";
 import { errorMessage, postActivity, quietly } from "./notify";
 import { changeRequestTerm } from "./publish";
 import { matchSelection } from "./routing";
@@ -46,14 +45,12 @@ export function repositorySelectionOf(run: Pick<RalphRun, "pendingElicitation">)
 
 /** Posts the repository question (a `select` elicitation of the repositories' full paths). */
 export async function askForRepository(
-  linear: LinearGateway,
-  sessionId: string,
+  conversation: RunConversation,
   candidates: readonly Pick<Repository, "fullPath">[],
   body: string = REPOSITORY_QUESTION,
 ): Promise<void> {
   await postActivity(
-    linear,
-    sessionId,
+    conversation,
     { type: "elicitation", body },
     {
       signal: "select",
@@ -153,8 +150,7 @@ export async function answerRepositorySelection(
   const repository = matchSelection(text, candidates);
   if (!repository) {
     await askForRepository(
-      deps.linear,
-      run.linearAgentSessionId,
+      conversationFor(run, deps),
       candidates,
       `I couldn't match "${text}" to a repository. Which one should I use?`,
     );
@@ -173,7 +169,7 @@ export async function answerRepositorySelection(
       externalId: found.repository.externalId,
     });
   } catch (error) {
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "error",
       body: `I couldn't read the default branch of \`${repository.fullPath}\`: ${errorMessage(error)}. Reply with the repository again to retry.`,
     });
@@ -196,7 +192,7 @@ export async function answerRepositorySelection(
   });
   if (!chosen) return { status: "ignored" };
 
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `Using \`${repository.fullPath}\`. Building on branch \`${chosen.branch}\`, based on \`${baseBranch}\`.`,
   });
@@ -239,6 +235,6 @@ export async function awaitRepository(
       waitingOn: null,
       pendingElicitation: { kind: "repository", repositoryIds: candidates.map((r) => r.id) },
     })) ?? run;
-  await askForRepository(deps.linear, run.linearAgentSessionId, candidates);
+  await askForRepository(conversationFor(run, deps), candidates);
   return updated;
 }

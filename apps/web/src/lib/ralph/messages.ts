@@ -26,7 +26,6 @@ import {
   type RalphMessage,
   type RalphRun,
   type RalphTransaction,
-  linearSessionOf,
 } from "@omniralph/db";
 import { asksForPushOrPullRequest } from "@omniralph/ralph";
 import {
@@ -35,7 +34,8 @@ import {
   type JobMessageDelivery,
 } from "@omniralph/shared";
 import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
-import { postActivity, quietly } from "./notify";
+import { conversationFor } from "./conversation";
+import { postActivity } from "./notify";
 
 /** Job types whose live Claude session takes replies. */
 export const LIVE_SESSION_JOB_TYPES: readonly string[] = [
@@ -200,7 +200,7 @@ export async function settleStrandedMessages(
 ): Promise<void> {
   for (const message of await listStrandedMessages(tx, run.id)) {
     const note = await strand(tx, run, message, now);
-    await postActivity(linear, linearSessionOf(run), note);
+    await postActivity(conversationFor(run, { linear }), note);
   }
 }
 
@@ -228,8 +228,7 @@ export async function exchangeJobMessages(
   const ids = [...delivered, ...acks.rejectedMessageIds];
   const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
-  const notes: { organizationId: string; sessionId: string | null; content: ActivityContent }[] =
-    [];
+  const notes: { run: RalphRun; content: ActivityContent }[] = [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
@@ -239,29 +238,27 @@ export async function exchangeJobMessages(
         if (delivered.has(message.id)) {
           if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);
           await updateMessage(tx, message.id, { deliveredAt: now, consumedAt: now });
-          notes.push({
-            organizationId: run.organizationId,
-            sessionId: linearSessionOf(run),
-            content: { type: "thought", body: DELIVERED_NOTE },
-          });
+          notes.push({ run, content: { type: "thought", body: DELIVERED_NOTE } });
         } else {
           const content = await strand(tx, run, message, now);
-          notes.push({
-            organizationId: run.organizationId,
-            sessionId: linearSessionOf(run),
-            content,
-          });
+          notes.push({ run, content });
         }
       }
     });
   }
-  for (const organizationId of new Set(notes.map((n) => n.organizationId))) {
-    await quietly("Telling Linear about delivered job messages", async () => {
-      const linear = await deps.linear(organizationId);
-      for (const note of notes.filter((n) => n.organizationId === organizationId)) {
-        await postActivity(linear, note.sessionId, note.content);
-      }
-    });
+  // One gateway per organization, fetched only when a note posts to Linear.
+  const gateways = new Map<string, Promise<LinearGateway>>();
+  const linearOf = (organizationId: string) => () => {
+    let gateway = gateways.get(organizationId);
+    if (!gateway) {
+      gateway = deps.linear(organizationId);
+      gateways.set(organizationId, gateway);
+    }
+    return gateway;
+  };
+  for (const note of notes) {
+    const linear = linearOf(note.run.organizationId);
+    await postActivity(conversationFor(note.run, { linear }), note.content);
   }
   const pending = await listUndeliveredJobMessages(deps.db, runningJobIds);
   return pending.map((m) => ({ jobId: m.jobId!, messageId: m.id, text: m.text }));

@@ -16,7 +16,6 @@ import {
   type RalphRun,
   type RalphStory,
   type RalphTransaction,
-  linearSessionOf,
 } from "@omniralph/db";
 import {
   eligiblePreparations,
@@ -27,6 +26,7 @@ import {
   type Story,
 } from "@omniralph/ralph";
 import { RalphPreparePayload, RalphPrepareResult } from "@omniralph/shared";
+import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { postActivity, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -89,7 +89,7 @@ export async function offerPreparation(
       // Asked again from scratch, even if it is the open question.
       state.request = null;
     } else {
-      await postActivity(deps.linear, linearSessionOf(run), {
+      await postActivity(conversationFor(run, deps), {
         type: "thought",
         body: "No open manual story with preparation commands can run now, so there's nothing to ask about again.",
       });
@@ -121,8 +121,7 @@ export async function offerPreparation(
   };
   await updateRun(tx, run.id, { preparation: state });
   await postActivity(
-    deps.linear,
-    run.linearAgentSessionId,
+    conversationFor(run, deps),
     {
       type: "elicitation",
       body: preparationQuestion({
@@ -161,7 +160,7 @@ export async function approvedPreparation(
   if (story) return { run, story, request };
   const updated =
     (await updateRun(tx, run.id, { preparation: { ...state, request: null } })) ?? run;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `**${request.identifier}** can't be prepared now (it's done or blocked again), so I ran nothing.`,
   });
@@ -245,6 +244,6 @@ export async function applyPreparationJob(
     }
   }
   await updateRun(tx, run.id, { preparation: next });
-  await postActivity(deps.linear, linearSessionOf(run), { type: "thought", body });
+  await postActivity(conversationFor(run, deps), { type: "thought", body });
   return { busy: false };
 }

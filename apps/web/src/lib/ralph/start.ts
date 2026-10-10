@@ -32,6 +32,7 @@ import {
 import { parseInstruction, type Epic } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { linearConversation } from "./conversation";
 import {
   loadEpic,
   repositoryAllowsPreparation,
@@ -40,7 +41,7 @@ import {
 } from "./epic-loader";
 import { routeStories } from "./lanes";
 import { applyGuidance, deliverToRunningJob } from "./messages";
-import { quietly } from "./notify";
+import { postActivity, quietly } from "./notify";
 import { preparationOf } from "./preparation";
 import {
   askForRepository,
@@ -87,15 +88,9 @@ export type StartOutcome =
   | { status: "failed"; error: string }
   | { status: "started"; run: RalphRun; created: boolean };
 
+/** Posts to a Linear agent session (a new one may not be its run's), logging a failure. */
 async function post(deps: RalphDeps, sessionId: string, content: ActivityContent): Promise<void> {
-  try {
-    await deps.linear.createActivity(sessionId, content);
-  } catch (error) {
-    console.error(
-      `Posting a Linear ${content.type} activity to session ${sessionId} failed`,
-      error,
-    );
-  }
+  await postActivity(linearConversation(deps.linear, sessionId), content);
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -308,8 +303,7 @@ async function askForRepositoryFirst(
     return { status: "started", run, created: false };
   }
   await askForRepository(
-    deps.linear,
-    event.sessionId,
+    linearConversation(deps.linear, event.sessionId),
     repositories,
     repositoryQuestionFor(root.description),
   );

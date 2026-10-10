@@ -1,7 +1,8 @@
 import "server-only";
-import { getRun, linearSessionOf, type Database, type Job } from "@omniralph/db";
+import { getRun, type Database, type Job } from "@omniralph/db";
 import { RALPH_CAPABILITY, type RalphActivity } from "@omniralph/shared";
 import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
+import { conversationFor } from "./conversation";
 import { FINISHED_RUN_STATUSES } from "./run";
 
 /** The Linear activity content of an activity an agent relays. */
@@ -17,15 +18,12 @@ export function isRalphJob(job: Pick<Job, "capability" | "type">): boolean {
 }
 
 export type RelayOutcome =
-  | { forwarded: true; sessionId: string }
-  /**
-   * No run, the run is over (e.g. stopped), or it has no Linear session (a
-   * chat run): the activity is dropped.
-   */
-  | { forwarded: false; reason: "no_run" | "run_finished" | "no_session" };
+  | { forwarded: true }
+  /** No run, or the run is over (e.g. stopped): the activity is dropped. */
+  | { forwarded: false; reason: "no_run" | "run_finished" };
 
 /**
- * Forwards an activity of a ralph job to its run's Linear agent session.
+ * Forwards an activity of a ralph job to its run's conversation (`conversationFor`).
  * Activities of a finished run are dropped, so a stopped run stays quiet.
  */
 export async function relayActivity(
@@ -37,11 +35,9 @@ export async function relayActivity(
   const run = job.ralphRunId ? await getRun(deps.db, job.ralphRunId) : null;
   if (!run) return { forwarded: false, reason: "no_run" };
   if (FINISHED_RUN_STATUSES.has(run.status)) return { forwarded: false, reason: "run_finished" };
-  const sessionId = linearSessionOf(run);
-  if (sessionId === null) return { forwarded: false, reason: "no_session" };
-  const linear = await deps.linear(run.organizationId);
-  await linear.createActivity(sessionId, activityContent(activity), {
-    ephemeral: activity.ephemeral,
+  const conversation = conversationFor(run, {
+    linear: () => deps.linear(run.organizationId),
   });
-  return { forwarded: true, sessionId };
+  await conversation.post(activityContent(activity), { ephemeral: activity.ephemeral });
+  return { forwarded: true };
 }

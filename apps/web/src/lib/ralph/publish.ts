@@ -26,7 +26,6 @@ import {
   type Repository,
   type ScmConnection,
   isLinearRun,
-  linearSessionOf,
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
@@ -37,6 +36,7 @@ import {
   RalphDescribePrResult,
 } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { conversationFor } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
 import { sanitizePullRequestText, type PullRequestText } from "./pull-request";
@@ -269,7 +269,7 @@ async function openEarlyLanePullRequest(
       });
     }
   } catch (error) {
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "thought",
       body: `I couldn't open a draft ${term}${where} yet (I'll try again after the next story): ${tail(errorMessage(error), 1500)}`,
     });
@@ -277,13 +277,11 @@ async function openEarlyLanePullRequest(
   }
   await updateLane(tx, lane.id, { prNumber: pr.number, prUrl: pr.url });
   const label = await sessionLinkLabel(tx, run, found.repository, pr.number);
-  const sessionId = linearSessionOf(run);
-  if (sessionId !== null) {
-    await quietly(`Adding the ${term} to session ${sessionId}`, () =>
-      deps.linear.addSessionExternalUrl(sessionId, label, pr.url),
-    );
-  }
-  await postActivity(deps.linear, linearSessionOf(run), {
+  const conversation = conversationFor(run, deps);
+  await quietly(`Adding the ${term} to ${conversation.name}`, () =>
+    conversation.addLink(label, pr.url),
+  );
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${lane.branch}\`${where}: ${pr.url}`,
   });
@@ -383,12 +381,10 @@ export async function applyPullRequestJob(
     { provider, fullPath: payload.data.repository.fullPath },
     pr.number,
   );
-  const sessionId = linearSessionOf(run);
-  if (sessionId !== null) {
-    await quietly(`Adding the ${term} to session ${sessionId}`, () =>
-      deps.linear.addSessionExternalUrl(sessionId, label, pr.url),
-    );
-  }
+  const conversation = conversationFor(run, deps);
+  await quietly(`Adding the ${term} to ${conversation.name}`, () =>
+    conversation.addLink(label, pr.url),
+  );
   return { busy: false };
 }
 
@@ -457,7 +453,7 @@ export async function finishPublishing(
     // A reply retries the lanes that failed; the published ones stay published.
     for (const { lane } of failed) await updateLane(tx, lane.id, { publish: null });
     const term = termOf(failed);
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "elicitation",
       body: [
         requestOutput,
@@ -478,7 +474,7 @@ export async function finishPublishing(
       requestOutput: null,
       error: null,
     })) ?? run;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "response",
     body: requestOutput
       ? withPullRequestLinks(requestOutput, published)
