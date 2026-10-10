@@ -75,6 +75,10 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     actor,
     thread: {} as Thread,
     appUrl: APP_URL,
+    chatThread: {} as ChatToolContext["chatThread"],
+    turnMessages: [],
+    ralph: () => Promise.reject(new Error("no ralph in read tools")),
+    handedOff: () => undefined,
   });
 
   async function call(name: string, input: unknown, organizationId: string): Promise<Result> {
@@ -222,7 +226,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     await container?.stop();
   });
 
-  it("registers every read tool as `read`", () => {
+  it("registers the read tools as `read` and start_ralph_request as `action`", () => {
     expect(Object.keys(chatTools)).toEqual([
       "list_ralph_runs",
       "get_ralph_run",
@@ -231,8 +235,10 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_jobs",
       "list_agents",
       "list_repositories",
+      "start_ralph_request",
     ]);
-    expect(Object.values(chatTools).every((t) => t.tier === "read")).toBe(true);
+    expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
+    expect(chatTools.start_ralph_request?.tier).toBe("action");
   });
 
   it("list_ralph_runs returns only the organization's runs, filtered, with URLs", async () => {

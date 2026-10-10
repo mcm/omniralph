@@ -1,7 +1,9 @@
-import type { Database } from "@omniralph/db";
+import type { ChatThread, Database } from "@omniralph/db";
 import { tool, type ToolSet } from "ai";
 import type { Thread } from "chat";
 import type { z } from "zod";
+import type { QuotedMessage } from "@/lib/ralph/chat-start";
+import type { RalphDeps } from "@/lib/ralph/run";
 import type { ChatActor } from "../identity";
 
 /**
@@ -22,6 +24,17 @@ export interface ChatToolContext {
   thread: Thread;
   /** The control panel's base URL (no trailing slash), for links to its pages. */
   appUrl: string;
+  /** The thread's `chat_threads` row. */
+  chatThread: ChatThread;
+  /** The user messages this turn answers (recorded already), oldest first. */
+  turnMessages: readonly QuotedMessage[];
+  /** The ralph orchestrator's dependencies for the organization (built on first use). */
+  ralph(): Promise<RalphDeps>;
+  /**
+   * A tool handed the thread to a ralph run (and said so in the thread): an
+   * empty final answer then posts nothing.
+   */
+  handedOff(): void;
 }
 
 export interface ChatTool<S extends z.ZodType = z.ZodType> {
