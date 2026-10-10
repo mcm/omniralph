@@ -13,7 +13,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "format": "prettier --write .",
-    "eval": "tsx --conditions=@omniralph/source packages/engine/src/eval/cli.ts"
+    "eval": "tsx --conditions=@omniralph/source packages/engine/src/eval/cli.ts",
+    "bench": "pnpm run eval"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
