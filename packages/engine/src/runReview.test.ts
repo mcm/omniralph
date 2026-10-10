@@ -3,10 +3,32 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Finding } from "@omniralph/shared";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type * as Plan from "./plan.js";
 import type { ReviewConfig } from "./prompt.js";
 import type { ReviewProvider, ReviewRequest, TaskReviewResult } from "./providers/types.js";
 import { runReview, type RunReviewInput } from "./runReview.js";
+
+// v1 plans one task; `split.on` makes one task per file to test multi-task reviews.
+const split = vi.hoisted(() => ({ on: false }));
+vi.mock("./plan.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof Plan>();
+  return {
+    ...actual,
+    planReview: (...args: Parameters<typeof actual.planReview>) => {
+      const plan = actual.planReview(...args);
+      if (!split.on) return plan;
+      const [task] = plan.tasks;
+      return {
+        ...plan,
+        tasks: task!.files.map((file, i) => ({ ...task!, id: `task-${i + 1}`, files: [file] })),
+      };
+    },
+  };
+});
+afterEach(() => {
+  split.on = false;
+});
 
 const BASE_CONVENTIONS = "# Base conventions\n\nErrors are returned as `Result` values.\n";
 const HEAD_CONVENTIONS =
@@ -298,6 +320,21 @@ describe("runReview", () => {
       { provider: stopped, logger: quietLogger },
     );
     expect(partial.fixedOpenFindings).toEqual([]);
+  });
+
+  it("counts a previous finding fixed only when every task answered fixed", async () => {
+    split.on = true;
+    const open = [finding(), finding({ path: "src/extra.ts", startLine: 1, endLine: 1 })];
+    // The task with src/lib.ts says only id 1 is fixed; the other says both are.
+    const provider = new FakeProvider((req) => ({
+      fixedPrevious: req.task.files.some((f) => f.path === "src/lib.ts") ? [1] : [0, 1],
+    }));
+    const result = await runReview(
+      input({ previousReview: { headSha: null, openFindings: open } }),
+      { provider, logger: quietLogger },
+    );
+    expect(provider.requests.length).toBeGreaterThan(1);
+    expect(result.fixedOpenFindings).toEqual([1]);
   });
 
   it("keeps partial findings and reports budget exhaustion and provider errors", async () => {
