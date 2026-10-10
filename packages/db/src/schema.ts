@@ -519,6 +519,10 @@ export const chatMessages = pgTable(
     /** The chat user who wrote it (`user` messages). */
     externalUserId: text("external_user_id"),
     authorName: text("author_name"),
+    /** The ralph run that posted it (an `assistant` message of the run's session). */
+    ralphRunId: uuid("ralph_run_id").references((): AnyPgColumn => ralphRuns.id, {
+      onDelete: "set null",
+    }),
     /** The message content (e.g. AI SDK model message content). */
     content: jsonb("content").$type<unknown>().notNull(),
     /** `clock_timestamp()`, so messages appended in one transaction keep their order. */

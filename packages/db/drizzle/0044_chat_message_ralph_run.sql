@@ -1,0 +1,2 @@
+ALTER TABLE "chat_messages" ADD COLUMN "ralph_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_ralph_run_id_ralph_runs_id_fk" FOREIGN KEY ("ralph_run_id") REFERENCES "public"."ralph_runs"("id") ON DELETE set null ON UPDATE no action;
