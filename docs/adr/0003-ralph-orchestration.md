@@ -1,6 +1,6 @@
 # ADR 0003: Ralph orchestration — one job per story, the control panel as orchestrator
 
-- **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update))
+- **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update)); amended by TOOL-181 (see the [addendum](#addendum-run-origin-and-the-conversation-channel))
 - **Date:** 2026-10-06
 
 ## Context
@@ -265,3 +265,51 @@ sections *Lanes* and *Requests and run modes* above describe the details; this i
 
 The cutover from cyralph itself is an operator checklist, not code:
 [cutover-from-cyralph.md](../cutover-from-cyralph.md).
+
+## Addendum: run origin and the conversation channel
+
+TOOL-181 lets a run belong to a Slack or Discord thread instead of a Linear issue, so the chat
+control-panel agent ([ADR 0005](0005-chat-front-door.md)) can hand work to ralph. The loop itself
+is unchanged: chat runs go through the same jobs, outcome handlers, `advanceRun` and run lock.
+
+- **Run origin.** `ralph_runs.origin` is `linear` (the default; every earlier run) or `chat`, with
+  `chat_thread_id` pointing at `chat_threads`. The Linear columns (issue, identifier, agent
+  session) are nullable, and a CHECK requires them for Linear runs. The CHECK doesn't require
+  `chat_thread_id` for chat runs: its FK is `on delete set null`, and disconnecting a workspace
+  cascades to its threads, so `createRun` requires the thread instead. "One active run per issue"
+  became two partial unique indexes: per issue for Linear runs, per chat thread for chat runs.
+  `NewRalphRunInput` is a discriminated union; code narrows with `isLinearRun` / `linearSessionOf`
+  and names runs with `runReference` (`ENG-1` or `chat-<id8>`), never by asserting the Linear
+  fields.
+- **Chat runs are request mode only.** `start_ralph_request` creates a `single`/`request` run in a
+  ralph-enabled repository the agent named (validated against the organization's repositories; no
+  Linear routing) on a lane `omniralph/chat-<id8>`, or reuses the thread's previous run's lanes
+  for the same repository. `step()` gives it a synthetic epic (no stories, no attachments), skips
+  every Linear-only step (epic load, story sync, state changes, follow-up filing, completed-epic
+  move, repository elicitation, `/ralph`) and completes it through `finishRequests`. Epics stay in
+  Linear.
+- **`RunConversation`.** Every session write (`notify`, `start`, `publish`, `run`, `activities`,
+  `requests`, `messages`, `repository-selection`, `ci`, `pull-request-requests`, `cleanup`, …) goes
+  through `RunConversation` (`apps/web/src/lib/ralph/conversation.ts`: `post`, `updatePlan`,
+  `addLink`), chosen per run by `conversationFor(run, deps)`. `LinearConversation` writes agent
+  activities, plans and external URLs exactly as before. `ChatConversation` posts proactively,
+  outside any webhook: it rebuilds the thread from `chat_threads` and, for Slack, runs the call
+  under the bot token from `chat_connections` (`withBotToken`). To keep the thread readable it
+  edits one status message per request job for thoughts, actions and plan changes, and posts only
+  responses, elicitations, errors, links and PR/MR follow-up notices (`PostOptions.notice`) as new
+  messages, sanitized and recorded in `chat_messages` with `ralph_run_id`. Its own state (status
+  message, posted links) lives in the Chat SDK state, not `ralph_runs`, so a post never contends
+  with the run lock.
+- **Linear only on demand.** `RalphDeps.linear` is a lazy gateway (`lazyLinearGateway`): chat-run
+  paths never load or refresh a Linear token, and organizations without Linear can run chat runs.
+- **Reply routing** lives in the chat agent's handler: while the thread's run has a queued or
+  running `ralph.request` job, a linked member's plain reply takes the Linear reply path
+  (`queueLiveReply`, else `addInstruction` + `advanceRun`) and reaches the session within one
+  heartbeat; a reply that mentions the bot goes to the control-panel agent. The agent can also add
+  guidance to any run of the organization (`send_ralph_guidance`, the same `addInstruction` path),
+  but can't stop runs.
+
+Alternatives considered: a separate chat-runs table (would duplicate lanes, requests, messages and
+PR follow-up bookkeeping that already hang off `ralph_runs`); mirroring every thought into chat as
+Linear does (too noisy for a channel); and posting from a background job per message (the
+conversation call is cheap and already runs where the activity arrives).
