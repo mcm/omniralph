@@ -29,7 +29,13 @@ import {
   type RalphTransaction,
   type Repository,
 } from "@omniralph/db";
-import { parseInstruction, parseShipRequest, SHIP_REQUEST_TEXT, type Epic } from "@omniralph/ralph";
+import {
+  hasOpenQuestions,
+  parseInstruction,
+  parseShipRequest,
+  SHIP_REQUEST_TEXT,
+  type Epic,
+} from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { linearConversation } from "./conversation";
@@ -80,6 +86,8 @@ export type StartOutcome =
   /** A mention handed to the issue's run (its running job, or its pending requests). */
   | { status: "delivered"; run: RalphRun; live: boolean }
   | { status: "load_failed"; error: string }
+  /** An epic-mode start on an issue (or epic) whose PRD still has open questions: no run. */
+  | { status: "open_questions"; identifier: string }
   /** No ralph-enabled repository at all. */
   | { status: "unroutable" }
   /** Routing found no repository: the run waits for a person to pick one. */
@@ -103,6 +111,53 @@ export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
       "label, project or team to its Linear routing, or a `[repo=<owner/name>]` tag to the issue " +
       "description). Then delegate it to me again.",
   ].join("\n\n");
+}
+
+/** The response refusing to build an issue whose PRD still has open questions. */
+export function openQuestionsMessage(
+  issue: Pick<IssueSummary, "identifier">,
+  epic?: boolean,
+): string {
+  const what = epic ? `the epic **${issue.identifier}**` : `**${issue.identifier}**`;
+  return [
+    `I won't build this yet: the PRD of ${what} still has open questions (its \`## Open Questions\` section).`,
+    "Answer them in the description (and remove the section), or reply in the triage session so " +
+      "triage folds the answers into the PRD. Then delegate it to me again.",
+  ].join("\n\n");
+}
+
+/**
+ * Before an epic-mode run starts: the issue whose description (or, for a
+ * sub-issue, whose parent epic's description) still has open questions. Null
+ * when neither has any, or when the issue can't be loaded (the start reports that).
+ */
+async function withOpenQuestions(
+  deps: RalphDeps,
+  issueId: string,
+): Promise<{ issue: IssueSummary; epic: boolean } | null> {
+  try {
+    const issue = await deps.linear.getIssue(issueId);
+    if (hasOpenQuestions(issue.description)) return { issue, epic: false };
+    if (!issue.parentId) return null;
+    const parent = await deps.linear.getIssue(issue.parentId);
+    return hasOpenQuestions(parent.description) ? { issue: parent, epic: true } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Refuses an epic-mode start while open questions remain (posting why); null when it may start. */
+async function refuseOpenQuestions(
+  deps: RalphDeps,
+  event: SessionCreatedEvent,
+): Promise<StartOutcome | null> {
+  const found = await withOpenQuestions(deps, event.issueId);
+  if (!found) return null;
+  await post(deps, event.sessionId, {
+    type: "response",
+    body: openQuestionsMessage(found.issue, found.epic),
+  });
+  return { status: "open_questions", identifier: found.issue.identifier };
 }
 
 /** The repository a run works in and how it was chosen. */
@@ -341,6 +396,8 @@ export async function startRun(
     return { status: "started", run: existing, created: false };
   }
   if (isMention(event)) return startMention(event, deps);
+  const refused = await refuseOpenQuestions(deps, event);
+  if (refused) return refused;
   return startNewRun(event, deps, { mode: "epic" });
 }
 
@@ -403,6 +460,10 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
       if (!handed.live) await advanceRun(active.id, deps);
       return { status: "delivered", run: active, live: handed.live };
     }
+  }
+  if (wantsLoop) {
+    const refused = await refuseOpenQuestions(deps, event);
+    if (refused) return refused;
   }
   return startNewRun(event, deps, {
     mode: wantsLoop ? "epic" : "request",
