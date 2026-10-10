@@ -95,7 +95,6 @@ function ConfigCard({
 }) {
   const { pending, run } = useAction();
   const [maxConcurrency, setMaxConcurrency] = React.useState(String(agent.maxConcurrency));
-  const [pollInterval, setPollInterval] = React.useState(String(agent.pollIntervalSeconds));
   const [capabilities, setCapabilities] = React.useState<string[]>(
     agent.enabledCapabilities.filter((c) => knownCapabilities.includes(c)),
   );
@@ -118,7 +117,6 @@ function ConfigCard({
       () =>
         updateAgentConfig(agent.id, {
           maxConcurrency: Number(maxConcurrency),
-          pollIntervalSeconds: Number(pollInterval),
           enabledCapabilities: capabilities,
           // Blank limits use the default.
           capabilityLimits: Object.fromEntries(
@@ -156,22 +154,6 @@ function ConfigCard({
                 disabled={disabled}
                 value={maxConcurrency}
                 onChange={(e) => setMaxConcurrency(e.target.value)}
-              />
-            </Field>
-            <Field
-              label="Poll interval (seconds)"
-              htmlFor="poll-interval"
-              hint="Wait after an empty poll (1–300)."
-            >
-              <Input
-                id="poll-interval"
-                type="number"
-                min={1}
-                max={300}
-                required
-                disabled={disabled}
-                value={pollInterval}
-                onChange={(e) => setPollInterval(e.target.value)}
               />
             </Field>
           </div>

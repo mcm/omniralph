@@ -379,6 +379,13 @@
       "when": 1791661950311,
       "tag": "0053_drop_job_topic",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791662922470,
+      "tag": "0054_drop_agent_poll_interval",
+      "breakpoints": true
     }
   ]
 }

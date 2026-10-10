@@ -867,10 +867,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
 
   describe("POST /api/agent/heartbeat", () => {
     it("returns central config, refreshed job tokens and jobs to cancel", async () => {
-      const { agentId, accessToken } = await newAgent({
-        maxConcurrency: 2,
-        pollIntervalSeconds: 7,
-      });
+      const { agentId, accessToken } = await newAgent({ maxConcurrency: 2 });
       const other = await newAgent();
       await db.insert(agentRepoPins).values({ agentId, repositoryId });
 

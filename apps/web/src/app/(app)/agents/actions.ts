@@ -93,7 +93,6 @@ export async function createEnrollment(name: string): Promise<EnrollmentActionRe
 const AgentConfig = z
   .object({
     maxConcurrency: z.number().int().min(1).max(32),
-    pollIntervalSeconds: z.number().int().min(1).max(300),
     enabledCapabilities: z.array(z.enum(CAPABILITIES)),
     capabilityLimits: z.partialRecord(z.enum(CAPABILITIES), z.number().int().min(1)).optional(),
   })
@@ -109,7 +108,6 @@ const AgentConfig = z
   });
 export interface AgentConfigForm {
   maxConcurrency: number;
-  pollIntervalSeconds: number;
   enabledCapabilities: string[];
   /**
    * Per-capability concurrency limits of enabled capabilities (1 to
@@ -129,7 +127,7 @@ export async function updateAgentConfig(
       return {
         ok: false,
         error:
-          "Max concurrency must be 1–32, the poll interval 1–300 seconds, capabilities known ones, and each capability limit 1 to the max concurrency for an enabled capability.",
+          "Max concurrency must be 1–32, capabilities known ones, and each capability limit 1 to the max concurrency for an enabled capability.",
       };
     }
     if (!(await updateAgentConfigRow(getDb(), admin.organization.id, agentId, parsed.data))) {

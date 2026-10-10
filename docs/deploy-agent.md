@@ -333,14 +333,13 @@ response (every 20s), so changes need no restart:
 | -- | -- | -- |
 | Max concurrency (parallel jobs) | **Agents › <agent>** | 1 |
 | Concurrency per capability (1 to max concurrency) | **Agents › <agent>** | `ralph`: max concurrency − 1 (at least 1); others: max concurrency |
-| Poll interval | **Agents › <agent>** | 5s |
 | Enabled capabilities (`review`, `ralph`, `triage`) | **Agents › <agent>** | `review` |
 | Pinned repositories | **Agents › <agent>**, or **Repository › Settings › Agents** | none (every agent is eligible for every repo) |
 | Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Settings › Agents**; per-agent override on **Agents › <agent>** | none (not managed) |
 | Job cancellations | **Jobs** (cancel) | — |
 
-Per-capability limits cap how many of an agent's slots one capability's jobs may take. A worker only
-receives from a capability's topics while that capability is under its limit, so with the default an
+Per-capability limits cap how many of an agent's slots one capability's jobs may take. The agent only
+claims a capability's jobs while that capability is under its limit, so with the default an
 agent with two or more slots always keeps one free for reviews while hours-long ralph stories run.
 Lowering a limit cancels nothing: the agent just takes no new jobs of that capability until it is
 under the new limit. The heartbeat's `freeSlots` counts only slots some enabled capability could use.
@@ -517,7 +516,7 @@ What to do:
    organization), as the agent's user. This
    creates a **new agent** (new ID) and overwrites `agent.json`; the revoked agent stays in the list
    for its history.
-4. Re-apply the old agent's central config to the new one: max concurrency, poll interval,
+4. Re-apply the old agent's central config to the new one: max concurrency,
    capabilities and **pinned repositories** (pins belong to the agent ID).
 5. Start the agent again.
 

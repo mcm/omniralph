@@ -181,7 +181,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
 
   it("refuses every agent action on the other organization's agent", async () => {
     state.userId = a.userId;
-    const config = { maxConcurrency: 4, pollIntervalSeconds: 5, enabledCapabilities: ["review"] };
+    const config = { maxConcurrency: 4, enabledCapabilities: ["review"] };
     expect(await updateAgentConfig(b.agentId, config)).toMatchObject({ ok: false });
     expect(await setAgentDesiredVersion(b.agentId, "9.9.9")).toMatchObject({ ok: false });
     expect(await revokeAgent(b.agentId)).toMatchObject({ ok: false });

@@ -256,7 +256,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(
         await updateAgentConfig(agentId, {
           maxConcurrency: 4,
-          pollIntervalSeconds: 30,
           enabledCapabilities: [],
         }),
       ).toEqual({ ok: true });
@@ -285,7 +284,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(
         await updateAgentConfig(agentId, {
           maxConcurrency: 1,
-          pollIntervalSeconds: 5,
           enabledCapabilities: ["review", "ralph"],
         }),
       ).toEqual({ ok: true });
@@ -302,7 +300,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       // Unset: ralph leaves one slot for reviews.
       const config = {
         maxConcurrency: 3,
-        pollIntervalSeconds: 5,
         enabledCapabilities: ["review", "ralph"],
       };
       expect(await updateAgentConfig(agentId, config)).toEqual({ ok: true });
@@ -497,11 +494,10 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
 
     it("rejects invalid values, unknown capabilities and non-admins", async () => {
       const { agentId } = await enrolledAgent();
-      const valid = { maxConcurrency: 2, pollIntervalSeconds: 10, enabledCapabilities: ["review"] };
+      const valid = { maxConcurrency: 2, enabledCapabilities: ["review"] };
       const invalid: Parameters<typeof updateAgentConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
         { ...valid, maxConcurrency: 1.5 },
-        { ...valid, pollIntervalSeconds: 301 },
         { ...valid, enabledCapabilities: ["deploy"] },
         { ...valid, capabilityLimits: { review: 0 } },
         { ...valid, capabilityLimits: { review: 3 } },
@@ -633,7 +629,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(
         await updateAgentConfig(agentId, {
           maxConcurrency: 2,
-          pollIntervalSeconds: 5,
           enabledCapabilities: [],
         }),
       ).toMatchObject({ ok: false });

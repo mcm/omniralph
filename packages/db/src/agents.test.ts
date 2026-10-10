@@ -74,7 +74,7 @@ describe.skipIf(!dockerAvailable)("organization-scoped agents", () => {
     expect(await getAgentOverview(db, orgB, a)).toBeNull();
     expect((await getAgentOverview(db, orgA, a))?.id).toBe(a);
 
-    const config = { maxConcurrency: 2, pollIntervalSeconds: 5, enabledCapabilities: ["review"] };
+    const config = { maxConcurrency: 2, enabledCapabilities: ["review"] };
     expect(await updateAgentConfig(db, orgB, a, config)).toBeNull();
     expect(await updateAgentConfig(db, orgA, a, config)).toMatchObject({ maxConcurrency: 2 });
     expect(await setAgentDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
