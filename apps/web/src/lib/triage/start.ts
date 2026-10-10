@@ -148,16 +148,36 @@ async function resolveRepository(
   };
 }
 
-/** Handles `AgentSessionEvent.created` whose instruction asks for `/triage`. */
+export interface StartTriageOptions {
+  /**
+   * The run created for this session already (the `ralph:triage` label
+   * trigger creates it before the session): it is used instead of a new
+   * one, and ends `stopped` or `failed` when triage doesn't start.
+   */
+  run?: TriageRun;
+}
+
+/**
+ * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`,
+ * or the session the `ralph:triage` label opened (with its `run`).
+ */
 export async function startTriage(
   event: SessionCreatedEvent,
   deps: TriageDeps,
+  options: StartTriageOptions = {},
 ): Promise<StartTriageOutcome> {
   const { db, linear } = deps;
   const sessionId = event.sessionId;
+  const given = options.run;
 
-  const existing = await getTriageRunBySession(db, sessionId);
-  if (existing) return { status: "exists", run: existing };
+  if (!given) {
+    const existing = await getTriageRunBySession(db, sessionId);
+    if (existing) return { status: "exists", run: existing };
+  }
+  /** Ends the given run when triage doesn't start. */
+  const endGiven = async (status: "stopped" | "failed") => {
+    if (given) await setTriageRunStatus(db, given.id, status);
+  };
 
   let issue: IssueSummary;
   let children: IssueSummary[];
@@ -168,6 +188,7 @@ export async function startTriage(
     children = await linear.getChildren(issue.id);
     const locked = lockedIssues(issue, children);
     if (locked.length > 0) {
+      await endGiven("stopped");
       await postActivity(linear, sessionId, {
         type: "response",
         body: lockedMessage(issue, locked),
@@ -177,6 +198,7 @@ export async function startTriage(
     issueComments = await linear.getComments(issue.id);
     blockers = await loadBlockers(deps, [issue, ...children]);
   } catch (error) {
+    await endGiven("failed");
     await postActivity(linear, sessionId, {
       type: "error",
       body: `I couldn't load the issue from Linear: ${errorMessage(error)}`,
@@ -188,6 +210,7 @@ export async function startTriage(
   try {
     repository = await resolveRepository(deps, issue);
   } catch (error) {
+    await endGiven("failed");
     await postActivity(linear, sessionId, {
       type: "error",
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
@@ -195,12 +218,14 @@ export async function startTriage(
     return { status: "failed", error: errorMessage(error) };
   }
 
-  const { run, created } = await createTriageRun(db, {
-    organizationId: deps.organizationId,
-    linearIssueId: issue.id,
-    linearAgentSessionId: sessionId,
-    trigger: "mention",
-  });
+  const { run, created } = given
+    ? { run: given, created: true }
+    : await createTriageRun(db, {
+        organizationId: deps.organizationId,
+        linearIssueId: issue.id,
+        linearAgentSessionId: sessionId,
+        trigger: "mention",
+      });
   if (!created) {
     if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
     await postActivity(linear, sessionId, {

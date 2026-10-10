@@ -13,6 +13,7 @@ import {
   getTriageRun,
   getTriageRunBySession,
   setTriageRunJob,
+  setTriageRunSession,
   setTriageRunStatus,
   startTriageRunJob,
   type NewTriageRunInput,
@@ -139,6 +140,15 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
     expect((await getTriageRun(db, run.id))?.currentJobId).toBeNull();
 
     expect(await setTriageRunJob(db, crypto.randomUUID(), null)).toBeNull();
+  });
+
+  it("sets the session of a run created before it", async () => {
+    const { run } = await createTriageRun(db, runInput({ linearAgentSessionId: "pending:1" }));
+    const updated = await setTriageRunSession(db, run.id, "session-real");
+    expect(updated?.linearAgentSessionId).toBe("session-real");
+    expect((await getTriageRunBySession(db, "session-real"))?.id).toBe(run.id);
+    expect(await getTriageRunBySession(db, "pending:1")).toBeNull();
+    expect(await setTriageRunSession(db, crypto.randomUUID(), "x")).toBeNull();
   });
 
   it("sets the status, and the last result when given", async () => {

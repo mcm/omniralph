@@ -82,13 +82,50 @@ export type LinearWebhookEvent =
       stateType?: string;
       removed: boolean;
     }
+  | {
+      /** An issue update added the `ralph:triage` label: triage the issue. */
+      kind: "triage_label_added";
+      issueId: string;
+      identifier?: string;
+      labelId: string;
+    }
   | { kind: "ignored"; reason: string };
+
+/** The label that asks for triage (matched ignoring case). */
+export const TRIAGE_LABEL = "ralph:triage";
+
+export const isTriageLabel = (name: string) => name.toLowerCase() === TRIAGE_LABEL;
 
 function obj(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
 }
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+function strings(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * The `ralph:triage` label's ID when the update added it: Linear sends the
+ * issue's `labelIds` (and its `labels` with names) in `data`, and the previous
+ * `labelIds` in `updatedFrom`.
+ */
+function addedTriageLabel(payload: Record<string, unknown>): string | undefined {
+  const before = obj(payload.updatedFrom);
+  if (payload.action !== "update" || !("labelIds" in before)) return undefined;
+  const data = obj(payload.data);
+  const previous = new Set(strings(before.labelIds));
+  const added = new Set(strings(data.labelIds).filter((id) => !previous.has(id)));
+  if (added.size === 0) return undefined;
+  const labels = Array.isArray(data.labels) ? data.labels.map(obj) : [];
+  const label = labels.find((l) => {
+    const id = str(l.id);
+    const name = str(l.name);
+    return id !== undefined && added.has(id) && name !== undefined && isTriageLabel(name);
+  });
+  return label ? str(label.id) : undefined;
 }
 
 function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEvent {
@@ -98,6 +135,10 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
   const removed = payload.action === "remove";
   const stateChanged = payload.action === "update" && "stateId" in obj(payload.updatedFrom);
   if (!removed && !stateChanged) {
+    const labelId = addedTriageLabel(payload);
+    if (labelId) {
+      return { kind: "triage_label_added", issueId, identifier: str(data.identifier), labelId };
+    }
     return { kind: "ignored", reason: "issue update without state change" };
   }
   return {
