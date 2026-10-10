@@ -90,8 +90,8 @@ export interface ReviewResult {
   discarded: { invalid: number; outsideDiff: number; duplicate: number };
   /**
    * Indexes into `previousReview.openFindings` of the open findings the
-   * model re-checked and found fixed at the head (only from tasks that
-   * completed, and never one a new finding raised again).
+   * model re-checked and found fixed at the head: every task answered
+   * "fixed" and completed, and no new finding raised it again.
    */
   fixedOpenFindings: number[];
 }
@@ -210,7 +210,9 @@ export async function runReview(
   const discarded = { invalid: 0, outsideDiff: 0, duplicate: 0 };
   const collected: Finding[] = [];
   const openFindings = input.previousReview?.openFindings ?? [];
-  const fixed = new Set<number>();
+  // Every task re-checks every previous finding: how many answered "fixed" per id.
+  const fixedVotes = new Map<number, number>();
+  let tasksRun = 0;
   let stopReason: ReviewStopReason = "completed";
   let error: string | undefined;
   let retryAfterMs: number | undefined;
@@ -245,9 +247,10 @@ export async function runReview(
     discarded.invalid += result.discarded.invalid;
     discarded.outsideDiff += result.discarded.outsideDiff;
     collected.push(...result.findings);
-    if (result.stopReason === "completed") {
-      for (const id of result.fixedPrevious ?? []) {
-        if (id < Math.min(openFindings.length, MAX_PREVIOUS_FINDINGS)) fixed.add(id);
+    tasksRun++;
+    for (const id of new Set(result.fixedPrevious ?? [])) {
+      if (id < Math.min(openFindings.length, MAX_PREVIOUS_FINDINGS)) {
+        fixedVotes.set(id, (fixedVotes.get(id) ?? 0) + 1);
       }
     }
     if (STOP_PRIORITY[result.stopReason] > STOP_PRIORITY[stopReason]) {
@@ -260,7 +263,15 @@ export async function runReview(
 
   const checked = await makeSelfContained(collected, files, input, logger);
   const deduped = dedupeFindings(checked, openFindings);
-  for (const id of deduped.repeated) fixed.delete(id);
+  // Fixed only when every task completed and each one answered "fixed": any
+  // "open" (or no answer) keeps the finding open.
+  const repeated = new Set(deduped.repeated);
+  const fixed =
+    stopReason === "completed"
+      ? [...fixedVotes]
+          .filter(([id, votes]) => votes === tasksRun && !repeated.has(id))
+          .map(([id]) => id)
+      : [];
   discarded.duplicate = deduped.suppressed.length;
   if (deduped.suppressed.length > 0) {
     logger.info(
@@ -287,6 +298,6 @@ export async function runReview(
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     scope,
     discarded,
-    fixedOpenFindings: [...fixed].sort((a, b) => a - b),
+    fixedOpenFindings: fixed.sort((a, b) => a - b),
   };
 }
