@@ -301,7 +301,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         });
       });
 
-      it("issues a GitHub token limited to contents: write on the one repo, expiring within an hour", async () => {
+      it("issues a GitHub token limited to contents and workflows write on the one repo, expiring within an hour", async () => {
         const agentId = await newAgent();
         const jobId = await newJob({
           ...ralphJob,
@@ -321,7 +321,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         });
         expect(Date.parse(body.expiresAt) - Date.now()).toBeLessThanOrEqual(3_600_000);
         expect(tokenRequests.map((r) => r.body)).toEqual([
-          { repositories: ["app"], permissions: { contents: "write" } },
+          { repositories: ["app"], permissions: { contents: "write", workflows: "write" } },
         ]);
         expect((await issued(agentId))[0]!.detail).toMatchObject({ access: "write" });
       });
