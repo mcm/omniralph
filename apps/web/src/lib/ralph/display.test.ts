@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatChannelLabel,
   linearIssueUrl,
   parseRalphRunListParams,
   ralphMessageState,
   ralphRunListHref,
   roundsLabel,
+  runSourceLabel,
   shortSha,
   truncate,
 } from "./display";
@@ -43,6 +45,21 @@ describe("formatting", () => {
     );
     expect(linearIssueUrl(null, "OPS-2")).toBeNull();
     expect(linearIssueUrl("https://example.com/ENG-1", "OPS-2")).toBeNull();
+  });
+
+  it("names a run by its Linear issue, or its chat platform and channel", () => {
+    const linear = { origin: "linear" as const, linearIdentifier: "ENG-1", chatThread: null };
+    expect(runSourceLabel(linear)).toBe("ENG-1");
+    const chat = { origin: "chat" as const, linearIdentifier: null };
+    expect(
+      runSourceLabel({ ...chat, chatThread: { platform: "slack", channelId: "slack:C0123" } }),
+    ).toBe("Slack C0123");
+    expect(
+      runSourceLabel({ ...chat, chatThread: { platform: "discord", channelId: "discord:9:42" } }),
+    ).toBe("Discord 42");
+    // Its thread is gone.
+    expect(runSourceLabel({ ...chat, chatThread: null })).toBe("Chat");
+    expect(chatChannelLabel("C0123")).toBe("C0123");
   });
 
   it("shortens SHAs and truncates text", () => {

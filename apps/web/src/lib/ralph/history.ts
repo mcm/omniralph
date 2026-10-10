@@ -4,6 +4,7 @@
  */
 import {
   RUN_DETAIL_MESSAGE_LIMIT,
+  type RalphRunChatThread,
   type RalphRunDetail,
   type RalphRunListEntry,
   type ScmProvider,
@@ -12,6 +13,7 @@ import { parseRalphSettings } from "@omniralph/shared";
 import {
   cleanupLabel,
   ralphMessageState,
+  type RalphChatThreadRef,
   type RalphPullRequest,
   type RalphRunDetailView,
   type RalphRunRow,
@@ -26,12 +28,18 @@ function pullRequest(
   return { number, url, label: `${provider === "gitlab" ? "!" : "#"}${number}` };
 }
 
+function chatThreadRef(thread: RalphRunChatThread | null): RalphChatThreadRef | null {
+  return thread && { platform: thread.platform, channelId: thread.channelId };
+}
+
 export function ralphRunRow(entry: RalphRunListEntry): RalphRunRow {
   return {
     id: entry.id,
+    origin: entry.origin,
     linearIdentifier: entry.linearIdentifier,
     linearTitle: entry.linearTitle,
     linearUrl: entry.linearUrl,
+    chatThread: chatThreadRef(entry.chatThread),
     repository: entry.repository,
     status: entry.status,
     stories: entry.stories,
@@ -52,9 +60,11 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
   });
   return {
     id: run.id,
+    origin: run.origin,
     linearIdentifier: run.linearIdentifier,
     linearTitle: run.linearTitle,
     linearUrl: run.linearUrl,
+    chatThread: chatThreadRef(detail.chatThread),
     kind: run.kind,
     repository,
     status: run.status,

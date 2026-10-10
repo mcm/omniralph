@@ -5,6 +5,7 @@ import {
   closeDb,
   createDb,
   createRun,
+  ensureChatThread,
   ensureLane,
   getJob,
   getMainLane,
@@ -18,6 +19,7 @@ import {
   ralphRuns,
   runMigrations,
   RUN_DETAIL_MESSAGE_LIMIT,
+  saveChatConnection,
   saveIntegration,
   updateLane,
   updateMessage,
@@ -28,9 +30,10 @@ import {
   upsertStories,
   DEFAULT_RALPH_SETTINGS,
   type Database,
-  type RalphRun,
   organizations,
   seedReviewProfiles,
+  type LinearRun,
+  type NewLinearRalphRunInput,
 } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
@@ -40,9 +43,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
-import type { RalphRunDetailView, RalphRunListParams, RalphRunRow } from "@/lib/ralph/display";
+import {
+  runSourceLabel,
+  type RalphRunDetailView,
+  type RalphRunListParams,
+  type RalphRunRow,
+} from "@/lib/ralph/display";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -203,23 +211,22 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     state.dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
   });
 
-  async function newRun(overrides: Partial<Parameters<typeof createRun>[1]> = {}) {
+  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
     session += 1;
-    return (
-      await createRun(db, {
-        organizationId: orgId,
-        linearIssueId: `issue-${session}`,
-        linearIdentifier: `ENG-${session}`,
-        linearTitle: `Epic ${session}`,
-        linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
-        linearAgentSessionId: `session-${session}`,
-        kind: "children",
-        repositoryId: repoA,
-        branch: `eng-${session}`,
-        baseBranch: "main",
-        ...overrides,
-      })
-    ).run;
+    const { run } = await createRun(db, {
+      organizationId: orgId,
+      linearIssueId: `issue-${session}`,
+      linearIdentifier: `ENG-${session}`,
+      linearTitle: `Epic ${session}`,
+      linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+      linearAgentSessionId: `session-${session}`,
+      kind: "children",
+      repositoryId: repoA,
+      branch: `eng-${session}`,
+      baseBranch: "main",
+      ...overrides,
+    });
+    return linearRun(run);
   }
 
   async function connectLinear() {
@@ -291,6 +298,48 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
 
     await connectLinear();
     expect((await listPage()).linearConnected).toBe(true);
+  });
+
+  it("shows a chat run with its platform and channel instead of a Linear issue", async () => {
+    const connection = await saveChatConnection(db, {
+      organizationId: orgId,
+      platform: "slack",
+      externalId: "T1",
+      name: "Acme",
+      credentials: null,
+      installedByUserId: null,
+    });
+    if (connection === "other_organization") throw new Error("connected elsewhere");
+    const thread = await ensureChatThread(db, {
+      connectionId: connection.id,
+      externalThreadId: "slack:C0123:1.1",
+      channelId: "slack:C0123",
+      startedByExternalUserId: "U1",
+    });
+    const { run } = await createRun(db, {
+      origin: "chat",
+      organizationId: orgId,
+      chatThreadId: thread!.id,
+      repositoryId: repoA,
+      branch: "omniralph/readme-typo",
+      baseBranch: "main",
+    });
+
+    const [row] = (await listPage()).runs;
+    expect(row).toMatchObject({
+      id: run.id,
+      origin: "chat",
+      linearIdentifier: null,
+      chatThread: { platform: "slack", channelId: "slack:C0123" },
+    });
+    expect(runSourceLabel(row!)).toBe("Slack C0123");
+    const { run: view } = await detailPage(run.id);
+    expect(view).toMatchObject({
+      origin: "chat",
+      linearIdentifier: null,
+      chatThread: { platform: "slack", channelId: "slack:C0123" },
+      branch: "omniralph/readme-typo",
+    });
   });
 
   it("is empty with no runs, and tells whether Linear is connected", async () => {
@@ -583,7 +632,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     expect(empty).toMatchObject({ pendingRequests: [], messages: [] });
   });
 
-  async function runningRun(): Promise<{ run: RalphRun; jobId: string }> {
+  async function runningRun(): Promise<{ run: LinearRun; jobId: string }> {
     const run = await newRun();
     const [story] = await upsertStories(db, run.id, [
       { linearIssueId: "r-1", identifier: "ENG-31", title: "Story" },
@@ -596,7 +645,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     });
     await updateStory(db, story!.id, { status: "running", lastJobId: job.id });
     await updateRun(db, run.id, { status: "running" });
-    return { run: (await getRun(db, run.id))!, jobId: job.id };
+    return { run: linearRun((await getRun(db, run.id))!), jobId: job.id };
   }
 
   it("stops a run like the Linear stop reply: job canceled, session told who stopped it", async () => {

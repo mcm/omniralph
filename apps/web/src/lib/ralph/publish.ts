@@ -25,6 +25,8 @@ import {
   type RalphTransaction,
   type Repository,
   type ScmConnection,
+  isLinearRun,
+  linearSessionOf,
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
@@ -267,7 +269,7 @@ async function openEarlyLanePullRequest(
       });
     }
   } catch (error) {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "thought",
       body: `I couldn't open a draft ${term}${where} yet (I'll try again after the next story): ${tail(errorMessage(error), 1500)}`,
     });
@@ -275,10 +277,13 @@ async function openEarlyLanePullRequest(
   }
   await updateLane(tx, lane.id, { prNumber: pr.number, prUrl: pr.url });
   const label = await sessionLinkLabel(tx, run, found.repository, pr.number);
-  await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
-    deps.linear.addSessionExternalUrl(run.linearAgentSessionId, label, pr.url),
-  );
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  const sessionId = linearSessionOf(run);
+  if (sessionId !== null) {
+    await quietly(`Adding the ${term} to session ${sessionId}`, () =>
+      deps.linear.addSessionExternalUrl(sessionId, label, pr.url),
+    );
+  }
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${lane.branch}\`${where}: ${pr.url}`,
   });
@@ -288,14 +293,22 @@ async function openEarlyLanePullRequest(
  * Every story of the epic is complete: the epic moves to the repository's
  * `epicCompletedState` (cyralph's `epicCompletedStateName`/`Type`), a state of
  * that name or else the first state of that type. Runs after the PR/MR step,
- * whether or not it worked; a single issue is left alone. A failure is logged,
+ * whether or not it worked; a single issue (or a chat run) is left alone. A failure is logged,
  * never fails the run.
  */
 export async function moveCompletedEpic(
   deps: Pick<RalphDeps, "db" | "linear">,
-  run: Pick<RalphRun, "kind" | "linearIssueId" | "repositoryId">,
+  run: Pick<
+    RalphRun,
+    | "kind"
+    | "origin"
+    | "linearIssueId"
+    | "linearIdentifier"
+    | "linearAgentSessionId"
+    | "repositoryId"
+  >,
 ): Promise<void> {
-  if (run.kind === "single") return;
+  if (run.kind === "single" || !isLinearRun(run)) return;
   await quietly(`Moving epic ${run.linearIssueId} to its completed state`, async () => {
     const repository = run.repositoryId ? await getRepository(deps.db, run.repositoryId) : null;
     const target = epicCompletedTarget(
@@ -370,9 +383,12 @@ export async function applyPullRequestJob(
     { provider, fullPath: payload.data.repository.fullPath },
     pr.number,
   );
-  await quietly(`Adding the ${term} to session ${run.linearAgentSessionId}`, () =>
-    deps.linear.addSessionExternalUrl(run.linearAgentSessionId, label, pr.url),
-  );
+  const sessionId = linearSessionOf(run);
+  if (sessionId !== null) {
+    await quietly(`Adding the ${term} to session ${sessionId}`, () =>
+      deps.linear.addSessionExternalUrl(sessionId, label, pr.url),
+    );
+  }
   return { busy: false };
 }
 
@@ -441,7 +457,7 @@ export async function finishPublishing(
     // A reply retries the lanes that failed; the published ones stay published.
     for (const { lane } of failed) await updateLane(tx, lane.id, { publish: null });
     const term = termOf(failed);
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "elicitation",
       body: [
         requestOutput,
@@ -462,7 +478,7 @@ export async function finishPublishing(
       requestOutput: null,
       error: null,
     })) ?? run;
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "response",
     body: requestOutput
       ? withPullRequestLinks(requestOutput, published)

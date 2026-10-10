@@ -14,6 +14,9 @@ import {
   type RalphRun,
   type RalphStory,
   type RalphTransaction,
+  isLinearRun,
+  linearSessionOf,
+  runReference,
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
@@ -128,7 +131,7 @@ async function applyStoryResult(
     if (wipSha) {
       // The blocked story's work so far, pushed as `wip(<ID>)`: it's on the branch now.
       await updateStory(tx, story.id, { commitSha: wipSha });
-      const base = run.progress || initialProgress(run.linearIdentifier);
+      const base = run.progress || initialProgress(runReference(run));
       const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
       run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
     }
@@ -150,7 +153,7 @@ async function applyStoryResult(
     lastFeedback: null,
   });
   if (result.progress === undefined) {
-    const base = run.progress || initialProgress(run.linearIdentifier);
+    const base = run.progress || initialProgress(runReference(run));
     const entry = progressEntry(story, result.summary, ctx.now ?? new Date());
     run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
   }
@@ -179,7 +182,7 @@ async function applyStoryResult(
 
   const stories = await listStories(tx, run.id);
   const done = stories.filter((s) => s.status === "completed" || s.status === "canceled").length;
-  await postActivity(linear, run.linearAgentSessionId, {
+  await postActivity(linear, linearSessionOf(run), {
     type: "thought",
     body: `✅ **${story.identifier}** complete${sha ? ` (\`${sha.slice(0, 10)}\`)` : ""}. ${done}/${stories.length} stories done.`,
   });
@@ -208,7 +211,7 @@ export async function recordFailedAttempt(
     attempts: attempt,
     lastFeedback: feedback,
   });
-  const sessionId = ctx.run.linearAgentSessionId;
+  const sessionId = linearSessionOf(ctx.run);
   const saved = options.wipSha
     ? ` Its work so far is committed as \`${options.wipSha.slice(0, 10)}\`.`
     : "";
@@ -234,7 +237,7 @@ export async function recordFailedAttempt(
  * Files the follow-ups a story turned up as sub-issues of the epic (manual
  * ones with the manual label); `blocking` makes them block the story. A
  * follow-up with the title of an open sub-issue reuses it, so a retry that
- * reports the same work again doesn't file it twice. Single-issue runs have
+ * reports the same work again doesn't file it twice. Single-issue and chat runs have
  * no epic to file them in.
  */
 export async function fileFollowUps(
@@ -244,7 +247,7 @@ export async function fileFollowUps(
   options: { blocking: boolean },
 ): Promise<void> {
   const { linear, run } = ctx;
-  if (followUps.length === 0 || run.kind === "single") return;
+  if (followUps.length === 0 || run.kind === "single" || !isLinearRun(run)) return;
   let siblings;
   let parent;
   try {
@@ -252,7 +255,7 @@ export async function fileFollowUps(
     siblings = await linear.getChildren(parent.id);
   } catch (error) {
     console.warn(`${run.linearIdentifier}: could not read the epic to file follow-ups`, error);
-    await postActivity(linear, run.linearAgentSessionId, {
+    await postActivity(linear, linearSessionOf(run), {
       type: "thought",
       body: `I couldn't file the follow-ups of **${story.identifier}** in Linear: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
     });
@@ -305,7 +308,7 @@ export async function fileFollowUps(
   }
   if (failed.length > 0) lines.push(`I couldn't file ${failed.join(", ")} in Linear.`);
   if (lines.length > 0) {
-    await postActivity(linear, run.linearAgentSessionId, {
+    await postActivity(linear, linearSessionOf(run), {
       type: "thought",
       body: lines.join(" "),
     });

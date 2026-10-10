@@ -14,6 +14,7 @@ import {
   getRepositoryWithConnection,
   getRunByIssue,
   getRunBySession,
+  linearSessionOf,
   listActiveRunJobIds,
   listRalphRepositories,
   listStories,
@@ -226,7 +227,9 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
   }
   const prUrl = (await getMainLane(deps.db, previous))?.prUrl;
   const pr = prUrl ? ` The open draft stays where it is: ${prUrl}` : "";
-  await post(deps, previous.linearAgentSessionId, {
+  const previousSessionId = linearSessionOf(previous);
+  if (previousSessionId === null) return;
+  await post(deps, previousSessionId, {
     type: "response",
     body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
   });

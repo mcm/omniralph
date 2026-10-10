@@ -39,6 +39,8 @@ import {
   type RalphRun,
   type RalphStash,
   type RalphTransaction,
+  linearSessionOf,
+  runReference,
 } from "@omniralph/db";
 import {
   branchAnswerMessage,
@@ -102,7 +104,7 @@ const now = () => new Date().toISOString();
  * sees a finished session complete again.
  */
 async function notify(deps: Pick<RalphDeps, "linear">, run: RalphRun, body: string): Promise<void> {
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: FINISHED_RUN_STATUSES.has(run.status) ? "response" : "thought",
     body,
   });
@@ -133,7 +135,7 @@ async function enqueueCleanupJob(
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository),
-    epic: { identifier: run.linearIdentifier },
+    epic: { identifier: runReference(run) },
     action,
   });
   const { job } = await deps.dispatcher.createAndPublish({
@@ -392,9 +394,9 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
           run,
           question,
           stashQuestion({
-            epic: run.linearIdentifier,
+            epic: runReference(run),
             repository: repository?.fullPath ?? payload.repository.fullPath,
-            stashBranch: ralphStashBranch(run.linearIdentifier),
+            stashBranch: ralphStashBranch(runReference(run)),
             entries: result.stashes,
           }),
         );
@@ -446,8 +448,8 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
         stashAnswerMessage({
           option,
           count: parsed.data.handled,
-          epic: run.linearIdentifier,
-          stashBranch: ralphStashBranch(run.linearIdentifier),
+          epic: runReference(run),
+          stashBranch: ralphStashBranch(runReference(run)),
         }),
       );
       return true;
@@ -476,7 +478,7 @@ async function ask(
 ): Promise<void> {
   await postActivity(
     deps.linear,
-    run.linearAgentSessionId,
+    linearSessionOf(run),
     { type: "elicitation", body },
     {
       signal: "select",

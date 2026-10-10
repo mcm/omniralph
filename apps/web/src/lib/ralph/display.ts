@@ -82,11 +82,28 @@ export interface RalphPullRequest {
   label: string;
 }
 
+/** The chat thread a chat run was started from. */
+export interface RalphChatThreadRef {
+  platform: "slack" | "discord";
+  /** The Chat SDK channel ID (e.g. `slack:C0123`). */
+  channelId: string;
+}
+
+export const CHAT_PLATFORM_NAMES: Record<RalphChatThreadRef["platform"], string> = {
+  slack: "Slack",
+  discord: "Discord",
+};
+
 export interface RalphRunRow {
   id: string;
-  linearIdentifier: string;
+  /** Where the run came from: a Linear issue, or a chat thread. */
+  origin: "linear" | "chat";
+  /** The Linear issue's (null for a chat run). */
+  linearIdentifier: string | null;
   linearTitle: string | null;
   linearUrl: string | null;
+  /** A chat run's thread (null for a Linear run, or once the thread is gone). */
+  chatThread: RalphChatThreadRef | null;
   /** Null while a person is asked which repository to use. */
   repository: RalphRepositoryRef | null;
   status: RalphRunStatus;
@@ -235,6 +252,24 @@ export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   messageLimit: number;
   /** ISO timestamp. */
   createdAt: string;
+}
+
+/** A Chat SDK channel ID without its platform prefix (and a Discord channel's guild). */
+export function chatChannelLabel(channelId: string): string {
+  return channelId.split(":").at(-1) || channelId;
+}
+
+/**
+ * What the pages call a run: its Linear identifier, or for a chat run its
+ * platform and channel (`Slack C0123`).
+ */
+export function runSourceLabel(
+  run: Pick<RalphRunRow, "origin" | "linearIdentifier" | "chatThread">,
+): string {
+  if (run.origin === "linear") return run.linearIdentifier ?? "Linear issue";
+  if (!run.chatThread) return "Chat";
+  const { platform, channelId } = run.chatThread;
+  return `${CHAT_PLATFORM_NAMES[platform]} ${chatChannelLabel(channelId)}`;
 }
 
 /** The first 12 characters of a commit SHA. */

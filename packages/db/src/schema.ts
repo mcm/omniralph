@@ -109,6 +109,8 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
  * delegation, or `/ralph`); `request` only does what a mention asks.
  */
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
+/** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
+export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -1128,8 +1130,9 @@ export interface RalphAttachmentLink {
 }
 
 /**
- * A delegated Linear issue being built story by story (the ralph loop). The
- * control panel owns this state; every change goes through a row lock
+ * A delegated Linear issue being built story by story (the ralph loop), or a
+ * request-mode run started from a chat thread (`origin` `chat`: no Linear
+ * issue, session or stories). The control panel owns this state; every change goes through a row lock
  * (`lockRun`) because webhooks and job outcomes race.
  */
 export const ralphRuns = pgTable(
@@ -1140,13 +1143,18 @@ export const ralphRuns = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    /** The delegated issue (the epic, or the single issue). */
-    linearIssueId: text("linear_issue_id").notNull(),
-    linearIdentifier: text("linear_identifier").notNull(),
+    origin: ralphRunOrigin("origin").notNull().default("linear"),
+    /** The chat thread a `chat` run belongs to (its session posts there). */
+    chatThreadId: uuid("chat_thread_id").references(() => chatThreads.id, {
+      onDelete: "set null",
+    }),
+    /** The delegated issue (the epic, or the single issue); set for `linear` runs only. */
+    linearIssueId: text("linear_issue_id"),
+    linearIdentifier: text("linear_identifier"),
     /** The delegated issue's title and Linear URL when the run started (for the Ralph runs pages). */
     linearTitle: text("linear_title"),
     linearUrl: text("linear_url"),
-    linearAgentSessionId: text("linear_agent_session_id").notNull(),
+    linearAgentSessionId: text("linear_agent_session_id"),
     kind: ralphRunKind("kind").notNull(),
     mode: ralphRunMode("mode").notNull().default("epic"),
     /** Linear issue ID of the story to work on first (a delegated sub-issue). */
@@ -1189,10 +1197,26 @@ export const ralphRuns = pgTable(
   },
   (t) => [
     uniqueIndex("ralph_runs_agent_session_uq").on(t.linearAgentSessionId),
-    /** At most one unfinished run per delegated issue (and organization). */
+    /** At most one unfinished Linear run per delegated issue (and organization). */
     uniqueIndex("ralph_runs_issue_active_uq")
       .on(t.organizationId, t.linearIssueId)
-      .where(sql`status in ('pending', 'running', 'waiting')`),
+      .where(sql`origin = 'linear' and status in ('pending', 'running', 'waiting')`),
+    /** At most one unfinished chat run per thread. */
+    uniqueIndex("ralph_runs_chat_thread_active_uq")
+      .on(t.chatThreadId)
+      .where(sql`origin = 'chat' and status in ('pending', 'running', 'waiting')`),
+    index("ralph_runs_chat_thread_id_idx").on(t.chatThreadId, t.createdAt),
+    /**
+     * A Linear run has its issue and agent session; a chat run only does what
+     * it was asked. A chat run starts with its thread (`createRun` requires
+     * it), but loses it when the thread goes (e.g. the chat connection is
+     * removed), so the thread can't be required here.
+     */
+    check(
+      "ralph_runs_origin_check",
+      sql`(origin = 'linear' and linear_issue_id is not null and linear_identifier is not null and linear_agent_session_id is not null)
+        or (origin = 'chat' and mode = 'request')`,
+    ),
     index("ralph_runs_linear_issue_id_idx").on(t.linearIssueId, t.createdAt),
     index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),
     index("ralph_runs_repository_created_at_idx").on(t.repositoryId, t.createdAt),

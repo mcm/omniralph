@@ -52,6 +52,7 @@ import {
   linearIssueUrl,
   RALPH_MESSAGE_STATE_LABELS,
   roundsLabel,
+  runSourceLabel,
   shortSha,
   STOPPABLE_RALPH_RUN_STATUSES,
   truncate,
@@ -66,6 +67,7 @@ import {
   LinearIssueLink,
   LinearNotConnected,
   PullRequestLink,
+  RunSource,
 } from "../ralph-runs-view";
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
@@ -170,7 +172,7 @@ function StopRunButton({ run }: { run: RalphRunDetail }) {
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Stop the run of {run.linearIdentifier}?</AlertDialogTitle>
+          <AlertDialogTitle>Stop the run of {runSourceLabel(run)}?</AlertDialogTitle>
           <AlertDialogDescription>
             Its queued or running job is canceled (a running job stops after its agent&apos;s next
             heartbeat) and the Linear agent session is told. Finished stories stay done; reply with
@@ -627,7 +629,7 @@ export function RalphRunDetailView({
   return (
     <>
       <AppHeader
-        breadcrumbs={[{ label: "Ralph runs", href: "/ralph" }, { label: run.linearIdentifier }]}
+        breadcrumbs={[{ label: "Ralph runs", href: "/ralph" }, { label: runSourceLabel(run) }]}
       />
       <main
         style={{
@@ -652,7 +654,7 @@ export function RalphRunDetailView({
                 flexWrap: "wrap",
               }}
             >
-              <span style={{ fontFamily: "var(--font-mono)" }}>{run.linearIdentifier}</span>
+              <span style={{ fontFamily: "var(--font-mono)" }}>{runSourceLabel(run)}</span>
               {run.linearTitle && <span>{run.linearTitle}</span>}
             </h1>
             <div
@@ -725,12 +727,8 @@ export function RalphRunDetailView({
               <Fact label="Status">
                 <RalphRunStatusBadge status={run.status} />
               </Fact>
-              <Fact label="Linear">
-                <LinearIssueLink
-                  identifier={run.linearIdentifier}
-                  title={null}
-                  url={run.linearUrl}
-                />
+              <Fact label={run.origin === "chat" ? "Chat" : "Linear"}>
+                <RunSource run={run} showTitle={false} />
               </Fact>
               <Fact label="Repository">
                 <span style={mono}>{run.repository?.fullPath ?? "Not chosen yet"}</span>

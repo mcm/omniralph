@@ -30,6 +30,8 @@ import {
   type RalphWaitingOn,
   type Repository,
   type ScmConnection,
+  isLinearRun,
+  linearSessionOf,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -178,10 +180,11 @@ export async function syncStories(
 /** Posts the run's plan (every story with its status) to its agent session. */
 export async function publishPlan(
   linear: LinearGateway,
-  run: Pick<RalphRun, "linearAgentSessionId">,
+  run: Pick<RalphRun, "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId">,
   stories: readonly RalphStory[],
 ): Promise<void> {
-  await linear.updateSessionPlan(run.linearAgentSessionId, planFor(stories));
+  const sessionId = linearSessionOf(run);
+  if (sessionId !== null) await linear.updateSessionPlan(sessionId, planFor(stories));
 }
 
 /**
@@ -272,6 +275,9 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     if ("failed" in asked) return failRun(deps, tx, run, asked.failed);
     return { action: "waiting", run: asked, waitingOn: { blockers: [], manual: [] } };
   }
+  // The steps below build a Linear issue; a chat run has none to load.
+  if (!isLinearRun(run)) return failRun(deps, tx, run, "A run from chat can't be built yet.");
+  const { linearIssueId } = run;
 
   const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
@@ -295,7 +301,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
     ? []
-    : openRootBlockers(epic, await deps.linear.getBlockers(run.linearIssueId));
+    : openRootBlockers(epic, await deps.linear.getBlockers(linearIssueId));
 
   if (rootBlockers.length === 0) {
     const focused = run.focusStoryId
@@ -355,7 +361,7 @@ async function failRun(
   error: string,
 ): Promise<AdvanceResult> {
   const failed = (await updateRun(tx, run.id, { status: "failed", waitingOn: null, error })) ?? run;
-  await postActivity(deps.linear, run.linearAgentSessionId, { type: "error", body: error });
+  await postActivity(deps.linear, linearSessionOf(run), { type: "error", body: error });
   return { action: "failed", run: failed };
 }
 
@@ -463,7 +469,7 @@ async function enqueueStory(
       error: null,
     })) ?? run;
   await publishPlan(deps.linear, run, await listStories(tx, run.id));
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${MAX_ATTEMPTS_PER_STORY})`,
   });
@@ -580,7 +586,7 @@ async function describeLane(
       ? `**${input.epic.identifier}** is done`
       : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
   const where = input.lanes.length > 1 ? ` of \`${repository.fullPath}\`` : "";
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: `${what}. Writing the ${term} description${where}.`,
   });
@@ -624,7 +630,7 @@ async function enqueuePreparation(
       waitingOn: null,
       preparation: { ...state, request: { ...request, jobId: job.id } },
     })) ?? run;
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: `Running the preparation of **${request.identifier}: ${request.title}** on \`${found.lane.branch}\`.`,
   });
@@ -676,7 +682,7 @@ async function enqueueRequest(
   if (!created) return { action: "busy", run };
   const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;
   const other = lane.repositoryId !== run.repositoryId ? repository.fullPath : null;
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: workingOnRequestsNote(input.requests.length, other),
   });
@@ -696,7 +702,7 @@ async function finishRequests(
   const output = await takeRequestOutput(tx, run);
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "response",
     body: output ? withPullRequestLinks(output, await runLanes(deps, tx, run)) : NOTHING_TO_DO,
   });
@@ -715,7 +721,7 @@ async function complete(
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
   await publishPlan(deps.linear, run, input.rows);
   if (output) {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "response",
       body: withPullRequestLinks(output, await runLanes(deps, tx, run)),
     });
@@ -726,7 +732,7 @@ async function complete(
     run.kind === "single"
       ? `**${input.epic.identifier}**`
       : `all ${input.stories.length} ${input.stories.length === 1 ? "story" : "stories"} of **${input.epic.identifier}**`;
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "response",
     body: `Finished ${what} on \`${await mainBranch(tx, run)}\`. Nothing was committed, so there is no pull/merge request.`,
   });
@@ -789,7 +795,7 @@ async function wait(
   // What requests did while the run waits (e.g. on blockers) is told before what it waits on.
   const output = await takeRequestOutput(tx, run);
   if (output) {
-    await postActivity(deps.linear, run.linearAgentSessionId, { type: "thought", body: output });
+    await postActivity(deps.linear, linearSessionOf(run), { type: "thought", body: output });
   }
   const found = waitingOnFor({ stories, externalIssues: epic.externalIssues ?? {} });
   const titles = new Map(stories.map((s) => [s.issueId ?? s.key, s.title]));
@@ -884,6 +890,6 @@ async function wait(
     const names = preparable.map((s) => `**${s.identifier ?? s.storyId}**`).join(", ");
     body += `\n\nReply \`rerun preparation\` to be asked again about running the preparation commands of ${names}.`;
   }
-  await postActivity(deps.linear, run.linearAgentSessionId, { type: "elicitation", body });
+  await postActivity(deps.linear, linearSessionOf(run), { type: "elicitation", body });
   return { action: "waiting", run: updated, waitingOn };
 }

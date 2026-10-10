@@ -3,6 +3,7 @@
  * issues, blocks relations, comments, activities, plans and session URLs are
  * plain fields to arrange and assert on.
  */
+import { isLinearRun, type LinearRun } from "@omniralph/db";
 import type {
   ActivityContent,
   ActivityOptions,
@@ -195,4 +196,10 @@ export class FakeLinearGateway implements LinearGateway {
   plan(sessionId: string): PlanStep[] | undefined {
     return this.plans.get(sessionId)?.at(-1);
   }
+}
+
+/** A run a test expects to have come from Linear, with its issue and session; throws otherwise. */
+export function linearRun<T extends Parameters<typeof isLinearRun>[0]>(run: T): LinearRun<T> {
+  if (!isLinearRun(run)) throw new Error("Expected a run from Linear");
+  return run;
 }

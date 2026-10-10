@@ -19,6 +19,8 @@ import {
   type RalphTransaction,
   type Repository,
   type ScmProvider,
+  isLinearRun,
+  linearSessionOf,
 } from "@omniralph/db";
 import { epicBranchName, parseRepoTags } from "@omniralph/ralph";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -145,6 +147,8 @@ export async function answerRepositorySelection(
   offered: readonly string[],
   text: string,
 ): Promise<RepositoryAnswer> {
+  // A Linear elicitation: a chat run is given its repository when it starts.
+  if (!isLinearRun(run)) return { status: "ignored" };
   const candidates = await selectionCandidates(deps, run, offered);
   const repository = matchSelection(text, candidates);
   if (!repository) {
@@ -169,7 +173,7 @@ export async function answerRepositorySelection(
       externalId: found.repository.externalId,
     });
   } catch (error) {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "error",
       body: `I couldn't read the default branch of \`${repository.fullPath}\`: ${errorMessage(error)}. Reply with the repository again to retry.`,
     });
@@ -192,7 +196,7 @@ export async function answerRepositorySelection(
   });
   if (!chosen) return { status: "ignored" };
 
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(deps.linear, linearSessionOf(run), {
     type: "thought",
     body: `Using \`${repository.fullPath}\`. Building on branch \`${chosen.branch}\`, based on \`${baseBranch}\`.`,
   });
@@ -219,6 +223,8 @@ export async function awaitRepository(
   run: RalphRun,
 ): Promise<RalphRun | { failed: string }> {
   if (run.status === "waiting" && repositorySelectionOf(run)) return run;
+  // Only a Linear run asks: a chat run is given its repository when it starts.
+  if (!isLinearRun(run)) return { failed: "This run has no repository to build in." };
   const candidates = await listRalphRepositories(tx, run.organizationId);
   if (candidates.length === 0) {
     return {

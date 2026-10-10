@@ -24,9 +24,9 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
-  type RalphRun,
   organizations,
   seedReviewProfiles,
+  type LinearRun,
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
@@ -42,7 +42,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import {
@@ -175,7 +175,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   async function session(
     issueId: string,
     body?: string,
-  ): Promise<{ outcome: StartOutcome; sessionId: string; run: RalphRun | null }> {
+  ): Promise<{ outcome: StartOutcome; sessionId: string; run: LinearRun | null }> {
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     const outcome = await startRun(
@@ -188,10 +188,11 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       },
       deps(),
     );
-    return { outcome, sessionId, run: await getRunBySession(db, sessionId) };
+    const run = await getRunBySession(db, sessionId);
+    return { outcome, sessionId, run: run && linearRun(run) };
   }
 
-  const reply = (run: RalphRun, body: string) =>
+  const reply = (run: LinearRun, body: string) =>
     handleReply(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body, authorName: "Steve" },
       deps(),

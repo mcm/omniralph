@@ -221,6 +221,59 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("makes existing runs Linear runs (0043)", async () => {
+    await db.execute(sql`create database run_origins`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/run_origins");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0043_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        await client.query(
+          `insert into ralph_runs (organization_id, linear_issue_id, linear_identifier, linear_agent_session_id, kind, mode, status)
+           values ($1, 'i-1', 'ENG-1', 's-1', 'children', 'epic', 'running'),
+                  ($1, 'i-2', 'ENG-2', 's-2', 'single', 'request', 'completed')`,
+          [orgs[0]!.id],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query(
+          `select linear_identifier, origin, chat_thread_id from ralph_runs order by linear_identifier`,
+        );
+        expect(rows).toEqual([
+          { linear_identifier: "ENG-1", origin: "linear", chat_thread_id: null },
+          { linear_identifier: "ENG-2", origin: "linear", chat_thread_id: null },
+        ]);
+        // The unfinished run still holds its issue.
+        await expect(
+          client.query(
+            `insert into ralph_runs (organization_id, linear_issue_id, linear_identifier, linear_agent_session_id, kind)
+             values ($1, 'i-1', 'ENG-1', 's-3', 'children')`,
+            [orgs[0]!.id],
+          ),
+        ).rejects.toThrow(/ralph_runs_issue_active_uq/);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("allows one queued/running job per dedupe key", async () => {
     const [org] = await db.insert(organizations).values({ name: "Jobs" }).returning();
     const job = {

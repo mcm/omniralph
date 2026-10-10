@@ -26,6 +26,7 @@ import {
   updateLane,
   type RalphLane,
   type RalphRun,
+  linearSessionOf,
 } from "@omniralph/db";
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
@@ -139,7 +140,7 @@ export async function respondToCi(
     if (rounds >= settings.maxFixRounds) {
       await updateLane(tx, lane.id, { handledCiShas });
       const active = (await listActiveRunJobIds(tx, run.id)).length > 0;
-      await postActivity(deps.linear, run.linearAgentSessionId, {
+      await postActivity(deps.linear, linearSessionOf(run), {
         type: active ? "thought" : "response",
         body: `CI failed again on ${prUrl} (\`${sha}\`). I've already tried to fix CI ${rounds} time${rounds === 1 ? "" : "s"} on this ${term}, so I'm leaving this one for a person.`,
       });
@@ -163,7 +164,7 @@ export async function respondToCi(
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledCiShas, ciFixRounds: rounds + 1 });
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "thought",
       body: `CI failed on the ${term} (\`${sha}\`: ${jobNames(ci.failedJobs)}). Working on a fix.`,
     });
