@@ -41,7 +41,6 @@ import {
   getMainLane,
   getActiveRunOfSameOrigin,
   isLinearRun,
-  linearSessionOf,
 } from "@omniralph/db";
 import {
   isRerunPreparationRequest,
@@ -56,6 +55,7 @@ import {
 } from "@omniralph/ralph";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
 import { answerCleanup } from "./cleanup";
@@ -115,7 +115,7 @@ export async function handleReply(
   const cleanup = await answerCleanup(deps, run.id, parseInstruction(text).text || text);
   if (cleanup) return { kind: "cleanup_answer" };
   if (run.status === "failed") {
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "response",
       body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.linearIdentifier}** to me again to start a new run.`,
     });
@@ -245,7 +245,7 @@ export async function handleReply(
     };
   });
   if (!handled) return null;
-  if (handled.note) await postActivity(deps.linear, linearSessionOf(run), handled.note);
+  if (handled.note) await postActivity(conversationFor(run, deps), handled.note);
   // `/ralph` on a mention's run: the story loop needs the epic's stories as sub-issues.
   if ("switched" in handled && handled.switched) await materializeStories(deps, run);
   if (!handled.advance) return { kind: handled.kind };
@@ -315,7 +315,7 @@ export async function stopRun(
   });
   if (!stopped) return { status: "gone" };
   if ("already" in stopped && stopped.already) {
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "response",
       body:
         stopped.already === "stopped"
@@ -332,7 +332,7 @@ export async function stopRun(
     if (ok) canceled += 1;
   }
   await quietly(`Posting the plan of session ${run.linearAgentSessionId}`, () =>
-    publishPlan(deps.linear, run, stopped.stories),
+    publishPlan(conversationFor(run, deps), stopped.stories),
   );
   const by = authorName ? ` (requested by ${authorName})` : "";
   const content: ActivityContent = {
@@ -345,7 +345,7 @@ export async function stopRun(
       .filter(Boolean)
       .join(" "),
   };
-  await postActivity(deps.linear, linearSessionOf(run), content);
+  await postActivity(conversationFor(run, deps), content);
   return { status: "stopped", canceled };
 }
 

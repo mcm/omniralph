@@ -39,7 +39,6 @@ import {
   type RalphRun,
   type RalphStash,
   type RalphTransaction,
-  linearSessionOf,
   runReference,
 } from "@omniralph/db";
 import {
@@ -67,6 +66,7 @@ import {
   type RalphCleanupAction,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
+import { conversationFor } from "./conversation";
 import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
 import { jobSettings } from "./payload";
@@ -104,7 +104,7 @@ const now = () => new Date().toISOString();
  * sees a finished session complete again.
  */
 async function notify(deps: Pick<RalphDeps, "linear">, run: RalphRun, body: string): Promise<void> {
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: FINISHED_RUN_STATUSES.has(run.status) ? "response" : "thought",
     body,
   });
@@ -477,8 +477,7 @@ async function ask(
   body: string,
 ): Promise<void> {
   await postActivity(
-    deps.linear,
-    linearSessionOf(run),
+    conversationFor(run, deps),
     { type: "elicitation", body },
     {
       signal: "select",

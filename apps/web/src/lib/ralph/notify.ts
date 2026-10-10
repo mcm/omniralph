@@ -3,7 +3,8 @@
  * comment that fails to post is logged, never allowed to undo a run's state
  * change (cyralph treats them the same way).
  */
-import type { ActivityContent, ActivityOptions, LinearGateway } from "@/lib/linear/gateway";
+import type { ActivityContent, ActivityOptions } from "@/lib/linear/gateway";
+import type { RunConversation } from "./conversation";
 
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -19,19 +20,14 @@ export async function quietly(what: string, write: () => Promise<unknown>): Prom
   }
 }
 
-/**
- * Posts an activity to an agent session, logging a failure. A run without a
- * Linear session (`linearSessionOf` of a chat run) posts nothing here.
- */
+/** Posts an activity to a run's conversation (`conversationFor`), logging a failure. */
 export async function postActivity(
-  linear: LinearGateway,
-  sessionId: string | null,
+  conversation: RunConversation,
   content: ActivityContent,
   options?: ActivityOptions,
 ): Promise<boolean> {
-  if (sessionId === null) return false;
-  return quietly(`Posting a Linear ${content.type} activity to session ${sessionId}`, () =>
-    linear.createActivity(sessionId, content, options),
+  return quietly(`Posting an activity (${content.type}) to ${conversation.name}`, () =>
+    conversation.post(content, options),
   );
 }
 

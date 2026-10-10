@@ -15,11 +15,11 @@ import {
   type RalphStory,
   type RalphTransaction,
   isLinearRun,
-  linearSessionOf,
   runReference,
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
+import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
@@ -182,7 +182,7 @@ async function applyStoryResult(
 
   const stories = await listStories(tx, run.id);
   const done = stories.filter((s) => s.status === "completed" || s.status === "canceled").length;
-  await postActivity(linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, ctx), {
     type: "thought",
     body: `✅ **${story.identifier}** complete${sha ? ` (\`${sha.slice(0, 10)}\`)` : ""}. ${done}/${stories.length} stories done.`,
   });
@@ -211,22 +211,22 @@ export async function recordFailedAttempt(
     attempts: attempt,
     lastFeedback: feedback,
   });
-  const sessionId = linearSessionOf(ctx.run);
+  const conversation = conversationFor(ctx.run, ctx);
   const saved = options.wipSha
     ? ` Its work so far is committed as \`${options.wipSha.slice(0, 10)}\`.`
     : "";
   if (options.setAside) {
-    await postActivity(ctx.linear, sessionId, {
+    await postActivity(conversation, {
       type: "thought",
       body: `🚧 **${story.identifier}** is blocked, so I'm setting it aside without retrying.${saved} Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
     });
   } else if (exhausted) {
-    await postActivity(ctx.linear, sessionId, {
+    await postActivity(conversation, {
       type: "error",
       body: `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside. Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
     });
   } else {
-    await postActivity(ctx.linear, sessionId, {
+    await postActivity(conversation, {
       type: "thought",
       body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${tail(feedback, 1500)}`,
     });
@@ -255,7 +255,7 @@ export async function fileFollowUps(
     siblings = await linear.getChildren(parent.id);
   } catch (error) {
     console.warn(`${run.linearIdentifier}: could not read the epic to file follow-ups`, error);
-    await postActivity(linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, ctx), {
       type: "thought",
       body: `I couldn't file the follow-ups of **${story.identifier}** in Linear: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
     });
@@ -308,7 +308,7 @@ export async function fileFollowUps(
   }
   if (failed.length > 0) lines.push(`I couldn't file ${failed.join(", ")} in Linear.`);
   if (lines.length > 0) {
-    await postActivity(linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, ctx), {
       type: "thought",
       body: lines.join(" "),
     });

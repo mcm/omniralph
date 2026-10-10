@@ -29,7 +29,6 @@ import {
   insertMessage,
   type Job,
   type RalphLane,
-  linearSessionOf,
   type RalphMessage,
   type RalphRun,
   type RalphTransaction,
@@ -40,6 +39,7 @@ import {
   RalphRequestResult,
   type RalphPullRequestAction,
 } from "@omniralph/shared";
+import { conversationFor } from "./conversation";
 import { settleFindingThreads } from "./finding-threads";
 import { errorMessage, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -296,11 +296,10 @@ async function recordPullRequest(
   if (lane.prNumber === pr.number && lane.prUrl === pr.url) return;
   await updateLane(tx, lane.id, { prNumber: pr.number, prUrl: pr.url });
   const label = await sessionLinkLabel(tx, run, repository, pr.number);
-  const sessionId = linearSessionOf(run);
-  if (sessionId === null) return;
+  const conversation = conversationFor(run, deps);
   await quietly(
-    `Adding the ${changeRequestTerm(repository.provider)} to session ${sessionId}`,
-    () => deps.linear.addSessionExternalUrl(sessionId, label, pr.url),
+    `Adding the ${changeRequestTerm(repository.provider)} to ${conversation.name}`,
+    () => conversation.addLink(label, pr.url),
   );
 }
 

@@ -31,7 +31,6 @@ import {
   type Repository,
   type ScmConnection,
   isLinearRun,
-  linearSessionOf,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -58,6 +57,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
+import { conversationFor, type RunConversation } from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
@@ -177,14 +177,12 @@ export async function syncStories(
   return changed ? listStories(tx, runId) : stored;
 }
 
-/** Posts the run's plan (every story with its status) to its agent session. */
+/** Posts the run's plan (every story with its status) to its conversation. */
 export async function publishPlan(
-  linear: LinearGateway,
-  run: Pick<RalphRun, "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId">,
+  conversation: RunConversation,
   stories: readonly RalphStory[],
 ): Promise<void> {
-  const sessionId = linearSessionOf(run);
-  if (sessionId !== null) await linear.updateSessionPlan(sessionId, planFor(stories));
+  await conversation.updatePlan(planFor(stories));
 }
 
 /**
@@ -200,7 +198,7 @@ export async function updateStoryAndPlan(
 ): Promise<RalphStory | null> {
   const updated = await updateStory(tx, story.id, update);
   if (updated && updated.status !== story.status) {
-    await publishPlan(linear, run, await listStories(tx, run.id));
+    await publishPlan(conversationFor(run, { linear }), await listStories(tx, run.id));
   }
   return updated;
 }
@@ -361,7 +359,7 @@ async function failRun(
   error: string,
 ): Promise<AdvanceResult> {
   const failed = (await updateRun(tx, run.id, { status: "failed", waitingOn: null, error })) ?? run;
-  await postActivity(deps.linear, linearSessionOf(run), { type: "error", body: error });
+  await postActivity(conversationFor(run, deps), { type: "error", body: error });
   return { action: "failed", run: failed };
 }
 
@@ -468,8 +466,8 @@ async function enqueueStory(
       waitingOn: null,
       error: null,
     })) ?? run;
-  await publishPlan(deps.linear, run, await listStories(tx, run.id));
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await publishPlan(conversationFor(run, deps), await listStories(tx, run.id));
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${MAX_ATTEMPTS_PER_STORY})`,
   });
@@ -509,7 +507,7 @@ async function publishLanes(
     through.push({ lane, repository: await laneRepositoryName(deps, lane) });
   }
   const epic = { identifier: input.epic.identifier, title: input.epic.title, url: input.epic.url };
-  await publishPlan(deps.linear, run, input.rows);
+  await publishPlan(conversationFor(run, deps), input.rows);
   const finished = await finishPublishing(deps, tx, run, {
     epic,
     rows: input.rows,
@@ -579,14 +577,14 @@ async function describeLane(
       waitingOn: null,
       error: null,
     })) ?? run;
-  await publishPlan(deps.linear, run, input.rows);
+  await publishPlan(conversationFor(run, deps), input.rows);
   const term = changeRequestTerm(repository.provider);
   const what =
     run.kind === "single"
       ? `**${input.epic.identifier}** is done`
       : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
   const where = input.lanes.length > 1 ? ` of \`${repository.fullPath}\`` : "";
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `${what}. Writing the ${term} description${where}.`,
   });
@@ -630,7 +628,7 @@ async function enqueuePreparation(
       waitingOn: null,
       preparation: { ...state, request: { ...request, jobId: job.id } },
     })) ?? run;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `Running the preparation of **${request.identifier}: ${request.title}** on \`${found.lane.branch}\`.`,
   });
@@ -682,7 +680,7 @@ async function enqueueRequest(
   if (!created) return { action: "busy", run };
   const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;
   const other = lane.repositoryId !== run.repositoryId ? repository.fullPath : null;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: workingOnRequestsNote(input.requests.length, other),
   });
@@ -702,7 +700,7 @@ async function finishRequests(
   const output = await takeRequestOutput(tx, run);
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "response",
     body: output ? withPullRequestLinks(output, await runLanes(deps, tx, run)) : NOTHING_TO_DO,
   });
@@ -719,9 +717,9 @@ async function complete(
   const output = await takeRequestOutput(tx, run);
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
-  await publishPlan(deps.linear, run, input.rows);
+  await publishPlan(conversationFor(run, deps), input.rows);
   if (output) {
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "response",
       body: withPullRequestLinks(output, await runLanes(deps, tx, run)),
     });
@@ -732,7 +730,7 @@ async function complete(
     run.kind === "single"
       ? `**${input.epic.identifier}**`
       : `all ${input.stories.length} ${input.stories.length === 1 ? "story" : "stories"} of **${input.epic.identifier}**`;
-  await postActivity(deps.linear, linearSessionOf(run), {
+  await postActivity(conversationFor(run, deps), {
     type: "response",
     body: `Finished ${what} on \`${await mainBranch(tx, run)}\`. Nothing was committed, so there is no pull/merge request.`,
   });
@@ -795,7 +793,7 @@ async function wait(
   // What requests did while the run waits (e.g. on blockers) is told before what it waits on.
   const output = await takeRequestOutput(tx, run);
   if (output) {
-    await postActivity(deps.linear, linearSessionOf(run), { type: "thought", body: output });
+    await postActivity(conversationFor(run, deps), { type: "thought", body: output });
   }
   const found = waitingOnFor({ stories, externalIssues: epic.externalIssues ?? {} });
   const titles = new Map(stories.map((s) => [s.issueId ?? s.key, s.title]));
@@ -807,7 +805,7 @@ async function wait(
     blockers: await waitingRefs(deps.linear, blockers, titles),
     manual: await waitingRefs(deps.linear, found.manual, titles),
   };
-  await publishPlan(deps.linear, run, rows);
+  await publishPlan(conversationFor(run, deps), rows);
   const all = [...waitingOn.blockers, ...waitingOn.manual];
   const done = stories.filter(isStoryDone).length;
   // A manual story whose preparation can run now: the question is the run's elicitation.
@@ -890,6 +888,6 @@ async function wait(
     const names = preparable.map((s) => `**${s.identifier ?? s.storyId}**`).join(", ");
     body += `\n\nReply \`rerun preparation\` to be asked again about running the preparation commands of ${names}.`;
   }
-  await postActivity(deps.linear, linearSessionOf(run), { type: "elicitation", body });
+  await postActivity(conversationFor(run, deps), { type: "elicitation", body });
   return { action: "waiting", run: updated, waitingOn };
 }

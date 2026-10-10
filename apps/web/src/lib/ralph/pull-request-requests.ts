@@ -31,10 +31,10 @@ import {
   type RalphRun,
   type RalphTransaction,
   getActiveRunOfSameOrigin,
-  linearSessionOf,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
 import { changeRequestTerm } from "./publish";
@@ -197,7 +197,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     if (rounds >= settings.maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });
       const busy = (await listActiveRunJobIds(tx, run.id)).length > 0;
-      await postActivity(deps.linear, linearSessionOf(run), {
+      await postActivity(conversationFor(run, deps), {
         type: busy ? "thought" : "response",
         body: `Omniralph reviewed ${lane.prUrl} again. I've already worked through ${rounds} of its reviews on this ${term}, so I'm leaving this one for a person.`,
       });
@@ -216,7 +216,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledReviewIds, reviewRounds: rounds + 1 });
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "thought",
       body: added.note,
     });
@@ -260,7 +260,7 @@ export async function addPullRequestCommentRequest(
       what: `@${input.author} asked for changes on the ${input.term}`,
     });
     if (!added) return { status: "run_over", run } as const;
-    await postActivity(deps.linear, linearSessionOf(run), {
+    await postActivity(conversationFor(run, deps), {
       type: "thought",
       body: added.note,
     });
