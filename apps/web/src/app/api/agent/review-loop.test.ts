@@ -469,7 +469,14 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     const nextPayload = ReviewJobPayload.parse((await jobRow(next.jobId)).payload);
     expect(nextPayload.previousReview).toEqual({
       headSha: head1,
-      openFindings: [{ path: "src/app.ts", startLine: 2, endLine: 2, category: "security" }],
+      openFindings: [
+        expect.objectContaining({
+          path: "src/app.ts",
+          startLine: 2,
+          endLine: 2,
+          category: "security",
+        }),
+      ],
     });
     await startAs(next.jobId, accessToken);
     const nextOutput = await agentRun(nextPayload);
@@ -547,7 +554,14 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     const payload = ReviewJobPayload.parse((await jobRow(next.jobId)).payload);
     expect(payload.previousReview).toEqual({
       headSha: null,
-      openFindings: [{ path: "src/app.ts", startLine: 2, endLine: 2, category: "security" }],
+      openFindings: [
+        expect.objectContaining({
+          path: "src/app.ts",
+          startLine: 2,
+          endLine: 2,
+          category: "security",
+        }),
+      ],
     });
     await startAs(next.jobId, accessToken);
     const output = await agentRun(payload);

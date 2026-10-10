@@ -348,7 +348,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
     const finish = (
       stopReason: ReviewStopReason,
       raw: Finding[],
-      extra: Pick<TaskReviewResult, "error" | "retryAfterMs"> = {},
+      extra: Pick<TaskReviewResult, "error" | "retryAfterMs" | "fixedPrevious"> = {},
     ): TaskReviewResult => {
       const { inside, outside } = filterToDiff(raw, request.task.files);
       discarded.outsideDiff += outside.length;
@@ -386,7 +386,9 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
     }
 
     const parsed = parseFindingsOutput(first.text);
-    if (parsed.ok) return finish("completed", parsed.findings);
+    if (parsed.ok) {
+      return finish("completed", parsed.findings, { fixedPrevious: parsed.fixedPrevious });
+    }
 
     this.logger.warn(
       { taskId: request.task.id, error: parsed.error },
@@ -418,12 +420,16 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
     }
 
     const repaired = parseFindingsOutput(repair.text);
-    if (repaired.ok) return finish("completed", repaired.findings);
+    if (repaired.ok) {
+      return finish("completed", repaired.findings, { fixedPrevious: repaired.fixedPrevious });
+    }
     this.logger.warn(
       { taskId: request.task.id, error: repaired.error },
       "Repaired review output is still invalid",
     );
-    return finish("completed", this.dropInvalid(request, repair.text, repaired.items, discarded));
+    return finish("completed", this.dropInvalid(request, repair.text, repaired.items, discarded), {
+      fixedPrevious: repaired.fixedPrevious ?? [],
+    });
   }
 
   /**
@@ -541,7 +547,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       quoted,
       "</previous_answer>",
       "",
-      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings. Drop any finding you cannot express in the required format.',
+      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings (and the same "previousFindings" list, if it had one). Drop any finding you cannot express in the required format.',
     ].join("\n");
   }
 

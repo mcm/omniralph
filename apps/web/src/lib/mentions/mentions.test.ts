@@ -301,7 +301,14 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       // Full (not incremental) review: no previous head, but open findings are deduped.
       expect(payload.previousReview).toEqual({
         headSha: null,
-        openFindings: [{ path: "src/app.ts", startLine: 3, endLine: 4, category: "correctness" }],
+        openFindings: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            startLine: 3,
+            endLine: 4,
+            category: "correctness",
+          }),
+        ],
       });
       expect(payload.reviewConfig.profile.id).toBe("standard");
       const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));

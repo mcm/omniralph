@@ -178,7 +178,7 @@ export function createReviewCapability(options: ReviewCapabilityOptions = {}): C
         stopReason: result.stopReason,
         scope: result.scope,
         discarded: result.discarded,
-        repeatedOpenFindings: result.repeatedOpenFindings,
+        fixedOpenFindings: result.fixedOpenFindings,
         durationMs: Date.now() - started,
       };
     },

@@ -13,7 +13,7 @@ import {
 import { ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
 import { onReviewForRalph } from "@/lib/ralph/jobs";
 import { postFailureNote, postReview } from "./post";
-import { resolveFindingsNotRaisedAgain } from "./resolve";
+import { resolveFixedFindings } from "./resolve";
 import { supersedeEarlierFindings } from "./supersede";
 
 /**
@@ -66,8 +66,8 @@ export function parseReviewResult(result: unknown): ReviewJobResult | null {
 /**
  * For a `completed` review job: persists the review and its findings (once),
  * then posts it to the PR/MR (once). A `fresh` review then supersedes the
- * earlier open findings it raised again; a review of the whole diff resolves
- * the earlier open findings it no longer raises. Then a ralph PR/MR's open
+ * earlier open findings it raised again, and the earlier open findings the
+ * review re-checked and found fixed are resolved. Then a ralph PR/MR's open
  * findings go back to its run (`onReviewForRalph`, at most once per review).
  * Safe to call again for a replayed result; that also retries a post that
  * failed before.
@@ -95,7 +95,7 @@ export async function onReviewJobCompleted(db: Database, job: Job): Promise<void
   });
   await postReview(db, { reviewId: payload.reviewId, payload, result });
   if (payload.mode === "fresh") await supersedeEarlierFindings(db, payload.reviewId);
-  await resolveFindingsNotRaisedAgain(db, { reviewId: payload.reviewId, payload, result });
+  await resolveFixedFindings(db, { reviewId: payload.reviewId, payload, result });
   // A ralph PR/MR: the open findings may go back to its run as a request.
   await onReviewForRalph(db, payload.reviewId);
 }

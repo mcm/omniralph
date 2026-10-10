@@ -9,7 +9,7 @@ import { closeFindingThreads } from "./threads";
  * that matches one of its findings (the engine's dedupe rule: same path,
  * overlapping lines, same category) becomes `superseded`, and its SCM thread
  * gets a short reply linking the new review and is resolved. Unmatched
- * findings are left to `resolveFindingsNotRaisedAgain`. A failed reply or
+ * findings stay `open`. A failed reply or
  * resolve is only logged, so it never fails the review. Safe to call again:
  * nothing open is left to supersede.
  */

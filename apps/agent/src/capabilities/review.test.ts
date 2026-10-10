@@ -175,7 +175,7 @@ describe("review capability", () => {
       stopReason: "completed",
       scope: { mode: "full", baseSha: base, headSha: head },
       discarded: { invalid: 0, outsideDiff: 0, duplicate: 0 },
-      repeatedOpenFindings: [],
+      fixedOpenFindings: [],
     });
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
 

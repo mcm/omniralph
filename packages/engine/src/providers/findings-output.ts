@@ -2,9 +2,9 @@ import { Finding, FindingList } from "@omniralph/shared";
 import type { DiffFile } from "../diff.js";
 
 export type ParsedOutput =
-  | { ok: true; findings: Finding[] }
-  /** `items` is set when the JSON shape was right but some items are invalid. */
-  | { ok: false; error: string; items?: unknown[] };
+  | { ok: true; findings: Finding[]; fixedPrevious: number[] }
+  /** `items` (and `fixedPrevious`) are set when the JSON shape was right but some items are invalid. */
+  | { ok: false; error: string; items?: unknown[]; fixedPrevious?: number[] };
 
 /** The last fenced code block, else the text from the first `[`/`{` to the last `]`/`}`. */
 function jsonCandidate(text: string): string | null {
@@ -28,6 +28,28 @@ function findingItems(value: unknown): unknown[] | null {
   return null;
 }
 
+/**
+ * The ids of the previous findings the answer's `previousFindings` list marks
+ * `fixed`. Malformed entries are ignored, so they count as still open.
+ */
+function fixedPreviousIds(value: unknown): number[] {
+  if (!value || typeof value !== "object") return [];
+  const list = (value as { previousFindings?: unknown }).previousFindings;
+  if (!Array.isArray(list)) return [];
+  const verdicts = new Map<number, unknown>();
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const { id, status } = entry as { id?: unknown; status?: unknown };
+    if (typeof id !== "number" || !Number.isInteger(id) || id < 0) continue;
+    // Conflicting answers for one id leave it open.
+    verdicts.set(id, verdicts.has(id) && verdicts.get(id) !== status ? "open" : status);
+  }
+  return [...verdicts]
+    .filter(([, status]) => status === "fixed")
+    .map(([id]) => id)
+    .sort((a, b) => a - b);
+}
+
 /** Parses the model's final answer: `{"findings": [...]}` or a bare array, optionally fenced. */
 export function parseFindingsOutput(text: string): ParsedOutput {
   const candidate = jsonCandidate(text);
@@ -40,14 +62,15 @@ export function parseFindingsOutput(text: string): ParsedOutput {
   }
   const items = findingItems(value);
   if (!items) return { ok: false, error: 'Expected an object {"findings": [...]}.' };
+  const fixedPrevious = fixedPreviousIds(value);
   const parsed = FindingList.safeParse(items);
-  if (parsed.success) return { ok: true, findings: parsed.data };
+  if (parsed.success) return { ok: true, findings: parsed.data, fixedPrevious };
   const issues = parsed.error.issues.slice(0, 20).map((issue) => {
     const [index, ...rest] = issue.path;
     const field = rest.map((key) => `.${String(key)}`).join("");
     return `findings[${String(index)}]${field}: ${issue.message}`;
   });
-  return { ok: false, error: `Invalid findings:\n${issues.join("\n")}`, items };
+  return { ok: false, error: `Invalid findings:\n${issues.join("\n")}`, items, fixedPrevious };
 }
 
 /** Keeps the valid items; returns how many were dropped. */
