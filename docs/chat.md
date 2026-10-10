@@ -363,11 +363,11 @@ topic as reviews and run in the same sandbox:
 
 ### Agent version
 
-`chat.ask` needs the `review` capability on **agent version 0.7.0 or later**. Older agents don't
+`chat.ask` needs the `review` capability on **agent version 0.8.0 or later**. Older agents don't
 know the job type. Before queueing, the control panel checks the organization's online agents (the
 version and capabilities they report in heartbeats); when none that would take the job can run it,
 nothing is queued and the bot says so: "no agent … is online", or that the online ones need the
-review capability on 0.7.0 or later. Update or start an agent ([deploy-agent.md](deploy-agent.md))
+review capability on 0.8.0 or later. Update or start an agent ([deploy-agent.md](deploy-agent.md))
 and ask again.
 
 ## Attachments
@@ -460,6 +460,6 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The bot won't start a ralph request                 | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
 | The Linear card's buttons do nothing (Slack)        | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
 | "Only the person who asked…" on a card              | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
-| A code question says no capable agent is online     | An agent with the `review` capability on version 0.7.0 or later is online (and, if the repository pins reviews to agents, it's one of them).                                                                 |
+| A code question says no capable agent is online     | An agent with the `review` capability on version 0.8.0 or later is online (and, if the repository pins reviews to agents, it's one of them).                                                                 |
 | The bot says it couldn't fetch a Slack attachment   | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
 | A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and an agent with `ralph` is online; the run must start within an hour of the delegation.                                                      |
