@@ -4,6 +4,10 @@ import { ChatConversation, conversationFor, LinearConversation } from "./convers
 import { postActivity } from "./notify";
 
 const linearRun = {
+  id: "run-1",
+  organizationId: "org-1",
+  repositoryId: null,
+  requestJobId: null,
   origin: "linear" as const,
   linearIssueId: "issue-1",
   linearIdentifier: "ENG-1",
@@ -11,12 +15,17 @@ const linearRun = {
   chatThreadId: null,
 };
 
+/** A chat run whose thread is gone (the chat side is covered in `conversation-chat.test.ts`). */
 const chatRun = {
+  id: "run-2",
+  organizationId: "org-1",
+  repositoryId: null,
+  requestJobId: null,
   origin: "chat" as const,
   linearIssueId: null,
   linearIdentifier: null,
   linearAgentSessionId: null,
-  chatThreadId: "thread-1",
+  chatThreadId: null,
 };
 
 describe("conversationFor", () => {
@@ -55,12 +64,18 @@ describe("conversationFor", () => {
 
   it("gives a chat run its thread, never touching Linear", async () => {
     const source = vi.fn(async () => new FakeLinearGateway());
-    const conversation = conversationFor(chatRun, { linear: source });
+    const chat = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const conversation = conversationFor(chatRun, { linear: source, chat });
     expect(conversation).toBeInstanceOf(ChatConversation);
     await conversation.post({ type: "response", body: "done" });
     await conversation.updatePlan([]);
     await conversation.addLink("Pull request", "https://github.com/acme/app/pull/1");
     expect(source).not.toHaveBeenCalled();
+    // Its thread is gone: nothing to post to.
+    expect(chat).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
   });
 });
 

@@ -87,6 +87,13 @@ export interface AppendChatMessageInput {
   externalUserId?: string | null;
   authorName?: string | null;
   content: unknown;
+  /** The ralph run posting it (a session update in the run's thread). */
+  ralphRunId?: string | null;
+}
+
+export interface ChatThreadWithConnection<C> {
+  thread: ChatThread;
+  connection: ChatConnectionWithCredentials<C>;
 }
 
 type EncryptionKey = string | Buffer | undefined;
@@ -498,6 +505,21 @@ export async function ensureChatThread(
   return row ?? null;
 }
 
+/** A thread with its connection and the connection's decrypted credentials, or null. */
+export async function getChatThreadWithConnection<C>(
+  db: Database,
+  id: string,
+  key?: EncryptionKey,
+): Promise<ChatThreadWithConnection<C> | null> {
+  const [row] = await db
+    .select({ thread: chatThreads, connection: chatConnections })
+    .from(chatThreads)
+    .innerJoin(chatConnections, eq(chatConnections.id, chatThreads.connectionId))
+    .where(eq(chatThreads.id, id))
+    .limit(1);
+  return row ? { thread: row.thread, connection: withCredentials<C>(row.connection, key) } : null;
+}
+
 /** Appends a message to a thread's conversation. */
 export async function appendChatMessage(
   db: Database,
@@ -511,6 +533,7 @@ export async function appendChatMessage(
       externalUserId: input.externalUserId ?? null,
       authorName: input.authorName ?? null,
       content: input.content,
+      ralphRunId: input.ralphRunId ?? null,
     })
     .returning();
   return row!;

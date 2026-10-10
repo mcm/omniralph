@@ -155,6 +155,8 @@ export interface ChatBot {
   chat: Chat;
   /** The adapter of each configured platform. */
   adapters: Partial<Record<ChatPlatform, Adapter>>;
+  /** The Chat SDK state (subscriptions, locks, thread state). */
+  state: StateAdapter;
   discord: DiscordOAuthConfig | null;
 }
 
@@ -323,7 +325,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
   chat.onNewMention((thread, message, context) => converse(thread, message, context, true));
   chat.onSubscribedMessage((thread, message, context) => converse(thread, message, context, false));
 
-  return { chat, adapters, discord: deps.discord };
+  return { chat, adapters, state: deps.state, discord: deps.discord };
 }
 
 let bot: ChatBot | undefined;
