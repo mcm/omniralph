@@ -383,6 +383,31 @@ export async function listActiveJobsByDedupePrefix(db: Database, prefix: string)
     .orderBy(asc(jobs.createdAt));
 }
 
+/**
+ * The organization's latest completed job of `type` whose payload names chat
+ * thread `chatThreadId` (`payload.chatThreadId`), e.g. a thread's last
+ * answered code question. Null when there is none.
+ */
+export async function latestCompletedChatThreadJob(
+  db: Database,
+  input: { organizationId: string; type: string; chatThreadId: string },
+): Promise<Job | null> {
+  const [row] = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, input.organizationId),
+        eq(jobs.type, input.type),
+        eq(jobs.status, "completed"),
+        sql`${jobs.payload}->>'chatThreadId' = ${input.chatThreadId}`,
+      ),
+    )
+    .orderBy(sql`${jobs.finishedAt} desc nulls last`, desc(jobs.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
 /** Marks jobs still `queued` that were created before `createdBefore` as `expired`. */
 export async function expireQueuedJobs(
   db: Database,

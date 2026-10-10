@@ -12,6 +12,14 @@ import { REVIEW_CAPABILITY } from "./review-job.js";
 export const CHAT_ASK_JOB_TYPE = "chat.ask";
 /** Runs on agents with the `review` capability, in the review sandbox. */
 export const CHAT_ASK_CAPABILITY = REVIEW_CAPABILITY;
+/** The first agent release that runs `chat.ask` jobs; older agents leave them queued. */
+export const CHAT_ASK_MIN_AGENT_VERSION = "0.7.0";
+/** Share of the repository profile's review token budget a code question may use. */
+export const CHAT_ASK_BUDGET_FRACTION = 0.25;
+/** Token cap of a code question in a repository whose reviews may use `maxTokensPerReview`. */
+export function chatAskTokenCap(maxTokensPerReview: number): number {
+  return Math.max(1, Math.floor(maxTokensPerReview * CHAT_ASK_BUDGET_FRACTION));
+}
 /** Longest question passed to the agent. */
 export const MAX_CHAT_ASK_QUESTION_LENGTH = 4000;
 /** Longest excerpt of the conversation passed along with the question. */

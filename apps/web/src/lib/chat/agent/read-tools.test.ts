@@ -236,6 +236,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_jobs",
       "list_agents",
       "list_repositories",
+      "ask_about_code",
       "start_ralph_request",
       "send_to_session",
       "send_ralph_guidance",

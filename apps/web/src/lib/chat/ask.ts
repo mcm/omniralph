@@ -1,14 +1,43 @@
 import "server-only";
-import { appendChatMessage, postJobCommentOnce, type Database, type Job } from "@omniralph/db";
-import { ChatAskJobPayload, ChatAskJobResult } from "@omniralph/shared";
+import { createHash } from "node:crypto";
+import {
+  appendChatMessage,
+  getRepositoryReviewSettings,
+  getRepositoryWithConnection,
+  latestCompletedChatThreadJob,
+  listAgentOverview,
+  postJobCommentOnce,
+  type AgentOverview,
+  type Database,
+  type Job,
+  type Repository,
+  type ScmConnection,
+} from "@omniralph/db";
+import type { ScmAdapter } from "@omniralph/scm";
+import {
+  agentVersionAtLeast,
+  CHAT_ASK_CAPABILITY,
+  CHAT_ASK_JOB_TYPE,
+  CHAT_ASK_MIN_AGENT_VERSION,
+  ChatAskJobPayload,
+  ChatAskJobResult,
+  chatAskTokenCap,
+  MAX_CHAT_ASK_CONTEXT_LENGTH,
+  MAX_CHAT_ASK_QUESTION_LENGTH,
+} from "@omniralph/shared";
+import { isAgentOnline } from "@/lib/agents/display";
+import type { JobDispatcher } from "@/lib/dispatch";
+import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import {
   defaultChatChannel,
   loadChatTarget,
   type ChatSource,
   type ChatTarget,
 } from "@/lib/ralph/conversation";
+import { errorMessage } from "@/lib/ralph/notify";
 import { fileWebUrl } from "@/lib/repositories/web-url";
 import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
+import { jobRepository } from "@/lib/scm/adapters";
 
 /**
  * Code questions from chat: a `chat.ask` job answers a question about a
@@ -16,6 +45,190 @@ import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitiz
  * hooks post its answer in the chat thread it came from and record it in the
  * thread's history. The control panel never reads the code itself.
  */
+
+/** An agent that could take a code question, or why it can't. */
+export interface ChatAskAgentStatus {
+  name: string;
+  version: string | null;
+  /** Whether it runs `chat.ask`: online, running the review capability, recent enough. */
+  capable: boolean;
+}
+
+/**
+ * The organization's agents that would get a `chat.ask` job of
+ * `repositoryId` (its pinned agents when it has some, else all), each saying
+ * whether it can run one now. Revoked and offline agents are left out.
+ */
+export function chatAskAgents(
+  agents: readonly AgentOverview[],
+  repositoryId: string,
+  now: Date = new Date(),
+): ChatAskAgentStatus[] {
+  const live = agents.filter((a) => !a.revokedAt);
+  const pinned = live.filter((a) => a.pinnedRepositories.some((r) => r.id === repositoryId));
+  return (pinned.length > 0 ? pinned : live)
+    .filter((a) => isAgentOnline(a.lastHeartbeatAt, now))
+    .map((a) => ({
+      name: a.name,
+      version: a.reportedVersion,
+      capable:
+        a.enabledCapabilities.includes(CHAT_ASK_CAPABILITY) &&
+        (a.reportedCapabilities ?? []).includes(CHAT_ASK_CAPABILITY) &&
+        a.reportedVersion !== null &&
+        agentVersionAtLeast(a.reportedVersion, CHAT_ASK_MIN_AGENT_VERSION),
+    }));
+}
+
+/** Normalized for dedupe: the same question asked twice in a thread runs once. */
+function questionKey(question: string): string {
+  const normalized = question.trim().replace(/\s+/g, " ").toLowerCase();
+  return createHash("sha256").update(normalized).digest("hex").slice(0, 32);
+}
+
+/** At most one active job per thread and question. */
+export function chatAskDedupeKey(chatThreadId: string, question: string): string {
+  return `${CHAT_ASK_JOB_TYPE}:${chatThreadId}:${questionKey(question)}`;
+}
+
+const clip = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+/** Longest previous question, and answer, a follow-up's context quotes. */
+const MAX_PREVIOUS_QUESTION_CHARS = 1_500;
+const MAX_PREVIOUS_ANSWER_CHARS = 4_000;
+
+/**
+ * The context excerpt of a code question: the thread's previous code
+ * question and its answer (for follow-ups), then the messages of this turn.
+ * Null when there is neither.
+ */
+export function chatAskContext(input: {
+  previous: { repository: string; question: string; answer: string } | null;
+  messages: readonly QuotedMessage[];
+}): string | null {
+  const parts: string[] = [];
+  if (input.previous) {
+    parts.push(
+      `Previous code question in this thread (about ${input.previous.repository}):\n${clip(input.previous.question.trim(), MAX_PREVIOUS_QUESTION_CHARS)}`,
+      `Its answer:\n${clip(input.previous.answer.trim(), MAX_PREVIOUS_ANSWER_CHARS)}`,
+    );
+  }
+  const messages = input.messages
+    .filter((m) => m.text.trim())
+    .map((m) => `${m.author ?? "someone"}: ${m.text.trim()}`);
+  if (messages.length > 0) parts.push(`Latest messages:\n${messages.join("\n")}`);
+  if (parts.length === 0) return null;
+  return clip(parts.join("\n\n"), MAX_CHAT_ASK_CONTEXT_LENGTH);
+}
+
+/** The thread's last answered code question, for a follow-up's context. */
+async function previousQuestion(
+  db: Database,
+  organizationId: string,
+  chatThreadId: string,
+): Promise<{ repository: string; question: string; answer: string } | null> {
+  const job = await latestCompletedChatThreadJob(db, {
+    organizationId,
+    type: CHAT_ASK_JOB_TYPE,
+    chatThreadId,
+  });
+  const payload = ChatAskJobPayload.safeParse(job?.payload);
+  const result = ChatAskJobResult.safeParse(job?.result);
+  if (!payload.success || !result.success || result.data.answer === null) return null;
+  return {
+    repository: payload.data.repository.fullPath,
+    question: payload.data.question,
+    answer: result.data.answer,
+  };
+}
+
+export type EnqueueChatAskOutcome =
+  | { status: "unknown_repository" }
+  /** No online agent that would get the job runs `chat.ask`: nothing was enqueued. */
+  | { status: "no_capable_agent"; agents: ChatAskAgentStatus[] }
+  | { status: "failed"; error: string }
+  | { status: "enqueued" | "duplicate"; jobId: string; repository: Repository };
+
+export interface EnqueueChatAskDeps {
+  db: Database;
+  dispatcher: JobDispatcher;
+  adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
+}
+
+/**
+ * Hands a question about one of the organization's connected repositories
+ * (`repositoryId`, already matched by the caller) to an agent as a
+ * `chat.ask` job answered from its default branch. The same question asked
+ * again in the thread while the first one runs is not enqueued twice.
+ */
+export async function enqueueChatAsk(
+  deps: EnqueueChatAskDeps,
+  input: {
+    organizationId: string;
+    repositoryId: string;
+    chatThreadId: string;
+    question: string;
+    messages: readonly QuotedMessage[];
+    now?: Date;
+  },
+): Promise<EnqueueChatAskOutcome> {
+  const { db } = deps;
+  const found = await getRepositoryWithConnection(db, input.repositoryId);
+  const settings = found && (await getRepositoryReviewSettings(db, input.repositoryId));
+  if (
+    !found ||
+    !settings ||
+    found.repository.organizationId !== input.organizationId ||
+    found.repository.disconnectedAt
+  ) {
+    return { status: "unknown_repository" };
+  }
+  const { repository, connection } = found;
+
+  const agents = chatAskAgents(
+    await listAgentOverview(db, input.organizationId),
+    repository.id,
+    input.now,
+  );
+  if (!agents.some((a) => a.capable)) return { status: "no_capable_agent", agents };
+
+  let defaultBranch: string;
+  try {
+    defaultBranch = await deps.adapterFor(db, connection).getDefaultBranch({
+      fullPath: repository.fullPath,
+      externalId: repository.externalId,
+    });
+  } catch (error) {
+    return {
+      status: "failed",
+      error: `I couldn't read the default branch of ${repository.fullPath}: ${errorMessage(error)}`,
+    };
+  }
+
+  const question = clip(input.question.trim(), MAX_CHAT_ASK_QUESTION_LENGTH);
+  const payload = ChatAskJobPayload.parse({
+    repositoryId: repository.id,
+    repository: jobRepository(repository, connection),
+    defaultBranch,
+    question,
+    context: chatAskContext({
+      previous: await previousQuestion(db, input.organizationId, input.chatThreadId),
+      messages: input.messages,
+    }),
+    chatThreadId: input.chatThreadId,
+    model: settings.profile.model,
+    maxTokens: chatAskTokenCap(settings.profile.maxTokensPerReview),
+  } satisfies ChatAskJobPayload);
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: input.organizationId,
+    capability: CHAT_ASK_CAPABILITY,
+    type: CHAT_ASK_JOB_TYPE,
+    payload,
+    repositoryId: repository.id,
+    dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
+  });
+  return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
+}
 
 /** Validates a code question's result before the job is completed. */
 export function parseChatAskResult(result: unknown): ChatAskJobResult | null {

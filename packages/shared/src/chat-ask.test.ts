@@ -4,6 +4,7 @@ import {
   CHAT_ASK_JOB_TYPE,
   ChatAskJobPayload,
   ChatAskJobResult,
+  chatAskTokenCap,
   MAX_CHAT_ASK_ANSWER_LENGTH,
   MAX_CHAT_ASK_REFERENCES,
 } from "./chat-ask.js";
@@ -75,5 +76,10 @@ describe("chat.ask", () => {
         references: Array.from({ length: MAX_CHAT_ASK_REFERENCES + 1 }, () => ({ path: "a" })),
       }).success,
     ).toBe(false);
+  });
+
+  it("caps a question at a quarter of the review budget", () => {
+    expect(chatAskTokenCap(200_000)).toBe(50_000);
+    expect(chatAskTokenCap(1)).toBe(1);
   });
 });
