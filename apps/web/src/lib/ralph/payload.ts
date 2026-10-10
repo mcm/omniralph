@@ -257,6 +257,7 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository),
+    source: run.origin,
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),

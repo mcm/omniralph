@@ -17,6 +17,7 @@ import {
 } from "./output.js";
 import {
   buildDescribePrPrompt,
+  buildRequestPrompt,
   buildStoryPrompt,
   GOOD_NEIGHBOR_RULE,
   RALPH_SYSTEM_APPEND,
@@ -295,6 +296,74 @@ describe("prompt", () => {
     expect(RALPH_SYSTEM_APPEND).toContain(GOOD_NEIGHBOR_RULE);
     expect(requestSystemAppend("when-asked")).toContain(GOOD_NEIGHBOR_RULE);
     expect(requestSystemAppend("never")).toContain(GOOD_NEIGHBOR_RULE);
+  });
+});
+
+describe("request prompt", () => {
+  const base = {
+    requests: ["fix the typo in the README"],
+    branch: "omniralph/x",
+    baseBranch: "main",
+    remoteUrl: "https://github.com/acme/app.git",
+    progressFile: "/tmp/progress.md",
+    qualityGates: ["pnpm test"],
+  };
+  const linearEpic: Epic = {
+    kind: "children",
+    issueId: "e",
+    identifier: "ENG-1",
+    title: "Task Priority",
+    description: "The PRD body",
+    branchName: "omniralph/x",
+    qualityGates: [],
+    stories: [story("US-001", { status: "completed" }), story("US-002")],
+  };
+  // What a chat run's request jobs get in place of a Linear issue (`chatRequestEpic`).
+  const chatEpic: Epic = {
+    kind: "single",
+    issueId: "run",
+    identifier: "chat-1a2b3c4d",
+    title: "fix the typo in the README",
+    description: "",
+    branchName: "omniralph/chat-1a2b3c4d",
+    qualityGates: [],
+    stories: [],
+  };
+
+  it("is about the Linear issue and its stories by default", () => {
+    const p = buildRequestPrompt({ ...base, epic: linearEpic });
+    expect(buildRequestPrompt({ ...base, epic: linearEpic, source: "linear" })).toBe(p);
+    expect(p).toContain("You are working on Linear ENG-1: Task Priority.");
+    expect(p).toContain("## Status: 1/2 stories complete");
+    expect(p).toContain("<prd-document>\nThe PRD body\n</prd-document>");
+    expect(p).toContain("reviewers who can't see Linear");
+    expect(p).toContain("judgement calls. Don't list the user stories.");
+    expect(p).toContain("Finish with a short summary for the Linear thread");
+  });
+
+  it("names neither Linear nor a story status for a request from chat", () => {
+    const p = buildRequestPrompt({ ...base, epic: chatEpic, source: "chat" });
+    expect(p).toContain(
+      "You are working on a request from a chat thread: fix the typo in the README.",
+    );
+    expect(p).toContain("on branch `omniralph/x` (base `main`)");
+    expect(p).toContain("## Request from your team\n> fix the typo in the README");
+    expect(p).toContain("reviewers who can't see the chat thread");
+    expect(p).toContain("Finish with a short summary for the chat thread");
+    expect(p).not.toContain("Linear");
+    expect(p).not.toContain("Status");
+    expect(p).not.toContain("stories");
+    expect(p).not.toContain("chat-1a2b3c4d");
+  });
+
+  it("has a system prompt for each source", () => {
+    expect(requestSystemAppend("when-asked", "linear")).toBe(requestSystemAppend("when-asked"));
+    expect(requestSystemAppend()).toContain("a request in a Linear agent session about a PRD epic");
+    expect(requestSystemAppend()).toContain("posted to the Linear thread");
+    const chat = requestSystemAppend("never", "chat");
+    expect(chat).toContain("a request in a chat thread about a repository");
+    expect(chat).toContain("posted to the chat thread");
+    expect(chat).not.toContain("Linear");
   });
 });
 

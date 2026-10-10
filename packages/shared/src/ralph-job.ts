@@ -276,8 +276,17 @@ export const RalphPrepareResult = z.object({
 });
 export type RalphPrepareResult = z.infer<typeof RalphPrepareResult>;
 
+/** Where a run's requests come from: a Linear agent session or a chat thread. */
+export const RALPH_REQUEST_SOURCES = ["linear", "chat"] as const;
+export type RalphRequestSource = (typeof RALPH_REQUEST_SOURCES)[number];
+
 /** Payload of a `ralph.request` job: a lane's pending requests, done in one Claude session. */
 export const RalphRequestPayload = RalphJobBase.extend({
+  /**
+   * Where the requests come from. Older control panels don't send it (Linear);
+   * older agents ignore it and prompt as for Linear.
+   */
+  source: z.enum(RALPH_REQUEST_SOURCES).default("linear"),
   epic: RalphIssue.extend({
     kind: z.enum(RALPH_EPIC_KINDS).default("children"),
     url: z.url().nullable().default(null),

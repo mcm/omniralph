@@ -417,6 +417,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     expect(publisher.sent.map((s) => s.jobId)).toEqual([job!.id]);
     const payload = RalphRequestPayload.parse(job!.payload);
     expect(payload).toMatchObject({
+      source: "chat",
       branch: `omniralph/chat-${run.id.slice(0, 8)}`,
       baseBranch: "develop",
       epic: {
