@@ -26,11 +26,22 @@ import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { errorMessage } from "./notify";
 
+/** How an activity is posted. */
+export interface PostOptions extends ActivityOptions {
+  /**
+   * News from outside the session's steps (a PR/MR follow-up: a review, CI
+   * failure, `@bot fix` or cleanup): Linear posts it as usual, while chat
+   * posts even a thought as a new message, since the status message it would
+   * edit may be far up the thread.
+   */
+  notice?: boolean;
+}
+
 export interface RunConversation {
   /** Names the conversation in logs (e.g. `Linear session <id>`). */
   readonly name: string;
   /** Posts an activity (a thought, action, response, elicitation or error). Throws on failure. */
-  post(content: ActivityContent, options?: ActivityOptions): Promise<void>;
+  post(content: ActivityContent, options?: PostOptions): Promise<void>;
   /** Replaces the plan shown with the run's stories. Throws on failure. */
   updatePlan(plan: PlanStep[]): Promise<void>;
   /** Links the conversation to a URL (a PR/MR). Throws on failure. */
@@ -61,8 +72,16 @@ export class LinearConversation implements RunConversation {
     return typeof this.linear === "function" ? this.linear() : this.linear;
   }
 
-  async post(content: ActivityContent, options?: ActivityOptions): Promise<void> {
-    await (await this.client()).createActivity(this.sessionId, content, options);
+  async post(content: ActivityContent, options?: PostOptions): Promise<void> {
+    // A notice is an ordinary activity in Linear.
+    const { notice: _notice, ...activity } = options ?? {};
+    await (
+      await this.client()
+    ).createActivity(
+      this.sessionId,
+      content,
+      Object.keys(activity).length > 0 ? activity : undefined,
+    );
   }
 
   async updatePlan(plan: PlanStep[]): Promise<void> {
@@ -335,8 +354,8 @@ export class ChatConversation implements RunConversation {
     });
   }
 
-  async post(content: ActivityContent): Promise<void> {
-    if (content.type === "thought" || content.type === "action") {
+  async post(content: ActivityContent, options?: PostOptions): Promise<void> {
+    if ((content.type === "thought" || content.type === "action") && !options?.notice) {
       const last = statusLine(content);
       await this.updateStatus(`a ${content.type}`, last ? { last } : {});
       return;

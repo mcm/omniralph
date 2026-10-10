@@ -3,8 +3,8 @@
  * comment that fails to post is logged, never allowed to undo a run's state
  * change (cyralph treats them the same way).
  */
-import type { ActivityContent, ActivityOptions } from "@/lib/linear/gateway";
-import type { RunConversation } from "./conversation";
+import type { ActivityContent } from "@/lib/linear/gateway";
+import type { PostOptions, RunConversation } from "./conversation";
 
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -24,7 +24,7 @@ export async function quietly(what: string, write: () => Promise<unknown>): Prom
 export async function postActivity(
   conversation: RunConversation,
   content: ActivityContent,
-  options?: ActivityOptions,
+  options?: PostOptions,
 ): Promise<boolean> {
   return quietly(`Posting an activity (${content.type}) to ${conversation.name}`, () =>
     conversation.post(content, options),

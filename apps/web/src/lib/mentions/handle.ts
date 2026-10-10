@@ -1,6 +1,7 @@
 import "server-only";
 import {
   findFindingByScmComment,
+  isLinearRun,
   type Database,
   type FindingRow,
   type RalphLane,
@@ -12,13 +13,14 @@ import { buildPullRequestCommentRequest, type ChangeRequestWord } from "@omniral
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import {
   addPullRequestCommentRequest,
   findRalphPullRequest,
   type PullRequestRequestDelivery,
 } from "@/lib/ralph/pull-request-requests";
+import type { ChatSource } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { enqueueReview } from "@/lib/review/enqueue";
@@ -42,6 +44,8 @@ export interface BotCommandContext {
   adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
   /** The Linear workspace (ralph requests); default: the connected one. */
   linear?: () => Promise<LinearGateway>;
+  /** Where ralph runs from chat post (default: the deployment's chat bot). */
+  chat?: ChatSource;
 }
 
 export type BotCommandOutcome =
@@ -136,7 +140,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     repository.provider === "gitlab" ? "merge request" : "pull request"
   ) satisfies ChangeRequestWord;
 
-  /** Hands a request to the PR/MR's ralph run and says so in the thread, with a link to the Linear issue. */
+  /** Hands a request to the PR/MR's ralph run and says so in the thread, with a link to the Linear issue (if any). */
   const requestRalph = async (
     found: { lane: RalphLane; run: RalphRun },
     text: string | null,
@@ -147,10 +151,11 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       db,
       organizationId,
       dispatcher,
-      linear: await (
-        ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
-      )(),
+      linear: lazyLinearGateway(
+        ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
+      ),
       adapterFor: ctx.adapterFor ?? scmAdapterFor,
+      chat: ctx.chat,
     };
     const request = buildPullRequestCommentRequest({
       author,
@@ -167,13 +172,20 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       term,
     });
     const { run } = result;
-    const issue = run.linearUrl
-      ? `[${run.linearIdentifier}](${run.linearUrl})`
-      : `**${run.linearIdentifier}**`;
-    const hosts = run.linearUrl ? [new URL(run.linearUrl).hostname] : [];
+    // A run from chat has no Linear issue: it's followed in its chat thread.
+    const linear = isLinearRun(run) ? run : null;
+    const issue = !linear
+      ? ""
+      : linear.linearUrl
+        ? ` of [${linear.linearIdentifier}](${linear.linearUrl})`
+        : ` of **${linear.linearIdentifier}**`;
+    const hosts = linear?.linearUrl ? [new URL(linear.linearUrl).hostname] : [];
     if (result.status === "run_over") {
+      const again = linear
+        ? `Delegate ${linear.linearIdentifier} to me in Linear again to pick it back up.`
+        : "Ask for it again in the chat thread it came from to pick it back up.";
       await respond(
-        `Sorry @${author}, ralph's run of ${issue} is over, so I can't work on this ${term}. Delegate ${run.linearIdentifier} to me in Linear again to pick it back up.`,
+        `Sorry @${author}, ralph's run${issue} is over, so I can't work on this ${term}. ${again}`,
         hosts,
       );
       return { status: "ralph_unavailable", runId: run.id };
@@ -184,8 +196,9 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         : result.status === "live"
           ? " right away"
           : "";
+    const follow = linear ? "Follow along in Linear." : "Follow along in its chat thread.";
     await respond(
-      `On it, @${author}: I passed this to ralph's run of ${issue}, which will work on it${when} and push the changes here. Follow along in Linear.`,
+      `On it, @${author}: I passed this to ralph's run${issue}, which will work on it${when} and push the changes here. ${follow}`,
       hosts,
     );
     return { status: "ralph_request", runId: run.id, delivery: result.status };

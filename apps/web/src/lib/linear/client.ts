@@ -132,6 +132,34 @@ export function disconnectedLinearGateway(): LinearGateway {
   });
 }
 
+/**
+ * A gateway that is only loaded (`load`, once) on its first call, so paths
+ * that may not touch Linear at all (e.g. follow-ups of a run from chat) never
+ * read or refresh the workspace's token. A failed load fails that call and is
+ * tried again by the next one.
+ */
+export function lazyLinearGateway(load: () => Promise<LinearGateway>): LinearGateway {
+  let loading: Promise<LinearGateway> | undefined;
+  const gateway = () => {
+    loading ??= load().catch((error: unknown) => {
+      loading = undefined;
+      throw error;
+    });
+    return loading;
+  };
+  return new Proxy({} as LinearGateway, {
+    // Not a thenable, so it can be returned from async functions.
+    get: (_target, prop) =>
+      prop === "then"
+        ? undefined
+        : async (...args: unknown[]) => {
+            const loaded = await gateway();
+            const method = loaded[prop as keyof LinearGateway] as (...a: unknown[]) => unknown;
+            return method.apply(loaded, args);
+          },
+  });
+}
+
 /** The organization's workspace gateway, or a disconnected one when it has none connected. */
 export async function getLinearGatewayOrDisconnected(
   options: LinearGatewayOptions,

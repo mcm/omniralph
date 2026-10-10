@@ -101,13 +101,14 @@ const now = () => new Date().toISOString();
 /**
  * Posts a cleanup message in the run's session: a thought while the run is
  * active (pending, running or waiting), otherwise a response, so Linear
- * sees a finished session complete again.
+ * sees a finished session complete again (in chat, always a new message).
  */
 async function notify(deps: Pick<RalphDeps, "linear">, run: RalphRun, body: string): Promise<void> {
-  await postActivity(conversationFor(run, deps), {
-    type: FINISHED_RUN_STATUSES.has(run.status) ? "response" : "thought",
-    body,
-  });
+  await postActivity(
+    conversationFor(run, deps),
+    { type: FINISHED_RUN_STATUSES.has(run.status) ? "response" : "thought", body },
+    { notice: true },
+  );
 }
 
 /**

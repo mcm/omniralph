@@ -722,7 +722,8 @@ async function enqueueRequest(
   if (!created) return { action: "busy", run };
   const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;
   const other = lane.repositoryId !== run.repositoryId ? repository.fullPath : null;
-  await postActivity(conversationFor(run, deps), {
+  // The updated run names the new job: in chat, it starts the job's own status message.
+  await postActivity(conversationFor(updated, deps), {
     type: "thought",
     body: workingOnRequestsNote(input.requests.length, other),
   });

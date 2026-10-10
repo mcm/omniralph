@@ -18,9 +18,10 @@ import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand } from "@/lib/mentions/handle";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { respondToCiEvent } from "@/lib/ralph/ci";
+import type { ChatSource } from "@/lib/ralph/conversation";
 import { cleanupMergedPullRequest } from "@/lib/ralph/cleanup";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -87,6 +88,8 @@ export interface WebhookDeps {
   handle?: string;
   /** The Linear workspace, for `@bot` requests to ralph runs; default: the connected one. */
   linear?: () => Promise<LinearGateway>;
+  /** Where ralph runs from chat post (default: the deployment's chat bot). */
+  chat?: ChatSource;
 }
 
 type Outcome =
@@ -303,9 +306,9 @@ async function handleCi(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = await (
-        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
-      )();
+      const linear = lazyLinearGateway(
+        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
+      );
       await respondToCiEvent(
         {
           db,
@@ -313,6 +316,7 @@ async function handleCi(
           linear,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,
+          chat: input.chat,
         },
         repository.id,
         ci,
@@ -353,9 +357,9 @@ async function handleMerge(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = await (
-        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId }))
-      )();
+      const linear = lazyLinearGateway(
+        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
+      );
       await cleanupMergedPullRequest(
         {
           db,
@@ -363,6 +367,7 @@ async function handleMerge(
           linear,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,
+          chat: input.chat,
         },
         found.lane,
       );
