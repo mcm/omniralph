@@ -152,6 +152,7 @@ describe("ralph.request", { timeout: 60_000 }, () => {
       historyRewrite: "when-asked",
       resumeSessionId: null,
       attachments: [],
+      ship: false,
       ...overrides,
     };
     return {
@@ -518,6 +519,152 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     await expect(runRequest(job(), context(), options(query))).rejects.toBeInstanceOf(
       RetryableJobError,
     );
+  });
+
+  describe("/ship", () => {
+    it("commits what the session prepared with its message, pushes the branch and opens the PR/MR", async () => {
+      await repos.withBranchWorktree(repo, { branch, baseBranch: "main", env: ENV }, async (wt) =>
+        writeFile(path.join(wt.path, "left.txt"), "from an earlier session\n"),
+      );
+      const { query, calls } = fakeQuery(async function* (call) {
+        await writeFile(path.join(call.options.cwd!, "fix.txt"), "last fix\n");
+        yield result({
+          summary: "Shipping the priority work.",
+          commit: { message: "Add priorities\n\nSorts stories by priority." },
+        });
+      });
+      const out = await runRequest(
+        job({ ship: true, prUrl: null, requests: [{ id: randomUUID(), text: "/ship" }] }),
+        context(),
+        options(query),
+      );
+      const [call] = calls;
+      expect(call!.prompt).toContain("This is `/ship`");
+      expect(JSON.stringify(call!.options.systemPrompt)).toContain("Don't run `git commit`");
+      expect(out.error).toBeNull();
+      expect(out.pushed).toBe(true);
+      expect(out.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(out.stashSha).toBeUndefined();
+      // The earlier session's leftovers are shipped too, not stashed away.
+      expect(git(remote.bare, "show", "--name-only", "--format=%s", branch)).toContain("left.txt");
+      expect(git(remote.bare, "log", "-1", "--format=%H%n%s%n%n%b", branch).trim()).toBe(
+        `${out.commitSha}\nAdd priorities\n\nSorts stories by priority.`,
+      );
+      expect(out.pullRequest).toEqual({
+        action: "open",
+        title: "Add priorities",
+        body: "Sorts stories by priority.",
+      });
+    });
+
+    it("offers the run's request stashes and keeps the session's PR/MR change when one is open", async () => {
+      await repos.withBranchWorktree(repo, { branch, baseBranch: "main", env: ENV }, async (wt) => {
+        await writeFile(path.join(wt.path, "half.txt"), "half done\n");
+        await wt.stashWork(`omniralph ralph ${runId} request unfinished`);
+      });
+      const { query, calls } = fakeQuery(async function* () {
+        yield result({
+          summary: "Nothing new.",
+          pullRequest: { action: "update", title: "Better title" },
+        });
+      });
+      const out = await runRequest(job({ ship: true }), context(), options(query));
+      expect(calls[0]!.prompt).toContain(`request unfinished`);
+      expect(calls[0]!.prompt).toContain("git stash apply <sha>");
+      expect(out.commitSha).toBeUndefined();
+      expect(out.pullRequest).toEqual({ action: "update", title: "Better title" });
+    });
+
+    it("commits nothing when the session leaves changes without a commit message", async () => {
+      const { query } = fakeQuery(async function* (call) {
+        await writeFile(path.join(call.options.cwd!, "fix.txt"), "last fix\n");
+        yield result({ summary: "The gates fail." });
+      });
+      const out = await runRequest(job({ ship: true, prUrl: null }), context(), options(query));
+      expect(out.error).toContain("no commit message");
+      expect(out.pushed).toBe(false);
+      expect(out.stashSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(git(remote.bare, "branch", "--list", branch)).toBe("");
+      expect(out.pullRequest).toBeUndefined();
+    });
+  });
+
+  describe("permission prompts of the repository's settings", () => {
+    function permissionFetch(answers: string[]) {
+      const requests: { method: string; url: string; body?: unknown }[] = [];
+      const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        requests.push({
+          method,
+          url,
+          ...(typeof init?.body === "string" && { body: JSON.parse(init.body) }),
+        });
+        if (url.includes("/permissions/") && method === "GET") {
+          return Response.json({ status: answers.shift() ?? "pending", answeredBy: null });
+        }
+        if (method === "DELETE") return new Response(null, { status: 204 });
+        return Response.json({ status: "pending" });
+      }) as typeof fetch;
+      return { fetchFn, requests };
+    }
+
+    it("asks in Linear and lets the call run once a person allows it", async () => {
+      const { fetchFn, requests } = permissionFetch(["pending", "allowed"]);
+      let decision: unknown;
+      const { query } = fakeQuery(async function* (call) {
+        decision = await call.options.canUseTool!(
+          "Bash",
+          { command: "git commit -m 'Fix it'" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-1",
+            requestId: "req-1",
+            title: "Claude wants to run git commit",
+            matchedAskRule: {
+              source: "projectSettings",
+              toolName: "Bash",
+              ruleContent: "git commit:*",
+            },
+          },
+        );
+        yield result({ summary: "Committed." });
+      });
+      await runRequest(job(), context(), {
+        ...options(query, fetchFn),
+        permissionPollIntervalMs: 5,
+      });
+      expect(decision).toMatchObject({ behavior: "allow" });
+      const ask = requests.find((r) => r.method === "POST" && r.url.endsWith("/permissions"));
+      expect(ask?.body).toMatchObject({
+        tool: "Bash",
+        detail: "git commit -m 'Fix it'",
+        reason:
+          "Claude wants to run git commit\nIt matches `Bash(git commit:*)` in the projectSettings settings.",
+        timeoutSeconds: 1800,
+      });
+      expect(requests.some((r) => r.method === "DELETE")).toBe(false);
+    });
+
+    it("denies the call and closes the question when nobody answers in time", async () => {
+      const { fetchFn, requests } = permissionFetch([]);
+      let decision: unknown;
+      const { query } = fakeQuery(async function* (call) {
+        decision = await call.options.canUseTool!(
+          "Bash",
+          { command: "git push" },
+          { signal: new AbortController().signal, toolUseID: "tool-1", requestId: "req-1" },
+        );
+        yield result({ summary: "Couldn't push." });
+      });
+      await runRequest(job(), context(), {
+        ...options(query, fetchFn),
+        permissionPollIntervalMs: 5,
+        permissionTimeoutMs: 50,
+      });
+      expect(decision).toMatchObject({ behavior: "deny" });
+      expect(requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
+    });
   });
 
   describe("history rewrites on request (rebase)", () => {

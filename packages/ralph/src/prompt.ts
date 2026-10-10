@@ -428,7 +428,9 @@ export const REQUEST_HEADING = "## Request from your team";
 export function requestSystemAppend(
   historyRewrite: HistoryRewritePolicy = "when-asked",
   source: RequestSource = "linear",
+  options: { ship?: boolean } = {},
 ): string {
+  if (options.ship) return shipSystemAppend(source);
   const rewrite =
     historyRewrite === "when-asked"
       ? "- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on the epic branch and push with `git push --force-with-lease`. That is allowed here."
@@ -446,6 +448,27 @@ ${rewrite}
 - The \`summary\` of your structured result is posted to ${thread}: summarise what you did, with links (e.g. the PR/MR URL).
 - You may run subagents and commands in the background. To wait for them, end your turn with \`waiting: true\` in your structured result: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
 ${GOOD_NEIGHBOR_RULE}`;
+}
+
+/**
+ * System prompt addition of a `/ship` request session: it prepares one
+ * commit and describes it; the job commits, pushes and opens the PR/MR.
+ */
+function shipSystemAppend(source: RequestSource): string {
+  const where = source === "chat" ? "a chat thread" : "a Linear agent session";
+  const thread = source === "chat" ? "the chat thread" : "the Linear thread";
+  return `You are "Omniralph", an autonomous engineer shipping the work on a branch for ${where}.
+- Don't run \`git commit\`, \`git push\`, \`git stash pop\`/\`drop\` or any command that rewrites history: the orchestrator commits everything left in the worktree with the \`commit.message\` of your structured result, then pushes the branch.
+- Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update) through \`pullRequest\` in your structured result; the orchestrator makes them after it pushes.
+- The \`summary\` of your structured result is posted to ${thread}.
+${GOOD_NEIGHBOR_RULE}`;
+}
+
+/** A stash entry a `/ship` session may bring back into the worktree. */
+export interface ShipStash {
+  sha: string;
+  label: string;
+  date: string;
 }
 
 export interface RequestPromptContext {
@@ -476,6 +499,11 @@ export interface RequestPromptContext {
   attachments?: string;
   /** Extra instructions from the repository's settings. */
   appendInstruction?: string;
+  /**
+   * `/ship`: the session prepares one commit instead of committing itself;
+   * `stashes` are what earlier request sessions left uncommitted.
+   */
+  ship?: { stashes: readonly ShipStash[] };
 }
 
 function capitalize(text: string): string {
@@ -538,6 +566,17 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
     "",
     REQUEST_HEADING,
     ...ctx.requests.map((r) => `> ${r.trim().replace(/\n/g, "\n> ")}\n`),
+    ...(ctx.ship ? shipInstructions(ctx, term, gates) : requestInstructions(ctx, term)),
+    ...(ctx.appendInstruction?.trim() ? ["", ctx.appendInstruction.trim()] : []),
+  ];
+  return lines.join("\n").trim();
+}
+
+/** "How to handle it" of an ordinary request session. */
+function requestInstructions(ctx: RequestPromptContext, term: string): string[] {
+  const chat = ctx.source === "chat";
+  const thread = chat ? "chat thread" : "Linear thread";
+  return [
     "## How to handle it",
     "- This is a direct request, not a story. Do what it asks, and nothing beyond it.",
     `- You may commit, and push \`${ctx.branch}\` to \`origin\` (\`git push -u origin ${ctx.branch}\`), when the request calls for it. Never push to \`${ctx.baseBranch}\` or any other branch.`,
@@ -550,7 +589,41 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
     "- If you change code, run the quality gates and commit with a clear message.",
     "- If the request is ambiguous or can't be done (e.g. missing credentials), say exactly what's missing instead of guessing.",
     `- Finish with a short summary for the ${thread} of what you did, including any ${term} URL, as the \`summary\` of your structured result.`,
-    ...(ctx.appendInstruction?.trim() ? ["", ctx.appendInstruction.trim()] : []),
   ];
-  return lines.join("\n").trim();
+}
+
+/** "How to handle it" of a `/ship` session: it prepares the commit, the job makes and pushes it. */
+function shipInstructions(
+  ctx: RequestPromptContext,
+  term: string,
+  gates: readonly string[],
+): string[] {
+  const stashes = ctx.ship?.stashes ?? [];
+  const chat = ctx.source === "chat";
+  return [
+    "## How to handle it",
+    `This is \`/ship\`: the work on \`${ctx.branch}\` is to be committed, pushed and put up for review. You prepare the commit; the orchestrator makes it with your message, pushes \`${ctx.branch}\` to \`origin\` and makes the ${term} change you ask for. Don't commit or push yourself.`,
+    "",
+    "1. See what the worktree has: `git status` and `git diff` (uncommitted changes), and `git log --oneline origin/" +
+      ctx.branch +
+      "..HEAD` (commits not pushed yet; the ref may not exist if the branch was never pushed).",
+    ...(stashes.length > 0
+      ? [
+          "2. Earlier request sessions on this branch left uncommitted work, which was stashed (newest first):",
+          ...stashes.map((s) => `   - \`${s.sha}\` (${s.date}): ${s.label}`),
+          "   Review each with `git stash show -p --include-untracked <sha>` and bring back what belongs in this commit with `git stash apply <sha>`. Never `pop` or `drop` them: the stash list is shared with other worktrees.",
+        ]
+      : ["2. No earlier request session left stashed work on this branch."]),
+    "3. If the request above says more than `/ship` (notes, a last fix), do that first.",
+    gates.length > 0
+      ? `4. Run the quality gates (${gates.map((g) => `\`${g}\``).join(", ")}) and fix any failures.`
+      : "4. Check that the change builds and its tests pass, as far as the repository lets you.",
+    "5. Leave in the worktree only what belongs in the commit: everything left (including untracked files) is committed with `git add -A`. Delete scratch files; add generated ones to `.gitignore`.",
+    "6. Report `commit.message` in your structured result: a one-line subject, a blank line, and a short body saying what changed and why. Leave `commit` out when there's nothing to commit (the orchestrator still pushes commits that aren't on `origin` yet).",
+    ctx.prUrl
+      ? `7. The ${term} is open (${ctx.prUrl}). If its title or description no longer match the branch, set \`pullRequest\` to \`update\` with a new title and description; otherwise leave \`pullRequest\` out.`
+      : `7. No ${term} is open yet: set \`pullRequest\` to \`open\` with a title summarising the change itself and a description written for reviewers who can't see ${chat ? "the chat thread" : "Linear"} (what it does and why, notable changes, breaking changes or judgement calls).${chat ? "" : " Don't list the user stories."}`,
+    "- If something stops you (failing gates you can't fix, a conflict, missing credentials), leave `commit` out and say exactly what's wrong in `summary`: nothing is committed or pushed then.",
+    `- \`summary\` is posted to the ${chat ? "chat" : "Linear"} thread: say what is being committed and pushed, in a sentence or two.`,
+  ];
 }

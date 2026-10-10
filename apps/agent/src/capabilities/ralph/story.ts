@@ -55,6 +55,10 @@ export interface StoryOptions {
   idleTimeoutMs?: number;
   /** How often the job token file git reads is refreshed (see `jobGitAccess`). */
   tokenRefreshMs?: number;
+  /** Request sessions: how long a permission question in Linear waits for an answer. */
+  permissionTimeoutMs?: number;
+  /** Request sessions: how often the answer to a permission question is polled for. */
+  permissionPollIntervalMs?: number;
   now?: () => Date;
 }
 

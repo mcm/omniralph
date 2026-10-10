@@ -310,6 +310,46 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
     return { epic, s1, s2, s3 };
   }
 
+  describe("/ship", () => {
+    it("ships a mention's work with a request job that commits, pushes and opens the PR/MR", async () => {
+      const { epic } = threeStoryEpic();
+      const { sessionId, run } = await session(epic.id, "@omniralph fix the typo in the README");
+      await request(run!.id, {
+        summary: "Fixed it, but the repository's settings stopped my commit.",
+      });
+
+      expect(await reply(run!, "/ship")).toMatchObject({ kind: "ship" });
+      const payload = await request(run!.id, {
+        summary: "Committing the README fix.",
+        commitSha: "7".repeat(40),
+        pushed: true,
+        pullRequest: { action: "open", title: "Fix the README typo" },
+      });
+      expect(payload.ship).toBe(true);
+      expect(payload.requests.map((r) => r.text)).toEqual([
+        "Commit the work on the branch, push it, and open the pull/merge request if there isn't one.",
+      ]);
+      expect(scm.changeRequests).toHaveLength(1);
+      const said = last(sessionId, "response");
+      expect(said).toContain("Committing the README fix.");
+      expect(said).toContain(`Committed \`7777777777\` and pushed \`${payload.branch}\`.`);
+    });
+
+    it("a `/ship` mention starts a ship job straight away", async () => {
+      const { epic } = threeStoryEpic();
+      const { run } = await session(epic.id, "@omniralph /ship with a changelog entry");
+      const payload = await request(run!.id);
+      expect(payload.ship).toBe(true);
+      expect(payload.requests.map((r) => r.text)).toEqual(["with a changelog entry"]);
+    });
+
+    it("an ordinary request isn't a ship job", async () => {
+      const { epic } = threeStoryEpic();
+      const { run } = await session(epic.id, "@omniralph what's left?");
+      expect((await request(run!.id)).ship).toBe(false);
+    });
+  });
+
   describe("mentions (Cyrus semantics)", () => {
     it("a mention only does what it asks, even with stories left (no story loop, no Linear changes)", async () => {
       const { epic } = threeStoryEpic();

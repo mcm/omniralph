@@ -3,6 +3,8 @@
  * `SessionManager.onPrompted`), handled in this order (FR-15):
  *
  * 1. Stop (Linear's Stop signal, or "stop"): the run is stopped, its job canceled.
+ * 1'. "Allow"/"Deny" while a live session waits for a person to approve a tool
+ *     call (`permissions.ts`): the agent reads the answer.
  * 1a. An answer to an open question about a merged PR/MR's leftovers
  *     (`cleanup.ts`: stash entries, a branch with unmerged commits), in any
  *     run status: a `ralph.cleanup` job carries it out.
@@ -14,6 +16,9 @@
  *     handled as below.
  * 3. `rerun preparation` (epic mode): the earliest open manual story's preparation is asked about again.
  * 4. "start anyway" (epic mode): outside blockers are ignored from now on.
+ * 4a. `/ship [notes]`: a pending request that a `ralph.request` job ships
+ *     (it commits and pushes the branch itself, and opens the PR/MR if there
+ *     is none). Never passed to a running session, never story guidance.
  * 5. Anything else, while a `ralph.story` or `ralph.request` job runs, is a
  *    message for its live session (`messages.ts`): nothing else happens until
  *    the agent delivers it or it turns out it can't. A push/PR/MR request
@@ -46,11 +51,14 @@ import {
   isRerunPreparationRequest,
   isStartAnywayRequest,
   isStopRequest,
+  matchPermissionAnswer,
   matchPreparationAnswer,
+  parseShipRequest,
   parseContinueRequest,
   parseInstruction,
   PREPARATION_LATER,
   PREPARATION_MYSELF,
+  SHIP_REQUEST_TEXT,
   type PreparationAnswer,
 } from "@omniralph/ralph";
 import type { ActivityContent } from "@/lib/linear/gateway";
@@ -61,6 +69,7 @@ import { loadEpic, runEpicOptions } from "./epic-loader";
 import { answerCleanup } from "./cleanup";
 import { applyGuidance, freshAttempts, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
+import { answerPermission } from "./permissions";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import { addInstruction } from "./requests";
@@ -84,6 +93,10 @@ export type ReplyKind =
   | "preparation_answer"
   | "rerun_preparation"
   | "start_anyway"
+  /** An answer to a live session's permission question (`permissions.ts`). */
+  | "permission_answer"
+  /** `/ship`: a pending request that commits, pushes and opens the PR/MR. */
+  | "ship"
   /** `/continue` without guidance: the iteration cap and story attempts start over. */
   | "continue"
   /** Stored for the running job's live session. */
@@ -111,6 +124,18 @@ export async function handleReply(
 
   const text = event.body.trim();
   if (!text) return null;
+  // A live session waiting for a person to approve a tool call.
+  const permission =
+    run.permission && !run.permission.answer ? matchPermissionAnswer(text) : undefined;
+  if (permission) {
+    const note = await lockRun(deps.db, run.id, (tx, current) =>
+      answerPermission(tx, deps.db, current, permission, event.authorName),
+    );
+    if (note) {
+      await postActivity(deps.linear, run.linearAgentSessionId, note);
+      return { kind: "permission_answer" };
+    }
+  }
   // An answer to a question about a merged PR/MR's leftovers (stashes, unmerged commits).
   const cleanup = await answerCleanup(deps, run.id, parseInstruction(text).text || text);
   if (cleanup) return { kind: "cleanup_answer" };
@@ -135,6 +160,7 @@ export async function handleReply(
   // `/continue [guidance]`: the rest of the reply is handled as usual.
   const continued = parseContinueRequest(text);
   const body = continued ?? text;
+  const ship = parseShipRequest(body);
   const instruction = parseInstruction(body);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (current.status === "failed") return null;
@@ -202,6 +228,33 @@ export async function handleReply(
         note: {
           type: "thought" as const,
           body: "OK, I'll ignore the open blockers and start anyway.",
+        },
+      };
+    }
+    // `/ship`: always a request job of its own, after whatever runs now.
+    if (ship !== null) {
+      await addInstruction(
+        tx,
+        resumed,
+        {
+          text: ship || SHIP_REQUEST_TEXT,
+          author: event.authorName ?? null,
+          wantsLoop: false,
+          ship: true,
+        },
+        applyGuidance,
+      );
+      return {
+        kind: "ship" as const,
+        advance: true,
+        note: {
+          type: "thought" as const,
+          body: await whenFree(
+            tx,
+            resumed,
+            "I'll commit, push and open the PR/MR",
+            "Shipping: I'll commit the work, push the branch and open the PR/MR if there isn't one.",
+          ),
         },
       };
     }

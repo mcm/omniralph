@@ -29,7 +29,7 @@ import {
   type RalphTransaction,
   type Repository,
 } from "@omniralph/db";
-import { parseInstruction, type Epic } from "@omniralph/ralph";
+import { parseInstruction, parseShipRequest, SHIP_REQUEST_TEXT, type Epic } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { linearConversation } from "./conversation";
@@ -313,8 +313,8 @@ async function askForRepositoryFirst(
 /** How a new run starts: a delegation (or `/ralph`) builds the epic; a mention does what it asks. */
 interface StartOptions {
   mode: RalphRunMode;
-  /** The mention's instruction (without `/ralph` and the leading `@name`). */
-  instruction?: { text: string; author: string | null; wantsLoop: boolean };
+  /** The mention's instruction (without `/ralph` and the leading `@name`; `ship` for `/ship`). */
+  instruction?: { text: string; author: string | null; wantsLoop: boolean; ship?: boolean };
 }
 
 /** A mention's instruction becomes the new run's first pending request (and guidance with `/ralph`). */
@@ -353,7 +353,12 @@ export async function startRun(
  * carrying over the issue's earlier run.
  */
 async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Promise<StartOutcome> {
-  const { text, wantsLoop } = parseInstruction(event.commentBody);
+  const parsed = parseInstruction(event.commentBody);
+  const { wantsLoop } = parsed;
+  // `/ship [notes]`: a ship request, never handed to a running session.
+  const shipNotes = wantsLoop ? null : parseShipRequest(parsed.text);
+  const ship = shipNotes !== null;
+  const text = ship ? shipNotes || SHIP_REQUEST_TEXT : parsed.text;
   const author = event.creatorName ?? null;
   if (!text && !wantsLoop) {
     await post(deps, event.sessionId, { type: "response", body: NOTHING_TO_DO });
@@ -377,10 +382,15 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     const handed = await lockRun(deps.db, active.id, async (tx, run) => {
       if (FINISHED_RUN_STATUSES.has(run.status)) return null;
       // The epic is being worked right now: hand the mention to that live agent.
-      if (text && !wantsLoop && (await deliverToRunningJob(tx, run, text, author ?? undefined))) {
+      if (
+        text &&
+        !wantsLoop &&
+        !ship &&
+        (await deliverToRunningJob(tx, run, text, author ?? undefined))
+      ) {
         return { live: true };
       }
-      await addInstruction(tx, run, { text, author, wantsLoop }, applyGuidance);
+      await addInstruction(tx, run, { text, author, wantsLoop, ship }, applyGuidance);
       return { live: false };
     });
     if (handed) {
@@ -396,7 +406,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
   }
   return startNewRun(event, deps, {
     mode: wantsLoop ? "epic" : "request",
-    instruction: { text, author, wantsLoop },
+    instruction: { text, author, wantsLoop, ship },
   });
 }
 

@@ -238,6 +238,15 @@ Reply in the agent session to steer a run:
 | Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
 | Anything else | Stored as guidance for the next story attempts (exhausted stories get fresh attempts) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
 | `/ralph` | Switches a mention's run (request mode) to the story loop; its requests become guidance. |
+| `/ship [notes]` | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
+| `Allow` / `Deny` (or `yes` / `no`) | Answers a request session's permission question (below). |
+
+**Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls
+a repository's own Claude Code settings `ask` about (for example `"ask": ["Bash(git commit:*)"]` in
+a committed `.claude/settings.json`). Such a call is asked about in the agent session as an
+**Allow** / **Deny** picker. The session waits for the answer, which reaches the agent within a few
+seconds. With no answer in 30 minutes the call is denied and the session carries on without it. Story
+sessions never ask (an epic must never wait for a person): such calls are denied there.
 
 Live delivery needs an agent version that acknowledges `jobMessages`; with an older agent, the reply is applied from the next story attempt once the running job ends.
 

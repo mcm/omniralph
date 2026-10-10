@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   query as sdkQuery,
+  type CanUseTool,
   type Options,
   type SDKMessage,
   type SDKUserMessage,
@@ -26,6 +27,21 @@ export const WAIT_NUDGE_TEXT =
   "Nothing is running in the background any more, so there is nothing left to wait for. Check the results of the background work you started, finish the task, and report your structured result.";
 
 const RATE_LIMIT_TEXT = /rate[_ ]limit|usage limit|\b429\b|too many requests/i;
+
+/** Tells a session denied a tool call that a person had to approve. */
+export const PERMISSION_DENIED_TEXT =
+  "A person had to approve this in Linear (the repository's Claude Code settings ask about it) and denied it or didn't answer in time. Don't retry it: carry on without it, or report what it blocks.";
+
+/** A tool call the repository's settings `ask` about. */
+export interface PermissionCall {
+  tool: string;
+  input: Record<string, unknown>;
+  /** Claude Code's prompt or reason, when it gave one. */
+  reason?: string;
+}
+
+/** Asks a person whether a call may run (false: deny it). */
+export type PermissionAsker = (call: PermissionCall, signal: AbortSignal) => Promise<boolean>;
 
 /** What a session shows while it runs (relayed to the Linear agent session). */
 export type SessionEvent =
@@ -77,6 +93,12 @@ export interface SessionRequest {
   persistSession?: boolean;
   /** A persisted session to continue (its conversation so far is kept). */
   resume?: string;
+  /**
+   * Asks a person about tool calls the repository's settings `ask` about
+   * (`canUseTool`); without it, such calls are denied. The session's idle
+   * timeout doesn't run while a question is open.
+   */
+  askPermission?: PermissionAsker;
 }
 
 /** Delivers a message into a live session; false when the session takes no more input. */
@@ -123,7 +145,11 @@ function resultUsage(message: Extract<SDKMessage, { type: "result" }>): TokenUsa
 }
 
 /** The SDK options of a ralph session; exported for tests. */
-export function sessionOptions(request: SessionRequest, abortController: AbortController): Options {
+export function sessionOptions(
+  request: SessionRequest,
+  abortController: AbortController,
+  canUseTool?: CanUseTool,
+): Options {
   return {
     ...narrowPermissions(
       sdkPermissions(request.policy)({ cwd: request.cwd, allowExploration: true }),
@@ -140,6 +166,7 @@ export function sessionOptions(request: SessionRequest, abortController: AbortCo
     persistSession: request.persistSession === true,
     ...(request.resume && { resume: request.resume }),
     env: { ...request.env, CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-agent" },
+    ...(canUseTool && { canUseTool }),
   };
 }
 
@@ -250,8 +277,11 @@ async function runQuery(
   let idleTimer: NodeJS.Timeout | undefined;
   const idleTimeoutMs = request.idleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const injectionIdleTimeoutMs = request.injectionIdleTimeoutMs ?? INJECTION_IDLE_TIMEOUT_MS;
+  /** Permission questions open right now: the session is quiet while it waits for a person. */
+  let asking = 0;
   const resetIdle = () => {
     clearTimeout(idleTimer);
+    if (asking > 0) return;
     idleTimer = setTimeout(() => {
       idle = true;
       controller.abort(new Error("the session was idle"));
@@ -349,9 +379,43 @@ async function runQuery(
     return undefined;
   };
 
+  const askPermission = request.askPermission;
+  const canUseTool: CanUseTool | undefined = askPermission
+    ? async (toolName, toolInput, options) => {
+        asking++;
+        clearTimeout(idleTimer);
+        let allowed = false;
+        try {
+          const rule = options.matchedAskRule;
+          const reason = [
+            options.title ?? options.decisionReason,
+            rule &&
+              `It matches \`${rule.toolName}${rule.ruleContent ? `(${rule.ruleContent})` : ""}\` in the ${rule.source} settings.`,
+          ]
+            .filter(Boolean)
+            .join("\n");
+          allowed = await askPermission(
+            { tool: toolName, input: toolInput, ...(reason && { reason }) },
+            options.signal,
+          );
+        } catch {
+          allowed = false;
+        } finally {
+          asking--;
+          if (!waiting) resetIdle();
+        }
+        return allowed
+          ? { behavior: "allow", updatedInput: toolInput }
+          : { behavior: "deny", message: PERMISSION_DENIED_TEXT };
+      }
+    : undefined;
+
   resetIdle();
   try {
-    const messages = query({ prompt: input, options: sessionOptions(request, controller) });
+    const messages = query({
+      prompt: input,
+      options: sessionOptions(request, controller, canUseTool),
+    });
     for await (const message of messages) {
       if (message.type === "system" && message.subtype === "background_tasks_changed") {
         live.clear();

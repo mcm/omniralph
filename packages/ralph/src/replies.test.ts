@@ -9,11 +9,16 @@ import {
   MAX_PREPARATION_COMMAND_LENGTH,
   MAX_PREPARATION_COMMANDS,
   isStopRequest,
+  matchPermissionAnswer,
   matchPreparationAnswer,
   parseContinueRequest,
+  parseShipRequest,
+  permissionQuestion,
   preparationHash,
   preparationQuestion,
 } from "./replies.js";
+import { readRequestResult } from "./output.js";
+import { buildRequestPrompt, requestSystemAppend } from "./prompt.js";
 import type { Story } from "./types.js";
 
 const story = (key: string, over: Partial<Story> = {}): Story => ({
@@ -120,5 +125,89 @@ describe("preparation", () => {
     expect(body).toContain("`feat/x` at `aaaaaaaaaa`");
     expect(body).toContain("````sh\nmake db\necho ```\n````");
     expect(fenced("x")).toBe("```\nx\n```");
+  });
+});
+
+describe("/ship", () => {
+  it("parses `/ship` at the start of a reply, with or without notes", () => {
+    expect(parseShipRequest("/ship")).toBe("");
+    expect(parseShipRequest("  /ship  and bump the version\nplease")).toBe(
+      "and bump the version\nplease",
+    );
+    expect(parseShipRequest("/shipit")).toBeNull();
+    expect(parseShipRequest("/ship-it")).toBeNull();
+    expect(parseShipRequest("please /ship")).toBeNull();
+  });
+
+  it("reads the session's commit message", () => {
+    expect(readRequestResult({ summary: "x", commit: { message: "  Fix it\n\nBody.  " } })).toEqual(
+      {
+        result: { summary: "x", commit: { message: "Fix it\n\nBody." } },
+      },
+    );
+    expect(readRequestResult({ summary: "x", commit: { message: "  " } })).toEqual({
+      result: { summary: "x" },
+    });
+  });
+
+  it("tells a ship session to prepare the commit, not make it", () => {
+    const prompt = buildRequestPrompt({
+      epic: {
+        kind: "single",
+        issueId: "",
+        identifier: "ENG-1",
+        title: "Fix",
+        description: "",
+        branchName: "eng-1",
+        qualityGates: [],
+        stories: [],
+      },
+      requests: ["/ship"],
+      branch: "eng-1",
+      baseBranch: "main",
+      remoteUrl: "https://example.com/r.git",
+      progressFile: "/tmp/p.md",
+      qualityGates: ["pnpm test"],
+      ship: {
+        stashes: [
+          {
+            sha: "a".repeat(40),
+            label: "omniralph ralph r request unfinished",
+            date: "2026-10-10",
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain("This is `/ship`");
+    expect(prompt).toContain(`git stash apply <sha>`);
+    expect(prompt).toContain("a".repeat(40));
+    expect(prompt).toContain("set `pullRequest` to `open`");
+    expect(prompt).not.toContain("You may commit");
+    expect(requestSystemAppend("when-asked", "linear", { ship: true })).toContain("Don't run `git commit`");
+    expect(requestSystemAppend("when-asked")).toContain("You may use git (commit, push)");
+  });
+});
+
+describe("permission questions", () => {
+  it("matches Allow/Deny answers, including the picker's values and yes/no", () => {
+    expect(matchPermissionAnswer("Allow")).toBe("Allow");
+    expect(matchPermissionAnswer("yes")).toBe("Allow");
+    expect(matchPermissionAnswer("1")).toBe("Allow");
+    expect(matchPermissionAnswer("Deny.")).toBe("Deny");
+    expect(matchPermissionAnswer("no")).toBe("Deny");
+    expect(matchPermissionAnswer("allow it but only once")).toBeUndefined();
+  });
+
+  it("shows the call, the reason and the timeout", () => {
+    const text = permissionQuestion({
+      tool: "Bash",
+      detail: "git commit -m '```'",
+      reason: "It matches `Bash(git commit:*)`.",
+      timeoutMinutes: 30,
+    });
+    expect(text).toContain("**Bash**");
+    expect(text).toContain("git commit -m 'ˋˋˋ'");
+    expect(text).toContain("It matches `Bash(git commit:*)`.");
+    expect(text).toContain("with no answer in 30 minutes I'll take it as Deny");
   });
 });

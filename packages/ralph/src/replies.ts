@@ -21,6 +21,50 @@ export function parseContinueRequest(reply: string): string | null {
   return match ? match[1]!.trim() : null;
 }
 
+/**
+ * `/ship` at the start of a reply: commit the branch's work, push it and open the PR/MR if it has
+ * none. Returns the text after it (notes for the commit, "" for a bare `/ship`), or null when the
+ * reply doesn't start with it.
+ */
+export function parseShipRequest(reply: string): string | null {
+  const match = /^\s*\/ship(?![\w-])(.*)$/is.exec(reply);
+  return match ? match[1]!.trim() : null;
+}
+
+/** The request text of a bare `/ship`. */
+export const SHIP_REQUEST_TEXT =
+  "Commit the work on the branch, push it, and open the pull/merge request if there isn't one.";
+
+export const PERMISSION_ALLOW = "Allow";
+export const PERMISSION_DENY = "Deny";
+export const PERMISSION_OPTIONS = [PERMISSION_ALLOW, PERMISSION_DENY] as const;
+export type PermissionAnswer = (typeof PERMISSION_OPTIONS)[number];
+
+/** A reply to the pending permission question: "Allow"/"Deny" (or "yes"/"no", 1/2). */
+export function matchPermissionAnswer(reply: string): PermissionAnswer | undefined {
+  const text = norm(reply);
+  if (/^(1|allow|yes|y|approve|approved)$/.test(text)) return PERMISSION_ALLOW;
+  if (/^(2|deny|no|n|reject|rejected)$/.test(text)) return PERMISSION_DENY;
+  return undefined;
+}
+
+/** The elicitation asking a person to allow a tool call the repository's settings ask about. */
+export function permissionQuestion(input: {
+  tool: string;
+  detail: string;
+  reason?: string | undefined;
+  timeoutMinutes: number;
+}): string {
+  const detail = input.detail.trim();
+  return [
+    `I need permission to use **${input.tool}**${detail ? ":" : "."}`,
+    ...(detail ? ["", "```", detail.replace(/```/g, "ˋˋˋ"), "```"] : []),
+    ...(input.reason?.trim() ? ["", input.reason.trim()] : []),
+    "",
+    `The repository's Claude Code settings ask for approval first. Reply **${PERMISSION_ALLOW}** or **${PERMISSION_DENY}**; with no answer in ${input.timeoutMinutes} minutes I'll take it as ${PERMISSION_DENY}.`,
+  ].join("\n");
+}
+
 /** "start anyway", "ignore the blockers", "go ahead anyway"… */
 export function isStartAnywayRequest(reply: string): boolean {
   return /\b(start|go|proceed|run|work on it|go ahead)\s+anyway\b|\bignore\s+(the\s+)?block(er|ers|ing|ed)?\b/i.test(
