@@ -21,8 +21,9 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip Next internals and static files.
+  // Skip Next internals, static files and the self-authenticated APIs (`classifyPath` makes
+  // them `public` anyway; agents poll often and every proxy run is a billed invocation).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api/(?:agent|webhooks|cron|auth)/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
