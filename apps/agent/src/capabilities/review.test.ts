@@ -148,9 +148,14 @@ describe("review capability", () => {
     };
   }
 
-  it("is read-only and runs review.run and review.learn-rule jobs", () => {
+  it("is read-only and runs review.run, review.learn-rule, review.reply and chat.ask jobs", () => {
     const capability = createReviewCapability();
-    expect(capability.jobTypes).toEqual(["review.run", "review.learn-rule", "review.reply"]);
+    expect(capability.jobTypes).toEqual([
+      "review.run",
+      "review.learn-rule",
+      "review.reply",
+      "chat.ask",
+    ]);
     expect(capability.toolPolicy).toBe(REVIEW_TOOL_POLICY);
     expect(REVIEW_TOOL_POLICY.allowedTools).toEqual(["Read", "Grep", "Glob"]);
     expect(REVIEW_TOOL_POLICY.disallowedTools).toEqual(

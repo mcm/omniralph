@@ -16,3 +16,4 @@ export * from "./summary.js";
 export * from "./learnRule.js";
 export * from "./ruleDedupe.js";
 export * from "./reply.js";
+export * from "./chatAsk.js";

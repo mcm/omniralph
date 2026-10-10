@@ -486,14 +486,16 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
         cwd: request.cwd,
         model: request.model,
         signal: request.signal,
-        systemPrompt: REPLY_SYSTEM_PROMPT,
+        systemPrompt: request.systemPrompt ?? REPLY_SYSTEM_PROMPT,
       },
       request.prompt,
       usage,
       request.maxTokens,
       {
         allowExploration: request.allowExploration,
-        maxTurns: request.allowExploration ? (this.options.maxReplyTurns ?? 10) : 1,
+        maxTurns: request.allowExploration
+          ? (request.maxTurns ?? this.options.maxReplyTurns ?? 10)
+          : 1,
       },
     );
     if (outcome.stop !== "completed") {

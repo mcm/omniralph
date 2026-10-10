@@ -7,6 +7,7 @@ import {
   type ReviewProvider,
 } from "@omniralph/engine";
 import {
+  CHAT_ASK_JOB_TYPE,
   FINDING_SEVERITIES,
   MAX_LEASE_SECONDS,
   MAX_REVIEW_FINDINGS,
@@ -16,17 +17,22 @@ import {
   REVIEW_JOB_TYPE,
   REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
+  type ChatAskJobResult,
   type Finding,
   type LearnRuleJobResult,
   type ReviewJobResult,
   type ReviewReplyJobResult,
 } from "@omniralph/shared";
+import { runChatAsk } from "./chat-ask.js";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
 import { runLearnRule, type LearnRuleOptions } from "./learn-rule.js";
 import { runReply, type ReplyOptions } from "./reply.js";
 import { sdkPermissions } from "./tool-policy.js";
 
-/** Review sessions (`review.run`, `review.reply`, `review.learn-rule`) only read the job's worktree. */
+/**
+ * Review sessions (`review.run`, `review.reply`, `review.learn-rule`) and code
+ * questions from chat (`chat.ask`) only read the job's worktree.
+ */
 export const REVIEW_TOOL_POLICY: ToolPolicy = {
   tools: "allowed",
   allowedTools: EXPLORATION_TOOLS,
@@ -75,7 +81,8 @@ export interface ReviewCapabilityOptions
 /**
  * Code review (`review.run`), plus learned-rule generation from false-positive
  * dismissals (`review.learn-rule`, see `learn-rule.ts`) and answers to
- * questions in finding threads (`review.reply`, see `reply.ts`). Makes sure the repo cache has the PR's base and
+ * questions in finding threads (`review.reply`, see `reply.ts`) and about a
+ * repository from chat (`chat.ask`, see `chat-ask.ts`). Makes sure the repo cache has the PR's base and
  * head (and the previous review's head, for incremental reviews), runs the
  * engine in a fresh worktree at head and returns the `ReviewJobResult`. It
  * calls no code-host API and holds no write credential: git authenticates
@@ -85,11 +92,15 @@ export interface ReviewCapabilityOptions
 export function createReviewCapability(options: ReviewCapabilityOptions = {}): Capability {
   return {
     name: REVIEW_CAPABILITY,
-    jobTypes: [REVIEW_JOB_TYPE, LEARN_RULE_JOB_TYPE, REVIEW_REPLY_JOB_TYPE],
+    jobTypes: [REVIEW_JOB_TYPE, LEARN_RULE_JOB_TYPE, REVIEW_REPLY_JOB_TYPE, CHAT_ASK_JOB_TYPE],
     toolPolicy: REVIEW_TOOL_POLICY,
-    async run(job, ctx): Promise<ReviewJobResult | LearnRuleJobResult | ReviewReplyJobResult> {
+    async run(
+      job,
+      ctx,
+    ): Promise<ReviewJobResult | LearnRuleJobResult | ReviewReplyJobResult | ChatAskJobResult> {
       if (job.type === LEARN_RULE_JOB_TYPE) return runLearnRule(job, ctx, options);
       if (job.type === REVIEW_REPLY_JOB_TYPE) return runReply(job, ctx, options);
+      if (job.type === CHAT_ASK_JOB_TYPE) return runChatAsk(job, ctx, options);
       const parsed = ReviewJobPayload.safeParse(job.payload);
       if (!parsed.success) throw new Error("invalid review.run payload");
       const payload = parsed.data;

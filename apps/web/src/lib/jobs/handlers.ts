@@ -1,6 +1,9 @@
 import "server-only";
 import type { Database, Job } from "@omniralph/db";
 import {
+  CHAT_ASK_CAPABILITY,
+  CHAT_ASK_JOB_TYPE,
+  ChatAskJobPayload,
   LEARN_RULE_CAPABILITY,
   LEARN_RULE_JOB_TYPE,
   LearnRuleJobPayload,
@@ -33,6 +36,7 @@ import {
   type JobSkipReason,
 } from "@omniralph/shared";
 import type { z } from "zod";
+import { onChatAskJobCompleted, onChatAskJobFailed, parseChatAskResult } from "@/lib/chat/ask";
 import { onReplyJobCompleted, onReplyJobFailed, parseReplyResult } from "@/lib/mentions/reply";
 import {
   onReviewJobCanceled,
@@ -125,6 +129,14 @@ registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
   isValidResult: (result) => parseReplyResult(result) !== null,
   onCompleted: onReplyJobCompleted,
   onFailed: (db, job) => onReplyJobFailed(db, job),
+});
+
+registerJobOutcomeHandler(CHAT_ASK_JOB_TYPE, {
+  capability: CHAT_ASK_CAPABILITY,
+  payload: ChatAskJobPayload,
+  isValidResult: (result) => parseChatAskResult(result) !== null,
+  onCompleted: (db, job) => onChatAskJobCompleted(db, job),
+  onFailed: (db, job) => onChatAskJobFailed(db, job),
 });
 
 registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {

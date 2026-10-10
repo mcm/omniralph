@@ -18,6 +18,12 @@ vi.mock("@/lib/mentions/reply", () => ({
   onReplyJobFailed: vi.fn(),
   parseReplyResult: vi.fn(),
 }));
+const chatAsk = vi.hoisted(() => ({
+  onChatAskJobCompleted: vi.fn(),
+  onChatAskJobFailed: vi.fn(),
+  parseChatAskResult: vi.fn((result: unknown) => (result === "ok" ? {} : null)),
+}));
+vi.mock("@/lib/chat/ask", () => chatAsk);
 vi.mock("@/lib/rules/learn", () => ({
   onLearnRuleJobCompleted: vi.fn(),
   parseLearnRuleResult: vi.fn(),
@@ -121,6 +127,34 @@ describe("job outcome handlers", () => {
       }),
     ).toBe(true);
     expect(jobOutcomeHandler({ ...triage, capability: "ralph" })).toBeUndefined();
+  });
+
+  it("routes chat.ask jobs to the code question hooks", async () => {
+    const ask = job({
+      type: "chat.ask",
+      payload: {
+        repositoryId: reviewPayload.repositoryId,
+        repository: reviewPayload.repository,
+        defaultBranch: "main",
+        question: "Where is auth?",
+        context: null,
+        chatThreadId: "00000000-0000-4000-8000-000000000004",
+        model: null,
+        maxTokens: 1000,
+      },
+    });
+    const handler = jobOutcomeHandler(ask)!;
+    expect(handler.capability).toBe("review");
+    expect(handler.isValidResult!("ok")).toBe(true);
+    expect(handler.isValidResult!("bad")).toBe(false);
+    const db = {} as Database;
+    await handler.onCompleted!(db, ask);
+    expect(chatAsk.onChatAskJobCompleted).toHaveBeenLastCalledWith(db, ask);
+    await handler.onFailed!(db, ask, "boom");
+    expect(chatAsk.onChatAskJobFailed).toHaveBeenLastCalledWith(db, ask);
+    // A review payload isn't a code question's.
+    expect(jobOutcomeHandler(job({ type: "chat.ask" }))).toBeUndefined();
+    expect(jobOutcomeHandler({ ...ask, capability: "ralph" })).toBeUndefined();
   });
 
   it("registers new job types, once each", () => {

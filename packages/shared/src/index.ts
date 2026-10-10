@@ -20,3 +20,4 @@ export * from "./reply.js";
 export * from "./rerun.js";
 export * from "./ralph-job.js";
 export * from "./triage-job.js";
+export * from "./chat-ask.js";
