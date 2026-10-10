@@ -23,9 +23,9 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
-  type RalphRun,
   organizations,
   seedReviewProfiles,
+  type LinearRun,
 } from "@omniralph/db";
 import { preparationHash } from "@omniralph/ralph";
 import {
@@ -43,7 +43,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
@@ -150,17 +150,17 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     dispatcher = new VercelQueuesDispatcher({ db, publisher });
   });
 
-  async function delegate(issueId: string): Promise<RalphRun> {
+  async function delegate(issueId: string): Promise<LinearRun> {
     sessionSeq += 1;
     const sessionId = `reply-session-${sessionSeq}`;
     await startRun(
       { kind: "session_created", sessionId, issueId, commentBody: `${AGENT_SESSION_MARKER}.` },
       deps(),
     );
-    return (await getRunBySession(db, sessionId))!;
+    return linearRun((await getRunBySession(db, sessionId))!);
   }
 
-  const branchOf = async (run: RalphRun) => (await getMainLane(db, run))!.branch;
+  const branchOf = async (run: LinearRun) => (await getMainLane(db, run))!.branch;
 
   const activeJobs = (runId: string) =>
     db
@@ -266,7 +266,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     return payload;
   }
 
-  const reply = (run: RalphRun, body: string, signal?: string): Promise<ReplyResult | null> =>
+  const reply = (run: LinearRun, body: string, signal?: string): Promise<ReplyResult | null> =>
     handleReply(
       {
         kind: "session_prompted",
@@ -277,7 +277,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       deps(),
     );
 
-  const last = (run: RalphRun, type: "thought" | "response" | "elicitation" | "error") =>
+  const last = (run: LinearRun, type: "thought" | "response" | "elicitation" | "error") =>
     linear.bodies(run.linearAgentSessionId, type).at(-1) ?? "";
 
   const storyStates = async (runId: string) =>
@@ -317,7 +317,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     return { epic, alpha, bucket, run };
   }
 
-  const selects = (run: RalphRun) =>
+  const selects = (run: LinearRun) =>
     linear.activities.filter(
       (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
     );
@@ -583,7 +583,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
 
   describe("/continue", () => {
     /** A two-story epic whose run hit the iteration cap after Alpha. */
-    async function cappedRun(): Promise<RalphRun> {
+    async function cappedRun(): Promise<LinearRun> {
       twoStoryEpic();
       const run = await delegate("issue-1");
       await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });

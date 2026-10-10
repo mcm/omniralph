@@ -26,6 +26,7 @@ import {
   type RalphMessage,
   type RalphRun,
   type RalphTransaction,
+  linearSessionOf,
 } from "@omniralph/db";
 import { asksForPushOrPullRequest } from "@omniralph/ralph";
 import {
@@ -199,7 +200,7 @@ export async function settleStrandedMessages(
 ): Promise<void> {
   for (const message of await listStrandedMessages(tx, run.id)) {
     const note = await strand(tx, run, message, now);
-    await postActivity(linear, run.linearAgentSessionId, note);
+    await postActivity(linear, linearSessionOf(run), note);
   }
 }
 
@@ -227,7 +228,8 @@ export async function exchangeJobMessages(
   const ids = [...delivered, ...acks.rejectedMessageIds];
   const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
-  const notes: { organizationId: string; sessionId: string; content: ActivityContent }[] = [];
+  const notes: { organizationId: string; sessionId: string | null; content: ActivityContent }[] =
+    [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
@@ -239,14 +241,14 @@ export async function exchangeJobMessages(
           await updateMessage(tx, message.id, { deliveredAt: now, consumedAt: now });
           notes.push({
             organizationId: run.organizationId,
-            sessionId: run.linearAgentSessionId,
+            sessionId: linearSessionOf(run),
             content: { type: "thought", body: DELIVERED_NOTE },
           });
         } else {
           const content = await strand(tx, run, message, now);
           notes.push({
             organizationId: run.organizationId,
-            sessionId: run.linearAgentSessionId,
+            sessionId: linearSessionOf(run),
             content,
           });
         }

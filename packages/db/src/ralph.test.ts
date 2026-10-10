@@ -3,6 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { ensureChatThread, saveChatConnection } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { insertJob } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
@@ -11,9 +12,15 @@ import {
   appendProgress,
   createRun,
   getRun,
+  getActiveRunByChatThread,
+  getActiveRunOfSameOrigin,
+  getRunByChatThread,
   getRunByIssue,
   getRunBySession,
+  isLinearRun,
+  linearSessionOf,
   listActiveRunJobIds,
+  runReference,
   listRunsAffectedByIssue,
   listRunsToReconcile,
   getRunDetail,
@@ -40,7 +47,8 @@ import {
   updateLane,
   updateMessage,
   RUN_DETAIL_MESSAGE_LIMIT,
-  type NewRalphRunInput,
+  type NewChatRalphRunInput,
+  type NewLinearRalphRunInput,
 } from "./ralph.js";
 import {
   connectRepository,
@@ -50,6 +58,7 @@ import {
 } from "./repositories.js";
 import {
   agents,
+  chatConnections,
   DEFAULT_RALPH_SETTINGS,
   jobs,
   ralphMessages,
@@ -124,7 +133,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await db.delete(ralphRuns);
   });
 
-  const runInput = (overrides: Partial<NewRalphRunInput> = {}): NewRalphRunInput => {
+  const runInput = (overrides: Partial<NewLinearRalphRunInput> = {}): NewLinearRalphRunInput => {
     session += 1;
     return {
       organizationId: orgId,
@@ -247,6 +256,210 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     );
     expect(results.filter((r) => r.created)).toHaveLength(1);
     expect(new Set(results.map((r) => r.run.id)).size).toBe(1);
+  });
+
+  describe("chat runs", () => {
+    let thread = 0;
+    /** A new Slack thread (of a new connection) of the organization. */
+    async function newThread(): Promise<{ id: string; connectionId: string }> {
+      thread += 1;
+      const connection = await saveChatConnection(db, {
+        organizationId: orgId,
+        platform: "slack",
+        externalId: `T${thread}`,
+        name: `Acme ${thread}`,
+        credentials: null,
+        installedByUserId: null,
+      });
+      if (connection === "other_organization") throw new Error("connected elsewhere");
+      const row = await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: `slack:C${thread}:1.${thread}`,
+        channelId: `slack:C${thread}`,
+        startedByExternalUserId: "U1",
+      });
+      return { id: row!.id, connectionId: connection.id };
+    }
+    /** The constraint a failed write violated (null: it worked). */
+    const violated = (write: PromiseLike<unknown>) =>
+      Promise.resolve(write).then(
+        () => null,
+        (error: { cause?: { constraint?: string } }) => error.cause?.constraint ?? "unknown",
+      );
+    const chatInput = (
+      chatThreadId: string,
+      overrides: Partial<NewChatRalphRunInput> = {},
+    ): NewChatRalphRunInput => ({
+      origin: "chat",
+      organizationId: orgId,
+      chatThreadId,
+      repositoryId: repoA,
+      branch: `omniralph/chat-${chatThreadId.slice(0, 8)}`,
+      baseBranch: "main",
+      ...overrides,
+    });
+
+    it("creates a request-mode run without Linear fields and finds it by thread", async () => {
+      const { id: threadId } = await newThread();
+      const { run, created } = await createRun(db, chatInput(threadId));
+      expect(created).toBe(true);
+      expect(run).toMatchObject({
+        origin: "chat",
+        chatThreadId: threadId,
+        mode: "request",
+        kind: "single",
+        linearIssueId: null,
+        linearIdentifier: null,
+        linearAgentSessionId: null,
+        status: "pending",
+      });
+      expect(await getMainLane(db, run)).toMatchObject({ repositoryId: repoA, baseBranch: "main" });
+      expect(await getRunByChatThread(db, threadId)).toEqual(run);
+      expect(await getActiveRunByChatThread(db, threadId)).toEqual(run);
+      expect(await getActiveRunOfSameOrigin(db, run)).toEqual(run);
+      expect(isLinearRun(run)).toBe(false);
+      expect(linearSessionOf(run)).toBeNull();
+      expect(runReference(run)).toBe(`chat-${run.id.slice(0, 8)}`);
+
+      // A Linear run is one.
+      const linear = (await createRun(db, runInput())).run;
+      expect(isLinearRun(linear)).toBe(true);
+      expect(linearSessionOf(linear)).toBe(linear.linearAgentSessionId);
+      expect(runReference(linear)).toBe(linear.linearIdentifier);
+      expect(linear.origin).toBe("linear");
+      expect(await getActiveRunOfSameOrigin(db, linear)).toEqual(linear);
+    });
+
+    it("allows one unfinished run per thread, alongside Linear runs", async () => {
+      const { id: threadId } = await newThread();
+      const { id: otherThreadId } = await newThread();
+      const first = await createRun(db, chatInput(threadId));
+      expect(await createRun(db, chatInput(threadId))).toEqual({ run: first.run, created: false });
+      // Another thread, and a Linear run, don't collide with it.
+      expect((await createRun(db, chatInput(otherThreadId))).created).toBe(true);
+      expect((await createRun(db, runInput())).created).toBe(true);
+      // The index itself refuses a second unfinished run of the thread.
+      expect(
+        await violated(
+          db.insert(ralphRuns).values({
+            organizationId: orgId,
+            origin: "chat",
+            chatThreadId: threadId,
+            kind: "single",
+            mode: "request",
+            repositoryId: repoA,
+          }),
+        ),
+      ).toBe("ralph_runs_chat_thread_active_uq");
+
+      // Once it finished, the thread can start another; the latest run wins.
+      await updateRun(db, first.run.id, { status: "completed" });
+      expect(await getActiveRunByChatThread(db, threadId)).toBeNull();
+      expect(await getActiveRunOfSameOrigin(db, first.run)).toBeNull();
+      const second = await createRun(db, chatInput(threadId));
+      expect(second.created).toBe(true);
+      expect((await getRunByChatThread(db, threadId))?.id).toBe(second.run.id);
+      expect((await getRunByChatThread(db, threadId, { activeOnly: true }))?.id).toBe(
+        second.run.id,
+      );
+
+      // Concurrent creates make one run.
+      const { id: racingThreadId } = await newThread();
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => createRun(db, chatInput(racingThreadId))),
+      );
+      expect(results.filter((r) => r.created)).toHaveLength(1);
+      expect(new Set(results.map((r) => r.run.id)).size).toBe(1);
+    });
+
+    it("keeps one unfinished Linear run per issue", async () => {
+      const input = runInput();
+      await createRun(db, input);
+      expect(
+        await violated(
+          db.insert(ralphRuns).values({
+            organizationId: orgId,
+            linearIssueId: input.linearIssueId,
+            linearIdentifier: input.linearIdentifier,
+            linearAgentSessionId: "session-again",
+            kind: "children",
+            repositoryId: repoA,
+          }),
+        ),
+      ).toBe("ralph_runs_issue_active_uq");
+    });
+
+    it("checks each origin's columns", async () => {
+      const { id: threadId } = await newThread();
+      const linear = {
+        organizationId: orgId,
+        linearIssueId: "issue-check",
+        linearIdentifier: "TOOL-0",
+        linearAgentSessionId: "session-check",
+        kind: "children" as const,
+        repositoryId: repoA,
+      };
+      // Linear runs need their issue, identifier and agent session.
+      for (const missing of ["linearIssueId", "linearIdentifier", "linearAgentSessionId"]) {
+        expect(await violated(db.insert(ralphRuns).values({ ...linear, [missing]: null }))).toBe(
+          "ralph_runs_origin_check",
+        );
+      }
+      // `linear` is the default origin.
+      const [row] = await db.insert(ralphRuns).values(linear).returning();
+      expect(row?.origin).toBe("linear");
+
+      // Chat runs only do what they were asked.
+      const chat = {
+        organizationId: orgId,
+        origin: "chat" as const,
+        chatThreadId: threadId,
+        kind: "single" as const,
+        repositoryId: repoA,
+      };
+      expect(await violated(db.insert(ralphRuns).values({ ...chat, mode: "epic" }))).toBe(
+        "ralph_runs_origin_check",
+      );
+      await expect(
+        db
+          .insert(ralphRuns)
+          .values({ ...chat, mode: "request" })
+          .returning(),
+      ).resolves.toHaveLength(1);
+    });
+
+    it("keeps a chat run when its thread goes (e.g. the chat connection is removed)", async () => {
+      const { id: threadId, connectionId } = await newThread();
+      const { run } = await createRun(db, chatInput(threadId));
+      await db.delete(chatConnections).where(eq(chatConnections.id, connectionId));
+      expect(await getRun(db, run.id)).toMatchObject({ origin: "chat", chatThreadId: null });
+      expect(await getActiveRunOfSameOrigin(db, { ...run, chatThreadId: null })).toBeNull();
+    });
+
+    it("lists and details a chat run with its thread's platform and channel", async () => {
+      const { id: threadId } = await newThread();
+      const { run } = await createRun(db, chatInput(threadId));
+      const linear = (await createRun(db, runInput())).run;
+      const { runs } = await listRuns(db, orgId);
+      expect(runs.find((r) => r.id === run.id)).toMatchObject({
+        origin: "chat",
+        linearIdentifier: null,
+        chatThread: {
+          id: threadId,
+          platform: "slack",
+          channelId: expect.stringMatching(/^slack:C/),
+        },
+      });
+      expect(runs.find((r) => r.id === linear.id)).toMatchObject({
+        origin: "linear",
+        chatThread: null,
+      });
+      expect((await getRunDetail(db, orgId, run.id))?.chatThread).toMatchObject({
+        id: threadId,
+        platform: "slack",
+      });
+      expect((await getRunDetail(db, orgId, linear.id))?.chatThread).toBeNull();
+    });
   });
 
   it("updates a run's status and state", async () => {
@@ -837,10 +1050,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
-    const { run: otherRun } = await createRun(
-      db,
-      runInput({ organizationId: other!.id, repositoryId: otherRepo }),
-    );
+    const otherInput = runInput({ organizationId: other!.id, repositoryId: otherRepo });
+    const { run: otherRun } = await createRun(db, otherInput);
     await upsertStories(db, otherRun.id, [
       { linearIssueId: "shared-story", identifier: "S-1", title: "s" },
     ]);
@@ -868,9 +1079,9 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     expect((await listLanesToCleanUp(db, other!.id)).map((l) => l.run.id)).toEqual([otherRun.id]);
 
     // The same issue (a workspace that moved) doesn't collide with the other organization's run.
-    expect(await getRunByIssue(db, orgId, otherRun.linearIssueId)).toBeNull();
-    const mine = await createRun(db, runInput({ linearIssueId: otherRun.linearIssueId }));
+    expect(await getRunByIssue(db, orgId, otherInput.linearIssueId)).toBeNull();
+    const mine = await createRun(db, runInput({ linearIssueId: otherInput.linearIssueId }));
     expect(mine).toMatchObject({ created: true, run: { organizationId: orgId } });
-    expect((await getRunByIssue(db, orgId, otherRun.linearIssueId))?.id).toBe(mine.run.id);
+    expect((await getRunByIssue(db, orgId, otherInput.linearIssueId))?.id).toBe(mine.run.id);
   });
 });

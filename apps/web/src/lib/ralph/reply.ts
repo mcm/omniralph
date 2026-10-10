@@ -30,7 +30,6 @@
  * a completed one (cyralph runs a reply on a finished session as a request).
  */
 import {
-  getRunByIssue,
   getRunBySession,
   listActiveRunJobIds,
   listStories,
@@ -40,6 +39,9 @@ import {
   type RalphRun,
   type RalphTransaction,
   getMainLane,
+  getActiveRunOfSameOrigin,
+  isLinearRun,
+  linearSessionOf,
 } from "@omniralph/db";
 import {
   isRerunPreparationRequest,
@@ -113,7 +115,7 @@ export async function handleReply(
   const cleanup = await answerCleanup(deps, run.id, parseInstruction(text).text || text);
   if (cleanup) return { kind: "cleanup_answer" };
   if (run.status === "failed") {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "response",
       body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.linearIdentifier}** to me again to start a new run.`,
     });
@@ -243,7 +245,7 @@ export async function handleReply(
     };
   });
   if (!handled) return null;
-  if (handled.note) await postActivity(deps.linear, run.linearAgentSessionId, handled.note);
+  if (handled.note) await postActivity(deps.linear, linearSessionOf(run), handled.note);
   // `/ralph` on a mention's run: the story loop needs the epic's stories as sub-issues.
   if ("switched" in handled && handled.switched) await materializeStories(deps, run);
   if (!handled.advance) return { kind: handled.kind };
@@ -252,7 +254,7 @@ export async function handleReply(
 
 /** Creates a PRD's missing stories as sub-issues (a request-mode run switched to the epic loop). */
 async function materializeStories(deps: RalphDeps, run: RalphRun): Promise<void> {
-  if (run.kind === "single") return;
+  if (run.kind === "single" || !isLinearRun(run)) return;
   await quietly(`Creating the stories of ${run.linearIdentifier}`, async () => {
     const options = await runEpicOptions(deps.db, run);
     await loadEpic(deps.linear, run.linearIssueId, { ...options, completePrd: true });
@@ -313,7 +315,7 @@ export async function stopRun(
   });
   if (!stopped) return { status: "gone" };
   if ("already" in stopped && stopped.already) {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "response",
       body:
         stopped.already === "stopped"
@@ -343,19 +345,17 @@ export async function stopRun(
       .filter(Boolean)
       .join(" "),
   };
-  await postActivity(deps.linear, run.linearAgentSessionId, content);
+  await postActivity(deps.linear, linearSessionOf(run), content);
   return { status: "stopped", canceled };
 }
 
 /**
  * A stopped run asked to work again becomes `pending` (advancing it decides
- * what's next). Not while another run of the issue is unfinished (it was
- * delegated again): null.
+ * what's next). Not while another run of the issue (or chat thread) is
+ * unfinished (it was delegated again): null.
  */
 async function resume(tx: RalphTransaction, run: RalphRun): Promise<RalphRun | null> {
-  const other = await getRunByIssue(tx, run.organizationId, run.linearIssueId, {
-    activeOnly: true,
-  });
+  const other = await getActiveRunOfSameOrigin(tx, run);
   if (other && other.id !== run.id) return null;
   return updateRun(tx, run.id, { status: "pending", error: null });
 }

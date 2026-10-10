@@ -19,13 +19,17 @@ export async function quietly(what: string, write: () => Promise<unknown>): Prom
   }
 }
 
-/** Posts an activity to an agent session, logging a failure. */
-export function postActivity(
+/**
+ * Posts an activity to an agent session, logging a failure. A run without a
+ * Linear session (`linearSessionOf` of a chat run) posts nothing here.
+ */
+export async function postActivity(
   linear: LinearGateway,
-  sessionId: string,
+  sessionId: string | null,
   content: ActivityContent,
   options?: ActivityOptions,
 ): Promise<boolean> {
+  if (sessionId === null) return false;
   return quietly(`Posting a Linear ${content.type} activity to session ${sessionId}`, () =>
     linear.createActivity(sessionId, content, options),
   );

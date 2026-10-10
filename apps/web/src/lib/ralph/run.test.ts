@@ -25,9 +25,9 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
-  type RalphRun,
   organizations,
   seedReviewProfiles,
+  type LinearRun,
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
@@ -44,7 +44,7 @@ import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
@@ -179,7 +179,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   });
 
   /** Delegates `issueId` and returns its run. */
-  async function delegate(issueId: string): Promise<RalphRun> {
+  async function delegate(issueId: string): Promise<LinearRun> {
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     await startRun(
@@ -191,7 +191,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       },
       deps(),
     );
-    return (await getRunBySession(db, sessionId))!;
+    return linearRun((await getRunBySession(db, sessionId))!);
   }
 
   const activeJobs = (runId: string) =>
@@ -1036,7 +1036,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   });
 
   /** A run waiting on an outside blocker that was just completed (without a webhook). */
-  async function unblockedWaitingRun(): Promise<RalphRun> {
+  async function unblockedWaitingRun(): Promise<LinearRun> {
     const outside = linear.add({ identifier: "OPS-9", title: "Outside", teamKey: "OPS" });
     const epic = linear.add({ identifier: "ENG-90", title: "Epic" });
     const story = linear.add({ identifier: "ENG-91", title: "Story", parentId: epic.id });
@@ -1246,7 +1246,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       }
     }
 
-    const reply = (run: RalphRun, body: string) =>
+    const reply = (run: LinearRun, body: string) =>
       handleLinearEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
@@ -1436,7 +1436,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
   describe("the pull/merge request", () => {
     /** A one-story epic whose story is done: the run is describing its PR/MR. */
-    async function finishedRun(teamKey = "ENG"): Promise<RalphRun> {
+    async function finishedRun(teamKey = "ENG"): Promise<LinearRun> {
       const epic = linear.add({
         identifier: `${teamKey}-100`,
         title: "Widgets",
@@ -1455,10 +1455,10 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(linear.bodies(run.linearAgentSessionId, "thought").at(-1)).toMatch(
         /^All 1 story is done\. Writing the (pull|merge) request description\.$/,
       );
-      return (await getRun(db, run.id))!;
+      return linearRun((await getRun(db, run.id))!);
     }
 
-    const reply = (run: RalphRun, body: string) =>
+    const reply = (run: LinearRun, body: string) =>
       handleLinearEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
@@ -1679,7 +1679,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         }
       }
 
-      const epicOf = (run: RalphRun) => linear.issues.get(run.linearIssueId)!;
+      const epicOf = (run: LinearRun) => linear.issues.get(run.linearIssueId)!;
 
       it("moves the epic to the named state once the pull request is opened", async () => {
         await withEpicCompletedState("in review", async () => {

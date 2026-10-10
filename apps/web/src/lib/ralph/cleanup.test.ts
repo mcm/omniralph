@@ -19,9 +19,9 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
-  type RalphRun,
   organizations,
   seedReviewProfiles,
+  type LinearRun,
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
@@ -37,7 +37,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
 import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
 import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
 import { reconcileCleanup } from "./cleanup";
@@ -209,7 +209,11 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   });
 
   /** A finished epic (ENG-1) whose PR #1 is open at `sha(1)`. */
-  async function epicWithPullRequest(): Promise<{ run: RalphRun; branch: string; epicId: string }> {
+  async function epicWithPullRequest(): Promise<{
+    run: LinearRun;
+    branch: string;
+    epicId: string;
+  }> {
     sessionSeq += 1;
     const n = sessionSeq;
     const epic = linear.add({
@@ -229,7 +233,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       },
       deps(),
     );
-    const run = (await getRunBySession(db, sessionId))!;
+    const run = linearRun((await getRunBySession(db, sessionId))!);
     await finish(await start(run.id), storyResult({ commitSha: sha(1) }));
     await finish(await start(run.id, "ralph.describe-pr"), {
       title: "Build the epic",
@@ -240,7 +244,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     const request = scm.changeRequests.at(-1)!;
     request.headSha = sha(1);
     const lane = (await getMainLane(db, run))!;
-    return { run: (await getRun(db, run.id))!, branch: lane.branch, epicId: epic.id };
+    return { run: linearRun((await getRun(db, run.id))!), branch: lane.branch, epicId: epic.id };
   }
 
   /** Merges the epic's PR/MR on the code host (`mergeSha` is the merge commit). */
@@ -264,11 +268,11 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },
     );
 
-  const reply = (run: RalphRun, body: string) =>
+  const reply = (run: LinearRun, body: string) =>
     handleReply({ kind: "session_prompted", sessionId: run.linearAgentSessionId, body }, deps());
 
-  const responses = (run: RalphRun) => linear.bodies(run.linearAgentSessionId, "response");
-  const selects = (run: RalphRun) =>
+  const responses = (run: LinearRun) => linear.bodies(run.linearAgentSessionId, "response");
+  const selects = (run: LinearRun) =>
     linear.activities.filter(
       (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
     );
@@ -278,7 +282,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     );
   const bodyOf = (a: ReturnType<typeof selects>[number] | undefined) =>
     a && "body" in a.content ? a.content.body : "";
-  const lane = async (run: RalphRun) => (await getMainLane(db, run))!;
+  const lane = async (run: LinearRun) => (await getMainLane(db, run))!;
 
   /** A merged epic whose cleanup job ran with `result`. */
   async function cleanedUp(result: Partial<RalphCleanupResult> = {}) {

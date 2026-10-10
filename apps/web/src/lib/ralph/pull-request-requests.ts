@@ -20,7 +20,6 @@ import {
   getLane,
   getRepositoryWithConnection,
   getReview,
-  getRunByIssue,
   getRunningRunJob,
   insertMessage,
   listActiveRunJobIds,
@@ -31,6 +30,8 @@ import {
   type RalphLane,
   type RalphRun,
   type RalphTransaction,
+  getActiveRunOfSameOrigin,
+  linearSessionOf,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
@@ -87,9 +88,7 @@ export async function addLaneRequest(
 ): Promise<{ delivery: PullRequestRequestDelivery; run: RalphRun; note: string } | null> {
   let current = run;
   if (current.status === "completed" || current.status === "stopped") {
-    const other = await getRunByIssue(tx, current.organizationId, current.linearIssueId, {
-      activeOnly: true,
-    });
+    const other = await getActiveRunOfSameOrigin(tx, current);
     if (other && other.id !== current.id) return null;
     current = (await updateRun(tx, current.id, { status: "pending", error: null })) ?? current;
   }
@@ -198,7 +197,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     if (rounds >= settings.maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });
       const busy = (await listActiveRunJobIds(tx, run.id)).length > 0;
-      await postActivity(deps.linear, run.linearAgentSessionId, {
+      await postActivity(deps.linear, linearSessionOf(run), {
         type: busy ? "thought" : "response",
         body: `Omniralph reviewed ${lane.prUrl} again. I've already worked through ${rounds} of its reviews on this ${term}, so I'm leaving this one for a person.`,
       });
@@ -217,7 +216,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledReviewIds, reviewRounds: rounds + 1 });
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "thought",
       body: added.note,
     });
@@ -261,7 +260,7 @@ export async function addPullRequestCommentRequest(
       what: `@${input.author} asked for changes on the ${input.term}`,
     });
     if (!added) return { status: "run_over", run } as const;
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(deps.linear, linearSessionOf(run), {
       type: "thought",
       body: added.note,
     });

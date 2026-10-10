@@ -34,7 +34,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
@@ -606,7 +606,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
       runSeq += 1;
-      const { run } = await createRun(db, {
+      const created = await createRun(db, {
         organizationId: orgId,
         linearIssueId: `issue-ralph-${runSeq}`,
         linearIdentifier: "ENG-1",
@@ -618,6 +618,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         baseBranch: "main",
         status: "running",
       });
+      const run = linearRun(created.run);
       const lane = (await getMainLane(db, run))!;
       await updateLane(db, lane.id, {
         prNumber: number,

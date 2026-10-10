@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import {
+  IconBrandDiscord,
+  IconBrandSlack,
   IconChevronRight,
   IconExternalLink,
   IconPlugConnected,
@@ -40,6 +42,7 @@ import {
   type RalphRepositoryRef,
   type RalphRunListParams,
   type RalphRunRow,
+  runSourceLabel,
 } from "@/lib/ralph/display";
 import { ProviderIcon } from "../repositories/repositories-view";
 
@@ -93,6 +96,38 @@ export function LinearIssueLink({
     </a>
   ) : (
     <span style={{ ...externalLink, fontSize: "var(--text-sm)" }}>{content}</span>
+  );
+}
+
+/**
+ * Where the run came from: its Linear issue (`LinearIssueLink`), or the chat
+ * platform and channel of a run started from chat.
+ */
+export function RunSource({
+  run,
+  showTitle = true,
+}: {
+  run: Pick<
+    RalphRunRow,
+    "origin" | "linearIdentifier" | "linearTitle" | "linearUrl" | "chatThread"
+  >;
+  showTitle?: boolean;
+}) {
+  if (run.origin === "linear" && run.linearIdentifier) {
+    return (
+      <LinearIssueLink
+        identifier={run.linearIdentifier}
+        title={showTitle ? run.linearTitle : null}
+        url={run.linearUrl}
+      />
+    );
+  }
+  const Icon = run.chatThread?.platform === "discord" ? IconBrandDiscord : IconBrandSlack;
+  return (
+    <span style={{ ...externalLink, fontSize: "var(--text-sm)" }}>
+      {run.chatThread && <Icon size={12} style={{ flexShrink: 0 }} />}
+      <span style={{ fontFamily: "var(--font-mono)" }}>{runSourceLabel(run)}</span>
+    </span>
   );
 }
 
@@ -150,11 +185,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
   return (
     <TableRow>
       <TableCell>
-        <LinearIssueLink
-          identifier={run.linearIdentifier}
-          title={run.linearTitle}
-          url={run.linearUrl}
-        />
+        <RunSource run={run} />
       </TableCell>
       <TableCell>
         <span
@@ -208,7 +239,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
           asChild
           variant="ghost"
           size="icon"
-          aria-label={`Run of ${run.linearIdentifier}`}
+          aria-label={`Run of ${runSourceLabel(run)}`}
           title="View run"
         >
           <Link href={`/ralph/${run.id}`}>

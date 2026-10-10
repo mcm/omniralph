@@ -21,11 +21,13 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import type { ChatPlatform } from "./chat.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
 import type { Repository, ScmProvider } from "./repositories.js";
 import {
   agents,
+  chatThreads,
   jobs,
   ralphLanes,
   ralphMessages,
@@ -43,12 +45,50 @@ export type RalphStory = typeof ralphStories.$inferSelect;
 export type RalphRunKind = RalphRun["kind"];
 export type RalphRunStatus = RalphRun["status"];
 export type RalphRunMode = RalphRun["mode"];
+export type RalphRunOrigin = RalphRun["origin"];
 export type RalphStoryStatus = RalphStory["status"];
 
 /** A transaction, as handed to `lockRun`'s callback. */
 export type RalphTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 /** The queries below run on the pool or inside a `lockRun` transaction. */
 type Executor = Database | RalphTransaction;
+
+/** A run's Linear fields, all set when it came from Linear (`ralph_runs_origin_check`). */
+type RunLinearFields = Pick<
+  RalphRun,
+  "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId"
+>;
+
+/** A run that came from Linear, with its issue and agent session. */
+export type LinearRun<T extends RunLinearFields = RalphRun> = T & {
+  origin: "linear";
+  linearIssueId: string;
+  linearIdentifier: string;
+  linearAgentSessionId: string;
+};
+
+/** Whether a run came from Linear (and so has its issue and agent session). */
+export function isLinearRun<T extends RunLinearFields>(run: T): run is LinearRun<T> {
+  return (
+    run.origin === "linear" &&
+    run.linearIssueId !== null &&
+    run.linearIdentifier !== null &&
+    run.linearAgentSessionId !== null
+  );
+}
+
+/**
+ * How a run is referred to in job payloads, branch names and messages: its
+ * Linear issue's identifier, or `chat-` and the start of its ID for a chat run.
+ */
+export function runReference(run: RunLinearFields & Pick<RalphRun, "id">): string {
+  return isLinearRun(run) ? run.linearIdentifier : `chat-${run.id.slice(0, 8)}`;
+}
+
+/** The Linear agent session of a run that came from Linear; null for a chat run. */
+export function linearSessionOf(run: RunLinearFields): string | null {
+  return isLinearRun(run) ? run.linearAgentSessionId : null;
+}
 
 /** Runs that haven't finished; at most one per delegated issue. */
 export const ACTIVE_RALPH_RUN_STATUSES = [
@@ -110,18 +150,9 @@ export async function listRalphRepositories(
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
-export interface NewRalphRunInput {
-  /** The organization whose Linear workspace delegated the issue. */
+interface NewRalphRunBase {
+  /** The organization the run belongs to (and whose repositories it uses). */
   organizationId: string;
-  linearIssueId: string;
-  linearIdentifier: string;
-  linearTitle?: string | null;
-  linearUrl?: string | null;
-  linearAgentSessionId: string;
-  kind: RalphRunKind;
-  /** `request` for a mention (default `epic`). */
-  mode?: RalphRunMode;
-  focusStoryId?: string | null;
   /** Null while a person is asked to pick the repository. */
   repositoryId: string | null;
   routedBy?: string | null;
@@ -132,23 +163,57 @@ export interface NewRalphRunInput {
   pendingElicitation?: RalphPendingElicitation | null;
 }
 
+/** A run delegated or mentioned in Linear (`origin` defaults to `linear`). */
+export interface NewLinearRalphRunInput extends NewRalphRunBase {
+  origin?: "linear";
+  linearIssueId: string;
+  linearIdentifier: string;
+  linearTitle?: string | null;
+  linearUrl?: string | null;
+  linearAgentSessionId: string;
+  kind: RalphRunKind;
+  /** `request` for a mention (default `epic`). */
+  mode?: RalphRunMode;
+  focusStoryId?: string | null;
+}
+
+/** A request-mode run started from a chat thread. */
+export interface NewChatRalphRunInput extends NewRalphRunBase {
+  origin: "chat";
+  chatThreadId: string;
+}
+
+export type NewRalphRunInput = NewLinearRalphRunInput | NewChatRalphRunInput;
+
 /**
  * Creates a `pending` run (and, given a repository and branch, its main lane),
  * unless the agent session already has a run or the issue already has an
- * unfinished one: then that run is returned with `created: false`.
+ * unfinished one (for a chat run: the thread already has an unfinished one):
+ * then that run is returned with `created: false`. A chat run is always a
+ * `single` request-mode run.
  */
 export async function createRun(
   db: Executor,
-  input: NewRalphRunInput,
+  newRun: NewRalphRunInput,
 ): Promise<{ run: RalphRun; created: boolean }> {
+  const { branch, baseBranch, ...input } = newRun;
+  const values: typeof ralphRuns.$inferInsert =
+    input.origin === "chat"
+      ? {
+          organizationId: input.organizationId,
+          origin: "chat",
+          chatThreadId: input.chatThreadId,
+          kind: "single",
+          mode: "request",
+          repositoryId: input.repositoryId,
+          routedBy: input.routedBy,
+          status: input.status,
+          pendingElicitation: input.pendingElicitation,
+        }
+      : { ...input, origin: "linear", focusStoryId: input.focusStoryId ?? null };
   // A conflicting run can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { branch, baseBranch, ...values } = input;
-    const [row] = await db
-      .insert(ralphRuns)
-      .values({ ...values, focusStoryId: input.focusStoryId ?? null })
-      .onConflictDoNothing()
-      .returning();
+    const [row] = await db.insert(ralphRuns).values(values).onConflictDoNothing().returning();
     if (row) {
       if (row.repositoryId && branch !== undefined) {
         await ensureLane(db, {
@@ -162,11 +227,19 @@ export async function createRun(
     }
 
     const existing =
-      (await getRunBySession(db, input.linearAgentSessionId)) ??
-      (await getRunByIssue(db, input.organizationId, input.linearIssueId, { activeOnly: true }));
+      input.origin === "chat"
+        ? await getActiveRunByChatThread(db, input.chatThreadId)
+        : ((await getRunBySession(db, input.linearAgentSessionId)) ??
+          (await getRunByIssue(db, input.organizationId, input.linearIssueId, {
+            activeOnly: true,
+          })));
     if (existing) return { run: existing, created: false };
   }
-  throw new Error(`Failed to create a ralph run for ${input.linearIdentifier}`);
+  throw new Error(
+    input.origin === "chat"
+      ? `Failed to create a ralph run for chat thread ${input.chatThreadId}`
+      : `Failed to create a ralph run for ${input.linearIdentifier}`,
+  );
 }
 
 export async function getRun(db: Executor, id: string): Promise<RalphRun | null> {
@@ -210,6 +283,53 @@ export async function getRunByIssue(
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * A chat thread's latest run (only an unfinished one with `activeOnly`), or
+ * null.
+ */
+export async function getRunByChatThread(
+  db: Executor,
+  chatThreadId: string,
+  options: { activeOnly?: boolean } = {},
+): Promise<RalphRun | null> {
+  const [row] = await db
+    .select()
+    .from(ralphRuns)
+    .where(
+      and(
+        eq(ralphRuns.origin, "chat"),
+        eq(ralphRuns.chatThreadId, chatThreadId),
+        options.activeOnly ? inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES) : undefined,
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** A chat thread's unfinished run (at most one), or null. */
+export async function getActiveRunByChatThread(
+  db: Executor,
+  chatThreadId: string,
+): Promise<RalphRun | null> {
+  return getRunByChatThread(db, chatThreadId, { activeOnly: true });
+}
+
+/**
+ * The unfinished run of what the run belongs to (its Linear issue, or its chat
+ * thread), or null: at most one can be unfinished, so a finished run can only
+ * start again when this is null or itself.
+ */
+export async function getActiveRunOfSameOrigin(
+  db: Executor,
+  run: RunLinearFields & Pick<RalphRun, "organizationId" | "chatThreadId">,
+): Promise<RalphRun | null> {
+  if (isLinearRun(run)) {
+    return getRunByIssue(db, run.organizationId, run.linearIssueId, { activeOnly: true });
+  }
+  return run.chatThreadId === null ? null : getActiveRunByChatThread(db, run.chatThreadId);
 }
 
 /**
@@ -322,10 +442,19 @@ export interface RalphRunListFilter {
   pageSize?: number;
 }
 
+/** The chat thread a chat run belongs to (for display). */
+export interface RalphRunChatThread {
+  id: string;
+  platform: ChatPlatform;
+  channelId: string;
+}
+
 export interface RalphRunListEntry {
   id: string;
-  linearIssueId: string;
-  linearIdentifier: string;
+  origin: RalphRunOrigin;
+  /** Null for chat runs. */
+  linearIssueId: string | null;
+  linearIdentifier: string | null;
   linearTitle: string | null;
   linearUrl: string | null;
   kind: RalphRunKind;
@@ -341,6 +470,8 @@ export interface RalphRunListEntry {
   /** Null while a person is asked to pick it. */
   repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
+  /** A chat run's thread (null for Linear runs, or once the thread is gone). */
+  chatThread: RalphRunChatThread | null;
   stories: { total: number; completed: number };
 }
 
@@ -351,6 +482,12 @@ export interface RalphRunListPage {
   page: number;
   pageSize: number;
 }
+
+const chatThreadColumns = {
+  id: chatThreads.id,
+  platform: chatThreads.platform,
+  channelId: chatThreads.channelId,
+};
 
 /** The organization's runs, newest first, optionally filtered by status, repository and Linear issue. */
 export async function listRuns(
@@ -374,6 +511,7 @@ export async function listRuns(
     db
       .select({
         id: ralphRuns.id,
+        origin: ralphRuns.origin,
         linearIssueId: ralphRuns.linearIssueId,
         linearIdentifier: ralphRuns.linearIdentifier,
         linearTitle: ralphRuns.linearTitle,
@@ -394,10 +532,12 @@ export async function listRuns(
         },
         agentId: agents.id,
         agentName: agents.name,
+        chatThread: chatThreadColumns,
       })
       .from(ralphRuns)
       .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
       .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+      .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
       .leftJoin(ralphLanes, mainLaneOf(ralphRuns))
       .where(where)
       .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
@@ -442,6 +582,8 @@ export interface RalphRunDetail {
   /** Null while a person is asked to pick it. */
   repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
+  /** A chat run's thread (null for Linear runs, or once the thread is gone). */
+  chatThread: RalphRunChatThread | null;
   /** The main lane first, then the others in the order they were added. */
   lanes: RalphLaneDetail[];
   /** In sub-issue order. */
@@ -503,10 +645,12 @@ export async function getRunDetail(
       },
       agentId: agents.id,
       agentName: agents.name,
+      chatThread: chatThreadColumns,
     })
     .from(ralphRuns)
     .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
     .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+    .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
     .where(and(eq(ralphRuns.id, runId), eq(ralphRuns.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
@@ -560,6 +704,7 @@ export async function getRunDetail(
     run: row.run,
     repository: row.repository,
     agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
+    chatThread: row.chatThread,
     lanes: lanes
       .map((l) => ({ ...l, main: l.lane.repositoryId === row.run.repositoryId }))
       .sort((a, b) => Number(b.main) - Number(a.main)),
