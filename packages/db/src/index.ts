@@ -373,6 +373,7 @@ export {
   listRalphRepositories,
   listRunsAffectedByIssue,
   listRunsToReconcile,
+  listChatRunOrganizationIds,
   listRuns,
   getRunDetail,
   listRalphRunRepositories,

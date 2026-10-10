@@ -807,12 +807,13 @@ export async function listRunsAffectedByIssue(
  * An organization's unfinished runs for the reconcile cron: every waiting run
  * (its blockers are re-checked), and pending or running runs without a queued
  * or running job that haven't changed since `staleBefore` (an outcome that was
- * never applied).
+ * never applied). Only runs of `origin` when given.
  */
 export async function listRunsToReconcile(
   db: Executor,
   organizationId: string,
   staleBefore: Date,
+  origin?: RalphRunOrigin,
 ): Promise<RalphRun[]> {
   return db
     .select()
@@ -820,6 +821,7 @@ export async function listRunsToReconcile(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
+        origin ? eq(ralphRuns.origin, origin) : undefined,
         or(
           eq(ralphRuns.status, "waiting"),
           and(
@@ -841,6 +843,16 @@ export async function listRunsToReconcile(
       ),
     )
     .orderBy(asc(ralphRuns.updatedAt), asc(ralphRuns.id));
+}
+
+/** Organizations with at least one chat-origin run, for the reconcile cron. */
+export async function listChatRunOrganizationIds(db: Executor): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ organizationId: ralphRuns.organizationId })
+    .from(ralphRuns)
+    .where(eq(ralphRuns.origin, "chat"))
+    .orderBy(asc(ralphRuns.organizationId));
+  return rows.map((r) => r.organizationId);
 }
 
 // ── Lanes ────────────────────────────────────────────────────────────────────
@@ -957,11 +969,12 @@ export async function findLaneByBranch(
 /**
  * Every ralph PR/MR of the organization's runs not known to be closed, each
  * with the lane of its newest run (a re-delegation carries a PR/MR forward),
- * oldest lane first.
+ * oldest lane first. Only runs of `origin` when given.
  */
 export async function listOpenPullRequestLanes(
   db: Executor,
   organizationId: string,
+  origin?: RalphRunOrigin,
 ): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
   const rows = await db
     .select({ lane: ralphLanes, run: ralphRuns })
@@ -970,6 +983,7 @@ export async function listOpenPullRequestLanes(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
+        origin ? eq(ralphRuns.origin, origin) : undefined,
         isNotNull(ralphLanes.prNumber),
         eq(ralphLanes.prClosed, false),
       ),
@@ -990,11 +1004,12 @@ export async function listOpenPullRequestLanes(
  * Merged ralph PRs/MRs of the organization's runs whose cleanup isn't
  * through, each with the lane of its newest run: never cleaned up, waiting,
  * running or failed, or with an answer being carried out or questions still
- * open. Oldest lane first.
+ * open. Oldest lane first. Only runs of `origin` when given.
  */
 export async function listLanesToCleanUp(
   db: Executor,
   organizationId: string,
+  origin?: RalphRunOrigin,
 ): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
   const rows = await db
     .select({ lane: ralphLanes, run: ralphRuns })
@@ -1003,6 +1018,7 @@ export async function listLanesToCleanUp(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
+        origin ? eq(ralphRuns.origin, origin) : undefined,
         isNotNull(ralphLanes.prNumber),
         eq(ralphLanes.prMerged, true),
         sql`(${ralphLanes.cleanup} is null
