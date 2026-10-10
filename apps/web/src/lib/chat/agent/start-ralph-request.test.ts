@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
   agents,
@@ -118,6 +118,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   let agentId: string;
   let posts: string[];
   let ephemerals: string[];
+  let reactions: { threadId: string; messageId: string; emoji: string }[];
   let scm: FakeScmAdapter;
   let publisher: RecordingPublisher;
   let adapter: Adapter;
@@ -151,6 +152,11 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       },
       mentionUser: (id: string) => `<@${id}>`,
       async startTyping() {},
+      adapter: {
+        async addReaction(threadId: string, messageId: string, emoji: string) {
+          reactions.push({ threadId, messageId, emoji });
+        },
+      },
       get state() {
         return Promise.resolve(null);
       },
@@ -160,7 +166,10 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   const member: ChatActor = { kind: "member", userId: "ada", role: "member", name: "Ada" };
   const domain: ChatActor = { kind: "domain", email: "ada@acme.test" };
 
-  /** Records `text` as Ada's message (as the bot does) and runs the agent's turn. */
+  /**
+   * Records `text` as Ada's message (as the bot does) and runs the agent's
+   * turn. It mentions the bot when it starts with `@omniralph`.
+   */
   async function turn(model: MockLanguageModelV2, text: string, actor: ChatActor = member) {
     await appendChatMessage(db, {
       threadId: chatThread.id,
@@ -171,7 +180,9 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     });
     const t = thread();
     const m = {
+      id: `msg-${randomBytes(4).toString("hex")}`,
       text,
+      isMention: text.startsWith("@omniralph"),
       author: { userId: "D1", userName: "ada", fullName: "Ada Lovelace" },
     } as Message;
     const context: ChatConversationContext = {
@@ -191,8 +202,14 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       env: ENV,
       logger,
       ralph: async () => ralph(),
+      // Every test's turns count against the same user and organization.
+      rateLimits: {
+        perOrganization: () => ({ key: `test:org:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
+        perChatUser: () => ({ key: `test:user:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
+      },
     });
     await handler.handle(t, m, context);
+    return m;
   }
 
   const queuedJobs = () =>
@@ -204,8 +221,8 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
 
   const threadRun = async (): Promise<RalphRun | null> => getRunByChatThread(db, chatThread.id);
 
-  /** Plays the run's queued `ralph.request` job to completion with `result`. */
-  async function playRequestJob(job: Job, result: Partial<RalphRequestResult>): Promise<void> {
+  /** Starts the run's queued `ralph.request` job on the agent. */
+  async function startRequestJob(job: Job): Promise<void> {
     const started = await startJob(db, {
       organizationId: orgId,
       jobId: job.id,
@@ -215,6 +232,11 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     });
     expect(started.action).toBe("run");
     expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+  }
+
+  /** Plays the run's queued (or started) `ralph.request` job to completion with `result`. */
+  async function playRequestJob(job: Job, result: Partial<RalphRequestResult>): Promise<void> {
+    if ((await getJob(db, job.id))!.status === "queued") await startRequestJob(job);
     const outcome: RalphRequestResult = {
       summary: "Fixed the typo.",
       error: null,
@@ -312,6 +334,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     }))!;
     posts = [];
     ephemerals = [];
+    reactions = [];
     scm = new FakeScmAdapter();
     publisher = new RecordingPublisher();
     let n = 0;
@@ -467,7 +490,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       error: "run_active",
       run: { id: first.id, status: "running" },
     });
-    expect(String(toolOutput(calls[1]!).message)).toContain("guidance");
+    expect(String(toolOutput(calls[1]!).message)).toContain("send_to_session");
     expect((await threadRun())!.id).toBe(first.id);
     expect(await queuedJobs()).toHaveLength(1);
     // The agent's empty answer after a refusal still says something.
@@ -527,6 +550,158 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     expect((await getMainLane(db, second))!).toMatchObject({
       branch: `omniralph/chat-${second.id.slice(0, 8)}`,
       prUrl: null,
+    });
+  });
+  describe("thread replies", () => {
+    const noModel = () => scriptedModel(textResult("I shouldn't be asked."));
+
+    /** Hands off and returns the run with its queued request job. */
+    async function handedOff() {
+      await handOff({ repository: "acme/app", request: REQUEST });
+      const run = (await threadRun())!;
+      const [job] = await queuedJobs();
+      posts = [];
+      return { run, job: job! };
+    }
+
+    it("passes a member's plain reply to the running session and reacts to it", async () => {
+      const { run, job } = await handedOff();
+      await startRequestJob(job);
+      const { model, calls } = noModel();
+
+      const m = await turn(model, "Also fix the one in CONTRIBUTING.md");
+
+      expect(calls).toEqual([]);
+      expect(posts).toEqual([]);
+      expect(reactions).toEqual([{ threadId: THREAD_ID, messageId: m.id, emoji: "eyes" }]);
+      const messages = await listMessages(db, run.id);
+      expect(messages.at(-1)).toMatchObject({
+        kind: "request",
+        jobId: job.id,
+        text: "Also fix the one in CONTRIBUTING.md",
+        author: "Ada Lovelace",
+      });
+      // No new job: the live session gets it in its next heartbeat.
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
+    });
+
+    it("keeps a plain reply as the next request while the job is queued", async () => {
+      const { run, job } = await handedOff();
+      const { model, calls } = noModel();
+
+      const m = await turn(model, "Also fix the one in CONTRIBUTING.md");
+
+      expect(calls).toEqual([]);
+      expect(posts).toEqual([]);
+      expect(reactions).toEqual([{ threadId: THREAD_ID, messageId: m.id, emoji: "eyes" }]);
+      const pending = (await listMessages(db, run.id)).at(-1)!;
+      expect(pending).toMatchObject({ kind: "request", jobId: null });
+      expect(pending.text).toBe("Also fix the one in CONTRIBUTING.md");
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
+    });
+
+    it("sends a plain reply from a user who isn't a linked member the link prompt", async () => {
+      const { run } = await handedOff();
+      const before = await listMessages(db, run.id);
+      const { model, calls } = noModel();
+
+      await turn(model, "Also fix the one in CONTRIBUTING.md", domain);
+
+      expect(calls).toEqual([]);
+      expect(reactions).toEqual([]);
+      expect(ephemerals).toHaveLength(1);
+      expect(ephemerals[0]).toContain(`${APP_URL}/chat/link?state=s`);
+      expect(await listMessages(db, run.id)).toEqual(before);
+    });
+
+    it("gives a mention to the agent, which can check on the run and pass a message on", async () => {
+      const { run, job } = await handedOff();
+      await startRequestJob(job);
+      const { model, calls } = scriptedModel(
+        toolCallResult("send_to_session", { text: "Use British spelling." }),
+        textResult("Passed that on."),
+      );
+
+      await turn(model, "@omniralph tell it to use British spelling");
+
+      const system = systemOf(calls[0]!);
+      expect(system).toContain(`This thread's ralph run: ${run.id}`);
+      expect(system).toContain("its session is working right now");
+      const tools = calls[0]!.tools?.map((t) => t.name);
+      expect(tools).toEqual(expect.arrayContaining(["get_ralph_run", "send_to_session"]));
+      expect(toolOutput(calls[1]!)).toMatchObject({ status: "delivered", run: { id: run.id } });
+      expect((await listMessages(db, run.id)).at(-1)).toMatchObject({
+        kind: "request",
+        jobId: job.id,
+        text: "Use British spelling.",
+      });
+      expect(reactions).toEqual([]);
+      expect(posts).toEqual(["Passed that on."]);
+    });
+
+    it("refuses send_to_session to a user who isn't a linked member", async () => {
+      const { run } = await handedOff();
+      const before = await listMessages(db, run.id);
+      const { model, calls } = scriptedModel(
+        toolCallResult("send_to_session", { text: "Use British spelling." }),
+        textResult("You need to link your account first."),
+      );
+
+      await turn(model, "@omniralph tell it to use British spelling", domain);
+
+      expect(toolOutput(calls[1]!)).toMatchObject({ error: "link_required" });
+      expect(await listMessages(db, run.id)).toEqual(before);
+    });
+
+    it("gives every reply to the agent once the run has no active job", async () => {
+      const { run, job } = await handedOff();
+      await playRequestJob(job, { summary: "Fixed the typo in the README." });
+      expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+      const messages = await listMessages(db, run.id);
+      posts = [];
+      const { model, calls } = scriptedModel(
+        toolCallResult("send_to_session", { text: "One more thing." }),
+        textResult("It fixed the typo in the README."),
+      );
+
+      await turn(model, "What did it change?");
+
+      expect(calls).toHaveLength(2);
+      expect(reactions).toEqual([]);
+      expect(systemOf(calls[0]!)).toContain(
+        `This thread's ralph run: ${run.id} (status: completed)`,
+      );
+      // A finished run takes no messages: the agent is told to start a new request.
+      expect(toolOutput(calls[1]!)).toMatchObject({ error: "no_active_run" });
+      expect(await listMessages(db, run.id)).toEqual(messages);
+      expect(posts).toEqual(["It fixed the typo in the README."]);
+
+      // The agent's history has the session's posts, marked as the run's.
+      const assistantTexts = calls[0]!.prompt.flatMap((m) =>
+        m.role === "assistant" ? m.content.flatMap((p) => (p.type === "text" ? [p.text] : [])) : [],
+      );
+      expect(assistantTexts).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(
+            new RegExp(`^\\[ralph run ${run.id}\\] .*Fixed the typo in the README\\.`, "s"),
+          ),
+        ]),
+      );
+    });
+
+    it("gives every reply to the agent when the run never started a job", async () => {
+      const { run, job } = await handedOff();
+      // The run waits (e.g. its job failed to enqueue): no queued or running job.
+      await db.delete(jobs).where(eq(jobs.id, job.id));
+      const { model, calls } = scriptedModel(textResult("It hasn't started yet."));
+
+      await turn(model, "Is it working?");
+
+      expect(calls).toHaveLength(1);
+      expect(systemOf(calls[0]!)).toContain(`This thread's ralph run: ${run.id}`);
+      expect(systemOf(calls[0]!)).not.toContain("its session is working right now");
+      expect(reactions).toEqual([]);
+      expect(posts).toEqual(["It hasn't started yet."]);
     });
   });
 });

@@ -12,6 +12,30 @@ export interface SystemPromptInput {
   actor: ChatActor;
   appUrl: string;
   now: Date;
+  /** The thread's latest ralph run, if it has one. */
+  threadRun?: ThreadRun | null;
+}
+
+export interface ThreadRun {
+  id: string;
+  status: string;
+  /** Its session works right now (a queued or running request job). */
+  working: boolean;
+}
+
+/** The marker of a recorded message posted for a ralph run (its handoff, progress and answers). */
+export function ralphRunMarker(runId: string): string {
+  return `[ralph run ${runId}]`;
+}
+
+function threadRunRules(run: ThreadRun): string[] {
+  return [
+    `This thread's ralph run: ${run.id} (status: ${run.status}${run.working ? ", its session is working right now" : ""}). get_ralph_run with that id tells you how it's going.`,
+    `- Assistant messages starting with ${ralphRunMarker("<id>")} were posted in the thread for that ralph run (the handoff, the session's answers and questions): use them to answer about what the session did. Never start your own answers with that marker.`,
+    run.working
+      ? "- While the session works, users' plain replies go to it directly; you only get messages that mention you. When a user wants the session to know or do something, pass it on with send_to_session."
+      : "- send_to_session passes a message to the run while it is unfinished; once it is over, hand new work to ralph with start_ralph_request.",
+  ];
 }
 
 function accessLevel(actor: ChatActor): string {
@@ -44,7 +68,8 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- The repository must be one the conversation makes unambiguous (named, or the only one that fits; list_repositories shows them). If it isn't, ask the user to confirm which repository first, and don't call the tool.",
     "- Before calling it, restate what you are handing off: the request starts with one sentence summarizing it, which the handoff message shows the users. Then the request goes on as a self-contained instruction with every detail ralph needs, since ralph doesn't read the thread.",
     "- The tool posts the handoff message itself, and ralph posts its progress and answer here: after it succeeds, end your turn without repeating it.",
-    "- If the tool says the thread already has a run, don't start another; tell the user their message should go to that run as guidance.",
+    "- If the tool says the thread already has a run, don't start another; pass the user's request to that run with send_to_session.",
+    ...(input.threadRun ? threadRunRules(input.threadRun) : []),
   ].join("\n");
 }
 
@@ -66,6 +91,11 @@ export function historyMessages(
     if (row.role === "user") {
       const author = row.authorName || row.externalUserId || "someone";
       messages.push({ role: "user", content: `${author}: ${String(row.content)}` });
+    } else if (row.role === "assistant" && row.ralphRunId) {
+      // Posted for a ralph run (plain text): marked so the agent tells it from its own answers.
+      const text = assistantText(row.content);
+      if (text)
+        messages.push({ role: "assistant", content: `${ralphRunMarker(row.ralphRunId)} ${text}` });
     } else if (row.role === "assistant") {
       if (includeTools) {
         messages.push({ role: "assistant", content: row.content as never });

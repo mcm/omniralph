@@ -357,6 +357,7 @@ export {
   getRunBySession,
   getStory,
   getRunningRunJob,
+  getActiveRunJob,
   isLinearRun,
   linearSessionOf,
   runReference,

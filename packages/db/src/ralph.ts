@@ -1214,6 +1214,27 @@ export async function getRunningRunJob(
   return row ?? null;
 }
 
+/** The run's newest queued or running job of one of `types`, or null. */
+export async function getActiveRunJob(
+  db: Executor,
+  runId: string,
+  types: readonly string[],
+): Promise<Job | null> {
+  const [row] = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.ralphRunId, runId),
+        inArray(jobs.status, ["queued", "running"]),
+        inArray(jobs.type, [...types]),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt), desc(jobs.id))
+    .limit(1);
+  return row ?? null;
+}
+
 export interface NewRalphMessageInput {
   runId: string;
   kind: RalphMessageKind;
