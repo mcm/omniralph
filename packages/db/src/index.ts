@@ -437,6 +437,7 @@ export {
   getTriageRun,
   getTriageRunBySession,
   setTriageRunJob,
+  setTriageRunSession,
   setTriageRunStatus,
   startTriageRunJob,
   finishTriageRunJob,

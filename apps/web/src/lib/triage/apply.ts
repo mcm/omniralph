@@ -8,7 +8,9 @@
  * reported in the run's Linear agent session.
  *
  * Nothing in Linear changes for a result that isn't valid, or when the issue
- * or one of its sub-issues went in progress or done while triage ran.
+ * or one of its sub-issues went in progress or done while triage ran, except
+ * that the `ralph:triage` label is removed whenever a triage job ends, so
+ * adding it again triages again.
  */
 import {
   failCompletedJob,
@@ -34,6 +36,7 @@ import { getLinearGateway } from "@/lib/linear/client";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
+import { removeTriageLabelQuietly } from "./label";
 import { lockedIssues, lockedMessage } from "./start";
 
 export interface TriageApplyDeps {
@@ -438,7 +441,11 @@ export async function onTriageJobCompleted(
   try {
     const run = await currentRun(db, job);
     if (!run || !isActive(run)) return;
-    await applyTriageJob(deps ?? (await defaultDeps(db, run)), job);
+    const applyDeps = deps ?? (await defaultDeps(db, run));
+    const outcome = await applyTriageJob(applyDeps, job);
+    if (outcome.status !== "ignored") {
+      await removeTriageLabelQuietly(applyDeps.linear, run.linearIssueId);
+    }
   } catch (error) {
     console.error(`Applying triage job ${job.id} failed`, error);
   }
@@ -446,7 +453,8 @@ export async function onTriageJobCompleted(
 
 /**
  * A triage job failed for good or was canceled: its run ends `failed` (or
- * `stopped`) and the session says so. Errors are logged, not thrown.
+ * `stopped`), the session says so and the `ralph:triage` label is removed.
+ * Errors are logged, not thrown.
  */
 export async function onTriageJobFinishedWithoutResult(
   db: Database,
@@ -471,6 +479,7 @@ export async function onTriageJobFinishedWithoutResult(
           }
         : { type: "response", body: "Triage was canceled. Nothing changed in Linear." },
     );
+    await removeTriageLabelQuietly(linear, run.linearIssueId);
   } catch (err) {
     console.error(`Recording the end of triage job ${job.id} failed`, err);
   }

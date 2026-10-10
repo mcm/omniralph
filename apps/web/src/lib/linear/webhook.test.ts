@@ -120,6 +120,73 @@ describe("classifyWebhook", () => {
     });
   });
 
+  it("classifies an update that adds the ralph:triage label, ignoring case", () => {
+    const update = (labels: Array<{ id: string; name: string }>, before: string[]) => ({
+      type: "Issue",
+      action: "update",
+      updatedFrom: { labelIds: before },
+      data: { id: "i3", identifier: "TOOL-3", labelIds: labels.map((l) => l.id), labels },
+    });
+    expect(classifyWebhook(update([{ id: "l1", name: "ralph:triage" }], []))).toEqual({
+      kind: "triage_label_added",
+      issueId: "i3",
+      identifier: "TOOL-3",
+      labelId: "l1",
+    });
+    expect(
+      classifyWebhook(
+        update(
+          [
+            { id: "l2", name: "bug" },
+            { id: "l1", name: "Ralph:Triage" },
+          ],
+          ["l2"],
+        ),
+      ),
+    ).toMatchObject({ kind: "triage_label_added", labelId: "l1" });
+  });
+
+  it("ignores other label changes", () => {
+    const update = (
+      labels: Array<{ id: string; name: string }>,
+      before: string[],
+      extra: Record<string, unknown> = {},
+    ) => ({
+      type: "Issue",
+      action: "update",
+      updatedFrom: { labelIds: before },
+      data: { id: "i3", labelIds: labels.map((l) => l.id), labels, ...extra },
+    });
+    const triage = { id: "l1", name: "ralph:triage" };
+    const bug = { id: "l2", name: "bug" };
+    for (const payload of [
+      // Another label added next to an existing ralph:triage.
+      update([triage, bug], ["l1"]),
+      // ralph:triage removed.
+      update([bug], ["l1", "l2"]),
+      // A label with a similar name.
+      update([{ id: "l3", name: "ralph:triaged" }], []),
+      // Label names missing from the payload.
+      {
+        type: "Issue",
+        action: "update",
+        updatedFrom: { labelIds: [] },
+        data: { id: "i3", labelIds: ["l1"] },
+      },
+      // Labels unchanged.
+      {
+        type: "Issue",
+        action: "update",
+        updatedFrom: { title: "x" },
+        data: { id: "i3", labelIds: ["l1"], labels: [triage] },
+      },
+      // A new issue created with the label.
+      { type: "Issue", action: "create", data: { id: "i3", labelIds: ["l1"], labels: [triage] } },
+    ]) {
+      expect(classifyWebhook(payload).kind).toBe("ignored");
+    }
+  });
+
   it("ignores everything else", () => {
     const ignored = [
       { type: "Comment", action: "create" },

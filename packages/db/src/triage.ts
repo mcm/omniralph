@@ -184,3 +184,21 @@ export async function finishTriageRunJob(
     .returning();
   return row ?? null;
 }
+
+/**
+ * Sets the run's Linear agent session (a run created before its session, as
+ * the label trigger does, holds a placeholder until then). Returns null if
+ * the run is gone.
+ */
+export async function setTriageRunSession(
+  db: Executor,
+  runId: string,
+  linearAgentSessionId: string,
+): Promise<TriageRun | null> {
+  const [row] = await db
+    .update(triageRuns)
+    .set({ linearAgentSessionId, updatedAt: new Date() })
+    .where(eq(triageRuns.id, runId))
+    .returning();
+  return row ?? null;
+}
