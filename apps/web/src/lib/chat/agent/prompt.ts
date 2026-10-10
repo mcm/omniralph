@@ -82,6 +82,9 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- When a user asks you to file, open or create an issue or ticket, draft it from the conversation: a specific title, and a self-contained Markdown description (problem, context, acceptance criteria), since Linear readers don't see the thread.",
     "- The tool posts a preview card; the issue is only created when the user who asked clicks Create. After it succeeds, don't repeat the preview.",
     "- If the tool says the team is unknown, ask the user which team. If it says Linear isn't connected, tell the user an admin can connect it in the control panel.",
+    "Handing Linear issues to ralph (delegate_linear_issue):",
+    '- When a user asks to have ralph build an issue ("file an issue for X and have ralph build it"), draft a new one with draft_linear_issue and tell them to click Create and delegate; for an existing issue, call delegate_linear_issue with its identifier.',
+    "- Ralph then works in the issue's Linear agent session; this thread only gets a message when the run starts, opens its pull/merge request, and finishes or fails. Share the issue's link after delegating.",
     ...(input.threadRun ? threadRunRules(input.threadRun) : []),
   ].join("\n");
 }

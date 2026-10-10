@@ -241,11 +241,13 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "send_to_session",
       "send_ralph_guidance",
       "draft_linear_issue",
+      "delegate_linear_issue",
     ]);
     expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
     expect(chatTools.start_ralph_request?.tier).toBe("action");
     expect(chatTools.send_to_session?.tier).toBe("action");
     expect(chatTools.draft_linear_issue?.tier).toBe("action");
+    expect(chatTools.delegate_linear_issue?.tier).toBe("action");
   });
 
   it("list_ralph_runs returns only the organization's runs, filtered, with URLs", async () => {

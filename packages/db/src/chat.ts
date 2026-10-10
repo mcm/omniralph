@@ -11,6 +11,7 @@ import {
   chatConnections,
   chatIdentities,
   chatIdentityOptOuts,
+  chatLinearDelegations,
   chatLinearIssueDrafts,
   chatLinkStateUses,
   chatMessages,
@@ -698,4 +699,60 @@ export async function expireChatLinearIssueDraft(
     )
     .returning();
   return row ?? null;
+}
+
+// ── Linear delegations ───────────────────────────────────────────────────────
+
+export type ChatLinearDelegation = typeof chatLinearDelegations.$inferSelect;
+
+/** How long a delegation waits for Linear's agent session before it's ignored. */
+export const CHAT_LINEAR_DELEGATION_TTL_MS = 60 * 60 * 1000;
+
+/** A database or a transaction. */
+type ChatExecutor = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** Records that a chat thread is delegating a Linear issue (before the delegation itself). */
+export async function createChatLinearDelegation(
+  db: ChatExecutor,
+  input: { organizationId: string; threadId: string; linearIssueId: string },
+): Promise<ChatLinearDelegation> {
+  const [row] = await db.insert(chatLinearDelegations).values(input).returning();
+  return row!;
+}
+
+/**
+ * Takes (deletes and returns) the latest delegation of the issue made within
+ * {@link CHAT_LINEAR_DELEGATION_TTL_MS} of `now`, so one session ties one run
+ * to the thread. Delegations older than that (no session ever took them) are
+ * pruned on the way. Null when there is none.
+ */
+export async function takeChatLinearDelegation(
+  db: ChatExecutor,
+  input: { organizationId: string; linearIssueId: string; now?: Date },
+): Promise<ChatLinearDelegation | null> {
+  const since = new Date((input.now ?? new Date()).getTime() - CHAT_LINEAR_DELEGATION_TTL_MS);
+  await db.delete(chatLinearDelegations).where(lt(chatLinearDelegations.createdAt, since));
+  const [latest] = await db
+    .select({ id: chatLinearDelegations.id })
+    .from(chatLinearDelegations)
+    .where(
+      and(
+        eq(chatLinearDelegations.organizationId, input.organizationId),
+        eq(chatLinearDelegations.linearIssueId, input.linearIssueId),
+      ),
+    )
+    .orderBy(desc(chatLinearDelegations.createdAt))
+    .limit(1);
+  if (!latest) return null;
+  // Delete every delegation of the issue: a repeated delegation shouldn't tie a later run.
+  const taken = await db
+    .delete(chatLinearDelegations)
+    .where(
+      and(
+        eq(chatLinearDelegations.organizationId, input.organizationId),
+        eq(chatLinearDelegations.linearIssueId, input.linearIssueId),
+      ),
+    )
+    .returning();
+  return taken.find((row) => row.id === latest.id) ?? null;
 }

@@ -23,6 +23,7 @@ import {
   updateLane,
   updateRun,
   updateStory,
+  takeChatLinearDelegation,
   type RalphLane,
   type RalphRun,
   type RalphRunMode,
@@ -38,6 +39,7 @@ import {
 } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { notifyRunThread } from "./chat-notify";
 import { linearConversation } from "./conversation";
 import {
   loadEpic,
@@ -351,6 +353,7 @@ async function askForRepositoryFirst(
       repositoryId: null,
       status: "waiting",
       pendingElicitation: { kind: "repository", repositoryIds: repositories.map((r) => r.id) },
+      chatThreadId: await delegatingThread(tx, deps, event),
     });
     if (!result.created) return result;
     // Like v2a, the previous main lane's PR/MR isn't carried over to a repository a person picks.
@@ -375,7 +378,26 @@ async function askForRepositoryFirst(
     repositories,
     repositoryQuestionFor(root.description),
   );
+  await notifyRunThread(deps, run, { kind: "started" });
   return { status: "selecting", run };
+}
+
+/**
+ * The chat thread that delegated the issue (`delegate_linear_issue`, or the
+ * issue card's **Create and delegate**) within the last hour, taken so only
+ * this run is tied to it. Null for a mention, or a delegation made in Linear.
+ */
+async function delegatingThread(
+  tx: RalphTransaction,
+  deps: StartRunDeps,
+  event: SessionCreatedEvent,
+): Promise<string | null> {
+  if (isMention(event)) return null;
+  const delegation = await takeChatLinearDelegation(tx, {
+    organizationId: deps.organizationId,
+    linearIssueId: event.issueId,
+  });
+  return delegation?.threadId ?? null;
 }
 
 /** How a new run starts: a delegation (or `/ralph`) builds the epic; a mention does what it asks. */
@@ -585,6 +607,7 @@ async function startNewRun(
       focusStoryId: loaded.focusStoryId ?? null,
       repositoryId: previous?.repositoryId ?? null,
       routedBy: chosen.routedBy,
+      chatThreadId: await delegatingThread(tx, deps, event),
     });
     if (!result.created) return { ...result, lane: null, left: null };
     let run = await carryOver(tx, result.run, previous);
@@ -634,6 +657,7 @@ async function startNewRun(
       body: describeRun(loaded, chosen, lane!, !!previous),
     });
   }
+  await notifyRunThread(deps, run, { kind: "started" });
   await advanceRun(run.id, deps);
   return { status: "started", run, created: true };
 }

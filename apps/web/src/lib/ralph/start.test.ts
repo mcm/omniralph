@@ -1,6 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
+  chatLinearDelegations,
   connectRepository,
+  createChatLinearDelegation,
+  ensureChatThread,
+  saveChatConnection,
   closeDb,
   createDb,
   getMainLane,
@@ -968,6 +973,78 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       expect(linear.plan("session-hook")).toEqual([
         { content: "ENG-100: Hooked", status: "inProgress" },
       ]);
+    });
+
+    it("ties the run of an issue delegated from chat to the thread, keeping its Linear origin", async () => {
+      const connection = await saveChatConnection(db, {
+        organizationId: orgId,
+        platform: "discord",
+        externalId: "G-webhook",
+        name: "Acme",
+        credentials: null,
+        installedByUserId: null,
+      });
+      if (connection === "other_organization") throw new Error("connected elsewhere");
+      const thread = (await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: "discord:G-webhook:CH1:TH1",
+        channelId: "discord:G-webhook:CH1",
+        startedByExternalUserId: "D-ADA",
+      }))!;
+      const issue = linear.add({ identifier: "ENG-110", title: "From chat" });
+      await createChatLinearDelegation(db, {
+        organizationId: orgId,
+        threadId: thread.id,
+        linearIssueId: issue.id,
+      });
+      const adapter = createMockAdapter("discord");
+      const chat = {
+        db,
+        adapters: { discord: adapter },
+        state: createMockState(),
+        appUrl: "https://omniralph.example.com",
+      };
+      const body = JSON.stringify({
+        type: "AgentSessionEvent",
+        action: "created",
+        organizationId: "org-1",
+        webhookTimestamp: Date.now(),
+        agentSession: {
+          id: "session-from-chat",
+          issue: { id: issue.id, identifier: "ENG-110" },
+          comment: { body: DELEGATION },
+        },
+      });
+      await handleLinearWebhook(
+        new Request("https://omniralph.example.com/api/webhooks/linear", {
+          method: "POST",
+          headers: { "linear-signature": signBody(body, SECRET), "linear-delivery": randomUUID() },
+          body,
+        }),
+        {
+          db,
+          secret: SECRET,
+          handle: (event, context) =>
+            handleLinearEvent(event, context, {
+              linear,
+              dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+              adapterFor: () => fakeAdapter,
+              chat,
+            }),
+        },
+      );
+
+      expect(await getRunBySession(db, "session-from-chat")).toMatchObject({
+        origin: "linear",
+        linearIssueId: issue.id,
+        chatThreadId: thread.id,
+        status: "running",
+      });
+      expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+      expect(adapter.postMessage).toHaveBeenCalledOnce();
+      expect(adapter.postMessage).toHaveBeenCalledWith("discord:G-webhook:CH1:TH1", {
+        markdown: expect.stringContaining("🚀 Ralph started building [ENG-110 From chat]"),
+      });
     });
 
     it("routes only to repositories of the organization that connected the workspace", async () => {

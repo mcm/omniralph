@@ -40,6 +40,7 @@ import {
   RalphRequestResult,
   type RalphPullRequestAction,
 } from "@omniralph/shared";
+import { notifyRunThread } from "./chat-notify";
 import { conversationFor } from "./conversation";
 import { settleFindingThreads } from "./finding-threads";
 import { errorMessage, quietly, tail } from "./notify";
@@ -320,6 +321,7 @@ async function recordPullRequest(
     `Adding the ${changeRequestTerm(repository.provider)} to ${conversation.name}`,
     () => conversation.addLink(label, pr.url),
   );
+  await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
 }
 
 /**
