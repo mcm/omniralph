@@ -68,6 +68,14 @@ export interface CreateIssueInput {
   labels?: string[];
 }
 
+/** Fields `updateIssue` changes; omitted ones are left as they are. */
+export interface UpdateIssueInput {
+  title?: string;
+  description?: string;
+  /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+  priority?: number;
+}
+
 export type ActivityContent =
   | { type: "thought"; body: string }
   | { type: "action"; action: string; parameter: string; result?: string }
@@ -121,7 +129,14 @@ export interface LinearGateway {
   createBlocksRelation(blockerId: string, blockedId: string): Promise<void>;
   /** Moves the issue to the named state, else the team's first state of this type. */
   setIssueState(issueId: string, target: { type?: string; name?: string }): Promise<void>;
+  /** Updates the given fields of an existing issue (a no-op when none are given). */
+  updateIssue(issueId: string, input: UpdateIssueInput): Promise<void>;
+  /** Adds labels by ID, keeping the issue's other labels. */
+  addIssueLabels(issueId: string, labelIds: string[]): Promise<void>;
+  removeIssueLabel(issueId: string, labelId: string): Promise<void>;
   addComment(issueId: string, body: string): Promise<void>;
+  /** Opens an agent session on the issue (as the app) and returns its ID. */
+  createAgentSessionOnIssue(issueId: string): Promise<string>;
   createActivity(
     sessionId: string,
     content: ActivityContent,
@@ -601,6 +616,39 @@ export class SdkLinearGateway implements LinearGateway {
     );
   }
 
+  private async issueUpdate(issueId: string, input: Record<string, unknown>): Promise<void> {
+    await this.mutate(
+      "issueUpdate",
+      /* GraphQL */ `
+        mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+          issueUpdate(id: $id, input: $input) {
+            success
+          }
+        }
+      `,
+      { id: issueId, input },
+    );
+  }
+
+  async updateIssue(issueId: string, input: UpdateIssueInput): Promise<void> {
+    const fields = {
+      ...(input.title !== undefined && { title: input.title }),
+      ...(input.description !== undefined && { description: input.description }),
+      ...(input.priority !== undefined && { priority: input.priority }),
+    };
+    if (Object.keys(fields).length === 0) return;
+    await this.issueUpdate(issueId, fields);
+  }
+
+  async addIssueLabels(issueId: string, labelIds: string[]): Promise<void> {
+    if (labelIds.length === 0) return;
+    await this.issueUpdate(issueId, { addedLabelIds: labelIds });
+  }
+
+  async removeIssueLabel(issueId: string, labelId: string): Promise<void> {
+    await this.issueUpdate(issueId, { removedLabelIds: [labelId] });
+  }
+
   async addComment(issueId: string, body: string): Promise<void> {
     await this.mutate(
       "commentCreate",
@@ -613,6 +661,28 @@ export class SdkLinearGateway implements LinearGateway {
       `,
       { input: { issueId, body } },
     );
+  }
+
+  async createAgentSessionOnIssue(issueId: string): Promise<string> {
+    const result = await this.mutate<
+      "agentSessionCreateOnIssue",
+      { success: boolean; agentSession?: { id: string } | null }
+    >(
+      "agentSessionCreateOnIssue",
+      /* GraphQL */ `
+        mutation CreateAgentSessionOnIssue($input: AgentSessionCreateOnIssue!) {
+          agentSessionCreateOnIssue(input: $input) {
+            success
+            agentSession {
+              id
+            }
+          }
+        }
+      `,
+      { input: { issueId } },
+    );
+    if (!result.agentSession) throw new LinearMutationError("agentSessionCreateOnIssue");
+    return result.agentSession.id;
   }
 
   async createActivity(
