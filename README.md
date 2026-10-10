@@ -161,7 +161,8 @@ details.
    and the bot posts inline findings plus a summary linking to the review. Comment
    `@omniralph review [quick|standard|deep]` to re-review for new issues,
    `@omniralph review fresh [quick|standard|deep]` to re-review from scratch (matching open
-   findings are superseded), `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
+   findings are superseded). A re-review that covers the whole diff resolves earlier open findings
+   it no longer raises, along with their threads. `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
    or ask a question there. On PRs/MRs ralph opened, `@omniralph fix [text]` (or any other
    request outside finding threads) has ralph make the change. Admins can also use **Re-run** on a review's page or history row.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›

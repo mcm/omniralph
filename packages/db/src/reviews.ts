@@ -5,7 +5,7 @@
  * `summary_comment_id` is set once the review (or its failure note) was
  * posted to the code host, which makes posting idempotent per review.
  */
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   findings,
@@ -403,5 +403,51 @@ export async function supersedeOpenFindings(
       if (updated) superseded.push({ finding: updated, by });
     }
     return superseded;
+  });
+}
+
+/**
+ * After a review got through the whole diff: sets every `open` finding of the
+ * PR's earlier reviews (created before this one) to `resolved` unless `keep`
+ * says the review still raised it. Returns the findings it resolved. Runs
+ * once in effect: a replay finds nothing open left to resolve.
+ */
+export async function resolveEarlierOpenFindings(
+  db: Database,
+  reviewId: string,
+  keep: (prior: FindingRow) => boolean,
+): Promise<FindingRow[]> {
+  return db.transaction(async (tx: Transaction) => {
+    const [review] = await tx
+      .select({
+        repositoryId: reviews.repositoryId,
+        prNumber: reviews.prNumber,
+        createdAt: reviews.createdAt,
+      })
+      .from(reviews)
+      .where(eq(reviews.id, reviewId));
+    if (!review) return [];
+    const prior = await tx
+      .select({ finding: findings })
+      .from(findings)
+      .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+      .where(
+        and(
+          eq(reviews.repositoryId, review.repositoryId),
+          eq(reviews.prNumber, review.prNumber),
+          ne(reviews.id, reviewId),
+          lt(reviews.createdAt, review.createdAt),
+          eq(findings.status, "open"),
+        ),
+      )
+      .orderBy(asc(findings.createdAt), asc(findings.id))
+      .for("update", { of: findings });
+    const ids = prior.filter(({ finding }) => !keep(finding)).map(({ finding }) => finding.id);
+    if (ids.length === 0) return [];
+    return tx
+      .update(findings)
+      .set({ status: "resolved" })
+      .where(and(inArray(findings.id, ids), eq(findings.status, "open")))
+      .returning();
   });
 }

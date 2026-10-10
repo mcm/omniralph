@@ -82,6 +82,12 @@ export interface ReviewResult {
   scope: ReviewScope;
   /** Findings dropped by validation, diff filtering and dedupe. */
   discarded: { invalid: number; outsideDiff: number; duplicate: number };
+  /**
+   * Indexes into `previousReview.openFindings` of the open findings this
+   * review raised again (dropped as duplicates). With a full scope, the
+   * others weren't found in the whole diff.
+   */
+  repeatedOpenFindings: number[];
 }
 
 /** Picks the commit range to review: the new commits only when possible. */
@@ -265,5 +271,6 @@ export async function runReview(
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     scope,
     discarded,
+    repeatedOpenFindings: deduped.repeated,
   };
 }

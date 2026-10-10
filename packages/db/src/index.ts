@@ -197,6 +197,7 @@ export {
   markReviewRunning,
   postReviewOnce,
   previousReviewState,
+  resolveEarlierOpenFindings,
   resolveOpenFindings,
   saveReviewOutcome,
   supersedeOpenFindings,

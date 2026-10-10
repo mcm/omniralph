@@ -38,7 +38,9 @@ export interface EnqueueReviewInput {
    * (`@bot review`, Re-run › Incremental). Both drop duplicates of the PR's
    * open findings. `fresh` (`@bot review fresh`, Re-run › Fresh) reviews the
    * whole diff with no open findings passed, so nothing is dropped; matching
-   * earlier open findings are superseded when it completes.
+   * earlier open findings are superseded when it completes. A completed
+   * review of the whole diff resolves the earlier open findings it no longer
+   * raises.
    */
   mode?: ReviewMode;
   /** Review profile to use instead of the repository's (`@bot review deep`). */

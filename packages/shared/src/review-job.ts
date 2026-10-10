@@ -134,6 +134,13 @@ export const ReviewJobResult = z.object({
     outsideDiff: z.int().min(0),
     duplicate: z.int().min(0),
   }),
+  /**
+   * Indexes into the payload's `previousReview.openFindings` of the open
+   * findings the review raised again. With a full scope, the other open
+   * findings weren't found in the whole diff and get resolved. Absent from
+   * agents that predate it: then nothing is resolved.
+   */
+  repeatedOpenFindings: z.array(z.int().min(0)).max(1000).optional(),
   durationMs: z.int().min(0),
 });
 export type ReviewJobResult = z.infer<typeof ReviewJobResult>;

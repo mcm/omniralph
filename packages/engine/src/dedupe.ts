@@ -68,6 +68,8 @@ export interface DedupeResult {
   findings: Finding[];
   /** New findings dropped as duplicates of an open prior finding or merged into an earlier new one. */
   suppressed: Finding[];
+  /** Indexes of the open prior findings that a new finding repeated (raised again). */
+  repeated: number[];
 }
 
 /**
@@ -81,8 +83,14 @@ export function dedupeFindings(
   openPrior: readonly FindingLocation[] = [],
 ): DedupeResult {
   const suppressed: Finding[] = [];
+  const repeated = new Set<number>();
   const fresh = findings.filter((finding) => {
-    const repeat = openPrior.some((prior) => sameIssue(prior, finding));
+    let repeat = false;
+    openPrior.forEach((prior, i) => {
+      if (!sameIssue(prior, finding)) return;
+      repeated.add(i);
+      repeat = true;
+    });
     if (repeat) suppressed.push(finding);
     return !repeat;
   });
@@ -113,5 +121,5 @@ export function dedupeFindings(
       suppressed.push(finding);
     }
   }
-  return { findings: kept, suppressed };
+  return { findings: kept, suppressed, repeated: [...repeated].sort((a, b) => a - b) };
 }
