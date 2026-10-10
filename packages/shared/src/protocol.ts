@@ -115,6 +115,25 @@ export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
 export type AgentVersion = z.infer<typeof AgentVersion>;
 
 /**
+ * Whether agent `version` is at least `minimum`, comparing major.minor.patch
+ * only (a prerelease of `minimum` counts: it's built from the same code).
+ * False for a version that isn't semver.
+ */
+export function agentVersionAtLeast(version: string, minimum: string): boolean {
+  const core = (v: string) => {
+    const match = SEMVER_PATTERN.exec(v.trim());
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+  };
+  const have = core(version);
+  const want = core(minimum);
+  if (!have || !want) return false;
+  for (let i = 0; i < 3; i++) {
+    if (have[i]! !== want[i]!) return have[i]! > want[i]!;
+  }
+  return true;
+}
+
+/**
  * Whether the agent can update itself: only under pm2 (which restarts it into
  * the new version). Other hosts report `unsupported` and must be updated by hand.
  */

@@ -1,6 +1,7 @@
 import "server-only";
 import {
   ACTIVE_RALPH_RUN_STATUSES,
+  appendChatMessage,
   getDesiredAgentVersion,
   getReviewDetail,
   getRunDetail,
@@ -14,6 +15,7 @@ import {
   type Database,
   type RepositoryOverview,
 } from "@omniralph/db";
+import { CHAT_ASK_MIN_AGENT_VERSION, MAX_CHAT_ASK_QUESTION_LENGTH } from "@omniralph/shared";
 import { z } from "zod";
 import { agentRow, jobRow } from "@/lib/agents/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
@@ -24,8 +26,10 @@ import {
   ralphRunRow,
 } from "@/lib/ralph/history";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
+import { enqueueChatAsk } from "../ask";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
@@ -57,14 +61,14 @@ function listInfo(shown: number, total: number | null, more: boolean, listUrl: s
   };
 }
 
-const UNKNOWN_REPOSITORY = {
+export const UNKNOWN_REPOSITORY = {
   error: "unknown_repository",
   message:
     "No connected repository of this organization matches. Use list_repositories to see their names.",
 } as const;
 
 /** One of the organization's connected repositories, by id or full path (case-insensitive). */
-async function findRepository(
+export async function findRepository(
   db: Database,
   organizationId: string,
   ref: string,
@@ -430,6 +434,85 @@ export const listRepositoriesTool = defineChatTool({
   },
 });
 
+/** The message posted when a code question is handed to an agent. */
+export function lookingIntoMessage(fullPath: string): string {
+  return `Looking into \`${fullPath}\`…`;
+}
+
+export const askAboutCodeTool = defineChatTool({
+  tier: "read",
+  description:
+    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones). An agent answers it from a read-only checkout of the default branch; the answer is posted in this thread a little later, so the tool only posts that it is looking into it. A follow-up's context includes the thread's previous code question and its answer.",
+  inputSchema: z.object({
+    repository: z
+      .string()
+      .min(1)
+      .max(300)
+      .describe(
+        "Full path of a connected repository of the organization, e.g. `acme/api`, or its id.",
+      ),
+    question: z
+      .string()
+      .min(1)
+      .max(MAX_CHAT_ASK_QUESTION_LENGTH)
+      .describe(
+        "The self-contained question about the code, with every detail from the conversation the agent needs (it only sees the latest messages and the previous code question).",
+      ),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, organizationId, chatThread, thread, appUrl } = context;
+    const repository = await findRepository(db, organizationId, input.repository);
+    if (!repository) return UNKNOWN_REPOSITORY;
+    const { dispatcher, adapterFor } = await context.ralph();
+    const outcome = await enqueueChatAsk(
+      { db, dispatcher, adapterFor },
+      {
+        organizationId,
+        repositoryId: repository.id,
+        chatThreadId: chatThread.id,
+        question: input.question,
+        messages: context.turnMessages,
+      },
+    );
+    switch (outcome.status) {
+      case "unknown_repository":
+        return UNKNOWN_REPOSITORY;
+      case "no_capable_agent":
+        return {
+          error: "no_capable_agent",
+          message:
+            outcome.agents.length === 0
+              ? `No agent of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the agents on ${appUrl}/agents.`
+              : `None of the online agents that would take this question can answer code questions: that needs the review capability on agent version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can update the agents on ${appUrl}/agents.`,
+          agents: outcome.agents,
+        };
+      case "failed":
+        return { error: "failed", message: outcome.error };
+      case "duplicate":
+        return {
+          status: "already_asked",
+          message:
+            "This question is already being looked into in this thread; its answer will be posted here. Don't ask it again.",
+        };
+      case "enqueued": {
+        const text = sanitizeCapped(
+          lookingIntoMessage(outcome.repository.fullPath),
+          { allowedHosts: [new URL(appUrl).host] },
+          MAX_BODY_CHARS,
+        );
+        await thread.post({ markdown: text });
+        await appendChatMessage(db, { threadId: chatThread.id, role: "assistant", content: text });
+        context.handedOff();
+        return {
+          status: "asked",
+          message:
+            "The question was handed to an agent and the thread was told; the answer will be posted here. End your turn without repeating it.",
+        };
+      }
+    }
+  },
+});
+
 export const readTools: ChatToolRegistry = {
   list_ralph_runs: listRalphRunsTool,
   get_ralph_run: getRalphRunTool,
@@ -438,4 +521,5 @@ export const readTools: ChatToolRegistry = {
   list_jobs: listJobsTool,
   list_agents: listAgentsTool,
   list_repositories: listRepositoriesTool,
+  ask_about_code: askAboutCodeTool,
 };

@@ -173,6 +173,7 @@ export {
   recordAgentHeartbeat,
   requestJobCancel,
   listActiveJobsByDedupePrefix,
+  latestCompletedChatThreadJob,
   skipJob,
   failCompletedJob,
   startJob,
