@@ -266,10 +266,11 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(after).toMatchObject({
         maxConcurrency: 4,
-        pollIntervalSeconds: 30,
+        // Legacy constants: agents claim jobs instead of polling queue topics.
+        pollIntervalSeconds: 5,
         enabledCapabilities: [],
         pinnedRepoIds: [repoA],
-        topics: [`system-jobs-agent-${agentId}`],
+        topics: [],
       });
 
       expect(await unpinRepository(agentId, repoA)).toEqual({ ok: true });
@@ -277,11 +278,10 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
-    it("enabling ralph lets the agent read the ralph topics", async () => {
+    it("enabling ralph reaches the agent's enabled capabilities", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(before.topics).not.toContain(`ralph-jobs-org-${orgId}`);
-      expect(before.topics).not.toContain(`ralph-jobs-agent-${agentId}`);
+      expect(before.enabledCapabilities).toEqual(["review"]);
 
       expect(
         await updateAgentConfig(agentId, {
@@ -292,13 +292,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       ).toEqual({ ok: true });
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(after.enabledCapabilities).toEqual(["review", "ralph"]);
-      expect(after.topics).toEqual([
-        `review-jobs-agent-${agentId}`,
-        `ralph-jobs-agent-${agentId}`,
-        `review-jobs-org-${orgId}`,
-        `ralph-jobs-org-${orgId}`,
-        `system-jobs-agent-${agentId}`,
-      ]);
+      expect(after.topics).toEqual([]);
     });
 
     it("sends the effective per-capability limits and stores the edited ones", async () => {

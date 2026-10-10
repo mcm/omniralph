@@ -2,9 +2,11 @@ import {
   classifyAgentRunningJobs,
   listAgentPinnedRepositoryIds,
   recordAgentHeartbeat,
+  renewJobLeases,
 } from "@omniralph/db";
 import {
   Heartbeat,
+  LEGACY_POLL_INTERVAL_SECONDS,
   effectiveCapabilityLimits,
   type HeartbeatResponse,
   type JobMessageDelivery,
@@ -14,7 +16,6 @@ import { requireAgent } from "@/lib/agent-auth/verify";
 import { signJobToken } from "@/lib/agent-api/jobs";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { getDb } from "@/lib/db";
-import { agentTopics, publishRegion } from "@/lib/dispatch";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
 
@@ -23,12 +24,13 @@ const NPM_TIMEOUT_MS = 5_000;
 
 /**
  * Agent heartbeat (every 20s). Records the reported version, capabilities and
- * self-update state, applies the acknowledged job messages and returns the central
- * configuration, the running jobs the agent must cancel, fresh job tokens and
- * undelivered messages (`jobMessages`) for the ones it keeps running, and the
- * version it should run (its override, else its organization's setting, with `latest`
- * resolved) and
- * an admin's pending "Update now" (cleared once the agent reports it handled).
+ * self-update state, renews the leases of the running jobs the agent keeps,
+ * applies the acknowledged job messages and returns the central configuration,
+ * the running jobs the agent must cancel, fresh job tokens and undelivered
+ * messages (`jobMessages`) for the ones it keeps running, and the version it
+ * should run (its override, else its organization's setting, with `latest`
+ * resolved) and an admin's pending "Update now" (cleared once the agent reports
+ * it handled).
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireAgent(req);
@@ -54,6 +56,9 @@ export async function POST(req: Request): Promise<Response> {
       ? null
       : organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
   ]);
+  const keepIds = running.keep.map((job) => job.id);
+  // The heartbeat is the lease: a job of a live agent is never taken over.
+  await renewJobLeases(db, agentId, keepIds);
   const jobTokens = await Promise.all(running.keep.map((job) => signJobToken(job, agentId)));
   let jobMessages: JobMessageDelivery[] = [];
   try {
@@ -63,7 +68,7 @@ export async function POST(req: Request): Promise<Response> {
         linear: (organizationId) => getLinearGatewayOrDisconnected({ db, organizationId }),
       },
       agentId,
-      running.keep.map((job) => job.id),
+      keepIds,
       body.data,
     );
   } catch (error) {
@@ -73,7 +78,8 @@ export async function POST(req: Request): Promise<Response> {
 
   return Response.json({
     maxConcurrency: agent.maxConcurrency,
-    pollIntervalSeconds: agent.pollIntervalSeconds,
+    // Legacy fields: old agents require them; `topics: []` stops their polling.
+    pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
     enabledCapabilities: agent.enabledCapabilities,
     capabilityLimits: effectiveCapabilityLimits(
       agent.enabledCapabilities,
@@ -82,8 +88,8 @@ export async function POST(req: Request): Promise<Response> {
     ),
     pinnedRepoIds,
     organizationId: agent.organizationId,
-    topics: agentTopics(agent),
-    queueRegion: publishRegion(),
+    topics: [],
+    queueRegion: "",
     cancelJobIds: running.cancel,
     jobTokens,
     jobMessages,
