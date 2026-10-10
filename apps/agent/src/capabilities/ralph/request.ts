@@ -161,6 +161,7 @@ export async function runRequest(
           const prompt = buildRequestPrompt({
             epic: requestEpic(payload),
             requests: payload.requests.map((r) => r.text),
+            source: payload.source,
             branch: payload.branch,
             baseBranch: payload.baseBranch,
             remoteUrl: payload.repository.cloneUrl,
@@ -178,7 +179,7 @@ export async function runRequest(
             prompt,
             cwd: worktree.path,
             policy: RALPH_TOOL_POLICY,
-            systemAppend: requestSystemAppend(payload.historyRewrite),
+            systemAppend: requestSystemAppend(payload.historyRewrite, payload.source),
             outputSchema: REQUEST_OUTPUT_SCHEMA,
             isWaiting: isWaitingRequest,
             model: payload.settings.model ?? DEFAULT_STORY_MODEL,

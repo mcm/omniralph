@@ -58,6 +58,7 @@ const run = (kind: RalphRun["kind"] = "children") =>
   ({
     id: randomUUID(),
     kind,
+    origin: "linear",
     progress: "",
     guidance: [],
   }) as unknown as RalphRun;
@@ -143,6 +144,22 @@ describe("story quality gates", () => {
       historyRewrite: "never",
     });
     expect(request("single").qualityGates).toEqual(["pnpm typecheck"]);
+  });
+
+  it("say whether a request comes from Linear or a chat thread", () => {
+    const request = (origin: RalphRun["origin"]) =>
+      buildRequestPayload({
+        run: { ...run("single"), origin },
+        lane: { ...lane, prUrl: null },
+        repository: repository({}),
+        connection,
+        epic: epic("single"),
+        stories: [],
+        requests: [{ id: randomUUID(), text: "fix the typo" }],
+        resumeSessionId: null,
+      });
+    expect(request("linear").source).toBe("linear");
+    expect(request("chat").source).toBe("chat");
   });
 });
 

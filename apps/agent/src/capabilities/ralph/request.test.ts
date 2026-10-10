@@ -107,6 +107,7 @@ describe("ralph.request", { timeout: 60_000 }, () => {
   function job(overrides: Partial<RalphRequestPayload> = {}): JobPayload {
     const payload: RalphRequestPayload = {
       runId,
+      source: "linear",
       repositoryId: randomUUID(),
       repository: repo,
       branch,
@@ -244,6 +245,35 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     expect(system).not.toContain("Never run git commit, git push");
     // Nothing was left uncommitted.
     expect(git(worktreePath(), "stash", "list")).toBe("");
+  });
+
+  it("tells a session when the request comes from chat: no Linear, no story status", async () => {
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ summary: "Fixed the typo." });
+    });
+    await runRequest(
+      job({
+        source: "chat",
+        epic: { identifier: "chat-1a2b3c4d", title: "fix the typo", kind: "single", url: null, prd: "" },
+        stories: [],
+        prUrl: null,
+        requests: [{ id: randomUUID(), text: "fix the typo in the README" }],
+      }),
+      context(),
+      options(query),
+    );
+    const [call] = calls;
+    const prompt = call!.prompt;
+    expect(prompt).toContain("You are working on a request from a chat thread: fix the typo.");
+    expect(prompt).toContain("## Request from your team\n> fix the typo in the README");
+    expect(prompt).toContain("Finish with a short summary for the chat thread");
+    expect(prompt).not.toContain("Linear");
+    expect(prompt).not.toContain("## Status");
+    expect(prompt).not.toContain("chat-1a2b3c4d");
+    const system = JSON.stringify(call!.options.systemPrompt);
+    expect(system).toContain("responding to a request in a chat thread");
+    expect(system).toContain("posted to the chat thread");
+    expect(system).not.toContain("Linear");
   });
 
   it("passes the repository's model and tool settings to the session, which only narrow ralph's policy", async () => {

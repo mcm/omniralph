@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { CAPABILITIES, isCapability } from "./index.js";
 import { JobTokenScope } from "./agent-protocol.js";
 import { CAPABILITY_JOB_SCOPES } from "./protocol.js";
@@ -126,8 +127,16 @@ describe("ralph capability", () => {
       prUrl: null,
       historyRewrite: "when-asked",
       resumeSessionId: null,
+      // An older control panel's payload (no source) is a Linear request.
+      source: "linear",
     });
     expect(RalphRequestPayload.safeParse({ ...base, requests: [] }).success).toBe(false);
+    const chat = { ...base, source: "chat", requests: payload.requests };
+    expect(RalphRequestPayload.parse(chat).source).toBe("chat");
+    expect(RalphRequestPayload.safeParse({ ...chat, source: "email" }).success).toBe(false);
+    // Older agents parse with the schema minus `source`: the extra key doesn't break them.
+    const { source: _source, ...olderSchema } = RalphRequestPayload.shape;
+    expect(z.object(olderSchema).safeParse(chat).success).toBe(true);
     expect(
       RalphRequestResult.parse({
         summary: "Opened it.",

@@ -414,6 +414,9 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
 /** Whether a request may rewrite the branch's history (`ralph_settings.historyRewrite`). */
 export type HistoryRewritePolicy = "when-asked" | "never";
 
+/** Where a request session's requests come from: a Linear agent session or a chat thread. */
+export type RequestSource = "linear" | "chat";
+
 /** Marks a request session's prompt (tests and logs tell it apart from story sessions by this). */
 export const REQUEST_HEADING = "## Request from your team";
 
@@ -422,25 +425,39 @@ export const REQUEST_HEADING = "## Request from your team";
  * it may commit and push its branch, never another one, rewrites history only
  * when asked (and allowed), and asks for PR/MR changes in its result.
  */
-export function requestSystemAppend(historyRewrite: HistoryRewritePolicy = "when-asked"): string {
+export function requestSystemAppend(
+  historyRewrite: HistoryRewritePolicy = "when-asked",
+  source: RequestSource = "linear",
+): string {
   const rewrite =
     historyRewrite === "when-asked"
       ? "- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on the epic branch and push with `git push --force-with-lease`. That is allowed here."
       : "- Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.";
-  return `You are "Omniralph", an autonomous engineer responding to a request in a Linear agent session about a PRD epic.
+  const where =
+    source === "chat"
+      ? "a request in a chat thread about a repository"
+      : "a request in a Linear agent session about a PRD epic";
+  const thread = source === "chat" ? "the chat thread" : "the Linear thread";
+  return `You are "Omniralph", an autonomous engineer responding to ${where}.
 - Do what the request asks. You may use git (commit, push) when the request calls for it.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
 - Only push the epic branch you are on. Never push to, or force-push, the base branch or any other branch.
 ${rewrite}
-- The \`summary\` of your structured result is posted to the Linear thread: summarise what you did, with links (e.g. the PR/MR URL).
+- The \`summary\` of your structured result is posted to ${thread}: summarise what you did, with links (e.g. the PR/MR URL).
 - You may run subagents and commands in the background. To wait for them, end your turn with \`waiting: true\` in your structured result: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
 ${GOOD_NEIGHBOR_RULE}`;
 }
 
 export interface RequestPromptContext {
   epic: Epic;
-  /** The requests from the Linear thread, oldest first. */
+  /** The requests from the Linear or chat thread, oldest first. */
   requests: readonly string[];
+  /**
+   * Where the requests come from. A chat request's epic is a stand-in (the
+   * run's reference and the request's first line, no stories), so its prompt
+   * names neither Linear nor a story status. Default "linear".
+   */
+  source?: RequestSource;
   /** The branch of the worktree the session runs in. */
   branch: string;
   baseBranch: string;
@@ -468,8 +485,8 @@ function capitalize(text: string): string {
 /**
  * Prompt of a direct request from the Linear thread (an @mention, or a reply
  * no story picked up), e.g. "push and open a PR" (cyralph's
- * `buildRequestPrompt`). Like Cyrus, the agent acts on it itself; PR/MR
- * changes go through its structured result.
+ * `buildRequestPrompt`), or from a chat thread. Like Cyrus, the agent acts on
+ * it itself; PR/MR changes go through its structured result.
  */
 export function buildRequestPrompt(ctx: RequestPromptContext): string {
   const { epic } = ctx;
@@ -479,14 +496,24 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
   ).length;
   const prd = epic.kind === "single" ? "" : epic.description.trim();
   const gates = uniqueCommands(ctx.qualityGates);
+  const chat = ctx.source === "chat";
+  const thread = chat ? "chat thread" : "Linear thread";
+  const intro = chat
+    ? [
+        `You are working on a request from a chat thread: ${epic.title}.`,
+        `It is implemented on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`,
+      ]
+    : [
+        `You are working on Linear ${epic.identifier}: ${epic.title}.`,
+        epic.kind === "single"
+          ? `It is implemented on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`
+          : `It is a PRD epic implemented one story per commit on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`,
+        "",
+        `## Status: ${done}/${epic.stories.length} stories complete`,
+        formatStoryList(epic),
+      ];
   const lines = [
-    `You are working on Linear ${epic.identifier}: ${epic.title}.`,
-    epic.kind === "single"
-      ? `It is implemented on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`
-      : `It is a PRD epic implemented one story per commit on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`,
-    "",
-    `## Status: ${done}/${epic.stories.length} stories complete`,
-    formatStoryList(epic),
+    ...intro,
     "",
     `- Git remote \`origin\`: ${ctx.remoteUrl ? `\`${ctx.remoteUrl}\`` : "none configured"}`,
     `- ${capitalize(term)}: ${ctx.prUrl ?? "none opened yet"}`,
@@ -504,7 +531,7 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
       ? [
           "",
           "## Attachments",
-          "Files attached in Linear. Open the ones relevant to the request with the Read tool (it shows images):",
+          `Files attached ${chat ? "to the request" : "in Linear"}. Open the ones relevant to the request with the Read tool (it shows images):`,
           ctx.attachments,
         ]
       : []),
@@ -518,11 +545,11 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
       ? `- History rewrites are allowed on \`${ctx.branch}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/${ctx.baseBranch}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin ${ctx.branch}\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.`
       : `- History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`${ctx.baseBranch}\` into \`${ctx.branch}\` instead.`,
     ctx.remoteUrl
-      ? `- For the ${term}, don't run \`gh\` or \`glab\`. Push \`${ctx.branch}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`${ctx.baseBranch}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see Linear: what it does and why, notable changes, and any breaking changes or judgement calls. Don't list the user stories.`
+      ? `- For the ${term}, don't run \`gh\` or \`glab\`. Push \`${ctx.branch}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`${ctx.baseBranch}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see ${chat ? "the chat thread" : "Linear"}: what it does and why, notable changes, and any breaking changes or judgement calls.${chat ? "" : " Don't list the user stories."}`
       : "- There is no `origin` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.",
     "- If you change code, run the quality gates and commit with a clear message.",
     "- If the request is ambiguous or can't be done (e.g. missing credentials), say exactly what's missing instead of guessing.",
-    `- Finish with a short summary for the Linear thread of what you did, including any ${term} URL, as the \`summary\` of your structured result.`,
+    `- Finish with a short summary for the ${thread} of what you did, including any ${term} URL, as the \`summary\` of your structured result.`,
     ...(ctx.appendInstruction?.trim() ? ["", ctx.appendInstruction.trim()] : []),
   ];
   return lines.join("\n").trim();
