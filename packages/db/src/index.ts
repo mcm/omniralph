@@ -178,7 +178,6 @@ export {
   latestCompletedChatThreadJob,
   skipJob,
   failCompletedJob,
-  startJob,
   type CancelJobResult,
   type ClaimJobResult,
   type FinishJobResult,
@@ -186,7 +185,6 @@ export {
   type JobStatus,
   type NewJobInput,
   type SettledJob,
-  type StartJobResult,
 } from "./jobs.js";
 export {
   createReview,

@@ -59,7 +59,6 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 process.env.APP_URL = "https://omniralph.example.com/";
 
 const {

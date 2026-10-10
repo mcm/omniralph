@@ -1,34 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentVersion,
-  agentTopic,
   agentVersionAtLeast,
-  capabilityTopic,
   defaultCapabilityLimit,
   effectiveCapabilityLimits,
   Heartbeat,
   HeartbeatResponse,
   JobFailure,
-  JobMessage,
   JobStartResponse,
 } from "./protocol.js";
 
 const ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 
 describe("protocol", () => {
-  it("names topics per capability, per organization and per agent", () => {
-    expect(capabilityTopic("review", ID)).toBe(`review-jobs-org-${ID}`);
-    expect(capabilityTopic("review", ID)).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(agentTopic("review", ID)).toBe(`review-jobs-agent-${ID}`);
-    // Vercel Queues topic names are [A-Za-z0-9_-]+.
-    expect(agentTopic("review", ID)).toMatch(/^[A-Za-z0-9_-]+$/);
-  });
-
-  it("validates job messages", () => {
-    expect(JobMessage.safeParse({ jobId: ID }).success).toBe(true);
-    expect(JobMessage.safeParse({ jobId: "../x" }).success).toBe(false);
-  });
-
   it("validates heartbeats", () => {
     expect(
       Heartbeat.safeParse({

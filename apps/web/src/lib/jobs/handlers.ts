@@ -55,7 +55,7 @@ import {
 } from "@/lib/triage/apply";
 
 /**
- * Per-job-type hooks into the generic job lifecycle (`/start`, `/result`,
+ * Per-job-type hooks into the generic job lifecycle (`/claim`, `/result`,
  * `/fail`, revocation, expiry and cancel). The lifecycle routes update the
  * `jobs` row; these hooks keep the capability's own state (reviews, rules,
  * ralph runs) in step with it. Every hook is optional.
@@ -65,8 +65,8 @@ export interface JobOutcomeHandler {
   /** Jobs whose payload doesn't parse get the generic lifecycle only. */
   payload: z.ZodType;
   /**
-   * After a delivery started. `skip` acknowledges the message without running
-   * it (the hook has already recorded why).
+   * After a delivery started. `skip` ends the claim without running it (the
+   * hook has already recorded why); the claim then moves on to the next job.
    */
   onStarted?(
     db: Database,

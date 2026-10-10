@@ -522,8 +522,8 @@ export type PinRepositoryResult =
   "pinned" | "already_pinned" | "unknown_agent" | "unknown_repository";
 
 /**
- * Pins a connected repository to an agent: its jobs then go to that agent's
- * topic (see `pinnedAgentFor`). Revoked agents, disconnected repositories and
+ * Pins a connected repository to an agent: its jobs are then targeted at that
+ * agent (see `pinnedAgentFor`). Revoked agents, disconnected repositories and
  * agents of another organization than the repository's can't be pinned.
  */
 export async function pinRepositoryToAgent(

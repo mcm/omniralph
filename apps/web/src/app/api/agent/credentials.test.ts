@@ -41,7 +41,6 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 process.env.GITHUB_APP_ID = "12345";
 process.env.GITHUB_APP_PRIVATE_KEY = appKey.export({ type: "pkcs8", format: "pem" }).toString();
 process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
@@ -50,7 +49,7 @@ const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/sign
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { pinRepository } = await import("@/lib/agents/pins");
 const { POST: credentials } = await import("./credentials/route");
-const { POST: start } = await import("./jobs/[id]/start/route");
+const { POST: claim } = await import("./claim/route");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -318,17 +317,23 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
       it("gives a started ralph job's token a write credential", async () => {
         const agentId = await newAgent({ enabledCapabilities: ["ralph"] });
-        const jobId = await newJob({ ...ralphJob, status: "queued", repositoryId: githubRepoId });
+        // Targeted at the agent, so the claim takes it before any other queued ralph job.
+        const jobId = await newJob({
+          ...ralphJob,
+          status: "queued",
+          repositoryId: githubRepoId,
+          targetAgentId: agentId,
+        });
         const accessToken = await getTokenSigner().signAccessToken(agentId);
-        const res = await start(
-          new Request(`http://localhost/api/agent/jobs/${jobId}/start`, {
+        const res = await claim(
+          new Request("http://localhost/api/agent/claim", {
             method: "POST",
             headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.251" },
+            body: JSON.stringify({ capabilities: ["ralph"], waitSeconds: 0 }),
           }),
-          { params: Promise.resolve({ id: jobId }) },
         );
         const started = (await res.json()) as JobStartResponse;
-        expect(started.action).toBe("run");
+        expect(started).toMatchObject({ action: "run", job: { id: jobId } });
         if (started.action !== "run") return;
         const cred = await credentials(credentialRequest(started.jobToken.token));
         expect(await cred.json()).toMatchObject({ password: "ghs_contents_write" });
@@ -580,15 +585,15 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
       // The agent runs it although no capability is enabled for it (system is built in)...
       const accessToken = await getTokenSigner().signAccessToken(agentId);
-      const res = await start(
-        new Request(`http://localhost/api/agent/jobs/${pinned.syncJobId}/start`, {
+      const res = await claim(
+        new Request("http://localhost/api/agent/claim", {
           method: "POST",
           headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.250" },
+          body: JSON.stringify({ capabilities: ["system"], waitSeconds: 0 }),
         }),
-        { params: Promise.resolve({ id: pinned.syncJobId! }) },
       );
       const started = (await res.json()) as JobStartResponse;
-      expect(started.action).toBe("run");
+      expect(started).toMatchObject({ action: "run", job: { id: pinned.syncJobId } });
       if (started.action !== "run") return;
       // ...and its git-credential helper gets a read-only credential with the job token.
       const cred = await credentials(credentialRequest(started.jobToken.token));

@@ -47,7 +47,6 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 
 const { updateRalphSettings, updateRepositorySettings } = await import("./actions");
 const { updateReviewProfile } = await import("../../../settings/profiles/actions");

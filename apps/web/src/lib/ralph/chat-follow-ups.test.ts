@@ -18,7 +18,7 @@ import {
   runMigrations,
   saveChatConnection,
   seedReviewProfiles,
-  startJob,
+  claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   webhookDeliveries,
@@ -250,14 +250,14 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     const [job, ...more] = await activeJobs(runId, type);
     expect(job, `the run has a queued ${type} job`).toBeDefined();
     expect(more).toEqual([]);
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job!.id,
       agentId,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job!.id);
     if (type !== "ralph.cleanup") {
       expect(await onRalphJobStarted(db, job!, agentId)).toEqual({ skip: false });
     }

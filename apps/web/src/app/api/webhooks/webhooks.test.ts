@@ -50,7 +50,6 @@ vi.mock("@/lib/dispatch", async (importOriginal) => {
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 delete process.env.GITHUB_APP_KMS_ISSUER_ID;
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 process.env.GITHUB_APP_ID = "12345";
 process.env.GITHUB_APP_PRIVATE_KEY = appKey.export({ type: "pkcs8", format: "pem" }).toString();
 process.env.GITHUB_WEBHOOK_SECRET = "github-secret";

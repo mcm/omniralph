@@ -133,7 +133,6 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 process.env.APP_URL = "https://omniralph.example.com";
 
 const { handleWebhook } = await import("@/lib/webhooks/ingest");

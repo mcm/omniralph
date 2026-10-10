@@ -1139,9 +1139,6 @@ export const jobs = pgTable(
     availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
     /** When a `running` job's lease lapses: another agent may then claim it (crash takeover). */
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
-    /** Vercel Queues topic the job was published to. */
-    topic: text("topic"),
-    queueMessageId: text("queue_message_id"),
     deliveryCount: integer("delivery_count").notNull().default(0),
     /** At most one queued/running job per dedupe key (see the partial unique index). */
     dedupeKey: text("dedupe_key"),
@@ -1308,7 +1305,7 @@ export const ralphRuns = pgTable(
     repositoryId: uuid("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
     /** How the repository was chosen, e.g. "team `ENG`" or "your selection" (kept on re-routing). */
     routedBy: text("routed_by"),
-    /** The sticky agent: set by the run's first job, all later jobs (of every lane) go to its topic. */
+    /** The sticky agent: set by the run's first job, all later jobs (of every lane) are targeted at it. */
     agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
     prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
@@ -1500,7 +1497,7 @@ export const ralphStories = pgTable(
     /** Sub-issue order in the epic (for display; selection re-reads Linear). */
     position: integer("position").notNull().default(0),
     status: ralphStoryStatus("status").notNull().default("pending"),
-    /** Finished attempts (queue redeliveries don't count). */
+    /** Finished attempts (redeliveries don't count). */
     attempts: integer("attempts").notNull().default(0),
     /** Why the last attempt didn't complete, passed to the next one. */
     lastFeedback: text("last_feedback"),

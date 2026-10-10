@@ -28,8 +28,6 @@ import {
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq, inArray } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
-import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -50,14 +48,12 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
     },
   }),
 }));
-vi.mock("@vercel/oidc", () => ({ getVercelOidcToken: async () => "control-panel-oidc" }));
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 delete process.env.KMS_AGENT_ISSUER_ID;
 process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
-process.env.QUEUE_REGIONS = "iad1";
 process.env.CRON_SECRET = "cron-secret";
 process.env.APP_URL = "https://omniralph.example.com";
 
@@ -65,7 +61,6 @@ const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { requireJob } = await import("@/lib/agent-auth/verify");
 const { POST: heartbeat } = await import("./heartbeat/route");
-const { POST: start } = await import("./jobs/[id]/start/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
 const { POST: claim } = await import("./claim/route");
@@ -73,24 +68,11 @@ const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: activities } = await import("./jobs/[id]/activities/route");
 const { GET: attachment } = await import("./jobs/[id]/attachments/[attachmentId]/route");
-const queueRoute = await import("./queue/[region]/[...path]/route");
 const { GET: expireJobs } = await import("../cron/expire-jobs/route");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
   () => false,
-);
-
-const upstreamCalls: { method: string; url: string; authorization: string | null }[] = [];
-const server = setupServer(
-  http.all("https://iad1.vercel-queue.com/*", ({ request }) => {
-    upstreamCalls.push({
-      method: request.method,
-      url: request.url,
-      authorization: request.headers.get("authorization"),
-    });
-    return new HttpResponse(null, { status: 204 });
-  }),
 );
 
 let ipCounter = 0;
@@ -122,16 +104,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   let db: Database;
   let repositoryId: string;
   let orgId: string;
-  /** The organization's shared review topic. */
-  const reviewTopic = () => `review-jobs-org-${orgId}`;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
     state.db = db;
-    // After the container started, or msw intercepts Testcontainers' Docker calls.
-    server.listen({ onUnhandledFrame: "error" });
 
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
@@ -161,14 +139,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   }, 180_000);
 
   afterAll(async () => {
-    server.close();
     if (db) await closeDb(db);
     await container?.stop();
   });
 
-  beforeEach(() => {
-    upstreamCalls.length = 0;
-  });
+  /** Agent IDs by access token, for `startAs`. */
+  const agentIds = new Map<string, string>();
 
   async function newAgent(values: Partial<typeof agents.$inferInsert> = {}) {
     const [agent] = await db
@@ -176,6 +152,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       .values({ organizationId: orgId, name: "coder-1", ...values })
       .returning();
     const accessToken = await getTokenSigner().signAccessToken(agent!.id);
+    agentIds.set(accessToken, agent!.id);
     return { agentId: agent!.id, accessToken };
   }
 
@@ -183,9 +160,17 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     return new PostgresDispatcher({ db });
   }
 
-  async function newJob(input: { repositoryId?: string; dedupeKey?: string } = {}) {
+  /** An organization of its own, so other tests' queued jobs aren't claimable. */
+  async function newOrg() {
+    const [org] = await db.insert(organizations).values({ name: "Initech" }).returning();
+    return org!.id;
+  }
+
+  async function newJob(
+    input: { repositoryId?: string; dedupeKey?: string; organizationId?: string } = {},
+  ) {
     const { job } = await dispatcher().createAndPublish({
-      organizationId: orgId,
+      organizationId: input.organizationId ?? orgId,
       capability: "review",
       type: "review.run",
       payload: { prNumber: 7 },
@@ -200,10 +185,37 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     return row!;
   }
 
+  /**
+   * Claims `jobId` as an agent through `POST /api/agent/claim`. The job is
+   * targeted at the agent for the claim and made claimable now (as once a
+   * retry delay passed, or a crashed agent's lease lapsed), so no other job is
+   * claimed instead. Null when the claim settled the job (or found nothing).
+   */
   async function startAs(jobId: string, accessToken: string) {
-    const res = await start(agentRequest(`jobs/${jobId}/start`, accessToken), ctx(jobId));
-    expect(res.status).toBe(200);
-    return (await res.json()) as JobStartResponse;
+    const before = await jobRow(jobId);
+    const past = new Date(Date.now() - 1000);
+    await db
+      .update(jobs)
+      .set({
+        targetAgentId: agentIds.get(accessToken)!,
+        availableAt: past,
+        ...(before.status === "running" && { leaseExpiresAt: past }),
+      })
+      .where(eq(jobs.id, jobId));
+    try {
+      const res = await claim(
+        agentRequest("claim", accessToken, {
+          body: { capabilities: [before.capability], waitSeconds: 0 },
+        }),
+      );
+      if (res.status === 204) return null;
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as JobStartResponse & { action: "run" };
+      expect(body.job.id).toBe(jobId);
+      return body;
+    } finally {
+      await db.update(jobs).set({ targetAgentId: before.targetAgentId }).where(eq(jobs.id, jobId));
+    }
   }
 
   async function failAs(jobId: string, accessToken: string, body: unknown) {
@@ -358,83 +370,6 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       expect(await dispatcher().cancel(running)).toBe("cancel_requested");
       expect(await jobRow(running)).toMatchObject({ status: "running", cancelRequested: true });
       expect(await dispatcher().cancel(queued)).toBe("not_cancelable");
-    });
-  });
-
-  describe("POST /api/agent/jobs/{id}/start", () => {
-    it("runs a queued job and returns a job token with the capability's scopes", async () => {
-      const { agentId, accessToken } = await newAgent();
-      const jobId = await newJob();
-      const body = await startAs(jobId, accessToken);
-      expect(body).toMatchObject({
-        action: "run",
-        job: {
-          id: jobId,
-          capability: "review",
-          type: "review.run",
-          repositoryId: null,
-          payload: { prNumber: 7 },
-          deliveryCount: 1,
-        },
-        jobToken: { jobId, expiresIn: 900 },
-      });
-      expect(await jobRow(jobId)).toMatchObject({ status: "running", agentId, deliveryCount: 1 });
-
-      if (body.action !== "run") throw new Error("expected run");
-      const principal = await requireJob(
-        new Request("http://localhost/api/agent/credentials", {
-          headers: { authorization: `Bearer ${body.jobToken.token}`, "x-real-ip": newIp() },
-        }),
-        "credentials:read",
-      );
-      expect(principal).toEqual({ jobId, agentId, scopes: ["credentials:read"] });
-    });
-
-    it("skips a canceled job", async () => {
-      const { accessToken } = await newAgent();
-      const jobId = await newJob();
-      await dispatcher().cancel(jobId);
-      expect(await startAs(jobId, accessToken)).toEqual({ action: "skip", reason: "canceled" });
-      expect((await jobRow(jobId)).deliveryCount).toBe(0);
-    });
-
-    it("skips a running job whose cancellation was requested", async () => {
-      const a = await newAgent();
-      const b = await newAgent();
-      const jobId = await newJob();
-      await startAs(jobId, a.accessToken);
-      await dispatcher().cancel(jobId);
-      expect(await startAs(jobId, b.accessToken)).toEqual({ action: "skip", reason: "canceled" });
-      expect((await jobRow(jobId)).status).toBe("canceled");
-    });
-
-    it("skips completed, failed and expired jobs, and unknown IDs", async () => {
-      const { accessToken } = await newAgent();
-      for (const status of ["completed", "failed", "expired"] as const) {
-        const jobId = await newJob();
-        await db.update(jobs).set({ status }).where(eq(jobs.id, jobId));
-        expect(await startAs(jobId, accessToken)).toEqual({ action: "skip", reason: status });
-      }
-      expect(await startAs(randomUUID(), accessToken)).toEqual({
-        action: "skip",
-        reason: "not_found",
-      });
-    });
-
-    it("skips jobs of capabilities not enabled for the agent", async () => {
-      const { accessToken } = await newAgent({ enabledCapabilities: [] });
-      const jobId = await newJob();
-      expect(await startAs(jobId, accessToken)).toEqual({
-        action: "skip",
-        reason: "capability_disabled",
-      });
-      expect((await jobRow(jobId)).status).toBe("queued");
-    });
-
-    it("requires an agent access token", async () => {
-      const jobId = await newJob();
-      const res = await start(agentRequest(`jobs/${jobId}/start`, "garbage"), ctx(jobId));
-      expect(res.status).toBe(401);
     });
   });
 
@@ -663,13 +598,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     });
 
     it("fails a job delivered more than 3 times (agents crashed mid-run)", async () => {
-      const { accessToken } = await newAgent();
-      const jobId = await newJob();
+      // Once the job is failed, the claim moves on: in an organization of its own, to nothing.
+      const organizationId = await newOrg();
+      const { accessToken } = await newAgent({ organizationId });
+      const jobId = await newJob({ organizationId });
       for (let i = 0; i < 3; i++) await startAs(jobId, accessToken);
-      expect(await startAs(jobId, accessToken)).toEqual({
-        action: "skip",
-        reason: "max_deliveries",
-      });
+      expect(await startAs(jobId, accessToken)).toBeNull();
       expect(await jobRow(jobId)).toMatchObject({ status: "failed", deliveryCount: 3 });
     });
 
@@ -715,7 +649,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const current = await newAgent({ name: "current" });
       const jobId = await newJob();
       await startAs(jobId, stale.accessToken);
-      // The stale agent's lease lapsed and the message was redelivered to another agent.
+      // The stale agent's lease lapsed and another agent claimed the job.
       await startAs(jobId, current.accessToken);
 
       const staleResult = await result(
@@ -1086,103 +1020,6 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     });
   });
 
-  describe("queue proxy route", () => {
-    const base = "http://localhost/api/agent/queue/iad1/api/v3/topic";
-
-    function proxyRequest(url: string, accessToken: string, method = "POST") {
-      return new Request(url, {
-        method,
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          accept: "multipart/mixed",
-          "x-real-ip": newIp(),
-        },
-      });
-    }
-
-    it("forwards the agent's topics with the control panel's OIDC token", async () => {
-      const { agentId, accessToken } = await newAgent();
-      for (const topic of [reviewTopic(), `review-jobs-agent-${agentId}`]) {
-        const res = await queueRoute.POST(
-          proxyRequest(`${base}/${topic}/consumer/agents`, accessToken),
-        );
-        expect(res.status).toBe(204);
-      }
-      const ack = await queueRoute.DELETE(
-        proxyRequest(`${base}/${reviewTopic()}/consumer/agents/lease/rh-1`, accessToken, "DELETE"),
-      );
-      expect(ack.status).toBe(204);
-      expect(upstreamCalls).toEqual([
-        {
-          method: "POST",
-          url: `https://iad1.vercel-queue.com/api/v3/topic/${reviewTopic()}/consumer/agents`,
-          authorization: "Bearer control-panel-oidc",
-        },
-        {
-          method: "POST",
-          url: `https://iad1.vercel-queue.com/api/v3/topic/review-jobs-agent-${agentId}/consumer/agents`,
-          authorization: "Bearer control-panel-oidc",
-        },
-        {
-          method: "DELETE",
-          url: `https://iad1.vercel-queue.com/api/v3/topic/${reviewTopic()}/consumer/agents/lease/rh-1`,
-          authorization: "Bearer control-panel-oidc",
-        },
-      ]);
-    });
-
-    it("denies other agents' topics, disabled capabilities and other operations", async () => {
-      const { accessToken } = await newAgent();
-      const other = await newAgent();
-      const disabled = await newAgent({ enabledCapabilities: [] });
-      const denied = [
-        queueRoute.POST(
-          proxyRequest(`${base}/review-jobs-agent-${other.agentId}/consumer/agents`, accessToken),
-        ),
-        queueRoute.POST(
-          proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, disabled.accessToken),
-        ),
-        queueRoute.POST(proxyRequest(`${base}/${reviewTopic()}/consumer/workers`, accessToken)),
-        queueRoute.GET(
-          proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, accessToken, "GET"),
-        ),
-        queueRoute.PUT(proxyRequest(`${base}/${reviewTopic()}`, accessToken, "PUT")),
-      ];
-      for (const res of await Promise.all(denied)) expect(res.status).toBe(403);
-      expect(upstreamCalls).toHaveLength(0);
-    });
-
-    it("lets every agent read its own system topic (even with no capability enabled), not others'", async () => {
-      const agent = await newAgent({ enabledCapabilities: [] });
-      const other = await newAgent();
-      const own = await queueRoute.POST(
-        proxyRequest(
-          `${base}/system-jobs-agent-${agent.agentId}/consumer/agents`,
-          agent.accessToken,
-        ),
-      );
-      expect(own.status).toBe(204);
-      const foreign = await queueRoute.POST(
-        proxyRequest(
-          `${base}/system-jobs-agent-${other.agentId}/consumer/agents`,
-          agent.accessToken,
-        ),
-      );
-      expect(foreign.status).toBe(403);
-      expect(upstreamCalls.map((c) => c.url)).toEqual([
-        `https://iad1.vercel-queue.com/api/v3/topic/system-jobs-agent-${agent.agentId}/consumer/agents`,
-      ]);
-    });
-
-    it("requires an agent access token", async () => {
-      const res = await queueRoute.POST(
-        proxyRequest(`${base}/${reviewTopic()}/consumer/agents`, "x"),
-      );
-      expect(res.status).toBe(401);
-      expect(upstreamCalls).toHaveLength(0);
-    });
-  });
-
   describe("organization isolation", () => {
     let otherOrgId: string;
     let otherRepositoryId: string;
@@ -1271,7 +1108,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       ).toHaveLength(0);
     });
 
-    it("gives agents their own organization and refuses the other's topics in the proxy", async () => {
+    it("gives agents their own organization", async () => {
       const ours = await newAgent();
       const theirs = await otherAgent();
       const beat = async (accessToken: string) => {
@@ -1286,41 +1123,14 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       expect(ourConfig.organizationId).toBe(orgId);
       const theirConfig = await beat(theirs.accessToken);
       expect(theirConfig.organizationId).toBe(otherOrgId);
-
-      const base = "http://localhost/api/agent/queue/iad1/api/v3/topic";
-      const proxied = (url: string, accessToken: string, method = "POST") =>
-        new Request(url, {
-          method,
-          headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": newIp() },
-        });
-      const denied = [
-        queueRoute.POST(proxied(`${base}/${reviewTopic()}/consumer/agents`, theirs.accessToken)),
-        queueRoute.DELETE(
-          proxied(
-            `${base}/${reviewTopic()}/consumer/agents/lease/rh-1`,
-            theirs.accessToken,
-            "DELETE",
-          ),
-        ),
-        queueRoute.POST(
-          proxied(`${base}/review-jobs-org-${otherOrgId}/consumer/agents`, ours.accessToken),
-        ),
-        queueRoute.POST(
-          proxied(`${base}/review-jobs-agent-${ours.agentId}/consumer/agents`, theirs.accessToken),
-        ),
-      ];
-      for (const res of await Promise.all(denied)) expect(res.status).toBe(403);
-      expect(upstreamCalls).toHaveLength(0);
     });
 
     it("never starts, completes or fails another organization's job", async () => {
-      const foreign = await otherAgent();
+      // An organization with no jobs of its own: the claim finds nothing.
+      const foreign = await newAgent({ organizationId: await newOrg() });
       const jobId = await newJob();
 
-      expect(await startAs(jobId, foreign.accessToken)).toEqual({
-        action: "skip",
-        reason: "not_found",
-      });
+      expect(await startAs(jobId, foreign.accessToken)).toBeNull();
       expect(await jobRow(jobId)).toMatchObject({
         status: "queued",
         agentId: null,

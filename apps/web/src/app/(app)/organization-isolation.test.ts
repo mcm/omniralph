@@ -27,7 +27,7 @@ import {
   saveIntegration,
   setActiveOrganization,
   setDesiredAgentVersion,
-  startJob,
+  claimJob,
   upsertScmConnection,
   upsertStories,
   users,
@@ -316,15 +316,15 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       repositoryId: repo.id,
     });
     expect(
-      await startJob(db, {
-        jobId: job.id,
+      await claimJob(db, {
         agentId,
         organizationId: org.id,
+        capabilities: ["review"],
         enabledCapabilities: ["review"],
         maxDeliveries: 5,
       }),
     ).toMatchObject({
-      action: "run",
+      claim: { action: "run", job: { id: job.id } },
     });
     await insertJob(db, {
       organizationId: org.id,

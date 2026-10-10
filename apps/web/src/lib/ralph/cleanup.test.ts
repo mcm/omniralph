@@ -12,7 +12,7 @@ import {
   jobs,
   ralphRuns,
   runMigrations,
-  startJob,
+  claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   webhookDeliveries,
@@ -153,14 +153,14 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     const [job, ...more] = active;
     expect(job, "the run has a queued job").toBeDefined();
     expect(more).toEqual([]);
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job!.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job!.id);
     if (job!.type !== "ralph.cleanup") {
       expect(await onRalphJobStarted(db, job!, agentA)).toEqual({ skip: false });
     }

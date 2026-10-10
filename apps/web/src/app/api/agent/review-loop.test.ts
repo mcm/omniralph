@@ -28,7 +28,7 @@ import {
   type ReviewJobResult,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -48,7 +48,6 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 process.env.GITHUB_APP_ID = "12345";
 process.env.GITHUB_APP_PRIVATE_KEY = appKey.export({ type: "pkcs8", format: "pem" }).toString();
 process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
@@ -57,7 +56,7 @@ process.env.APP_URL = "https://omniralph.example.com";
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { enqueueReview } = await import("@/lib/review/enqueue");
-const { POST: start } = await import("./jobs/[id]/start/route");
+const { POST: claim } = await import("./claim/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
 
@@ -292,10 +291,43 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     });
   }
 
-  async function startAs(jobId: string, accessToken: string): Promise<JobStartResponse> {
-    const res = await start(agentRequest(`jobs/${jobId}/start`, accessToken), ctx(jobId));
-    expect(res.status).toBe(200);
-    return (await res.json()) as JobStartResponse;
+  /**
+   * Claims `jobId` through `POST /api/agent/claim`: makes it claimable now (as
+   * once a retry delay passed) and holds the other queued jobs back meanwhile,
+   * so no other job is claimed instead. Null when the claim settled or skipped
+   * the job.
+   */
+  async function startAs(jobId: string, accessToken: string): Promise<JobStartResponse | null> {
+    await db
+      .update(jobs)
+      .set({ availableAt: new Date(Date.now() - 1000) })
+      .where(eq(jobs.id, jobId));
+    const held = (
+      await db
+        .update(jobs)
+        .set({ availableAt: sql`${jobs.availableAt} + interval '1 day'` })
+        .where(
+          and(eq(jobs.status, "queued"), ne(jobs.id, jobId), lte(jobs.availableAt, sql`now()`)),
+        )
+        .returning({ id: jobs.id })
+    ).map((j) => j.id);
+    try {
+      const res = await claim(
+        agentRequest("claim", accessToken, { capabilities: ["review"], waitSeconds: 0 }),
+      );
+      if (res.status === 204) return null;
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as JobStartResponse & { action: "run" };
+      expect(body.job.id).toBe(jobId);
+      return body;
+    } finally {
+      if (held.length > 0) {
+        await db
+          .update(jobs)
+          .set({ availableAt: sql`${jobs.availableAt} - interval '1 day'` })
+          .where(inArray(jobs.id, held));
+      }
+    }
   }
 
   async function submit(jobId: string, accessToken: string, body: ReviewJobResult) {
@@ -506,17 +538,14 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     const first = await enqueue(prNumber, head1);
     if (first.status !== "enqueued") throw new Error(first.status);
     const run = await startAs(first.jobId, accessToken);
-    if (run.action !== "run") throw new Error("expected run");
+    if (run?.action !== "run") throw new Error("expected run");
     await submit(first.jobId, accessToken, await agentRun(run.job.payload));
     expect(postReview).toHaveBeenCalledTimes(1);
 
     // E.g. a redelivered webhook for the same head after the review completed.
     const again = await enqueue(prNumber, head1);
     if (again.status !== "enqueued") throw new Error(again.status);
-    expect(await startAs(again.jobId, accessToken)).toEqual({
-      action: "skip",
-      reason: "already_reviewed",
-    });
+    expect(await startAs(again.jobId, accessToken)).toBeNull();
     expect(await jobRow(again.jobId)).toMatchObject({ status: "skipped" });
     expect(await reviewRow(again.reviewId)).toMatchObject({ status: "skipped" });
     expect(postReview).toHaveBeenCalledTimes(1);
@@ -528,7 +557,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     const first = await enqueue(prNumber, head1);
     if (first.status !== "enqueued") throw new Error(first.status);
     const run = await startAs(first.jobId, accessToken);
-    if (run.action !== "run") throw new Error("expected run");
+    if (run?.action !== "run") throw new Error("expected run");
     const partial = {
       ...(await agentRun(run.job.payload)),
       stopReason: "budget_exhausted" as const,
@@ -565,7 +594,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     const running = await enqueue(prNumber, base);
     if (running.status !== "enqueued") throw new Error(running.status);
     const run = await startAs(running.jobId, accessToken);
-    if (run.action !== "run") throw new Error("expected run");
+    if (run?.action !== "run") throw new Error("expected run");
     const queued = await enqueue(prNumber, head1);
     if (queued.status !== "enqueued") throw new Error(queued.status);
     // A different PR's job is left alone.
@@ -582,11 +611,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     expect((await reviewRow(running.reviewId)).status).toBe("skipped");
     expect((await reviewRow(queued.reviewId)).status).toBe("skipped");
 
-    // The canceled queued job is skipped at start; the running one's late result isn't posted.
-    expect(await startAs(queued.jobId, accessToken)).toEqual({
-      action: "skip",
-      reason: "canceled",
-    });
+    // The canceled queued job is never claimed; the running one's late result isn't posted.
+    expect(await startAs(queued.jobId, accessToken)).toBeNull();
     const late = await submit(running.jobId, accessToken, {
       findings: [],
       usage: { inputTokens: 1, outputTokens: 1 },
@@ -653,10 +679,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
     await db.update(jobs).set({ deliveryCount: 3 }).where(eq(jobs.id, enqueued.jobId));
     const { accessToken } = await newAgent();
-    expect(await startAs(enqueued.jobId, accessToken)).toEqual({
-      action: "skip",
-      reason: "max_deliveries",
-    });
+    expect(await startAs(enqueued.jobId, accessToken)).toBeNull();
     expect(await reviewRow(enqueued.reviewId)).toMatchObject({
       status: "failed",
       error: "Gave up after 3 deliveries",

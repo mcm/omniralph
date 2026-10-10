@@ -4,7 +4,7 @@
  * (without touching Linear) when the issue or one of its sub-issues is in
  * progress or done, routes it to a repository the way ralph does (none is
  * fine: triage then runs without a checkout), records a `triage_runs` row and
- * enqueues a `triage.run` job on the organization's triage topic. The job's
+ * enqueues a `triage.run` job any of the organization's agents may claim. The job's
  * outcome is applied to Linear when it finishes.
  */
 import {

@@ -1,17 +1,13 @@
 /**
- * Job protocol between the control panel and agents: the queue message, the
- * heartbeat and the job lifecycle endpoints (`/api/agent/heartbeat`,
- * `/api/agent/claim`, `/api/agent/jobs/{id}/start|result|fail`). See
- * `docs/adr/0001-job-dispatch.md`.
+ * Job protocol between the control panel and agents: the heartbeat and the
+ * job lifecycle endpoints (`/api/agent/heartbeat`, `/api/agent/claim`,
+ * `/api/agent/jobs/{id}/result|fail`). See `docs/adr/0001-job-dispatch.md`.
  */
 import { z } from "zod";
 import type { JobTokenScope } from "./agent-protocol.js";
 import type { Capability } from "./index.js";
 
-/** Consumer group every agent uses on every topic, so agents compete for messages. */
-export const QUEUE_CONSUMER_GROUP = "agents";
-
-/** Messages (and the idempotency window) live for 24h; still-queued jobs then expire. */
+/** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
 export const JOB_RETENTION_SECONDS = 24 * 60 * 60;
 
 /** A job is failed once it has been delivered (started) this many times without finishing. */
@@ -26,26 +22,13 @@ export const HEARTBEAT_INTERVAL_SECONDS = 20;
  */
 export const JOB_LEASE_SECONDS = 120;
 
-/** Longest lease extension Vercel Queues accepts (`visibilityTimeoutSeconds`). */
+/** Longest delay before a retried job may be claimed again (`retryAfterSeconds`). */
 export const MAX_LEASE_SECONDS = 3600;
 
 /**
- * An organization's shared topic for a capability, e.g.
- * `review-jobs-org-<organizationId>`: only that organization's agents poll it.
- */
-export function capabilityTopic(capability: string, organizationId: string): string {
-  return `${capability}-jobs-org-${organizationId}`;
-}
-
-/** The topic for jobs of repos pinned to one agent, e.g. `review-jobs-agent-<agentId>`. */
-export function agentTopic(capability: string, agentId: string): string {
-  return `${capability}-jobs-agent-${agentId}`;
-}
-
-/**
  * The built-in capability every agent runs, regardless of central config:
- * housekeeping jobs such as `repo.sync`. Its jobs only reach an agent through
- * its own topic (`system-jobs-agent-<agentId>`).
+ * housekeeping jobs such as `repo.sync`. Its jobs are always targeted at one
+ * agent (`jobs.target_agent_id`).
  */
 export const SYSTEM_CAPABILITY = "system";
 export type SystemCapability = typeof SYSTEM_CAPABILITY;
@@ -64,12 +47,6 @@ export const CAPABILITY_JOB_SCOPES: Record<Capability | SystemCapability, JobTok
   triage: ["credentials:read"],
   system: ["credentials:read"],
 };
-
-/** Payload of every queue message; the job itself lives in Postgres. */
-export const JobMessage = z.object({
-  jobId: z.uuid(),
-});
-export type JobMessage = z.infer<typeof JobMessage>;
 
 const capabilityName = z.string().min(1).max(64);
 
@@ -241,7 +218,7 @@ export const HeartbeatResponse = z.object({
   capabilityLimits: CapabilityLimits.default({}),
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
   pinnedRepoIds: z.array(z.uuid()),
-  /** The agent's organization: its capability topics are that organization's. */
+  /** The agent's organization: it only claims that organization's jobs. */
   organizationId: z.uuid(),
   /**
    * @deprecated Vercel Queues topics old agents poll. Always empty, so old agents
@@ -294,8 +271,8 @@ export const JobSkipReason = z.enum(JOB_SKIP_REASONS);
 export type JobSkipReason = z.infer<typeof JobSkipReason>;
 
 /**
- * `POST /api/agent/jobs/{id}/start` response. On `skip` the agent acknowledges
- * the message without running anything.
+ * A started job: `run` with the job and its token (`POST /api/agent/claim`
+ * only answers `run`). On `skip` the agent runs nothing.
  */
 export const JobStartResponse = z.discriminatedUnion("action", [
   z.object({
@@ -333,7 +310,7 @@ export type JobResult = z.infer<typeof JobResult>;
 
 /** `POST /api/agent/jobs/{id}/fail` */
 export const JobFailure = z.object({
-  /** Transient failure (e.g. a Claude rate limit): redeliver after `retryAfterSeconds`. */
+  /** Transient failure (e.g. a Claude rate limit): claimable again after `retryAfterSeconds`. */
   retryable: z.boolean(),
   retryAfterSeconds: z.int().min(0).max(MAX_LEASE_SECONDS).optional(),
   error: z.string().max(4000).optional(),
@@ -341,9 +318,8 @@ export const JobFailure = z.object({
 export type JobFailure = z.infer<typeof JobFailure>;
 
 /**
- * Response of `/result` and `/fail`. `retry`: don't acknowledge; set the
- * message's lease to `retryAfterSeconds` so it is redelivered then. Otherwise
- * acknowledge the message.
+ * Response of `/result` and `/fail`. `retry`: the job is queued again and may
+ * be claimed after `retryAfterSeconds`; the agent does nothing else.
  */
 export const JobOutcomeResponse = z.discriminatedUnion("status", [
   z.object({ status: z.literal("completed") }),

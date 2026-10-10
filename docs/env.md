@@ -141,7 +141,6 @@ See [ADR 0001](adr/0001-job-dispatch.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `QUEUE_REGIONS` | yes | — | Comma-separated Vercel Queues regions, e.g. `iad1`. Jobs are published to (and agents poll) the first one; the agent queue proxy only forwards to listed regions. |
 | `CRON_SECRET` | yes | — | Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to `/api/cron/*`; requests without it get 401. |
 
 ### Set by Vercel
