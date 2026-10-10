@@ -1,5 +1,6 @@
 import {
   HEARTBEAT_INTERVAL_SECONDS,
+  LEGACY_POLL_INTERVAL_SECONDS,
   JobMessage,
   QUEUE_CONSUMER_GROUP,
   SYSTEM_CAPABILITY,
@@ -327,7 +328,7 @@ export class AgentDaemon implements DrainableDaemon {
       previous.maxConcurrency !== config.maxConcurrency ||
       previous.pollIntervalSeconds !== config.pollIntervalSeconds ||
       previous.queueRegion !== config.queueRegion ||
-      previous.topics.join() !== config.topics.join() ||
+      (previous.topics ?? []).join() !== (config.topics ?? []).join() ||
       JSON.stringify(previous.capabilityLimits) !== JSON.stringify(config.capabilityLimits) ||
       previous.enabledCapabilities.join() !== config.enabledCapabilities.join()
     ) {
@@ -393,7 +394,9 @@ export class AgentDaemon implements DrainableDaemon {
   pollableTopics(): string[] {
     const config = this.config;
     if (!config) return [];
-    const topics = config.topics.filter((topic) => this.topicCapability(topic) !== undefined);
+    const topics = (config.topics ?? []).filter(
+      (topic) => this.topicCapability(topic) !== undefined,
+    );
     return [
       ...topics.filter((topic) => topic.includes("-agent-")),
       ...topics.filter((topic) => !topic.includes("-agent-")),
@@ -418,8 +421,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (!organizationId) return undefined;
     return this.pollableCapabilities().find(
       (name) =>
-        topic === capabilityTopic(name, organizationId) ||
-        topic.startsWith(agentTopic(name, "")),
+        topic === capabilityTopic(name, organizationId) || topic.startsWith(agentTopic(name, "")),
     );
   }
 
@@ -510,7 +512,7 @@ export class AgentDaemon implements DrainableDaemon {
         const capability = this.topicCapability(topic);
         if (!capability || !this.takeCapabilitySlot(capability)) continue;
         try {
-          const result = await this.receiver(config.queueRegion).receive(
+          const result = await this.receiver(config.queueRegion ?? "").receive(
             topic,
             QUEUE_CONSUMER_GROUP,
             (message, metadata) => this.track(this.handleMessage(message, metadata)),
@@ -530,7 +532,8 @@ export class AgentDaemon implements DrainableDaemon {
           this.releaseCapabilitySlot(capability);
         }
       }
-      if (!received) await this.sleep(config.pollIntervalSeconds * 1000);
+      if (!received)
+        await this.sleep((config.pollIntervalSeconds ?? LEGACY_POLL_INTERVAL_SECONDS) * 1000);
     }
   }
 

@@ -20,9 +20,14 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import type { HeartbeatResponse, JobOutcomeResponse, JobStartResponse } from "@omniralph/shared";
+import {
+  JOB_LEASE_SECONDS,
+  type HeartbeatResponse,
+  type JobOutcomeResponse,
+  type JobStartResponse,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -943,7 +948,13 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const takenOver = await newJob();
       await startAs(takenOver, accessToken);
       await startAs(takenOver, other.accessToken);
+      const stale = new Date(Date.now() - 60_000);
+      await db
+        .update(jobs)
+        .set({ leaseExpiresAt: stale })
+        .where(inArray(jobs.id, [running, canceled, takenOver]));
 
+      const before = Date.now();
       const res = await heartbeat(
         agentRequest("heartbeat", accessToken, {
           body: {
@@ -958,13 +969,14 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const body = (await res.json()) as HeartbeatResponse;
       expect(body).toMatchObject({
         maxConcurrency: 2,
-        pollIntervalSeconds: 7,
         enabledCapabilities: ["review"],
         pinnedRepoIds: [repositoryId],
         organizationId: orgId,
-        topics: [`review-jobs-agent-${agentId}`, reviewTopic(), `system-jobs-agent-${agentId}`],
-        queueRegion: "iad1",
       });
+      // Legacy fields old agents require: no topics, so they stop polling.
+      expect(body.pollIntervalSeconds).toBe(5);
+      expect(body.topics).toEqual([]);
+      expect(body.queueRegion).toBe("");
       expect(body.cancelJobIds.sort()).toEqual([canceled, takenOver].sort());
       expect(body.jobTokens.map((t) => [t.jobId, t.expiresIn])).toEqual([[running, 900]]);
 
@@ -975,6 +987,19 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         "credentials:read",
       );
       expect(principal).toMatchObject({ jobId: running, agentId });
+
+      // Only the job the agent keeps gets its lease renewed.
+      const leases = new Map(
+        (
+          await db
+            .select({ id: jobs.id, leaseExpiresAt: jobs.leaseExpiresAt })
+            .from(jobs)
+            .where(inArray(jobs.id, [running, canceled, takenOver]))
+        ).map((j) => [j.id, j.leaseExpiresAt?.getTime() ?? null]),
+      );
+      expect(leases.get(running)).toBeGreaterThanOrEqual(before + JOB_LEASE_SECONDS * 1000);
+      expect(leases.get(takenOver)).toBe(stale.getTime());
+      expect(leases.get(canceled)).not.toBeGreaterThan(before);
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(agent).toMatchObject({
@@ -1246,7 +1271,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       ).toHaveLength(0);
     });
 
-    it("gives agents only their organization's topics and refuses the other's in the proxy", async () => {
+    it("gives agents their own organization and refuses the other's topics in the proxy", async () => {
       const ours = await newAgent();
       const theirs = await otherAgent();
       const beat = async (accessToken: string) => {
@@ -1259,12 +1284,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       };
       const ourConfig = await beat(ours.accessToken);
       expect(ourConfig.organizationId).toBe(orgId);
-      expect(ourConfig.topics).toContain(reviewTopic());
-      expect(ourConfig.topics).not.toContain(`review-jobs-org-${otherOrgId}`);
       const theirConfig = await beat(theirs.accessToken);
       expect(theirConfig.organizationId).toBe(otherOrgId);
-      expect(theirConfig.topics).toContain(`review-jobs-org-${otherOrgId}`);
-      expect(theirConfig.topics).not.toContain(reviewTopic());
 
       const base = "http://localhost/api/agent/queue/iad1/api/v3/topic";
       const proxied = (url: string, accessToken: string, method = "POST") =>

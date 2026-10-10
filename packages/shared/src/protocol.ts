@@ -222,10 +222,17 @@ export const JobMessageDelivery = z.object({
 });
 export type JobMessageDelivery = z.infer<typeof JobMessageDelivery>;
 
+/** `pollIntervalSeconds` sent to old (Vercel Queues) agents, which require it. */
+export const LEGACY_POLL_INTERVAL_SECONDS = 5;
+
 /** Central configuration, returned on every heartbeat. */
 export const HeartbeatResponse = z.object({
   maxConcurrency: z.int().min(1),
-  pollIntervalSeconds: z.int().min(1),
+  /**
+   * @deprecated Agents claim jobs through `POST /api/agent/claim`. Always
+   * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
+   */
+  pollIntervalSeconds: z.int().min(1).optional(),
   enabledCapabilities: z.array(capabilityName),
   /**
    * Effective per-capability concurrency limits of the enabled capabilities.
@@ -236,10 +243,13 @@ export const HeartbeatResponse = z.object({
   pinnedRepoIds: z.array(z.uuid()),
   /** The agent's organization: its capability topics are that organization's. */
   organizationId: z.uuid(),
-  /** Topics to poll, in consumer group `QUEUE_CONSUMER_GROUP`. */
-  topics: z.array(z.string()),
-  /** Vercel Queues region the topics live in (the proxy's `{region}` path segment). */
-  queueRegion: z.string(),
+  /**
+   * @deprecated Vercel Queues topics old agents poll. Always empty, so old agents
+   * stop polling; agents claim jobs through `POST /api/agent/claim`.
+   */
+  topics: z.array(z.string()).optional(),
+  /** @deprecated Vercel Queues region of `topics`. Always `""`. */
+  queueRegion: z.string().optional(),
   /** Running jobs the agent must stop (canceled, or no longer its job). */
   cancelJobIds: z.array(z.uuid()),
   /** New job tokens for the agent's still-running jobs. */
