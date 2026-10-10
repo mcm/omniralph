@@ -19,6 +19,9 @@ Linear connection) and don't change anything in Linear; see
 [chat.md › Ralph from chat](chat.md#ralph-from-chat). Linear runs behave as described here, and
 the chat bot can also report on them and send them guidance.
 
+The `triage` capability uses the same app to rewrite rough issues as PRDs ralph can build: see
+[Triage](#triage).
+
 Coming from cyralph? [cutover-from-cyralph.md](cutover-from-cyralph.md) maps its `config.json` to
 the settings below and lists the steps to switch over.
 
@@ -374,13 +377,125 @@ was kept as guidance), the run's guidance, its progress log and its jobs. **Anal
 has a Ralph section: runs started, ralph tokens per day next to reviews, runs per day by status
 and story outcomes per day and in total (first attempt, after retries, blocked, exhausted).
 
+## Triage
+
+The `triage` capability turns a rough Linear issue into something ralph can build, without a
+person in the loop: it does what the `/linear-prd triage` skill does interactively. It reads the
+issue (and, read-only, the repository it routes to), rewrites it as a PRD in the format ralph
+executes, splits large work into sub-issues and lists whatever it couldn't decide as open
+questions. It never writes code, branches, commits or PRs/MRs.
+
+**Setup** (once, on top of steps 1–3 above):
+
+- Enable the `triage` capability on an agent under **Agents › <agent>** (**Enabled
+  capabilities**; it applies with the next heartbeat). Triage jobs (`triage.run`) wait in the
+  queue until an agent has it.
+- For the label trigger, create a label named `ralph:triage` in the Linear workspace (a
+  workspace label, or one on each team that should use it). The app's **Issues** webhook events
+  (step 1) deliver the label changes.
+
+### Starting triage
+
+- **Mention.** @mention the app with `/triage` in an issue's comment, e.g. `@omniralph /triage`
+  (the rest of the comment is passed along like a reply). A mention without `/triage` is a ralph
+  request, as before.
+- **Label.** Add the `ralph:triage` label to an issue (the name matches ignoring case). The control
+  panel opens an agent session on the issue itself, so the label trigger gets the same activities
+  and reply handling as a mention. The label is removed when triage finishes (or fails, is stopped
+  or can't start), so adding it again triages again.
+
+One triage runs per issue at a time: the label on an issue that is being triaged does nothing,
+and a mention or reply from another session gets "already being triaged in another session". Triage reports in the session like
+ralph does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
+final response with what changed (outcome, size, structure, sub-issues created or updated, the
+status set and the open questions).
+
+### Repository and session
+
+The issue is routed with ralph's rules ([4. Configure routing](#4-configure-routing): `[repo=…]`
+tag, labels, project, team; only ralph-enabled repositories). With a repository, the agent checks
+out its default branch and the PRD's quality gates and file paths come from the source (CI config
+first, and the repository's `LINEAR.md` if it has one). Without one, triage still runs from Linear
+alone and adds an open question asking which repository the issue belongs in; it never asks the
+"Which repository?" question ralph does.
+
+The session is read-only, like a review: only `Read`, `Grep` and `Glob` inside the checkout, no
+shell, no writes, no network, no project settings or hooks, and no Linear token (the agent returns
+a typed result; the control panel makes every change in Linear). It sees the issue, its comments,
+its sub-issues (with their states and priorities) and blockers.
+
+### What it writes
+
+The issue's title and description are rewritten as a PRD following the `linear-prd` methodology
+(Introduction, Goals, Quality Gates, Non-Goals, Design and Technical Considerations, Success
+Metrics) with a t-shirt size, then:
+
+| Size | Result |
+| -- | -- |
+| XS, S, M | A single issue: the description carries the user story and its acceptance criteria. |
+| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the repository's first **Manual label**, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so ralph builds the epic as `children` without rewriting it. |
+
+An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
+again to reformat them.
+
+**Reformatting.** An issue that is already triaged but not in ralph's format (an epic with
+sub-issues, or a PRD with the wrong sections) is reformatted in place:
+
+- The parent's title and description are rewritten.
+- Sub-issues in **Backlog** or **Todo** get their title, body and priority rewritten (only what
+  changed) and missing "blocks" relations between siblings added; existing relations are kept.
+- Sub-issues in any other state, and updates that don't name one of the issue's sub-issues, are
+  ignored and listed in the response.
+- An epic without a sub-issue whose title starts with "Validate" gets a `Validate functional
+  requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
+- Triage never cancels, deletes, merges or re-parents sub-issues.
+
+An issue already in the right format is left as it is (`unchanged`); only its open questions are
+updated.
+
+**The in-progress/done guard.** Before triage starts and again before it writes anything, the
+control panel loads the issue and its sub-issues. If the issue or any sub-issue is in a `started`
+(In Progress, In Review) or `completed` (Done) state, triage changes nothing in Linear and the
+response names those issues. Canceled sub-issues don't count. Edit the PRD by hand, or move them
+back to Backlog or Todo and triage again.
+
+### Open questions and status
+
+Every ambiguity triage can't resolve from the issue, its comments, its sub-issues and the source
+becomes an open question instead of a guess. They go in a `## Open Questions` section at the very
+end of the description, as a numbered list (never checkboxes, so ralph doesn't read them as
+acceptance criteria). The section is left out when there are none and removed once all of them
+are answered.
+
+| Open questions | Status set |
+| -- | -- |
+| None | **Todo** (the team's first `unstarted` state): ready to delegate to ralph. |
+| Some | **Backlog** (the first `backlog` state). The control panel also comments on the issue, @mentioning its creator, with the list. |
+
+### Replying to continue
+
+Reply in the triage session to answer the open questions (or add context): triage runs again
+with your reply and its previous result, folds the answers into the PRD, drops the questions they
+answer and sets the status again. A reply while triage is still running is queued and handled when
+the current job ends. `stop` (or Linear's stop button) stops a running triage and cancels its job.
+Editing the description yourself and triaging again works too.
+
+### Ralph refuses issues with open questions
+
+Ralph doesn't start a delegated issue, or a `/ralph` mention, while the issue's description (or,
+for a sub-issue, its parent epic's) has a non-empty `## Open Questions` section: it answers in the
+session that the questions need answering first, and materializes nothing and changes no state.
+Answer them (a reply in the triage session, or by editing the description) and delegate again.
+Request-mode @mentions and runs that are already going aren't affected.
+
 ## Agents and concurrency
 
 Ralph jobs run on agents with the `ralph` capability ([deploy-agent.md](deploy-agent.md#ralph)).
 An agent's **Concurrency per capability** caps how many of its slots ralph may take; by default
 that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
-reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent. Agents
-under pm2 update themselves to the version chosen on **Settings › Agents**
+reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent.
+Triage jobs run on agents with the `triage` capability; like reviews, they may take every slot by
+default, so lower its limit to keep slots free for other work. Agents under pm2 update themselves to the version chosen on **Settings › Agents**
 ([deploy-agent.md](deploy-agent.md#self-update-pm2)).
 
 ## Troubleshooting
@@ -408,5 +523,9 @@ under pm2 update themselves to the version chosen on **Settings › Agents**
   Linear refused the connected workspace's token (reconnect it under **Settings › Integrations**);
   `larger than 25 MB` files aren't downloaded; `skipped: more than 20 attachments` ones are
   downloaded by the run's next job.
+- **Triage never starts from the label.** The `ralph:triage` label doesn't exist in the workspace
+  (or under another name), or **Issues** webhook events are disabled. A triage that can't start
+  removes the label again; the session it opened says why.
+- **"Triaging …" but nothing happens.** No agent has the `triage` capability enabled.
 - **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is
   pinned to an agent that doesn't ([deploy-agent.md](deploy-agent.md#ralph)).
