@@ -261,7 +261,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       "standard",
     ]);
     await updateReviewProfile(db, otherId, "deep", {
-      model: "claude-haiku-4-5",
+      model: "claude-haiku-5-5",
       maxTokensPerReview: 1000,
       maxFiles: 1,
       allowRepoExploration: false,
@@ -273,7 +273,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       organizationId: otherId,
       id: "custom",
       name: "Custom",
-      model: "claude-haiku-4-5",
+      model: "claude-haiku-5-5",
       maxTokensPerReview: 1000,
       maxFiles: 1,
       allowRepoExploration: false,

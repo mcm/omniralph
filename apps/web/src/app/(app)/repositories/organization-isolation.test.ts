@@ -280,7 +280,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
   it("edits only the active organization's review profiles", async () => {
     state.userId = a.userId;
     const limits = {
-      model: "claude-haiku-4-5",
+      model: "claude-haiku-5-5",
       maxTokensPerReview: 12_345,
       maxFiles: 3,
       allowRepoExploration: false,

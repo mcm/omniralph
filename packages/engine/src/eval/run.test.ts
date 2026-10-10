@@ -221,7 +221,7 @@ describe("reports", { timeout: 30_000 }, () => {
 
     const markdown = renderMarkdown(report);
     expect(markdown).toContain("# Review eval: all");
-    expect(markdown).toContain("## quick (claude-haiku-4-5)");
+    expect(markdown).toContain("## quick (claude-haiku-5-5)");
     expect(markdown).toContain("| Precision | 50.0% | 75.0% | −25.0 pp |");
     expect(markdown).toContain("| Input tokens / case (mean) | 800 | 1,000 | −200 |");
     expect(markdown).toContain("| False positives on clean cases | 0 | 0 | ±0 |");
