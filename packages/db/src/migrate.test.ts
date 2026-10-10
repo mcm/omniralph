@@ -274,6 +274,63 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("targets per-agent topic jobs at their agent and leases running jobs (0052)", async () => {
+    await db.execute(sql`create database job_queue`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/job_queue");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0052_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        const { rows: agentRows } = await client.query<{ id: string }>(
+          `insert into agents (organization_id, name) values ($1, 'a') returning id`,
+          [org],
+        );
+        const agent = agentRows[0]!.id;
+        await client.query(
+          `insert into jobs (organization_id, capability, type, status, topic, dedupe_key) values
+             ($1, 'review', 'review.run', 'queued', 'review-jobs-agent-' || $2, 'pinned'),
+             ($1, 'system', 'repo.sync', 'running', 'system-jobs-agent-' || $2, 'sync'),
+             ($1, 'review', 'review.run', 'queued', 'review-jobs-org-' || $1, 'shared'),
+             ($1, 'review', 'review.run', 'completed', 'review-jobs-agent-' || $2, 'done')`,
+          [org, agent],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query(
+          `select dedupe_key, target_agent_id, lease_expires_at > now() + interval '100 seconds' as leased,
+                  available_at <= now() as available
+           from jobs order by dedupe_key`,
+        );
+        expect(rows).toEqual([
+          { dedupe_key: "done", target_agent_id: null, leased: null, available: true },
+          { dedupe_key: "pinned", target_agent_id: agent, leased: null, available: true },
+          { dedupe_key: "shared", target_agent_id: null, leased: null, available: true },
+          { dedupe_key: "sync", target_agent_id: agent, leased: true, available: true },
+        ]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

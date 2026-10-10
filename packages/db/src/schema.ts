@@ -1131,6 +1131,14 @@ export const jobs = pgTable(
       onDelete: "set null",
     }),
     agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** Only this agent may claim the job (a pinned repo's job, or `repo.sync`); null: any agent of the organization. */
+    targetAgentId: uuid("target_agent_id").references((): AnyPgColumn => agents.id, {
+      onDelete: "set null",
+    }),
+    /** When a `queued` job may be claimed (later than creation for a delayed retry). */
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When a `running` job's lease lapses: another agent may then claim it (crash takeover). */
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     /** Vercel Queues topic the job was published to. */
     topic: text("topic"),
     queueMessageId: text("queue_message_id"),
@@ -1161,6 +1169,13 @@ export const jobs = pgTable(
     index("jobs_agent_id_idx").on(t.agentId),
     index("jobs_ralph_run_id_idx").on(t.ralphRunId),
     index("jobs_organization_created_at_idx").on(t.organizationId, t.createdAt),
+    // The claim query: queued jobs that are available, and running jobs whose lease lapsed.
+    index("jobs_claim_queued_idx")
+      .on(t.organizationId, t.status, t.availableAt)
+      .where(sql`status = 'queued'`),
+    index("jobs_claim_lease_idx")
+      .on(t.organizationId, t.leaseExpiresAt)
+      .where(sql`status = 'running'`),
   ],
 );
 

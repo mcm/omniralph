@@ -19,6 +19,12 @@ export const MAX_JOB_DELIVERIES = 3;
 /** How often agents heartbeat. */
 export const HEARTBEAT_INTERVAL_SECONDS = 20;
 
+/**
+ * How long a claimed job's lease lasts (6 missed heartbeats): each heartbeat
+ * renews it, and once it lapses another agent may claim the job.
+ */
+export const JOB_LEASE_SECONDS = 120;
+
 /** Longest lease extension Vercel Queues accepts (`visibilityTimeoutSeconds`). */
 export const MAX_LEASE_SECONDS = 3600;
 

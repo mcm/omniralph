@@ -5,13 +5,21 @@
  * failure; `queued` jobs older than the queue retention become `expired`.
  * See `docs/adr/0001-job-dispatch.md`.
  */
-import { and, asc, count, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { agentRepoPins, agents, jobs, type AgentUpdateState } from "./schema.js";
 
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
+
+/**
+ * How long a claimed job's lease lasts; the agent's heartbeat renews it.
+ * Mirrors `JOB_LEASE_SECONDS` in `@omniralph/shared` (which this package doesn't depend on).
+ */
+export const JOB_LEASE_SECONDS = 120;
+
+const secondsAfter = (now: Date, seconds: number) => new Date(now.getTime() + seconds * 1000);
 
 export interface NewJobInput {
   /** Only this organization's agents receive the job (its repository's / run's organization). */
@@ -24,6 +32,8 @@ export interface NewJobInput {
   dedupeKey?: string | null;
   /** The ralph run a `ralph.*` job belongs to. */
   ralphRunId?: string | null;
+  /** Only this agent may claim the job; null: any agent of the organization. */
+  targetAgentId?: string | null;
 }
 
 /**
@@ -46,6 +56,7 @@ export async function insertJob(
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
         ralphRunId: input.ralphRunId ?? null,
+        targetAgentId: input.targetAgentId ?? null,
       })
       .onConflictDoNothing({
         target: jobs.dedupeKey,
@@ -241,11 +252,136 @@ export async function startJob(
         agentId: input.agentId,
         deliveryCount: sql`${jobs.deliveryCount} + 1`,
         startedAt: now,
+        leaseExpiresAt: secondsAfter(now, JOB_LEASE_SECONDS),
       })
       .where(eq(jobs.id, job.id))
       .returning();
     return { action: "run", job: started! };
   });
+}
+
+/** A candidate the claim settled instead of running; the caller runs its outcome handler. */
+export interface SettledJob {
+  /** `canceled`: cancellation was requested; `failed`: it reached `maxDeliveries`. */
+  outcome: "canceled" | "failed";
+  job: Job;
+}
+
+export interface ClaimJobResult {
+  /** The claimed job, or null when nothing is claimable. */
+  claim: { action: "run"; job: Job } | null;
+  settled: SettledJob[];
+}
+
+/**
+ * Claims the next job for an agent from the `jobs` table, in one transaction.
+ * Eligible: the agent's organization's jobs whose capability is in both
+ * `capabilities` (asked for) and `enabledCapabilities`, targeted at this
+ * agent or at none, that are `queued` with `available_at <= now` or `running`
+ * with a lapsed lease (the previous agent's results are then rejected). Jobs
+ * targeted at this agent come first, then the oldest. The claim sets
+ * `running`, the agent, `started_at` and the lease and increments
+ * `delivery_count`. Like `startJob`, a cancel-requested candidate is canceled
+ * and one at `maxDeliveries` is failed; both are returned in `settled` and
+ * the claim moves on to the next candidate.
+ */
+export async function claimJob(
+  db: Database,
+  input: {
+    agentId: string;
+    organizationId: string;
+    capabilities: readonly string[];
+    enabledCapabilities: readonly string[];
+    maxDeliveries: number;
+    leaseSeconds?: number;
+    now?: Date;
+  },
+): Promise<ClaimJobResult> {
+  const now = input.now ?? new Date();
+  const capabilities = input.capabilities.filter((c) => input.enabledCapabilities.includes(c));
+  const settled: SettledJob[] = [];
+  if (capabilities.length === 0) return { claim: null, settled };
+  return db.transaction(async (tx): Promise<ClaimJobResult> => {
+    for (;;) {
+      const [job] = await tx
+        .select()
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.organizationId, input.organizationId),
+            inArray(jobs.capability, capabilities),
+            or(isNull(jobs.targetAgentId), eq(jobs.targetAgentId, input.agentId)),
+            or(
+              and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
+              and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
+            ),
+          ),
+        )
+        // Targeted jobs (`target_agent_id is null` false) first.
+        .orderBy(sql`${jobs.targetAgentId} is null`, asc(jobs.createdAt), asc(jobs.id))
+        .limit(1)
+        .for("update", { skipLocked: true });
+      if (!job) return { claim: null, settled };
+
+      if (job.cancelRequested) {
+        const [canceled] = await tx
+          .update(jobs)
+          .set({ status: "canceled", leaseExpiresAt: null, finishedAt: now })
+          .where(eq(jobs.id, job.id))
+          .returning();
+        settled.push({ outcome: "canceled", job: canceled! });
+        continue;
+      }
+      if (job.deliveryCount >= input.maxDeliveries) {
+        const [failed] = await tx
+          .update(jobs)
+          .set({
+            status: "failed",
+            error: `Gave up after ${job.deliveryCount} deliveries`,
+            leaseExpiresAt: null,
+            finishedAt: now,
+          })
+          .where(eq(jobs.id, job.id))
+          .returning();
+        settled.push({ outcome: "failed", job: failed! });
+        continue;
+      }
+      const [claimed] = await tx
+        .update(jobs)
+        .set({
+          status: "running",
+          agentId: input.agentId,
+          deliveryCount: sql`${jobs.deliveryCount} + 1`,
+          startedAt: now,
+          leaseExpiresAt: secondsAfter(now, input.leaseSeconds ?? JOB_LEASE_SECONDS),
+        })
+        .where(eq(jobs.id, job.id))
+        .returning();
+      return { claim: { action: "run", job: claimed! }, settled };
+    }
+  });
+}
+
+/**
+ * Extends the lease of the given jobs that are `running` on `agentId` (others
+ * are left alone). Returns the IDs whose lease was renewed.
+ */
+export async function renewJobLeases(
+  db: Database,
+  agentId: string,
+  jobIds: readonly string[],
+  now: Date = new Date(),
+  leaseSeconds: number = JOB_LEASE_SECONDS,
+): Promise<string[]> {
+  if (jobIds.length === 0) return [];
+  const rows = await db
+    .update(jobs)
+    .set({ leaseExpiresAt: secondsAfter(now, leaseSeconds) })
+    .where(
+      and(inArray(jobs.id, [...jobIds]), eq(jobs.status, "running"), eq(jobs.agentId, agentId)),
+    )
+    .returning({ id: jobs.id });
+  return rows.map((r) => r.id);
 }
 
 export type FinishJobResult =
@@ -293,7 +429,7 @@ export async function completeJob(
 /**
  * Records a failed delivery. Non-retryable failures, and retryable ones on the
  * `maxDeliveries`-th delivery, fail the job; other retryable failures put it
- * back to `queued` for the queue to redeliver. A job canceled while running
+ * back to `queued`, claimable again after `retryAfterSeconds`. A job canceled while running
  * ends `canceled`. Only the job's current agent may report it.
  */
 export async function failJob(
@@ -304,6 +440,8 @@ export async function failJob(
     retryable: boolean;
     error?: string | null;
     maxDeliveries: number;
+    /** How long a retried job waits before it may be claimed again (default 0). */
+    retryAfterSeconds?: number;
     now?: Date;
   },
 ): Promise<FinishJobResult> {
@@ -329,7 +467,13 @@ export async function failJob(
     }
     await tx
       .update(jobs)
-      .set({ status: "queued", agentId: null, error })
+      .set({
+        status: "queued",
+        agentId: null,
+        error,
+        availableAt: secondsAfter(now, input.retryAfterSeconds ?? 0),
+        leaseExpiresAt: null,
+      })
       .where(eq(jobs.id, job.id));
     return { status: "retry" };
   });
