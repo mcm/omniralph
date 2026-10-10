@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
+  ClaimRequest,
   HeartbeatResponse,
   JobFailure,
   JobOutcomeResponse,
@@ -21,26 +22,18 @@ import { AgentDaemon, JobCanceled, ShutdownAbort } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
-import type { MessageHandler, QueueReceiver, RetryDirective } from "./queue.js";
-import type { ReceiveBatchOptions, ReceiveResult } from "@vercel/queue";
 import type { RepoCache } from "./workspace/repoCache.js";
 import { SelfUpdater, readUpdateState } from "./update.js";
 
-const AGENT_ID = randomUUID();
 const ORG_ID = randomUUID();
-const REVIEW_TOPIC = `review-jobs-org-${ORG_ID}`;
-const RALPH_TOPIC = `ralph-jobs-org-${ORG_ID}`;
 
 function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   return {
     maxConcurrency: 1,
-    pollIntervalSeconds: 5,
     enabledCapabilities: ["review"],
     capabilityLimits: {},
     pinnedRepoIds: [],
     organizationId: ORG_ID,
-    topics: [REVIEW_TOPIC],
-    queueRegion: "iad1",
     cancelJobIds: [],
     jobTokens: [],
     jobMessages: [],
@@ -48,68 +41,6 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     updateRequest: null,
     ...overrides,
   };
-}
-
-interface Delivered {
-  topic: string;
-  message: unknown;
-}
-
-/** An in-memory stand-in for `PollingQueueClient.receive` with the SDK's ack/retry semantics. */
-class FakeQueue implements QueueReceiver {
-  private readonly topics = new Map<string, unknown[]>();
-  readonly acked: Delivered[] = [];
-  readonly rescheduled: (Delivered & { directive: RetryDirective })[] = [];
-  readonly unacked: Delivered[] = [];
-  readonly receiveCalls: string[] = [];
-  readonly regions: string[] = [];
-  inFlight = 0;
-  maxInFlight = 0;
-
-  push(topic: string, ...jobIds: string[]): void {
-    const queue = this.topics.get(topic) ?? [];
-    queue.push(...jobIds.map((jobId) => ({ jobId })));
-    this.topics.set(topic, queue);
-  }
-
-  async receive<T>(
-    topic: string,
-    _group: string,
-    handler: MessageHandler<T>,
-    options?: ReceiveBatchOptions,
-  ): Promise<ReceiveResult> {
-    this.receiveCalls.push(topic);
-    this.inFlight++;
-    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
-    try {
-      const message = this.topics.get(topic)?.shift();
-      if (message === undefined) return { ok: false, reason: "empty" };
-      const metadata = {
-        messageId: randomUUID(),
-        deliveryCount: 1,
-        createdAt: new Date(),
-        expiresAt: new Date(),
-        topicName: topic,
-        consumerGroup: "agents",
-        region: "iad1",
-      };
-      try {
-        await handler(message as T, metadata);
-        this.acked.push({ topic, message });
-        return { ok: true };
-      } catch (error) {
-        const directive = options?.retry?.(error, metadata);
-        if (directive) {
-          this.rescheduled.push({ topic, message, directive });
-          return { ok: true };
-        }
-        this.unacked.push({ topic, message });
-        throw error;
-      }
-    } finally {
-      this.inFlight--;
-    }
-  }
 }
 
 function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
@@ -124,15 +55,75 @@ function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
   };
 }
 
-function fakeApi(config: HeartbeatResponse = centralConfig()) {
+function runResponse(j: JobPayload): JobStartResponse {
+  return {
+    action: "run",
+    job: j,
+    jobToken: { jobId: j.id, token: `job-token-${j.id}`, expiresIn: 900 },
+  };
+}
+
+/**
+ * An in-memory stand-in for `POST /api/agent/claim`: hands out the first
+ * queued job of a requested capability, else holds the claim until a job is
+ * pushed, the claim is aborted or 50s pass (null).
+ */
+class FakeClaims {
+  private readonly jobs: JobPayload[] = [];
+  private readonly waiting = new Set<() => void>();
+  /** Capabilities of every claim, in order. */
+  readonly calls: string[][] = [];
+  /** Capabilities of every aborted claim. */
+  readonly aborted: string[][] = [];
+  inFlight = 0;
+  maxInFlight = 0;
+
+  push(...jobs: JobPayload[]): void {
+    this.jobs.push(...jobs);
+    for (const wake of [...this.waiting]) wake();
+  }
+
+  readonly claim = async (
+    { capabilities }: ClaimRequest,
+    signal?: AbortSignal,
+  ): Promise<JobStartResponse | null> => {
+    this.calls.push(capabilities);
+    this.inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      for (;;) {
+        const index = this.jobs.findIndex((j) => capabilities.includes(j.capability));
+        if (index >= 0) return runResponse(this.jobs.splice(index, 1)[0]!);
+        const outcome = await new Promise<"pushed" | "timeout">((resolve, reject) => {
+          const finish = (settle: () => void) => {
+            clearTimeout(timer);
+            this.waiting.delete(onPush);
+            signal?.removeEventListener("abort", onAbort);
+            settle();
+          };
+          const onPush = () => finish(() => resolve("pushed"));
+          const onAbort = () => {
+            this.aborted.push(capabilities);
+            finish(() => reject(signal!.reason));
+          };
+          const timer = setTimeout(() => finish(() => resolve("timeout")), 50_000);
+          this.waiting.add(onPush);
+          if (signal?.aborted) onAbort();
+          else signal?.addEventListener("abort", onAbort);
+        });
+        if (outcome === "timeout") return null;
+      }
+    } finally {
+      this.inFlight--;
+    }
+  };
+}
+
+function fakeApi(claims: FakeClaims, config: HeartbeatResponse = centralConfig()) {
   const state = { config };
   const api = {
     heartbeat: vi.fn(async () => state.config),
-    startJob: vi.fn(async (id: string): Promise<JobStartResponse> => ({
-      action: "run",
-      job: job(id),
-      jobToken: { jobId: id, token: `job-token-${id}`, expiresIn: 900 },
-    })),
+    claim: vi.fn(claims.claim),
     submitResult: vi.fn(async (): Promise<JobOutcomeResponse> => ({ status: "completed" })),
     submitFailure: vi.fn(async (_id: string, body: JobFailure): Promise<JobOutcomeResponse> =>
       body.retryable
@@ -174,8 +165,8 @@ function setup(options: {
   repos?: RepoCache;
   updater?: SelfUpdater;
 }) {
-  const { api, state } = fakeApi(options.config);
-  const queue = new FakeQueue();
+  const claims = new FakeClaims();
+  const { api, state } = fakeApi(claims, options.config);
   const tokens = { refresh: vi.fn(async () => "access") };
   const daemon = new AgentDaemon({
     server: "https://omniralph.example",
@@ -187,15 +178,11 @@ function setup(options: {
     registry: new CapabilityRegistry(
       options.capabilities ?? [capability(options.run ?? (async () => ({ ok: true })))],
     ),
-    queue: (region) => {
-      queue.regions.push(region);
-      return queue;
-    },
     logger: silentLogger(),
     reportRetryDelayMs: 10,
     updater: options.updater,
   });
-  return { api, state, queue, tokens, daemon };
+  return { api, state, claims, tokens, daemon };
 }
 
 /** Lets pending promises and zero-delay timers run. */
@@ -234,14 +221,14 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("does not poll before the first successful heartbeat", async () => {
-    const { api, queue, daemon } = setup({});
+  it("does not claim before the first successful heartbeat", async () => {
+    const { api, claims, daemon } = setup({});
     api.heartbeat.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
     void daemon.run();
     await settle();
-    expect(queue.receiveCalls).toEqual([]);
+    expect(claims.calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(queue.receiveCalls).toEqual([REVIEW_TOPIC]);
+    expect(claims.calls).toEqual([["review"]]);
     await daemon.shutdown();
   });
 
@@ -254,177 +241,162 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("runs a job: start, run with the job token, result, then acknowledge", async () => {
+  it("runs a claimed job with the job token, reports the result and claims again at once", async () => {
     const id = randomUUID();
     const seen: { jobToken?: string; workspaceRoot?: string } = {};
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       run: async (j, ctx) => {
         seen.jobToken = ctx.jobToken();
         seen.workspaceRoot = ctx.workspaceRoot;
         return { findings: [], jobId: j.id };
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
-    expect(api.startJob).toHaveBeenCalledWith(id);
+    expect(api.claim).toHaveBeenCalledWith({ capabilities: ["review"] }, expect.any(AbortSignal));
     expect(seen).toEqual({ jobToken: `job-token-${id}`, workspaceRoot: "/tmp/omniralph-test" });
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { findings: [], jobId: id } });
-    expect(queue.acked).toEqual([{ topic: REVIEW_TOPIC, message: { jobId: id } }]);
-    expect(queue.regions).toEqual(["iad1"]);
+    expect(claims.calls).toEqual([["review"], ["review"]]);
+    expect(claims.inFlight).toBe(1);
     await daemon.shutdown();
   });
 
-  it("acknowledges skipped jobs without running them", async () => {
+  it("claims again as soon as an empty claim returns", async () => {
+    const { claims, daemon } = setup({});
+    void daemon.run();
+    await settle();
+    expect(claims.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(49_999);
+    expect(claims.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(claims.calls).toHaveLength(2);
+    await daemon.shutdown();
+  });
+
+  it("backs off on claim errors (doubling up to 30s) and resets after a successful claim", async () => {
+    const { api, claims, tokens, daemon } = setup({});
+    api.claim.mockRejectedValue(new ApiError(503, undefined, "down"));
+    void daemon.run();
+    await settle();
+    expect(api.claim).toHaveBeenCalledTimes(1);
+    for (const [i, delay] of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000].entries()) {
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(api.claim).toHaveBeenCalledTimes(i + 1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(api.claim).toHaveBeenCalledTimes(i + 2);
+    }
+
+    // A 401 also asks for a fresh access token.
+    api.claim.mockRejectedValueOnce(new ApiError(401, "unauthorized", "401"));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(tokens.refresh).toHaveBeenCalledTimes(1);
+
+    api.claim.mockImplementation(claims.claim);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const calls = api.claim.mock.calls.length;
+    // The empty claim returns after 50s; the next one fails and waits only 1s.
+    api.claim.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(api.claim).toHaveBeenCalledTimes(calls + 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(api.claim).toHaveBeenCalledTimes(calls + 2);
+    await daemon.shutdown();
+  });
+
+  it("only reports a retryable failure: no acknowledgement, lease or redelivery handling", async () => {
     const id = randomUUID();
-    const run = vi.fn(async () => ({}));
-    const { api, queue, daemon } = setup({ run });
-    api.startJob.mockResolvedValueOnce({ action: "skip", reason: "canceled" });
-    queue.push(REVIEW_TOPIC, id);
-    void daemon.run();
-    await settle();
-    expect(run).not.toHaveBeenCalled();
-    expect(api.submitResult).not.toHaveBeenCalled();
-    expect(api.submitFailure).not.toHaveBeenCalled();
-    expect(queue.acked).toHaveLength(1);
-    await daemon.shutdown();
-  });
-
-  it("acknowledges malformed messages without calling the control panel", async () => {
-    const { api, queue, daemon } = setup({});
-    queue.push(REVIEW_TOPIC, "not-a-uuid");
-    void daemon.run();
-    await settle();
-    expect(api.startJob).not.toHaveBeenCalled();
-    expect(queue.acked).toHaveLength(1);
-    await daemon.shutdown();
-  });
-
-  it("reschedules a message whose start call failed instead of acknowledging it", async () => {
-    const { api, queue, daemon } = setup({});
-    api.startJob.mockRejectedValueOnce(new ApiError(502, undefined, "bad gateway"));
-    queue.push(REVIEW_TOPIC, randomUUID());
-    void daemon.run();
-    await settle();
-    expect(queue.acked).toEqual([]);
-    expect(queue.rescheduled[0]?.directive).toEqual({ afterSeconds: 30 });
-    await daemon.shutdown();
-  });
-
-  it("reports a retryable failure and leaves the message unacknowledged until retryAfterSeconds", async () => {
-    const id = randomUUID();
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       run: async () => {
         throw new RetryableJobError("rate limited", 120);
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
+    expect(api.submitFailure).toHaveBeenCalledTimes(1);
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: true,
       error: "rate limited",
       retryAfterSeconds: 120,
     });
-    expect(queue.acked).toEqual([]);
-    expect(queue.rescheduled).toEqual([
-      { topic: REVIEW_TOPIC, message: { jobId: id }, directive: { afterSeconds: 120 } },
+    expect(api.submitResult).not.toHaveBeenCalled();
+    // Nothing else is sent for the job: the next heartbeat and claim don't mention it.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ runningJobIds: [], freeSlots: 1 }),
+    );
+    expect(api.claim.mock.calls.map(([body]) => body)).toEqual([
+      { capabilities: ["review"] },
+      { capabilities: ["review"] },
     ]);
+    expect(daemon.status().runningJobIds).toEqual([]);
     await daemon.shutdown();
   });
 
-  it("acknowledges a retryable failure the control panel turns into a final failure", async () => {
-    const { api, queue, daemon } = setup({
-      run: async () => {
-        throw new RetryableJobError("rate limited");
-      },
-    });
-    api.submitFailure.mockResolvedValueOnce({ status: "failed" });
-    queue.push(REVIEW_TOPIC, randomUUID());
-    void daemon.run();
-    await settle();
-    expect(api.submitFailure).toHaveBeenCalledWith(expect.any(String), {
-      retryable: true,
-      error: "rate limited",
-    });
-    expect(queue.acked).toHaveLength(1);
-    expect(queue.rescheduled).toEqual([]);
-    await daemon.shutdown();
-  });
-
-  it("reports other errors as non-retryable failures and acknowledges", async () => {
+  it("reports other errors as non-retryable failures", async () => {
     const id = randomUUID();
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       run: async () => {
         throw new Error("boom");
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
     expect(api.submitFailure).toHaveBeenCalledWith(id, { retryable: false, error: "boom" });
-    expect(queue.acked).toHaveLength(1);
-    expect(queue.rescheduled).toEqual([]);
     await daemon.shutdown();
   });
 
-  it("only polls its own organization's capability topics", async () => {
-    const otherOrg = randomUUID();
-    const { daemon } = setup({
+  it("ignores the deprecated topics, queueRegion and pollIntervalSeconds", async () => {
+    const id = randomUUID();
+    const { api, claims, daemon } = setup({
       config: centralConfig({
-        topics: [`review-jobs-org-${otherOrg}`, "review-jobs", REVIEW_TOPIC],
+        topics: [`review-jobs-org-${randomUUID()}`],
+        queueRegion: "iad1",
+        pollIntervalSeconds: 5,
       }),
     });
+    claims.push(job(id));
     void daemon.run();
     await settle();
-    expect(daemon.pollableTopics()).toEqual([REVIEW_TOPIC]);
+    expect(api.submitResult).toHaveBeenCalledWith(id, { result: { ok: true } });
+    // Long-polls instead of waiting pollIntervalSeconds.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(claims.calls).toEqual([["review"], ["review"]]);
     await daemon.shutdown();
   });
 
-  it("polls ralph topics only once ralph is enabled, and runs its jobs", async () => {
+  it("claims ralph jobs only once ralph is enabled, and runs them", async () => {
     const id = randomUUID();
-    const ralphTopic = `ralph-jobs-agent-${AGENT_ID}`;
-    const topics = [REVIEW_TOPIC, RALPH_TOPIC, ralphTopic];
-    const { api, state, queue, daemon } = setup({
+    const { api, state, claims, daemon } = setup({
       capabilities: [systemCapability, capability(async () => ({})), ralphCapability],
-      config: centralConfig({ enabledCapabilities: ["review"], topics }),
+      config: centralConfig({ enabledCapabilities: ["review"] }),
     });
-    api.startJob.mockResolvedValueOnce({
-      action: "run",
-      job: job(id, { capability: "ralph", type: "ralph.prepare" }),
-      jobToken: { jobId: id, token: "t", expiresIn: 900 },
-    });
+    claims.push(job(id, { capability: "ralph", type: "ralph.prepare" }));
     void daemon.run();
     await settle();
-    expect(daemon.pollableTopics()).toEqual([REVIEW_TOPIC]);
-    expect(queue.receiveCalls).not.toContain(RALPH_TOPIC);
-    expect(queue.receiveCalls).not.toContain(ralphTopic);
+    expect(claims.calls).toEqual([["system", "review"]]);
+    expect(api.submitFailure).not.toHaveBeenCalled();
 
-    state.config = centralConfig({ enabledCapabilities: ["review", "ralph"], topics });
+    state.config = centralConfig({ enabledCapabilities: ["review", "ralph"] });
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(daemon.pollableTopics()).toEqual([ralphTopic, REVIEW_TOPIC, RALPH_TOPIC]);
-    queue.push(ralphTopic, id);
-    await vi.advanceTimersByTimeAsync(5_000);
     await settle();
-    expect(queue.receiveCalls).toContain(ralphTopic);
+    // The claim without ralph was aborted and replaced.
+    expect(claims.aborted).toEqual([["system", "review"]]);
+    expect(claims.calls[1]).toEqual(["system", "review", "ralph"]);
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
       error: "invalid ralph.prepare payload",
     });
-    expect(queue.rescheduled).toEqual([]);
     await daemon.shutdown();
   });
 
   it("reports an unknown job type as a non-retryable failure", async () => {
     const id = randomUUID();
     const run = vi.fn(async () => ({}));
-    const { api, queue, daemon } = setup({ run });
-    api.startJob.mockResolvedValueOnce({
-      action: "run",
-      job: job(id, { type: "review.frobnicate" }),
-      jobToken: { jobId: id, token: "t", expiresIn: 900 },
-    });
-    queue.push(REVIEW_TOPIC, id);
+    const { api, claims, daemon } = setup({ run });
+    claims.push(job(id, { type: "review.frobnicate" }));
     void daemon.run();
     await settle();
     expect(run).not.toHaveBeenCalled();
@@ -432,40 +404,38 @@ describe("AgentDaemon", () => {
       retryable: false,
       error: "unknown job type review/review.frobnicate",
     });
-    expect(queue.acked).toHaveLength(1);
     await daemon.shutdown();
   });
 
   it("drops the outcome when the job was taken over by another agent (409)", async () => {
-    const { api, queue, daemon } = setup({});
+    const { api, claims, daemon } = setup({});
     api.submitResult.mockRejectedValueOnce(new ApiError(409, "not_current_agent", "409"));
-    queue.push(REVIEW_TOPIC, randomUUID());
+    claims.push(job(randomUUID()));
     void daemon.run();
     await settle();
     expect(api.submitResult).toHaveBeenCalledTimes(1);
-    expect(queue.rescheduled).toEqual([]);
-    expect(queue.unacked).toEqual([]);
+    expect(claims.calls).toHaveLength(2);
     await daemon.shutdown();
   });
 
-  it("retries reporting, then leaves the message for redelivery", async () => {
-    const { api, queue, daemon } = setup({});
+  it("retries reporting, then gives up (the lease lapses) and goes on claiming", async () => {
+    const { api, claims, daemon } = setup({});
     api.submitResult.mockRejectedValue(new ApiError(503, undefined, "down"));
-    queue.push(REVIEW_TOPIC, randomUUID());
+    claims.push(job(randomUUID()));
     void daemon.run();
     await settle();
     await vi.advanceTimersByTimeAsync(100);
     expect(api.submitResult).toHaveBeenCalledTimes(3);
-    expect(queue.acked).toEqual([]);
-    expect(queue.unacked).toHaveLength(1);
+    expect(daemon.status().runningJobIds).toEqual([]);
+    expect(claims.inFlight).toBe(1);
     await daemon.shutdown();
   });
 
-  it("never runs more jobs or receives than maxConcurrency", async () => {
+  it("claims up to maxConcurrency jobs, one claim at a time", async () => {
     const gates = new Map<string, ReturnType<typeof deferred>>();
     let running = 0;
     let maxRunning = 0;
-    const { queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       config: centralConfig({ maxConcurrency: 2 }),
       run: async (j) => {
         running++;
@@ -478,15 +448,16 @@ describe("AgentDaemon", () => {
       },
     });
     const ids = Array.from({ length: 5 }, () => randomUUID());
-    queue.push(REVIEW_TOPIC, ...ids);
+    claims.push(...ids.map((id) => job(id)));
     void daemon.run();
     await settle();
     expect(running).toBe(2);
     expect(daemon.status().runningJobIds).toEqual(ids.slice(0, 2));
-
-    // Heartbeats while busy report no free slots and don't add pollers.
+    // Full: no claim in flight, and heartbeats while busy don't start one.
+    expect(claims.inFlight).toBe(0);
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(queue.maxInFlight).toBe(2);
+    expect(claims.calls).toHaveLength(2);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ freeSlots: 0 }));
 
     gates.get(ids[0]!)!.resolve();
     await settle();
@@ -498,13 +469,13 @@ describe("AgentDaemon", () => {
     }
     gates.get(ids[4]!)?.resolve();
     await settle();
-    expect(queue.acked).toHaveLength(5);
+    expect(api.submitResult).toHaveBeenCalledTimes(5);
     expect(maxRunning).toBe(2);
-    expect(queue.maxInFlight).toBe(2);
+    expect(claims.maxInFlight).toBe(1);
     await daemon.shutdown();
   });
 
-  /** Review and ralph capabilities whose jobs wait on gates; `startJob` maps ids to capabilities. */
+  /** Review and ralph capabilities whose jobs wait on gates. */
   function gatedCapabilities(config: HeartbeatResponse) {
     const gates = new Map<string, ReturnType<typeof deferred>>();
     const runningJobs: Record<string, string[]> = { review: [], ralph: [] };
@@ -527,43 +498,35 @@ describe("AgentDaemon", () => {
         capability(run("ralph"), { name: "ralph", jobTypes: ["ralph.story"] }),
       ],
     });
-    const ralphIds = new Set<string>();
-    env.api.startJob.mockImplementation(async (id: string) => ({
-      action: "run",
-      job: ralphIds.has(id) ? job(id, { capability: "ralph", type: "ralph.story" }) : job(id),
-      jobToken: { jobId: id, token: `job-token-${id}`, expiresIn: 900 },
-    }));
-    const pushRalph = (...ids: string[]) => {
-      for (const id of ids) ralphIds.add(id);
-      env.queue.push(RALPH_TOPIC, ...ids);
-    };
+    const pushRalph = (...ids: string[]) =>
+      env.claims.push(...ids.map((id) => job(id, { capability: "ralph", type: "ralph.story" })));
     return { ...env, gates, runningJobs, signals, pushRalph };
   }
 
   it("caps ralph jobs at their limit so a slot stays free for reviews", async () => {
-    const { api, queue, daemon, gates, runningJobs, pushRalph } = gatedCapabilities(
+    const { api, claims, daemon, gates, runningJobs, pushRalph } = gatedCapabilities(
       centralConfig({
         maxConcurrency: 2,
         enabledCapabilities: ["review", "ralph"],
         // No ralph limit sent: the default (maxConcurrency - 1) applies.
         capabilityLimits: { review: 2 },
-        topics: [REVIEW_TOPIC, RALPH_TOPIC],
       }),
     );
     const ralph = Array.from({ length: 3 }, () => randomUUID());
     pushRalph(...ralph);
     void daemon.run();
     await settle();
-    await vi.advanceTimersByTimeAsync(10_000);
     expect(daemon.capabilityLimit("ralph")).toBe(1);
     expect(runningJobs.ralph).toEqual([ralph[0]]);
     expect(daemon.freeSlots()).toBe(1);
-    await vi.advanceTimersByTimeAsync(10_000);
+    // Only reviews are claimed while ralph is at its limit.
+    expect(claims.calls).toEqual([["review", "ralph"], ["review"]]);
+    await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ freeSlots: 1 }));
 
     const review = randomUUID();
-    queue.push(REVIEW_TOPIC, review);
-    await vi.advanceTimersByTimeAsync(5_000);
+    claims.push(job(review));
+    await settle();
     expect(runningJobs.review).toEqual([review]);
     expect(runningJobs.ralph).toEqual([ralph[0]]);
     expect(daemon.freeSlots()).toBe(0);
@@ -571,38 +534,39 @@ describe("AgentDaemon", () => {
     // A finished review frees its slot, but ralph still has none.
     gates.get(review)!.resolve();
     await settle();
-    await vi.advanceTimersByTimeAsync(10_000);
     expect(runningJobs.ralph).toEqual([ralph[0]]);
+    expect(claims.calls.at(-1)).toEqual(["review"]);
     expect(daemon.freeSlots()).toBe(1);
 
+    // A finished ralph job aborts the review-only claim and claims ralph again.
     gates.get(ralph[0]!)!.resolve();
     await settle();
-    await vi.advanceTimersByTimeAsync(5_000);
     expect(runningJobs.ralph).toEqual([ralph[1]]);
-    expect(queue.maxInFlight).toBe(2);
+    expect(claims.aborted).toEqual([["review"]]);
     gates.get(ralph[1]!)!.resolve();
     await settle();
-    await vi.advanceTimersByTimeAsync(5_000);
     gates.get(ralph[2]!)!.resolve();
     await settle();
-    expect(queue.acked).toHaveLength(4);
+    expect(api.submitResult).toHaveBeenCalledTimes(4);
+    expect(claims.maxInFlight).toBe(1);
     await daemon.shutdown();
   });
 
-  it("keeps running jobs when a limit is lowered and receives again once under it", async () => {
+  it("keeps running jobs when a limit is lowered and aborts the claim when it's raised", async () => {
     const config = centralConfig({
       maxConcurrency: 3,
       enabledCapabilities: ["review", "ralph"],
       capabilityLimits: { review: 3, ralph: 2 },
-      topics: [REVIEW_TOPIC, RALPH_TOPIC],
     });
-    const { state, daemon, gates, runningJobs, signals, pushRalph } = gatedCapabilities(config);
-    const ralph = Array.from({ length: 4 }, () => randomUUID());
+    const { state, claims, daemon, gates, runningJobs, signals, pushRalph } =
+      gatedCapabilities(config);
+    const ralph = Array.from({ length: 3 }, () => randomUUID());
     pushRalph(...ralph);
     void daemon.run();
     await settle();
     expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
     expect(daemon.freeSlots()).toBe(1);
+    expect(claims.calls.at(-1)).toEqual(["review"]);
 
     state.config = { ...config, capabilityLimits: { review: 3, ralph: 1 } };
     await vi.advanceTimersByTimeAsync(20_000);
@@ -610,28 +574,32 @@ describe("AgentDaemon", () => {
     expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
     expect(signals.get(ralph[0]!)!.aborted).toBe(false);
     expect(signals.get(ralph[1]!)!.aborted).toBe(false);
-    // Over the limit: only non-ralph work could still start.
+    // Over the limit: only non-ralph work could still start, as the claim already asks.
     expect(daemon.freeSlots()).toBe(1);
+    expect(claims.aborted).toEqual([]);
 
     gates.get(ralph[0]!)!.resolve();
     await settle();
-    await vi.advanceTimersByTimeAsync(10_000);
     expect(runningJobs.ralph).toEqual([ralph[1]]);
+    expect(claims.aborted).toEqual([]);
 
-    gates.get(ralph[1]!)!.resolve();
+    // Raising the limit aborts the review-only claim; the new one gets ralph's job.
+    state.config = { ...config, capabilityLimits: { review: 3, ralph: 3 } };
+    await vi.advanceTimersByTimeAsync(20_000);
     await settle();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(runningJobs.ralph).toEqual([ralph[2]]);
+    expect(claims.aborted).toEqual([["review"]]);
+    expect(runningJobs.ralph).toEqual([ralph[1], ralph[2]]);
     for (const gate of gates.values()) gate.resolve();
+    await settle();
     await daemon.shutdown();
   });
 
-  it("applies central config from each heartbeat without restarting", async () => {
+  it("applies maxConcurrency from each heartbeat without restarting", async () => {
     const gates: ReturnType<typeof deferred>[] = [];
     let running = 0;
     let maxRunning = 0;
-    const { api, state, queue, daemon } = setup({
-      config: centralConfig({ maxConcurrency: 1, topics: [REVIEW_TOPIC] }),
+    const { api, state, claims, daemon } = setup({
+      config: centralConfig({ maxConcurrency: 1 }),
       run: async () => {
         running++;
         maxRunning = Math.max(maxRunning, running);
@@ -642,33 +610,22 @@ describe("AgentDaemon", () => {
         return {};
       },
     });
-    const pinnedTopic = `review-jobs-agent-${AGENT_ID}`;
-    queue.push(pinnedTopic, randomUUID(), randomUUID(), randomUUID());
+    claims.push(...Array.from({ length: 4 }, () => job(randomUUID())));
     void daemon.run();
     await settle();
-    // The pinned topic isn't in the config yet.
-    expect(queue.receiveCalls).toEqual([REVIEW_TOPIC]);
-    expect(running).toBe(0);
+    expect(running).toBe(1);
 
-    state.config = centralConfig({
-      maxConcurrency: 3,
-      pollIntervalSeconds: 2,
-      topics: [REVIEW_TOPIC, pinnedTopic, RALPH_TOPIC],
-    });
+    state.config = centralConfig({ maxConcurrency: 3 });
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
     expect(running).toBe(3);
     expect(api.heartbeat).toHaveBeenCalledTimes(2);
-    // Unregistered capabilities' topics are never polled; pinned topics come first.
-    expect(queue.receiveCalls).not.toContain(RALPH_TOPIC);
-    const firstPinned = queue.receiveCalls.indexOf(pinnedTopic);
-    expect(queue.receiveCalls.slice(firstPinned)).toEqual([pinnedTopic, pinnedTopic, pinnedTopic]);
 
-    // Lowering maxConcurrency retires surplus pollers once their jobs finish.
-    state.config = centralConfig({ maxConcurrency: 1, topics: [pinnedTopic] });
+    // Lowering maxConcurrency lets running jobs finish but takes no new ones until under it.
+    state.config = centralConfig({ maxConcurrency: 1 });
     await vi.advanceTimersByTimeAsync(20_000);
-    queue.push(pinnedTopic, randomUUID(), randomUUID());
-    for (const gate of gates.splice(0)) gate.resolve();
+    claims.push(job(randomUUID()));
+    gates.splice(0, 2).forEach((gate) => gate.resolve());
     await settle();
     expect(running).toBe(1);
     gates.splice(0).forEach((gate) => gate.resolve());
@@ -677,19 +634,21 @@ describe("AgentDaemon", () => {
     expect(maxRunning).toBe(3);
     gates.splice(0).forEach((gate) => gate.resolve());
     await settle();
-    expect(queue.acked).toHaveLength(5);
+    gates.splice(0).forEach((gate) => gate.resolve());
+    await settle();
+    expect(api.submitResult).toHaveBeenCalledTimes(5);
 
-    // Disabling the capability centrally stops polling.
-    state.config = centralConfig({ enabledCapabilities: [], topics: [] });
+    // Disabling the capability centrally stops claiming.
+    state.config = centralConfig({ enabledCapabilities: [] });
     await vi.advanceTimersByTimeAsync(20_000);
-    const calls = queue.receiveCalls.length;
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(queue.receiveCalls.length).toBe(calls);
+    const calls = claims.calls.length;
+    expect(claims.inFlight).toBe(0);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(claims.calls.length).toBe(calls);
     await daemon.shutdown();
   });
 
-  it("always polls its system topic and runs repo.sync through the repo cache with the job env", async () => {
-    const systemTopic = `system-jobs-agent-${AGENT_ID}`;
+  it("always claims system jobs and runs repo.sync through the repo cache with the job env", async () => {
     const repository = {
       provider: "gitlab" as const,
       fullPath: "group/app",
@@ -700,21 +659,17 @@ describe("AgentDaemon", () => {
       cloned: true,
       fetched: false,
     }));
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       capabilities: [systemCapability, capability(async () => ({}))],
       // Review is disabled centrally; system is built in.
-      config: centralConfig({ enabledCapabilities: [], topics: [systemTopic] }),
+      config: centralConfig({ enabledCapabilities: [] }),
       repos: { sync } as unknown as RepoCache,
     });
-    api.startJob.mockImplementation(async (id: string) => ({
-      action: "run",
-      job: job(id, { capability: "system", type: "repo.sync", payload: { repository } }),
-      jobToken: { jobId: id, token: `job-token-${id}`, expiresIn: 900 },
-    }));
     const id = randomUUID();
-    queue.push(systemTopic, id);
+    claims.push(job(id, { capability: "system", type: "repo.sync", payload: { repository } }));
     void daemon.run();
     await settle();
+    expect(claims.calls[0]).toEqual(["system"]);
     expect(sync).toHaveBeenCalledTimes(1);
     const [repo, options] = sync.mock.calls[0] as unknown as [unknown, { env: NodeJS.ProcessEnv }];
     expect(repo).toEqual(repository);
@@ -722,19 +677,6 @@ describe("AgentDaemon", () => {
     expect(api.submitResult).toHaveBeenCalledWith(id, {
       result: { repository: "gitlab/group/app", cloned: true, fetched: false },
     });
-    expect(queue.acked).toEqual([{ topic: systemTopic, message: { jobId: id } }]);
-    await daemon.shutdown();
-  });
-
-  it("waits pollIntervalSeconds between empty polls", async () => {
-    const { queue, daemon } = setup({ config: centralConfig({ pollIntervalSeconds: 7 }) });
-    void daemon.run();
-    await settle();
-    expect(queue.receiveCalls).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(6_999);
-    expect(queue.receiveCalls).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(queue.receiveCalls).toHaveLength(2);
     await daemon.shutdown();
   });
 
@@ -742,14 +684,14 @@ describe("AgentDaemon", () => {
     const id = randomUUID();
     const gate = deferred();
     let ctx: JobContext | undefined;
-    const { state, queue, daemon } = setup({
+    const { state, claims, daemon } = setup({
       run: async (_j, c) => {
         ctx = c;
         await gate.promise;
         return {};
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
     expect(ctx?.jobToken()).toBe(`job-token-${id}`);
@@ -769,7 +711,7 @@ describe("AgentDaemon", () => {
     const sessionOpen = deferred();
     const sessionEnd = deferred();
     const gate = deferred();
-    const { api, state, queue, daemon } = setup({
+    const { api, state, claims, daemon } = setup({
       run: async (_job, ctx) => {
         ctx.setMessageInjector?.((text) => {
           injected.push(text);
@@ -783,7 +725,7 @@ describe("AgentDaemon", () => {
         return {};
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
     await sessionOpen.promise;
@@ -844,14 +786,14 @@ describe("AgentDaemon", () => {
     const id = randomUUID();
     const messageId = randomUUID();
     const gate = deferred();
-    const { api, state, queue, daemon } = setup({
+    const { api, state, claims, daemon } = setup({
       run: async (_job, ctx) => {
         ctx.setMessageInjector?.(() => true);
         await gate.promise;
         return {};
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
     state.config = { ...state.config, jobMessages: [{ jobId: id, messageId, text: "hi" }] };
@@ -875,7 +817,7 @@ describe("AgentDaemon", () => {
   it("aborts a job listed in cancelJobIds and reports it canceled", async () => {
     const id = randomUUID();
     let signal: AbortSignal | undefined;
-    const { api, state, queue, daemon } = setup({
+    const { api, state, claims, daemon } = setup({
       run: (_j, ctx) =>
         new Promise((_resolve, reject) => {
           signal = ctx.signal;
@@ -883,7 +825,7 @@ describe("AgentDaemon", () => {
         }),
     });
     api.submitFailure.mockResolvedValueOnce({ status: "canceled" });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     void daemon.run();
     await settle();
     expect(signal?.aborted).toBe(false);
@@ -894,15 +836,14 @@ describe("AgentDaemon", () => {
     expect(signal?.aborted).toBe(true);
     expect(signal?.reason).toBeInstanceOf(JobCanceled);
     expect(api.submitFailure).toHaveBeenCalledWith(id, { retryable: false, error: "canceled" });
-    expect(queue.acked).toHaveLength(1);
     expect(daemon.status().runningJobIds).toEqual([]);
     await daemon.shutdown();
   });
 
-  it("on SIGTERM stops polling, aborts jobs and exits without acknowledging them", async () => {
+  it("on SIGTERM aborts the claim and the jobs, and exits without reporting them", async () => {
     const id = randomUUID();
     let signal: AbortSignal | undefined;
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       config: centralConfig({ maxConcurrency: 2 }),
       run: (_j, ctx) =>
         new Promise((_resolve, reject) => {
@@ -910,34 +851,35 @@ describe("AgentDaemon", () => {
           ctx.signal.addEventListener("abort", () => reject(new Error("aborted")));
         }),
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     const exit = daemon.run();
     await settle();
-    const polls = queue.receiveCalls.length;
+    expect(claims.inFlight).toBe(1);
+    const polls = claims.calls.length;
     const heartbeats = api.heartbeat.mock.calls.length;
 
     await daemon.shutdown();
     expect(await exit).toBe(0);
+    expect(claims.inFlight).toBe(0);
+    expect(claims.aborted).toEqual([["review"]]);
     expect(signal?.reason).toBeInstanceOf(ShutdownAbort);
     expect(api.submitFailure).not.toHaveBeenCalled();
     expect(api.submitResult).not.toHaveBeenCalled();
-    expect(queue.acked).toEqual([]);
-    expect(queue.unacked).toEqual([{ topic: REVIEW_TOPIC, message: { jobId: id } }]);
 
     await vi.advanceTimersByTimeAsync(120_000);
-    expect(queue.receiveCalls.length).toBe(polls);
+    expect(claims.calls.length).toBe(polls);
     expect(api.heartbeat.mock.calls.length).toBe(heartbeats);
   });
 
   it("on SIGTERM lets jobs finish within 60s and reports them", async () => {
     const id = randomUUID();
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       run: async () => {
         await new Promise((resolve) => setTimeout(resolve, 30_000));
         return { done: true };
       },
     });
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     const exit = daemon.run();
     await settle();
     let exited = false;
@@ -949,12 +891,11 @@ describe("AgentDaemon", () => {
     await shutdown;
     expect(await exit).toBe(0);
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { done: true } });
-    expect(queue.acked).toHaveLength(1);
   });
 
-  it("on SIGTERM gives up after 60s and leaves unfinished messages unacknowledged", async () => {
-    const { api, queue, daemon } = setup({ run: () => new Promise(() => {}) });
-    queue.push(REVIEW_TOPIC, randomUUID());
+  it("on SIGTERM gives up after 60s and leaves unfinished jobs unreported", async () => {
+    const { api, claims, daemon } = setup({ run: () => new Promise(() => {}) });
+    claims.push(job(randomUUID()));
     const exit = daemon.run();
     await settle();
     let exited = false;
@@ -964,40 +905,41 @@ describe("AgentDaemon", () => {
     expect(exited).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(await exit).toBe(0);
-    expect(queue.acked).toEqual([]);
     expect(api.submitResult).not.toHaveBeenCalled();
     expect(api.submitFailure).not.toHaveBeenCalled();
   });
 
-  it("releases messages received after shutdown began without starting them", async () => {
-    const { api, queue, daemon } = setup({});
+  it("doesn't start a job claimed as shutdown began", async () => {
+    const run = vi.fn(async () => ({}));
+    const { api, daemon } = setup({ run });
+    const claimed = deferred();
+    const id = randomUUID();
+    // A claim whose response was already on its way when the claim was aborted.
+    api.claim.mockImplementationOnce(async () => {
+      await claimed.promise;
+      return runResponse(job(id));
+    });
     void daemon.run();
     await settle();
     await daemon.shutdown();
-    // A receive that was already in flight delivers a message after the shutdown.
-    queue.push(REVIEW_TOPIC, randomUUID());
-    await queue
-      .receive(
-        REVIEW_TOPIC,
-        "agents",
-        (m, meta) =>
-          (daemon as unknown as { handleMessage: MessageHandler }).handleMessage(m, meta),
-        { retry: (e) => (e as { directive?: RetryDirective }).directive },
-      )
-      .catch(() => {});
-    expect(api.startJob).not.toHaveBeenCalled();
-    expect(queue.rescheduled[0]?.directive).toEqual({ afterSeconds: 0 });
+    claimed.resolve();
+    await settle();
+    expect(run).not.toHaveBeenCalled();
+    expect(api.submitResult).not.toHaveBeenCalled();
+    expect(api.submitFailure).not.toHaveBeenCalled();
+    expect(api.claim).toHaveBeenCalledTimes(1);
   });
 
   it("fail() stops everything and exits non-zero", async () => {
-    const { queue, daemon } = setup({});
+    const { claims, daemon } = setup({});
     const exit = daemon.run();
     await settle();
     daemon.fail(new Error("re-enrollment required"));
     expect(await exit).toBe(1);
-    const polls = queue.receiveCalls.length;
+    expect(claims.inFlight).toBe(0);
+    const polls = claims.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(queue.receiveCalls.length).toBe(polls);
+    expect(claims.calls.length).toBe(polls);
   });
 });
 
@@ -1027,7 +969,7 @@ describe("self-update", () => {
     const second = randomUUID();
     const gate = deferred();
     const installs: string[] = [];
-    const { api, queue, state, daemon } = setup({
+    const { api, claims, state, daemon } = setup({
       config: centralConfig({ maxConcurrency: 2 }),
       run: async (j) => {
         if (j.id === first) await gate.promise;
@@ -1035,7 +977,7 @@ describe("self-update", () => {
       },
       updater: updater(installs),
     });
-    queue.push(REVIEW_TOPIC, first);
+    claims.push(job(first));
     const exit = daemon.run();
     await settle();
     expect(daemon.status().runningJobIds).toEqual([first]);
@@ -1044,6 +986,9 @@ describe("self-update", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
     expect(daemon.status().draining).toBe(true);
+    // Draining aborted the in-flight claim.
+    expect(claims.inFlight).toBe(0);
+    expect(claims.aborted).toEqual([["review"]]);
     // The next heartbeat reports the drain.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(
@@ -1054,11 +999,11 @@ describe("self-update", () => {
       }),
     );
     // A job queued meanwhile isn't taken; heartbeats go on.
-    queue.push(REVIEW_TOPIC, second);
-    const polls = queue.receiveCalls.length;
+    claims.push(job(second));
+    const polls = claims.calls.length;
     await vi.advanceTimersByTimeAsync(60 * 60_000);
-    expect(queue.receiveCalls.length).toBe(polls);
-    expect(api.startJob).not.toHaveBeenCalledWith(second);
+    expect(claims.calls.length).toBe(polls);
+    expect(api.submitResult).not.toHaveBeenCalledWith(second, expect.anything());
     expect(installs).toEqual([]);
 
     gate.resolve();
@@ -1072,11 +1017,11 @@ describe("self-update", () => {
     });
   });
 
-  it("aborts jobs still running after 2 hours, so they're redelivered, then updates", async () => {
+  it("aborts jobs still running after 2 hours, unreported so they're redelivered, then updates", async () => {
     const id = randomUUID();
     const installs: string[] = [];
     let signal: AbortSignal | undefined;
-    const { api, queue, state, daemon } = setup({
+    const { api, claims, state, daemon } = setup({
       config: centralConfig({ desiredVersion: "2.0.0" }),
       run: (_j, ctx) =>
         new Promise((_resolve, reject) => {
@@ -1087,7 +1032,7 @@ describe("self-update", () => {
     });
     // The first heartbeat has no desired version, so the job starts.
     state.config = centralConfig();
-    queue.push(REVIEW_TOPIC, id);
+    claims.push(job(id));
     const exit = daemon.run();
     await settle();
     expect(daemon.status().runningJobIds).toEqual([id]);
@@ -1101,14 +1046,13 @@ describe("self-update", () => {
     expect(await exit).toBe(0);
     expect(installs).toEqual(["2.0.0"]);
     expect(api.submitFailure).not.toHaveBeenCalled();
-    expect(queue.acked).toEqual([]);
-    expect(queue.unacked).toEqual([{ topic: REVIEW_TOPIC, message: { jobId: id } }]);
+    expect(api.submitResult).not.toHaveBeenCalled();
   });
 
   it("takes jobs again when the install fails", async () => {
     const id = randomUUID();
     let attempted = false;
-    const { api, queue, daemon } = setup({
+    const { api, claims, daemon } = setup({
       config: centralConfig({ desiredVersion: "2.0.0" }),
       updater: new SelfUpdater({
         statePath: path.join(dir, "update-state.json"),
@@ -1125,8 +1069,7 @@ describe("self-update", () => {
     });
     void daemon.run();
     await vi.waitFor(() => expect(attempted && !daemon.status().draining).toBe(true));
-    queue.push(REVIEW_TOPIC, id);
-    await vi.advanceTimersByTimeAsync(5_000);
+    claims.push(job(id));
     await settle();
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { ok: true } });
     await vi.advanceTimersByTimeAsync(20_000);

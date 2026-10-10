@@ -3,7 +3,9 @@ import {
   HeartbeatResponse,
   JobOutcomeResponse,
   JobStartResponse,
+  MAX_CLAIM_WAIT_SECONDS,
   TokenResponse,
+  type ClaimRequest,
   type EnrollRequest,
   type Heartbeat,
   type JobFailure,
@@ -28,14 +30,26 @@ export class ApiError extends Error {
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
+/** A claim is held up to its wait time; leave room for the response on top. */
+const CLAIM_TIMEOUT_MS = (MAX_CLAIM_WAIT_SECONDS + 30) * 1000;
 
-/** POSTs JSON to the control panel and validates the response body. */
+export interface PostOptions {
+  /** Aborts the request (on top of the timeout). */
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * POSTs JSON to the control panel and validates the response body. A 204's
+ * body is validated as `null`.
+ */
 export async function postJson<S extends z.ZodType>(
   fetchFn: FetchFn,
   url: string,
   body: unknown,
   schema: S,
   accessToken?: string,
+  options: PostOptions = {},
 ): Promise<z.infer<S>> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (accessToken) headers.authorization = `Bearer ${accessToken}`;
@@ -44,7 +58,7 @@ export async function postJson<S extends z.ZodType>(
     headers,
     body: JSON.stringify(body),
     redirect: "error",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: abortSignal(options),
   });
   const text = await res.text();
   let json: unknown;
@@ -53,6 +67,7 @@ export async function postJson<S extends z.ZodType>(
   } catch {
     json = undefined;
   }
+  if (res.status === 204) json = null;
   const path = new URL(url).pathname;
   if (!res.ok) {
     const code =
@@ -78,6 +93,11 @@ export async function postJson<S extends z.ZodType>(
   return parsed.data;
 }
 
+function abortSignal({ signal, timeoutMs = REQUEST_TIMEOUT_MS }: PostOptions): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([timeout, signal]) : timeout;
+}
+
 /** `POST /api/agent/enroll`: exchanges a one-time enrollment token. */
 export function enroll(
   server: string,
@@ -99,7 +119,11 @@ export function exchangeRefreshToken(
 /** The authenticated agent API. Every call uses the current access token. */
 export interface ControlPanelApi {
   heartbeat(body: Heartbeat): Promise<HeartbeatResponse>;
-  startJob(jobId: string): Promise<JobStartResponse>;
+  /**
+   * `POST /api/agent/claim`: long-polls for a job of one of `capabilities`.
+   * Null when the wait passed with nothing to claim (204).
+   */
+  claim(body: ClaimRequest, signal?: AbortSignal): Promise<JobStartResponse | null>;
   submitResult(jobId: string, body: JobResult): Promise<JobOutcomeResponse>;
   submitFailure(jobId: string, body: JobFailure): Promise<JobOutcomeResponse>;
 }
@@ -111,16 +135,31 @@ export class HttpControlPanelApi implements ControlPanelApi {
     private readonly fetchFn: FetchFn = fetch,
   ) {}
 
-  private async post<S extends z.ZodType>(path: string, body: unknown, schema: S) {
-    return postJson(this.fetchFn, `${this.server}${path}`, body, schema, await this.accessToken());
+  private async post<S extends z.ZodType>(
+    path: string,
+    body: unknown,
+    schema: S,
+    options?: PostOptions,
+  ) {
+    return postJson(
+      this.fetchFn,
+      `${this.server}${path}`,
+      body,
+      schema,
+      await this.accessToken(),
+      options,
+    );
   }
 
   heartbeat(body: Heartbeat): Promise<HeartbeatResponse> {
     return this.post("/api/agent/heartbeat", body, HeartbeatResponse);
   }
 
-  startJob(jobId: string): Promise<JobStartResponse> {
-    return this.post(`/api/agent/jobs/${encodeURIComponent(jobId)}/start`, {}, JobStartResponse);
+  claim(body: ClaimRequest, signal?: AbortSignal): Promise<JobStartResponse | null> {
+    return this.post("/api/agent/claim", body, JobStartResponse.nullable(), {
+      signal,
+      timeoutMs: CLAIM_TIMEOUT_MS,
+    });
   }
 
   submitResult(jobId: string, body: JobResult): Promise<JobOutcomeResponse> {

@@ -22,7 +22,6 @@ import { AgentDaemon } from "./daemon.js";
 import { readCredentialRequest, runGitCredential } from "./credential-helper.js";
 import { startHealthServer } from "./healthz.js";
 import { createLogger, type Logger } from "./logger.js";
-import { createQueueReceiver, type QueueReceiverFactory } from "./queue.js";
 import {
   SelfUpdater,
   npmInstaller,
@@ -69,7 +68,6 @@ export interface MainDeps {
   env: NodeJS.ProcessEnv;
   logger?: Logger;
   capabilities?: Capability[];
-  queue?: QueueReceiverFactory;
   /** Reads stdin (the `git-credential` request). */
   readStdin?: () => Promise<string>;
   /** `credential.helper` for job git commands (default: this CLI's `git-credential`). */
@@ -293,9 +291,6 @@ async function runStart(
     api,
     tokens,
     registry,
-    queue:
-      deps.queue ??
-      ((region) => createQueueReceiver(config.server, region, () => tokens.currentAccessToken())),
     logger,
     updater,
   });
