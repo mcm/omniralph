@@ -100,13 +100,14 @@ this: pushes go through the job's write-scoped git credentials, as for stories.
 
 ### The sticky agent
 
-A run's first job goes to the repository's pinned agent topic if there is one, otherwise to the
-organization's shared `ralph-jobs-org-<organizationId>` topic. The agent that starts it is recorded as `ralph_runs.agent_id`, and every
-later job of the run goes to `ralph-jobs-agent-<agentId>`. That keeps the branch worktree (and its
+A run's first job goes to the repository's pinned agent if there is one, otherwise to any ralph
+agent of the organization. The agent that starts it is recorded as `ralph_runs.agent_id`, and every
+later job of the run is targeted at it (`jobs.target_agent_id`;
+[ADR 0006](0006-postgres-job-queue.md), which replaced the per-agent topics). That keeps the branch worktree (and its
 installed dependencies and stashed leftovers) warm on one host.
 
 Stickiness is an optimization, not a requirement: when the sticky agent is revoked or no longer has
-`ralph` enabled, the next job goes to the shared topic (or the pinned one) again, and whichever agent
+`ralph` enabled, the next job goes to any ralph agent (or the pinned one) again, and whichever agent
 takes it recreates the worktree from the pushed remote branch.
 
 ### Attempts vs deliveries
@@ -253,8 +254,8 @@ sections *Lanes* and *Requests and run modes* above describe the details; this i
   download them through a job-scoped proxy (`ralph:attachments`), so they still never hold the
   Linear token.
 - **Concurrency.** `agents.capability_limits` caps concurrent jobs per capability (ralph defaults to
-  `max(1, maxConcurrency - 1)`), sent in the heartbeat config. The daemon only receives from a
-  capability's topics while it has a free slot, so long ralph jobs can't starve reviews.
+  `max(1, maxConcurrency - 1)`), sent in the heartbeat config. The daemon only claims a
+  capability's jobs while it has a free slot, so long ralph jobs can't starve reviews.
 - **Self-update.** cyralph's git-following supervisor (`src/update/*`) is replaced by a desired
   version (global in `app_settings`, per-agent override in `agents.desired_version`) returned in
   the heartbeat. Agents under pm2 drain (up to 2 hours), `npm i -g` the version, write

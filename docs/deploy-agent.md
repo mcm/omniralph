@@ -1,8 +1,8 @@
 # Deploying an agent
 
-`omniralph-agent` is a Node 22 daemon that pulls jobs through the control panel and runs them with
-the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control panel (API and queue
-proxy) and to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
+`omniralph-agent` is a Node 22 daemon that claims jobs from the control panel and runs them with
+the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control panel (its agent API)
+and to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
 push with brokered write tokens). It opens no port except an optional `/healthz` on `127.0.0.1`.
 
 This guide sets one up on a Coder workspace, running as the **workspace user** (`coder`): the
@@ -213,7 +213,7 @@ Environment=PATH=/home/omniralph/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Optional overrides (ANTHROPIC_API_KEY=… or CLAUDE_CODE_OAUTH_TOKEN=…); root-owned, mode 0600.
 EnvironmentFile=-/etc/omniralph/agent.env
 ExecStart=/usr/bin/node /home/omniralph/.local/lib/node_modules/@omniralph/agent/dist/cli.js start --healthz-port 9310
-# SIGTERM: stop polling, give running jobs up to 60s; unfinished jobs are redelivered.
+# SIGTERM: stop claiming, give running jobs up to 60s; unfinished jobs are redelivered.
 KillSignal=SIGTERM
 TimeoutStopSec=90
 Restart=on-failure
@@ -265,7 +265,7 @@ An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates i
 1. When the heartbeat's desired version differs from the running one and isn't in the agent's
    failed list, the agent stops taking new jobs and lets running ones finish, for up to 2 hours.
    Heartbeats go on meanwhile (jobs keep their tokens and Linear replies). Jobs still running after
-   2 hours are aborted; their queue messages aren't acknowledged, so they're redelivered.
+   2 hours are aborted; their leases lapse, so they're redelivered.
 2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, like the
    [install](#2-install) (the package is public, so no npm auth is needed).
 3. It writes `update-state.json` next to `agent.json` (mode 0600):
@@ -365,10 +365,10 @@ Linear attachments through the control panel and cache them in `<workspaceRoot>/
 
 New agents only run reviews. To let an agent run ralph jobs, open **Agents › <agent>**, tick
 `ralph` under **Enabled capabilities** and save; it applies with the next heartbeat (no restart).
-The agent then also polls its organization's `ralph-jobs-org-<orgId>` topic and its own
-`ralph-jobs-agent-<id>` topic (see [ADR 0004](adr/0004-organizations.md#per-organization-topics)).
+The agent then also claims its organization's `ralph` jobs (see
+[ADR 0004](adr/0004-organizations.md#job-isolation)).
 
-- A run sticks to the agent that started it: all its later jobs go to that agent's topic, so keep
+- A run sticks to the agent that started it: all its later jobs are targeted at that agent, so keep
   `ralph` enabled on it until its runs finish. If you disable `ralph` on it or revoke it, the run's
   next job goes to any ralph-enabled agent, which recreates the branch worktree from the pushed
   branch.
@@ -521,7 +521,7 @@ What to do:
 5. Start the agent again.
 
 When an admin revokes an agent, its running jobs are re-queued at once. After a `refresh_reuse`, the
-queue redelivers the agent's unfinished jobs once their leases lapse. Either way another agent (or
+agent's unfinished jobs are redelivered once their leases lapse (2 minutes without a heartbeat). Either way another agent (or
 the newly enrolled one) picks them up.
 
 ## Troubleshooting
@@ -535,6 +535,6 @@ the newly enrolled one) picks them up.
   gate's toolchain isn't installed for the agent's user or isn't on the unit's `PATH`
   ([Host prerequisites](#host-prerequisites)).
 - **Ralph jobs stay queued**: no agent has `ralph` enabled, or the run's sticky (or pinned) agent is
-  offline. Check **Jobs** for the job's topic.
+  offline. Check **Jobs** for the job's status.
 - **Reviews fail with a Claude login message**: log in again as the agent's user
   ([claude-auth.md](claude-auth.md)).

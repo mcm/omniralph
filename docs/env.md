@@ -137,7 +137,7 @@ See [ADR 0002](adr/0002-agent-auth.md).
 
 ### Job dispatch and cron
 
-See [ADR 0001](adr/0001-job-dispatch.md).
+See [ADR 0006](adr/0006-postgres-job-queue.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
@@ -148,7 +148,7 @@ See [ADR 0001](adr/0001-job-dispatch.md).
 The control panel also reads `VERCEL_ENV` (refuses the local agent-token signer in `production`),
 `VERCEL_PROJECT_PRODUCTION_URL` (the `APP_URL` default), and `VERCEL` / `VERCEL_OIDC_TOKEN` (the
 chat assistant uses the AI Gateway through OIDC). Vercel sets them; don't set them yourself.
-Publishing jobs, the queue proxy and KMS calls authenticate with the deployment's Vercel OIDC token,
+KMS calls authenticate with the deployment's Vercel OIDC token,
 which needs no variable either.
 
 ## Agent host (`omniralph-agent`)
