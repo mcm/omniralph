@@ -649,6 +649,67 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
   });
 
+  describe("open questions", () => {
+    const QUESTIONS = `${PRD}\n## Open Questions\n\n1. Which column type?\n`;
+
+    it("refuses a delegation while the PRD has open questions", async () => {
+      const issue = linear.add({ identifier: "ENG-60", title: "PRD", description: QUESTIONS });
+      const event = created(issue.id);
+      expect(await startRun(event, deps())).toEqual({
+        status: "open_questions",
+        identifier: "ENG-60",
+      });
+      const [response] = linear.bodies(event.sessionId, "response");
+      expect(response).toContain("**ENG-60** still has open questions");
+      expect(response).toContain("reply in the triage session");
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      // Nothing materialized, no state change.
+      expect(await linear.getChildren(issue.id)).toEqual([]);
+      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+    });
+
+    it("refuses a delegated sub-issue of an epic with open questions, and `/ralph` mentions", async () => {
+      const epic = linear.add({
+        identifier: "ENG-61",
+        title: "Epic",
+        description: "Epic.\n\n## Open Questions\n\n1. Which team?",
+      });
+      const story = linear.add({ identifier: "ENG-62", title: "Store", parentId: epic.id });
+      const event = created(story.id);
+      expect(await startRun(event, deps())).toEqual({
+        status: "open_questions",
+        identifier: "ENG-61",
+      });
+      expect(linear.bodies(event.sessionId, "response")[0]).toContain(
+        "the epic **ENG-61** still has open questions",
+      );
+
+      const mention = created(epic.id, { commentBody: "@omniralph /ralph go" });
+      expect(await startRun(mention, deps())).toMatchObject({ status: "open_questions" });
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+    });
+
+    it("starts issues without open questions, and request-mode mentions regardless", async () => {
+      const issue = linear.add({
+        identifier: "ENG-63",
+        title: "Plain",
+        description: "Do it.\n\n## Open Questions\n\n",
+      });
+      expect(await startRun(created(issue.id), deps())).toMatchObject({
+        status: "started",
+        created: true,
+      });
+
+      const asked = linear.add({ identifier: "ENG-64", title: "PRD", description: QUESTIONS });
+      expect(
+        await startRun(
+          created(asked.id, { commentBody: "@omniralph what does this need?" }),
+          deps(),
+        ),
+      ).toMatchObject({ status: "started", created: true });
+    });
+  });
+
   it("re-delegation reuses the previous run's branch, PR, guidance and progress", async () => {
     const epic = linear.add({ identifier: "ENG-60", title: "Epic" });
     linear.add({ identifier: "ENG-61", title: "One", parentId: epic.id });
