@@ -21,6 +21,7 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
+import { loadEpic } from "@/lib/ralph/epic-loader";
 import {
   applyTriageJob,
   onTriageJobCompleted,
@@ -46,6 +47,10 @@ const PRD = [
   "## Quality Gates",
   "",
   "- `pnpm test` - Tests",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "- [ ] It works",
 ].join("\n");
 
 type Story = TriageAgentOutput["stories"][number];
@@ -295,6 +300,62 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     );
   });
 
+  it("leaves a triaged epic that ralph loads as-is, without materializing it again", async () => {
+    const issue = addIssue();
+    const stories = [
+      story("Add the export endpoint", { priority: 1 }),
+      story("Add the export button", { dependsOn: [0] }),
+      story("Announce it", { manual: true }),
+      story("Validate functional requirements", { priority: 3 }),
+    ];
+    const { job } = await completedJob(issue, result({ size: "L", stories }));
+    await applyTriageJob(deps(), job);
+    const issueCount = linear.issues.size;
+    const updates = linear.issueUpdates.length;
+    const [endpoint, button, announce, validation] = await linear.getChildren(issue.id);
+
+    // A delegation of a never-run issue loads with `completePrd`: still nothing new.
+    const loaded = await loadEpic(linear, issue.id, {
+      completePrd: true,
+      manualLabels: ["manual"],
+    });
+    expect(loaded).toMatchObject({ kind: "children", materialized: 0, root: { id: issue.id } });
+    expect(linear.issues.size).toBe(issueCount);
+    expect(linear.issueUpdates).toHaveLength(updates);
+    expect(loaded.epic.description).toBe(PRD);
+    expect(loaded.epic.qualityGates).not.toEqual([]);
+    expect(
+      loaded.epic.stories.map((s) => [s.title, s.priority, [...s.dependsOn].sort(), !!s.manual]),
+    ).toEqual([
+      ["Add the export endpoint", 1, [], false],
+      ["Add the export button", 2, [endpoint!.id], false],
+      ["Announce it", 2, [], true],
+      [
+        "Validate functional requirements",
+        3,
+        [endpoint!.id, button!.id, announce!.id].sort(),
+        false,
+      ],
+    ]);
+    expect(loaded.epic.stories[3]!.key).toBe(validation!.id);
+  });
+
+  it("creates no story sub-issues next to an epic's existing ones", async () => {
+    const issue = addIssue();
+    const existing = linear.add({ title: "Old story", parentId: issue.id, stateType: "backlog" });
+    const { job, sessionId } = await completedJob(
+      issue,
+      result({ size: "XL", stories: [story("One"), story("Validate functional requirements")] }),
+    );
+
+    expect(await applyTriageJob(deps(), job)).toMatchObject({ status: "applied", created: [] });
+    expect(await linear.getChildren(issue.id)).toEqual([
+      expect.objectContaining({ id: existing.id }),
+    ]);
+    expect(linear.issueUpdates.map((u) => u.issueId)).toEqual([issue.id]);
+    expect(JSON.stringify(responses(sessionId))).toContain("none created, the issue already has 1");
+  });
+
   type Update = TriageAgentOutput["subIssueUpdates"][number];
   const update = (child: IssueSummary, overrides: Partial<Update> = {}): Update => ({
     id: child.id,
@@ -539,6 +600,10 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     expect(linear.issueUpdates).toEqual([]);
     expect(responses(sessionId)[0]).toMatchObject({ type: "error" });
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
+    expect(await getJob(db, job.id)).toMatchObject({
+      status: "failed",
+      error: "the session ended without a result",
+    });
   });
 
   it("marks the run running when its job starts, and skips a job that isn't current", async () => {

@@ -117,12 +117,13 @@ export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
 export function openQuestionsMessage(
   issue: Pick<IssueSummary, "identifier">,
   epic?: boolean,
+  then = "Then delegate it to me again.",
 ): string {
   const what = epic ? `the epic **${issue.identifier}**` : `**${issue.identifier}**`;
   return [
     `I won't build this yet: the PRD of ${what} still has open questions (its \`## Open Questions\` section).`,
     "Answer them in the description (and remove the section), or reply in the triage session so " +
-      "triage folds the answers into the PRD. Then delegate it to me again.",
+      `triage folds the answers into the PRD. ${then}`,
   ].join("\n\n");
 }
 
@@ -131,8 +132,8 @@ export function openQuestionsMessage(
  * sub-issue, whose parent epic's description) still has open questions. Null
  * when neither has any, or when the issue can't be loaded (the start reports that).
  */
-async function withOpenQuestions(
-  deps: RalphDeps,
+export async function withOpenQuestions(
+  deps: Pick<RalphDeps, "linear">,
   issueId: string,
 ): Promise<{ issue: IssueSummary; epic: boolean } | null> {
   try {
@@ -436,6 +437,11 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     activeOnly: true,
   });
   if (active) {
+    // `/ralph` on a mention's run switches it to the story loop: an epic-mode start.
+    if (wantsLoop && active.mode === "request") {
+      const refused = await refuseOpenQuestions(deps, event);
+      if (refused) return refused;
+    }
     const handed = await lockRun(deps.db, active.id, async (tx, run) => {
       if (FINISHED_RUN_STATUSES.has(run.status)) return null;
       // The epic is being worked right now: hand the mention to that live agent.

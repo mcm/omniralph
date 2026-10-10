@@ -646,6 +646,31 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       const first = await work(run!.id);
       expect(first.story.identifier).toBe("ENG-2");
     });
+
+    it("`/ralph` doesn't switch a mention's run to the epic loop while the PRD has open questions", async () => {
+      const { epic } = threeStoryEpic();
+      const root = linear.issues.get(epic.id)!;
+      root.description = `${EPIC_DESCRIPTION}\n## Open Questions\n\n1. Which column type?\n`;
+      const { run } = await session(epic.id, "@omniralph use smallint everywhere");
+      expect(run).toMatchObject({ mode: "request" });
+
+      // A `/ralph` mention handed to the running mention's run.
+      const mention = await session(epic.id, "@omniralph /ralph go");
+      expect(mention.outcome).toEqual({ status: "open_questions", identifier: "ENG-1" });
+      expect(last(mention.sessionId, "response")).toContain("still has open questions");
+      expect(await getRun(db, run!.id)).toMatchObject({ mode: "request" });
+
+      await request(run!.id);
+      expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
+      expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
+      expect(last(run!.linearAgentSessionId, "response")).toContain("Then reply `/ralph` again.");
+      expect(await activeJobs(run!.id)).toEqual([]);
+
+      // Answered: `/ralph` starts the loop.
+      root.description = EPIC_DESCRIPTION;
+      await reply(run!, "/ralph");
+      expect(await getRun(db, run!.id)).toMatchObject({ mode: "epic", status: "running" });
+    });
   });
 
   describe("replies as requests", () => {

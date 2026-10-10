@@ -202,6 +202,19 @@ describe("validateTriageOutput", () => {
     );
   });
 
+  it("keeps quality gates ralph can parse and single issues ralph won't split", () => {
+    for (const output of [single, epic]) {
+      const r = validateTriageOutput(output);
+      if (!("result" in r)) throw new Error(r.problem);
+      expect(parseQualityGates(r.result.description)).toEqual(["pnpm typecheck", "pnpm test"]);
+      expect(parsePrd(r.result.description)).toBeNull();
+    }
+    const r = validateTriageOutput(single);
+    if (!("result" in r)) throw new Error(r.problem);
+    const headings = r.result.description.match(/^## .+$/gm);
+    expect(headings?.at(-1)).toBe("## Acceptance Criteria");
+  });
+
   it("rejects a description without a Quality Gates heading", () => {
     expect(
       problemOf({ ...single, description: SINGLE.replace("## Quality Gates", "## Gates") }),
@@ -217,6 +230,17 @@ describe("validateTriageOutput", () => {
     for (const size of ["XS", "S", "M"]) {
       expect(problemOf({ ...epic, size })).toMatch(/single issue but there are `stories`/);
     }
+  });
+
+  it("rejects a single issue that doesn't end with its acceptance criteria", () => {
+    expect(problemOf({ ...single, description: PRD })).toMatch(/end with its `## Acceptance/);
+    const after = `${SINGLE}\n\n## Notes\n\nLater.`;
+    expect(problemOf({ ...single, description: after })).toMatch(/end with its `## Acceptance/);
+    // Epics keep their criteria in the stories, and the rule is only for new PRDs.
+    expect(validateTriageOutput(epic)).toHaveProperty("result");
+    expect(
+      validateTriageOutput({ ...single, outcome: "unchanged", description: PRD }),
+    ).toHaveProperty("result");
   });
 
   it("rejects a single-issue description ralph would split into stories", () => {
@@ -365,6 +389,12 @@ describe("buildTriagePrompt", () => {
     expect(prompt).toContain("The first draft.");
     expect(prompt).toContain("0. Add the priority column");
     expect(prompt).toContain("1. Who can set a priority?");
+  });
+
+  it("shows a Quality Gates example ralph's parser reads", () => {
+    const example = /```\n(## Quality Gates[\s\S]*?)```/.exec(buildTriagePrompt(input))?.[1];
+    expect(example).toBeDefined();
+    expect(parseQualityGates(example!)).toEqual(["pnpm typecheck", "pnpm lint", "pnpm test"]);
   });
 
   it("covers the methodology", () => {

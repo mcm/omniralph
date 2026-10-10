@@ -322,4 +322,30 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     expect(await db.select().from(triageRuns)).toEqual([]);
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
   });
+
+  it("sends a delegation to ralph even when the issue's text mentions /triage", async () => {
+    // A delegation's session has no comment; its prompt context quotes the issue (and its
+    // comments), which may mention `/triage` without asking for it.
+    const issue = linear.add({
+      identifier: "OPS-4",
+      title: "Run /triage on new issues",
+      description: "Use /triage first.",
+      teamKey: "OPS",
+    });
+    const event = mention(issue.id, undefined, {
+      commentBody: undefined,
+      promptContext: `<issue identifier="OPS-4"><title>Run /triage on new issues</title></issue>`,
+    });
+    await handleLinearEvent(
+      event,
+      { db, organizationId: orgId, workspaceId: "ws-1" },
+      {
+        linear,
+        dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+        adapterFor: () => fakeAdapter,
+      },
+    );
+    expect(await db.select().from(triageRuns)).toEqual([]);
+    expect(await db.select().from(ralphRuns)).toHaveLength(1);
+  });
 });
