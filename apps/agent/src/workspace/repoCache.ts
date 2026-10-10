@@ -572,6 +572,29 @@ export class RepoCache {
   }
 
   /**
+   * Fetches every branch and returns the commit `origin/<branch>` points at,
+   * or null when the remote has no such branch (e.g. an empty repository).
+   */
+  async branchHead(
+    repo: JobRepository,
+    branch: string,
+    options: GitJobOptions,
+  ): Promise<string | null> {
+    await this.checkBranchName(branch);
+    return this.withRepoLock(repo, options.signal, async () => {
+      const { dir } = await this.syncLocked(repo, [], options);
+      const sha = await this.runGit(
+        ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}^{commit}`],
+        { ...options, cwd: dir },
+      ).then(
+        (out) => out.trim(),
+        () => "",
+      );
+      return SHA.test(sha) ? sha : null;
+    });
+  }
+
+  /**
    * Makes `sha` available and checks it out (detached) into
    * `<workspaceRoot>/.worktrees/<jobId>`. On failure or abort the worktree is
    * removed again before the error is rethrown.

@@ -5,6 +5,7 @@ import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
 import { reviewCapability } from "./review.js";
 import { systemCapability } from "./system.js";
+import { triageCapability } from "./triage/index.js";
 
 /**
  * What a capability's Claude sessions may do. The agent builds the SDK's
@@ -132,5 +133,5 @@ export function toolPolicyFor(capability: Capability, jobType: string): ToolPoli
 
 /** The capabilities this build of the agent ships; `system` is built in and always enabled. */
 export function defaultCapabilities(): Capability[] {
-  return [systemCapability, reviewCapability, ralphCapability];
+  return [systemCapability, reviewCapability, ralphCapability, triageCapability];
 }

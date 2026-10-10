@@ -80,6 +80,18 @@ describe("RepoCache", { timeout: 30_000 }, () => {
     expect(git(dir, "rev-parse", "refs/remotes/origin/main")).toBe(third);
   });
 
+  it("resolves a branch's head after fetching every branch, or null when it doesn't exist", async () => {
+    const first = await remote.commit({ "README.md": "one\n" });
+    const repos = cache();
+    expect(await repos.branchHead(repo, "main", opts)).toBe(first);
+    const second = await remote.commit({ "README.md": "two\n" });
+    const other = await remote.commit({ "b.txt": "b\n" }, "feature/b");
+    expect(await repos.branchHead(repo, "main", opts)).toBe(second);
+    expect(await repos.branchHead(repo, "feature/b", opts)).toBe(other);
+    expect(await repos.branchHead(repo, "missing", opts)).toBeNull();
+    await expect(repos.branchHead(repo, "-x", opts)).rejects.toThrow(/invalid branch name/);
+  });
+
   it("creates a detached worktree at <workspaceRoot>/.worktrees/<jobId> and removes it", async () => {
     const first = await remote.commit({ "src/a.ts": "export const a = 1;\n" });
     const second = await remote.commit({ "src/a.ts": "export const a = 2;\n" });
