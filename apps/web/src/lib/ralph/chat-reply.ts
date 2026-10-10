@@ -10,13 +10,18 @@
 import {
   getActiveRunByChatThread,
   getActiveRunJob,
+  getRun,
+  isLinearRun,
+  listActiveRunJobIds,
   lockRun,
   type Database,
   type Job,
   type RalphRun,
 } from "@omniralph/db";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { conversationFor } from "./conversation";
 import { applyGuidance, queueLiveReply } from "./messages";
+import { postActivity, quote } from "./notify";
 import { addInstruction } from "./requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
@@ -76,6 +81,62 @@ export async function sendToChatRun(
       // The request stays pending: the next advance (job end, reconcile) runs it.
       console.error(`Advancing chat ralph run ${run.id} failed`, error);
     }
+  }
+  return handled;
+}
+
+export type GuidanceOutcome =
+  /** No run of this organization has that id. */
+  | { status: "not_found" }
+  /** The run is over (completed, failed or stopped): it takes no more guidance. */
+  | { status: "finished"; run: RalphRun }
+  /**
+   * Stored as guidance and/or a pending request (`addInstruction`); `busy`:
+   * a job of the run is queued or running, so it applies once that finishes.
+   */
+  | { status: "applied"; run: RalphRun; busy: boolean };
+
+/**
+ * Guidance from chat for any unfinished run of the organization, Linear or
+ * chat (`send_ralph_guidance`): applied like a Linear reply's instruction
+ * (`addInstruction` under `lockRun`, then the run advances), with `author`
+ * noting that it came from chat. A Linear run's session also shows it, so
+ * Linear watchers see who steered it.
+ */
+export async function sendGuidance(
+  deps: RalphDeps,
+  input: { runId: string; text: string; author: string | null },
+): Promise<GuidanceOutcome> {
+  const text = input.text.trim();
+  const run = await getRun(deps.db, input.runId);
+  if (!run || run.organizationId !== deps.organizationId) return { status: "not_found" };
+  const author = `${input.author ?? "Someone"} (from chat)`;
+  const handled = await lockRun(deps.db, run.id, async (tx, current) => {
+    if (FINISHED_RUN_STATUSES.has(current.status)) {
+      return { status: "finished" as const, run: current };
+    }
+    const added = await addInstruction(
+      tx,
+      current,
+      { text, author, wantsLoop: false },
+      applyGuidance,
+    );
+    const busy = (await listActiveRunJobIds(tx, current.id)).length > 0;
+    return { status: "applied" as const, run: added.run, busy };
+  });
+  if (!handled) return { status: "not_found" };
+  if (handled.status === "finished") return handled;
+  if (isLinearRun(run)) {
+    await postActivity(conversationFor(run, deps), {
+      type: "thought",
+      body: `Guidance from ${author}:\n\n${quote(text)}`,
+    });
+  }
+  try {
+    await advanceRun(run.id, deps);
+  } catch (error) {
+    // The guidance is stored: the next advance (job end, reconcile) applies it.
+    console.error(`Advancing ralph run ${run.id} after guidance from chat failed`, error);
   }
   return handled;
 }
