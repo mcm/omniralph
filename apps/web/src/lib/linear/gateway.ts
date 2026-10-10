@@ -27,8 +27,11 @@ export interface IssueSummary {
   projectName?: string;
   parentId?: string;
   assigneeId?: string;
-  /** Who created the issue; absent when Linear doesn't say (e.g. an integration). */
-  creator?: { id: string; name: string };
+  /**
+   * Who created the issue; absent when Linear doesn't say (e.g. an integration).
+   * `url` is their profile URL, which a comment @mentions them with.
+   */
+  creator?: { id: string; name: string; url?: string };
 }
 
 export interface IssueComment {
@@ -175,6 +178,7 @@ const ISSUE_FIELDS = /* GraphQL */ `
     creator {
       id
       name
+      url
     }
     team {
       id
@@ -206,7 +210,7 @@ interface IssueNode {
   subIssueSortOrder?: number | null;
   parent?: { id: string } | null;
   assignee?: { id: string } | null;
-  creator?: { id: string; name: string } | null;
+  creator?: { id: string; name: string; url?: string | null } | null;
   team?: { id: string; key: string } | null;
   state?: { name: string; type: string } | null;
   labels?: { nodes: Array<{ name: string }> } | null;
@@ -241,7 +245,13 @@ function summarize(issue: IssueNode): IssueSummary {
     projectName: issue.project?.name ?? undefined,
     parentId: issue.parent?.id ?? undefined,
     assigneeId: issue.assignee?.id ?? undefined,
-    creator: issue.creator ? { id: issue.creator.id, name: issue.creator.name } : undefined,
+    creator: issue.creator
+      ? {
+          id: issue.creator.id,
+          name: issue.creator.name,
+          ...(issue.creator.url && { url: issue.creator.url }),
+        }
+      : undefined,
   };
 }
 

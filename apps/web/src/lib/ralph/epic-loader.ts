@@ -21,6 +21,7 @@ import {
   singleIssueEpic,
   type Epic,
   type EpicOptions,
+  type MaterializationPlan,
   type ParsedPrd,
 } from "@omniralph/ralph";
 import { getRepository, type Database } from "@omniralph/db";
@@ -136,14 +137,30 @@ async function loadChildrenEpic(
  * isn't created again; relations are only added for new issues. Returns the
  * created issues.
  */
-export async function materializePrd(
+export function materializePrd(
   linear: LinearGateway,
   parent: IssueSummary,
   prd: ParsedPrd,
   manualLabel: string,
   existing: readonly IssueSummary[] = [],
 ): Promise<IssueSummary[]> {
-  const plan = materializationPlan(prd);
+  return createPlannedSubIssues(linear, parent, materializationPlan(prd), manualLabel, existing);
+}
+
+/**
+ * Creates `plan`'s sub-issues of `parent` in order (the helper behind
+ * `materializePrd`, also used by triage): priority, sub-issue order, project,
+ * the manual label and completion, then the plan's "blocks" relations. Planned
+ * issues titled like one of `existing` are reused, not created; relations are
+ * only added for new issues. Returns the created issues, in plan order.
+ */
+export async function createPlannedSubIssues(
+  linear: LinearGateway,
+  parent: IssueSummary,
+  plan: MaterializationPlan,
+  manualLabel: string,
+  existing: readonly IssueSummary[] = [],
+): Promise<IssueSummary[]> {
   const byTitle = new Map(existing.map((issue) => [issue.title.trim(), issue]));
   const issues = new Map<string, IssueSummary>();
   const created = new Map<string, IssueSummary>();

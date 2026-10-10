@@ -56,7 +56,7 @@ function issueNode(id: string, overrides: Record<string, unknown> = {}) {
     subIssueSortOrder: 1.5,
     parent: { id: "epic" },
     assignee: { id: "user-1" },
-    creator: { id: "user-2", name: "Ada" },
+    creator: { id: "user-2", name: "Ada", url: "https://linear.app/acme/profiles/ada" },
     team: { id: "team-1", key: "TOOL" },
     state: { name: "Todo", type: "unstarted" },
     labels: { nodes: [{ name: "backend" }] },
@@ -91,7 +91,7 @@ describe("SdkLinearGateway reads", () => {
       projectName: "Omniralph",
       parentId: "epic",
       assigneeId: "user-1",
-      creator: { id: "user-2", name: "Ada" },
+      creator: { id: "user-2", name: "Ada", url: "https://linear.app/acme/profiles/ada" },
     });
     expect(calls).toHaveLength(1);
   });

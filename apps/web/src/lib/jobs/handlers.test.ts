@@ -91,6 +91,38 @@ describe("job outcome handlers", () => {
     expect(review.onReviewJobFailed).toHaveBeenLastCalledWith(db, job({}), "boom");
   });
 
+  it("routes triage jobs and accepts well-formed results only", () => {
+    const triage = job({
+      capability: "triage",
+      type: "triage.run",
+      payload: {
+        triageRunId: "00000000-0000-4000-8000-000000000003",
+        issue: {
+          id: "issue-1",
+          identifier: "ENG-1",
+          title: "t",
+          description: "",
+          stateType: "backlog",
+          creator: null,
+        },
+      },
+    });
+    const handler = jobOutcomeHandler(triage)!;
+    expect(handler.capability).toBe("triage");
+    expect(handler.onStarted).toBeDefined();
+    expect(handler.isValidResult!({ summary: "x" })).toBe(false);
+    expect(
+      handler.isValidResult!({
+        summary: "failed",
+        error: "boom",
+        outcome: null,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        durationMs: 0,
+      }),
+    ).toBe(true);
+    expect(jobOutcomeHandler({ ...triage, capability: "ralph" })).toBeUndefined();
+  });
+
   it("registers new job types, once each", () => {
     const onCompleted = vi.fn();
     registerJobOutcomeHandler("test.thing", {

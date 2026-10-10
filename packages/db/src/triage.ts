@@ -3,7 +3,7 @@
  * panel looks runs up by session (replies) and by issue (the label trigger),
  * and records the `triage.run` job whose outcome it applies next.
  */
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { triageRuns, type TriageLastResult } from "./schema.js";
 
@@ -125,6 +125,62 @@ export async function setTriageRunStatus(
       updatedAt: new Date(),
     })
     .where(eq(triageRuns.id, runId))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Moves the unfinished run to `running` when `jobId` is its current job, or
+ * when it has none yet (the job can start before its enqueuer records it):
+ * then `jobId` becomes its current job. Returns null (and changes nothing)
+ * otherwise: the run moved on to another job, or is over.
+ */
+export async function startTriageRunJob(
+  db: Executor,
+  runId: string,
+  jobId: string,
+): Promise<TriageRun | null> {
+  const [row] = await db
+    .update(triageRuns)
+    .set({ status: "running", currentJobId: jobId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(triageRuns.id, runId),
+        or(eq(triageRuns.currentJobId, jobId), isNull(triageRuns.currentJobId)),
+        inArray(triageRuns.status, ACTIVE_TRIAGE_RUN_STATUSES),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Finishes the run with `status` (and, when given, its last result) when
+ * `jobId` is its current job and it is still queued or running. Returns null
+ * (and changes nothing) otherwise, so a job's outcome is applied once: a
+ * replayed result finds the run finished already.
+ */
+export async function finishTriageRunJob(
+  db: Executor,
+  runId: string,
+  jobId: string,
+  status: Exclude<TriageRunStatus, (typeof ACTIVE_TRIAGE_RUN_STATUSES)[number]>,
+  lastResult?: TriageLastResult | null,
+): Promise<TriageRun | null> {
+  const [row] = await db
+    .update(triageRuns)
+    .set({
+      status,
+      ...(lastResult !== undefined ? { lastResult } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(triageRuns.id, runId),
+        eq(triageRuns.currentJobId, jobId),
+        inArray(triageRuns.status, ACTIVE_TRIAGE_RUN_STATUSES),
+      ),
+    )
     .returning();
   return row ?? null;
 }

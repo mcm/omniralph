@@ -353,6 +353,24 @@ export async function skipJob(
 }
 
 /**
+ * Marks a `completed` job `failed` with `error`: its result was well-formed
+ * but couldn't be used (e.g. a triage the control panel rejects). Returns
+ * false when the job isn't `completed`.
+ */
+export async function failCompletedJob(
+  db: Database,
+  jobId: string,
+  error: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(jobs)
+    .set({ status: "failed", error })
+    .where(and(eq(jobs.id, jobId), eq(jobs.status, "completed")))
+    .returning({ id: jobs.id });
+  return rows.length > 0;
+}
+
+/**
  * Queued or running jobs whose dedupe key starts with `prefix`, e.g. every
  * active review job of one PR (`review.run:<repositoryId>:<prNumber>:`).
  */
