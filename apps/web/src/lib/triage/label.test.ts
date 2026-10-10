@@ -171,6 +171,63 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     expect(publisher.sent).toHaveLength(1);
   });
 
+  it("starts triage when the label is added together with a state change", async () => {
+    const { issue, labelId } = await labeledIssue();
+    // A ralph run waiting on the issue is still woken by the state change.
+    const wake = vi.spyOn(await import("@/lib/ralph/reconcile"), "wakeRunsForIssue");
+
+    await handle({
+      kind: "issue_state",
+      issueId: issue.id,
+      identifier: issue.identifier,
+      stateType: "backlog",
+      removed: false,
+      triageLabelId: labelId,
+    });
+
+    expect(wake).toHaveBeenCalledWith(issue.id, expect.anything());
+    wake.mockRestore();
+    expect(linear.sessionsCreated).toEqual([{ issueId: issue.id, sessionId: "session-1" }]);
+    const run = await getTriageRunBySession(db, "session-1");
+    expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
+    expect(publisher.sent).toHaveLength(1);
+    expect(linear.labelChanges).toEqual([]);
+
+    // A second combined update while the run is active doesn't start another triage.
+    await handle({
+      kind: "issue_state",
+      issueId: issue.id,
+      stateType: "unstarted",
+      removed: false,
+      triageLabelId: labelId,
+    });
+    expect(linear.sessionsCreated).toHaveLength(1);
+    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(triageRuns)).toHaveLength(1);
+  });
+
+  it("applies the in-progress guard when the combined update starts the issue", async () => {
+    const { issue, labelId } = await labeledIssue({ stateType: "started" });
+
+    await handle({
+      kind: "issue_state",
+      issueId: issue.id,
+      identifier: issue.identifier,
+      stateType: "started",
+      removed: false,
+      triageLabelId: labelId,
+    });
+
+    expect(await db.select().from(jobs)).toEqual([]);
+    expect(publisher.sent).toEqual([]);
+    expect((await getTriageRunBySession(db, "session-1"))?.status).toBe("stopped");
+    expect(linear.bodies("session-1", "response")[0]).toContain(
+      `**${issue.identifier}** is already in progress or done`,
+    );
+    expect(linear.issueUpdates).toEqual([]);
+    expect(linear.labelChanges).toEqual([{ issueId: issue.id, removed: [labelId] }]);
+  });
+
   it("removes the label once the triage job completes", async () => {
     const { issue, labelId } = await labeledIssue();
     const started = await startLabelTriage(labelEvent(issue, labelId), deps());

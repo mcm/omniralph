@@ -81,6 +81,11 @@ export type LinearWebhookEvent =
       /** Workflow state type from the payload, when present (`completed`, `canceled`, …). */
       stateType?: string;
       removed: boolean;
+      /**
+       * The same update also added the `ralph:triage` label (a bulk edit, or
+       * moving and labelling at once): triage starts after the state change.
+       */
+      triageLabelId?: string;
     }
   | {
       /** An issue update added the `ralph:triage` label: triage the issue. */
@@ -141,12 +146,14 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
     }
     return { kind: "ignored", reason: "issue update without state change" };
   }
+  const triageLabelId = removed ? undefined : addedTriageLabel(payload);
   return {
     kind: "issue_state",
     issueId,
     identifier: str(data.identifier),
     stateType: str(obj(data.state).type),
     removed,
+    ...(triageLabelId ? { triageLabelId } : {}),
   };
 }
 
