@@ -166,10 +166,10 @@ export async function handleReply(
   const ship = parseShipRequest(body);
   const instruction = parseInstruction(body);
   // `/ralph` on a mention's run switches it to the story loop: not while the PRD has open questions.
-  if (instruction.wantsLoop && run.mode === "request") {
+  if (instruction.wantsLoop && run.mode === "request" && isLinearRun(run)) {
     const found = await withOpenQuestions(deps, run.focusStoryId ?? run.linearIssueId);
     if (found) {
-      await postActivity(deps.linear, run.linearAgentSessionId, {
+      await postActivity(conversationFor(run, deps), {
         type: "response",
         body: openQuestionsMessage(found.issue, found.epic, "Then reply `/ralph` again."),
       });
