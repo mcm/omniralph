@@ -201,8 +201,9 @@ function ConfigCard({
               <Muted>
                 Caps how many of the agent&apos;s slots a capability&apos;s jobs may take (1 to the
                 max concurrency). Leave blank for the default: ralph leaves one slot free for other
-                work, the rest may use every slot. Lowering a limit doesn&apos;t cancel running
-                jobs; the agent takes no new ones until it is under the limit.
+                work; triage and review may use every slot, so cap triage to keep room for ralph and
+                reviews. Lowering a limit doesn&apos;t cancel running jobs; the agent takes no new
+                ones until it is under the limit.
               </Muted>
               <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
                 {capabilities.map((capability) => (

@@ -334,7 +334,7 @@ response (every 20s), so changes need no restart:
 | Max concurrency (parallel jobs) | **Agents › <agent>** | 1 |
 | Concurrency per capability (1 to max concurrency) | **Agents › <agent>** | `ralph`: max concurrency − 1 (at least 1); others: max concurrency |
 | Poll interval | **Agents › <agent>** | 5s |
-| Enabled capabilities (`review`, `ralph`) | **Agents › <agent>** | `review` |
+| Enabled capabilities (`review`, `ralph`, `triage`) | **Agents › <agent>** | `review` |
 | Pinned repositories | **Agents › <agent>**, or **Repository › Settings › Agents** | none (every agent is eligible for every repo) |
 | Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Settings › Agents**; per-agent override on **Agents › <agent>** | none (not managed) |
 | Job cancellations | **Jobs** (cancel) | — |
