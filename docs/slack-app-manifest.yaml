@@ -37,6 +37,10 @@ settings:
       - message.groups
       - app_uninstalled
       - tokens_revoked
+  # Buttons on cards the bot posts (e.g. Create / Cancel on a Linear issue draft).
+  interactivity:
+    is_enabled: true
+    request_url: https://omniralph.example.com/api/webhooks/slack
   org_deploy_enabled: true
   socket_mode_enabled: false
   token_rotation_enabled: false

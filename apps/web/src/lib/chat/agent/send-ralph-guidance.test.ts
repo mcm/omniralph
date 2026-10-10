@@ -83,6 +83,7 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
     db,
     organizationId,
     actor,
+    requesterExternalUserId: "U-ADA",
     thread: {} as Thread,
     appUrl: APP_URL,
     chatThread,

@@ -33,6 +33,9 @@ A preview deployment that should receive Slack events needs its own app.
    - the redirect URL `<APP_URL>/api/integrations/slack/callback`;
    - the event request URL `<APP_URL>/api/webhooks/slack` with the `app_mention`,
      `message.channels`, `message.groups`, `app_uninstalled` and `tokens_revoked` events;
+   - interactivity on the same request URL, for buttons on the bot's cards (e.g. **Create** /
+     **Cancel** on a Linear issue draft). An app created from an older manifest needs it turned on
+     under **Interactivity & Shortcuts**;
    - the bot scopes (`app_mentions:read`, `channels:history`, `channels:read`, `chat:write`,
      `groups:history`, `groups:read`, `reactions:read`, `reactions:write`, `users:read`,
      `users:read.email`). `users:read.email` is what lets Omniralph

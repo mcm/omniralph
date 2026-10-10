@@ -30,7 +30,9 @@ import { chatAgentConfig } from "./agent/config";
 import { createChatAgentHandler } from "./agent/handler";
 import { discordOAuthConfig, type DiscordOAuthConfig } from "./discord-oauth";
 import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identity";
+import type { LinearGateway } from "@/lib/linear/gateway";
 import { createLinkUrl } from "./link";
+import { handleLinearIssueAction, LINEAR_ISSUE_ACTIONS } from "./linear-issue";
 import { CHAT_ACCOUNTS_PATH } from "./link-paths";
 import { slackOAuthConfig, type SlackCredentials, type SlackOAuthConfig } from "./slack-oauth";
 
@@ -149,6 +151,8 @@ export interface ChatBotDeps {
   /** `APP_URL` and `AUTH_SECRET` for link URLs (tests). */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
+  /** An organization's Linear workspace, for issues drafted in chat (default: `getLinearGateway`). */
+  linear?: (organizationId: string) => Promise<LinearGateway>;
 }
 
 export interface ChatBot {
@@ -238,16 +242,28 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
     logger,
   });
 
-  /** The connection that received a message in `thread`, or null (not connected, or a DM). */
-  async function connectionFor(thread: Thread): Promise<ChatConnection | null> {
-    if (thread.isDM) return null;
-    if (thread.adapter.name === "slack") return slackRequestScope.getStore()?.connection ?? null;
-    if (thread.adapter.name === "discord") {
-      const guildId = discordGuildId(thread.id);
+  /** The connection that received an event in a thread, or null (not connected, or a DM). */
+  async function connectionFor(
+    adapter: Adapter,
+    threadId: string,
+    isDM: boolean,
+  ): Promise<ChatConnection | null> {
+    if (isDM) return null;
+    if (adapter.name === "slack") return slackRequestScope.getStore()?.connection ?? null;
+    if (adapter.name === "discord") {
+      const guildId = discordGuildId(threadId);
       return guildId ? getChatConnectionByExternalId(db, "discord", guildId) : null;
     }
     return null;
   }
+
+  const identityDeps = {
+    db,
+    fetch: deps.fetch,
+    encryptionKey: deps.encryptionKey,
+    now: deps.now,
+    logger,
+  };
 
   async function converse(
     thread: Thread,
@@ -256,7 +272,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
     subscribe: boolean,
   ): Promise<void> {
     if (message.author.isMe) return;
-    const connection = await connectionFor(thread);
+    const connection = await connectionFor(thread.adapter, thread.id, thread.isDM);
     if (!connection) {
       logger.info("Ignoring a message from an unconnected workspace", { threadId: thread.id });
       return;
@@ -281,15 +297,12 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
       });
     }
     const author = message.author;
-    const actor = await resolveChatActor(
-      { db, fetch: deps.fetch, encryptionKey: deps.encryptionKey, now: deps.now, logger },
-      {
-        organizationId: connection.organizationId,
-        connection,
-        platform: connection.platform,
-        externalUserId: author.userId,
-      },
-    );
+    const actor = await resolveChatActor(identityDeps, {
+      organizationId: connection.organizationId,
+      connection,
+      platform: connection.platform,
+      externalUserId: author.userId,
+    });
     if (actor.kind === "member" && actor.autoLinked) {
       await postToAuthor(
         thread,
@@ -323,6 +336,31 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
   }
 
   chat.onNewMention((thread, message, context) => converse(thread, message, context, true));
+  chat.onAction(LINEAR_ISSUE_ACTIONS, async (event) => {
+    const connection = await connectionFor(
+      event.adapter,
+      event.threadId,
+      event.thread?.isDM ?? event.adapter.isDM?.(event.threadId) ?? false,
+    );
+    if (!connection) return;
+    await handleLinearIssueAction(
+      {
+        db,
+        resolveActor: (c, externalUserId) =>
+          resolveChatActor(identityDeps, {
+            organizationId: c.organizationId,
+            connection: c,
+            platform: c.platform,
+            externalUserId,
+          }),
+        linear: deps.linear,
+        now: deps.now,
+        logger,
+      },
+      event,
+      connection,
+    );
+  });
   chat.onSubscribedMessage((thread, message, context) => converse(thread, message, context, false));
 
   return { chat, adapters, state: deps.state, discord: deps.discord };

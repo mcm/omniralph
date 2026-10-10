@@ -212,6 +212,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             db,
             organizationId,
             actor,
+            requesterExternalUserId: message.author.userId,
             thread,
             appUrl,
             chatThread,

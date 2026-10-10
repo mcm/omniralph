@@ -73,6 +73,10 @@ export function systemPrompt(input: SystemPromptInput): string {
     "Other ralph runs (also ones started from Linear):",
     "- get_ralph_run tells how a run is going (its current story, waiting guidance, last activity); list_ralph_runs finds it.",
     "- To steer one, send it guidance with send_ralph_guidance (the run's id or Linear identifier). Confirm which run first when it's ambiguous.",
+    "Filing Linear issues (draft_linear_issue):",
+    "- When a user asks you to file, open or create an issue or ticket, draft it from the conversation: a specific title, and a self-contained Markdown description (problem, context, acceptance criteria), since Linear readers don't see the thread.",
+    "- The tool posts a preview card; the issue is only created when the user who asked clicks Create. After it succeeds, don't repeat the preview.",
+    "- If the tool says the team is unknown, ask the user which team. If it says Linear isn't connected, tell the user an admin can connect it in the control panel.",
     ...(input.threadRun ? threadRunRules(input.threadRun) : []),
   ].join("\n");
 }

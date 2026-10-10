@@ -1,11 +1,25 @@
 import "server-only";
-import { appendChatMessage, type RalphRun, type Repository } from "@omniralph/db";
+import {
+  appendChatMessage,
+  createChatLinearIssueDraft,
+  setChatLinearIssueDraftMessage,
+  type RalphRun,
+  type Repository,
+} from "@omniralph/db";
 import { z } from "zod";
+import { LinearNotConnectedError } from "@/lib/linear/client";
+import type { Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
+import { draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
 import { findRalphRunId } from "./read-tools";
-import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
+import {
+  defineChatTool,
+  LINK_REQUIRED_RESULT,
+  type ChatToolContext,
+  type ChatToolRegistry,
+} from "./tools";
 
 /**
  * `action` tools: what the control-panel agent does for a linked member. A
@@ -243,8 +257,99 @@ export const sendRalphGuidance = defineChatTool({
   },
 });
 
+export const LINEAR_NOT_CONNECTED_RESULT = {
+  error: "linear_not_connected",
+  message:
+    "This organization has no Linear workspace connected, so you can't create Linear issues. Tell the user an admin can connect one under Settings › Integrations in the control panel.",
+} as const;
+
+/** The team `ref` names (key, name or ID, ignoring case), or undefined. */
+export function findTeam(teams: readonly Team[], ref: string): Team | undefined {
+  const wanted = ref.trim().toLowerCase();
+  return teams.find(
+    (t) => t.key.toLowerCase() === wanted || t.name.toLowerCase() === wanted || t.id === ref.trim(),
+  );
+}
+
+export const draftLinearIssue = defineChatTool({
+  tier: "action",
+  description:
+    "Drafts a Linear issue in the organization's Linear workspace from the conversation: posts a preview card in the thread with Create and Cancel buttons. Nothing is created until the user who asked clicks Create (within 24 hours); then the card shows the issue's identifier and link. Use it when a user asks you to file, open or create an issue/ticket. Write a self-contained title and description (the problem, context and acceptance criteria from the thread, in Markdown). Ask which team when the user hasn't said and the workspace has several.",
+  inputSchema: z.object({
+    team: z.string().min(1).max(200).describe("The Linear team: its key (e.g. `ENG`), name or ID."),
+    title: z.string().min(1).max(255).describe("A short, specific issue title."),
+    description: z
+      .string()
+      .max(20_000)
+      .describe(
+        "The issue description in Markdown, self-contained (Linear readers don't see the thread).",
+      ),
+    project: z.string().min(1).max(200).optional().describe("A Linear project name to add it to."),
+    labels: z
+      .array(z.string().min(1).max(80))
+      .max(10)
+      .optional()
+      .describe("Label names; a label the team doesn't have yet is created."),
+    priority: z
+      .number()
+      .int()
+      .min(0)
+      .max(4)
+      .optional()
+      .describe("Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low."),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, actor, thread, chatThread } = context;
+    if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
+    let teams: Team[];
+    try {
+      teams = await (await context.ralph()).linear.listTeams();
+    } catch (error) {
+      if (error instanceof LinearNotConnectedError) return LINEAR_NOT_CONNECTED_RESULT;
+      return {
+        error: "linear_error",
+        message: `Linear couldn't list the workspace's teams: ${error instanceof Error ? error.message : String(error)}. Tell the user to try again later.`,
+      };
+    }
+    const team = findTeam(teams, input.team);
+    if (!team) {
+      return {
+        error: "unknown_team",
+        message:
+          teams.length > 0
+            ? `The Linear workspace has no team "${input.team}". Ask the user which of these they mean: ${teams.map((t) => `${t.key} (${t.name})`).join(", ")}.`
+            : "The Linear workspace has no teams.",
+        teams: teams.map((t) => ({ key: t.key, name: t.name })),
+      };
+    }
+    const draft = await createChatLinearIssueDraft(db, {
+      threadId: chatThread.id,
+      requestedByUserId: actor.userId,
+      requestedByExternalUserId: context.requesterExternalUserId,
+      teamId: team.id,
+      teamKey: team.key,
+      title: input.title.trim(),
+      description: input.description.trim(),
+      projectName: input.project?.trim() || null,
+      labels: input.labels?.map((l) => l.trim()).filter(Boolean) ?? [],
+      priority: input.priority ?? null,
+      expiresAt: new Date(Date.now() + LINEAR_ISSUE_DRAFT_TTL_MS),
+    });
+    const posted = await thread.post(draftCard(draft));
+    await setChatLinearIssueDraftMessage(db, draft.id, posted.id);
+    context.handedOff();
+    return {
+      status: "drafted",
+      draft: { id: draft.id, team: team.key, title: draft.title },
+      message:
+        "The preview card with Create and Cancel buttons is posted in the thread; nothing is created until the user clicks Create (within 24 hours). Don't repeat the preview: end your turn with no text, or one short line.",
+    };
+  },
+});
+
 export const actionTools: ChatToolRegistry = {
   start_ralph_request: startRalphRequest,
   send_to_session: sendToSession,
   send_ralph_guidance: sendRalphGuidance,
+  draft_linear_issue: draftLinearIssue,
 };
