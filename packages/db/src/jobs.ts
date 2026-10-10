@@ -288,7 +288,9 @@ export interface ClaimJobResult {
  * `running`, the agent, `started_at` and the lease and increments
  * `delivery_count`. Like `startJob`, a cancel-requested candidate is canceled
  * and one at `maxDeliveries` is failed; both are returned in `settled` and
- * the claim moves on to the next candidate.
+ * the claim moves on to the next candidate. `beforeClaim` runs on the job
+ * about to be claimed (e.g. to sign its job token): if it throws, the whole
+ * transaction rolls back and no delivery is used up.
  */
 export async function claimJob(
   db: Database,
@@ -300,6 +302,7 @@ export async function claimJob(
     maxDeliveries: number;
     leaseSeconds?: number;
     now?: Date;
+    beforeClaim?: (job: Job) => Promise<void>;
   },
 ): Promise<ClaimJobResult> {
   const now = input.now ?? new Date();
@@ -351,6 +354,7 @@ export async function claimJob(
         settled.push({ outcome: "failed", job: failed! });
         continue;
       }
+      await input.beforeClaim?.(job);
       const [claimed] = await tx
         .update(jobs)
         .set({
