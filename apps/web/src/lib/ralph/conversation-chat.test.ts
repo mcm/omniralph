@@ -12,6 +12,7 @@ import {
   runMigrations,
   saveChatConnection,
   seedReviewProfiles,
+  updateRun,
   upsertScmConnection,
   type Database,
   type RalphRun,
@@ -29,7 +30,10 @@ import {
   statusText,
   type ChatChannel,
 } from "./conversation";
+import { relayActivity } from "./activities";
 import { postActivity } from "./notify";
+
+vi.mock("server-only", () => ({}));
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -301,6 +305,41 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
     await conversation.post({ type: "response", body: "done" });
     expect(await recorded(run.id)).toEqual([]);
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("gets an agent's relayed activities without touching Linear", async () => {
+    const { run } = await chatRun();
+    const { adapter } = slackAdapter();
+    const linear = vi.fn(async () => new FakeLinearGateway());
+    const deps = { db, linear, chat: channel(adapter) };
+
+    const outcome = await relayActivity(
+      deps,
+      { ralphRunId: run.id },
+      {
+        type: "action",
+        body: "Edited",
+        parameter: "README.md",
+        ephemeral: false,
+      },
+    );
+
+    expect(outcome).toEqual({ forwarded: true });
+    expect(adapter.postMessage).toHaveBeenCalledWith(SLACK_THREAD, {
+      markdown: "⏳ Working on it\nEdited `README.md`",
+    });
+    expect(linear).not.toHaveBeenCalled();
+
+    await updateRun(db, run.id, { status: "stopped" });
+    expect(
+      await relayActivity(
+        deps,
+        { ralphRunId: run.id },
+        { type: "thought", body: "late", ephemeral: false },
+      ),
+    ).toEqual({ forwarded: false, reason: "run_finished" });
+    expect(adapter.postMessage).toHaveBeenCalledOnce();
+    expect(adapter.editMessage).not.toHaveBeenCalled();
   });
 });
 
