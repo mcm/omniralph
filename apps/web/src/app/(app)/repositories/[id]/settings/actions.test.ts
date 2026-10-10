@@ -297,7 +297,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
   it("edits a profile and rejects a token cap below 5,000", async () => {
     expect(
       await updateReviewProfile("quick", {
-        model: "claude-haiku-4-5",
+        model: "claude-haiku-5-5",
         maxTokensPerReview: 4999,
         maxFiles: 15,
         allowRepoExploration: false,
@@ -313,7 +313,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     });
     expect(
       await updateReviewProfile("quick", {
-        model: "claude-haiku-4-5",
+        model: "claude-haiku-5-5",
         maxTokensPerReview: 5000,
         maxFiles: 10,
         allowRepoExploration: true,

@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-05T16:09:18.972Z",
+  "updatedAt": "2026-10-10T18:00:04.120Z",
   "profiles": {
     "quick": {
       "profileId": "quick",
-      "model": "claude-haiku-4-5",
+      "model": "claude-haiku-5-5",
       "cases": 27,
       "caseIds": [
         "bad-async-foreach",
@@ -36,28 +36,28 @@
         "clean-test-only"
       ],
       "unscored": 0,
-      "truePositives": 13,
-      "falsePositives": 4,
-      "falseNegatives": 0,
-      "precision": 0.7647058823529411,
-      "recall": 1,
-      "cleanFalsePositives": 4,
-      "cleanCasesFlagged": 4,
+      "truePositives": 12,
+      "falsePositives": 2,
+      "falseNegatives": 1,
+      "precision": 0.8571428571428571,
+      "recall": 0.9230769230769231,
+      "cleanFalsePositives": 1,
+      "cleanCasesFlagged": 1,
       "cleanCases": 15,
       "inputTokens": {
-        "mean": 7963,
-        "p50": 7980,
-        "max": 12779
+        "mean": 9133,
+        "p50": 9324,
+        "max": 14691
       },
       "outputTokens": {
-        "mean": 7611,
-        "p50": 6536,
-        "max": 16794
+        "mean": 870,
+        "p50": 857,
+        "max": 1846
       },
-      "totalTokens": 420499,
+      "totalTokens": 270083,
       "durationMs": {
-        "mean": 72534,
-        "total": 1958413
+        "mean": 6039,
+        "total": 163046
       }
     },
     "standard": {

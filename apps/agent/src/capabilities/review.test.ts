@@ -298,7 +298,7 @@ describe("review capability", () => {
         repository,
         baseSha: base,
         headSha: head,
-        model: "claude-haiku-4-5",
+        model: "claude-haiku-5-5",
         maxTokens: 5000,
         finding: {
           path: "src/list.ts",
@@ -334,7 +334,7 @@ describe("review capability", () => {
       expect(requests).toHaveLength(1);
       const [request] = requests;
       expect(request!.maxTokens).toBe(5000);
-      expect(request!.model).toBe("claude-haiku-4-5");
+      expect(request!.model).toBe("claude-haiku-5-5");
       expect(request!.prompt).toContain("Out-of-range read");
       expect(request!.prompt).toContain("-  return xs[xs.length];");
       expect(request!.prompt).toContain("+  return xs[xs.length + 1];");

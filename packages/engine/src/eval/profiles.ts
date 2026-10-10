@@ -9,7 +9,7 @@ export const EVAL_PROFILES: readonly ReviewProfileConfig[] = [
   {
     id: "quick",
     name: "Quick",
-    model: "claude-haiku-4-5",
+    model: "claude-haiku-5-5",
     maxTokensPerReview: 60_000,
     maxFiles: 15,
     allowRepoExploration: false,

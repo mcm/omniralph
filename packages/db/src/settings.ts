@@ -22,7 +22,7 @@ export const BUILT_IN_REVIEW_PROFILES = [
     id: "quick",
     name: "Quick",
     description: "Fast, diff-only review for small changes.",
-    model: "claude-haiku-4-5",
+    model: "claude-haiku-5-5",
     maxTokensPerReview: 60_000,
     maxFiles: 15,
     allowRepoExploration: false,
