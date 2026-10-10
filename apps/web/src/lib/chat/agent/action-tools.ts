@@ -1,6 +1,7 @@
 import "server-only";
 import { appendChatMessage, type RalphRun, type Repository } from "@omniralph/db";
 import { z } from "zod";
+import { sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
@@ -106,7 +107,7 @@ export const startRalphRequest = defineChatTool({
         return {
           error: "run_active",
           message:
-            "This thread already has a ralph run in progress. Don't start another one: send the user's request to that run as guidance instead.",
+            "This thread already has a ralph run in progress. Don't start another one: pass the user's request to that run with send_to_session instead.",
           run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
         };
       case "failed":
@@ -124,6 +125,51 @@ export const startRalphRequest = defineChatTool({
   },
 });
 
+export const sendToSession = defineChatTool({
+  tier: "action",
+  description:
+    "Passes a message to the ralph run of this thread, as if the user had replied to its session: while it works, its agent gets the message right away; otherwise it runs as the run's next request once the current step finishes. Use it when a user mentions you to steer the running session (more detail, a correction, a question for it). It answers in this thread itself.",
+  inputSchema: z.object({
+    text: z
+      .string()
+      .min(1)
+      .max(10_000)
+      .describe(
+        "The message for the session: self-contained, with what the user asked for (quote them when it helps).",
+      ),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const outcome = await sendToChatRun(await context.ralph(), {
+      chatThreadId: context.chatThread.id,
+      text: input.text,
+      author: context.turnMessages.at(-1)?.author ?? null,
+    });
+    switch (outcome.status) {
+      case "no_run":
+        return {
+          error: "no_active_run",
+          message:
+            "This thread has no ralph run in progress. To have ralph do more, hand it a new request with start_ralph_request.",
+        };
+      case "live":
+        return {
+          status: "delivered",
+          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          message:
+            "Passed to the session that is working right now; it answers in this thread. Tell the user briefly.",
+        };
+      case "queued":
+        return {
+          status: "queued",
+          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          message:
+            "The run takes this as its next request once its current step finishes, and answers in this thread. Tell the user briefly.",
+        };
+    }
+  },
+});
+
 export const actionTools: ChatToolRegistry = {
   start_ralph_request: startRalphRequest,
+  send_to_session: sendToSession,
 };

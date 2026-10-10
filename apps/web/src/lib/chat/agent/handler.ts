@@ -2,14 +2,16 @@ import "server-only";
 import {
   appendChatMessage,
   getOrganization,
+  getRunByChatThread,
   listChatMessages,
   type ChatMessageRole,
   type Database,
 } from "@omniralph/db";
 import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
-import { ConsoleLogger, type Logger } from "chat";
+import { ConsoleLogger, type Logger, type Message } from "chat";
 import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
+import { chatRunSession, sendToChatRun } from "@/lib/ralph/chat-reply";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
@@ -61,6 +63,13 @@ async function defaultRalphDeps(db: Database, organizationId: string): Promise<R
   return defaultDeps(db, organizationId);
 }
 
+/** How a message passed to the running session is acknowledged (no extra message). */
+export const SESSION_REACTION = "eyes";
+
+/** A chat message's author as the session sees it. */
+const authorName = (m: Message) =>
+  m.author.fullName || m.author.userName || m.author.userId || null;
+
 /** The parts of a model message other than text. */
 function withoutText(message: ModelMessage): Array<{ type: string }> {
   if (typeof message.content === "string") return [];
@@ -79,6 +88,8 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
   const rateLimits = deps.rateLimits ?? CHAT_AGENT_RATE_LIMITS;
   const registry = deps.tools ?? chatTools;
   const now = () => deps.now?.() ?? new Date();
+  const ralphDeps = (organizationId: string) =>
+    (deps.ralph ?? ((id) => defaultRalphDeps(db, id)))(organizationId);
 
   return {
     async handle(thread, message, context) {
@@ -89,6 +100,46 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         await thread.post(text);
         await record("assistant", text);
       };
+
+      // While the thread's session works, a plain reply is for it; a mention is for the agent.
+      if (!message.isMention && (await chatRunSession(db, chatThread.id))) {
+        if (actor.kind !== "member") {
+          await requireMember(context);
+          return;
+        }
+        try {
+          const ralph = await ralphDeps(organizationId);
+          let passed = false;
+          for (const m of [...context.skipped.filter((s) => !s.isMention), message]) {
+            const outcome = await sendToChatRun(ralph, {
+              chatThreadId: chatThread.id,
+              text: m.text,
+              author: authorName(m),
+            });
+            if (outcome.status !== "no_run") passed = true;
+          }
+          if (passed) {
+            await thread.adapter
+              .addReaction(thread.id, message.id, SESSION_REACTION)
+              .catch((error: unknown) =>
+                logger.warn("Couldn't react to a message passed to the session", {
+                  threadId: thread.id,
+                  error,
+                }),
+              );
+            return;
+          }
+          // The run ended meanwhile: the agent answers instead.
+        } catch (error) {
+          logger.error("Passing a chat reply to the ralph session failed", {
+            organizationId,
+            threadId: thread.id,
+            error,
+          });
+          await reply(ERROR_REPLY).catch(() => undefined);
+          return;
+        }
+      }
 
       if (!deps.model) {
         const state = (await thread.state) as AgentThreadState | null;
@@ -120,9 +171,10 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         const organization = await getOrganization(db, organizationId);
         const history = await listChatMessages(db, chatThread.id, CHAT_AGENT_HISTORY_LIMIT);
         const turnMessages = [...context.skipped, message].map((m) => ({
-          author: m.author.fullName || m.author.userName || m.author.userId || null,
+          author: authorName(m),
           text: m.text,
         }));
+        const threadRun = await getRunByChatThread(db, chatThread.id);
         const tools = toAiTools(
           registry,
           {
@@ -133,7 +185,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             appUrl,
             chatThread,
             turnMessages,
-            ralph: () => (deps.ralph ?? ((id) => defaultRalphDeps(db, id)))(organizationId),
+            ralph: () => ralphDeps(organizationId),
             handedOff: () => {
               handedOff = true;
             },
@@ -151,6 +203,11 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             actor,
             appUrl,
             now: now(),
+            threadRun: threadRun && {
+              id: threadRun.id,
+              status: threadRun.status,
+              working: !!(await chatRunSession(db, chatThread.id)),
+            },
           }),
           messages: historyMessages(history, { includeTools: Object.keys(tools).length > 0 }),
           tools,
