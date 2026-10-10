@@ -3,6 +3,8 @@
  * Agent SDK as `outputFormat`, and readers that validate and normalise a session's result.
  */
 import { z } from "zod";
+import { parsePrd } from "./prd.js";
+import { hasOpenQuestionsHeading } from "./triage.js";
 
 /** At most this many follow-up issues are filed from one story session. */
 export const MAX_FOLLOW_UPS = 10;
@@ -228,6 +230,187 @@ export function readRequestResult(
       }),
       ...(findings.length > 0 && { findings: findings.slice(0, MAX_FINDING_OUTCOMES) }),
       ...(message && { commit: { message } }),
+    },
+  };
+}
+
+/** The t-shirt sizes of a triage; L and larger become epics. */
+export const TRIAGE_OUTPUT_SIZES = ["XS", "S", "M", "L", "XL"] as const;
+const EPIC_SIZES = new Set<string>(["L", "XL"]);
+
+const LinearPriority = z
+  .literal([1, 2, 3, 4])
+  .describe("Linear priority: 1 Urgent, 2 High, 3 Medium, 4 Low.");
+
+/** The structured result a triage session ends with (the shared `TriageOutcome` plus a summary). */
+export const TriageAgentOutput = z.object({
+  outcome: z
+    .enum(["prd", "reformat", "unchanged"])
+    .describe(
+      "prd: the issue (with no sub-issues) is rewritten as a PRD. reformat: an issue already planned with sub-issues is put into the PRD format, sub-issues included. unchanged: it already is a PRD in the format.",
+    ),
+  title: z.string().describe("The issue's title: descriptive but concise."),
+  description: z
+    .string()
+    .describe(
+      "The PRD in markdown: the issue's new description, without a `## Open Questions` section.",
+    ),
+  size: z
+    .enum(TRIAGE_OUTPUT_SIZES)
+    .describe("T-shirt size of the whole body of work. L or larger is an epic with sub-issues."),
+  openQuestions: z
+    .array(z.string())
+    .describe("Every ambiguity you couldn't resolve, one question each. Empty when none remain."),
+  stories: z
+    .array(
+      z.object({
+        title: z.string().describe("The plain story title, without IDs."),
+        body: z
+          .string()
+          .describe(
+            "User story sentence, optional context, then a `## Acceptance Criteria` checklist. No IDs or metadata.",
+          ),
+        priority: LinearPriority,
+        dependsOn: z
+          .array(z.number())
+          .describe("0-based indexes, in `stories`, of the stories this one is blocked by."),
+        manual: z.boolean().describe("True for a step only a person can do."),
+      }),
+    )
+    .describe(
+      "outcome prd, L or larger only: the sub-issues to create, in order, the validation story last. Empty otherwise.",
+    ),
+  subIssueUpdates: z
+    .array(
+      z.object({
+        id: z.string().describe("The existing sub-issue's id, as given in the prompt."),
+        title: z.string().describe("The plain story title, without IDs."),
+        body: z
+          .string()
+          .describe("The story body, ending with a `## Acceptance Criteria` checklist."),
+        priority: LinearPriority,
+        blockedBy: z.array(z.string()).describe("Ids of the sibling sub-issues it is blocked by."),
+      }),
+    )
+    .describe(
+      "outcome reformat only: Backlog/Todo sub-issues rewritten in the story format. Empty otherwise.",
+    ),
+  summary: z
+    .string()
+    .describe(
+      "Posted to the Linear session: the outcome, size and why, the structure, and how many open questions remain.",
+    ),
+});
+export type TriageAgentOutput = z.infer<typeof TriageAgentOutput>;
+
+/** `outputFormat` schema of a triage session. */
+export const TRIAGE_OUTPUT_SCHEMA = jsonSchema(TriageAgentOutput);
+
+/** Longest issue title kept (Linear's limit). */
+export const MAX_TRIAGE_TITLE = 255;
+
+function oneLine(title: string): string {
+  return title.replace(/\s+/g, " ").trim().slice(0, MAX_TRIAGE_TITLE).trim();
+}
+
+const QUALITY_GATES_HEADING = /^##[ \t]+Quality Gates[ \t]*$/im;
+const ACCEPTANCE_CRITERIA_HEADING = /^##[ \t]+Acceptance Criteria[ \t]*$/im;
+
+/**
+ * A triage session's result, trimmed (blank and duplicate open questions dropped, dependency indexes
+ * limited to other stories), or the problem with it: a result that doesn't match the schema, a
+ * description without `## Quality Gates` or with `## Open Questions`, an epic PRD without stories, a
+ * smaller issue with stories, a description ralph would split into stories, a story body without
+ * `## Acceptance Criteria`, or stories/updates that don't fit the outcome.
+ */
+export function validateTriageOutput(
+  structured: unknown,
+): { result: TriageAgentOutput } | { problem: string } {
+  const parsed = structured === undefined ? undefined : TriageAgentOutput.safeParse(structured);
+  if (!parsed?.success) return { problem: problemWith(parsed?.error) };
+  const data = parsed.data;
+  const title = oneLine(data.title);
+  const description = data.description.trim();
+  const summary = data.summary.trim();
+  if (!title) return { problem: "the title is empty" };
+  if (!description) return { problem: "the description is empty" };
+  if (!summary) return { problem: "the summary is empty" };
+  if (!QUALITY_GATES_HEADING.test(description)) {
+    return { problem: "the description has no `## Quality Gates` section" };
+  }
+  if (hasOpenQuestionsHeading(description)) {
+    return {
+      problem: "the description contains `## Open Questions`: report them in `openQuestions`",
+    };
+  }
+  if (parsePrd(description)) {
+    return {
+      problem:
+        "ralph would split the description into stories: no story-style headings or `userStories` JSON",
+    };
+  }
+  const epic = EPIC_SIZES.has(data.size);
+  if (data.outcome === "prd" && epic && data.stories.length === 0) {
+    return { problem: `size ${data.size} is an epic but there are no \`stories\`` };
+  }
+  if (!epic && data.stories.length > 0) {
+    return { problem: `size ${data.size} is a single issue but there are \`stories\`` };
+  }
+  if (data.outcome !== "prd" && data.stories.length > 0) {
+    return { problem: `outcome ${data.outcome} can't create \`stories\`` };
+  }
+  if (data.outcome !== "reformat" && data.subIssueUpdates.length > 0) {
+    return { problem: `outcome ${data.outcome} can't have \`subIssueUpdates\`` };
+  }
+
+  const stories: TriageAgentOutput["stories"] = [];
+  for (const [i, s] of data.stories.entries()) {
+    const storyTitle = oneLine(s.title);
+    const body = s.body.trim();
+    if (!storyTitle) return { problem: `story ${i} has no title` };
+    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
+      return { problem: `story ${i} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
+    }
+    const dependsOn = [
+      ...new Set(
+        s.dependsOn.filter(
+          (d) => Number.isInteger(d) && d >= 0 && d < data.stories.length && d !== i,
+        ),
+      ),
+    ];
+    stories.push({ title: storyTitle, body, priority: s.priority, dependsOn, manual: s.manual });
+  }
+
+  const subIssueUpdates: TriageAgentOutput["subIssueUpdates"] = [];
+  for (const u of data.subIssueUpdates) {
+    const id = u.id.trim();
+    const updateTitle = oneLine(u.title);
+    const body = u.body.trim();
+    if (!id || subIssueUpdates.some((x) => x.id === id)) continue;
+    if (!updateTitle) return { problem: `the update of sub-issue ${id} has no title` };
+    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
+      return { problem: `the update of sub-issue ${id} has no \`## Acceptance Criteria\`` };
+    }
+    const blockedBy = [...new Set(u.blockedBy.map((b) => b.trim()).filter((b) => b && b !== id))];
+    subIssueUpdates.push({ id, title: updateTitle, body, priority: u.priority, blockedBy });
+  }
+
+  const openQuestions: string[] = [];
+  for (const q of data.openQuestions) {
+    const question = q.trim();
+    if (question && !openQuestions.includes(question)) openQuestions.push(question);
+  }
+
+  return {
+    result: {
+      outcome: data.outcome,
+      title,
+      description,
+      size: data.size,
+      openQuestions,
+      stories,
+      subIssueUpdates,
+      summary,
     },
   };
 }

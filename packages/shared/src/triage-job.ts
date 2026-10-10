@@ -99,28 +99,51 @@ export const TriageRepository = z.object({
 });
 export type TriageRepository = z.infer<typeof TriageRepository>;
 
-/** A sub-issue rewritten in the PRD format (only Backlog/Todo ones are ever applied). */
-export const TriageChildUpdate = z.object({
+/** What a triage session did: wrote a new PRD, reformatted an already-planned issue, or left it as is. */
+export const TRIAGE_OUTCOME_KINDS = ["prd", "reformat", "unchanged"] as const;
+export type TriageOutcomeKind = (typeof TRIAGE_OUTCOME_KINDS)[number];
+
+/** Linear priority of a story: 1 Urgent, 2 High, 3 Medium, 4 Low. */
+const StoryPriority = z.int().min(1).max(4);
+
+/** A story sub-issue to create for a new epic, in story order. */
+export const TriageStory = z.object({
+  title: z.string().trim().min(1).max(255),
+  /** User story sentence, optional context, then `## Acceptance Criteria`. */
+  body: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
+  priority: StoryPriority,
+  /** Indexes (0-based) of the earlier stories it is blocked by. */
+  dependsOn: z.array(z.int().min(0)).max(100).default([]),
+  /** A step for a person: created with the manual label. */
+  manual: z.boolean().default(false),
+});
+export type TriageStory = z.infer<typeof TriageStory>;
+
+/** An existing sub-issue rewritten in the PRD format (only Backlog/Todo ones are ever applied). */
+export const TriageSubIssueUpdate = z.object({
+  /** The sub-issue's Linear id. */
   id: LinearId,
   title: z.string().trim().min(1).max(255),
-  description: z.string().max(MAX_DOCUMENT_LENGTH),
+  body: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
+  priority: StoryPriority,
+  /** Linear ids of the sibling sub-issues it is blocked by. */
+  blockedBy: z.array(LinearId).max(100).default([]),
 });
-export type TriageChildUpdate = z.infer<typeof TriageChildUpdate>;
+export type TriageSubIssueUpdate = z.infer<typeof TriageSubIssueUpdate>;
 
 /** What a triage session decided: the issue as it should read in Linear. */
 export const TriageOutcome = z.object({
+  outcome: z.enum(TRIAGE_OUTCOME_KINDS),
   size: z.enum(TRIAGE_SIZES),
   title: z.string().trim().min(1).max(255),
-  /**
-   * The PRD, without the `## Open Questions` section (the control panel adds
-   * it from `openQuestions`). For L or larger it lists the stories the
-   * sub-issues are created from.
-   */
+  /** The PRD, without the `## Open Questions` section (the control panel adds it from `openQuestions`). */
   description: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
   /** What it couldn't decide; empty when the issue is ready for Todo. */
   openQuestions: z.array(z.string().trim().min(1).max(4000)).max(50),
-  /** Existing sub-issues reformatted to the PRD format. */
-  childUpdates: z.array(TriageChildUpdate).max(500).default([]),
+  /** Sub-issues to create (`prd` epics, L or larger, only). */
+  stories: z.array(TriageStory).max(100).default([]),
+  /** Existing sub-issues reformatted to the PRD format (`reformat` only). */
+  subIssueUpdates: z.array(TriageSubIssueUpdate).max(500).default([]),
 });
 export type TriageOutcome = z.infer<typeof TriageOutcome>;
 
