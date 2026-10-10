@@ -158,6 +158,7 @@ export {
   type LatestAgentVersionCheck,
 } from "./app-settings.js";
 export {
+  claimJob,
   classifyAgentRunningJobs,
   completeJob,
   expireQueuedJobs,
@@ -171,6 +172,7 @@ export {
   pinnedAgentFor,
   postJobCommentOnce,
   recordAgentHeartbeat,
+  renewJobLeases,
   requestJobCancel,
   listActiveJobsByDedupePrefix,
   latestCompletedChatThreadJob,
@@ -178,10 +180,12 @@ export {
   failCompletedJob,
   startJob,
   type CancelJobResult,
+  type ClaimJobResult,
   type FinishJobResult,
   type Job,
   type JobStatus,
   type NewJobInput,
+  type SettledJob,
   type StartJobResult,
 } from "./jobs.js";
 export {

@@ -28,12 +28,14 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
 
   const db = getDb();
   if (!(await getJobForAgent(db, jobId, principal.agentId))) return notFound();
+  const retryAfterSeconds = body.data.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
   const outcome = await failJob(db, {
     jobId,
     agentId: principal.agentId,
     retryable: body.data.retryable,
     error: body.data.error ?? null,
     maxDeliveries: MAX_JOB_DELIVERIES,
+    retryAfterSeconds,
   });
   const job = outcome.status === "not_found" ? null : await getJob(db, jobId);
   const handler = job && jobOutcomeHandler(job);
@@ -51,7 +53,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     case "retry":
       return Response.json({
         status: "retry",
-        retryAfterSeconds: body.data.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS,
+        retryAfterSeconds,
       } satisfies JobOutcomeResponse);
     case "failed":
     case "canceled":
