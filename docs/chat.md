@@ -162,16 +162,94 @@ last 50 messages are kept as context. Direct messages to the bot are ignored.
 
 It can answer questions about the organization's ralph runs (status, stories, PRs/MRs, progress),
 reviews and their findings, jobs, agents and repositories, with links to the control panel's
-pages. It can't start or steer ralph runs, create Linear issues or answer questions about code yet.
+pages. Linked members can also [hand work to ralph](#ralph-from-chat) and steer runs. It can't
+create Linear issues or answer questions about code yet.
 
 Turns are rate-limited to 10 per minute per chat user and 60 per 10 minutes per organization; the
 bot says so once when a limit is reached.
 
+## Ralph from chat
+
+Linked members can ask the bot to change code: it hands the request to a ralph session in a
+repository, and the session works in the same thread. The run is a request-mode run, like an
+[@mention in Linear](linear.md#mentions-request-mode), but it belongs to the chat thread instead
+of a Linear issue; it shows up under **Ralph runs** with the platform and channel it came from.
+The organization doesn't need Linear for it.
+
+### Starting a request
+
+> @Omniralph fix the typo in the README of acme/website
+
+The control-panel agent works out the repository from the conversation (asking first when it's
+ambiguous) and hands the request off with its `start_ralph_request` tool:
+
+- The repository must be one of the organization's repositories with ralph enabled (see
+  [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
+  used); otherwise the bot lists the ones it can use. The session runs on an agent with the
+  `ralph` capability ([deploy-agent.md](deploy-agent.md#ralph)) and waits in the queue until one
+  is online.
+- The bot posts **"Handing this to ralph in `owner/repo`…"** with the request's first sentence
+  and a link to the run's page. The session gets the agent's summary of the request plus the
+  quoted chat messages it's based on.
+- The session works on a new branch `omniralph/chat-<id>` from the default branch, with the
+  repository's quality gates, and asks the control panel to open a PR/MR (a draft until it's
+  ready; its description says it was requested in chat). A later request in the same thread for
+  the same repository continues that branch and PR/MR.
+- One run per thread at a time: while the thread's run is active, new requests go to it as
+  [replies](#replies-while-a-session-runs) instead.
+
+While it works, the session keeps **one status message** up to date (`⏳ Working on it`, the
+current step and its last action) instead of posting every thought. Its answers, questions and
+errors (`⚠️ …`) arrive as new messages, and the PR/MR link is posted once. Questions with options
+(as in Linear's pickers) are answered by replying with the option's text. When the request is done,
+the control-panel agent takes the thread back.
+
+### Replies while a session runs
+
+While the thread's run has a queued or running `ralph.request` job:
+
+| Reply                                 | Goes to                                                                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A plain reply (no mention of the bot) | The session, like a reply in a Linear agent session: passed live within one heartbeat (about 20s) when it's running, otherwise queued as the next request. The bot reacts with 👀 and posts nothing else. |
+| A reply that @mentions the bot        | The control-panel agent, which can answer questions or forward guidance with its `send_to_session` tool.                                                                                                  |
+
+Plain replies from someone who isn't a linked member aren't passed on; they get the link prompt.
+When no session is working, every reply goes to the control-panel agent as usual, and asking it
+for more work in the same repository starts the next request on the same branch.
+
+### Checking on and steering other runs
+
+Ask about any run of the organization by its run ID or its Linear identifier ("how is ENG-42
+doing?"): the agent reports its status, current story, pending guidance and last activity
+(`get_ralph_run`). A linked member can send it guidance ("tell ENG-42 to skip the migration"):
+`send_ralph_guidance` adds it as guidance and a pending request, exactly like a reply in the run's
+own session, authored as `<name> (from chat)`; a Linear run's session shows a "Guidance from
+<name> (from chat)" note. A finished run can't take guidance, and runs can't be stopped from chat.
+The detailed progress of Linear runs stays in Linear.
+
+### PR/MR follow-ups
+
+A chat run's PRs/MRs are looked after like
+[those of Linear runs](linear.md#reviews-and-bot-requests-on-ralph-prsmrs): Omniralph's review
+findings, `@omniralph fix` requests and failed CI become requests on the run (within the same
+capped rounds), and the worktree is cleaned up after the merge. Their news ("CI failed on the pull
+request… Working on a fix.", round limits, the cleanup report) is posted to the thread as new
+messages. `@omniralph fix` on the PR/MR replies with a pointer to the chat thread instead of a
+Linear issue. A cleanup question (what to do with a stash or a kept branch) is answered with a
+plain reply in the thread, by a linked member.
+
+### What needs a linked account
+
+Starting a request, plain replies to a running session, guidance with `send_to_session` or
+`send_ralph_guidance` and answers to cleanup questions are `action`s: only
+[linked members](#access-levels) can do them. Slack users admitted by email domain can ask about
+runs but not change them; everyone else gets the link prompt.
+
 ## Access levels
 
 Who may ask what depends on whether Omniralph knows who's asking. Each tool the agent uses has a
-tier: `read` (questions about the organization) or `action` (changing something, for later
-features).
+tier: `read` (questions about the organization) or `action` (changing something: starting,
+steering and replying to [ralph runs](#ralph-from-chat)).
 
 | Who                                                                                                                                                                             | Gets                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -227,3 +305,5 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The bot doesn't react to a Discord mention    | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
 | "The Omniralph assistant isn't configured"    | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
 | The bot asks to link although you're a member | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
+| A reply didn't reach the ralph session        | It must not mention the bot (a mention goes to the control-panel agent), you must be a linked member, and the session must still be working: once its request is done, replies go to the agent.              |
+| The bot won't start a ralph request           | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |

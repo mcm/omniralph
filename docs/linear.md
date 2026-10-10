@@ -12,6 +12,13 @@ their activities through the control panel (`POST /api/agent/jobs/{id}/activitie
 [Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
 and never see a Linear token.
 
+Runs can also start from a Slack or Discord thread: a linked member asks the chat bot and it hands
+the request to a request-mode run in a ralph-enabled repository, whose progress, answers and PR/MR
+follow-ups go to that thread instead of a Linear session. Such runs need no Linear issue (or
+Linear connection) and don't change anything in Linear; see
+[chat.md › Ralph from chat](chat.md#ralph-from-chat). Linear runs behave as described here, and
+the chat bot can also report on them and send them guidance.
+
 Coming from cyralph? [cutover-from-cyralph.md](cutover-from-cyralph.md) maps its `config.json` to
 the settings below and lists the steps to switch over.
 

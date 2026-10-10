@@ -102,7 +102,8 @@ message's author resolves to an access level (`resolveChatActor`,
 A call to a tool above the actor's level returns a "link required" result, and the bot posts a
 link prompt (ephemeral in Slack, a mention in Discord). This epic ships only `read` tools (runs,
 reviews, jobs, agents, repositories); later epics add `action` tools that therefore require a
-link.
+link. TOOL-181 added the first ones (`start_ralph_request`, `send_to_session`,
+`send_ralph_guidance`; see [ADR 0003's addendum](0003-ralph-orchestration.md#addendum-run-origin-and-the-conversation-channel)).
 
 - **Linking.** A signed, 15-minute link (`/chat/link`) lets a signed-in member link a chat identity
   (`chat_identities`, one Omniralph user per org + platform + chat user). Slack users whose
