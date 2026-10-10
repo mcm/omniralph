@@ -3,7 +3,7 @@
  * Lifecycle: `queued` → `running` (claim, per delivery) → `completed` |
  * `failed` | `canceled`, or back to `queued` on a retryable failure; `queued`
  * jobs older than the retention become `expired`.
- * See `docs/adr/0001-job-dispatch.md`.
+ * See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";

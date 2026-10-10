@@ -1,11 +1,10 @@
 # Deploying the control panel
 
 The control panel (`apps/web`) is a Next.js 16 app on Vercel. It's the single integration point:
-code hosts send webhooks to it, it owns job state in Postgres, publishes jobs to Vercel Queues,
-proxies the agents' queue calls, signs agent tokens with Vercel KMS and brokers short-lived clone
-credentials. Every variable mentioned below is described in [env.md](env.md).
+code hosts send webhooks to it, it owns job state in Postgres, where agents claim their jobs, signs
+agent tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
 
-Prerequisites: a Vercel team with Queues and KMS available (both in beta), the Vercel CLI
+Prerequisites: a Vercel team with KMS available (beta), the Vercel CLI
 (`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, a Neon API key, and
 admin access to this repository and to the GitHub organization and/or GitLab projects you'll connect.
 
@@ -20,8 +19,8 @@ uploads the output with `vercel deploy --prebuilt` (see *Deploying from GitHub A
    from Git pushes (`"git": { "deploymentEnabled": false }`), so connecting the repository doesn't
    make Vercel build it too.
 3. **Node.js version:** 22.x (**Settings › Build and Deployment**).
-4. **Function region** (**Settings › Functions**): the region you'll use for Queues (e.g. `iad1`
-   Washington, D.C.), close to your Neon database.
+4. **Function region** (**Settings › Functions**): close to your Neon database (e.g. `iad1`
+   Washington, D.C.).
 5. Link a local checkout for the CLI steps below: `cd apps/web && vercel link`. Note the
    `orgId` and `projectId` in `apps/web/.vercel/project.json` for the next step.
 
@@ -122,24 +121,16 @@ vercel kms inspect <issuerId>       # "algorithm": "RS256", "origin": "external"
 Set `GITHUB_APP_KMS_ISSUER_ID=<issuerId>` and leave `GITHUB_APP_PRIVATE_KEY` unset, then delete the
 PEM file. Do the same per environment if previews use their own GitHub App.
 
-## 6. Vercel Queues (`QUEUE_REGIONS`)
+## 6. Job dispatch
 
-Jobs are delivered through Vercel Queues in poll mode ([ADR 0001](adr/0001-job-dispatch.md)).
-There's nothing to provision per topic or per organization: topics (`review-jobs-org-<orgId>` and
-`ralph-jobs-org-<orgId>` per organization, `review-jobs-agent-<agentId>` for pinned repos,
-`system-jobs-agent-<agentId>` for `repo.sync`; see [ADR 0004](adr/0004-organizations.md)) and the
-`agents` consumer group are created on first use. The control panel authenticates to Queues with the deployment's Vercel OIDC token.
+There's nothing to provision: the `jobs` table in Postgres is the job queue
+([ADR 0006](adr/0006-postgres-job-queue.md)). Agents claim jobs with `POST /api/agent/claim`, which
+holds the request for up to 50s while there's nothing to claim (its `maxDuration` is 60s), and
+renew the leases of their running jobs with each heartbeat.
 
-1. Make sure Vercel Queues (beta) is enabled for the team that owns the project.
-2. Pick a region where Queues is available, ideally your function region. Set
-   `QUEUE_REGIONS=iad1` (comma-separated if you list more). Jobs are published to, and agents
-   poll, the **first** region; the agent queue proxy (`/api/agent/queue/<region>/…`) only forwards to
-   regions in the list.
-3. Don't change the first region while jobs are queued: messages can only be received in the region
-   they were sent to. Drain the queue (or let the 24h retention expire) first.
-
-Agents never talk to Vercel: they poll through the proxy with their own access token, and the proxy
-only allows receive, acknowledge and extend-lease on the agent's topics in the `agents` group.
+If the project still has a `QUEUE_REGIONS` variable from an older release, remove it after
+deploying; nothing reads it. Follow the [cutover](adr/0006-postgres-job-queue.md#cutover) so
+running jobs aren't lost.
 
 ## 7. Vercel Cron (`CRON_SECRET`)
 
@@ -148,7 +139,7 @@ only allows receive, acknowledge and extend-lease on the agent's topics in the `
 | Path | Schedule | Does |
 | -- | -- | -- |
 | `/api/cron/discord-gateway` | every 9 minutes | Holds the Discord Gateway connection for 10 minutes and forwards messages to the Discord webhook route; needs a Pro or Enterprise plan ([chat.md](chat.md#the-discord-gateway-cron)). Does nothing without the Discord env vars |
-| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (their messages have left the queue) |
+| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no agent claimed them) |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
 | `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |

@@ -449,7 +449,7 @@ async function usableRepository(
  * settings and quality gates): its sub-issue moves to started and a
  * `ralph.story` job goes to the run's sticky agent (the agent that started
  * its first job, whichever lane it worked in), else to the lane repository's
- * pinned agent, else to its organization's `ralph-jobs-org-<orgId>`.
+ * pinned agent, else to any ralph agent of its organization.
  */
 async function enqueueStory(
   deps: RalphDeps,

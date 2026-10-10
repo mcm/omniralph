@@ -5,9 +5,9 @@ import { getDb } from "@/lib/db";
 import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /**
- * Vercel Cron (`vercel.json`): marks jobs still `queued` after the queue's 24h
- * message retention as `expired`; their messages are gone, so no agent will
- * ever start them. Their outcome handlers hear about the failure (e.g. a
+ * Vercel Cron (`vercel.json`): marks jobs still `queued` 24h after creation
+ * (`JOB_RETENTION_SECONDS`) as `expired`, so no agent picks up a stale job.
+ * Their outcome handlers hear about the failure (e.g. a
  * review fails with a note on the PR/MR).
  */
 export async function GET(req: Request): Promise<Response> {

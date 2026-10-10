@@ -57,26 +57,21 @@ Nothing was live yet, so this change wipes existing data and keeps no backwards 
   apps and the Linear app are env vars; only their installations and connections are per
   organization.
 
-### Per-organization topics
+### Job isolation
 
-Capability topics are per organization (`capabilityTopic(capability, organizationId)` in
-`packages/shared/src/protocol.ts`):
-
-| Topic | Who publishes | Who polls |
-| -- | -- | -- |
-| `<capability>-jobs-org-<organizationId>` (e.g. `review-jobs-org-<id>`, `ralph-jobs-org-<id>`) | jobs of that organization that aren't pinned or sticky | agents of that organization with the capability enabled |
-| `<capability>-jobs-agent-<agentId>` (e.g. `review-jobs-agent-<id>`, `system-jobs-agent-<id>`) | pinned repositories, ralph runs sticking to an agent, `repo.sync` | that agent only |
+Jobs are dispatched through the `jobs` table, which agents claim from
+([ADR 0006](0006-postgres-job-queue.md)); there are no per-organization queues:
 
 - `jobs.organization_id` is set on every job: from the repository (reviews, replies, learned
   rules, `repo.sync`) or the ralph run.
-- The dispatcher publishes to the job's organization topic. A pinned agent, a run's sticky agent
-  or an explicit target agent is only used when it belongs to the job's organization (a foreign
-  target throws, a foreign pin or sticky agent is ignored).
-- `agentTopics()` (`apps/web/src/lib/dispatch/config.ts`) returns only the agent's
-  organization's capability topics and its own agent topics; the queue proxy refuses every other
-  topic. The heartbeat response carries `organizationId`, and the agent daemon
-  (`apps/agent/src/daemon.ts`, `topicCapability`) only polls topics matching it.
-- The agent API (`getJobForAgent`, `startJob`, `isJobRunningOnAgent`) only acts on jobs of the
+- `jobs.target_agent_id` is set for pinned repositories, ralph runs sticking to an agent and
+  `repo.sync`. A pinned agent, a run's sticky agent or an explicit target agent is only used when
+  it belongs to the job's organization (a foreign target throws, a foreign pin or sticky agent is
+  ignored); otherwise it's null and any agent of the organization may claim the job.
+- The claim (`claimJob`, `POST /api/agent/claim`) only selects jobs of the agent's organization
+  whose `target_agent_id` is null or the agent itself, and whose capability is enabled for the
+  agent.
+- The agent API (`getJobForAgent`, `claimJob`, `isJobRunningOnAgent`) only acts on jobs of the
   agent's organization, so the credential broker and job-token routes refuse a cross-org job.
 
 ### Uniqueness rules
@@ -108,5 +103,5 @@ parameter alone. GitLab connect uses the admin's active organization directly.
   deleted with its repositories (and, by cascade, their reviews, rules, pins and ralph runs; GitLab
   project webhooks are deleted first), so its history doesn't move along. There is no
   organization deletion and no transfer of resources.
-- A queued job's topic includes its organization ID, so changing an agent's organization isn't
-  possible (agents are enrolled into one organization for life).
+- An agent's jobs, pins and sticky runs all belong to its organization, so changing an agent's
+  organization isn't possible (agents are enrolled into one organization for life).

@@ -1,7 +1,10 @@
 # ADR 0001: Job dispatch through Vercel Queues (poll mode)
 
-- **Status:** Accepted (US-009). Verified live against the `omniralph` Vercel
-  project on 2026-10-04 (TOOL-45): see [Spike](#spike).
+- **Status:** Superseded by [ADR 0006](0006-postgres-job-queue.md) (TOOL-254,
+  2026-10-10): agents now claim jobs from the `jobs` table and Vercel Queues is
+  gone. Originally accepted (US-009) and verified live against the `omniralph`
+  Vercel project on 2026-10-04 (TOOL-45): see [Spike](#spike). The rest of this
+  record describes the design as it was.
 - **Date:** 2026-10-04
 
 ## Context
@@ -30,7 +33,7 @@ delivers jobs.**
   publishes:
   - to the job's organization's `<capability>-jobs-org-<organizationId>`
     (e.g. `review-jobs-org-<organizationId>`; see
-    [ADR 0004: organizations](0004-organizations.md#per-organization-topics)
+    [ADR 0004: organizations](0004-organizations.md#job-isolation)
     for topic naming), or
   - to `<capability>-jobs-agent-<agentId>` when the repo is pinned (only to
     agents of the job's organization). With several
@@ -58,7 +61,7 @@ delivers jobs.**
     (`PATCH …/lease/<receipt>`). Send and receive-by-ID are refused.
   - **Topics:** the shared topics of the agent's enabled capabilities in its
     own organization, plus its own pinned topics
-    ([ADR 0004](0004-organizations.md#per-organization-topics)).
+    ([ADR 0004](0004-organizations.md#job-isolation)).
   - **Consumer group:** `agents` only.
   - **Regions:** those in `QUEUE_REGIONS`. The upstream host is always
     `{region}.vercel-queue.com`.

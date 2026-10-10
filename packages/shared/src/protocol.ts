@@ -1,7 +1,7 @@
 /**
  * Job protocol between the control panel and agents: the heartbeat and the
  * job lifecycle endpoints (`/api/agent/heartbeat`, `/api/agent/claim`,
- * `/api/agent/jobs/{id}/result|fail`). See `docs/adr/0001-job-dispatch.md`.
+ * `/api/agent/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { z } from "zod";
 import type { JobTokenScope } from "./agent-protocol.js";

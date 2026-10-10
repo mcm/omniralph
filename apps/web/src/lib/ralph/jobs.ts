@@ -26,7 +26,7 @@ import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
 /**
  * A delivery started: the agent becomes the run's sticky agent (its later
- * jobs go to `ralph-jobs-agent-<id>`). A job of a run that is over is skipped.
+ * jobs are targeted at it). A job of a run that is over is skipped.
  */
 export async function onRalphJobStarted(
   db: Database,
