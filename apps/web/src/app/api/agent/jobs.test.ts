@@ -543,6 +543,67 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       expect(await jobRow(jobId)).toMatchObject({ status: "queued", deliveryCount: 0 });
     });
 
+    it("claims jobs targeted at the agent first, and never another agent's", async () => {
+      const { organizationId, agent, job } = await claimOrg();
+      const other = await newAgent({ organizationId });
+      const untargeted = await job();
+      const theirs = await job("claim.run", { targetAgentId: other.agentId });
+      const ours = await job("claim.run", { targetAgentId: agent.agentId });
+      const claimedId = async (accessToken: string) =>
+        ((await (await claimAs(accessToken)).json()) as JobStartResponse & { action: "run" }).job
+          .id;
+      expect(await claimedId(agent.accessToken)).toBe(ours);
+      expect(await claimedId(agent.accessToken)).toBe(untargeted);
+      expect((await claimAs(agent.accessToken)).status).toBe(204);
+      expect(await claimedId(other.accessToken)).toBe(theirs);
+    });
+
+    it("leaves a live agent's job alone and redelivers a crashed agent's once its lease lapses", async () => {
+      const { organizationId, agent, job } = await claimOrg();
+      const other = await newAgent({ organizationId });
+      const jobId = await job();
+      expect((await claimAs(agent.accessToken)).status).toBe(200);
+
+      // The heartbeat renews the lease of a job the agent still runs.
+      await db
+        .update(jobs)
+        .set({ leaseExpiresAt: new Date(Date.now() + 1000) })
+        .where(eq(jobs.id, jobId));
+      const beat = await heartbeat(
+        agentRequest("heartbeat", agent.accessToken, {
+          body: {
+            version: "0.2.0",
+            capabilities: ["review"],
+            runningJobIds: [jobId],
+            freeSlots: 0,
+          },
+        }),
+      );
+      expect(beat.status).toBe(200);
+      expect((await jobRow(jobId)).leaseExpiresAt!.getTime()).toBeGreaterThanOrEqual(
+        Date.now() + (JOB_LEASE_SECONDS - 5) * 1000,
+      );
+      expect((await claimAs(other.accessToken)).status).toBe(204);
+
+      // The agent crashed: no more heartbeats, the lease lapses, another agent takes over.
+      await db
+        .update(jobs)
+        .set({ leaseExpiresAt: new Date(Date.now() - 1000) })
+        .where(eq(jobs.id, jobId));
+      const res = await claimAs(other.accessToken);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ job: { id: jobId, deliveryCount: 2 } });
+      expect(await jobRow(jobId)).toMatchObject({ status: "running", agentId: other.agentId });
+
+      // The crashed agent's late result is rejected.
+      const late = await result(
+        agentRequest(`jobs/${jobId}/result`, agent.accessToken, { body: { result: {} } }),
+        ctx(jobId),
+      );
+      expect(late.status).toBe(409);
+      expect(await jobRow(jobId)).toMatchObject({ status: "running", agentId: other.agentId });
+    });
+
     it("rejects invalid bodies, bad tokens and revoked agents", async () => {
       const { agent, job } = await claimOrg();
       await job();
@@ -571,7 +632,10 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         });
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ status: "retry", retryAfterSeconds: 120 });
-        expect(await jobRow(jobId)).toMatchObject({ status: "queued", agentId: null });
+        const row = await jobRow(jobId);
+        expect(row).toMatchObject({ status: "queued", agentId: null, leaseExpiresAt: null });
+        // Claimable again only once the retry delay passed.
+        expect(row.availableAt.getTime()).toBeGreaterThan(Date.now() + 110_000);
       }
 
       await startAs(jobId, accessToken);
