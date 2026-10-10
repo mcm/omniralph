@@ -3,16 +3,18 @@ import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { insertJob } from "./jobs.js";
+import { failCompletedJob, insertJob } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import { jobs, organizations, triageRuns } from "./schema.js";
 import {
   createTriageRun,
+  finishTriageRunJob,
   getActiveTriageRun,
   getTriageRun,
   getTriageRunBySession,
   setTriageRunJob,
   setTriageRunStatus,
+  startTriageRunJob,
   type NewTriageRunInput,
 } from "./triage.js";
 
@@ -156,6 +158,39 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
       lastResult: null,
     });
     expect(await setTriageRunStatus(db, crypto.randomUUID(), "failed")).toBeNull();
+  });
+
+  it("starts and finishes a run for its current job only", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    const job = await triageJob();
+    const other = await triageJob();
+    // No current job yet (it started before it was recorded): it becomes the current one.
+    expect(await startTriageRunJob(db, run.id, job.id)).toMatchObject({
+      status: "running",
+      currentJobId: job.id,
+    });
+    expect(await startTriageRunJob(db, run.id, other.id)).toBeNull();
+    expect(await startTriageRunJob(db, run.id, job.id)).toMatchObject({ status: "running" });
+
+    expect(await finishTriageRunJob(db, run.id, other.id, "completed")).toBeNull();
+    const result = { summary: "Sized M" };
+    expect(await finishTriageRunJob(db, run.id, job.id, "completed", result)).toMatchObject({
+      status: "completed",
+      lastResult: result,
+    });
+    // Once finished, the same job's outcome isn't applied again.
+    expect(await finishTriageRunJob(db, run.id, job.id, "failed")).toBeNull();
+    expect(await startTriageRunJob(db, run.id, job.id)).toBeNull();
+    expect((await getTriageRun(db, run.id))?.status).toBe("completed");
+  });
+
+  it("fails a completed job whose result is unusable", async () => {
+    const job = await triageJob();
+    expect(await failCompletedJob(db, job.id, "bad")).toBe(false);
+    await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, job.id));
+    expect(await failCompletedJob(db, job.id, "bad")).toBe(true);
+    const [row] = await db.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(row).toMatchObject({ status: "failed", error: "bad" });
   });
 
   it("deletes an organization's runs with it", async () => {
