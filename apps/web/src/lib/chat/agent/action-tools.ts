@@ -8,11 +8,11 @@ import {
 } from "@omniralph/db";
 import { z } from "zod";
 import { LinearNotConnectedError } from "@/lib/linear/client";
-import type { Team } from "@/lib/linear/gateway";
+import type { IssueSummary, Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
-import { draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
+import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
 import { findRalphRunId } from "./read-tools";
 import {
   defineChatTool,
@@ -347,9 +347,61 @@ export const draftLinearIssue = defineChatTool({
   },
 });
 
+const linearErrorText = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+export const delegateLinearIssue = defineChatTool({
+  tier: "action",
+  description:
+    "Delegates an existing Linear issue to the Omniralph app, so ralph builds it (an epic with a PRD and stories, or a single issue) the way it does when someone delegates it in Linear. Ralph works in the issue's Linear agent session; this thread gets a message when the run starts, when it opens its pull/merge request, and when it finishes or fails. Use it when a user asks to have ralph build, work on or take an existing issue. For a new issue, draft it with draft_linear_issue instead: its card has a Create and delegate button.",
+  inputSchema: z.object({
+    issue: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe("The Linear issue identifier (e.g. `ENG-42`) or ID."),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, actor, chatThread, organizationId } = context;
+    if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
+    const ref = input.issue.trim();
+    let issue: IssueSummary;
+    try {
+      const { linear } = await context.ralph();
+      try {
+        issue = await linear.getIssue(ref);
+      } catch (error) {
+        if (error instanceof LinearNotConnectedError) throw error;
+        return {
+          error: "unknown_issue",
+          message: `Linear couldn't find the issue "${ref}" (${linearErrorText(error)}). Ask the user for the issue's identifier, e.g. ENG-42.`,
+        };
+      }
+      await delegateToRalph(db, linear, {
+        organizationId,
+        chatThreadId: chatThread.id,
+        linearIssueId: issue.id,
+      });
+    } catch (error) {
+      if (error instanceof LinearNotConnectedError) return LINEAR_NOT_CONNECTED_RESULT;
+      return {
+        error: "linear_error",
+        message: `Linear didn't delegate the issue: ${linearErrorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in Linear.`,
+      };
+    }
+    return {
+      status: "delegated",
+      issue: { identifier: issue.identifier, title: issue.title, url: issue.url },
+      message:
+        "Delegated to ralph. Tell the user briefly, with the issue's link; this thread gets a message when the run starts and when it finishes.",
+    };
+  },
+});
+
 export const actionTools: ChatToolRegistry = {
   start_ralph_request: startRalphRequest,
   send_to_session: sendToSession,
   send_ralph_guidance: sendRalphGuidance,
   draft_linear_issue: draftLinearIssue,
+  delegate_linear_issue: delegateLinearIssue,
 };

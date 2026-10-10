@@ -59,6 +59,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
+import { notifyRunThread } from "./chat-notify";
 import { conversationFor, type ChatSource, type RunConversation } from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
@@ -399,6 +400,7 @@ async function failRun(
 ): Promise<AdvanceResult> {
   const failed = (await updateRun(tx, run.id, { status: "failed", waitingOn: null, error })) ?? run;
   await postActivity(conversationFor(run, deps), { type: "error", body: error });
+  await notifyRunThread(deps, run, { kind: "failed", error });
   return { action: "failed", run: failed };
 }
 
@@ -743,10 +745,12 @@ async function finishRequests(
   const output = await takeRequestOutput(tx, run);
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
+  const lanes = await runLanes(deps, tx, run);
   await postActivity(conversationFor(run, deps), {
     type: "response",
-    body: output ? withPullRequestLinks(output, await runLanes(deps, tx, run)) : NOTHING_TO_DO,
+    body: output ? withPullRequestLinks(output, lanes) : NOTHING_TO_DO,
   });
+  await notifyRunThread(deps, run, { kind: "completed", lanes });
   return { action: "completed", run: completed };
 }
 
@@ -761,10 +765,12 @@ async function complete(
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
   await publishPlan(conversationFor(run, deps), input.rows);
+  const lanes = await runLanes(deps, tx, run);
+  await notifyRunThread(deps, run, { kind: "completed", lanes });
   if (output) {
     await postActivity(conversationFor(run, deps), {
       type: "response",
-      body: withPullRequestLinks(output, await runLanes(deps, tx, run)),
+      body: withPullRequestLinks(output, lanes),
     });
     await moveCompletedEpic(deps, run);
     return { action: "completed", run: completed };

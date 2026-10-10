@@ -86,6 +86,7 @@ export async function handleLinearEvent(
     linear,
     dispatcher: deps.dispatcher ?? getDispatcher(),
     adapterFor: deps.adapterFor ?? scmAdapterFor,
+    ...(deps.chat && { chat: deps.chat }),
   };
   if (event.kind === "session_created") {
     if (parseInstruction(event.commentBody).wantsTriage) await startTriage(event, ralph);

@@ -5,6 +5,7 @@ import {
   chatThreads,
   claimChatLinearIssueDraft,
   completeChatLinearIssueDraft,
+  createChatLinearDelegation,
   expireChatLinearIssueDraft,
   getChatLinearIssueDraft,
   releaseChatLinearIssueDraft,
@@ -33,16 +34,23 @@ import type { ChatActor } from "./identity";
 
 /**
  * Linear issues drafted by the control-panel agent (`draft_linear_issue`): a
- * card with the preview and **Create** / **Cancel** buttons. Only the linked
- * member who asked can click them; **Create** creates the issue in the
- * organization's Linear workspace and turns the card into a link to it. A
- * draft expires after {@link LINEAR_ISSUE_DRAFT_TTL_MS}.
+ * card with the preview and **Create** / **Create and delegate** / **Cancel**
+ * buttons. Only the linked member who asked can click them; **Create** creates
+ * the issue in the organization's Linear workspace and turns the card into a
+ * link to it, and **Create and delegate** also delegates it to the Omniralph
+ * app ({@link delegateToRalph}), so ralph builds it. A draft expires after
+ * {@link LINEAR_ISSUE_DRAFT_TTL_MS}.
  */
 
 export const LINEAR_ISSUE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 export const CREATE_LINEAR_ISSUE_ACTION = "linear_issue_create";
+export const CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION = "linear_issue_create_delegate";
 export const CANCEL_LINEAR_ISSUE_ACTION = "linear_issue_cancel";
-export const LINEAR_ISSUE_ACTIONS = [CREATE_LINEAR_ISSUE_ACTION, CANCEL_LINEAR_ISSUE_ACTION];
+export const LINEAR_ISSUE_ACTIONS = [
+  CREATE_LINEAR_ISSUE_ACTION,
+  CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+  CANCEL_LINEAR_ISSUE_ACTION,
+];
 
 /** Longest description the preview shows (the issue gets all of it). */
 const MAX_PREVIEW_CHARS = 2_500;
@@ -101,16 +109,26 @@ export function draftCard(draft: Draft): CardElement {
           style: "primary",
           value: draft.id,
         }),
+        Button({
+          id: CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+          label: "Create and delegate",
+          value: draft.id,
+        }),
         Button({ id: CANCEL_LINEAR_ISSUE_ACTION, label: "Cancel", value: draft.id }),
       ]),
     ],
   });
 }
 
-/** The draft once its issue was created: identifier and link. */
-export function createdCard(draft: Draft): CardElement {
+/** The draft once its issue was created: identifier and link (and whether ralph has it). */
+export function createdCard(draft: Draft, delegated = false): CardElement {
   const identifier = draft.linearIssueIdentifier ?? "the issue";
   const children: CardChild[] = [CardText(`Created ${identifier}: ${shownTitle(draft)}`)];
+  if (delegated) {
+    children.push(
+      CardText("Delegated to ralph: I'll post here when it starts and when it finishes."),
+    );
+  }
   if (draft.linearIssueUrl) {
     children.push(
       Actions([LinkButton({ label: `Open ${identifier}`, url: draft.linearIssueUrl })]),
@@ -153,9 +171,33 @@ export function cardFor(draft: ChatLinearIssueDraft): CardElement {
 }
 
 /** What `chat_messages` records once the issue is created. */
-export function createdMessage(draft: Draft): string {
-  return `Created Linear issue ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
+export function createdMessage(draft: Draft, delegated = false): string {
+  const created = `Created Linear issue ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
+  return delegated ? `${created}, and delegated it to ralph.` : created;
 }
+
+/**
+ * Delegates a Linear issue to the Omniralph app for a chat thread: first
+ * records the delegation (so the run Linear's agent session starts is tied to
+ * the thread, see `startRun`), then delegates the issue to the app user
+ * (`getViewer`). Throws when Linear fails.
+ */
+export async function delegateToRalph(
+  db: Database,
+  linear: LinearGateway,
+  input: { organizationId: string; chatThreadId: string; linearIssueId: string },
+): Promise<void> {
+  await createChatLinearDelegation(db, {
+    organizationId: input.organizationId,
+    threadId: input.chatThreadId,
+    linearIssueId: input.linearIssueId,
+  });
+  const app = await linear.getViewer();
+  await linear.delegateIssue(input.linearIssueId, app.id);
+}
+
+export const DELEGATION_FAILED_REPLY =
+  "The issue was created, but Linear didn't delegate it to ralph. Ask me to delegate it again, or delegate it to Omniralph in Linear.";
 
 export interface LinearIssueActionDeps {
   db: Database;
@@ -240,17 +282,19 @@ export async function handleLinearIssueAction(
     return;
   }
 
-  if (event.actionId !== CREATE_LINEAR_ISSUE_ACTION) return;
+  const delegate = event.actionId === CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION;
+  if (event.actionId !== CREATE_LINEAR_ISSUE_ACTION && !delegate) return;
   const claimed = await claimChatLinearIssueDraft(db, draft.id, now);
   if (!claimed) {
     if (draft.status !== "creating") await show(cardFor(draft));
     return;
   }
   let created: ChatLinearIssueDraft | null;
+  let linear: LinearGateway;
   try {
-    const linear = await (
-      deps.linear ?? ((organizationId) => getLinearGateway({ db, organizationId }))
-    )(chatThread.organizationId);
+    linear = await (deps.linear ?? ((organizationId) => getLinearGateway({ db, organizationId })))(
+      chatThread.organizationId,
+    );
     const issue = await linear.createIssue({
       teamId: claimed.teamId,
       title: claimed.title,
@@ -271,6 +315,20 @@ export async function handleLinearIssueAction(
     return;
   }
   if (!created) return;
-  await show(createdCard(created));
-  await record(createdMessage(created));
+  let delegated = false;
+  if (delegate && created.linearIssueId) {
+    try {
+      await delegateToRalph(db, linear, {
+        organizationId: chatThread.organizationId,
+        chatThreadId: chatThread.id,
+        linearIssueId: created.linearIssueId,
+      });
+      delegated = true;
+    } catch (error) {
+      logger.error("Delegating a Linear issue created from chat failed", { draftId, error });
+      await tell(DELEGATION_FAILED_REPLY);
+    }
+  }
+  await show(createdCard(created, delegated));
+  await record(createdMessage(created, delegated));
 }

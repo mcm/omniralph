@@ -175,6 +175,8 @@ export interface NewLinearRalphRunInput extends NewRalphRunBase {
   /** `request` for a mention (default `epic`). */
   mode?: RalphRunMode;
   focusStoryId?: string | null;
+  /** The chat thread that delegated the issue: it gets the run's start/PR/finish notifications. */
+  chatThreadId?: string | null;
 }
 
 /** A request-mode run started from a chat thread. */

@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
+import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
   agentRepoPins,
+  chatLinearDelegations,
+  chatMessages,
+  createChatLinearDelegation,
+  ensureChatThread,
+  saveChatConnection,
   agents,
   completeJob,
   connectRepository,
@@ -49,6 +55,8 @@ import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
+import type { Adapter } from "chat";
+import type { ChatChannel } from "./conversation";
 import { advanceRun, MAX_ITERATIONS_PER_RUN } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -84,12 +92,15 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   let sessionSeq = 0;
 
   let scm: FakeScmAdapter;
+  /** The chat bot runs delegated from a chat thread notify (set by those tests). */
+  let chat: ChatChannel | undefined;
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
     linear,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
+    ...(chat && { chat }),
   });
 
   beforeAll(async () => {
@@ -176,6 +187,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     scm = new FakeScmAdapter();
     publisher = new RecordingPublisher();
     dispatcher = new VercelQueuesDispatcher({ db, publisher });
+    chat = undefined;
   });
 
   /** Delegates `issueId` and returns its run. */
@@ -1805,6 +1817,163 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Nothing was committed",
       );
+    });
+  });
+
+  describe("a run delegated from a chat thread", () => {
+    const DISCORD_THREAD = "discord:G1:CH1:TH1";
+    let adapter: Adapter;
+    let threadId: string;
+
+    beforeEach(async () => {
+      await db.delete(chatLinearDelegations);
+      await db.delete(chatMessages);
+      const connection = await saveChatConnection(db, {
+        organizationId: orgId,
+        platform: "discord",
+        externalId: "G1",
+        name: "Acme",
+        credentials: null,
+        installedByUserId: null,
+      });
+      if (connection === "other_organization") throw new Error("connected elsewhere");
+      threadId = (await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: DISCORD_THREAD,
+        channelId: "discord:G1:CH1",
+        startedByExternalUserId: "D-ADA",
+      }))!.id;
+      let n = 0;
+      adapter = createMockAdapter("discord", {
+        postMessage: vi.fn(async (thread: string) => {
+          n += 1;
+          return { id: `m-${n}`, threadId: thread, raw: {} };
+        }),
+      });
+      chat = {
+        db,
+        adapters: { discord: adapter },
+        state: createMockState(),
+        appUrl: "https://omniralph.example.com",
+      };
+    });
+
+    /** The messages posted to the thread. */
+    const posted = () =>
+      vi.mocked(adapter.postMessage).mock.calls.map(([thread, message]) => {
+        expect(thread).toBe(DISCORD_THREAD);
+        return (message as { markdown: string }).markdown;
+      });
+
+    async function delegateFromChat(issueId: string): Promise<LinearRun> {
+      await createChatLinearDelegation(db, {
+        organizationId: orgId,
+        threadId,
+        linearIssueId: issueId,
+      });
+      return delegate(issueId);
+    }
+
+    it("posts the start, the pull request and the completion to the thread, and nothing else", async () => {
+      const issue = linear.add({ identifier: "ENG-140", title: "Fix the login bug" });
+      const run = await delegateFromChat(issue.id);
+
+      expect(run).toMatchObject({ origin: "linear", chatThreadId: threadId });
+      expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+      expect(posted()).toEqual([
+        `🚀 Ralph started building [ENG-140 Fix the login bug](<${issue.url}>). Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`,
+      ]);
+
+      await work(run.id, { commitSha: sha(60) });
+      // Story progress stays in Linear.
+      expect(posted()).toHaveLength(1);
+      await describePr(run.id);
+
+      const pr = (await withPullRequest(run.id))!;
+      expect(pr).toMatchObject({ status: "completed", prNumber: 1 });
+      const [, opened, finished, ...more] = posted();
+      expect(more).toEqual([]);
+      expect(opened).toBe(
+        `🔗 Pull request #1 for [ENG-140 Fix the login bug](<${issue.url}>) is open: ${pr.prUrl}`,
+      );
+      expect(finished).toContain("✅ Ralph finished [ENG-140 Fix the login bug]");
+      expect(finished).toContain(`Pull request #1: ${pr.prUrl}`);
+      // Recorded in the thread's history as the run's.
+      const recorded = await db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.ralphRunId, run.id));
+      expect(recorded).toHaveLength(3);
+      expect(recorded.every((m) => m.threadId === threadId && m.role === "assistant")).toBe(true);
+      // The Linear session still has everything.
+      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+        "Finished **ENG-140**",
+      );
+    });
+
+    it("posts the failure to the thread", async () => {
+      const issue = linear.add({ identifier: "ENG-141", title: "Doomed" });
+      const run = await delegateFromChat(issue.id);
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: false,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+      });
+      try {
+        await work(run.id, { jobError: "the agent crashed" });
+      } finally {
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+        });
+      }
+
+      expect((await getRun(db, run.id))?.status).toBe("failed");
+      const [started, failed, ...more] = posted();
+      expect(started).toContain("🚀 Ralph started building");
+      expect(failed).toContain("⚠️ Ralph stopped working on [ENG-141 Doomed]");
+      expect(failed).toContain("Ralph was disabled for `acme/api`");
+      expect(more).toEqual([]);
+    });
+
+    it("doesn't tie a run delegated in Linear, or a mention, to a thread", async () => {
+      const issue = linear.add({ identifier: "ENG-142", title: "Plain" });
+      const run = await delegate(issue.id);
+      expect(run.chatThreadId).toBeNull();
+      expect(posted()).toEqual([]);
+    });
+
+    it("ignores a delegation older than an hour, and prunes it", async () => {
+      const issue = linear.add({ identifier: "ENG-143", title: "Late" });
+      await createChatLinearDelegation(db, {
+        organizationId: orgId,
+        threadId,
+        linearIssueId: issue.id,
+      });
+      await db
+        .update(chatLinearDelegations)
+        .set({ createdAt: new Date(Date.now() - 61 * 60 * 1000) });
+
+      const run = await delegate(issue.id);
+
+      expect(run).toMatchObject({ status: "running", chatThreadId: null });
+      expect(posted()).toEqual([]);
+      expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+    });
+
+    it("skips the notifications when the thread is gone, without failing the run", async () => {
+      const issue = linear.add({ identifier: "ENG-144", title: "Orphan" });
+      const run = await delegateFromChat(issue.id);
+      chat = { ...chat!, adapters: {} };
+      await work(run.id, { commitSha: sha(61) });
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(posted()).toHaveLength(1);
     });
   });
 

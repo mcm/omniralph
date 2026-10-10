@@ -36,6 +36,7 @@ import {
   RalphDescribePrResult,
 } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { notifyRunThread } from "./chat-notify";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -284,6 +285,7 @@ async function openEarlyLanePullRequest(
   await quietly(`Adding the ${term} to ${conversation.name}`, () =>
     conversation.addLink(label, pr.url),
   );
+  await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
   await postActivity(conversationFor(run, deps), {
     type: "thought",
     body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${lane.branch}\`${where}: ${pr.url}`,
@@ -388,6 +390,7 @@ export async function applyPullRequestJob(
   await quietly(`Adding the ${term} to ${conversation.name}`, () =>
     conversation.addLink(label, pr.url),
   );
+  await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
   return { busy: false };
 }
 
@@ -483,6 +486,7 @@ export async function finishPublishing(
       ? withPullRequestLinks(requestOutput, published)
       : finalResponse(completed, input.epic, input.rows, published),
   });
+  await notifyRunThread(deps, run, { kind: "completed", lanes: published });
   await moveCompletedEpic(deps, run);
   return completed;
 }

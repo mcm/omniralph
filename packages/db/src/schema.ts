@@ -590,6 +590,32 @@ export const chatLinearIssueDrafts = pgTable(
 );
 
 /**
+ * A Linear issue delegated to the Omniralph app from a chat thread, written
+ * just before the delegation: when Linear's agent session for it starts the
+ * run, `startRun` takes the row and ties the run to the thread (its
+ * `chat_thread_id`) for start/PR/finish notifications. A row no session takes
+ * within an hour is ignored and pruned.
+ */
+export const chatLinearDelegations = pgTable(
+  "chat_linear_delegations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    linearIssueId: text("linear_issue_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("chat_linear_delegations_issue_idx").on(t.organizationId, t.linearIssueId, t.createdAt),
+    index("chat_linear_delegations_created_at_idx").on(t.createdAt),
+  ],
+);
+
+/**
  * Review profiles of an organization. The built-in ones (`quick`, `standard`,
  * `deep`) are seeded into every new organization (`createOrganization`).
  */

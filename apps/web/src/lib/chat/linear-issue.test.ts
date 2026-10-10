@@ -1,5 +1,6 @@
 import { createMockAdapter } from "@chat-adapter/tests";
 import {
+  chatLinearDelegations,
   chatLinearIssueDrafts,
   chatMessages,
   closeDb,
@@ -31,7 +32,9 @@ vi.mock("server-only", () => ({}));
 const { chatTools } = await import("./agent/registry");
 const {
   CANCEL_LINEAR_ISSUE_ACTION,
+  CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
   CREATE_LINEAR_ISSUE_ACTION,
+  DELEGATION_FAILED_REPLY,
   LINEAR_ISSUE_DRAFT_TTL_MS,
   LINEAR_NOT_CONNECTED_REPLY,
   NOT_REQUESTER_REPLY,
@@ -113,6 +116,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
 
   beforeEach(async () => {
     await db.delete(chatLinearIssueDrafts);
+    await db.delete(chatLinearDelegations);
     await db.delete(chatMessages);
     linear = new FakeLinearGateway();
     linear.teams = [
@@ -234,6 +238,8 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     expect(text).toContain("ENG");
     expect(text).toContain("High");
     expect(text).toContain(CREATE_LINEAR_ISSUE_ACTION);
+    expect(text).toContain(CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION);
+    expect(text).toContain("Create and delegate");
     expect(text).toContain(CANCEL_LINEAR_ISSUE_ACTION);
 
     const id = (result.draft as { id: string }).id;
@@ -424,5 +430,114 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
 
     expect(linear.issues.size).toBe(0);
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
+  });
+  /** Records the delegations stored when `delegateIssue` is called (to check they come first). */
+  function watchDelegations(): Array<{ issueId: string; rows: string[] }> {
+    const seen: Array<{ issueId: string; rows: string[] }> = [];
+    const delegateIssue = linear.delegateIssue.bind(linear);
+    linear.delegateIssue = async (issueId: string, delegateId: string) => {
+      const rows = await db.select().from(chatLinearDelegations);
+      seen.push({ issueId, rows: rows.map((r) => `${r.threadId}:${r.linearIssueId}`) });
+      return delegateIssue(issueId, delegateId);
+    };
+    return seen;
+  }
+
+  it("creates and delegates the issue to the app user on Create and delegate", async () => {
+    linear.viewer = { id: "omniralph-app", name: "Omniralph" };
+    const seen = watchDelegations();
+    const id = await drafted();
+    const { event, adapter, postEphemeral } = click(
+      id,
+      CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+      "D-ADA",
+    );
+
+    await handle(event);
+
+    const [issue] = [...linear.issues.values()];
+    expect(issue).toMatchObject({ title: "Login fails with SSO" });
+    expect(linear.delegations).toEqual([{ issueId: issue!.id, delegateId: "omniralph-app" }]);
+    // The delegation row is written before Linear is asked to delegate.
+    expect(seen).toEqual([{ issueId: issue!.id, rows: [`${chatThread.id}:${issue!.id}`] }]);
+    const [row] = await db.select().from(chatLinearDelegations);
+    expect(row).toMatchObject({ organizationId: orgId, threadId: chatThread.id });
+    expect(postEphemeral).not.toHaveBeenCalled();
+    const [edit] = edited(adapter);
+    expect(edit!.text).toContain(issue!.url);
+    expect(edit!.text).toContain("Delegated to ralph");
+    expect((await recorded())[0]!.content).toContain("delegated it to ralph");
+  });
+
+  it("keeps the created issue and tells the requester when delegating fails", async () => {
+    linear.failures.set("delegateIssue", new Error("Linear is down"));
+    const id = await drafted();
+    const { event, adapter, postEphemeral } = click(
+      id,
+      CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+      "D-ADA",
+    );
+
+    await handle(event);
+
+    expect(linear.issues.size).toBe(1);
+    expect(linear.delegations).toEqual([]);
+    expect(postEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "D-ADA" }),
+      DELEGATION_FAILED_REPLY,
+      expect.anything(),
+    );
+    const [edit] = edited(adapter);
+    expect(edit!.text).toContain("Created");
+    expect(edit!.text).not.toContain("Delegated to ralph");
+    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+  });
+
+  describe("delegate_linear_issue", () => {
+    async function delegate(issue: string, actor?: ChatActor): Promise<Result> {
+      const tool = chatTools.delegate_linear_issue!;
+      return (await tool.execute(tool.inputSchema.parse({ issue }), context(actor))) as Result;
+    }
+
+    it("records the delegation for the thread, then delegates the issue to the app user", async () => {
+      linear.viewer = { id: "omniralph-app", name: "Omniralph" };
+      const seen = watchDelegations();
+      const issue = linear.add({ identifier: "ENG-7", title: "Dark mode" });
+
+      const result = await delegate("ENG-7");
+
+      expect(result).toMatchObject({
+        status: "delegated",
+        issue: { identifier: "ENG-7", title: "Dark mode", url: issue.url },
+      });
+      expect(linear.delegations).toEqual([{ issueId: issue.id, delegateId: "omniralph-app" }]);
+      expect(seen).toEqual([{ issueId: issue.id, rows: [`${chatThread.id}:${issue.id}`] }]);
+    });
+
+    it("explains an unknown issue without delegating anything", async () => {
+      const result = await delegate("ENG-404");
+
+      expect(result.error).toBe("unknown_issue");
+      expect(linear.delegations).toEqual([]);
+      expect(await db.select().from(chatLinearDelegations)).toHaveLength(0);
+    });
+
+    it("explains a Linear failure, and a missing Linear integration", async () => {
+      linear.add({ identifier: "ENG-8", title: "Search" });
+      linear.failures.set("delegateIssue", new Error("Linear is down"));
+      expect(await delegate("ENG-8")).toMatchObject({ error: "linear_error" });
+
+      gateway = disconnectedLinearGateway();
+      expect(await delegate("ENG-8")).toMatchObject({ error: "linear_not_connected" });
+    });
+
+    it("is an action tool: a domain user can't delegate", async () => {
+      linear.add({ identifier: "ENG-9", title: "Export" });
+      expect(chatTools.delegate_linear_issue!.tier).toBe("action");
+      expect(await delegate("ENG-9", { kind: "domain", email: "eve@acme.test" })).toMatchObject({
+        error: "link_required",
+      });
+      expect(linear.delegations).toEqual([]);
+    });
   });
 });
