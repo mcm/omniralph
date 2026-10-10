@@ -115,7 +115,12 @@ export class FakeLinearGateway implements LinearGateway {
   async getBlockers(issueId: string): Promise<Blocker[]> {
     return (this.blocks.get(issueId) ?? []).map((id) => {
       const blocker = this.find(id);
-      return { id: blocker.id, identifier: blocker.identifier, stateType: blocker.stateType };
+      return {
+        id: blocker.id,
+        identifier: blocker.identifier,
+        title: blocker.title,
+        stateType: blocker.stateType,
+      };
     });
   }
   async getWorkflowStates(_teamId: string): Promise<WorkflowState[]> {

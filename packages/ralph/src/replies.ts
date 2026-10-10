@@ -189,20 +189,26 @@ export function preparationQuestion(input: {
 /** In a mention or reply, opts into the epic's story loop (`/label-based-prompt` is Cyrus' spelling). */
 const LOOP_COMMAND = /(^|\s)\/(ralph|label-based-prompt)\b/i;
 
+/** In a mention (or delegation), asks for triage instead of a ralph run. */
+const TRIAGE_COMMAND = /(^|\s)\/triage\b/i;
+
 /**
  * A mention's or reply's instruction (cyralph's `parseInstruction`): the text
- * without `/ralph` and a leading `@name`, and whether `/ralph` asked for the
- * story loop.
+ * without `/ralph`, `/triage` and a leading `@name`, whether `/ralph` asked for
+ * the story loop and whether `/triage` asked for triage.
  */
 export function parseInstruction(body: string | undefined | null): {
   text: string;
   wantsLoop: boolean;
+  wantsTriage: boolean;
 } {
   const raw = (body ?? "").trim();
   const wantsLoop = LOOP_COMMAND.test(raw);
+  const wantsTriage = TRIAGE_COMMAND.test(raw);
   const text = raw
     .replace(LOOP_COMMAND, " ")
+    .replace(TRIAGE_COMMAND, " ")
     .replace(/^\s*@[\w.-]+[,:]?\s*/, "")
     .trim();
-  return { text, wantsLoop };
+  return { text, wantsLoop, wantsTriage };
 }
