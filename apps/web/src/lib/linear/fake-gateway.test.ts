@@ -71,3 +71,53 @@ describe("FakeLinearGateway triage methods", () => {
     expect((await linear.getIssue(issue.id)).title).toBe("T");
   });
 });
+
+describe("FakeLinearGateway teams and delegation", () => {
+  it("lists teams and reads the viewer, as arranged", async () => {
+    const linear = new FakeLinearGateway();
+    expect(await linear.listTeams()).toEqual([{ id: "team-1", key: "ENG", name: "Engineering" }]);
+    expect(await linear.getViewer()).toEqual({ id: "app-user", name: "Omniralph" });
+
+    linear.teams = [{ id: "t2", key: "OPS", name: "Operations" }];
+    linear.viewer = { id: "bot", name: "Bot" };
+    expect(await linear.listTeams()).toEqual([{ id: "t2", key: "OPS", name: "Operations" }]);
+    expect(await linear.getViewer()).toEqual({ id: "bot", name: "Bot" });
+  });
+
+  it("records delegations from delegateIssue and createIssue", async () => {
+    const linear = new FakeLinearGateway();
+    const existing = linear.add({ title: "Existing" });
+
+    await linear.delegateIssue(existing.identifier, "app-user");
+    const created = await linear.createIssue({
+      teamId: "team-1",
+      title: "New",
+      description: "",
+      delegateId: "app-user",
+    });
+    await linear.createIssue({ teamId: "team-1", title: "Plain", description: "" });
+
+    expect(linear.delegations).toEqual([
+      { issueId: existing.id, delegateId: "app-user" },
+      { issueId: created.id, delegateId: "app-user" },
+    ]);
+  });
+
+  it("fails each on demand", async () => {
+    const linear = new FakeLinearGateway();
+    const issue = linear.add({ title: "T" });
+    for (const method of ["listTeams", "getViewer", "delegateIssue"]) {
+      linear.failures.set(method, new Error(`${method} down`));
+    }
+    await expect(linear.listTeams()).rejects.toThrow("listTeams down");
+    await expect(linear.getViewer()).rejects.toThrow("getViewer down");
+    await expect(linear.delegateIssue(issue.id, "app-user")).rejects.toThrow("delegateIssue down");
+    expect(linear.delegations).toEqual([]);
+  });
+
+  it("rejects delegating an unknown issue", async () => {
+    await expect(new FakeLinearGateway().delegateIssue("nope", "app-user")).rejects.toThrow(
+      "no issue nope",
+    );
+  });
+});

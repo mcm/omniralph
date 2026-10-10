@@ -62,6 +62,18 @@ export interface IssueLabel {
   teamId: string | null;
 }
 
+export interface Team {
+  id: string;
+  key: string;
+  name: string;
+}
+
+/** The user the gateway's token acts as: for the app's OAuth token, the app user. */
+export interface Viewer {
+  id: string;
+  name: string;
+}
+
 export interface CreateIssueInput {
   teamId: string;
   title: string;
@@ -72,6 +84,8 @@ export interface CreateIssueInput {
   projectName?: string;
   /** Label names (case-insensitive); a label the team doesn't have yet is created for it. */
   labels?: string[];
+  /** The (agent) user to delegate the issue to, e.g. the app user from `getViewer`. */
+  delegateId?: string;
 }
 
 /** Fields `updateIssue` changes; omitted ones are left as they are. */
@@ -118,6 +132,10 @@ export interface UploadDownload {
 export interface LinearGateway {
   /** The installing workspace. */
   getOrganization(): Promise<{ id: string; name: string }>;
+  /** Every team in the workspace (all pages). */
+  listTeams(): Promise<Team[]>;
+  /** The user the token acts as (the app user for the app's token). */
+  getViewer(): Promise<Viewer>;
   getIssue(idOrIdentifier: string): Promise<IssueSummary>;
   /** Every sub-issue (all pages). */
   getChildren(issueId: string): Promise<IssueSummary[]>;
@@ -140,6 +158,8 @@ export interface LinearGateway {
   /** Adds labels by ID, keeping the issue's other labels. */
   addIssueLabels(issueId: string, labelIds: string[]): Promise<void>;
   removeIssueLabel(issueId: string, labelId: string): Promise<void>;
+  /** Delegates the issue to an (agent) user, e.g. the app user from `getViewer`. */
+  delegateIssue(issueId: string, delegateId: string): Promise<void>;
   addComment(issueId: string, body: string): Promise<void>;
   /** Opens an agent session on the issue (as the app) and returns its ID. */
   createAgentSessionOnIssue(issueId: string): Promise<string>;
@@ -325,6 +345,42 @@ export class SdkLinearGateway implements LinearGateway {
       }
     `);
     return { id: data.organization.id, name: data.organization.name };
+  }
+
+  async listTeams(): Promise<Team[]> {
+    return this.paginate(async (after) => {
+      const data = await this.request<{ teams: Connection<Team> }>(
+        /* GraphQL */ `
+          query Teams($first: Int!, $after: String) {
+            teams(first: $first, after: $after) {
+              nodes {
+                id
+                key
+                name
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.teams;
+    });
+  }
+
+  async getViewer(): Promise<Viewer> {
+    const data = await this.request<{ viewer: Viewer }>(/* GraphQL */ `
+      query Viewer {
+        viewer {
+          id
+          name
+        }
+      }
+    `);
+    return { id: data.viewer.id, name: data.viewer.name };
   }
 
   async getIssue(idOrIdentifier: string): Promise<IssueSummary> {
@@ -582,6 +638,7 @@ export class SdkLinearGateway implements LinearGateway {
           }),
           ...(projectId && { projectId }),
           ...(labelIds && { labelIds }),
+          ...(input.delegateId !== undefined && { delegateId: input.delegateId }),
         },
       },
     );
@@ -673,6 +730,10 @@ export class SdkLinearGateway implements LinearGateway {
 
   async removeIssueLabel(issueId: string, labelId: string): Promise<void> {
     await this.issueUpdate(issueId, { removedLabelIds: [labelId] });
+  }
+
+  async delegateIssue(issueId: string, delegateId: string): Promise<void> {
+    await this.issueUpdate(issueId, { delegateId });
   }
 
   async addComment(issueId: string, body: string): Promise<void> {
