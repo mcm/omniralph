@@ -146,6 +146,38 @@ describe("classifyWebhook", () => {
     ).toMatchObject({ kind: "triage_label_added", labelId: "l1" });
   });
 
+  it("classifies a state change that also adds ralph:triage as both", () => {
+    const update = (labels: Array<{ id: string; name: string }>, before: string[]) => ({
+      type: "Issue",
+      action: "update",
+      updatedFrom: { stateId: "old", labelIds: before },
+      data: {
+        id: "i4",
+        identifier: "TOOL-4",
+        state: { type: "backlog" },
+        labelIds: labels.map((l) => l.id),
+        labels,
+      },
+    });
+    expect(classifyWebhook(update([{ id: "l1", name: "Ralph:Triage" }], []))).toEqual({
+      kind: "issue_state",
+      issueId: "i4",
+      identifier: "TOOL-4",
+      stateType: "backlog",
+      removed: false,
+      triageLabelId: "l1",
+    });
+    // The label was already there, or another label was added: just the state change.
+    for (const payload of [
+      update([{ id: "l1", name: "ralph:triage" }], ["l1"]),
+      update([{ id: "l2", name: "bug" }], []),
+    ]) {
+      const event = classifyWebhook(payload);
+      expect(event).toMatchObject({ kind: "issue_state", issueId: "i4" });
+      expect(event).not.toHaveProperty("triageLabelId");
+    }
+  });
+
   it("ignores other label changes", () => {
     const update = (
       labels: Array<{ id: string; name: string }>,

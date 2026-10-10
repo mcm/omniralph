@@ -68,7 +68,8 @@ export async function acknowledgeLinearEvent(
  * contains `/triage`; the sessions triage opens itself are left alone); the
  * `ralph:triage` label added to an issue starts triage; an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
- * completed, cleans up its runs' merged PRs/MRs); a reply in an agent
+ * completed, cleans up its runs' merged PRs/MRs), then starts triage when the
+ * same update added the label; a reply in an agent
  * session is the run's guidance (or, in a triage session, an answer to triage's
  * open questions).
  */
@@ -99,5 +100,16 @@ export async function handleLinearEvent(
       await cleanupAfterIssueCompleted(ralph, event.issueId);
     }
     await wakeRunsForIssue(event.issueId, ralph);
+    if (event.triageLabelId) {
+      await startLabelTriage(
+        {
+          kind: "triage_label_added",
+          issueId: event.issueId,
+          identifier: event.identifier,
+          labelId: event.triageLabelId,
+        },
+        ralph,
+      );
+    }
   }
 }

@@ -402,7 +402,8 @@ questions. It never writes code, branches, commits or PRs/MRs.
 - **Label.** Add the `ralph:triage` label to an issue (the name matches ignoring case). The control
   panel opens an agent session on the issue itself, so the label trigger gets the same activities
   and reply handling as a mention. The label is removed when triage finishes (or fails, is stopped
-  or can't start), so adding it again triages again.
+  or can't start), so adding it again triages again. Adding the label in the same edit as a state
+  change (a bulk edit, or moving the issue to Backlog and labelling it at once) works too.
 
 One triage runs per issue at a time: the label on an issue that is being triaged does nothing,
 and a mention or reply from another session is answered that the issue is being triaged in
