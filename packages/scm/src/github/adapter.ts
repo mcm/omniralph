@@ -20,7 +20,12 @@ import {
   type ScmAdapter,
   type WebhookHeaders,
 } from "../types.js";
-import { GitHubAppAuth, GITHUB_API_URL, type InstallationToken } from "./app-auth.js";
+import {
+  GitHubAppAuth,
+  GITHUB_API_URL,
+  type InstallationPermissions,
+  type InstallationToken,
+} from "./app-auth.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
 /** GitHub rejects comment, review and PR bodies longer than this. */
@@ -346,8 +351,11 @@ export class GitHubAdapter implements ScmAdapter {
   }
 
   /**
-   * An installation token limited to `contents: write` on this one
-   * repository. GitHub expires installation tokens after (at most) 1 hour.
+   * An installation token limited to `contents: write` and `workflows: write`
+   * on this one repository, so pushes may touch `.github/workflows`. An
+   * installation that hasn't granted Workflows still gets a contents-only
+   * token: it can push anything but workflow changes. GitHub expires
+   * installation tokens after (at most) 1 hour.
    */
   async getWriteCloneCredential(repo: RepoRef): Promise<CloneCredential> {
     return this.cloneCredential(repo, "write");
@@ -359,12 +367,19 @@ export class GitHubAdapter implements ScmAdapter {
   ): Promise<CloneCredential> {
     const { owner, repo: name } = splitRepoPath(repo);
     const installationId = await this.resolveInstallationId(owner, name);
+    const requestToken = (permissions: InstallationPermissions) =>
+      this.auth.getInstallationToken(installationId, { repositories: [name], permissions });
     let installationToken: InstallationToken;
     try {
-      installationToken = await this.auth.getInstallationToken(installationId, {
-        repositories: [name],
-        permissions: { contents },
-      });
+      // A token given explicit permissions gets only those, whatever else the
+      // installation has been granted, so ask for workflows alongside contents.
+      installationToken =
+        contents === "write"
+          ? await requestToken({ contents, workflows: "write" }).catch((error: unknown) => {
+              if (!isPermissionNotGranted(error)) throw error;
+              return requestToken({ contents });
+            })
+          : await requestToken({ contents });
     } catch (error) {
       // 422 "The level of access for permissions requested are not granted to
       // this installation": the App (or the installation, which hasn't accepted

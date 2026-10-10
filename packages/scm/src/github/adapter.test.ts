@@ -173,14 +173,14 @@ describe("getReadOnlyCloneCredential", () => {
 });
 
 describe("getWriteCloneCredential", () => {
-  it("requests a token limited to contents: write on the one repository, expiring within an hour", async () => {
+  it("requests a token limited to contents and workflows: write on the one repository, expiring within an hour", async () => {
     const adapter = makeAdapter();
     const credential = await adapter.getWriteCloneCredential(REPO);
 
     expect(tokenRequests).toHaveLength(1);
     expect(tokenRequests[0]?.body).toEqual({
       repositories: ["widgets"],
-      permissions: { contents: "write" },
+      permissions: { contents: "write", workflows: "write" },
     });
     expect(credential).toEqual({
       cloneUrl: "https://github.com/acme/widgets.git",
@@ -199,6 +199,64 @@ describe("getWriteCloneCredential", () => {
     });
     await adapter.getWriteCloneCredential(REPO);
     expect(tokenRequests).toHaveLength(2);
+  });
+
+  it("falls back to contents: write when the installation hasn't granted workflows", async () => {
+    server.use(
+      http.post(`${API}/app/installations/42/access_tokens`, async ({ request }) => {
+        const body = (await request.json()) as { permissions?: Record<string, string> };
+        tokenRequests.push({ auth: request.headers.get("authorization"), body });
+        if (body.permissions?.workflows) {
+          return HttpResponse.json(
+            {
+              message:
+                "The level of access for permissions requested are not granted to this installation.",
+              status: "422",
+            },
+            { status: 422 },
+          );
+        }
+        return HttpResponse.json(
+          {
+            token: "ghs_contents",
+            expires_at: new Date(now + 60 * 60 * 1000).toISOString(),
+            permissions: body.permissions,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const credential = await makeAdapter().getWriteCloneCredential(REPO);
+
+    expect(credential.token).toBe("ghs_contents");
+    expect(tokenRequests.map((r) => r.body)).toEqual([
+      { repositories: ["widgets"], permissions: { contents: "write", workflows: "write" } },
+      { repositories: ["widgets"], permissions: { contents: "write" } },
+    ]);
+  });
+
+  it("does not fall back on a 422 that isn't about permissions", async () => {
+    server.use(
+      http.post(`${API}/app/installations/42/access_tokens`, async ({ request }) => {
+        tokenRequests.push({
+          auth: request.headers.get("authorization"),
+          body: (await request.json()) as Record<string, unknown>,
+        });
+        return HttpResponse.json(
+          {
+            message:
+              "There is at least one repository that does not exist or is not accessible to the parent installation.",
+            status: "422",
+          },
+          { status: 422 },
+        );
+      }),
+    );
+    const error = await makeAdapter()
+      .getWriteCloneCredential(REPO)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 422 });
+    expect(tokenRequests).toHaveLength(1);
   });
 
   it("explains a missing Contents permission instead of failing with GitHub's 422", async () => {
