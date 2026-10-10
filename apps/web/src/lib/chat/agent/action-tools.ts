@@ -1,9 +1,10 @@
 import "server-only";
 import { appendChatMessage, type RalphRun, type Repository } from "@omniralph/db";
 import { z } from "zod";
-import { sendToChatRun } from "@/lib/ralph/chat-reply";
+import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
+import { findRalphRunId } from "./read-tools";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
@@ -169,7 +170,55 @@ export const sendToSession = defineChatTool({
   },
 });
 
+export const sendRalphGuidance = defineChatTool({
+  tier: "action",
+  description:
+    "Sends guidance to any unfinished ralph run of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): ralph applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the ralph run of this thread, prefer send_to_session, which reaches a working session right away.",
+  inputSchema: z.object({
+    run: z.string().min(1).max(100).describe("Run id or Linear issue identifier (e.g. `ENG-42`)."),
+    text: z
+      .string()
+      .min(1)
+      .max(10_000)
+      .describe(
+        "The guidance: self-contained, with what the user asked for (quote them when it helps).",
+      ),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, organizationId, appUrl, actor } = context;
+    const ref = input.run.trim();
+    const runId = await findRalphRunId(db, organizationId, ref);
+    const author =
+      (actor.kind === "member" ? actor.name : null) ?? context.turnMessages.at(-1)?.author ?? null;
+    const outcome = runId
+      ? await sendGuidance(await context.ralph(), { runId, text: input.text, author })
+      : ({ status: "not_found" } as const);
+    switch (outcome.status) {
+      case "not_found":
+        return {
+          error: "not_found",
+          message: `No ralph run of this organization matches "${ref}".`,
+        };
+      case "finished":
+        return {
+          error: "run_finished",
+          message: `That run is ${outcome.run.status}, so it takes no more guidance. A Linear run starts again when its issue is delegated to Omniralph again; for a change in a repository, hand ralph a new request with start_ralph_request.`,
+          run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
+        };
+      case "applied":
+        return {
+          status: "applied",
+          run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
+          message: outcome.busy
+            ? "Stored: the run applies it once the job it is running finishes. Tell the user briefly."
+            : "Stored: the run applies it from its next step. Tell the user briefly.",
+        };
+    }
+  },
+});
+
 export const actionTools: ChatToolRegistry = {
   start_ralph_request: startRalphRequest,
   send_to_session: sendToSession,
+  send_ralph_guidance: sendRalphGuidance,
 };

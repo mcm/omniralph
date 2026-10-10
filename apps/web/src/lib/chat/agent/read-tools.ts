@@ -17,7 +17,12 @@ import {
 import { z } from "zod";
 import { agentRow, jobRow } from "@/lib/agents/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
-import { ralphRunDetailView, ralphRunRow } from "@/lib/ralph/history";
+import {
+  lastRunActivity,
+  pendingGuidanceCount,
+  ralphRunDetailView,
+  ralphRunRow,
+} from "@/lib/ralph/history";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
@@ -129,28 +134,39 @@ export const listRalphRunsTool = defineChatTool({
   },
 });
 
+/**
+ * The ID of the organization's run `ref` names: a run id, or a Linear issue
+ * identifier (its latest run). Null when none matches.
+ */
+export async function findRalphRunId(
+  db: Database,
+  organizationId: string,
+  ref: string,
+): Promise<string | null> {
+  if (UUID.safeParse(ref).success) return ref.toLowerCase();
+  const page = await listRuns(db, organizationId, {
+    linearIdentifier: ref.toUpperCase(),
+    pageSize: 1,
+  });
+  return page.runs[0]?.id ?? null;
+}
+
 export const getRalphRunTool = defineChatTool({
   tier: "read",
   description:
-    "One ralph run by its id or its Linear issue identifier (e.g. `ENG-42`; the latest run of that issue): status, stories and their progress, the progress log's latest entries and PR/MR links.",
+    "One ralph run by its id or its Linear issue identifier (e.g. `ENG-42`; the latest run of that issue): status, the story being worked on, stories and their progress, how many messages (guidance, requests) it hasn't taken in yet, when it last did something, the progress log's latest entries and PR/MR links.",
   inputSchema: z.object({
     run: z.string().min(1).max(100).describe("Run id or Linear issue identifier."),
   }),
   async execute(input, { db, organizationId, appUrl }: ChatToolContext) {
     const ref = input.run.trim();
-    let runId: string | undefined = UUID.safeParse(ref).success ? ref.toLowerCase() : undefined;
-    if (!runId) {
-      const page = await listRuns(db, organizationId, {
-        linearIdentifier: ref.toUpperCase(),
-        pageSize: 1,
-      });
-      runId = page.runs[0]?.id;
-    }
+    const runId = await findRalphRunId(db, organizationId, ref);
     const detail = runId ? await getRunDetail(db, organizationId, runId) : null;
     if (!detail) {
       return { error: "not_found", message: `No ralph run of this organization matches "${ref}".` };
     }
     const run = ralphRunDetailView(detail);
+    const currentStory = run.stories.find((story) => story.status === "running") ?? null;
     return {
       id: run.id,
       url: `${appUrl}/ralph/${run.id}`,
@@ -172,6 +188,13 @@ export const getRalphRunTool = defineChatTool({
         cleanup: lane.cleanup,
       })),
       waitingOn: run.waitingOn,
+      currentStory: currentStory && {
+        identifier: currentStory.identifier,
+        title: currentStory.title,
+        attempts: currentStory.attempts,
+      },
+      pendingGuidance: pendingGuidanceCount(detail),
+      lastActivityAt: lastRunActivity(detail),
       storyCounts: run.storyCounts,
       stories: run.stories.slice(0, CHAT_TOOL_RESULT_LIMIT).map((story) => ({
         identifier: story.identifier,

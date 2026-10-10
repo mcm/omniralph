@@ -237,6 +237,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_repositories",
       "start_ralph_request",
       "send_to_session",
+      "send_ralph_guidance",
     ]);
     expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
     expect(chatTools.start_ralph_request?.tier).toBe("action");

@@ -156,3 +156,30 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
     updatedAt: run.updatedAt.toISOString(),
   };
 }
+
+/**
+ * How many of the run's messages (guidance and requests) it hasn't taken in
+ * yet: pending requests and live replies its agent hasn't been given.
+ */
+export function pendingGuidanceCount(detail: RalphRunDetail): number {
+  const ids = new Set(detail.pendingRequests.map((request) => request.id));
+  for (const { id, deliveredAt, consumedAt } of detail.messages) {
+    if (!deliveredAt && !consumedAt) ids.add(id);
+  }
+  return ids.size;
+}
+
+/** When the run last did something (a change, a job starting or ending, a message), as ISO. */
+export function lastRunActivity(detail: RalphRunDetail): string {
+  const times = [detail.run.updatedAt];
+  for (const job of detail.jobs) {
+    times.push(job.createdAt);
+    if (job.startedAt) times.push(job.startedAt);
+    if (job.finishedAt) times.push(job.finishedAt);
+  }
+  for (const message of detail.messages) {
+    times.push(message.createdAt);
+    if (message.deliveredAt) times.push(message.deliveredAt);
+  }
+  return new Date(Math.max(...times.map((time) => time.getTime()))).toISOString();
+}
