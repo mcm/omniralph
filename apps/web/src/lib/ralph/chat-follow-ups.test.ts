@@ -11,6 +11,7 @@ import {
   getMainLane,
   getRun,
   jobs,
+  listPendingRequests,
   organizations,
   ralphRuns,
   runMigrations,
@@ -53,6 +54,8 @@ const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { createChatAgentHandler, SESSION_REACTION } = await import("@/lib/chat/agent/handler");
 const { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } = await import("./jobs");
 const { startChatRequest } = await import("./chat-start");
+const { sendToChatRun } = await import("./chat-reply");
+const { askPermission, readPermission } = await import("./permissions");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -463,5 +466,48 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
 
     expect(linearCalls).toEqual([]);
     expect(linearLoads).toBe(0);
+  });
+  it("asks a session's permission question in the thread, takes the answer and a /ship from replies", async () => {
+    const started = await startChatRequest(ralph(), {
+      chatThreadId: chatThread.id,
+      repository: "acme/app",
+      request: "Fix the typo in the README.",
+      quoted: [],
+      author: "Ada Lovelace",
+      announce: async () => undefined,
+    });
+    if (started.status !== "started") throw new Error(`not started: ${started.status}`);
+    const job = await start(started.run.id, "ralph.request");
+    vi.mocked(adapter.postMessage).mockClear();
+
+    const requestId = randomUUID();
+    expect(
+      await askPermission({ db, linear: async () => strictLinear(), chat: chat() }, job, {
+        requestId,
+        tool: "Bash",
+        detail: "git commit -m 'Fix the typo'",
+        timeoutSeconds: 1800,
+      }),
+    ).toEqual({ status: "asked" });
+    expect(posted().join("\n")).toContain("I need permission to use **Bash**");
+
+    const reply = (text: string) =>
+      sendToChatRun(ralph(), { chatThreadId: chatThread.id, text, author: "Ada Lovelace" });
+    expect(await reply("Allow")).toMatchObject({ status: "answered" });
+    expect(readPermission(await getRun(db, started.run.id), job, requestId)).toMatchObject({
+      status: "allowed",
+      answeredBy: "Ada Lovelace",
+    });
+    expect(posted().at(-1)).toContain("Allowed **Bash**");
+
+    // `/ship` waits for the running session instead of going into it.
+    expect(await reply("/ship")).toMatchObject({ status: "queued" });
+    // (The running job's own request stays pending until that job finishes.)
+    expect((await listPendingRequests(db, started.run.id)).at(-1)).toMatchObject({
+      text: "Commit the work on the branch, push it, and open the pull/merge request if there isn't one.",
+      ship: true,
+      jobId: null,
+    });
+    expect(linearCalls).toEqual([]);
   });
 });

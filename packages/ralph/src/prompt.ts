@@ -525,7 +525,6 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
   const prd = epic.kind === "single" ? "" : epic.description.trim();
   const gates = uniqueCommands(ctx.qualityGates);
   const chat = ctx.source === "chat";
-  const thread = chat ? "chat thread" : "Linear thread";
   const intro = chat
     ? [
         `You are working on a request from a chat thread: ${epic.title}.`,

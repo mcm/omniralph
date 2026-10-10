@@ -166,6 +166,13 @@ export const sendToSession = defineChatTool({
           message:
             "The run takes this as its next request once its current step finishes, and answers in this thread. Tell the user briefly.",
         };
+      case "answered":
+        return {
+          status: "answered",
+          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          message:
+            "That answered the session's open permission question; the answer is posted in the thread. End your turn with no text.",
+        };
     }
   },
 });

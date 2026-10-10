@@ -1,10 +1,12 @@
 /**
- * Permission prompts of a live session, asked in Linear. Request sessions
+ * Permission prompts of a live session, asked in the run's conversation (its
+ * Linear agent session, or its chat thread). Request sessions
  * bypass Claude Code's permission checks, but a repository's own Claude Code
  * settings can still `ask` about a call (e.g. `"ask": ["Bash(git commit:*)"]`).
  * The agent then asks here (`POST /api/agent/jobs/{id}/permissions`): the
  * question is stored on the run and posted as an Allow/Deny elicitation. A
- * reply answers it (`answerPermission`, from `handleReply`); the agent polls
+ * reply answers it (`answerPermission`, from `handleReply` or, in chat,
+ * `sendToChatRun`); the agent polls
  * for the answer and denies the call itself when nobody answers in time,
  * telling us (`expirePermission`). One question at a time per run.
  */
@@ -25,6 +27,7 @@ import {
 } from "@omniralph/ralph";
 import type { RalphPermissionAnswer, RalphPermissionRequest } from "@omniralph/shared";
 import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
+import { conversationFor, type ChatSource } from "./conversation";
 import { postActivity } from "./notify";
 import { FINISHED_RUN_STATUSES } from "./run";
 
@@ -32,6 +35,13 @@ export interface PermissionDeps {
   db: Database;
   /** The gateway of an organization's Linear workspace. */
   linear: (organizationId: string) => Promise<LinearGateway>;
+  /** Posts chat runs (default: the deployment's chat bot). */
+  chat?: ChatSource;
+}
+
+/** The run's conversation, getting the Linear gateway only when it's needed. */
+function conversation(deps: PermissionDeps, run: RalphRun) {
+  return conversationFor(run, { linear: () => deps.linear(run.organizationId), chat: deps.chat });
 }
 
 type RalphJob = Pick<Job, "id" | "ralphRunId">;
@@ -43,7 +53,7 @@ function questionOf(run: RalphRun, job: RalphJob, requestId: string) {
 }
 
 /**
- * Asks the run's Linear session to approve a tool call (idempotent per
+ * Asks the run's conversation to approve a tool call (idempotent per
  * `requestId`). Any earlier question still open is replaced. `no_run`: the
  * job has no run, or the run is over; the agent denies the call.
  */
@@ -73,10 +83,8 @@ export async function askPermission(
   });
   if (!asked) return { status: "no_run" };
   if (asked.post) {
-    const linear = await deps.linear(asked.run.organizationId);
     await postActivity(
-      linear,
-      asked.run.linearAgentSessionId,
+      conversation(deps, asked.run),
       {
         type: "elicitation",
         body: permissionQuestion({
@@ -135,16 +143,17 @@ export async function expirePermission(
     return { run, tool: question.tool, timedOut };
   });
   if (!expired?.timedOut || FINISHED_RUN_STATUSES.has(expired.run.status)) return;
-  const linear = await deps.linear(expired.run.organizationId);
-  await postActivity(linear, expired.run.linearAgentSessionId, {
-    type: "thought",
-    body: `Nobody answered in time, so I didn't use **${expired.tool}**.`,
-  });
+  // In chat, a new message under the question rather than an edit of the status message.
+  await postActivity(
+    conversation(deps, expired.run),
+    { type: "thought", body: `Nobody answered in time, so I didn't use **${expired.tool}**.` },
+    { notice: true },
+  );
 }
 
 /**
  * A reply that answers the run's open permission question (inside the run's
- * lock, from `handleReply`). Returns the note for the thread, or null when
+ * lock, from `handleReply` or `sendToChatRun`). Returns the note for the thread, or null when
  * the run has no open question this reply answers: none is pending, it
  * expired, or the job that asked isn't running anymore (then it's closed).
  */
