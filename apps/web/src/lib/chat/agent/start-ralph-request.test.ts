@@ -20,7 +20,7 @@ import {
   runMigrations,
   saveChatConnection,
   seedReviewProfiles,
-  startJob,
+  claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
@@ -221,14 +221,14 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
 
   /** Starts the run's queued `ralph.request` job on the agent. */
   async function startRequestJob(job: Job): Promise<void> {
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job.id);
     expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, isCapability } from "./index.js";
-import { CAPABILITY_JOB_SCOPES, capabilityTopic, defaultCapabilityLimit } from "./protocol.js";
+import { CAPABILITY_JOB_SCOPES, defaultCapabilityLimit } from "./protocol.js";
 import {
   TRIAGE_CAPABILITY,
   TRIAGE_JOB_TYPES,
@@ -71,11 +71,6 @@ describe("triage capability", () => {
     expect(CAPABILITY_JOB_SCOPES.triage).not.toContain("credentials:write");
     expect(TRIAGE_RUN_JOB_TYPE).toBe("triage.run");
     expect(TRIAGE_JOB_TYPES).toEqual(["triage.run"]);
-  });
-
-  it("delivers its jobs on the organization's triage topic", () => {
-    const orgId = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
-    expect(capabilityTopic(TRIAGE_CAPABILITY, orgId)).toBe(`triage-jobs-org-${orgId}`);
   });
 
   it("gets the same default concurrency limit as review", () => {

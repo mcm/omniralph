@@ -202,7 +202,7 @@ export async function rotateRefreshToken(
 }
 
 export interface RevokeAgentResult {
-  /** Running jobs put back to `queued` (failed-retryable): the queue redelivers them. */
+  /** Running jobs put back to `queued` (failed-retryable): other agents claim them again. */
   requeuedJobs: Job[];
   /** Running jobs that had used up their deliveries and are now `failed`. */
   failedJobs: Job[];
@@ -217,8 +217,7 @@ export interface RevokeAgentResult {
  * Outstanding access and job tokens stop working immediately because every
  * authenticated request checks `revoked_at`. Its running jobs are failed as
  * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
- * like `failJob`), so their queue messages are redelivered to other agents
- * once the lease lapses, and its repository pins are removed. Returns null
+ * like `failJob`), so other agents claim them again, and its repository pins are removed. Returns null
  * for unknown agents (with `organizationId`, also for agents of another
  * organization).
  */

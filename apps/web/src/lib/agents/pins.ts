@@ -10,8 +10,8 @@ import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /**
- * Pins a repository to an agent and enqueues a `repo.sync` job on that
- * agent's `system` topic, so the agent pre-clones the repo before its first
+ * Pins a repository to an agent and enqueues a `repo.sync` job targeted at
+ * that agent, so the agent pre-clones the repo before its first
  * review. The sync is deduped per agent and repository (also when the
  * repository was already pinned, so pinning again re-syncs).
  */

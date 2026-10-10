@@ -1,8 +1,8 @@
 /**
- * Job state (Postgres is the source of truth; Vercel Queues only delivers
- * `{ jobId }` messages). Lifecycle: `queued` → `running` (start, per delivery)
- * → `completed` | `failed` | `canceled`, or back to `queued` on a retryable
- * failure; `queued` jobs older than the queue retention become `expired`.
+ * Job state and the job queue itself: agents claim `queued` jobs (`claimJob`).
+ * Lifecycle: `queued` → `running` (claim, per delivery) → `completed` |
+ * `failed` | `canceled`, or back to `queued` on a retryable failure; `queued`
+ * jobs older than the retention become `expired`.
  * See `docs/adr/0001-job-dispatch.md`.
  */
 import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -180,91 +180,6 @@ export async function requestJobCancel(
   return (await getJob(db, jobId)) ? "not_cancelable" : "not_found";
 }
 
-export type StartJobResult =
-  | { action: "run"; job: Job }
-  | {
-      action: "skip";
-      reason:
-        | "not_found"
-        | "canceled"
-        | "completed"
-        | "failed"
-        | "expired"
-        | "skipped"
-        | "max_deliveries"
-        | "capability_disabled";
-    };
-
-/**
- * Starts a delivery of a job on an agent: atomically sets `running`, the
- * agent and `started_at` and increments `delivery_count`. A job still
- * `running` elsewhere is taken over (the queue only redelivers once the
- * previous agent's lease lapsed); that agent's results are then rejected.
- * Canceled, finished and expired jobs are skipped, as is a delivery beyond
- * `maxDeliveries`, which fails the job.
- */
-export async function startJob(
-  db: Database,
-  input: {
-    jobId: string;
-    agentId: string;
-    /** The agent's organization: a job of another organization is never started. */
-    organizationId: string;
-    enabledCapabilities: readonly string[];
-    maxDeliveries: number;
-    now?: Date;
-  },
-): Promise<StartJobResult> {
-  const now = input.now ?? new Date();
-  return db.transaction(async (tx): Promise<StartJobResult> => {
-    const [job] = await tx.select().from(jobs).where(eq(jobs.id, input.jobId)).for("update");
-    if (!job || job.organizationId !== input.organizationId) {
-      return { action: "skip", reason: "not_found" };
-    }
-    switch (job.status) {
-      case "canceled":
-      case "completed":
-      case "failed":
-      case "expired":
-      case "skipped":
-        return { action: "skip", reason: job.status };
-      case "queued":
-      case "running":
-        break;
-    }
-    if (job.cancelRequested) {
-      await tx.update(jobs).set({ status: "canceled", finishedAt: now }).where(eq(jobs.id, job.id));
-      return { action: "skip", reason: "canceled" };
-    }
-    if (!input.enabledCapabilities.includes(job.capability)) {
-      return { action: "skip", reason: "capability_disabled" };
-    }
-    if (job.deliveryCount >= input.maxDeliveries) {
-      await tx
-        .update(jobs)
-        .set({
-          status: "failed",
-          error: `Gave up after ${job.deliveryCount} deliveries`,
-          finishedAt: now,
-        })
-        .where(eq(jobs.id, job.id));
-      return { action: "skip", reason: "max_deliveries" };
-    }
-    const [started] = await tx
-      .update(jobs)
-      .set({
-        status: "running",
-        agentId: input.agentId,
-        deliveryCount: sql`${jobs.deliveryCount} + 1`,
-        startedAt: now,
-        leaseExpiresAt: secondsAfter(now, JOB_LEASE_SECONDS),
-      })
-      .where(eq(jobs.id, job.id))
-      .returning();
-    return { action: "run", job: started! };
-  });
-}
-
 /** A candidate the claim settled instead of running; the caller runs its outcome handler. */
 export interface SettledJob {
   /** `canceled`: cancellation was requested; `failed`: it reached `maxDeliveries`. */
@@ -286,7 +201,7 @@ export interface ClaimJobResult {
  * with a lapsed lease (the previous agent's results are then rejected). Jobs
  * targeted at this agent come first, then the oldest. The claim sets
  * `running`, the agent, `started_at` and the lease and increments
- * `delivery_count`. Like `startJob`, a cancel-requested candidate is canceled
+ * `delivery_count`. A cancel-requested candidate is canceled
  * and one at `maxDeliveries` is failed; both are returned in `settled` and
  * the claim moves on to the next candidate. `beforeClaim` runs on the job
  * about to be claimed (e.g. to sign its job token): if it throws, the whole

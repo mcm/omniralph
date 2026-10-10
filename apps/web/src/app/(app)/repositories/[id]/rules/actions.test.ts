@@ -56,7 +56,6 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.QUEUE_REGIONS = "iad1";
 
 const { addCustomRule, deleteRule, editRule, setRuleEnabled } = await import("./actions");
 const { enqueueReview } = await import("@/lib/review/enqueue");

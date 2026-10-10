@@ -19,7 +19,7 @@ import {
   ralphRuns,
   reviews,
   runMigrations,
-  startJob,
+  claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
@@ -163,14 +163,14 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     const [job, ...more] = await activeJobs(runId);
     expect(job, "the run has a queued job").toBeDefined();
     expect(more).toEqual([]);
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job!.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job!.id);
     expect(await onRalphJobStarted(db, job!, agentA)).toEqual({ skip: false });
     return job!;
   }

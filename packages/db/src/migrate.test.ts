@@ -331,6 +331,14 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("drops the Vercel Queues columns from jobs (0053)", async () => {
+    const { rows } = await db.$client.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_name = 'jobs' and column_name in ('topic', 'queue_message_id')`,
+    );
+    expect(rows).toEqual([]);
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

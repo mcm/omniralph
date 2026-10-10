@@ -24,7 +24,7 @@ import {
   pinRepositoryToAgent,
   ralphRuns,
   runMigrations,
-  startJob,
+  claimJob,
   updateRepositoryRalphSettings,
   updateRun,
   upsertScmConnection,
@@ -238,14 +238,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     agentId = agentA,
   ): Promise<RalphStoryPayload> {
     const job = await activeJob(runId);
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job.id);
     expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
     if ("jobError" in outcome) {
       await failJob(db, {
@@ -285,13 +285,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   ): Promise<RalphDescribePrPayload> {
     const job = await activeJob(runId);
     expect(job.type).toBe("ralph.describe-pr");
-    await startJob(db, {
+    const { claim } = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
+    expect(claim?.job.id).toBe(job.id);
     expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
     if ("jobError" in outcome) {
       await failJob(db, {
@@ -509,8 +510,10 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const run = await delegate(epic.id);
     expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
 
-    // Agent A happened to take it: the run sticks to A from now on.
+    // The pin is removed and the job retargeted, so agent A takes it: the run sticks to A from now on.
     await db.delete(agentRepoPins);
+    expect(await dispatcher.republish((await activeJob(run.id)).id)).toBe(true);
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
     await work(run.id, {}, agentA);
     const second = await activeJob(run.id);
     expect(second.targetAgentId).toBe(agentA);
@@ -529,13 +532,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     linear.add({ identifier: "ENG-17", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
-    await startJob(db, {
+    const { claim } = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
+    expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
     await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
     await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentA));
@@ -554,13 +558,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     linear.add({ identifier: "ENG-29", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
-    await startJob(db, {
+    const { claim } = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
+    expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
     await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
     await db.update(ralphRuns).set({ agentId: foreign!.id }).where(eq(ralphRuns.id, run.id));
@@ -603,27 +608,37 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
     // The agent crashes (lease lost) on every delivery: no outcome is reported.
     const job = await activeJob(run.id);
+    const lapseLease = () =>
+      db
+        .update(jobs)
+        .set({ leaseExpiresAt: new Date(0) })
+        .where(eq(jobs.id, job.id));
     for (let delivery = 1; delivery <= MAX_JOB_DELIVERIES; delivery += 1) {
-      const started = await startJob(db, {
+      await lapseLease();
+      const started = await claimJob(db, {
         organizationId: orgId,
-        jobId: job.id,
         agentId: agentA,
+        capabilities: ["ralph"],
         enabledCapabilities: ["ralph"],
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
-      expect(started.action).toBe("run");
+      expect(started.claim?.job.id).toBe(job.id);
       await advanceRun(run.id, deps());
       expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 0]]);
       expect((await activeJob(run.id)).id).toBe(job.id);
     }
-    const gaveUp = await startJob(db, {
+    await lapseLease();
+    const gaveUp = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(gaveUp).toEqual({ action: "skip", reason: "max_deliveries" });
+    expect(gaveUp).toMatchObject({
+      claim: null,
+      settled: [{ outcome: "failed", job: { id: job.id, status: "failed" } }],
+    });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
 
     expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 1]]);
@@ -651,13 +666,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     linear.add({ identifier: "ENG-35", title: "Only", parentId: epic.id });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
-    await startJob(db, {
+    const { claim } = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
+    expect(claim?.job.id).toBe(job.id);
     const failed = await failJob(db, {
       jobId: job.id,
       agentId: agentA,
@@ -1083,13 +1099,14 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(waiting.id);
 
     // The job completes, but its outcome hook never ran (e.g. the control panel crashed).
-    await startJob(db, {
+    const { claim } = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
+    expect(claim?.job.id).toBe(job.id);
     await completeJob(db, {
       jobId: job.id,
       agentId: agentA,

@@ -6,14 +6,13 @@ import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/l
 import { getDb } from "@/lib/db";
 import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
-/** Lease delay before a retryable failure is redelivered, when the agent doesn't name one. */
+/** Delay before a retryable failure may be claimed again, when the agent doesn't name one. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 
 /**
  * Records a failed delivery. Non-retryable failures, and any failure on the
- * last allowed delivery, fail the job (the agent acknowledges the message).
- * Otherwise the response is `retry`: the agent sets the message's lease to
- * `retryAfterSeconds` without acknowledging, so the queue redelivers it.
+ * last allowed delivery, fail the job. Otherwise the job is queued again,
+ * claimable after `retryAfterSeconds`, and the response is `retry`.
  * The job type's outcome handler (`onFailed`, `onCanceled`, `onRetry`) then
  * updates the capability's state, e.g. a review's final failure fails the
  * review and posts a failure note.

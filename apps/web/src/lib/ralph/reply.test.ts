@@ -15,7 +15,7 @@ import {
   listStories,
   ralphRuns,
   runMigrations,
-  startJob,
+  claimJob,
   updateLane,
   updateRepositoryRalphSettings,
   updateRun,
@@ -176,14 +176,14 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
 
   async function start(runId: string): Promise<Job> {
     const job = await activeJob(runId);
-    const started = await startJob(db, {
+    const started = await claimJob(db, {
       organizationId: orgId,
-      jobId: job.id,
       agentId: agentA,
+      capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    expect(started.action).toBe("run");
+    expect(started.claim?.job.id).toBe(job.id);
     expect(await onRalphJobStarted(db, job, agentA)).toEqual({ skip: false });
     return job;
   }

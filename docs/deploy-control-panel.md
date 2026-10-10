@@ -217,7 +217,7 @@ summary comment links back to `/reviews/<id>`.
   `vercel kms inspect` shows it; re-import with `--algorithm RS256` into a new issuer.
 - **Jobs stay queued:** no agent of the repository's organization is online with the capability
   enabled (**Agents**; agents of other organizations never take its jobs), the repository is
-  pinned to an offline agent, or `QUEUE_REGIONS` changed while jobs were queued.
+  pinned to an offline agent.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be
   connected to one organization. Disconnect a Linear workspace there first; remove a GitHub

@@ -139,7 +139,7 @@ details.
 ## Quickstart
 
 1. **Deploy the control panel** on Vercel, built by GitHub Actions: Neon Postgres, the deploy
-   workflow's secrets, a KMS issuer per environment, `QUEUE_REGIONS`, `CRON_SECRET`, sign-in and
+   workflow's secrets, a KMS issuer per environment, `CRON_SECRET`, sign-in and
    the other variables in [`.env.example`](.env.example).
    → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
 2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` (or invited)
