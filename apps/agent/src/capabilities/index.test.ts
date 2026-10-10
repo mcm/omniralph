@@ -15,11 +15,15 @@ import {
   ralphCapability,
 } from "./ralph/index.js";
 import { REVIEW_TOOL_POLICY } from "./review.js";
+import { TRIAGE_TOOL_POLICY, triageCapability } from "./triage/index.js";
 
 describe("capability registry", () => {
-  it("ships the system, review and ralph capabilities", () => {
+  it("ships the system, review, ralph and triage capabilities", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
-    expect(registry.names()).toEqual(["system", "review", "ralph"]);
+    expect(registry.names()).toEqual(["system", "review", "ralph", "triage"]);
+    expect(registry.forJob({ capability: "triage", type: "triage.run" })?.name).toBe("triage");
+    expect(registry.forJob({ capability: "ralph", type: "triage.run" })).toBeUndefined();
+    expect(registry.forJob({ capability: "triage", type: "ralph.story" })).toBeUndefined();
     expect(registry.forJob({ capability: "system", type: "repo.sync" })?.name).toBe("system");
     expect(registry.forJob({ capability: "system", type: "review.run" })).toBeUndefined();
     expect(registry.forJob({ capability: "review", type: "review.run" })?.name).toBe("review");
@@ -39,6 +43,22 @@ describe("capability registry", () => {
     expect(REVIEW_TOOL_POLICY.permissionMode).not.toBe("bypassPermissions");
     expect(REVIEW_TOOL_POLICY.settingSources).toEqual([]);
     expect(REVIEW_TOOL_POLICY.writable).toBe(false);
+  });
+
+  it("keeps triage sessions read-only", () => {
+    expect(toolPolicyFor(triageCapability, "triage.run")).toBe(TRIAGE_TOOL_POLICY);
+    expect(TRIAGE_TOOL_POLICY).toMatchObject({
+      tools: "allowed",
+      fileScope: "worktree",
+      permissionMode: "dontAsk",
+      settingSources: [],
+      writable: false,
+    });
+    expect([...TRIAGE_TOOL_POLICY.allowedTools].sort()).toEqual(["Glob", "Grep", "Read"]);
+    expect(TRIAGE_TOOL_POLICY.readOnlyCommands).toBeUndefined();
+    for (const tool of ["Bash", "Write", "Edit", "MultiEdit", "WebFetch", "WebSearch"]) {
+      expect(TRIAGE_TOOL_POLICY.disallowedTools).toContain(tool);
+    }
   });
 
   it("lets ralph story sessions write, and keeps describe-pr sessions read-only", () => {

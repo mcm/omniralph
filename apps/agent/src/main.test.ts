@@ -120,7 +120,7 @@ describe("omniralph-agent CLI", () => {
             enrollmentToken: "ore_abc",
             name: "coder-1",
             version: AGENT_VERSION,
-            capabilities: ["system", "review", "ralph"],
+            capabilities: ["system", "review", "ralph", "triage"],
           },
         },
       ]);
