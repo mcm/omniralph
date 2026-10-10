@@ -27,6 +27,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
@@ -62,6 +63,8 @@ const { POST: heartbeat } = await import("./heartbeat/route");
 const { POST: start } = await import("./jobs/[id]/start/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
+const { POST: claim } = await import("./claim/route");
+const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: activities } = await import("./jobs/[id]/activities/route");
 const { GET: attachment } = await import("./jobs/[id]/attachments/[attachmentId]/route");
@@ -427,6 +430,189 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       const jobId = await newJob();
       const res = await start(agentRequest(`jobs/${jobId}/start`, "garbage"), ctx(jobId));
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/agent/claim", () => {
+    const outcomes: string[] = [];
+
+    beforeAll(() => {
+      // Test job types: `claim.skip` is skipped by its `onStarted`.
+      for (const type of ["claim.run", "claim.skip"]) {
+        registerJobOutcomeHandler(type, {
+          capability: "review",
+          payload: z.object({}),
+          onStarted: async (db, job, agentId) => {
+            outcomes.push(`started:${job.id}:${agentId}`);
+            if (type !== "claim.skip") return { skip: false };
+            await db.update(jobs).set({ status: "skipped" }).where(eq(jobs.id, job.id));
+            return { skip: true, reason: "skipped" };
+          },
+          onFailed: async (_db, job, error) => void outcomes.push(`failed:${job.id}:${error}`),
+          onCanceled: async (_db, job) => void outcomes.push(`canceled:${job.id}`),
+        });
+      }
+    });
+
+    beforeEach(() => {
+      outcomes.length = 0;
+    });
+
+    /** An organization of its own, so other tests' queued jobs aren't claimable. */
+    async function claimOrg() {
+      const [org] = await db.insert(organizations).values({ name: "Claimco" }).returning();
+      const organizationId = org!.id;
+      const agent = await newAgent({ organizationId });
+      async function job(type = "claim.run", values: Partial<typeof jobs.$inferInsert> = {}) {
+        const { job } = await dispatcher().createAndPublish({
+          organizationId,
+          capability: "review",
+          type,
+          payload: {},
+          dedupeKey: randomUUID(),
+        });
+        if (Object.keys(values).length > 0) {
+          await db.update(jobs).set(values).where(eq(jobs.id, job.id));
+        }
+        return job.id;
+      }
+      return { organizationId, agent, job };
+    }
+
+    function claimAs(
+      accessToken: string,
+      body: unknown = { capabilities: ["review"], waitSeconds: 0 },
+      signal?: AbortSignal,
+    ) {
+      const req = agentRequest("claim", accessToken, { body });
+      return claim(signal ? new Request(req, { signal }) : req);
+    }
+
+    it("claims a queued job at once and returns it with a job token", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job();
+      const res = await claimAs(agent.accessToken, { capabilities: ["review"] });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as JobStartResponse;
+      expect(body).toMatchObject({
+        action: "run",
+        job: { id: jobId, capability: "review", type: "claim.run", deliveryCount: 1 },
+        jobToken: { jobId, expiresIn: 900 },
+      });
+      if (body.action !== "run") throw new Error("expected run");
+      const principal = await requireJob(
+        new Request("http://localhost/api/agent/credentials", {
+          headers: { authorization: `Bearer ${body.jobToken.token}`, "x-real-ip": newIp() },
+        }),
+        "credentials:read",
+      );
+      expect(principal).toMatchObject({ jobId, agentId: agent.agentId });
+      expect(await jobRow(jobId)).toMatchObject({
+        status: "running",
+        agentId: agent.agentId,
+        deliveryCount: 1,
+      });
+      expect((await jobRow(jobId)).leaseExpiresAt).toBeInstanceOf(Date);
+      expect(outcomes).toEqual([`started:${jobId}:${agent.agentId}`]);
+    });
+
+    it("returns 204 with nothing to claim after waitSeconds: 0", async () => {
+      const { agent, job } = await claimOrg();
+      // Not claimable: a capability the agent didn't ask for, and a delayed retry.
+      const delayed = await job("claim.run", { availableAt: new Date(Date.now() + 60_000) });
+      const res = await claimAs(agent.accessToken, { capabilities: ["ralph"], waitSeconds: 0 });
+      expect(res.status).toBe(204);
+      expect((await claimAs(agent.accessToken)).status).toBe(204);
+      expect((await jobRow(delayed)).status).toBe("queued");
+    });
+
+    it("never claims capabilities the agent hasn't enabled", async () => {
+      const { organizationId, job } = await claimOrg();
+      const disabled = await newAgent({ organizationId, enabledCapabilities: [] });
+      const jobId = await job();
+      expect((await claimAs(disabled.accessToken)).status).toBe(204);
+      expect((await jobRow(jobId)).status).toBe("queued");
+    });
+
+    it("returns a job dispatched while the request waits", async () => {
+      const { agent, job } = await claimOrg();
+      const started = Date.now();
+      const pending = claimAs(agent.accessToken, { capabilities: ["review"], waitSeconds: 10 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const jobId = await job();
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    });
+
+    it("stops waiting when the request is aborted", async () => {
+      const { agent } = await claimOrg();
+      const controller = new AbortController();
+      const started = Date.now();
+      const pending = claimAs(
+        agent.accessToken,
+        { capabilities: ["review"], waitSeconds: 50 },
+        controller.signal,
+      );
+      setTimeout(() => controller.abort(), 300);
+      expect((await pending).status).toBe(204);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    });
+
+    it("never returns another organization's job", async () => {
+      const ours = await claimOrg();
+      const theirs = await claimOrg();
+      const theirJob = await theirs.job();
+      expect((await claimAs(ours.agent.accessToken)).status).toBe(204);
+      expect((await jobRow(theirJob)).status).toBe("queued");
+      const res = await claimAs(theirs.agent.accessToken);
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(theirJob);
+    });
+
+    it("runs the outcome handlers of settled and skipped jobs and moves on", async () => {
+      const { agent, job } = await claimOrg();
+      const canceled = await job("claim.run", { cancelRequested: true });
+      const exhausted = await job("claim.run", { deliveryCount: 3 });
+      const skipped = await job("claim.skip");
+      const runnable = await job();
+      const res = await claimAs(agent.accessToken);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(runnable);
+      expect(outcomes).toEqual([
+        `canceled:${canceled}`,
+        `failed:${exhausted}:Gave up after 3 deliveries`,
+        `started:${skipped}:${agent.agentId}`,
+        `started:${runnable}:${agent.agentId}`,
+      ]);
+      expect((await jobRow(canceled)).status).toBe("canceled");
+      expect((await jobRow(exhausted)).status).toBe("failed");
+      expect((await jobRow(skipped)).status).toBe("skipped");
+    });
+
+    it("uses up no delivery when signing the job token fails", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job();
+      const signer = getTokenSigner();
+      const spy = vi.spyOn(signer, "signJobToken").mockRejectedValueOnce(new Error("kms down"));
+      try {
+        await expect(claimAs(agent.accessToken)).rejects.toThrow("kms down");
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await jobRow(jobId)).toMatchObject({ status: "queued", deliveryCount: 0 });
+    });
+
+    it("rejects invalid bodies, bad tokens and revoked agents", async () => {
+      const { agent, job } = await claimOrg();
+      await job();
+      expect(
+        (await claimAs(agent.accessToken, { capabilities: ["review"], waitSeconds: 51 })).status,
+      ).toBe(400);
+      expect((await claimAs(agent.accessToken, { waitSeconds: 0 })).status).toBe(400);
+      expect((await claimAs("garbage")).status).toBe(401);
+      await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agent.agentId));
+      expect((await claimAs(agent.accessToken)).status).toBe(401);
     });
   });
 

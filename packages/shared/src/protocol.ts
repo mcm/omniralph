@@ -1,7 +1,8 @@
 /**
  * Job protocol between the control panel and agents: the queue message, the
  * heartbeat and the job lifecycle endpoints (`/api/agent/heartbeat`,
- * `/api/agent/jobs/{id}/start|result|fail`). See `docs/adr/0001-job-dispatch.md`.
+ * `/api/agent/claim`, `/api/agent/jobs/{id}/start|result|fail`). See
+ * `docs/adr/0001-job-dispatch.md`.
  */
 import { z } from "zod";
 import type { JobTokenScope } from "./agent-protocol.js";
@@ -299,6 +300,20 @@ export const JobStartResponse = z.discriminatedUnion("action", [
   }),
 ]);
 export type JobStartResponse = z.infer<typeof JobStartResponse>;
+
+/** Longest `POST /api/agent/claim` holds the request while there's nothing to claim. */
+export const MAX_CLAIM_WAIT_SECONDS = 50;
+
+/**
+ * `POST /api/agent/claim` request. The response is `JobStartResponse`'s `run`
+ * shape (200), or 204 once `waitSeconds` passed with nothing to claim.
+ */
+export const ClaimRequest = z.object({
+  /** Capabilities the agent has a free slot for; only enabled ones are claimed. */
+  capabilities: z.array(capabilityName).max(32),
+  waitSeconds: z.int().min(0).max(MAX_CLAIM_WAIT_SECONDS).default(MAX_CLAIM_WAIT_SECONDS),
+});
+export type ClaimRequest = z.input<typeof ClaimRequest>;
 
 /** `POST /api/agent/jobs/{id}/result`: the capability's output (e.g. findings for a review). */
 export const JobResult = z.object({
