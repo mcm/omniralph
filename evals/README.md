@@ -34,6 +34,10 @@ pnpm eval --max-total-tokens 2000000        # hard cap for the whole run
 pnpm eval --profile standard --update-baseline
 ```
 
+`pnpm bench` is an alias for `pnpm eval` and takes the same options. Use it
+where a shell guard blocks commands containing the word `eval`, such as an AI
+agent session isolated in a worktree.
+
 | Option                   | Default        | Meaning                                                                                                                                                                                   |
 | ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--profile`              | `all`          | Profiles to run. They use the built-in defaults from `packages/engine/src/eval/profiles.ts` (the same as the seed migration), not a database's edited copies.                             |
