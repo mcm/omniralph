@@ -36,13 +36,20 @@ import { getLinearGateway } from "@/lib/linear/client";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
+import { getDispatcher } from "@/lib/dispatch";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 import { removeTriageLabelQuietly } from "./label";
-import { lockedIssues, lockedMessage } from "./start";
+import { continueTriageAfterJob } from "./reply";
+import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 
 export interface TriageApplyDeps {
   db: Database;
   linear: LinearGateway;
 }
+
+/** What the job handlers use: also what starts the job a pending reply asks for. */
+export type TriageJobDeps = TriageApplyDeps &
+  Partial<Pick<TriageDeps, "dispatcher" | "adapterFor">>;
 
 /** What applying a triage job did. */
 export type ApplyTriageOutcome =
@@ -432,11 +439,14 @@ export async function onTriageJobStarted(
   return { skip: true, reason: "skipped" };
 }
 
-/** A triage job completed: its result is applied. Errors are logged, not thrown. */
+/**
+ * A triage job completed: its result is applied, then a reply that arrived
+ * while it ran starts the next job. Errors are logged, not thrown.
+ */
 export async function onTriageJobCompleted(
   db: Database,
   job: Job,
-  deps?: TriageApplyDeps,
+  deps?: TriageJobDeps,
 ): Promise<void> {
   try {
     const run = await currentRun(db, job);
@@ -445,6 +455,7 @@ export async function onTriageJobCompleted(
     const outcome = await applyTriageJob(applyDeps, job);
     if (outcome.status !== "ignored") {
       await removeTriageLabelQuietly(applyDeps.linear, run.linearIssueId);
+      await continueWithPendingReply(db, run.id, applyDeps);
     }
   } catch (error) {
     console.error(`Applying triage job ${job.id} failed`, error);
@@ -453,22 +464,24 @@ export async function onTriageJobCompleted(
 
 /**
  * A triage job failed for good or was canceled: its run ends `failed` (or
- * `stopped`), the session says so and the `ralph:triage` label is removed.
- * Errors are logged, not thrown.
+ * `stopped`), the session says so and the `ralph:triage` label is removed;
+ * a reply that arrived while it ran starts the next job. Errors are logged,
+ * not thrown.
  */
 export async function onTriageJobFinishedWithoutResult(
   db: Database,
   job: Job,
   status: "failed" | "stopped",
   error: string | null,
-  deps?: TriageApplyDeps,
+  deps?: TriageJobDeps,
 ): Promise<void> {
   try {
     const run = await currentRun(db, job);
     if (!run) return;
     const claimed = await finishTriageRunJob(db, run.id, job.id, status);
     if (!claimed) return;
-    const { linear } = deps ?? (await defaultDeps(db, run));
+    const jobDeps = deps ?? (await defaultDeps(db, run));
+    const { linear } = jobDeps;
     await postActivity(
       linear,
       run.linearAgentSessionId,
@@ -480,6 +493,7 @@ export async function onTriageJobFinishedWithoutResult(
         : { type: "response", body: "Triage was canceled. Nothing changed in Linear." },
     );
     await removeTriageLabelQuietly(linear, run.linearIssueId);
+    await continueWithPendingReply(db, run.id, jobDeps);
   } catch (err) {
     console.error(`Recording the end of triage job ${job.id} failed`, err);
   }
@@ -487,6 +501,26 @@ export async function onTriageJobFinishedWithoutResult(
 
 const isActive = (run: TriageRun) =>
   (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(run.status);
+
+/** Starts the run's next job when replies arrived while the last one ran. */
+async function continueWithPendingReply(
+  db: Database,
+  runId: string,
+  deps: TriageJobDeps,
+): Promise<void> {
+  const run = await getTriageRun(db, runId);
+  if (!run?.pendingReply) return;
+  await continueTriageAfterJob(
+    {
+      db,
+      organizationId: run.organizationId,
+      linear: deps.linear,
+      dispatcher: deps.dispatcher ?? getDispatcher(),
+      adapterFor: deps.adapterFor ?? scmAdapterFor,
+    },
+    run.id,
+  );
+}
 
 async function defaultDeps(db: Database, run: TriageRun): Promise<TriageApplyDeps> {
   return { db, linear: await getLinearGateway({ db, organizationId: run.organizationId }) };

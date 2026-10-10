@@ -1,0 +1,1 @@
+ALTER TABLE "triage_runs" ADD COLUMN "pending_reply" text;

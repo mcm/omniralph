@@ -202,3 +202,118 @@ export async function setTriageRunSession(
     .returning();
   return row ?? null;
 }
+
+/** What `replyToTriageRun` / `takeTriageRunPendingReply` did. */
+export type TriageRunReplyResult =
+  /** The run is queued or running: the reply waits for its next job. */
+  | { status: "pending"; run: TriageRun }
+  /** The run is queued again (no current job yet), to triage with `reply`. */
+  | { status: "requeued"; run: TriageRun; reply: string }
+  /** Another run of the issue is queued or running: nothing changed. */
+  | { status: "conflict"; other: TriageRun | null }
+  /** Nothing to triage with (no reply given or pending), or the run is gone. */
+  | { status: "none" };
+
+const isActiveStatus = (status: TriageRunStatus) =>
+  (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(status);
+
+const joinReplies = (...replies: (string | null | undefined)[]) =>
+  replies
+    .map((r) => r?.trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+/**
+ * Takes a reply in the run's session, under the run's lock: while the run is
+ * queued or running the reply is stored (after any earlier pending one) for
+ * the next job; otherwise the run is queued again (its current job cleared,
+ * its pending replies taken) and the combined reply returned, unless another
+ * run of the issue is unfinished.
+ */
+export async function replyToTriageRun(
+  db: Database,
+  runId: string,
+  reply: string,
+): Promise<TriageRunReplyResult> {
+  return requeueTriageRun(db, runId, reply);
+}
+
+/**
+ * Queues the run again with its pending replies once its job is over (as
+ * `replyToTriageRun` does for a new reply). `none` when it has none, or is
+ * still queued or running.
+ */
+export async function takeTriageRunPendingReply(
+  db: Database,
+  runId: string,
+): Promise<TriageRunReplyResult> {
+  return requeueTriageRun(db, runId, null);
+}
+
+async function requeueTriageRun(
+  db: Database,
+  runId: string,
+  reply: string | null,
+): Promise<TriageRunReplyResult> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [run] = await tx
+        .select()
+        .from(triageRuns)
+        .where(eq(triageRuns.id, runId))
+        .for("update");
+      if (!run) return { status: "none" } as const;
+      if (isActiveStatus(run.status)) {
+        if (reply === null || !reply.trim()) return { status: "none" } as const;
+        const [row] = await tx
+          .update(triageRuns)
+          .set({ pendingReply: joinReplies(run.pendingReply, reply), updatedAt: new Date() })
+          .where(eq(triageRuns.id, runId))
+          .returning();
+        return { status: "pending", run: row! } as const;
+      }
+      const combined = joinReplies(run.pendingReply, reply);
+      if (!combined) return { status: "none" } as const;
+      const other = await getActiveTriageRun(tx, run.organizationId, run.linearIssueId);
+      if (other) return { status: "conflict", other } as const;
+      const [row] = await tx
+        .update(triageRuns)
+        .set({ status: "queued", currentJobId: null, pendingReply: null, updatedAt: new Date() })
+        .where(eq(triageRuns.id, runId))
+        .returning();
+      return { status: "requeued", run: row!, reply: combined } as const;
+    });
+  } catch (error) {
+    // Another run of the issue became active meanwhile (`triage_runs_issue_active_uq`).
+    if (isUniqueViolation(error)) {
+      const run = await getTriageRun(db, runId);
+      const other = run && (await getActiveTriageRun(db, run.organizationId, run.linearIssueId));
+      return { status: "conflict", other: other ?? null };
+    }
+    throw error;
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  for (let e = error; e && typeof e === "object"; e = (e as { cause?: unknown }).cause) {
+    if ((e as { code?: unknown }).code === "23505") return true;
+  }
+  return false;
+}
+
+/**
+ * Stops a queued or running run (Linear's Stop signal): it becomes `stopped`
+ * and its pending replies are dropped. Returns the run as it was before, or
+ * null when it wasn't queued or running.
+ */
+export async function stopTriageRun(db: Database, runId: string): Promise<TriageRun | null> {
+  return db.transaction(async (tx) => {
+    const [run] = await tx.select().from(triageRuns).where(eq(triageRuns.id, runId)).for("update");
+    if (!run || !isActiveStatus(run.status)) return null;
+    await tx
+      .update(triageRuns)
+      .set({ status: "stopped", pendingReply: null, updatedAt: new Date() })
+      .where(eq(triageRuns.id, runId));
+    return run;
+  });
+}

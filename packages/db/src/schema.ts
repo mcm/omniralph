@@ -1472,6 +1472,8 @@ export const triageRuns = pgTable(
     currentJobId: uuid("current_job_id").references(() => jobs.id, { onDelete: "set null" }),
     status: triageRunStatus("status").notNull().default("queued"),
     lastResult: jsonb("last_result").$type<TriageLastResult>(),
+    /** Replies in the session while a job ran: the next job takes them. */
+    pendingReply: text("pending_reply"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -23,6 +23,7 @@ import {
   TRIAGE_RUN_JOB_TYPE,
   TriageRunPayload,
   type TriageBlocker,
+  type TriageOutcome,
   type TriageRepository,
 } from "@omniralph/shared";
 import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
@@ -157,38 +158,40 @@ export interface StartTriageOptions {
   run?: TriageRun;
 }
 
+/** What triage reads from Linear and the repository before a job. */
+export interface TriageContext {
+  issue: IssueSummary;
+  children: IssueSummary[];
+  comments: IssueComment[];
+  blockers: TriageBlocker[];
+  repository: Awaited<ReturnType<typeof resolveRepository>>;
+}
+
 /**
- * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`,
- * or the session the `ralph:triage` label opened (with its `run`).
+ * Loads what a triage job needs, or, when it can't run (the issue or a
+ * sub-issue is in progress or done, or a load failed), says so in the session
+ * and returns why (calling `end` with the status the run should end in).
  */
-export async function startTriage(
-  event: SessionCreatedEvent,
+export async function prepareTriage(
   deps: TriageDeps,
-  options: StartTriageOptions = {},
-): Promise<StartTriageOutcome> {
-  const { db, linear } = deps;
-  const sessionId = event.sessionId;
-  const given = options.run;
-
-  if (!given) {
-    const existing = await getTriageRunBySession(db, sessionId);
-    if (existing) return { status: "exists", run: existing };
-  }
-  /** Ends the given run when triage doesn't start. */
-  const endGiven = async (status: "stopped" | "failed") => {
-    if (given) await setTriageRunStatus(db, given.id, status);
-  };
-
+  issueId: string,
+  sessionId: string,
+  end: (status: "stopped" | "failed") => Promise<void>,
+): Promise<
+  | { status: "ready"; context: TriageContext }
+  | Extract<StartTriageOutcome, { status: "load_failed" | "in_progress" | "failed" }>
+> {
+  const { linear } = deps;
   let issue: IssueSummary;
   let children: IssueSummary[];
   let issueComments: IssueComment[];
   let blockers: TriageBlocker[];
   try {
-    issue = await linear.getIssue(event.issueId);
+    issue = await linear.getIssue(issueId);
     children = await linear.getChildren(issue.id);
     const locked = lockedIssues(issue, children);
     if (locked.length > 0) {
-      await endGiven("stopped");
+      await end("stopped");
       await postActivity(linear, sessionId, {
         type: "response",
         body: lockedMessage(issue, locked),
@@ -198,7 +201,7 @@ export async function startTriage(
     issueComments = await linear.getComments(issue.id);
     blockers = await loadBlockers(deps, [issue, ...children]);
   } catch (error) {
-    await endGiven("failed");
+    await end("failed");
     await postActivity(linear, sessionId, {
       type: "error",
       body: `I couldn't load the issue from Linear: ${errorMessage(error)}`,
@@ -206,36 +209,39 @@ export async function startTriage(
     return { status: "load_failed", error: errorMessage(error) };
   }
 
-  let repository: Awaited<ReturnType<typeof resolveRepository>>;
+  let repository: TriageContext["repository"];
   try {
     repository = await resolveRepository(deps, issue);
   } catch (error) {
-    await endGiven("failed");
+    await end("failed");
     await postActivity(linear, sessionId, {
       type: "error",
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   }
+  return {
+    status: "ready",
+    context: { issue, children, comments: issueComments, blockers, repository },
+  };
+}
 
-  const { run, created } = given
-    ? { run: given, created: true }
-    : await createTriageRun(db, {
-        organizationId: deps.organizationId,
-        linearIssueId: issue.id,
-        linearAgentSessionId: sessionId,
-        trigger: "mention",
-      });
-  if (!created) {
-    if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
-    await postActivity(linear, sessionId, {
-      type: "response",
-      body: `**${issue.identifier}** is already being triaged in another session.`,
-    });
-    return { status: "already_running", run };
-  }
-
-  const reply = parseInstruction(event.commentBody).text;
+/**
+ * Enqueues the run's next `triage.run` job over `context` (with the session's
+ * reply and the run's previous triage, if any), records it as the run's
+ * current job and posts the "Triaging …" thought. An enqueue failure ends the
+ * run `failed`.
+ */
+export async function enqueueTriage(
+  deps: TriageDeps,
+  run: TriageRun,
+  context: TriageContext,
+  options: { reply?: string | null; previousResult?: TriageOutcome | null } = {},
+): Promise<Extract<StartTriageOutcome, { status: "queued" | "failed" }>> {
+  const { db, linear } = deps;
+  const { issue, children, repository } = context;
+  const sessionId = run.linearAgentSessionId;
+  const reply = options.reply?.trim();
   const payload = TriageRunPayload.parse({
     triageRunId: run.id,
     issue: {
@@ -247,7 +253,7 @@ export async function startTriage(
       creator: issue.creator ? { id: issue.creator.id, name: cut(issue.creator.name, 200) } : null,
       url: issue.url || null,
     },
-    comments: comments(issueComments),
+    comments: comments(context.comments),
     children: children.slice(0, MAX_ITEMS).map((c) => ({
       id: c.id,
       identifier: c.identifier,
@@ -256,10 +262,11 @@ export async function startTriage(
       stateType: stateType(c.stateType),
       priority: c.priority,
     })),
-    blockers,
+    blockers: context.blockers,
     repository: repository?.payload ?? null,
-    // What the mention says besides `/triage` guides the triage like a reply.
-    reply: reply ? cut(reply, MAX_COMMENT) : null,
+    // The newest part of a long reply is kept.
+    reply: reply ? (reply.length > MAX_COMMENT ? reply.slice(-MAX_COMMENT) : reply) : null,
+    previousResult: options.previousResult ?? null,
   });
 
   let jobId: string;
@@ -300,4 +307,52 @@ export async function startTriage(
     jobId,
     repository: repository?.payload ?? null,
   };
+}
+
+/**
+ * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`,
+ * or the session the `ralph:triage` label opened (with its `run`).
+ */
+export async function startTriage(
+  event: SessionCreatedEvent,
+  deps: TriageDeps,
+  options: StartTriageOptions = {},
+): Promise<StartTriageOutcome> {
+  const { db, linear } = deps;
+  const sessionId = event.sessionId;
+  const given = options.run;
+
+  if (!given) {
+    const existing = await getTriageRunBySession(db, sessionId);
+    if (existing) return { status: "exists", run: existing };
+  }
+  /** Ends the given run when triage doesn't start. */
+  const endGiven = async (status: "stopped" | "failed") => {
+    if (given) await setTriageRunStatus(db, given.id, status);
+  };
+
+  const prepared = await prepareTriage(deps, event.issueId, sessionId, endGiven);
+  if (prepared.status !== "ready") return prepared;
+  const { issue } = prepared.context;
+
+  const { run, created } = given
+    ? { run: given, created: true }
+    : await createTriageRun(db, {
+        organizationId: deps.organizationId,
+        linearIssueId: issue.id,
+        linearAgentSessionId: sessionId,
+        trigger: "mention",
+      });
+  if (!created) {
+    if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
+    await postActivity(linear, sessionId, {
+      type: "response",
+      body: `**${issue.identifier}** is already being triaged in another session.`,
+    });
+    return { status: "already_running", run };
+  }
+
+  // What the mention says besides `/triage` guides the triage like a reply.
+  const reply = parseInstruction(event.commentBody).text;
+  return enqueueTriage(deps, run, prepared.context, { reply });
 }
