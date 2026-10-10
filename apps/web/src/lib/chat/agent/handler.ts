@@ -16,7 +16,12 @@ import { answerCleanup } from "@/lib/ralph/cleanup";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
-import { adapterFetcher, threadAttachments } from "../attachments";
+import {
+  adapterFetcher,
+  attachmentMetadata,
+  sessionAttachmentNote,
+  threadAttachments,
+} from "../attachments";
 import {
   CHAT_AGENT_HISTORY_LIMIT,
   CHAT_AGENT_MAX_STEPS,
@@ -135,6 +140,11 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               chatThreadId: chatThread.id,
               text: m.text,
               author: authorName(m),
+              attachments: await sessionAttachmentNote(
+                attachmentMetadata(m.attachments),
+                adapterFetcher(thread.adapter, m.attachments),
+                deps.attachmentLimits ?? CHAT_ATTACHMENT_LIMITS,
+              ),
             });
             if (outcome.status !== "no_run") passed = true;
           }
