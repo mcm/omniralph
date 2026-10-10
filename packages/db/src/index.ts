@@ -131,7 +131,7 @@ export {
 export {
   getAgentOverview,
   listAgentOverview,
-  listQueuedJobsOnAgentTopics,
+  listQueuedJobsTargetingAgent,
   listRecentAgentAudit,
   listRecentJobs,
   markAgentDeleted,
@@ -166,8 +166,8 @@ export {
   getAgent,
   getJob,
   insertJob,
+  setQueuedJobTarget,
   listAgentPinnedRepositoryIds,
-  markJobPublished,
   getJobForAgent,
   pinnedAgentFor,
   postJobCommentOnce,

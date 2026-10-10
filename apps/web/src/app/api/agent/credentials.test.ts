@@ -30,17 +30,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
-}));
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -56,7 +47,7 @@ process.env.GITHUB_APP_PRIVATE_KEY = appKey.export({ type: "pkcs8", format: "pem
 process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
 const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/signer");
-const { VercelQueuesDispatcher } = await import("@/lib/dispatch");
+const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { pinRepository } = await import("@/lib/agents/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: start } = await import("./jobs/[id]/start/route");
@@ -191,7 +182,6 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
   beforeEach(() => {
     tokenRequests.length = 0;
-    state.sends.length = 0;
   });
 
   async function newAgent(values: Partial<typeof agents.$inferInsert> = {}) {
@@ -378,7 +368,8 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           http.post("https://api.github.com/app/installations/4343/access_tokens", () =>
             HttpResponse.json(
               {
-                message: "The level of access for permissions requested are not granted to this installation.",
+                message:
+                  "The level of access for permissions requested are not granted to this installation.",
                 status: "422",
               },
               { status: 422 },
@@ -547,9 +538,9 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   });
 
   describe("pinning a repository", () => {
-    it("pins and enqueues repo.sync on the agent's system topic, which it can run and get credentials for", async () => {
+    it("pins and enqueues repo.sync targeted at the agent, which it can run and get credentials for", async () => {
       const agentId = await newAgent({ enabledCapabilities: [] });
-      const dispatcher = new VercelQueuesDispatcher({ db });
+      const dispatcher = new PostgresDispatcher({ db });
       const pinned = await pinRepository(db, dispatcher, { agentId, repositoryId: gitlabRepoId });
       expect(pinned.result).toBe("pinned");
       const pins = await db
@@ -559,17 +550,19 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           and(eq(agentRepoPins.agentId, agentId), eq(agentRepoPins.repositoryId, gitlabRepoId)),
         );
       expect(pins).toHaveLength(1);
-      expect(state.sends).toEqual([
-        {
-          topic: `system-jobs-agent-${agentId}`,
-          payload: { jobId: pinned.syncJobId },
-          options: { idempotencyKey: pinned.syncJobId, retentionSeconds: 86_400 },
-        },
-      ]);
-      const [job] = await db.select().from(jobs).where(eq(jobs.id, pinned.syncJobId!));
+      const syncJobs = () =>
+        db
+          .select()
+          .from(jobs)
+          .where(and(eq(jobs.type, "repo.sync"), eq(jobs.targetAgentId, agentId)));
+      const [job, ...others] = await syncJobs();
+      expect(others).toHaveLength(0);
       expect(job).toMatchObject({
+        id: pinned.syncJobId,
         capability: "system",
         type: "repo.sync",
+        status: "queued",
+        targetAgentId: agentId,
         repositoryId: gitlabRepoId,
         payload: {
           repository: {
@@ -583,7 +576,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       // Pinning again while the sync is queued doesn't enqueue a second one.
       const again = await pinRepository(db, dispatcher, { agentId, repositoryId: gitlabRepoId });
       expect(again).toEqual({ result: "already_pinned", syncJobId: pinned.syncJobId });
-      expect(state.sends).toHaveLength(1);
+      expect(await syncJobs()).toHaveLength(1);
 
       // The agent runs it although no capability is enabled for it (system is built in)...
       const accessToken = await getTokenSigner().signAccessToken(agentId);
@@ -604,7 +597,9 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
     });
 
     it("refuses revoked agents and disconnected repositories", async () => {
-      const dispatcher = new VercelQueuesDispatcher({ db });
+      const dispatcher = new PostgresDispatcher({ db });
+      const syncJobs = () => db.select().from(jobs).where(eq(jobs.type, "repo.sync"));
+      const before = (await syncJobs()).length;
       const revoked = await newAgent({ revokedAt: new Date() });
       expect(
         await pinRepository(db, dispatcher, { agentId: revoked, repositoryId: githubRepoId }),
@@ -615,7 +610,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       expect(
         await pinRepository(db, dispatcher, { agentId, repositoryId: disconnectedRepoId }),
       ).toEqual({ result: "unknown_repository" });
-      expect(state.sends).toHaveLength(0);
+      expect(await syncJobs()).toHaveLength(before);
     });
   });
 });

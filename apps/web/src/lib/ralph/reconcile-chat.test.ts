@@ -25,8 +25,7 @@ import type { Adapter } from "chat";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher, type JobDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher, type JobDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type { ChatChannel } from "./conversation";
 import { RECONCILE_STALE_MS } from "./reconcile";
@@ -56,7 +55,7 @@ describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear",
   let connection: ChatConnection;
   let chatThread: ChatThread;
   let scm: FakeScmAdapter;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let adapter: Adapter;
   let state: ReturnType<typeof createMockState>;
 
@@ -134,7 +133,7 @@ describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear",
       startedByExternalUserId: "D1",
     }))!;
     scm = new FakeScmAdapter();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+    dispatcher = new PostgresDispatcher({ db });
     let n = 0;
     adapter = createMockAdapter("discord", {
       postMessage: vi.fn(async (threadId: string) => {

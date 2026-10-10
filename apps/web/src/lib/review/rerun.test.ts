@@ -138,13 +138,6 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => state.scm.adapter,
 }));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send() {
-      return { messageId: "msg-1" };
-    }
-  },
-}));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.QUEUE_REGIONS = "iad1";

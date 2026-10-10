@@ -33,23 +33,8 @@ vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   replies: [] as { number: number; commentId: string; body: string }[],
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
-  clients: [] as unknown[],
-  sendError: null as Error | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    constructor(options: unknown) {
-      state.clients.push(options);
-    }
-    async send(topic: string, payload: unknown, options: unknown) {
-      if (state.sendError) throw state.sendError;
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
-}));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => ({
@@ -70,7 +55,7 @@ process.env.QUEUE_REGIONS = "iad1";
 process.env.CRON_SECRET = "cron-secret";
 process.env.APP_URL = "https://omniralph.example.com";
 
-const { VercelQueuesDispatcher } = await import("@/lib/dispatch");
+const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { requireJob } = await import("@/lib/agent-auth/verify");
 const { POST: heartbeat } = await import("./heartbeat/route");
@@ -174,9 +159,6 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   });
 
   beforeEach(() => {
-    state.sends.length = 0;
-    state.clients.length = 0;
-    state.sendError = null;
     upstreamCalls.length = 0;
   });
 
@@ -190,7 +172,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
   }
 
   function dispatcher() {
-    return new VercelQueuesDispatcher({ db });
+    return new PostgresDispatcher({ db });
   }
 
   async function newJob(input: { repositoryId?: string; dedupeKey?: string } = {}) {
@@ -220,28 +202,25 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
     return fail(agentRequest(`jobs/${jobId}/fail`, accessToken, { body }), ctx(jobId));
   }
 
-  describe("VercelQueuesDispatcher", () => {
-    it("publishes { jobId } deploymentless with idempotencyKey = jobId and 24h retention", async () => {
+  describe("PostgresDispatcher", () => {
+    it("inserts a queued job any agent of the organization may claim", async () => {
       const { job, created } = await dispatcher().createAndPublish({
         organizationId: orgId,
         capability: "review",
         type: "review.run",
-        dedupeKey: "review:publish",
+        payload: { prNumber: 7 },
+        dedupeKey: "review:insert",
       });
       expect(created).toBe(true);
-      expect(state.clients).toEqual([{ region: "iad1", deploymentId: null }]);
-      expect(state.sends).toEqual([
-        {
-          topic: reviewTopic(),
-          payload: { jobId: job.id },
-          options: { idempotencyKey: job.id, retentionSeconds: 86_400 },
-        },
-      ]);
-      const row = await jobRow(job.id);
-      expect(row).toMatchObject({
+      expect(job).toMatchObject({ status: "queued", targetAgentId: null });
+      expect(await jobRow(job.id)).toMatchObject({
+        organizationId: orgId,
+        capability: "review",
+        type: "review.run",
+        payload: { prNumber: 7 },
         status: "queued",
-        topic: reviewTopic(),
-        queueMessageId: "msg-1",
+        targetAgentId: null,
+        agentId: null,
       });
     });
 
@@ -259,8 +238,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         dedupeKey: "review:dedupe",
       });
       expect(second.created).toBe(false);
-      expect(second.job.id).toBe(first.job.id);
-      expect(state.sends).toHaveLength(1);
+      expect(second.job).toMatchObject({ id: first.job.id, status: "queued" });
       expect(await db.select().from(jobs).where(eq(jobs.dedupeKey, "review:dedupe"))).toHaveLength(
         1,
       );
@@ -277,33 +255,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       expect(third.job.id).not.toBe(first.job.id);
     });
 
-    it("republishes a deduped job whose earlier publish failed", async () => {
-      state.sendError = new Error("queue down");
-      await expect(
-        dispatcher().createAndPublish({
-          organizationId: orgId,
-          capability: "review",
-          type: "review.run",
-          dedupeKey: "review:publish-failed",
-        }),
-      ).rejects.toThrow("queue down");
-      state.sendError = null;
-      const retried = await dispatcher().createAndPublish({
-        organizationId: orgId,
-        capability: "review",
-        type: "review.run",
-        dedupeKey: "review:publish-failed",
-      });
-      expect(retried.created).toBe(false);
-      expect(state.sends).toHaveLength(1);
-      expect(state.sends[0]!.options).toEqual({
-        idempotencyKey: retried.job.id,
-        retentionSeconds: 86_400,
-      });
-      expect((await jobRow(retried.job.id)).topic).toBe(reviewTopic());
-    });
-
-    it("publishes pinned repos' jobs to the pinned agent's topic", async () => {
+    it("targets pinned repos' jobs at the least busy live pinned agent", async () => {
       const busy = await newAgent({ name: "busy" });
       const idle = await newAgent({ name: "idle" });
       const revoked = await newAgent({ name: "revoked", revokedAt: new Date() });
@@ -319,23 +271,72 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
         status: "running",
         agentId: busy.agentId,
       });
+      try {
+        const pinned = await newJob({ repositoryId });
+        expect(await jobRow(pinned)).toMatchObject({
+          status: "queued",
+          targetAgentId: idle.agentId,
+        });
 
-      await newJob({ repositoryId });
-      expect(state.sends.at(-1)!.topic).toBe(`review-jobs-agent-${idle.agentId}`);
+        // Explicit targets (e.g. `repo.sync` pre-clones) win over pins.
+        const { job: targeted } = await dispatcher().createAndPublish({
+          organizationId: orgId,
+          capability: "review",
+          type: "repo.sync",
+          repositoryId,
+          targetAgentId: busy.agentId,
+        });
+        expect(targeted.targetAgentId).toBe(busy.agentId);
+        expect((await jobRow(targeted.id)).targetAgentId).toBe(busy.agentId);
+      } finally {
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
+      }
 
-      // Explicit targets (e.g. `repo.sync` pre-clones) win.
-      await dispatcher().createAndPublish({
-        organizationId: orgId,
-        capability: "review",
-        type: "repo.sync",
-        repositoryId,
-        targetAgentId: busy.agentId,
-      });
-      expect(state.sends.at(-1)!.topic).toBe(`review-jobs-agent-${busy.agentId}`);
+      // Without pins, any agent of the organization may claim the job.
+      expect((await jobRow(await newJob({ repositoryId }))).targetAgentId).toBeNull();
+    });
 
-      await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
-      await newJob({ repositoryId });
-      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+    it("republishes a queued job to its repo's current pins", async () => {
+      const first = await newAgent({ name: "first" });
+      const second = await newAgent({ name: "second" });
+      await db.insert(agentRepoPins).values({ agentId: first.agentId, repositoryId });
+      try {
+        const jobId = await newJob({ repositoryId });
+        expect((await jobRow(jobId)).targetAgentId).toBe(first.agentId);
+
+        // The pin moves to another agent.
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, first.agentId));
+        await db.insert(agentRepoPins).values({ agentId: second.agentId, repositoryId });
+        expect(await dispatcher().republish(jobId)).toBe(true);
+        expect(await jobRow(jobId)).toMatchObject({
+          status: "queued",
+          targetAgentId: second.agentId,
+        });
+
+        // Unpinned: any agent of the organization may claim it.
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
+        expect(await dispatcher().republish(jobId)).toBe(true);
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
+      } finally {
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
+      }
+    });
+
+    it("doesn't republish jobs that aren't queued or don't exist", async () => {
+      const agent = await newAgent();
+      const jobId = await newJob({ repositoryId });
+      await db
+        .update(jobs)
+        .set({ status: "running", agentId: agent.agentId })
+        .where(eq(jobs.id, jobId));
+      await db.insert(agentRepoPins).values({ agentId: agent.agentId, repositoryId });
+      try {
+        expect(await dispatcher().republish(jobId)).toBe(false);
+        expect(await jobRow(jobId)).toMatchObject({ status: "running", targetAgentId: null });
+      } finally {
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
+      }
+      expect(await dispatcher().republish(randomUUID())).toBe(false);
     });
 
     it("cancels queued jobs at once and flags running ones", async () => {
@@ -1019,26 +1020,30 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
       return job.id;
     }
 
-    it("publishes each job to its own organization's topic, never another's", async () => {
+    it("inserts each job for its own organization, never another's", async () => {
       const ours = await newJob({ repositoryId });
-      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
       const theirs = await otherJob({ repositoryId: otherRepositoryId });
-      expect(state.sends.at(-1)!.topic).toBe(`review-jobs-org-${otherOrgId}`);
-      expect((await jobRow(ours)).organizationId).toBe(orgId);
-      expect((await jobRow(theirs)).organizationId).toBe(otherOrgId);
+      expect(await jobRow(ours)).toMatchObject({ organizationId: orgId, targetAgentId: null });
+      expect(await jobRow(theirs)).toMatchObject({
+        organizationId: otherOrgId,
+        targetAgentId: null,
+      });
     });
 
-    it("never sends a job to a pinned or targeted agent of another organization", async () => {
+    it("never targets a job at a pinned or targeted agent of another organization", async () => {
       // A pin can't be created across organizations; even if one existed it's ignored.
       const foreign = await otherAgent();
       await db.insert(agentRepoPins).values({ agentId: foreign.agentId, repositoryId });
       try {
-        await newJob({ repositoryId });
-        expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+        const jobId = await newJob({ repositoryId });
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
+        expect(await dispatcher().republish(jobId)).toBe(true);
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
       } finally {
         await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, foreign.agentId));
       }
 
+      const dedupeKey = randomUUID();
       await expect(
         dispatcher().createAndPublish({
           organizationId: orgId,
@@ -1046,9 +1051,13 @@ describe.skipIf(!dockerAvailable)("job dispatch and agent API", () => {
           type: "repo.sync",
           repositoryId,
           targetAgentId: foreign.agentId,
+          dedupeKey,
         }),
       ).rejects.toThrow(/organization/);
-      expect(state.sends.at(-1)!.topic).toBe(reviewTopic());
+      expect(await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey))).toHaveLength(0);
+      expect(
+        await db.select().from(jobs).where(eq(jobs.targetAgentId, foreign.agentId)),
+      ).toHaveLength(0);
     });
 
     it("gives agents only their organization's topics and refuses the other's in the proxy", async () => {

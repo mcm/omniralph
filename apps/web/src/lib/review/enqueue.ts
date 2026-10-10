@@ -66,7 +66,7 @@ export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): stri
 
 /**
  * Enqueues a review of a PR/MR head: cancels the PR's queued or running review
- * jobs for older head SHAs, creates the `queued` review and publishes a
+ * jobs for older head SHAs, creates the `queued` review and dispatches a
  * `review.run` job carrying the review config resolved now (profile, rules,
  * instructions, excludes) and the previous review's head SHA (none for a
  * `full` review) and open findings (neither for a `fresh` one). The payload holds
@@ -176,8 +176,8 @@ export async function enqueueReview(
     const existing = ReviewJobPayload.shape.reviewId.parse(job.payload.reviewId);
     return { status: "duplicate", reviewId: existing, jobId: job.id, canceledJobIds };
   } catch (error) {
-    // A job inserted before publishing failed keeps its review (the next enqueue of this
-    // head publishes it again); otherwise the review has no job and is removed.
+    // A job that was inserted anyway keeps its review; otherwise the review has no job
+    // and is removed.
     const active = await listActiveJobsByDedupePrefix(db, `${prefix}${input.headSha}`);
     if (!active.some((job) => job.payload.reviewId === review.id)) {
       await deleteReview(db, review.id);

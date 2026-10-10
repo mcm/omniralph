@@ -23,7 +23,7 @@ import {
   type RepositorySettingsInput,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -35,7 +35,6 @@ const state = vi.hoisted(() => ({
   orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -45,14 +44,6 @@ vi.mock("@/lib/auth/session", () => ({
       state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
       role,
     ),
-}));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -146,7 +137,6 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
 
   beforeEach(async () => {
     state.user = { id: "admin-1", role: "admin", name: null, email: null, image: null };
-    state.sends.length = 0;
     await db.delete(agentRepoPins);
     await db.delete(jobs);
   });
@@ -162,6 +152,10 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       .from(agentRepoPins)
       .where(eq(agentRepoPins.repositoryId, repoId));
     return rows.map((r) => r.agentId).sort();
+  }
+
+  async function syncJobs() {
+    return db.select().from(jobs).where(eq(jobs.type, "repo.sync")).orderBy(asc(jobs.createdAt));
   }
 
   async function enqueuedPayload(): Promise<ReviewJobPayload> {
@@ -211,31 +205,27 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentA] }),
     ).toEqual({ ok: true });
     expect(await pinnedAgentIds()).toEqual([agentA]);
-    expect(state.sends).toHaveLength(1);
-    expect(state.sends[0]!.topic).toBe(`system-jobs-agent-${agentA}`);
-    const { jobId } = state.sends[0]!.payload as { jobId: string };
-    const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+    const [job, ...rest] = await syncJobs();
+    expect(rest).toHaveLength(0);
     expect(job).toMatchObject({
       capability: "system",
       type: "repo.sync",
       status: "queued",
       repositoryId: repoId,
-      topic: `system-jobs-agent-${agentA}`,
+      targetAgentId: agentA,
     });
     expect(job!.payload).toMatchObject({ repository: { fullPath: "acme/api" } });
 
     // Swapping A for B syncs only to B, and keeping B pinned doesn't sync again.
-    state.sends.length = 0;
     expect(
       await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentB] }),
     ).toEqual({ ok: true });
     expect(await pinnedAgentIds()).toEqual([agentB]);
-    expect(state.sends.map((s) => s.topic)).toEqual([`system-jobs-agent-${agentB}`]);
-    state.sends.length = 0;
+    expect((await syncJobs()).map((j) => j.targetAgentId)).toEqual([agentA, agentB]);
     expect(
       await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentB] }),
     ).toEqual({ ok: true });
-    expect(state.sends).toHaveLength(0);
+    expect(await syncJobs()).toHaveLength(2);
 
     // Empty means any agent.
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
@@ -258,7 +248,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       ).toMatchObject({ ok: false, fieldErrors: { pinnedAgentIds: expect.any(String) } });
     }
     expect(await pinnedAgentIds()).toEqual([]);
-    expect(state.sends).toHaveLength(0);
+    expect(await db.select().from(jobs)).toHaveLength(0);
     expect((await getRepository(db, repoId))!.profileId).toBe("standard");
   });
 

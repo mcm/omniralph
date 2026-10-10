@@ -18,8 +18,7 @@ import { TriageRunPayload, type TriageOutcome, type TriageRunResult } from "@omn
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
@@ -76,14 +75,13 @@ describe.skipIf(!dockerAvailable)("continuing triage from session replies", () =
   let db: Database;
   let orgId: string;
   let linear: FakeLinearGateway;
-  let publisher: RecordingPublisher;
   let sessionSeq = 0;
 
   const deps = (): TriageDeps => ({
     db,
     organizationId: orgId,
     linear,
-    dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => ({ getDefaultBranch: async () => "main" }) as unknown as ScmAdapter,
   });
 
@@ -105,7 +103,6 @@ describe.skipIf(!dockerAvailable)("continuing triage from session replies", () =
     await db.delete(jobs);
     await db.delete(ralphRuns);
     linear = new FakeLinearGateway();
-    publisher = new RecordingPublisher();
   });
 
   /** An issue triaged from a mention: its run and queued job. */

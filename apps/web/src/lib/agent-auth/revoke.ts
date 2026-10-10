@@ -1,7 +1,7 @@
 import "server-only";
 import {
   getAgentOverview,
-  listQueuedJobsOnAgentTopics,
+  listQueuedJobsTargetingAgent,
   markAgentDeleted,
   revokeAgent as revokeAgentRow,
   skipJob,
@@ -22,10 +22,9 @@ const REVOKED = "Agent revoked";
  * `revoke` audit row. Unexpired access and job tokens are rejected from the next
  * request on, because `requireAgent`/`requireJob` check the agent row.
  *
- * Requeued jobs on the shared topics are redelivered to other agents once the
- * revoked agent's lease lapses. Jobs published to the agent's own topics (which
- * nobody else reads) are published again: `repo.sync` jobs are skipped, the
- * rest go wherever the repo's remaining pins send them. Returns false for
+ * Requeued untargeted jobs are claimed by other agents. Queued jobs only the
+ * revoked agent may claim (`target_agent_id`) are redispatched: `repo.sync` jobs
+ * are skipped, the rest go wherever the repo's remaining pins send them. Returns false for
  * unknown agents (with `organizationId`, also for another organization's).
  */
 export async function revokeAgent(
@@ -63,7 +62,7 @@ export async function revokeAgent(
   await forEachJob(revoked.failedJobs, (h, job) => h.onFailed?.(db, job, REVOKED));
 
   const dispatcher = options.dispatcher ?? getDispatcher();
-  for (const job of await listQueuedJobsOnAgentTopics(db, agentId)) {
+  for (const job of await listQueuedJobsTargetingAgent(db, agentId)) {
     try {
       if (job.capability === SYSTEM_CAPABILITY) {
         await skipJob(db, job.id, { reason: REVOKED });

@@ -41,8 +41,7 @@ import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
@@ -120,7 +119,6 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   let ephemerals: string[];
   let reactions: { threadId: string; messageId: string; emoji: string }[];
   let scm: FakeScmAdapter;
-  let publisher: RecordingPublisher;
   let adapter: Adapter;
   let logger: Logger;
 
@@ -128,7 +126,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     db,
     organizationId: orgId,
     linear: new FakeLinearGateway(),
-    dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => scm.asAdapter(),
     chat: {
       db,
@@ -336,7 +334,6 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     ephemerals = [];
     reactions = [];
     scm = new FakeScmAdapter();
-    publisher = new RecordingPublisher();
     let n = 0;
     adapter = createMockAdapter("discord", {
       postMessage: vi.fn(async (threadId: string) => {
@@ -413,8 +410,12 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     // The job went out through the existing path, on the run's new branch.
     const [job, ...more] = await queuedJobs();
     expect(more).toEqual([]);
-    expect(job).toMatchObject({ type: "ralph.request", ralphRunId: run.id, status: "queued" });
-    expect(publisher.sent.map((s) => s.jobId)).toEqual([job!.id]);
+    expect(job).toMatchObject({
+      type: "ralph.request",
+      ralphRunId: run.id,
+      status: "queued",
+      targetAgentId: null,
+    });
     const payload = RalphRequestPayload.parse(job!.payload);
     expect(payload).toMatchObject({
       source: "chat",

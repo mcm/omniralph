@@ -41,8 +41,7 @@ import type { ReactElement } from "react";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import {
@@ -208,7 +207,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     state.orgId = orgId;
     linear = new FakeLinearGateway();
     state.linear = linear;
-    state.dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+    state.dispatcher = new PostgresDispatcher({ db });
   });
 
   async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {

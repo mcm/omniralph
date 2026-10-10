@@ -41,8 +41,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatConversationContext } from "@/lib/chat/bot";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type { ChatChannel } from "./conversation";
@@ -81,7 +80,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
   let chatThread: ChatThread;
   let agentId: string;
   let scm: FakeScmAdapter;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let adapter: Adapter;
   let state: ReturnType<typeof createMockState>;
   /** Every Linear gateway call, and every time one was loaded. */
@@ -221,7 +220,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       startedByExternalUserId: "D1",
     }))!;
     scm = new FakeScmAdapter();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+    dispatcher = new PostgresDispatcher({ db });
     let n = 0;
     adapter = createMockAdapter("discord", {
       postMessage: vi.fn(async (threadId: string) => {

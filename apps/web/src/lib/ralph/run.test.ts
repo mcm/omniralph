@@ -47,8 +47,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeAgent } from "@/lib/agent-auth/revoke";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -87,8 +86,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   let agentA: string;
   let agentB: string;
   let linear: FakeLinearGateway;
-  let publisher: RecordingPublisher;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let sessionSeq = 0;
 
   let scm: FakeScmAdapter;
@@ -185,8 +183,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
-    publisher = new RecordingPublisher();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher });
+    dispatcher = new PostgresDispatcher({ db });
     chat = undefined;
   });
 
@@ -349,7 +346,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       type: "ralph.story",
       repositoryId: repoId,
       ralphRunId: run.id,
-      topic: `ralph-jobs-org-${orgId}`,
+      targetAgentId: null,
     });
     const payload = RalphStoryPayload.parse(first.payload);
     expect(payload).toMatchObject({
@@ -398,7 +395,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     ]);
     expect((await getRun(db, run.id))?.agentId).toBe(agentA);
     const second = await activeJob(run.id);
-    expect(second.topic).toBe(`ralph-jobs-agent-${agentA}`);
+    expect(second.targetAgentId).toBe(agentA);
     const betaPayload = RalphStoryPayload.parse(second.payload);
     expect(betaPayload.story.identifier).toBe("ENG-3");
     expect(betaPayload.progress).toContain("ENG-4: Gamma");
@@ -417,7 +414,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(describeJob).toMatchObject({
       capability: "ralph",
       type: "ralph.describe-pr",
-      topic: `ralph-jobs-agent-${agentA}`,
+      targetAgentId: agentA,
       ralphRunId: run.id,
     });
     const describePayload = await describePr(run.id);
@@ -499,7 +496,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         url: "https://github.com/acme/api/pull/1",
       },
     ]);
-    expect(publisher.sent).toHaveLength(4);
+    expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
     expect(linear.bodies(run.linearAgentSessionId, "error")).toEqual([]);
   });
 
@@ -510,23 +507,23 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       linear.add({ identifier: `ENG-1${i + 1}`, title, parentId: epic.id, subIssueSortOrder: i });
     }
     const run = await delegate(epic.id);
-    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-agent-${agentB}`);
+    expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
 
     // Agent A happened to take it: the run sticks to A from now on.
     await db.delete(agentRepoPins);
     await work(run.id, {}, agentA);
     const second = await activeJob(run.id);
-    expect(second.topic).toBe(`ralph-jobs-agent-${agentA}`);
+    expect(second.targetAgentId).toBe(agentA);
 
-    // A is revoked while the job waits on its topic: it's published again to the org's ralph topic.
+    // A is revoked while the job waits for it: it goes back to any of the org's ralph agents.
     await revokeAgent(agentA, { db, dispatcher });
-    expect(publisher.sent.at(-1)).toEqual({ topic: `ralph-jobs-org-${orgId}`, jobId: second.id });
+    expect(await getJob(db, second.id)).toMatchObject({ status: "queued", targetAgentId: null });
     await work(run.id, {}, agentB);
     expect((await getRun(db, run.id))?.agentId).toBe(agentB);
-    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-agent-${agentB}`);
+    expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
   });
 
-  it("goes back to the organization's ralph topic when the sticky agent was revoked before the next job", async () => {
+  it("goes back to the organization's ralph agents when the sticky agent was revoked before the next job", async () => {
     const epic = linear.add({ identifier: "ENG-15", title: "Epic" });
     linear.add({ identifier: "ENG-16", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
     linear.add({ identifier: "ENG-17", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
@@ -543,7 +540,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
     await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentA));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-org-${orgId}`);
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
   });
 
   it("never sticks to an agent of another organization", async () => {
@@ -568,7 +565,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
     await db.update(ralphRuns).set({ agentId: foreign!.id }).where(eq(ralphRuns.id, run.id));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-org-${orgId}`);
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
   });
 
   it("retries a failed attempt with its feedback and completes", async () => {
@@ -1065,7 +1062,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(results.filter((r) => r.action === "enqueued")).toHaveLength(1);
     expect(results.filter((r) => r.action === "busy")).toHaveLength(4);
     expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(1);
-    expect(publisher.sent).toHaveLength(1);
     expect(
       linear.bodies(run.linearAgentSessionId, "thought").filter((t) => t.startsWith("▶️")),
     ).toHaveLength(1);
@@ -1292,7 +1288,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         const job = await activeJob(run.id);
         expect(job).toMatchObject({
           repositoryId: gitlabRepoId,
-          topic: `ralph-jobs-agent-${agentA}`,
+          targetAgentId: agentA,
         });
         const second = await work(run.id, { commitSha: sha(42) }, agentA);
         expect(second).toMatchObject({
@@ -1309,7 +1305,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         );
 
         // The sticky agent takes every lane's jobs.
-        expect((await activeJob(run.id)).topic).toBe(`ralph-jobs-agent-${agentA}`);
+        expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
         expect((await work(run.id, { commitSha: sha(43) }, agentA)).repositoryId).toBe(repoId);
 
         // Each lane is published with its own describe job and its own PR/MR, the main one first.

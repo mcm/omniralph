@@ -23,8 +23,7 @@ import type { Thread } from "chat";
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -148,7 +147,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   let agentId: string;
   let otherAgentId: string;
   let connectionId: string;
-  let publisher: RecordingPublisher;
   let scm: FakeScmAdapter;
   let seq = 0;
 
@@ -156,7 +154,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     db,
     organizationId,
     linear: new FakeLinearGateway(),
-    dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => scm.asAdapter(),
   });
 
@@ -269,7 +267,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   });
 
   beforeEach(async () => {
-    publisher = new RecordingPublisher();
     scm = new FakeScmAdapter();
     const capable = {
       reportedVersion: "0.8.0",
@@ -296,7 +293,12 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
 
     expect(result).toMatchObject({ status: "asked" });
     const [job] = await chatAskJobs(h.chatThread.id);
-    expect(job).toMatchObject({ capability: "review", status: "queued", repositoryId });
+    expect(job).toMatchObject({
+      capability: "review",
+      status: "queued",
+      repositoryId,
+      targetAgentId: null,
+    });
     const payload = ChatAskJobPayload.parse(job!.payload);
     expect(payload).toMatchObject({
       repositoryId,
@@ -309,7 +311,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(payload.context).toBe(
       "Latest messages:\nAda Lovelace: how are webhooks verified in acme/api?",
     );
-    expect(publisher.sent).toEqual([{ topic: `review-jobs-org-${orgId}`, jobId: job!.id }]);
     expect(h.thread.post).toHaveBeenCalledWith({ markdown: "Looking into `acme/api`…" });
     expect(h.handedOff).toHaveBeenCalled();
     expect((await listChatMessages(db, h.chatThread.id, 10)).at(-1)).toMatchObject({
@@ -457,7 +458,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(offline.message).toContain("online");
 
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
-    expect(publisher.sent).toEqual([]);
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 

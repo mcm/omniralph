@@ -38,8 +38,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { handleLinearWebhook } from "@/lib/linear/ingest";
@@ -109,7 +108,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     db,
     organizationId: orgId,
     linear,
-    dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
 
@@ -1027,7 +1026,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
           handle: (event, context) =>
             handleLinearEvent(event, context, {
               linear,
-              dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+              dispatcher: new PostgresDispatcher({ db }),
               adapterFor: () => fakeAdapter,
               chat,
             }),
@@ -1105,7 +1104,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
             handle: (event, context) =>
               handleLinearEvent(event, context, {
                 linear,
-                dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+                dispatcher: new PostgresDispatcher({ db }),
                 adapterFor: () => fakeAdapter,
               }),
           },

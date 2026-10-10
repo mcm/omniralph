@@ -37,8 +37,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
@@ -77,7 +76,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
   let otherRepoId: string;
   let agentA: string;
   let linear: FakeLinearGateway;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
 
@@ -155,7 +154,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     await ralphOn(otherRepoId);
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+    dispatcher = new PostgresDispatcher({ db });
   });
 
   const activeJobs = (runId: string) =>
@@ -389,7 +388,6 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
         organizationId: orgId,
         type: "ralph.request",
         capability: "ralph",
-        topic: `ralph-jobs-org-${orgId}`,
         payload: {},
         ralphRunId: run.id,
         repositoryId: repoId,

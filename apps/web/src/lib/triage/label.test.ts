@@ -20,8 +20,7 @@ import type { TriageRunResult } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent, type HandledLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
@@ -72,7 +71,6 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
   let db: Database;
   let orgId: string;
   let linear: FakeLinearGateway;
-  let publisher: RecordingPublisher;
 
   const fakeAdapter = { getDefaultBranch: async () => "main" } as unknown as ScmAdapter;
 
@@ -80,7 +78,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     db,
     organizationId: orgId,
     linear,
-    dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
 
@@ -90,7 +88,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
         linear,
-        dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+        dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
     );
@@ -147,7 +145,6 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     await db.delete(jobs);
     await db.delete(ralphRuns);
     linear = new FakeLinearGateway();
-    publisher = new RecordingPublisher();
   });
 
   it("opens an agent session and queues a label-triggered triage", async () => {
@@ -160,7 +157,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job).toMatchObject({ capability: "triage", type: "triage.run" });
-    expect(publisher.sent).toEqual([{ topic: `triage-jobs-org-${orgId}`, jobId: job.id }]);
+    expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     expect(linear.bodies("session-1", "thought")[0]).toContain(`Triaging **${issue.identifier}**`);
     // The label stays while triage runs.
     expect(linear.labelChanges).toEqual([]);
@@ -168,7 +165,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     // Linear's webhook for the session triage opened doesn't start a ralph run.
     await handle({ kind: "session_created", sessionId: "session-1", issueId: issue.id });
     expect(await db.select().from(ralphRuns)).toEqual([]);
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
   });
 
   it("starts triage when the label is added together with a state change", async () => {
@@ -190,7 +187,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     expect(linear.sessionsCreated).toEqual([{ issueId: issue.id, sessionId: "session-1" }]);
     const run = await getTriageRunBySession(db, "session-1");
     expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
     expect(linear.labelChanges).toEqual([]);
 
     // A second combined update while the run is active doesn't start another triage.
@@ -202,7 +199,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
       triageLabelId: labelId,
     });
     expect(linear.sessionsCreated).toHaveLength(1);
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
     expect(await db.select().from(triageRuns)).toHaveLength(1);
   });
 
@@ -219,7 +216,6 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     });
 
     expect(await db.select().from(jobs)).toEqual([]);
-    expect(publisher.sent).toEqual([]);
     expect((await getTriageRunBySession(db, "session-1"))?.status).toBe("stopped");
     expect(linear.bodies("session-1", "response")[0]).toContain(
       `**${issue.identifier}** is already in progress or done`,
@@ -292,7 +288,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     });
 
     expect(linear.sessionsCreated).toHaveLength(1);
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
     expect(await db.select().from(triageRuns)).toHaveLength(2);
     expect(linear.labelChanges).toEqual([]);
   });
@@ -306,7 +302,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     await handle(labelEvent(issue, labelId));
 
     expect(linear.sessionsCreated).toHaveLength(1);
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
     expect(await db.select().from(triageRuns)).toHaveLength(1);
     expect(linear.labelChanges).toEqual([]);
     expect(linear.activities.filter((a) => a.sessionId !== "session-1")).toEqual([]);
@@ -337,7 +333,6 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
       outcome: { status: "in_progress", issues: [issue.identifier] },
     });
     expect(await db.select().from(jobs)).toEqual([]);
-    expect(publisher.sent).toEqual([]);
     expect((await getTriageRunBySession(db, "session-1"))?.status).toBe("stopped");
     expect(linear.bodies("session-1", "response")[0]).toContain(
       `**${issue.identifier}** is already in progress or done`,
@@ -372,7 +367,7 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     });
     const [run] = await db.select().from(triageRuns);
     expect(run?.status).toBe("failed");
-    expect(publisher.sent).toEqual([]);
+    expect(await db.select().from(jobs)).toEqual([]);
     expect(linear.labelChanges).toEqual([{ issueId: issue.id, removed: [labelId] }]);
   });
 

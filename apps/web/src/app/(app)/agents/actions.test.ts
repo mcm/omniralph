@@ -37,7 +37,6 @@ const state = vi.hoisted(() => ({
   orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
   latest: "2.0.0",
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
@@ -52,14 +51,6 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/agents/npm", () => ({
   NpmRegistryError: class extends Error {},
   latestAgentVersion: async () => state.latest,
-}));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
 }));
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -163,7 +154,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
 
   beforeEach(() => {
     state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
-    state.sends.length = 0;
     vi.useRealTimers();
   });
 
@@ -499,18 +489,16 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await requestAgentUpdate(agentId)).toEqual({ ok: false, error: expect.any(String) });
     });
 
-    it("pinning enqueues a repo.sync job on the agent's topic", async () => {
+    it("pinning enqueues a repo.sync job targeting the agent", async () => {
       const { agentId } = await enrolledAgent();
       expect(await pinRepository(agentId, repoB)).toEqual({ ok: true });
-      expect(state.sends).toHaveLength(1);
-      expect(state.sends[0]!.topic).toBe(`system-jobs-agent-${agentId}`);
-      const { jobId } = state.sends[0]!.payload as { jobId: string };
-      expect(await jobRow(jobId)).toMatchObject({
+      const targeted = await db.select().from(jobs).where(eq(jobs.targetAgentId, agentId));
+      expect(targeted).toHaveLength(1);
+      expect(targeted[0]).toMatchObject({
         capability: "system",
         type: "repo.sync",
         status: "queued",
         repositoryId: repoB,
-        topic: `system-jobs-agent-${agentId}`,
       });
     });
 
@@ -544,10 +532,9 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     it("rejects unexpired tokens, requeues running jobs and removes pins", async () => {
       const { agentId, accessToken, refreshToken } = await enrolledAgent();
       await pinRepository(agentId, repoA);
-      state.sends.length = 0;
       expect((await sendHeartbeat(accessToken)).status).toBe(200);
 
-      const [running, lastDelivery, canceling, queuedOnOwnTopic, syncOnOwnTopic] = await db
+      const [running, lastDelivery, canceling, queuedForIt, syncForIt] = await db
         .insert(jobs)
         .values([
           {
@@ -557,7 +544,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             status: "running",
             agentId,
             deliveryCount: 1,
-            topic: `review-jobs-org-${orgId}`,
           },
           {
             organizationId: orgId,
@@ -566,7 +552,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             status: "running",
             agentId,
             deliveryCount: 3,
-            topic: `review-jobs-org-${orgId}`,
           },
           {
             organizationId: orgId,
@@ -583,7 +568,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             type: "review.run",
             status: "queued",
             repositoryId: repoA,
-            topic: `review-jobs-agent-${agentId}`,
+            targetAgentId: agentId,
           },
           {
             organizationId: orgId,
@@ -591,7 +576,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
             type: "repo.sync",
             status: "queued",
             repositoryId: repoA,
-            topic: `system-jobs-agent-${agentId}`,
+            targetAgentId: agentId,
           },
         ])
         .returning();
@@ -631,19 +616,12 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await jobRow(lastDelivery!.id)).toMatchObject({ status: "failed" });
       expect(await jobRow(canceling!.id)).toMatchObject({ status: "canceled" });
 
-      // Jobs only it could read are re-published (to the shared topic now) or skipped.
-      expect(await jobRow(queuedOnOwnTopic!.id)).toMatchObject({
+      // Jobs only it could claim are redispatched (to any agent now) or skipped.
+      expect(await jobRow(queuedForIt!.id)).toMatchObject({
         status: "queued",
-        topic: `review-jobs-org-${orgId}`,
+        targetAgentId: null,
       });
-      expect(state.sends).toEqual([
-        {
-          topic: `review-jobs-org-${orgId}`,
-          payload: { jobId: queuedOnOwnTopic!.id },
-          options: expect.objectContaining({ idempotencyKey: queuedOnOwnTopic!.id }),
-        },
-      ]);
-      expect(await jobRow(syncOnOwnTopic!.id)).toMatchObject({ status: "skipped" });
+      expect(await jobRow(syncForIt!.id)).toMatchObject({ status: "skipped" });
 
       // Pins removed; audited.
       expect(
@@ -693,7 +671,6 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
           status: "running",
           agentId,
           deliveryCount: 1,
-          topic: `review-jobs-org-${orgId}`,
         })
         .returning();
 

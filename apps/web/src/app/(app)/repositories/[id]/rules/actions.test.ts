@@ -40,7 +40,6 @@ const state = vi.hoisted(() => ({
   orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -54,14 +53,6 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => ({ resolveThread: async () => undefined }),
-}));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -136,7 +127,6 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
 
   beforeEach(async () => {
     state.user = admin;
-    state.sends.length = 0;
     await db.delete(rules);
     await db.delete(jobs);
     await db.delete(findings);
@@ -227,7 +217,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
         type: "review.learn-rule",
         repositoryId: repoId,
         status: "queued",
-        topic: `review-jobs-org-${orgId}`,
+        targetAgentId: null,
       });
       const payload = LearnRuleJobPayload.parse(job.payload);
       expect(payload).toMatchObject({
@@ -247,9 +237,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
         },
       });
       expect(LEARN_RULE_TOKEN_CAP).toBe(5000);
-      expect(state.sends).toEqual([
-        expect.objectContaining({ topic: `review-jobs-org-${orgId}`, payload: { jobId: job.id } }),
-      ]);
+      expect((await db.select().from(jobs)).map((j) => j.id)).toEqual([job.id]);
     });
 
     it("enqueues for @bot dismiss (scm) feedback too, but not for other reasons", async () => {

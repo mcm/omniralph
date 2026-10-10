@@ -2,7 +2,7 @@
  * Agents and Jobs pages: the fleet overview, central agent configuration
  * (returned to the agent in its next heartbeat), the audit log and the job list.
  */
-import { and, asc, desc, eq, inArray, isNotNull, isNull, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -334,14 +334,11 @@ export async function listRecentJobs(
   }));
 }
 
-/**
- * Queued jobs published to one of the agent's own topics
- * (`<capability>-jobs-agent-<agentId>`), which no other agent reads.
- */
-export async function listQueuedJobsOnAgentTopics(db: Database, agentId: string): Promise<Job[]> {
+/** Queued jobs only this agent may claim (`target_agent_id`: pinned and `repo.sync` jobs). */
+export async function listQueuedJobsTargetingAgent(db: Database, agentId: string): Promise<Job[]> {
   return db
     .select()
     .from(jobs)
-    .where(and(eq(jobs.status, "queued"), like(jobs.topic, `%-jobs-agent-${agentId}`)))
+    .where(and(eq(jobs.status, "queued"), eq(jobs.targetAgentId, agentId)))
     .orderBy(asc(jobs.createdAt));
 }

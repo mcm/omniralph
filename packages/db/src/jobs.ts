@@ -75,16 +75,21 @@ export async function insertJob(
   throw new Error(`Failed to insert job with dedupe key ${input.dedupeKey}`);
 }
 
-/** Records where a job was published. `topic` stays null until publishing succeeded. */
-export async function markJobPublished(
+/**
+ * Sets which agent may claim a `queued` job (null: any agent of its
+ * organization). False if the job isn't queued.
+ */
+export async function setQueuedJobTarget(
   db: Database,
   jobId: string,
-  input: { topic: string; messageId: string | null },
-): Promise<void> {
-  await db
+  targetAgentId: string | null,
+): Promise<boolean> {
+  const rows = await db
     .update(jobs)
-    .set({ topic: input.topic, queueMessageId: input.messageId })
-    .where(eq(jobs.id, jobId));
+    .set({ targetAgentId })
+    .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
+    .returning({ id: jobs.id });
+  return rows.length > 0;
 }
 
 export async function getJob(db: Database, jobId: string): Promise<Job | null> {
