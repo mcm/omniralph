@@ -35,7 +35,6 @@ export interface AgentRow {
   capabilityLimits: Record<string, number>;
   /** Effective per-capability limits of the enabled capabilities, as sent to the agent. */
   effectiveCapabilityLimits: Record<string, number>;
-  pollIntervalSeconds: number;
   runningJobs: { id: string; capability: string; type: string; target: JobTarget | null }[];
   pinnedRepositories: {
     id: string;
@@ -98,7 +97,6 @@ export function agentRow(
       agent.capabilityLimits,
       agent.maxConcurrency,
     ),
-    pollIntervalSeconds: agent.pollIntervalSeconds,
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
       capability: job.capability,

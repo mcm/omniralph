@@ -339,6 +339,14 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     expect(rows).toEqual([]);
   });
 
+  it("drops the poll interval from agents (0054)", async () => {
+    const { rows } = await db.$client.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_name = 'agents' and column_name = 'poll_interval_seconds'`,
+    );
+    expect(rows).toEqual([]);
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

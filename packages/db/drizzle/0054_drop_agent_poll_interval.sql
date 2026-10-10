@@ -1,0 +1,1 @@
+ALTER TABLE "agents" DROP COLUMN "poll_interval_seconds";

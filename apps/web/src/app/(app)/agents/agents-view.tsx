@@ -117,9 +117,9 @@ export function AgentsView({ agents, now }: AgentsViewProps) {
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Agents</h1>
             <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Hosts running <InlineCode>omniralph-agent</InlineCode>. Their concurrency, poll
-              interval, capabilities and pinned repositories are configured here and reach them with
-              their next heartbeat.
+              Hosts running <InlineCode>omniralph-agent</InlineCode>. Their concurrency,
+              capabilities and pinned repositories are configured here and reach them with their
+              next heartbeat.
             </Muted>
           </div>
           {isAdmin && <EnrollAgentDialog />}

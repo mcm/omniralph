@@ -839,7 +839,6 @@ export const agents = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     maxConcurrency: integer("max_concurrency").notNull().default(1),
-    pollIntervalSeconds: integer("poll_interval_seconds").notNull().default(5),
     enabledCapabilities: text("enabled_capabilities")
       .array()
       .notNull()
