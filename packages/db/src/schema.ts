@@ -1124,6 +1124,27 @@ export interface RalphPreparation {
 }
 
 /**
+ * A tool call a run's live session asked a person to approve in Linear (the
+ * repository's Claude Code settings `ask` about it). One at a time: the agent
+ * waits for the answer before it asks about another call.
+ */
+export interface RalphPermissionQuestion {
+  /** The agent's ID for the call; it reads the answer back with it. */
+  requestId: string;
+  /** The job whose session asks. */
+  jobId: string;
+  tool: string;
+  detail: string;
+  askedAt: string;
+  /** When the agent stops waiting and denies the call (ISO 8601). */
+  expiresAt: string;
+  /** Unset while pending; `expired` when nobody answered in time (or the job ended). */
+  answer?: "allowed" | "denied" | "expired";
+  answeredAt?: string;
+  answeredBy?: string | null;
+}
+
+/**
  * A file uploaded to Linear (`uploads.linear.app`) that the run's jobs may
  * download through the control panel, by its attachment ID.
  */
@@ -1188,6 +1209,8 @@ export const ralphRuns = pgTable(
     pendingElicitation: jsonb("pending_elicitation").$type<RalphPendingElicitation>(),
     /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
     preparation: jsonb("preparation").$type<RalphPreparation>(),
+    /** The latest tool call a live session asked a person to approve, and the answer. */
+    permission: jsonb("permission").$type<RalphPermissionQuestion>(),
     /** Attachment ID -> Linear upload, for every attachment listed in the run's job payloads. */
     attachments: jsonb("attachments")
       .$type<Record<string, RalphAttachmentLink>>()
@@ -1396,6 +1419,8 @@ export const ralphMessages = pgTable(
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
     kind: ralphMessageKind("kind").notNull(),
     text: text("text").notNull(),
+    /** `/ship`: the request job that takes it commits, pushes and opens the PR/MR. */
+    ship: boolean("ship").notNull().default(false),
     /** Who wrote it in Linear, when known. */
     author: text("author"),
     createdAt: createdAt(),

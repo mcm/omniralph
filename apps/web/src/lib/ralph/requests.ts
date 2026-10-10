@@ -76,7 +76,7 @@ const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 export async function addInstruction(
   tx: RalphTransaction,
   run: RalphRun,
-  input: { text: string; author?: string | null; wantsLoop: boolean },
+  input: { text: string; author?: string | null; wantsLoop: boolean; ship?: boolean },
   applyGuidance: (tx: RalphTransaction, run: RalphRun, text: string) => Promise<void>,
 ): Promise<{ run: RalphRun; switched: boolean }> {
   let current = run;
@@ -86,14 +86,20 @@ export async function addInstruction(
     switched = true;
     const guidance = new Set(current.guidance.map((g) => g.text));
     for (const request of await listPendingRequests(tx, current.id)) {
-      if (request.laneId || guidance.has(request.text)) continue;
+      if (request.laneId || request.ship || guidance.has(request.text)) continue;
       await appendGuidance(tx, current.id, request.text);
     }
   }
   if (input.text) {
     // A run waiting after its PR/MR step failed: the reply (e.g. "retry") retries that step.
-    const retry = current.mode === "epic" && current.status === "waiting" && !!current.error;
-    if (current.mode === "epic" && (retry || !asksForPushOrPullRequest(input.text))) {
+    // `/ship` is never guidance: it only runs as a request job.
+    const retry =
+      !input.ship && current.mode === "epic" && current.status === "waiting" && !!current.error;
+    if (
+      current.mode === "epic" &&
+      !input.ship &&
+      (retry || !asksForPushOrPullRequest(input.text))
+    ) {
       await applyGuidance(tx, current, input.text);
     }
     if (retry) return { run: current, switched };
@@ -102,6 +108,7 @@ export async function addInstruction(
       kind: "request",
       text: input.text,
       author: input.author ?? null,
+      ...(input.ship && { ship: true }),
     });
   }
   return { run: current, switched };
@@ -136,15 +143,15 @@ export async function pendingRequestLanes(
 
 /**
  * A story job is taking the main lane's pending requests as guidance (they
- * are in its prompt): they're handled. Push/PR requests stay pending for a
- * request job, since a story agent may not do them.
+ * are in its prompt): they're handled. Push/PR requests and `/ship` stay
+ * pending for a request job, since a story agent may not do them.
  */
 export async function consumeStoryRequests(
   tx: RalphTransaction,
   run: Pick<RalphRun, "id">,
 ): Promise<void> {
   const taken = (await listPendingRequests(tx, run.id)).filter(
-    (r) => !r.laneId && !asksForPushOrPullRequest(r.text),
+    (r) => !r.laneId && !r.ship && !asksForPushOrPullRequest(r.text),
   );
   await consumeMessages(
     tx,
@@ -270,6 +277,7 @@ export async function applyRequestJob(
     const stashed = result.stashSha
       ? `The session left uncommitted changes, which I stashed as \`${result.stashSha.slice(0, 10)}\`.`
       : "";
+    if (payload.data.ship && !result.error) notes.unshift(shipNote(result, payload.data.branch));
     output = result.error
       ? `I ran into an error working on your request: ${result.error}.\n\n${tail(result.summary, 2000)}`.trim()
       : result.summary.trim() || "Done.";
@@ -284,6 +292,15 @@ export async function applyRequestJob(
     requestOutput: [run.requestOutput?.trim(), prefixed].filter(Boolean).join("\n\n"),
   });
   return { busy: false };
+}
+
+/** What a `/ship` job did with git, for the thread. */
+function shipNote(result: RalphRequestResult, branch: string): string {
+  const commit = result.commitSha ? `Committed \`${result.commitSha.slice(0, 10)}\`` : "";
+  if (result.pushed) {
+    return commit ? `${commit} and pushed \`${branch}\`.` : `Pushed \`${branch}\`.`;
+  }
+  return commit ? `${commit}.` : `Nothing new to commit or push on \`${branch}\`.`;
 }
 
 /** Records a lane's PR/MR and adds it to the agent session. */

@@ -170,6 +170,18 @@ export const RequestAgentOutput = z.object({
     .describe(
       "True only when you are ending your turn to wait for background work you started; you are resumed when it finishes.",
     ),
+  commit: z
+    .object({
+      message: z
+        .string()
+        .describe(
+          "The commit message: a one-line subject (imperative mood, at most ~72 characters), a blank line, then a short body saying what changed and why.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Only when shipping (`/ship`): the message the orchestrator commits the worktree's changes with before it pushes the branch.",
+    ),
 });
 export type RequestAgentOutput = z.infer<typeof RequestAgentOutput>;
 
@@ -198,6 +210,7 @@ export function readRequestResult(
   const parsed = structured === undefined ? undefined : RequestAgentOutput.safeParse(structured);
   if (!parsed?.success) return { problem: problemWith(parsed?.error) };
   const { pullRequest } = parsed.data;
+  const message = parsed.data.commit?.message.trim();
   const title = pullRequest?.title?.replace(/\s+/g, " ").trim();
   const body = pullRequest?.body?.trim();
   const findings: NonNullable<RequestAgentOutput["findings"]> = [];
@@ -214,6 +227,7 @@ export function readRequestResult(
         pullRequest: { action: pullRequest.action, ...(title && { title }), ...(body && { body }) },
       }),
       ...(findings.length > 0 && { findings: findings.slice(0, MAX_FINDING_OUTCOMES) }),
+      ...(message && { commit: { message } }),
     },
   };
 }

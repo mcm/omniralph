@@ -48,6 +48,7 @@ import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { exchangeJobMessages } from "./messages";
+import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
 import { MAX_ITERATIONS_PER_RUN } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
@@ -503,6 +504,97 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         story: { identifier: "ENG-3" },
         guidance: ["Use the v2 API.", "And keep commits small."],
       });
+    });
+  });
+
+  describe("/ship", () => {
+    it("is a pending request a request job ships, never a message for the running story session", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const story = await start(run.id);
+
+      expect(await reply(run, "/ship and bump the version")).toMatchObject({ kind: "ship" });
+      expect(last(run, "thought")).toBe(
+        "I'll commit, push and open the PR/MR once the current job finishes.",
+      );
+      const [pending, ...more] = await listPendingRequests(db, run.id);
+      expect(more).toEqual([]);
+      expect(pending).toMatchObject({ text: "and bump the version", ship: true, jobId: null });
+      // Not story guidance, and the story session doesn't get it.
+      expect((await getRun(db, run.id))?.guidance).toEqual([]);
+      expect(
+        await exchangeJobMessages({ db, linear: async () => linear }, agentA, [story.id], {
+          deliveredMessageIds: [],
+          rejectedMessageIds: [],
+        }),
+      ).toEqual([]);
+      // The next story takes no `/ship` either: it stays pending for a request job.
+      await finish(story, { ...storyResult({ commitSha: sha(1) }) });
+      const next = await start(run.id);
+      expect(next.type).toBe("ralph.story");
+      expect(await listPendingRequests(db, run.id)).toHaveLength(1);
+    });
+  });
+
+  describe("permission prompts of a live session", () => {
+    const permissionDeps = () => ({ db, linear: async () => linear });
+    const ask = (job: Job, requestId = randomUUID()) =>
+      askPermission(permissionDeps(), job, {
+        requestId,
+        tool: "Bash",
+        detail: "git commit -m 'Fix it'",
+        reason: "It matches `Bash(git commit:*)` in the projectSettings settings.",
+        timeoutSeconds: 1800,
+      }).then((outcome) => ({ outcome, requestId }));
+    const answerOf = async (run: RalphRun, job: Job, requestId: string) =>
+      readPermission(await getRun(db, run.id), job, requestId);
+
+    it("asks in Linear with Allow/Deny, and a reply answers it for the agent", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      const { outcome, requestId } = await ask(job);
+      expect(outcome).toEqual({ status: "asked" });
+      const question = selects(run).at(-1)!;
+      expect(question.content).toMatchObject({ type: "elicitation" });
+      expect(JSON.stringify(question.content)).toContain("git commit -m 'Fix it'");
+      expect(question.options?.signalMetadata).toEqual({
+        options: [{ value: "Allow" }, { value: "Deny" }],
+      });
+      // Asking again with the same ID doesn't post twice.
+      await ask(job, requestId);
+      expect(selects(run)).toHaveLength(1);
+      expect(await answerOf(run, job, requestId)).toEqual({ status: "pending", answeredBy: null });
+
+      expect(await reply(run, "Allow")).toEqual({ kind: "permission_answer" });
+      expect(last(run, "thought")).toBe("Allowed **Bash**. Carrying on.");
+      expect(await answerOf(run, job, requestId)).toMatchObject({ status: "allowed" });
+      // Answered: another "Allow" is just a message for the session.
+      expect(await reply(run, "Allow")).toEqual({ kind: "live" });
+      // An unknown question counts as expired.
+      expect(await answerOf(run, job, randomUUID())).toMatchObject({ status: "expired" });
+    });
+
+    it("denies on Deny, closes an unanswered question, and ignores answers once the job ended", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      const first = await ask(job);
+      expect(await reply(run, "deny")).toEqual({ kind: "permission_answer" });
+      expect(await answerOf(run, job, first.requestId)).toMatchObject({ status: "denied" });
+
+      const second = await ask(job);
+      await expirePermission(permissionDeps(), job, second.requestId);
+      expect(await answerOf(run, job, second.requestId)).toMatchObject({ status: "expired" });
+      expect(last(run, "thought")).toBe("Nobody answered in time, so I didn't use **Bash**.");
+
+      const third = await ask(job);
+      await finish(job, { ...storyResult({ commitSha: sha(1) }) });
+      expect(await reply(run, "Allow")).toEqual({ kind: "permission_answer" });
+      expect(last(run, "thought")).toBe(
+        "That question about **Bash** isn't open anymore, so I didn't act on the answer.",
+      );
+      expect(await answerOf(run, job, third.requestId)).toMatchObject({ status: "expired" });
     });
   });
 

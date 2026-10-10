@@ -8,6 +8,8 @@ import {
   REQUEST_OUTPUT_SCHEMA,
   requestSystemAppend,
   type Epic,
+  type RequestAgentOutput,
+  type ShipStash,
   type Story,
 } from "@omniralph/ralph";
 import {
@@ -20,6 +22,7 @@ import {
 import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
 import { ActivityRelay } from "./activities.js";
+import { PermissionRelay } from "./permissions.js";
 import { controlPanelFetcher, jobAttachments } from "./attachments.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import { sessionGitAccess } from "./git-access.js";
@@ -112,6 +115,19 @@ export async function runRequest(
     logger: log,
     ...(options.fetch && { fetch: options.fetch }),
   });
+  const permissions = new PermissionRelay({
+    server: ctx.server,
+    jobId: job.id,
+    jobToken: ctx.jobToken,
+    logger: log,
+    ...(options.fetch && { fetch: options.fetch }),
+    ...(options.permissionTimeoutMs !== undefined && {
+      timeoutMs: options.permissionTimeoutMs,
+    }),
+    ...(options.permissionPollIntervalMs !== undefined && {
+      pollIntervalMs: options.permissionPollIntervalMs,
+    }),
+  });
   const runSession = options.runSession ?? createSessionRunner();
   const env = ctx.env();
   // The session fetches and pushes the branch itself, through the brokered helper.
@@ -129,8 +145,8 @@ export async function runRequest(
         signal: ctx.signal,
       },
       async (worktree) => {
-        // Whatever an earlier session left behind is set aside first.
-        const leftover = await worktree.stashWork(label("pre-run"));
+        // Whatever an earlier session left behind is set aside first (`/ship` ships it instead).
+        const leftover = payload.ship ? null : await worktree.stashWork(label("pre-run"));
         if (leftover) {
           log.info({ stash: leftover }, "stashed leftover work");
           relay.post({
@@ -158,6 +174,7 @@ export async function runRequest(
         const progressFile = path.join(progressDir, "progress.md");
         try {
           await writeFile(progressFile, payload.progress);
+          const shipStashes = payload.ship ? await requestStashes(worktree, payload) : [];
           const prompt = buildRequestPrompt({
             epic: requestEpic(payload),
             requests: payload.requests.map((r) => r.text),
@@ -174,12 +191,15 @@ export async function runRequest(
             ...(payload.settings.appendInstruction && {
               appendInstruction: payload.settings.appendInstruction,
             }),
+            ...(payload.ship && { ship: { stashes: shipStashes } }),
           });
           const request: SessionRequest = {
             prompt,
             cwd: worktree.path,
             policy: RALPH_TOOL_POLICY,
-            systemAppend: requestSystemAppend(payload.historyRewrite, payload.source),
+            systemAppend: requestSystemAppend(payload.historyRewrite, payload.source, {
+              ship: payload.ship,
+            }),
             outputSchema: REQUEST_OUTPUT_SCHEMA,
             isWaiting: isWaitingRequest,
             model: payload.settings.model ?? DEFAULT_STORY_MODEL,
@@ -202,6 +222,8 @@ export async function runRequest(
             onInjector: (inject) => ctx.setMessageInjector?.(inject),
             // Follow-ups continue this conversation, like Cyrus resuming its Claude session.
             persistSession: true,
+            // The repository's Claude Code settings may `ask` about calls (e.g. `git commit`).
+            askPermission: (call, signal) => permissions.ask(call, signal),
           };
           const resume = payload.resumeSessionId ?? undefined;
           let session = await runSession({ ...request, ...(resume && { resume }) });
@@ -226,18 +248,27 @@ export async function runRequest(
             );
           }
 
-          // The agent commits what it means to keep; anything else is set aside so the next session starts clean.
-          const stashSha = await stashQuietly(worktree, label("unfinished"), log);
           const read =
             session.stop === "completed" ? readRequestResult(session.structured) : undefined;
+          const stoppedWaiting =
+            session.stop === "completed" && isWaitingRequest(session.structured);
+          const valid = read && !("problem" in read) && !stoppedWaiting ? read.result : undefined;
+          // `/ship`: the job commits and pushes what the session prepared.
+          const shipped =
+            payload.ship && valid ? await ship(worktree, payload, valid, log) : undefined;
+          // The agent commits what it means to keep; anything else is set aside so the next session starts clean.
+          const stashSha = await stashQuietly(worktree, label("unfinished"), log);
           const base = {
             sessionId: session.sessionId ?? null,
             ...(stashSha && { stashSha }),
+            ...(shipped?.commitSha && { commitSha: shipped.commitSha }),
+            ...(shipped && { pushed: shipped.pushed }),
             usage: session.usage,
             durationMs: Date.now() - started,
           };
-          const stoppedWaiting =
-            session.stop === "completed" && isWaitingRequest(session.structured);
+          if (shipped?.error) {
+            return { ...base, summary: clip(valid?.summary ?? ""), error: clip(shipped.error) };
+          }
           if (!read || "problem" in read || stoppedWaiting) {
             const why = stoppedWaiting
               ? `the session was stopped while it waited for background work: ${session.error ?? "it gave up waiting"}`
@@ -257,19 +288,16 @@ export async function runRequest(
             },
             "request done",
           );
+          const pullRequest = read.result.pullRequest ?? shipped?.pullRequest;
           return {
             ...base,
             summary: clip(read.result.summary),
             error: null,
-            ...(read.result.pullRequest && {
+            ...(pullRequest && {
               pullRequest: {
-                action: read.result.pullRequest.action,
-                ...(read.result.pullRequest.title && {
-                  title: clip(read.result.pullRequest.title, 500),
-                }),
-                ...(read.result.pullRequest.body && {
-                  body: clip(read.result.pullRequest.body, 60_000),
-                }),
+                action: pullRequest.action,
+                ...(pullRequest.title && { title: clip(pullRequest.title, 500) }),
+                ...(pullRequest.body && { body: clip(pullRequest.body, 60_000) }),
               },
             }),
             ...(read.result.findings && {
@@ -292,6 +320,119 @@ export async function runRequest(
     await git.close();
     await relay.flush();
   }
+}
+
+/** The run's request stash entries in the stash list, newest first (offered to a `/ship` session). */
+async function requestStashes(
+  worktree: BranchWorktree,
+  payload: RalphRequestPayload,
+): Promise<ShipStash[]> {
+  const prefix = requestStashPrefix(payload);
+  const entries = await worktree.listStashes();
+  return entries
+    .filter((e) => e.label.startsWith(prefix))
+    .slice(0, 20)
+    .map((e) => ({ sha: e.sha, label: e.label, date: e.date }));
+}
+
+/** Identity for commits on hosts without a git `user.email`. */
+const FALLBACK_IDENTITY = ["-c", "user.name=Omniralph", "-c", "user.email=omniralph@localhost"];
+
+/** What `ship` did: the commit it made, whether it pushed, the PR/MR to open, or why it failed. */
+interface Shipped {
+  commitSha?: string;
+  pushed: boolean;
+  pullRequest?: NonNullable<RequestAgentOutput["pullRequest"]>;
+  error?: string;
+}
+
+/**
+ * `/ship` after the session prepared the worktree: commits everything with
+ * the session's message (outside Claude Code, so the repository's `ask`
+ * rules don't apply), pushes the branch when `origin` doesn't have its head,
+ * and asks for the PR/MR to be opened when the lane has none and the branch
+ * has commits the base doesn't. A failed commit or push undoes the commit
+ * (its changes are then stashed with the rest) and reports why.
+ */
+async function ship(
+  worktree: BranchWorktree,
+  payload: RalphRequestPayload,
+  result: RequestAgentOutput,
+  log: JobContext["logger"],
+): Promise<Shipped> {
+  const git = (args: readonly string[]) => worktree.git(args);
+  const tryGit = (args: readonly string[]) =>
+    git(args).then(
+      (out) => out.trim(),
+      () => null,
+    );
+  const remoteHead = () =>
+    tryGit(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${payload.branch}`]);
+
+  let commitSha: string | undefined;
+  await git(["add", "-A"]);
+  const staged = (await git(["diff", "--cached", "--name-only"])).trim();
+  if (staged) {
+    const message = result.commit?.message;
+    if (!message) {
+      await git(["reset", "--quiet"]);
+      return {
+        pushed: false,
+        error:
+          "the session left uncommitted changes but no commit message, so nothing was committed or pushed",
+      };
+    }
+    const identity = (await tryGit(["config", "--get", "user.email"])) ? [] : FALLBACK_IDENTITY;
+    try {
+      await git([...identity, "commit", "--quiet", "-m", message]);
+    } catch (error) {
+      await git(["reset", "--quiet"]).catch(() => {});
+      return {
+        pushed: false,
+        error: `committing the work failed (e.g. a git hook rejected it):\n\n\`\`\`\n${tail(errorText(error), 4000)}\n\`\`\``,
+      };
+    }
+    commitSha = (await git(["rev-parse", "HEAD"])).trim();
+    log.info({ commit: commitSha }, "committed the shipped work");
+  }
+
+  const head = (await git(["rev-parse", "HEAD"])).trim();
+  let pushed = false;
+  if ((await remoteHead()) !== head) {
+    try {
+      await git(["push", "--quiet", "-u", "origin", payload.branch]);
+      pushed = true;
+      log.info({ head }, "pushed the shipped branch");
+    } catch (error) {
+      // Undo the commit, so its changes are stashed with the rest instead of lost in a local commit.
+      if (commitSha) await git(["reset", "--quiet", "HEAD~1"]).catch(() => {});
+      return {
+        pushed: false,
+        error: `${commitSha ? "the work was committed, but pushing it failed, so the commit was undone" : "pushing the branch failed"}:\n\n\`\`\`\n${tail(errorText(error), 4000)}\n\`\`\``,
+      };
+    }
+  }
+
+  // No PR/MR yet: open one when the branch has something to review.
+  let pullRequest: Shipped["pullRequest"];
+  if (!payload.prUrl && !result.pullRequest) {
+    const ahead = await tryGit(["rev-list", "--count", `origin/${payload.baseBranch}..HEAD`]);
+    if (ahead !== null && Number(ahead) > 0) {
+      const [subject, ...rest] = (result.commit?.message ?? "").split("\n");
+      const body = rest.join("\n").trim();
+      pullRequest = {
+        action: "open",
+        ...(subject?.trim() && { title: subject.trim() }),
+        ...(body && { body }),
+      };
+    }
+  }
+  return { ...(commitSha && { commitSha }), pushed, ...(pullRequest && { pullRequest }) };
+}
+
+/** An error's message (a git failure's includes its output). */
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Stashes the worktree's changes (even after a cancel); the stash SHA, or null. A failure is logged. */

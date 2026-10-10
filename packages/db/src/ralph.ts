@@ -1260,6 +1260,8 @@ export interface NewRalphMessageInput {
   /** The lane it's for; omitted: the run's main lane. */
   laneId?: string | null;
   author?: string | null;
+  /** `/ship` (requests only). */
+  ship?: boolean;
 }
 
 export async function insertMessage(
@@ -1275,6 +1277,7 @@ export async function insertMessage(
       jobId: input.jobId ?? null,
       laneId: input.laneId ?? null,
       author: input.author ?? null,
+      ship: input.ship ?? false,
     })
     .returning();
   return row!;

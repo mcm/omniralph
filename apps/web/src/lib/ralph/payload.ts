@@ -234,8 +234,8 @@ export interface RequestPayloadInput {
   epic: Epic;
   /** The epic's stories with the run's state applied. */
   stories: readonly Story[];
-  /** The lane's pending requests (`ralph_messages`), oldest first. */
-  requests: readonly Pick<RalphMessage, "id" | "text">[];
+  /** The lane's pending requests (`ralph_messages`), oldest first; one `ship` ships them all. */
+  requests: readonly (Pick<RalphMessage, "id" | "text"> & Partial<Pick<RalphMessage, "ship">>)[];
   /** The lane's last request conversation, when the job goes to the agent holding it. */
   resumeSessionId: string | null;
   /** Every Linear attachment of the run (`payloadAttachments`). */
@@ -245,11 +245,12 @@ export interface RequestPayloadInput {
 /**
  * The payload of a `ralph.request` job: a lane's pending requests with the
  * epic as context (status, stories, PR/MR, progress log, quality gates) and
- * the repository's `historyRewrite`.
+ * the repository's `historyRewrite`. A `/ship` among them makes it a ship job.
  */
 export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPayload {
   const { run, lane, repository, connection, epic } = input;
   const settings = parseRalphSettings(repository.ralphSettings);
+  const requests = input.requests.slice(0, 50);
   return RalphRequestPayload.parse({
     runId: run.id,
     repositoryId: repository.id,
@@ -266,12 +267,13 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
       prd: run.kind === "single" ? "" : headOf(epic.description),
     },
     stories: storyList(epic, input.stories).slice(0, 500),
-    requests: input.requests.slice(0, 50).map((r) => ({ id: r.id, text: r.text.slice(0, 20_000) })),
+    requests: requests.map((r) => ({ id: r.id, text: r.text.slice(0, 20_000) })),
     prUrl: url(lane.prUrl ?? undefined),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     qualityGates: storyQualityGates(run.kind, epic, repository),
     historyRewrite: settings.historyRewrite,
     resumeSessionId: input.resumeSessionId,
     attachments: input.attachments ?? [],
+    ship: requests.some((r) => r.ship === true),
   });
 }

@@ -315,6 +315,11 @@ export const RalphRequestPayload = RalphJobBase.extend({
   resumeSessionId: z.string().min(1).max(200).nullable().default(null),
   /** Every Linear attachment of the run (the epic, its stories and the thread). */
   attachments: RalphAttachments,
+  /**
+   * `/ship`: the session prepares one commit and describes it; the job
+   * commits, pushes the branch, and opens the PR/MR when there is none.
+   */
+  ship: z.boolean().default(false),
 });
 export type RalphRequestPayload = z.infer<typeof RalphRequestPayload>;
 
@@ -351,6 +356,10 @@ export const RalphRequestResult = z.object({
   findings: z.array(RalphFindingOutcome).max(50).optional(),
   /** What the session left uncommitted, stashed. */
   stashSha: CommitSha.optional(),
+  /** `/ship`: the commit the job made (absent when there was nothing to commit). */
+  commitSha: CommitSha.optional(),
+  /** `/ship`: whether the job pushed the branch. */
+  pushed: z.boolean().optional(),
   usage: TokenUsage,
   durationMs: z.int().min(0),
 });
@@ -433,6 +442,37 @@ export type RalphCleanupResult = z.infer<typeof RalphCleanupResult>;
  * An agent-session activity relayed by an agent (`POST /api/agent/jobs/{id}/activities`):
  * Claude's text as a `thought`, a tool call as an (ephemeral) `action`.
  */
+/**
+ * A tool call a running ralph job's session needs a person's approval for
+ * (the repository's Claude Code settings `ask` about it):
+ * `POST /api/agent/jobs/{id}/permissions`. The control panel asks in the
+ * run's Linear agent session.
+ */
+export const RalphPermissionRequest = z.object({
+  /** Chosen by the agent; the answer is read back with it. */
+  requestId: z.uuid(),
+  /** The tool, e.g. `Bash`. */
+  tool: z.string().trim().min(1).max(200),
+  /** What the call does, e.g. the command. */
+  detail: z.string().max(4000).default(""),
+  /** Why Claude Code asks (its decision reason), if it said. */
+  reason: z.string().max(1000).optional(),
+  /** How long the agent waits for an answer before it denies the call. */
+  timeoutSeconds: z.int().min(1).max(86_400),
+});
+export type RalphPermissionRequest = z.infer<typeof RalphPermissionRequest>;
+
+export const RALPH_PERMISSION_STATUSES = ["pending", "allowed", "denied", "expired"] as const;
+export type RalphPermissionStatus = (typeof RALPH_PERMISSION_STATUSES)[number];
+
+/** `GET /api/agent/jobs/{id}/permissions/{requestId}`: the answer so far. */
+export const RalphPermissionAnswer = z.object({
+  status: z.enum(RALPH_PERMISSION_STATUSES),
+  /** Who answered in Linear, when known. */
+  answeredBy: z.string().nullable().default(null),
+});
+export type RalphPermissionAnswer = z.infer<typeof RalphPermissionAnswer>;
+
 export const RalphActivity = z.object({
   type: z.enum(["thought", "action"]),
   /** A thought's text, or an action's name (e.g. the tool). */

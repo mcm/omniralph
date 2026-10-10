@@ -1,10 +1,11 @@
-import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import {
   createSessionRunner,
   type MessageInjector,
   type SessionQueryFn,
+  PERMISSION_DENIED_TEXT,
   type SessionRequest,
   WAIT_NUDGE_TEXT,
 } from "./session.js";
@@ -163,6 +164,8 @@ describe("session runner streaming input", () => {
 interface Script {
   next: () => Promise<SDKUserMessage | undefined>;
   sent: SDKUserMessage[];
+  /** The SDK options the session was started with. */
+  options: Options;
 }
 
 /** A fake SDK `query()` that yields what `script` yields, so a test controls every message. */
@@ -181,7 +184,7 @@ function scriptedQuery(script: (io: Script) => AsyncGenerator<unknown>): {
         return r.value;
       };
       const signal = options?.abortController?.signal;
-      const gen = script({ next, sent });
+      const gen = script({ next, sent, options: options ?? {} });
       for (;;) {
         // Like the SDK, an aborted session stops yielding.
         const step = await Promise.race([
@@ -242,6 +245,57 @@ function run(script: (io: Script) => AsyncGenerator<unknown>, extra: Partial<Ses
   });
   return { done, sent: fake.sent };
 }
+
+describe("session runner permission prompts", () => {
+  const ask = { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" };
+
+  it("asks about a call the repository's settings ask about, without timing out meanwhile", async () => {
+    const calls: unknown[] = [];
+    let decision: unknown;
+    const r = run(
+      async function* ({ next, options }) {
+        await next();
+        yield turn();
+        // A person takes longer to answer than the idle timeout.
+        decision = await options.canUseTool!("Bash", { command: "git commit" }, ask);
+        yield result("complete");
+      },
+      {
+        askPermission: async (call) => {
+          calls.push(call);
+          await wait(80);
+          return true;
+        },
+      },
+    );
+    expect(await r.done).toMatchObject({ stop: "completed" });
+    expect(decision).toMatchObject({ behavior: "allow", updatedInput: { command: "git commit" } });
+    expect(calls).toEqual([{ tool: "Bash", input: { command: "git commit" } }]);
+  });
+
+  it("denies the call when the person says no, and without an asker sets no canUseTool", async () => {
+    let decision: unknown;
+    let canUseTool: unknown = "unset";
+    const denied = run(
+      async function* ({ next, options }) {
+        await next();
+        decision = await options.canUseTool!("Bash", { command: "git push" }, ask);
+        yield result("complete");
+      },
+      { askPermission: async () => false },
+    );
+    await denied.done;
+    expect(decision).toMatchObject({ behavior: "deny", message: PERMISSION_DENIED_TEXT });
+
+    const none = run(async function* ({ next, options }) {
+      await next();
+      canUseTool = options.canUseTool;
+      yield result("complete");
+    });
+    await none.done;
+    expect(canUseTool).toBeUndefined();
+  });
+});
 
 describe("session runner background work", () => {
   it("keeps a waiting session open, silent past the idle timeout, until its next turn", async () => {
