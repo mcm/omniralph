@@ -11,6 +11,7 @@ import {
   getRepositoryWithConnection,
   listActiveRunJobIds,
   listLanes,
+  listMessages,
   listStories,
   lockRun,
   updateLane,
@@ -31,6 +32,7 @@ import {
   type Repository,
   type ScmConnection,
   isLinearRun,
+  runReference,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -57,7 +59,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
-import { conversationFor, type RunConversation } from "./conversation";
+import { conversationFor, type ChatSource, type RunConversation } from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
@@ -110,6 +112,8 @@ export interface RalphDeps {
   dispatcher: JobDispatcher;
   /** The code-host adapter of a repository's connection (default branch, PRs/MRs). */
   adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
+  /** Where chat runs' threads are posted through (default: the deployment's chat bot). */
+  chat?: ChatSource;
 }
 
 /** Story jobs a run may enqueue in total (cyralph's `maxIterationsPerRun`). */
@@ -273,8 +277,13 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     if ("failed" in asked) return failRun(deps, tx, run, asked.failed);
     return { action: "waiting", run: asked, waitingOn: { blockers: [], manual: [] } };
   }
-  // The steps below build a Linear issue; a chat run has none to load.
-  if (!isLinearRun(run)) return failRun(deps, tx, run, "A run from chat can't be built yet.");
+  // A chat run has no Linear issue: only its requests run, as in request mode.
+  if (!isLinearRun(run)) {
+    const epic = await chatRequestEpic(tx, run);
+    const [next] = await pendingRequestLanes(tx, run);
+    if (next) return enqueueRequest(deps, tx, run, { epic, stories: [], ...next });
+    return finishRequests(deps, tx, run);
+  }
   const { linearIssueId } = run;
 
   const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
@@ -328,6 +337,36 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     return publishLanes(deps, tx, run, { epic, stories, rows });
   }
   return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: false });
+}
+
+/** A chat run's branch: `omniralph/chat-<id>`. */
+export function chatRunBranch(run: RalphRun): string {
+  return `omniralph/${runReference(run)}`;
+}
+
+/** Longest title a chat run's request jobs show (the first line of its first request). */
+const MAX_CHAT_TITLE_CHARS = 120;
+
+/**
+ * What a chat run's request jobs work on in place of a Linear issue: the run
+ * (`chat-<id>`), titled with the first line of its first request.
+ */
+async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epic> {
+  const first = (await listMessages(tx, run.id)).find((m) => m.kind === "request");
+  const line = first?.text.trim().split("\n")[0]?.trim() ?? "";
+  const title =
+    line.length > MAX_CHAT_TITLE_CHARS ? `${line.slice(0, MAX_CHAT_TITLE_CHARS - 1)}…` : line;
+  const identifier = runReference(run);
+  return {
+    kind: "single",
+    issueId: run.id,
+    identifier,
+    title: title || "Request from chat",
+    description: "",
+    branchName: chatRunBranch(run),
+    qualityGates: [],
+    stories: [],
+  };
 }
 
 /**
@@ -656,7 +695,10 @@ async function enqueueRequest(
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId
       : null;
-  const attachments = await gatherRunAttachments(deps.linear, tx, run, input.epic);
+  // Attachments are Linear's; a chat run has none.
+  const attachments = isLinearRun(run)
+    ? await gatherRunAttachments(deps.linear, tx, run, input.epic)
+    : [];
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,

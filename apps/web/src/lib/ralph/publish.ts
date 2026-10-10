@@ -61,6 +61,8 @@ export interface LinearLink {
   identifier: string;
   title: string;
   url?: string | null;
+  /** A chat run's (`identifier` is the run's reference, not a Linear issue). */
+  fromChat?: boolean;
 }
 
 /**
@@ -69,6 +71,7 @@ export interface LinearLink {
  * not be able to open it, so it's only a footnote.
  */
 export function pullRequestFooter(epic: LinearLink): string {
+  if (epic.fromChat) return ["---", "_Requested in chat. Opened by Omniralph._"].join("\n");
   const linear = epic.url ? `[${epic.identifier}](${epic.url})` : epic.identifier;
   return ["---", `Linear: ${linear} · _Opened by Omniralph._`].join("\n");
 }

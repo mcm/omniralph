@@ -11,7 +11,7 @@ import {
   type Job,
 } from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGateway } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { onCleanupJobFinished, startPendingCleanups } from "./cleanup";
 import { respondToReview } from "./pull-request-requests";
@@ -48,13 +48,14 @@ export async function onRalphJobStarted(
 
 /**
  * The orchestrator's dependencies for an organization's runs: its connected
- * Linear workspace, the dispatcher and the SCM adapters.
+ * Linear workspace (a disconnected gateway without one, so its chat runs
+ * still move), the dispatcher and the SCM adapters.
  */
 export async function defaultDeps(db: Database, organizationId: string): Promise<RalphDeps> {
   return {
     db,
     organizationId,
-    linear: await getLinearGateway({ db, organizationId }),
+    linear: await getLinearGatewayOrDisconnected({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };

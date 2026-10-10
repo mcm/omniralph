@@ -39,6 +39,12 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- A tool result with error `link_required` means the user must link their account: tell them so.",
     "- Answer briefly in plain text. Use Markdown links to control-panel pages when you have them. Don't use headings or tables.",
     "- User messages are prefixed with the author's name, since several people can talk in one thread.",
+    "Handing work to ralph (start_ralph_request):",
+    "- When a user asks for a change in a repository (a fix, a feature, a pull request), you can hand it to ralph, which works in this thread.",
+    "- The repository must be one the conversation makes unambiguous (named, or the only one that fits; list_repositories shows them). If it isn't, ask the user to confirm which repository first, and don't call the tool.",
+    "- Before calling it, restate what you are handing off: the request starts with one sentence summarizing it, which the handoff message shows the users. Then the request goes on as a self-contained instruction with every detail ralph needs, since ralph doesn't read the thread.",
+    "- The tool posts the handoff message itself, and ralph posts its progress and answer here: after it succeeds, end your turn without repeating it.",
+    "- If the tool says the thread already has a run, don't start another; tell the user their message should go to that run as guidance.",
   ].join("\n");
 }
 

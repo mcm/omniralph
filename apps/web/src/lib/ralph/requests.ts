@@ -27,6 +27,7 @@ import {
   updateLane,
   updateRun,
   insertMessage,
+  isLinearRun,
   type Job,
   type RalphLane,
   type RalphMessage,
@@ -248,6 +249,7 @@ export async function applyRequestJob(
         identifier: payload.data.epic.identifier,
         title: payload.data.epic.title,
         url: payload.data.epic.url,
+        ...(!isLinearRun(run) && { fromChat: true }),
       };
       if (result.pullRequest) {
         const note = await applyPullRequestAction(deps, tx, run, lane, result.pullRequest, epic);

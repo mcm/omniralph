@@ -10,6 +10,7 @@ import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from
 import { ConsoleLogger, type Logger } from "chat";
 import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
+import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
 import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
@@ -41,6 +42,8 @@ export interface ChatAgentDeps {
   /** `APP_URL` (tests). */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
+  /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
+  ralph?: (organizationId: string) => Promise<RalphDeps>;
   rateLimits?: {
     perOrganization: (organizationId: string) => RateLimit;
     perChatUser: (organizationId: string, platform: string, externalUserId: string) => RateLimit;
@@ -52,11 +55,22 @@ interface AgentThreadState {
   notConfiguredNoticeSent?: boolean;
 }
 
+/** The deployment's ralph dependencies for an organization (loaded on first use). */
+async function defaultRalphDeps(db: Database, organizationId: string): Promise<RalphDeps> {
+  const { defaultDeps } = await import("@/lib/ralph/jobs");
+  return defaultDeps(db, organizationId);
+}
+
+/** The parts of a model message other than text. */
+function withoutText(message: ModelMessage): Array<{ type: string }> {
+  if (typeof message.content === "string") return [];
+  return (message.content as Array<{ type: string }>).filter((p) => p.type !== "text");
+}
+
 /** The text parts of a model message replaced by `text` (what was actually posted). */
 function withPostedText(message: ModelMessage, text: string): ModelMessage["content"] {
   if (typeof message.content === "string") return text;
-  const others = (message.content as Array<{ type: string }>).filter((p) => p.type !== "text");
-  return [...others, { type: "text", text }] as ModelMessage["content"];
+  return [...withoutText(message), { type: "text", text }] as ModelMessage["content"];
 }
 
 export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHandler {
@@ -100,13 +114,34 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
       await thread.startTyping().catch(() => undefined);
 
       let linkNeeded = actor.kind === "unlinked";
+      let handedOff = false;
       try {
         const appUrl = getAppUrl(deps.env);
         const organization = await getOrganization(db, organizationId);
         const history = await listChatMessages(db, chatThread.id, CHAT_AGENT_HISTORY_LIMIT);
-        const tools = toAiTools(registry, { db, organizationId, actor, thread, appUrl }, () => {
-          linkNeeded = true;
-        });
+        const turnMessages = [...context.skipped, message].map((m) => ({
+          author: m.author.fullName || m.author.userName || m.author.userId || null,
+          text: m.text,
+        }));
+        const tools = toAiTools(
+          registry,
+          {
+            db,
+            organizationId,
+            actor,
+            thread,
+            appUrl,
+            chatThread,
+            turnMessages,
+            ralph: () => (deps.ralph ?? ((id) => defaultRalphDeps(db, id)))(organizationId),
+            handedOff: () => {
+              handedOff = true;
+            },
+          },
+          () => {
+            linkNeeded = true;
+          },
+        );
         const result = await generateText({
           model: deps.model,
           system: systemPrompt({
@@ -123,20 +158,30 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           maxRetries: 1,
         });
 
-        const text = sanitizeCapped(
-          result.text.trim() || EMPTY_REPLY,
-          { allowedHosts: [new URL(appUrl).host] },
-          MAX_BODY_CHARS,
-        );
-        await thread.post({ markdown: text });
+        // After a handoff (announced in the thread already), an empty answer posts nothing.
+        const quiet = handedOff && !result.text.trim();
+        const text = quiet
+          ? ""
+          : sanitizeCapped(
+              result.text.trim() || EMPTY_REPLY,
+              { allowedHosts: [new URL(appUrl).host] },
+              MAX_BODY_CHARS,
+            );
+        if (!quiet) await thread.post({ markdown: text });
         const responses = result.response.messages;
         const last = responses.at(-1);
         for (const m of responses) {
+          if (quiet && m === last && m.role === "assistant") {
+            // Its empty text isn't kept: models reject empty assistant messages.
+            const parts = withoutText(m);
+            if (parts.length > 0) await record("assistant", parts);
+            continue;
+          }
           const content =
             m === last && m.role === "assistant" ? withPostedText(m, text) : m.content;
           await record(m.role === "tool" ? "tool" : "assistant", content);
         }
-        if (last?.role !== "assistant") await record("assistant", text);
+        if (last?.role !== "assistant" && !quiet) await record("assistant", text);
       } catch (error) {
         logger.error("Chat agent turn failed", { organizationId, threadId: thread.id, error });
         await reply(ERROR_REPLY).catch((postError: unknown) =>
