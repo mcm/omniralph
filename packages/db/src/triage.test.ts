@@ -15,7 +15,10 @@ import {
   setTriageRunJob,
   setTriageRunSession,
   setTriageRunStatus,
+  replyToTriageRun,
   startTriageRunJob,
+  stopTriageRun,
+  takeTriageRunPendingReply,
   type NewTriageRunInput,
 } from "./triage.js";
 
@@ -201,6 +204,63 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
     expect(await failCompletedJob(db, job.id, "bad")).toBe(true);
     const [row] = await db.select().from(jobs).where(eq(jobs.id, job.id));
     expect(row).toMatchObject({ status: "failed", error: "bad" });
+  });
+
+  it("stores a reply while the run is active and requeues it once over", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    const job = await triageJob();
+    await setTriageRunJob(db, run.id, job.id);
+
+    expect(await replyToTriageRun(db, run.id, "1: owners")).toMatchObject({
+      status: "pending",
+      run: { pendingReply: "1: owners", status: "queued" },
+    });
+    expect(await replyToTriageRun(db, run.id, " 2: B ")).toMatchObject({
+      run: { pendingReply: "1: owners\n\n2: B" },
+    });
+    // Still active: nothing to take yet.
+    expect(await takeTriageRunPendingReply(db, run.id)).toEqual({ status: "none" });
+
+    await finishTriageRunJob(db, run.id, job.id, "completed", { summary: "M" });
+    expect(await takeTriageRunPendingReply(db, run.id)).toMatchObject({
+      status: "requeued",
+      reply: "1: owners\n\n2: B",
+      run: {
+        status: "queued",
+        currentJobId: null,
+        pendingReply: null,
+        lastResult: { summary: "M" },
+      },
+    });
+    expect(await takeTriageRunPendingReply(db, run.id)).toEqual({ status: "none" });
+  });
+
+  it("requeues an idle run with a reply, unless another run of the issue is active", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    await setTriageRunStatus(db, run.id, "completed");
+    expect(await replyToTriageRun(db, run.id, "   ")).toEqual({ status: "none" });
+
+    const { run: other } = await createTriageRun(db, runInput());
+    expect(await replyToTriageRun(db, run.id, "answer")).toMatchObject({
+      status: "conflict",
+      other: { id: other.id },
+    });
+    expect((await getTriageRun(db, run.id))?.status).toBe("completed");
+
+    await setTriageRunStatus(db, other.id, "failed");
+    expect(await replyToTriageRun(db, run.id, "answer")).toMatchObject({
+      status: "requeued",
+      reply: "answer",
+      run: { id: run.id, status: "queued" },
+    });
+  });
+
+  it("stops an active run and drops its pending replies", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    await replyToTriageRun(db, run.id, "later");
+    expect(await stopTriageRun(db, run.id)).toMatchObject({ id: run.id, status: "queued" });
+    expect(await getTriageRun(db, run.id)).toMatchObject({ status: "stopped", pendingReply: null });
+    expect(await stopTriageRun(db, run.id)).toBeNull();
   });
 
   it("deletes an organization's runs with it", async () => {

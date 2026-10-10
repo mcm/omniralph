@@ -274,7 +274,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
-  it("creates the triage_runs table (0046)", async () => {
+  it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns
        where table_name = 'triage_runs' order by column_name`,
@@ -287,6 +287,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       { column_name: "linear_agent_session_id", is_nullable: "NO" },
       { column_name: "linear_issue_id", is_nullable: "NO" },
       { column_name: "organization_id", is_nullable: "NO" },
+      { column_name: "pending_reply", is_nullable: "YES" },
       { column_name: "status", is_nullable: "NO" },
       { column_name: "trigger", is_nullable: "NO" },
       { column_name: "updated_at", is_nullable: "NO" },

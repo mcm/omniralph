@@ -9,6 +9,7 @@ import type { RalphDeps } from "@/lib/ralph/run";
 import { ACKNOWLEDGEMENT, startRun } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { isOwnTriageSession, startLabelTriage } from "@/lib/triage/label";
+import { handleTriageReply } from "@/lib/triage/reply";
 import { startTriage } from "@/lib/triage/start";
 import { getLinearGateway } from "./client";
 import type { LinearGateway } from "./gateway";
@@ -68,7 +69,8 @@ export async function acknowledgeLinearEvent(
  * `ralph:triage` label added to an issue starts triage; an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
  * completed, cleans up its runs' merged PRs/MRs); a reply in an agent
- * session is the run's guidance.
+ * session is the run's guidance (or, in a triage session, an answer to triage's
+ * open questions).
  */
 export async function handleLinearEvent(
   event: HandledLinearEvent,
@@ -87,8 +89,10 @@ export async function handleLinearEvent(
   if (event.kind === "session_created") {
     if (parseInstruction(event.commentBody).wantsTriage) await startTriage(event, ralph);
     else if (!(await isOwnTriageSession(db, organizationId, event))) await startRun(event, ralph);
-  } else if (event.kind === "session_prompted") await handleReply(event, ralph);
-  else if (event.kind === "triage_label_added") await startLabelTriage(event, ralph);
+  } else if (event.kind === "session_prompted") {
+    // Triage sessions' replies go to triage; every other session is ralph's.
+    if (!(await handleTriageReply(event, ralph))) await handleReply(event, ralph);
+  } else if (event.kind === "triage_label_added") await startLabelTriage(event, ralph);
   else {
     // Done: the issue's merged PRs/MRs are cleaned up (logged, never failing the delivery).
     if (event.stateType === "completed" && !event.removed) {
