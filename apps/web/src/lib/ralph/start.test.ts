@@ -708,6 +708,21 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
         ),
       ).toMatchObject({ status: "started", created: true });
     });
+
+    it("refuses a delegation when Linear can't be read for the check", async () => {
+      const issue = linear.add({ identifier: "ENG-65", title: "PRD", description: PRD });
+      linear.failures.set("getIssue", new Error("rate limited"));
+      const event = created(issue.id);
+      expect(await startRun(event, deps())).toEqual({
+        status: "load_failed",
+        error: "rate limited",
+      });
+      expect(linear.bodies(event.sessionId, "error")[0]).toContain(
+        "I couldn't check the issue for open questions in Linear, so I didn't start: rate limited.",
+      );
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+    });
   });
 
   it("re-delegation reuses the previous run's branch, PR, guidance and progress", async () => {

@@ -666,6 +666,15 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect(last(run!.linearAgentSessionId, "response")).toContain("Then reply `/ralph` again.");
       expect(await activeJobs(run!.id)).toEqual([]);
 
+      // Linear can't be read: refused too.
+      linear.failures.set("getIssue", new Error("timed out"));
+      expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
+      linear.failures.delete("getIssue");
+      expect(last(run!.linearAgentSessionId, "error")).toContain(
+        "I couldn't check the issue for open questions in Linear, so I didn't start: timed out.",
+      );
+      expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
+
       // Answered: `/ralph` starts the loop.
       root.description = EPIC_DESCRIPTION;
       await reply(run!, "/ralph");

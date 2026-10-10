@@ -130,21 +130,23 @@ export function openQuestionsMessage(
 /**
  * Before an epic-mode run starts: the issue whose description (or, for a
  * sub-issue, whose parent epic's description) still has open questions. Null
- * when neither has any, or when the issue can't be loaded (the start reports that).
+ * when neither has any. Throws when Linear can't be read, so callers refuse
+ * rather than start a PRD whose questions went unchecked.
  */
 export async function withOpenQuestions(
   deps: Pick<RalphDeps, "linear">,
   issueId: string,
 ): Promise<{ issue: IssueSummary; epic: boolean } | null> {
-  try {
-    const issue = await deps.linear.getIssue(issueId);
-    if (hasOpenQuestions(issue.description)) return { issue, epic: false };
-    if (!issue.parentId) return null;
-    const parent = await deps.linear.getIssue(issue.parentId);
-    return hasOpenQuestions(parent.description) ? { issue: parent, epic: true } : null;
-  } catch {
-    return null;
-  }
+  const issue = await deps.linear.getIssue(issueId);
+  if (hasOpenQuestions(issue.description)) return { issue, epic: false };
+  if (!issue.parentId) return null;
+  const parent = await deps.linear.getIssue(issue.parentId);
+  return hasOpenQuestions(parent.description) ? { issue: parent, epic: true } : null;
+}
+
+/** The error posted when the open-questions check can't read Linear. */
+export function openQuestionsCheckFailedMessage(error: unknown, then: string): string {
+  return `I couldn't check the issue for open questions in Linear, so I didn't start: ${message(error)}. ${then}`;
 }
 
 /** Refuses an epic-mode start while open questions remain (posting why); null when it may start. */
@@ -152,7 +154,17 @@ async function refuseOpenQuestions(
   deps: RalphDeps,
   event: SessionCreatedEvent,
 ): Promise<StartOutcome | null> {
-  const found = await withOpenQuestions(deps, event.issueId);
+  let found: Awaited<ReturnType<typeof withOpenQuestions>>;
+  try {
+    found = await withOpenQuestions(deps, event.issueId);
+  } catch (error) {
+    console.error(`Checking open questions of ${event.issueId} failed`, error);
+    await post(deps, event.sessionId, {
+      type: "error",
+      body: openQuestionsCheckFailedMessage(error, "Delegate or mention me again to retry."),
+    });
+    return { status: "load_failed", error: message(error) };
+  }
   if (!found) return null;
   await post(deps, event.sessionId, {
     type: "response",

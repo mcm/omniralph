@@ -73,7 +73,7 @@ import { answerPermission } from "./permissions";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import { addInstruction } from "./requests";
-import { openQuestionsMessage, withOpenQuestions } from "./start";
+import { openQuestionsCheckFailedMessage, openQuestionsMessage, withOpenQuestions } from "./start";
 import {
   advanceRun,
   FINISHED_RUN_STATUSES,
@@ -105,7 +105,7 @@ export type ReplyKind =
   /** A push/PR/MR request kept away from a running story agent. */
   | "request"
   | "guidance"
-  /** `/ralph` on a mention's run whose PRD still has open questions: refused. */
+  /** `/ralph` on a mention's run whose PRD still has open questions (or couldn't be checked): refused. */
   | "open_questions";
 
 export interface ReplyResult {
@@ -167,7 +167,18 @@ export async function handleReply(
   const instruction = parseInstruction(body);
   // `/ralph` on a mention's run switches it to the story loop: not while the PRD has open questions.
   if (instruction.wantsLoop && run.mode === "request" && isLinearRun(run)) {
-    const found = await withOpenQuestions(deps, run.focusStoryId ?? run.linearIssueId);
+    const issueId = run.focusStoryId ?? run.linearIssueId;
+    let found: Awaited<ReturnType<typeof withOpenQuestions>>;
+    try {
+      found = await withOpenQuestions(deps, issueId);
+    } catch (error) {
+      console.error(`Checking open questions of ${issueId} failed`, error);
+      await postActivity(conversationFor(run, deps), {
+        type: "error",
+        body: openQuestionsCheckFailedMessage(error, "Reply `/ralph` again to retry."),
+      });
+      return { kind: "open_questions" };
+    }
     if (found) {
       await postActivity(conversationFor(run, deps), {
         type: "response",
