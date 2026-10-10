@@ -11,8 +11,10 @@ import {
   getActiveRunByChatThread,
   getActiveRunJob,
   getRun,
+  getRunByChatThread,
   isLinearRun,
   listActiveRunJobIds,
+  listLanes,
   lockRun,
   type Database,
   type Job,
@@ -43,6 +45,21 @@ export async function chatRunSession(
   if (!run) return null;
   const job = await getActiveRunJob(db, run.id, [RALPH_REQUEST_JOB_TYPE]);
   return job ? { run, job } : null;
+}
+
+/**
+ * The thread's latest run when one of its lanes has an open cleanup question
+ * (asked after its PR/MR merged), else null: a plain reply may answer it
+ * (`answerCleanup`), as a reply in a Linear session does.
+ */
+export async function chatRunAskingCleanup(
+  db: Database,
+  chatThreadId: string,
+): Promise<RalphRun | null> {
+  const run = await getRunByChatThread(db, chatThreadId);
+  if (!run) return null;
+  const lanes = await listLanes(db, run.id);
+  return lanes.some((lane) => (lane.cleanup?.questions.length ?? 0) > 0) ? run : null;
 }
 
 export type ChatRunMessageOutcome =

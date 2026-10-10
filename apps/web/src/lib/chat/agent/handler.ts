@@ -11,7 +11,8 @@ import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from
 import { ConsoleLogger, type Logger, type Message } from "chat";
 import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
-import { chatRunSession, sendToChatRun } from "@/lib/ralph/chat-reply";
+import { chatRunAskingCleanup, chatRunSession, sendToChatRun } from "@/lib/ralph/chat-reply";
+import { answerCleanup } from "@/lib/ralph/cleanup";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
@@ -101,6 +102,17 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         await record("assistant", text);
       };
 
+      /** Marks a message the run took (no extra message). */
+      const acknowledge = () =>
+        thread.adapter
+          .addReaction(thread.id, message.id, SESSION_REACTION)
+          .catch((error: unknown) =>
+            logger.warn("Couldn't react to a message passed to the session", {
+              threadId: thread.id,
+              error,
+            }),
+          );
+
       // While the thread's session works, a plain reply is for it; a mention is for the agent.
       if (!message.isMention && (await chatRunSession(db, chatThread.id))) {
         if (actor.kind !== "member") {
@@ -119,14 +131,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             if (outcome.status !== "no_run") passed = true;
           }
           if (passed) {
-            await thread.adapter
-              .addReaction(thread.id, message.id, SESSION_REACTION)
-              .catch((error: unknown) =>
-                logger.warn("Couldn't react to a message passed to the session", {
-                  threadId: thread.id,
-                  error,
-                }),
-              );
+            await acknowledge();
             return;
           }
           // The run ended meanwhile: the agent answers instead.
@@ -138,6 +143,32 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           });
           await reply(ERROR_REPLY).catch(() => undefined);
           return;
+        }
+      }
+
+      // After the run's PR/MR merged, a member's plain reply may answer its cleanup question.
+      if (!message.isMention && actor.kind === "member") {
+        const asking = await chatRunAskingCleanup(db, chatThread.id);
+        if (asking) {
+          try {
+            const answer = await answerCleanup(
+              await ralphDeps(organizationId),
+              asking.id,
+              message.text,
+            );
+            if (answer) {
+              await acknowledge();
+              return;
+            }
+          } catch (error) {
+            logger.error("Answering a ralph cleanup question from chat failed", {
+              organizationId,
+              threadId: thread.id,
+              error,
+            });
+            await reply(ERROR_REPLY).catch(() => undefined);
+            return;
+          }
         }
       }
 

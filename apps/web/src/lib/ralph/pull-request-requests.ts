@@ -197,10 +197,14 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     if (rounds >= settings.maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });
       const busy = (await listActiveRunJobIds(tx, run.id)).length > 0;
-      await postActivity(conversationFor(run, deps), {
-        type: busy ? "thought" : "response",
-        body: `Omniralph reviewed ${lane.prUrl} again. I've already worked through ${rounds} of its reviews on this ${term}, so I'm leaving this one for a person.`,
-      });
+      await postActivity(
+        conversationFor(run, deps),
+        {
+          type: busy ? "thought" : "response",
+          body: `Omniralph reviewed ${lane.prUrl} again. I've already worked through ${rounds} of its reviews on this ${term}, so I'm leaving this one for a person.`,
+        },
+        { notice: true },
+      );
       return { status: "round_limit", rounds } as const;
     }
     const added = await addLaneRequest(tx, run, lane, {
@@ -216,10 +220,14 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledReviewIds, reviewRounds: rounds + 1 });
-    await postActivity(conversationFor(run, deps), {
-      type: "thought",
-      body: added.note,
-    });
+    await postActivity(
+      conversationFor(run, deps),
+      {
+        type: "thought",
+        body: added.note,
+      },
+      { notice: true },
+    );
     return { status: added.delivery, runId: run.id, findings: findings.length } as const;
   });
   if (!outcome) return ignored("not_ralph");
@@ -260,10 +268,14 @@ export async function addPullRequestCommentRequest(
       what: `@${input.author} asked for changes on the ${input.term}`,
     });
     if (!added) return { status: "run_over", run } as const;
-    await postActivity(conversationFor(run, deps), {
-      type: "thought",
-      body: added.note,
-    });
+    await postActivity(
+      conversationFor(run, deps),
+      {
+        type: "thought",
+        body: added.note,
+      },
+      { notice: true },
+    );
     return { status: added.delivery, run: added.run } as const;
   });
   if (!outcome) return { status: "run_over", run: found.run };
