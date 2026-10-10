@@ -4,13 +4,14 @@
  * agent's threads and their messages. Connection credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
   chatConnections,
   chatIdentities,
   chatIdentityOptOuts,
+  chatLinearIssueDrafts,
   chatLinkStateUses,
   chatMessages,
   chatThreads,
@@ -552,4 +553,149 @@ export async function listChatMessages(
     .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
     .limit(limit);
   return rows.reverse();
+}
+
+// ── Linear issue drafts ──────────────────────────────────────────────────────
+
+export type ChatLinearIssueDraft = typeof chatLinearIssueDrafts.$inferSelect;
+export type ChatLinearIssueDraftStatus = ChatLinearIssueDraft["status"];
+
+export interface CreateChatLinearIssueDraftInput {
+  threadId: string;
+  requestedByUserId: string;
+  requestedByExternalUserId: string;
+  teamId: string;
+  teamKey: string;
+  title: string;
+  description: string;
+  projectName?: string | null;
+  labels?: string[];
+  priority?: number | null;
+  expiresAt: Date;
+}
+
+/** Stores a `pending` draft (its card isn't posted yet). */
+export async function createChatLinearIssueDraft(
+  db: Database,
+  input: CreateChatLinearIssueDraftInput,
+): Promise<ChatLinearIssueDraft> {
+  const [row] = await db
+    .insert(chatLinearIssueDrafts)
+    .values({
+      ...input,
+      projectName: input.projectName ?? null,
+      labels: input.labels ?? [],
+      priority: input.priority ?? null,
+    })
+    .returning();
+  return row!;
+}
+
+/** A draft by ID, or null. */
+export async function getChatLinearIssueDraft(
+  db: Database,
+  id: string,
+): Promise<ChatLinearIssueDraft | null> {
+  const [row] = await db
+    .select()
+    .from(chatLinearIssueDrafts)
+    .where(eq(chatLinearIssueDrafts.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Records the chat message of the draft's card. */
+export async function setChatLinearIssueDraftMessage(
+  db: Database,
+  id: string,
+  externalMessageId: string,
+): Promise<void> {
+  await db
+    .update(chatLinearIssueDrafts)
+    .set({ externalMessageId, updatedAt: new Date() })
+    .where(eq(chatLinearIssueDrafts.id, id));
+}
+
+/**
+ * Moves a `pending` draft that hasn't expired at `now` to `creating`, so one
+ * click creates it once. Null when it isn't pending or has expired.
+ */
+export async function claimChatLinearIssueDraft(
+  db: Database,
+  id: string,
+  now: Date,
+): Promise<ChatLinearIssueDraft | null> {
+  const [row] = await db
+    .update(chatLinearIssueDrafts)
+    .set({ status: "creating", updatedAt: now })
+    .where(
+      and(
+        eq(chatLinearIssueDrafts.id, id),
+        eq(chatLinearIssueDrafts.status, "pending"),
+        gt(chatLinearIssueDrafts.expiresAt, now),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/** A `creating` draft whose issue couldn't be created goes back to `pending`. */
+export async function releaseChatLinearIssueDraft(db: Database, id: string): Promise<void> {
+  await db
+    .update(chatLinearIssueDrafts)
+    .set({ status: "pending", updatedAt: new Date() })
+    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "creating")));
+}
+
+/** Marks a `creating` draft `created` with its Linear issue. */
+export async function completeChatLinearIssueDraft(
+  db: Database,
+  id: string,
+  issue: { id: string; identifier: string; url: string },
+): Promise<ChatLinearIssueDraft | null> {
+  const [row] = await db
+    .update(chatLinearIssueDrafts)
+    .set({
+      status: "created",
+      linearIssueId: issue.id,
+      linearIssueIdentifier: issue.identifier,
+      linearIssueUrl: issue.url,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "creating")))
+    .returning();
+  return row ?? null;
+}
+
+/** Cancels a `pending` draft; null when it isn't pending. */
+export async function cancelChatLinearIssueDraft(
+  db: Database,
+  id: string,
+): Promise<ChatLinearIssueDraft | null> {
+  const [row] = await db
+    .update(chatLinearIssueDrafts)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "pending")))
+    .returning();
+  return row ?? null;
+}
+
+/** Marks a `pending` draft that expired by `now` `expired`; null otherwise. */
+export async function expireChatLinearIssueDraft(
+  db: Database,
+  id: string,
+  now: Date,
+): Promise<ChatLinearIssueDraft | null> {
+  const [row] = await db
+    .update(chatLinearIssueDrafts)
+    .set({ status: "expired", updatedAt: now })
+    .where(
+      and(
+        eq(chatLinearIssueDrafts.id, id),
+        eq(chatLinearIssueDrafts.status, "pending"),
+        lte(chatLinearIssueDrafts.expiresAt, now),
+      ),
+    )
+    .returning();
+  return row ?? null;
 }

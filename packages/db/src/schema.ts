@@ -113,6 +113,14 @@ export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
 /** What started a triage run: an `@omniralph /triage` mention, or the `ralph:triage` label. */
 export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
+/** A Linear issue draft posted from chat: `creating` while its **Create** click runs. */
+export const chatLinearIssueDraftStatus = pgEnum("chat_linear_issue_draft_status", [
+  "pending",
+  "creating",
+  "created",
+  "cancelled",
+  "expired",
+]);
 export const triageRunStatus = pgEnum("triage_run_status", [
   "queued",
   "running",
@@ -540,6 +548,45 @@ export const chatMessages = pgTable(
       .default(sql`clock_timestamp()`),
   },
   (t) => [index("chat_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt)],
+);
+
+/**
+ * A Linear issue the control-panel agent drafted in a chat thread: posted as a
+ * card with **Create** / **Cancel** buttons, created only when the member who
+ * asked clicks **Create** before `expiresAt`.
+ */
+export const chatLinearIssueDrafts = pgTable(
+  "chat_linear_issue_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    /** The linked member who asked: the only one whose click creates it. */
+    requestedByUserId: text("requested_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Their chat user ID. */
+    requestedByExternalUserId: text("requested_by_external_user_id").notNull(),
+    teamId: text("team_id").notNull(),
+    teamKey: text("team_key").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    projectName: text("project_name"),
+    labels: jsonb("labels").$type<string[]>().notNull().default([]),
+    /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+    priority: integer("priority"),
+    status: chatLinearIssueDraftStatus("status").notNull().default("pending"),
+    /** The chat message of the card (set once posted). */
+    externalMessageId: text("external_message_id"),
+    linearIssueId: text("linear_issue_id"),
+    linearIssueIdentifier: text("linear_issue_identifier"),
+    linearIssueUrl: text("linear_issue_url"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chat_linear_issue_drafts_thread_id_idx").on(t.threadId)],
 );
 
 /**

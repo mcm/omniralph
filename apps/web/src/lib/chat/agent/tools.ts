@@ -21,6 +21,8 @@ export interface ChatToolContext {
   db: Database;
   organizationId: string;
   actor: ChatActor;
+  /** The chat user ID of the author of the message being answered. */
+  requesterExternalUserId: string;
   thread: Thread;
   /** The control panel's base URL (no trailing slash), for links to its pages. */
   appUrl: string;
@@ -31,8 +33,8 @@ export interface ChatToolContext {
   /** The ralph orchestrator's dependencies for the organization (built on first use). */
   ralph(): Promise<RalphDeps>;
   /**
-   * A tool handed the thread to a ralph run (and said so in the thread): an
-   * empty final answer then posts nothing.
+   * A tool handed the thread to a ralph run, or posted its own message (e.g. a
+   * card), in the thread: an empty final answer then posts nothing.
    */
   handedOff(): void;
 }
