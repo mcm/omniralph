@@ -41,17 +41,30 @@ describe("splitIssue", () => {
 
 describe("mergeFindings", () => {
   it("lets the more severe finding lead and widens the range", () => {
-    const minor = finding({ startLine: 13, endLine: 13, severity: "low", title: "Minor", body: "B." });
+    const minor = finding({
+      startLine: 13,
+      endLine: 13,
+      severity: "low",
+      title: "Minor",
+      body: "B.",
+    });
     const major = finding({ severity: "critical", body: "A.", confidence: 0.5 });
     const merged = mergeFindings(minor, major);
-    expect(merged).toMatchObject({ severity: "critical", title: "Bug", startLine: 10, endLine: 13 });
+    expect(merged).toMatchObject({
+      severity: "critical",
+      title: "Bug",
+      startLine: 10,
+      endLine: 13,
+    });
     expect(merged.confidence).toBe(0.9);
     expect(merged.body).toBe("A.\n\nAlso (line 13): Minor. B.");
   });
 
   it("keeps the leader's suggestion when the other finding lies inside its range", () => {
     const lead = finding({ suggestion: "fixed();" });
-    expect(mergeFindings(lead, finding({ startLine: 11, endLine: 11, title: "Dup" }))).toEqual(lead);
+    expect(mergeFindings(lead, finding({ startLine: 11, endLine: 11, title: "Dup" }))).toEqual(
+      lead,
+    );
   });
 });
 
@@ -64,17 +77,36 @@ describe("dedupeFindings", () => {
     const result = dedupeFindings([repeat, otherCategory, otherLines], prior);
     expect(result.findings).toEqual([otherCategory, otherLines]);
     expect(result.suppressed).toEqual([repeat]);
+    expect(result.repeated).toEqual([0]);
+  });
+
+  it("reports which open prior findings were raised again", () => {
+    const prior = [
+      finding({ path: "a.ts" }),
+      finding({ path: "b.ts" }),
+      finding({ path: "c.ts", category: "performance" }),
+    ];
+    const result = dedupeFindings(
+      [finding({ path: "c.ts", category: "performance" }), finding({ path: "a.ts" })],
+      prior,
+    );
+    expect(result.findings).toEqual([]);
+    expect(result.repeated).toEqual([0, 2]);
   });
 
   it("drops repeats among the new findings, keeping the first", () => {
     const first = finding();
     const second = finding({ startLine: 12, endLine: 12, title: "Dup" });
-    expect(dedupeFindings([first, second])).toEqual({ findings: [first], suppressed: [second] });
+    expect(dedupeFindings([first, second])).toEqual({
+      findings: [first],
+      suppressed: [second],
+      repeated: [],
+    });
   });
 
   it("keeps everything when there is nothing to match", () => {
     const all = [finding(), finding({ path: "b.ts" })];
-    expect(dedupeFindings(all, [])).toEqual({ findings: all, suppressed: [] });
+    expect(dedupeFindings(all, [])).toEqual({ findings: all, suppressed: [], repeated: [] });
   });
 
   it("merges two findings about one issue on adjacent lines into one", () => {
@@ -99,7 +131,8 @@ describe("dedupeFindings", () => {
       category: "security",
       title: "Add PR_TITLE to env",
       body: "Pass the title through an environment variable.",
-      suggestion: "        env:\n          NODE_ENV: test\n          PR_TITLE: ${{ github.event.pull_request.title }}",
+      suggestion:
+        "        env:\n          NODE_ENV: test\n          PR_TITLE: ${{ github.event.pull_request.title }}",
       confidence: 0.8,
     });
 
@@ -128,6 +161,6 @@ describe("dedupeFindings", () => {
   it("keeps findings of other categories on adjacent lines apart", () => {
     const a = finding();
     const b = finding({ startLine: 13, endLine: 13, category: "performance" });
-    expect(dedupeFindings([a, b])).toEqual({ findings: [a, b], suppressed: [] });
+    expect(dedupeFindings([a, b])).toEqual({ findings: [a, b], suppressed: [], repeated: [] });
   });
 });

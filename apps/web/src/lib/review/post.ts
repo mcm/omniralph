@@ -96,6 +96,7 @@ export async function postReview(
       stopReason: input.result.stopReason,
       scope: input.result.scope,
       discarded: input.result.discarded,
+      repeatedOpenFindings: input.result.repeatedOpenFindings ?? [],
     };
     const posted = await adapter.postReview(repo, review.prNumber, {
       summary: capSummary(renderSummary(summaryInput, reviewUrl(review.id), { botHandle: handle })),

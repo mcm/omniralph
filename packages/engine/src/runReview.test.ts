@@ -264,6 +264,7 @@ describe("runReview", () => {
     );
     expect(result.findings).toEqual([fresh]);
     expect(result.discarded.duplicate).toBe(1);
+    expect(result.repeatedOpenFindings).toEqual([0]);
   });
 
   it("keeps partial findings and reports budget exhaustion and provider errors", async () => {
