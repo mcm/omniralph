@@ -224,6 +224,12 @@ While the thread's run has a queued or running `ralph.request` job:
 | A plain reply (no mention of the bot) | The session, like a reply in a Linear agent session: passed live within one heartbeat (about 20s) when it's running, otherwise queued as the next request. The bot reacts with 👀 and posts nothing else. |
 | A reply that @mentions the bot        | The control-panel agent, which can answer questions or forward guidance with its `send_to_session` tool.                                                                                                  |
 
+Files attached to a plain reply go to the session with it: each is listed by name and type, a
+text file's content follows (fenced as user data, up to 20,000 characters, within the
+[attachment limits](#attachments)), and the session is told it can't see images, so it asks in
+the thread what a screenshot shows if that matters. A reply with only attachments is passed on as
+well.
+
 Plain replies from someone who isn't a linked member aren't passed on; they get the link prompt.
 When no session is working, every reply goes to the control-panel agent as usual, and asking it
 for more work in the same repository starts the next request on the same branch.

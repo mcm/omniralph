@@ -80,13 +80,27 @@ export type ChatRunMessageOutcome =
 export async function sendToChatRun(
   deps: RalphDeps,
   /** `ship`: a ship request even without a `/ship` prefix (the chat assistant's `ship` flag). */
-  input: { chatThreadId: string; text: string; author: string | null; ship?: boolean },
+  input: {
+    chatThreadId: string;
+    text: string;
+    author: string | null;
+    ship?: boolean;
+    /** The message's attachments for the session (`sessionAttachmentNote`), appended to its text. */
+    attachments?: string | null;
+  },
 ): Promise<ChatRunMessageOutcome> {
   const text = input.text.trim();
+  const withFiles = (body: string) =>
+    [body, input.attachments?.trim()].filter(Boolean).join("\n\n");
   const run = await getActiveRunByChatThread(deps.db, input.chatThreadId);
-  if (!run || run.organizationId !== deps.organizationId || !text) return { status: "no_run" };
+  if (!run || run.organizationId !== deps.organizationId || !withFiles(text)) {
+    return { status: "no_run" };
+  }
+  // Only a message without files can be an answer to the permission question.
   const permission =
-    run.permission && !run.permission.answer ? matchPermissionAnswer(text) : undefined;
+    run.permission && !run.permission.answer && !input.attachments?.trim()
+      ? matchPermissionAnswer(text)
+      : undefined;
   if (permission) {
     const note = await lockRun(deps.db, run.id, (tx, current) =>
       answerPermission(tx, deps.db, current, permission, input.author ?? undefined),
@@ -101,15 +115,20 @@ export async function sendToChatRun(
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (FINISHED_RUN_STATUSES.has(current.status)) return null;
     if (ship === null) {
-      const live = await queueLiveReply(tx, current, text, input.author ?? undefined);
+      const live = await queueLiveReply(tx, current, withFiles(text), input.author ?? undefined);
       if (live) return { status: "live" as const, run: current };
     }
     const added = await addInstruction(
       tx,
       current,
       ship === null
-        ? { text, author: input.author, wantsLoop: false }
-        : { text: ship || SHIP_REQUEST_TEXT, author: input.author, wantsLoop: false, ship: true },
+        ? { text: withFiles(text), author: input.author, wantsLoop: false }
+        : {
+            text: withFiles(ship || SHIP_REQUEST_TEXT),
+            author: input.author,
+            wantsLoop: false,
+            ship: true,
+          },
       applyGuidance,
     );
     return { status: "queued" as const, run: added.run };
