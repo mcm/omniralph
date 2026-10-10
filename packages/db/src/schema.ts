@@ -111,6 +111,15 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 /** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
 export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
+/** What started a triage run: an `@omniralph /triage` mention, or the `ralph:triage` label. */
+export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
+export const triageRunStatus = pgEnum("triage_run_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "stopped",
+]);
 export const jobStatus = pgEnum("job_status", [
   "queued",
   "running",
@@ -1432,6 +1441,47 @@ export const ralphMessages = pgTable(
   (t) => [
     index("ralph_messages_run_id_idx").on(t.runId, t.createdAt),
     index("ralph_messages_job_id_idx").on(t.jobId),
+  ],
+);
+
+// ── Triage ───────────────────────────────────────────────────────────────────
+
+/**
+ * The last `triage.run` result a triage run applied (a `TriageRunResult` from
+ * `@omniralph/shared`, which this package doesn't depend on).
+ */
+export type TriageLastResult = Record<string, unknown>;
+
+/**
+ * A triage of a Linear issue in one Linear agent session, so the session's
+ * replies and its jobs' outcomes route to triage rather than ralph. A reply
+ * triages again in the same run.
+ */
+export const triageRuns = pgTable(
+  "triage_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The issue being triaged. */
+    linearIssueId: text("linear_issue_id").notNull(),
+    linearAgentSessionId: text("linear_agent_session_id").notNull(),
+    trigger: triageRunTrigger("trigger").notNull(),
+    /** The `triage.run` job whose outcome the run hasn't applied yet. */
+    currentJobId: uuid("current_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    status: triageRunStatus("status").notNull().default("queued"),
+    lastResult: jsonb("last_result").$type<TriageLastResult>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("triage_runs_agent_session_uq").on(t.linearAgentSessionId),
+    /** At most one unfinished triage per issue (and organization). */
+    uniqueIndex("triage_runs_issue_active_uq")
+      .on(t.organizationId, t.linearIssueId)
+      .where(sql`status in ('queued', 'running')`),
+    index("triage_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
   ],
 );
 
