@@ -110,7 +110,7 @@ export interface ChatChannel {
 export type ChatSource = ChatChannel | (() => Promise<ChatChannel>);
 
 /** The deployment's chat bot (`getChatBot`), loaded on first use. */
-async function defaultChatChannel(): Promise<ChatChannel> {
+export async function defaultChatChannel(): Promise<ChatChannel> {
   const [{ getChatBot }, { getDb }, { getAppUrl }] = await Promise.all([
     import("@/lib/chat/bot"),
     import("@/lib/db"),
@@ -141,13 +141,62 @@ interface ChatRunState {
   links?: string[];
 }
 
-interface ChatTarget {
+/** A chat thread to post to proactively, through its connection's adapter. */
+export interface ChatTarget {
   channel: ChatChannel;
   thread: ChatThread;
   adapter: Adapter;
   /** Runs a platform call with the connection's bot token (Slack). */
   send<T>(fn: () => Promise<T>): Promise<T>;
+  /** Hosts links in posted messages may point at: the control panel's and the repository's. */
   allowedHosts: string[];
+  /** The repository's browser URL, when the target has one. */
+  repositoryUrl: string | null;
+}
+
+/**
+ * The thread `chatThreadId` to post to outside a webhook, with the hosts its
+ * links may point at (the control panel's, and `repositoryId`'s code host).
+ * Null when there is no thread, or it, its connection or its platform's
+ * adapter is gone.
+ */
+export async function loadChatTarget(
+  source: ChatSource,
+  ref: { chatThreadId: string | null; organizationId: string; repositoryId: string | null },
+): Promise<ChatTarget | null> {
+  if (!ref.chatThreadId) return null;
+  const channel = typeof source === "function" ? await source() : source;
+  const found = await getChatThreadWithConnection<{ botToken?: string }>(
+    channel.db,
+    ref.chatThreadId,
+    channel.encryptionKey,
+  );
+  if (!found) return null;
+  const { thread, connection } = found;
+  const adapter = channel.adapters[thread.platform];
+  if (!adapter) return null;
+  const allowedHosts = [new URL(channel.appUrl).hostname];
+  let repositoryUrl: string | null = null;
+  if (ref.repositoryId) {
+    const repo = await getRepositoryWithConnection(
+      channel.db,
+      ref.repositoryId,
+      ref.organizationId,
+    );
+    if (repo) {
+      const { repository, connection: scm } = repo;
+      repositoryUrl = repositoryWebUrl(repository.provider, scm.baseUrl, repository.fullPath);
+      allowedHosts.push(new URL(repositoryUrl).hostname);
+    }
+  }
+  const botToken = connection.credentials?.botToken;
+  // Outside a webhook, the Slack adapter only knows a workspace's token when handed it.
+  const slack = adapter as Partial<Pick<SlackAdapter, "withBotToken">>;
+  const send = <T>(fn: () => Promise<T>): Promise<T> =>
+    botToken && slack.withBotToken
+      ? slack.withBotToken(botToken, fn, { installationId: connection.externalId })
+      : fn();
+  return { channel, thread, adapter, send, allowedHosts, repositoryUrl };
 }
 
 /** How long a run's status message is remembered after its last update. */
@@ -235,40 +284,8 @@ export class ChatConversation implements RunConversation {
     );
   }
 
-  private async load(): Promise<ChatTarget | null> {
-    if (!this.run.chatThreadId) return null;
-    const channel = typeof this.source === "function" ? await this.source() : this.source;
-    const found = await getChatThreadWithConnection<{ botToken?: string }>(
-      channel.db,
-      this.run.chatThreadId,
-      channel.encryptionKey,
-    );
-    if (!found) return null;
-    const { thread, connection } = found;
-    const adapter = channel.adapters[thread.platform];
-    if (!adapter) return null;
-    const allowedHosts = [new URL(channel.appUrl).hostname];
-    if (this.run.repositoryId) {
-      const repo = await getRepositoryWithConnection(
-        channel.db,
-        this.run.repositoryId,
-        this.run.organizationId,
-      );
-      if (repo) {
-        const { repository, connection: scm } = repo;
-        allowedHosts.push(
-          new URL(repositoryWebUrl(repository.provider, scm.baseUrl, repository.fullPath)).hostname,
-        );
-      }
-    }
-    const botToken = connection.credentials?.botToken;
-    // Outside a webhook, the Slack adapter only knows a workspace's token when handed it.
-    const slack = adapter as Partial<Pick<SlackAdapter, "withBotToken">>;
-    const send = <T>(fn: () => Promise<T>): Promise<T> =>
-      botToken && slack.withBotToken
-        ? slack.withBotToken(botToken, fn, { installationId: connection.externalId })
-        : fn();
-    return { channel, thread, adapter, send, allowedHosts };
+  private load(): Promise<ChatTarget | null> {
+    return loadChatTarget(this.source, this.run);
   }
 
   private sanitize(target: ChatTarget, text: string): string {

@@ -76,8 +76,12 @@ export interface RuleLearner {
 }
 
 export interface ReplyRequest {
-  /** The assembled reply prompt (`buildReplyPrompt`). */
+  /** The assembled prompt (`buildReplyPrompt`, `buildChatAskPrompt`). */
   prompt: string;
+  /** Defaults to `REPLY_SYSTEM_PROMPT` (a finding thread reply). */
+  systemPrompt?: string;
+  /** Most turns while exploring; defaults to the provider's `maxReplyTurns`. */
+  maxTurns?: number;
   /** The job's worktree at the review's head; the read-only tools are confined to it. */
   cwd: string;
   /** False when no checkout is available (`cwd` is then an empty directory). */

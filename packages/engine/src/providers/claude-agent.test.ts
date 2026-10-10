@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HookInput, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CHAT_ASK_SYSTEM_PROMPT } from "../chatAsk.js";
 import { parseDiff } from "../diff.js";
 import { LEARN_RULE_SYSTEM_PROMPT } from "../learnRule.js";
 import { REPLY_SYSTEM_PROMPT } from "../reply.js";
@@ -692,6 +693,24 @@ describe("ClaudeAgentProvider.answer", () => {
     expect(options.maxTurns).toBe(10);
     expect(options.hooks?.PreToolUse).toHaveLength(1);
     expect(options.systemPrompt).toBe(REPLY_SYSTEM_PROMPT);
+  });
+
+  it("takes another system prompt and turn limit (chat.ask)", async () => {
+    const fake = fakeQuery([result("See `src/a.ts:3`.")]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    await provider.answer({
+      prompt: "question…",
+      cwd: "/tmp/wt",
+      allowExploration: true,
+      maxTokens: 20_000,
+      systemPrompt: CHAT_ASK_SYSTEM_PROMPT,
+      maxTurns: 25,
+    });
+    const options = fake.calls[0]!.options;
+    expect(options.systemPrompt).toBe(CHAT_ASK_SYSTEM_PROMPT);
+    expect(options.maxTurns).toBe(25);
+    expect(options.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(options.settingSources).toEqual([]);
   });
 
   it("runs one turn without tools when there is no checkout", async () => {
