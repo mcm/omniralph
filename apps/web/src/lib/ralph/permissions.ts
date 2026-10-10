@@ -109,9 +109,14 @@ export function readPermission(
   return { status: question.answer ?? "pending", answeredBy: question.answeredBy ?? null };
 }
 
+/** Leeway for the agent's and our clocks when telling a timeout from an early close. */
+const EXPIRY_LEEWAY_MS = 60_000;
+
 /**
- * The agent stopped waiting (timeout, or the session ended): a pending
- * question is closed as expired, and the thread is told the call was denied.
+ * The agent stopped waiting: a pending question is closed as expired. Only a
+ * timeout (the question reached its `expiresAt`) is announced in the thread;
+ * a session that ended first (the job was canceled or stopped) closes it
+ * quietly.
  */
 export async function expirePermission(
   deps: PermissionDeps,
@@ -126,9 +131,10 @@ export async function expirePermission(
     await updateRun(tx, run.id, {
       permission: { ...question, answer: "expired", answeredAt: now.toISOString() },
     });
-    return { run, tool: question.tool };
+    const timedOut = now.getTime() >= Date.parse(question.expiresAt) - EXPIRY_LEEWAY_MS;
+    return { run, tool: question.tool, timedOut };
   });
-  if (!expired || FINISHED_RUN_STATUSES.has(expired.run.status)) return;
+  if (!expired?.timedOut || FINISHED_RUN_STATUSES.has(expired.run.status)) return;
   const linear = await deps.linear(expired.run.organizationId);
   await postActivity(linear, expired.run.linearAgentSessionId, {
     type: "thought",

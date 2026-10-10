@@ -575,6 +575,28 @@ describe("ralph.request", { timeout: 60_000 }, () => {
       expect(out.pullRequest).toEqual({ action: "update", title: "Better title" });
     });
 
+    it("reports an unexpected git failure instead of failing the job", async () => {
+      const { query } = fakeQuery(async function* (call) {
+        await writeFile(path.join(call.options.cwd!, "fix.txt"), "last fix\n");
+        // Another git process holds the index: `git add` fails.
+        const lock = git(
+          call.options.cwd!,
+          "rev-parse",
+          "--path-format=absolute",
+          "--git-path",
+          "index.lock",
+        );
+        await writeFile(lock.trim(), "");
+        yield result({ summary: "Ready.", commit: { message: "Fix it" } });
+      });
+      const out = await runRequest(job({ ship: true, prUrl: null }), context(), options(query));
+      expect(out.error).toContain("shipping failed");
+      expect(out.error).toContain("index.lock");
+      expect(out.pushed).toBe(false);
+      expect(out.commitSha).toBeUndefined();
+      expect(git(remote.bare, "branch", "--list", branch)).toBe("");
+    });
+
     it("commits nothing when the session leaves changes without a commit message", async () => {
       const { query } = fakeQuery(async function* (call) {
         await writeFile(path.join(call.options.cwd!, "fix.txt"), "last fix\n");

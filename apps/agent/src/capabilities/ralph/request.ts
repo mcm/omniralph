@@ -360,6 +360,29 @@ async function ship(
   result: RequestAgentOutput,
   log: JobContext["logger"],
 ): Promise<Shipped> {
+  // Set once the commit exists and until it's pushed: an unexpected failure undoes it.
+  const state: { unpushedCommit?: string } = {};
+  try {
+    return await shipSteps(worktree, payload, result, log, state);
+  } catch (error) {
+    log.warn({ err: error }, "shipping failed");
+    if (state.unpushedCommit) {
+      await worktree.git(["reset", "--quiet", "HEAD~1"]).catch(() => {});
+    }
+    return {
+      pushed: false,
+      error: `shipping failed${state.unpushedCommit ? " (the commit was undone)" : ""}:\n\n\`\`\`\n${tail(errorText(error), 4000)}\n\`\`\``,
+    };
+  }
+}
+
+async function shipSteps(
+  worktree: BranchWorktree,
+  payload: RalphRequestPayload,
+  result: RequestAgentOutput,
+  log: JobContext["logger"],
+  state: { unpushedCommit?: string },
+): Promise<Shipped> {
   const git = (args: readonly string[]) => worktree.git(args);
   const tryGit = (args: readonly string[]) =>
     git(args).then(
@@ -392,7 +415,9 @@ async function ship(
         error: `committing the work failed (e.g. a git hook rejected it):\n\n\`\`\`\n${tail(errorText(error), 4000)}\n\`\`\``,
       };
     }
+    state.unpushedCommit = "HEAD";
     commitSha = (await git(["rev-parse", "HEAD"])).trim();
+    state.unpushedCommit = commitSha;
     log.info({ commit: commitSha }, "committed the shipped work");
   }
 
@@ -401,11 +426,13 @@ async function ship(
   if ((await remoteHead()) !== head) {
     try {
       await git(["push", "--quiet", "-u", "origin", payload.branch]);
+      delete state.unpushedCommit;
       pushed = true;
       log.info({ head }, "pushed the shipped branch");
     } catch (error) {
       // Undo the commit, so its changes are stashed with the rest instead of lost in a local commit.
       if (commitSha) await git(["reset", "--quiet", "HEAD~1"]).catch(() => {});
+      delete state.unpushedCommit;
       return {
         pushed: false,
         error: `${commitSha ? "the work was committed, but pushing it failed, so the commit was undone" : "pushing the branch failed"}:\n\n\`\`\`\n${tail(errorText(error), 4000)}\n\`\`\``,

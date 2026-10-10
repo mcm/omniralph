@@ -584,9 +584,17 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect(await answerOf(run, job, first.requestId)).toMatchObject({ status: "denied" });
 
       const second = await ask(job);
-      await expirePermission(permissionDeps(), job, second.requestId);
+      const later = new Date(Date.now() + 1800 * 1000);
+      await expirePermission(permissionDeps(), job, second.requestId, later);
       expect(await answerOf(run, job, second.requestId)).toMatchObject({ status: "expired" });
       expect(last(run, "thought")).toBe("Nobody answered in time, so I didn't use **Bash**.");
+
+      // A session that ended before the deadline closes its question quietly.
+      const thoughts = linear.bodies(run.linearAgentSessionId, "thought").length;
+      const early = await ask(job);
+      await expirePermission(permissionDeps(), job, early.requestId);
+      expect(await answerOf(run, job, early.requestId)).toMatchObject({ status: "expired" });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
 
       const third = await ask(job);
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
