@@ -566,3 +566,61 @@ describe("SdkLinearGateway.downloadUpload", () => {
     );
   });
 });
+
+describe("SdkLinearGateway.uploadFile", () => {
+  const SIGNED = "https://storage.example.com/signed/shot.png?sig=abc";
+  const ASSET = "https://uploads.linear.app/org/a1b2/shot.png";
+
+  it("asks Linear for a signed URL, PUTs the file there with Linear's headers, and returns the asset URL", async () => {
+    resolvers.FileUpload = () => ({
+      fileUpload: {
+        success: true,
+        uploadFile: {
+          uploadUrl: SIGNED,
+          assetUrl: ASSET,
+          headers: [{ key: "x-goog-meta-owner", value: "org-1" }],
+        },
+      },
+    });
+    const puts: Array<{ headers: Headers; body: string }> = [];
+    server.use(
+      http.put(SIGNED, async ({ request }) => {
+        puts.push({ headers: request.headers, body: await request.text() });
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    const url = await gateway().uploadFile({
+      filename: "shot.png",
+      contentType: "image/png",
+      data: new TextEncoder().encode("PNGDATA"),
+    });
+    expect(url).toBe(ASSET);
+    expect(calls[0]).toMatchObject({
+      operation: "FileUpload",
+      variables: { contentType: "image/png", filename: "shot.png", size: 7 },
+    });
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.body).toBe("PNGDATA");
+    expect(puts[0]!.headers.get("content-type")).toBe("image/png");
+    expect(puts[0]!.headers.get("x-goog-meta-owner")).toBe("org-1");
+    // The signed URL carries its own auth: the token never goes to storage.
+    expect(puts[0]!.headers.get("authorization")).toBeNull();
+  });
+
+  it("throws when storage rejects the upload", async () => {
+    resolvers.FileUpload = () => ({
+      fileUpload: {
+        success: true,
+        uploadFile: { uploadUrl: SIGNED, assetUrl: ASSET, headers: [] },
+      },
+    });
+    server.use(http.put(SIGNED, () => new HttpResponse(null, { status: 403 })));
+    await expect(
+      gateway().uploadFile({
+        filename: "a.png",
+        contentType: "image/png",
+        data: new Uint8Array(1),
+      }),
+    ).rejects.toThrow("403");
+  });
+});

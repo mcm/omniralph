@@ -16,7 +16,13 @@ import { answerCleanup } from "@/lib/ralph/cleanup";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
-import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
+import { adapterFetcher, threadAttachments } from "../attachments";
+import {
+  CHAT_AGENT_HISTORY_LIMIT,
+  CHAT_AGENT_MAX_STEPS,
+  CHAT_ATTACHMENT_LIMITS,
+  type ChatAttachmentLimits,
+} from "./config";
 import { historyMessages, systemPrompt } from "./prompt";
 import { chatTools } from "./registry";
 import { toAiTools, type ChatToolRegistry } from "./tools";
@@ -47,6 +53,8 @@ export interface ChatAgentDeps {
   now?: () => Date;
   /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
   ralph?: (organizationId: string) => Promise<RalphDeps>;
+  /** Limits on the attachments a turn reads (default: `CHAT_ATTACHMENT_LIMITS`). */
+  attachmentLimits?: ChatAttachmentLimits;
   rateLimits?: {
     perOrganization: (organizationId: string) => RateLimit;
     perChatUser: (organizationId: string, platform: string, externalUserId: string) => RateLimit;
@@ -205,6 +213,14 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           author: authorName(m),
           text: m.text,
         }));
+        const attachments = await threadAttachments(
+          history,
+          adapterFetcher(
+            thread.adapter,
+            [...context.skipped, message].flatMap((m) => m.attachments ?? []),
+          ),
+          deps.attachmentLimits ?? CHAT_ATTACHMENT_LIMITS,
+        );
         const threadRun = await getRunByChatThread(db, chatThread.id);
         const tools = toAiTools(
           registry,
@@ -218,6 +234,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             chatThread,
             turnMessages,
             ralph: () => ralphDeps(organizationId),
+            attachments,
             handedOff: () => {
               handedOff = true;
             },
@@ -241,7 +258,10 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               working: !!(await chatRunSession(db, chatThread.id)),
             },
           }),
-          messages: historyMessages(history, { includeTools: Object.keys(tools).length > 0 }),
+          messages: historyMessages(history, {
+            includeTools: Object.keys(tools).length > 0,
+            attachments,
+          }),
           tools,
           stopWhen: stepCountIs(deps.maxSteps ?? CHAT_AGENT_MAX_STEPS),
           maxRetries: 1,

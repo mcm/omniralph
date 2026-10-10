@@ -27,6 +27,7 @@ import { gateway } from "ai";
 import { getAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { chatAgentConfig } from "./agent/config";
+import { attachmentMetadata } from "./attachments";
 import { createChatAgentHandler } from "./agent/handler";
 import { discordOAuthConfig, type DiscordOAuthConfig } from "./discord-oauth";
 import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identity";
@@ -294,6 +295,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
         externalUserId: m.author.userId,
         authorName: m.author.fullName || m.author.userName,
         content: m.text,
+        attachments: attachmentMetadata(m.attachments),
       });
     }
     const author = message.author;

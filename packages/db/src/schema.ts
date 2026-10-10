@@ -525,6 +525,22 @@ export const chatThreads = pgTable(
 );
 
 /** A message of a chat thread's conversation history. */
+/**
+ * A file attached to a chat message: its metadata only, never the bytes (they
+ * are fetched again from the platform when a turn needs them).
+ */
+export interface ChatMessageAttachment {
+  type: "image" | "file" | "video" | "audio";
+  name: string | null;
+  mimeType: string | null;
+  /** Bytes, as the platform reported it. */
+  size: number | null;
+  /** The platform's URL of the file (e.g. Slack's private URL). */
+  url: string | null;
+  /** What the platform's adapter needs to fetch it again (`Attachment.fetchMetadata`). */
+  fetchMetadata: Record<string, string> | null;
+}
+
 export const chatMessages = pgTable(
   "chat_messages",
   {
@@ -542,6 +558,8 @@ export const chatMessages = pgTable(
     }),
     /** The message content (e.g. AI SDK model message content). */
     content: jsonb("content").$type<unknown>().notNull(),
+    /** Files attached to a `user` message (metadata only). */
+    attachments: jsonb("attachments").$type<ChatMessageAttachment[]>().notNull().default([]),
     /** `clock_timestamp()`, so messages appended in one transaction keep their order. */
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -576,6 +594,11 @@ export const chatLinearIssueDrafts = pgTable(
     labels: jsonb("labels").$type<string[]>().notNull().default([]),
     /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
     priority: integer("priority"),
+    /** Screenshots from the thread to upload to Linear and embed in the description. */
+    attachments: jsonb("attachments")
+      .$type<Array<ChatMessageAttachment & { ref: string }>>()
+      .notNull()
+      .default([]),
     status: chatLinearIssueDraftStatus("status").notNull().default("pending"),
     /** The chat message of the card (set once posted). */
     externalMessageId: text("external_message_id"),

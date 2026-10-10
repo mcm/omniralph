@@ -4,6 +4,7 @@ import type { Thread } from "chat";
 import type { z } from "zod";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
+import type { ThreadAttachment } from "../attachments";
 import type { ChatActor } from "../identity";
 
 /**
@@ -32,6 +33,8 @@ export interface ChatToolContext {
   turnMessages: readonly QuotedMessage[];
   /** The ralph orchestrator's dependencies for the organization (built on first use). */
   ralph(): Promise<RalphDeps>;
+  /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
+  attachments?: ReadonlyMap<string, ThreadAttachment>;
   /**
    * A tool handed the thread to a ralph run, or posted its own message (e.g. a
    * card), in the thread: an empty final answer then posts nothing.

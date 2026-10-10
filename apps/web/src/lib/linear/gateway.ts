@@ -129,6 +129,14 @@ export interface UploadDownload {
   body: ReadableStream<Uint8Array> | null;
 }
 
+/** A file to upload to Linear (`uploadFile`). */
+export interface UploadFileInput {
+  filename: string;
+  /** e.g. `image/png`. */
+  contentType: string;
+  data: Uint8Array;
+}
+
 export interface LinearGateway {
   /** The installing workspace. */
   getOrganization(): Promise<{ id: string; name: string }>;
@@ -175,6 +183,12 @@ export interface LinearGateway {
    * the workspace's token. Rejects any other URL without sending the token.
    */
   downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload>;
+  /**
+   * Uploads a file to the workspace's storage (`fileUpload`, then a PUT to the
+   * signed URL) and returns its asset URL, for a Markdown link or image in an
+   * issue description.
+   */
+  uploadFile(input: UploadFileInput): Promise<string>;
 }
 
 const PAGE_SIZE = 100;
@@ -837,5 +851,51 @@ export class SdkLinearGateway implements LinearGateway {
       contentLength: res.headers.has("content-length") && Number.isFinite(length) ? length : null,
       body: res.ok ? res.body : null,
     };
+  }
+
+  async uploadFile(input: UploadFileInput): Promise<string> {
+    const { uploadFile } = await this.mutate<
+      "fileUpload",
+      {
+        success: boolean;
+        uploadFile?: {
+          uploadUrl: string;
+          assetUrl: string;
+          headers: Array<{ key: string; value: string }>;
+        } | null;
+      }
+    >(
+      "fileUpload",
+      /* GraphQL */ `
+        mutation FileUpload($contentType: String!, $filename: String!, $size: Int!) {
+          fileUpload(contentType: $contentType, filename: $filename, size: $size) {
+            success
+            uploadFile {
+              uploadUrl
+              assetUrl
+              headers {
+                key
+                value
+              }
+            }
+          }
+        }
+      `,
+      { contentType: input.contentType, filename: input.filename, size: input.data.byteLength },
+    );
+    if (!uploadFile) throw new LinearMutationError("fileUpload");
+    // The signed URL carries its own auth: Linear's headers, never the token.
+    const headers = new Headers({
+      "content-type": input.contentType,
+      "cache-control": "public, max-age=31536000",
+    });
+    for (const { key, value } of uploadFile.headers) headers.set(key, value);
+    const res = await fetch(uploadFile.uploadUrl, {
+      method: "PUT",
+      headers,
+      body: new Uint8Array(input.data),
+    });
+    if (!res.ok) throw new Error(`Linear's file storage answered ${res.status} to the upload`);
+    return uploadFile.assetUrl;
   }
 }
