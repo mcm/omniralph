@@ -5,7 +5,9 @@
  * gets it in its next heartbeat (`queueLiveReply`); otherwise it becomes a
  * pending request (`addInstruction`) and the run is advanced, so it runs as
  * soon as the current job finishes. Chat runs stay in request mode: there is
- * no `/ralph`, stop or preparation handling here.
+ * no `/ralph`, stop or preparation handling here. An "Allow"/"Deny" answers a
+ * live session's open permission question first (`permissions.ts`), and
+ * `/ship [notes]` is always a pending ship request (`reply.ts` step 4a).
  */
 import {
   getActiveRunByChatThread,
@@ -20,10 +22,12 @@ import {
   type Job,
   type RalphRun,
 } from "@omniralph/db";
+import { matchPermissionAnswer, parseShipRequest, SHIP_REQUEST_TEXT } from "@omniralph/ralph";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
 import { conversationFor } from "./conversation";
 import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quote } from "./notify";
+import { answerPermission } from "./permissions";
 import { addInstruction } from "./requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
@@ -67,6 +71,8 @@ export type ChatRunMessageOutcome =
   | { status: "no_run" }
   /** Stored for the running job's live session: the agent gets it in its next heartbeat. */
   | { status: "live"; run: RalphRun }
+  /** An answer to the live session's permission question; the agent reads it. */
+  | { status: "answered"; run: RalphRun }
   /** A pending request: it runs once the current job finishes (or right away when none runs). */
   | { status: "queued"; run: RalphRun };
 
@@ -78,14 +84,31 @@ export async function sendToChatRun(
   const text = input.text.trim();
   const run = await getActiveRunByChatThread(deps.db, input.chatThreadId);
   if (!run || run.organizationId !== deps.organizationId || !text) return { status: "no_run" };
+  const permission =
+    run.permission && !run.permission.answer ? matchPermissionAnswer(text) : undefined;
+  if (permission) {
+    const note = await lockRun(deps.db, run.id, (tx, current) =>
+      answerPermission(tx, deps.db, current, permission, input.author ?? undefined),
+    );
+    if (note) {
+      // A new message in the thread, not an edit of the status message far up.
+      await postActivity(conversationFor(run, deps), note, { notice: true });
+      return { status: "answered", run };
+    }
+  }
+  const ship = parseShipRequest(text);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (FINISHED_RUN_STATUSES.has(current.status)) return null;
-    const live = await queueLiveReply(tx, current, text, input.author ?? undefined);
-    if (live) return { status: "live" as const, run: current };
+    if (ship === null) {
+      const live = await queueLiveReply(tx, current, text, input.author ?? undefined);
+      if (live) return { status: "live" as const, run: current };
+    }
     const added = await addInstruction(
       tx,
       current,
-      { text, author: input.author, wantsLoop: false },
+      ship === null
+        ? { text, author: input.author, wantsLoop: false }
+        : { text: ship || SHIP_REQUEST_TEXT, author: input.author, wantsLoop: false, ship: true },
       applyGuidance,
     );
     return { status: "queued" as const, run: added.run };

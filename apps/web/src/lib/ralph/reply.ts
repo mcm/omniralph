@@ -132,7 +132,7 @@ export async function handleReply(
       answerPermission(tx, deps.db, current, permission, event.authorName),
     );
     if (note) {
-      await postActivity(deps.linear, run.linearAgentSessionId, note);
+      await postActivity(conversationFor(run, deps), note);
       return { kind: "permission_answer" };
     }
   }
