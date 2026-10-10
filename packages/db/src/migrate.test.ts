@@ -274,6 +274,46 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("creates the triage_runs table (0046)", async () => {
+    const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
+      `select column_name, is_nullable from information_schema.columns
+       where table_name = 'triage_runs' order by column_name`,
+    );
+    expect(rows).toEqual([
+      { column_name: "created_at", is_nullable: "NO" },
+      { column_name: "current_job_id", is_nullable: "YES" },
+      { column_name: "id", is_nullable: "NO" },
+      { column_name: "last_result", is_nullable: "YES" },
+      { column_name: "linear_agent_session_id", is_nullable: "NO" },
+      { column_name: "linear_issue_id", is_nullable: "NO" },
+      { column_name: "organization_id", is_nullable: "NO" },
+      { column_name: "status", is_nullable: "NO" },
+      { column_name: "trigger", is_nullable: "NO" },
+      { column_name: "updated_at", is_nullable: "NO" },
+    ]);
+
+    const [org] = await db.insert(organizations).values({ name: "Triage" }).returning();
+    const insert = (session: string, status = "queued") =>
+      db.$client.query(
+        `insert into triage_runs (organization_id, linear_issue_id, linear_agent_session_id, trigger, status)
+         values ($1, 'issue-1', $2, 'mention', $3)`,
+        [org!.id, session, status],
+      );
+    await insert("s-1", "completed");
+    // The agent session is unique.
+    await expect(insert("s-1", "completed")).rejects.toThrow();
+    await insert("s-2");
+    // One unfinished run per issue.
+    await expect(insert("s-3", "running")).rejects.toThrow();
+    await expect(
+      db.$client.query(
+        `insert into triage_runs (organization_id, linear_issue_id, linear_agent_session_id, trigger)
+         values ($1, 'issue-2', 's-4', 'comment')`,
+        [org!.id],
+      ),
+    ).rejects.toThrow();
+  });
+
   it("allows one queued/running job per dedupe key", async () => {
     const [org] = await db.insert(organizations).values({ name: "Jobs" }).returning();
     const job = {
