@@ -1,8 +1,10 @@
 /**
  * Applies a finished `triage.run` job to Linear (agents hold no Linear token):
  * the issue's title and description become the PRD (with its open questions
- * at the end), a new epic gets its story sub-issues, and the issue moves to
- * Todo when nothing is left to answer or Backlog otherwise. The outcome is
+ * at the end), a new epic gets its story sub-issues, a reformatted epic's
+ * Backlog/Todo sub-issues are rewritten (with their missing relations and a
+ * validation sub-issue), and the issue moves to Todo when nothing is left to
+ * answer or Backlog otherwise. The outcome is
  * reported in the run's Linear agent session.
  *
  * Nothing in Linear changes for a result that isn't valid, or when the issue
@@ -23,6 +25,7 @@ import {
 import {
   renderOpenQuestions,
   validateTriageOutput,
+  withoutOpenQuestions,
   type MaterializationPlan,
   type TriageAgentOutput,
 } from "@omniralph/ralph";
@@ -48,13 +51,37 @@ export type ApplyTriageOutcome =
   | { status: "in_progress"; issues: string[] }
   /** A Linear read or write failed part way. */
   | { status: "failed"; error: string }
-  | { status: "applied"; created: IssueSummary[]; stateType: "unstarted" | "backlog" };
+  | {
+      status: "applied";
+      /** New sub-issues: a new epic's stories, or a reformatted epic's validation sub-issue. */
+      created: IssueSummary[];
+      /** Identifiers of the sub-issues a reformat rewrote. */
+      reformatted: string[];
+      /** Sub-issue updates (or their blockers) that were ignored, and why. */
+      ignored: string[];
+      stateType: "unstarted" | "backlog";
+    };
 
 const EPIC_SIZES = new Set(["L", "XL"]);
 /** Title of the validation story `buildTriagePrompt` asks for (the last story). */
 const VALIDATION_TITLE = /^validate\b/i;
 
 const STATE_NAMES = { unstarted: "Todo", backlog: "Backlog" } as const;
+
+/** Sub-issue state types a reformat may rewrite. */
+const REFORMATTABLE = new Set(["backlog", "unstarted"]);
+
+/** The validation sub-issue a reformatted epic gets when it has none. */
+export const VALIDATION_STORY_TITLE = "Validate functional requirements";
+export const VALIDATION_STORY_BODY = [
+  "Verify that the finished epic meets every functional requirement of the parent issue's PRD and every other sub-issue's acceptance criteria. For each item, confirm it in the code or with a test; add missing tests and fix any gap you find.",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "- [ ] Every functional requirement of the parent issue's PRD is met",
+  "- [ ] All acceptance criteria of the other stories of this epic are met",
+  "- [ ] All quality gates pass",
+].join("\n");
 
 /** The run a triage job belongs to, when the job is still its current one. */
 async function currentRun(db: Database, job: Job): Promise<TriageRun | null> {
@@ -124,13 +151,17 @@ export function appliedMessage(
   created: readonly IssueSummary[],
   stateType: "unstarted" | "backlog",
   notes: readonly string[] = [],
+  subIssues = 0,
 ): string {
+  const plural = (n: number) => (n === 1 ? "" : "s");
   const structure =
-    created.length > 0
-      ? `epic with ${created.length} new sub-issue${created.length === 1 ? "" : "s"}: ${created.map((c) => c.identifier).join(", ")}`
-      : EPIC_SIZES.has(triage.size)
-        ? "epic (its existing sub-issues kept)"
-        : "single issue";
+    subIssues > 0
+      ? `epic with ${subIssues} existing sub-issue${plural(subIssues)}`
+      : created.length > 0
+        ? `epic with ${created.length} new sub-issue${plural(created.length)}: ${created.map((c) => c.identifier).join(", ")}`
+        : EPIC_SIZES.has(triage.size)
+          ? "epic (its existing sub-issues kept)"
+          : "single issue";
   const lines = [
     `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? "rewritten as a PRD" : triage.outcome === "reformat" ? "reformatted" : "already in the PRD format"}).`,
     "",
@@ -162,6 +193,88 @@ export function openQuestionsComment(
   const who = issue.creator?.url ?? (issue.creator ? `@${issue.creator.name}` : null);
   const intro = `${who ? `${who} ` : ""}triage left ${questions.length === 1 ? "an open question" : `${questions.length} open questions`} on this issue. It stays in Backlog until ${questions.length === 1 ? "it is" : "they are"} answered (reply in the triage session, or edit the description and triage again):`;
   return [intro, "", ...questions.map((q, i) => `${i + 1}. ${q}`)].join("\n");
+}
+
+/** What `reformatSubIssues` changed. */
+interface SubIssueReformat {
+  reformatted: IssueSummary[];
+  relations: number;
+  validation: IssueSummary | null;
+  ignored: string[];
+}
+
+/**
+ * Applies a reformat's `subIssueUpdates` to `issue`'s Backlog/Todo
+ * sub-issues: title, body and priority, plus the "blocks" relations they
+ * lack (existing ones are kept). Updates for an issue that isn't a sub-issue
+ * of `issue`, or one in another state, are ignored and reported. An epic
+ * without a validation sub-issue gets one, blocked by every other
+ * non-canceled sub-issue. Nothing is ever canceled, deleted or reparented.
+ */
+export async function reformatSubIssues(
+  linear: LinearGateway,
+  issue: IssueSummary,
+  children: readonly IssueSummary[],
+  updates: TriageAgentOutput["subIssueUpdates"],
+): Promise<SubIssueReformat> {
+  const byRef = new Map<string, IssueSummary>();
+  for (const child of children) {
+    byRef.set(child.id, child);
+    byRef.set(child.identifier, child);
+  }
+  const done: SubIssueReformat = { reformatted: [], relations: 0, validation: null, ignored: [] };
+
+  for (const update of updates) {
+    const child = byRef.get(update.id);
+    if (!child) {
+      done.ignored.push(`\`${update.id}\` isn't a sub-issue of ${issue.identifier}`);
+      continue;
+    }
+    if (!REFORMATTABLE.has(child.stateType)) {
+      done.ignored.push(`${child.identifier} is ${child.stateName || child.stateType}`);
+      continue;
+    }
+    await linear.updateIssue(child.id, {
+      ...(update.title !== child.title && { title: update.title }),
+      ...(update.body.trim() !== child.description.trim() && { description: update.body.trim() }),
+      ...(update.priority !== child.priority && { priority: update.priority }),
+    });
+    done.reformatted.push(child);
+
+    const existing = new Set((await linear.getBlockers(child.id)).map((b) => b.id));
+    for (const ref of update.blockedBy) {
+      const blocker = byRef.get(ref);
+      if (!blocker || blocker.id === child.id) {
+        done.ignored.push(`blocker \`${ref}\` of ${child.identifier} isn't a sibling sub-issue`);
+        continue;
+      }
+      if (existing.has(blocker.id) || blocker.stateType === "canceled") continue;
+      await linear.createBlocksRelation(blocker.id, child.id);
+      existing.add(blocker.id);
+      done.relations += 1;
+    }
+  }
+
+  const live = children.filter((c) => c.stateType !== "canceled");
+  if (live.length > 0 && !live.some((c) => VALIDATION_TITLE.test(c.title.trim()))) {
+    const priorities = live.map((c) => c.priority).filter((p) => p > 0);
+    const orders = children.map((c) => c.subIssueSortOrder).filter((o) => o !== undefined);
+    const validation = await linear.createIssue({
+      teamId: issue.teamId,
+      parentId: issue.id,
+      title: VALIDATION_STORY_TITLE,
+      description: VALIDATION_STORY_BODY,
+      priority: priorities.length > 0 ? Math.max(...priorities) : 3,
+      ...(orders.length > 0 && { subIssueSortOrder: Math.max(...orders) + 1 }),
+      ...(issue.projectName && { projectName: issue.projectName }),
+    });
+    for (const child of live) {
+      await linear.createBlocksRelation(child.id, validation.id);
+      done.relations += 1;
+    }
+    done.validation = validation;
+  }
+  return done;
 }
 
 /**
@@ -219,12 +332,44 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const stateType = triage.openQuestions.length > 0 ? "backlog" : "unstarted";
   const notes: string[] = [];
   let created: IssueSummary[] = [];
+  let reformat: SubIssueReformat | null = null;
   try {
-    const description = triagedDescription(triage);
-    await linear.updateIssue(issue.id, {
-      ...(triage.title !== issue.title && { title: triage.title }),
-      ...(description !== issue.description.trim() && { description }),
-    });
+    if (triage.outcome === "unchanged") {
+      // Already a PRD: only its open questions change.
+      const description = triagedDescription({
+        description: withoutOpenQuestions(issue.description),
+        openQuestions: triage.openQuestions,
+      });
+      if (description !== issue.description.trim()) {
+        await linear.updateIssue(issue.id, { description });
+      }
+    } else {
+      const description = triagedDescription(triage);
+      await linear.updateIssue(issue.id, {
+        ...(triage.title !== issue.title && { title: triage.title }),
+        ...(description !== issue.description.trim() && { description }),
+      });
+    }
+
+    if (
+      triage.outcome === "reformat" &&
+      (children.length > 0 || triage.subIssueUpdates.length > 0)
+    ) {
+      reformat = await reformatSubIssues(linear, issue, children, triage.subIssueUpdates);
+      if (reformat.validation) created = [reformat.validation];
+      if (reformat.reformatted.length > 0) {
+        notes.push(
+          `**Sub-issues reformatted:** ${reformat.reformatted.map((c) => c.identifier).join(", ")}`,
+        );
+      }
+      if (reformat.relations > 0) notes.push(`**Blocks relations added:** ${reformat.relations}`);
+      if (reformat.validation) {
+        notes.push(`**Validation sub-issue created:** ${reformat.validation.identifier}`);
+      }
+      if (reformat.ignored.length > 0) {
+        notes.push(`**Ignored sub-issue updates:** ${reformat.ignored.join("; ")}`);
+      }
+    }
 
     if (triage.outcome === "prd" && EPIC_SIZES.has(triage.size) && triage.stories.length > 0) {
       if (children.length === 0) {
@@ -257,9 +402,15 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   }
   await postActivity(linear, sessionId, {
     type: "response",
-    body: appliedMessage(issue, triage, created, stateType, notes),
+    body: appliedMessage(issue, triage, created, stateType, notes, reformat ? children.length : 0),
   });
-  return { status: "applied", created, stateType };
+  return {
+    status: "applied",
+    created,
+    reformatted: reformat?.reformatted.map((c) => c.identifier) ?? [],
+    ignored: reformat?.ignored ?? [],
+    stateType,
+  };
 }
 
 /**

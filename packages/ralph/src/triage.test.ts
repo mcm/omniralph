@@ -9,6 +9,7 @@ import {
   buildTriagePrompt,
   hasOpenQuestions,
   renderOpenQuestions,
+  withoutOpenQuestions,
 } from "./triage.js";
 
 const PRD = `## Introduction
@@ -111,6 +112,18 @@ describe("renderOpenQuestions", () => {
     const description = `${SINGLE}\n\n${renderOpenQuestions(["Which label?"])}`;
     expect(parseQualityGates(description)).toEqual(["pnpm typecheck", "pnpm test"]);
     expect(description).not.toMatch(/- \[ \] Which label/);
+  });
+});
+
+describe("withoutOpenQuestions", () => {
+  it("removes the section wherever it is and keeps the rest", () => {
+    expect(withoutOpenQuestions(`${SINGLE}\n\n${renderOpenQuestions(["Which label?"])}\n`)).toBe(
+      SINGLE.trim(),
+    );
+    expect(withoutOpenQuestions("## A\n\nx\n\n## Open Questions\n\n1. Q?\n\n## B\n\ny")).toBe(
+      "## A\n\nx\n\n## B\n\ny",
+    );
+    expect(withoutOpenQuestions(SINGLE)).toBe(SINGLE.trim());
   });
 });
 

@@ -32,6 +32,16 @@ export function hasOpenQuestionsHeading(description: string): boolean {
   return OPEN_QUESTIONS_SECTION.test(description.replace(/\r\n/g, "\n"));
 }
 
+/** `description` without its `## Open Questions` section(s), trimmed. */
+export function withoutOpenQuestions(description: string): string {
+  const pattern = new RegExp(OPEN_QUESTIONS_SECTION.source, "gim");
+  return description
+    .replace(/\r\n/g, "\n")
+    .replace(pattern, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** What a previous triage of the session decided (the shared `TriageOutcome`). */
 export interface TriagePreviousResult {
   outcome?: string;
