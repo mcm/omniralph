@@ -54,7 +54,7 @@ describe("chatAskAgents", () => {
   const agent = (over: Partial<Parameters<typeof chatAskAgents>[0][number]> = {}) =>
     ({
       name: "a",
-      reportedVersion: "0.7.0",
+      reportedVersion: "0.8.0",
       revokedAt: null,
       lastHeartbeatAt: now,
       enabledCapabilities: ["review"],
@@ -65,10 +65,10 @@ describe("chatAskAgents", () => {
 
   it("counts online agents running the review capability at a recent enough version", () => {
     expect(chatAskAgents([agent()], "r1", now)).toEqual([
-      { name: "a", version: "0.7.0", capable: true },
+      { name: "a", version: "0.8.0", capable: true },
     ]);
     const incapable = [
-      agent({ name: "old", reportedVersion: "0.6.0" }),
+      agent({ name: "old", reportedVersion: "0.7.0" }),
       agent({ name: "unknown", reportedVersion: null }),
       agent({ name: "disabled", enabledCapabilities: ["ralph"] }),
       agent({ name: "unreported", reportedCapabilities: ["ralph"] }),
@@ -92,11 +92,11 @@ describe("chatAskAgents", () => {
     ).toEqual([]);
     const pinned = agent({
       name: "pinned",
-      reportedVersion: "0.6.0",
+      reportedVersion: "0.7.0",
       pinnedRepositories: [{ id: "r1" }] as never,
     });
     expect(chatAskAgents([agent(), pinned], "r1", now)).toEqual([
-      { name: "pinned", version: "0.6.0", capable: false },
+      { name: "pinned", version: "0.7.0", capable: false },
     ]);
     expect(chatAskAgents([agent(), pinned], "r2", now)).toHaveLength(2);
   });
@@ -272,7 +272,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     publisher = new RecordingPublisher();
     scm = new FakeScmAdapter();
     const capable = {
-      reportedVersion: "0.7.0",
+      reportedVersion: "0.8.0",
       reportedCapabilities: ["review", "ralph"],
       lastHeartbeatAt: new Date(),
       revokedAt: null,
@@ -443,15 +443,15 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   it("enqueues nothing when no online agent can answer code questions", async () => {
     const h = await harness();
 
-    await setAgent(agentId, { reportedVersion: "0.6.0" });
+    await setAgent(agentId, { reportedVersion: "0.7.0" });
     const old = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(old).toMatchObject({
       error: "no_capable_agent",
-      agents: [{ name: "acme-agent", version: "0.6.0", capable: false }],
+      agents: [{ name: "acme-agent", version: "0.7.0", capable: false }],
     });
-    expect(old.message).toContain("0.7.0");
+    expect(old.message).toContain("0.8.0");
 
-    await setAgent(agentId, { reportedVersion: "0.7.0", lastHeartbeatAt: null });
+    await setAgent(agentId, { reportedVersion: "0.8.0", lastHeartbeatAt: null });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(offline).toMatchObject({ error: "no_capable_agent", agents: [] });
     expect(offline.message).toContain("online");
