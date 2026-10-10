@@ -252,7 +252,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   }
 
   /** The handoff turn: the model calls the tool with `input`, then ends with no text. */
-  async function handOff(input: { repository: string; request: string }) {
+  async function handOff(input: { repository: string; request: string; ship?: boolean }) {
     const scripted = scriptedModel(toolCallResult("start_ralph_request", input), textResult(""));
     await turn(scripted.model, "@omniralph fix the typo in the README of acme/app");
     return scripted.calls;
@@ -534,6 +534,35 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     expect(payload).toMatchObject({ branch: firstLane.branch, prUrl: firstLane.prUrl });
     // The follow-up keeps the lane's base branch: it doesn't read the default branch again.
     expect(scm.calls.filter((c) => c === "getDefaultBranch")).toHaveLength(branchReads);
+  });
+
+  it("ships the thread's finished run with `ship`: a ship job on its branch", async () => {
+    await handOff({ repository: "acme/app", request: REQUEST });
+    const first = (await threadRun())!;
+    const [job] = await queuedJobs();
+    await playRequestJob(job!, { summary: "Fixed it, but couldn't commit." });
+    const firstLane = (await getMainLane(db, first))!;
+
+    const calls = await handOff({ repository: "acme/app", request: "Ship it.", ship: true });
+
+    expect(toolOutput(calls[1]!)).toMatchObject({ status: "started", followUp: true });
+    const second = (await threadRun())!;
+    const [next] = await db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.ralphRunId, second.id), eq(jobs.status, "queued")));
+    const payload = RalphRequestPayload.parse(next!.payload);
+    expect(payload).toMatchObject({ ship: true, branch: firstLane.branch });
+    expect(payload.requests[0]!.text).toMatch(/^Ship it\./);
+    expect(systemOf(calls[0]!)).toContain("set `ship` on start_ralph_request");
+  });
+
+  it("refuses to ship when the thread has no earlier run in that repository", async () => {
+    const calls = await handOff({ repository: "acme/app", request: "Ship it.", ship: true });
+
+    expect(toolOutput(calls[1]!)).toMatchObject({ error: "nothing_to_ship" });
+    expect(await threadRun()).toBeNull();
+    expect(await queuedJobs()).toHaveLength(0);
   });
 
   it("starts fresh when the thread's last run worked in another repository", async () => {

@@ -69,6 +69,7 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- Before calling it, restate what you are handing off: the request starts with one sentence summarizing it, which the handoff message shows the users. Then the request goes on as a self-contained instruction with every detail ralph needs, since ralph doesn't read the thread.",
     "- The tool posts the handoff message itself, and ralph posts its progress and answer here: after it succeeds, end your turn without repeating it.",
     "- If the tool says the thread already has a run, don't start another; pass the user's request to that run with send_to_session.",
+    "- When a user asks to ship ralph's work in this thread (\"ship it\", commit and push it, open the PR), set `ship` on start_ralph_request (same repository as the thread's last run) or on send_to_session while the run is unfinished. Ralph then commits the work itself, pushes the branch and opens the pull/merge request.",
     "Other ralph runs (also ones started from Linear):",
     "- get_ralph_run tells how a run is going (its current story, waiting guidance, last activity); list_ralph_runs finds it.",
     "- To steer one, send it guidance with send_ralph_guidance (the run's id or Linear identifier). Confirm which run first when it's ambiguous.",
