@@ -295,6 +295,185 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     );
   });
 
+  type Update = TriageAgentOutput["subIssueUpdates"][number];
+  const update = (child: IssueSummary, overrides: Partial<Update> = {}): Update => ({
+    id: child.id,
+    title: `${child.title} (reformatted)`,
+    body: `As a user, I want ${child.title}.\n\n## Acceptance Criteria\n\n- [ ] It works`,
+    priority: 2,
+    blockedBy: [],
+    ...overrides,
+  });
+
+  it("reformats Backlog/Todo sub-issues, adds missing relations and the validation sub-issue", async () => {
+    const issue = addIssue({ title: "Export widgets as CSV", projectName: "Widgets" });
+    const child = (title: string, overrides: Partial<IssueSummary> = {}) =>
+      linear.add({ title, parentId: issue.id, priority: 3, stateType: "backlog", ...overrides });
+    const first = child("US-001: endpoint", { subIssueSortOrder: 0 });
+    const second = child("US-002: button", { stateType: "unstarted", subIssueSortOrder: 1 });
+    const third = child("Docs", { subIssueSortOrder: 2, description: "fine already" });
+    const dropped = child("Dropped", { stateType: "canceled", subIssueSortOrder: 3 });
+    await linear.createBlocksRelation(first.id, second.id);
+
+    const updates = [
+      update(first, { title: "Add the export endpoint", priority: 1 }),
+      // The existing relation is kept, the missing one added; a canceled blocker is skipped.
+      update(second, { blockedBy: [first.id, third.identifier, dropped.id] }),
+    ];
+    const { job, sessionId } = await completedJob(
+      issue,
+      result({ outcome: "reformat", size: "L", subIssueUpdates: updates }),
+    );
+
+    const applied = await applyTriageJob(deps(), job);
+    expect(applied).toMatchObject({
+      status: "applied",
+      reformatted: [first.identifier, second.identifier],
+      ignored: [],
+      stateType: "unstarted",
+    });
+    expect(await linear.getIssue(issue.id)).toMatchObject({ description: PRD });
+    expect(await linear.getIssue(first.id)).toMatchObject({
+      title: "Add the export endpoint",
+      description: updates[0]!.body,
+      priority: 1,
+    });
+    expect(await linear.getIssue(second.id)).toMatchObject({
+      title: "US-002: button (reformatted)",
+      priority: 2,
+      stateType: "unstarted",
+    });
+    expect(await linear.getIssue(third.id)).toMatchObject({
+      title: "Docs",
+      description: "fine already",
+    });
+    expect((await linear.getBlockers(second.id)).map((b) => b.id)).toEqual([first.id, third.id]);
+
+    const children = await linear.getChildren(issue.id);
+    expect(children.map((c) => c.id).slice(0, 4)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+      dropped.id,
+    ]);
+    expect(children).toHaveLength(5);
+    const validation = children[4]!;
+    expect(validation).toMatchObject({
+      title: "Validate functional requirements",
+      parentId: issue.id,
+      subIssueSortOrder: 4,
+      projectName: "Widgets",
+    });
+    expect(validation.description).toContain("## Acceptance Criteria");
+    expect((await linear.getBlockers(validation.id)).map((b) => b.id).sort()).toEqual(
+      [first.id, second.id, third.id].sort(),
+    );
+    expect(applied).toMatchObject({ created: [{ id: validation.id }] });
+    // Nothing canceled, deleted or reparented.
+    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { type: "unstarted" } }]);
+    expect((await linear.getIssue(dropped.id)).stateType).toBe("canceled");
+
+    const body = JSON.stringify(responses(sessionId));
+    expect(body).toContain("reformatted");
+    expect(body).toContain("epic with 4 existing sub-issues");
+    expect(body).toContain(`Sub-issues reformatted:** ${first.identifier}, ${second.identifier}`);
+    expect(body).toContain(`Validation sub-issue created:** ${validation.identifier}`);
+  });
+
+  it("keeps an existing validation sub-issue and ignores updates of foreign issues", async () => {
+    const issue = addIssue();
+    const own = linear.add({ title: "Story", parentId: issue.id, stateType: "backlog" });
+    linear.add({
+      title: "Validate functional requirements",
+      parentId: issue.id,
+      stateType: "backlog",
+    });
+    const foreign = linear.add({ title: "Someone else's", stateType: "backlog" });
+    const updates = [
+      update(own, { blockedBy: ["ENG-404"] }),
+      update(foreign, { title: "Hijacked" }),
+    ];
+    const { job, sessionId } = await completedJob(
+      issue,
+      result({ outcome: "reformat", size: "L", subIssueUpdates: updates }),
+    );
+
+    const applied = await applyTriageJob(deps(), job);
+    expect(applied).toMatchObject({
+      status: "applied",
+      created: [],
+      reformatted: [own.identifier],
+      ignored: [
+        `blocker \`ENG-404\` of ${own.identifier} isn't a sibling sub-issue`,
+        `\`${foreign.id}\` isn't a sub-issue of ${issue.identifier}`,
+      ],
+    });
+    expect(await linear.getIssue(foreign.id)).toMatchObject({ title: "Someone else's" });
+    expect(linear.issueUpdates.map((u) => u.issueId)).not.toContain(foreign.id);
+    expect(await linear.getChildren(issue.id)).toHaveLength(2);
+    expect(await linear.getBlockers(own.id)).toEqual([]);
+    const body = JSON.stringify(responses(sessionId));
+    expect(body).toContain("Ignored sub-issue updates:");
+    expect(body).toContain(`isn't a sub-issue of ${issue.identifier}`);
+  });
+
+  it("changes nothing in a reformat when one sub-issue is started", async () => {
+    const issue = addIssue();
+    const todo = linear.add({ title: "Todo", parentId: issue.id, stateType: "unstarted" });
+    linear.add({ title: "Busy", parentId: issue.id, stateType: "started", identifier: "ENG-77" });
+    const { job, sessionId } = await completedJob(
+      issue,
+      result({ outcome: "reformat", size: "L", subIssueUpdates: [update(todo)] }),
+    );
+
+    expect(await applyTriageJob(deps(), job)).toEqual({
+      status: "in_progress",
+      issues: ["ENG-77"],
+    });
+    expect(linear.issueUpdates).toEqual([]);
+    expect(linear.stateChanges).toEqual([]);
+    expect(await linear.getChildren(issue.id)).toHaveLength(2);
+    expect(await linear.getBlockers(todo.id)).toEqual([]);
+    expect(JSON.stringify(responses(sessionId))).toContain(
+      "**ENG-77** is already in progress or done",
+    );
+  });
+
+  it("applies only the state, open questions and response when unchanged", async () => {
+    const issue = addIssue({
+      title: "Export widgets",
+      description: `${PRD}\n\n## Open Questions\n\n1. Old question?`,
+    });
+    const child = linear.add({ title: "Story", parentId: issue.id, stateType: "backlog" });
+    const { job, sessionId } = await completedJob(
+      issue,
+      result({ outcome: "unchanged", size: "L", title: "A new title", openQuestions: ["New?"] }),
+    );
+
+    expect(await applyTriageJob(deps(), job)).toMatchObject({
+      status: "applied",
+      created: [],
+      reformatted: [],
+      stateType: "backlog",
+    });
+    expect(linear.issueUpdates).toEqual([
+      { issueId: issue.id, input: { description: `${PRD}\n\n## Open Questions\n\n1. New?` } },
+    ]);
+    expect((await linear.getIssue(issue.id)).title).toBe("Export widgets");
+    expect(await linear.getChildren(issue.id)).toEqual([expect.objectContaining({ id: child.id })]);
+    expect(linear.stateChanges).toEqual([]); // already in Backlog
+    expect(linear.comments).toHaveLength(1);
+    expect(JSON.stringify(responses(sessionId))).toContain("already in the PRD format");
+
+    // Once answered, the section goes and it moves to Todo, still without other changes.
+    const again = addIssue({ description: `${PRD}\n\n## Open Questions\n\n1. Old?` });
+    linear.issueUpdates = [];
+    const second = await completedJob(again, result({ outcome: "unchanged" }));
+    expect(await applyTriageJob(deps(), second.job)).toMatchObject({ stateType: "unstarted" });
+    expect(linear.issueUpdates).toEqual([{ issueId: again.id, input: { description: PRD } }]);
+    expect((await linear.getIssue(again.id)).stateType).toBe("unstarted");
+  });
+
   it("changes nothing when work started while triage ran", async () => {
     const issue = addIssue();
     const { job, sessionId, run } = await completedJob(
