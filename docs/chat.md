@@ -9,7 +9,9 @@ reviews, jobs, agents and repositories through tools. See
 [ADR 0005](adr/0005-chat-front-door.md) for the design.
 
 The control panel does all of it: it holds the Slack and Discord credentials, receives their
-events, keeps each thread's history in Postgres and calls the model. Agent hosts aren't involved.
+events, keeps each thread's history in Postgres and calls the model. Agent hosts are only involved
+when the bot hands work off: [code questions](#code-questions) run as read-only `chat.ask` jobs and
+[ralph requests](#ralph-from-chat) as ralph jobs; the control panel never reads code itself.
 
 Setting chat up takes these steps (Slack and Discord are independent; set up either or both):
 
@@ -165,8 +167,9 @@ last 50 messages are kept as context. Direct messages to the bot are ignored.
 
 It can answer questions about the organization's ralph runs (status, stories, PRs/MRs, progress),
 reviews and their findings, jobs, agents and repositories, with links to the control panel's
-pages. Linked members can also [hand work to ralph](#ralph-from-chat) and steer runs. It can't
-create Linear issues or answer questions about code yet.
+pages. It can [answer questions about a repository's code](#code-questions) by handing them to an
+agent. Linked members can also [hand work to ralph](#ralph-from-chat), steer runs, and
+[file Linear issues](#linear-issues-from-chat) (and delegate them to ralph).
 
 Turns are rate-limited to 10 per minute per chat user and 60 per 10 minutes per organization; the
 bot says so once when a limit is reached.
@@ -245,14 +248,114 @@ plain reply in the thread, by a linked member.
 
 Starting a request, plain replies to a running session, guidance with `send_to_session` or
 `send_ralph_guidance` and answers to cleanup questions are `action`s: only
-[linked members](#access-levels) can do them. Slack users admitted by email domain can ask about
-runs but not change them; everyone else gets the link prompt.
+[linked members](#access-levels) can do them, as can drafting, creating and delegating
+[Linear issues](#linear-issues-from-chat). Slack users admitted by email domain can ask about runs
+and [ask code questions](#code-questions) but not change anything; everyone else gets the link
+prompt.
+
+## Linear issues from chat
+
+Linked members can turn a conversation into a Linear issue, and have ralph build it. The
+organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--integrations));
+without one the bot says an admin can connect it under **Settings › Integrations**.
+
+### Filing an issue
+
+> @Omniralph file an issue in ENG for the login timeout we just discussed
+
+The control-panel agent drafts the issue from the thread with its `draft_linear_issue` tool: a
+title, a self-contained Markdown description (Linear readers don't see the thread), the team and,
+if asked, a project, labels and a priority. The team is matched by key, name or id; if it's
+unknown (or the workspace has several and you didn't say), the bot asks which one.
+
+Nothing is created yet. The bot posts a **confirmation card** with the draft (team, project,
+labels, priority, title and a preview of the description) and three buttons:
+
+| Button                  | Does                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| **Create**              | Creates the issue in Linear. The card then shows its identifier and an **Open ENG-123** link. |
+| **Create and delegate** | Creates the issue and [delegates it to ralph](#delegating-to-ralph).                          |
+| **Cancel**              | Discards the draft; the card says so.                                                         |
+
+- Only the member who asked can click them; anyone else gets a private note to mention the bot
+  and draft their own.
+- The draft is kept for **24 hours**; after that the card says it expired. Ask again for a new one.
+- A click creates the issue once, even when it's clicked twice or by two devices. If Linear
+  fails, the draft stays open and you can click again.
+- In Slack, the buttons need **interactivity** on the app (see
+  [step 1](#1-create-the-slack-app)); an app created from an older manifest must turn it on.
+
+### Delegating to ralph
+
+> @Omniralph file an issue for X and have ralph build it
+
+For a new issue, click **Create and delegate** on the card. For an existing one, ask the bot to
+delegate it by identifier ("have ralph build ENG-42"): its `delegate_linear_issue` tool sets the
+issue's delegate to the Omniralph app. Either way it's the same as delegating in Linear: Linear
+starts an agent session and ralph builds the issue as described in
+[linear.md › Delegate an issue](linear.md#5-delegate-an-issue) (the issue's team must be routed to
+a repository with ralph enabled).
+
+The run stays a Linear run: its progress, questions and replies are in the Linear issue's agent
+session, not in chat. The thread gets the issue's link, and one message each when:
+
+- the run starts (`🚀 Ralph started building ENG-42…`);
+- it opens its pull/merge request (with the link);
+- it finishes, or fails (`⚠️ Ralph stopped working on ENG-42: …`).
+
+These updates are tied to the thread when the delegation comes from chat and the run starts within
+an hour. If Linear refuses the delegation after creating the issue, the issue is kept and the bot
+says so; ask it to delegate again, or delegate the issue in Linear.
+
+## Code questions
+
+Ask about a connected repository's code and the bot gets an answer from an agent with a checkout
+of it:
+
+> @Omniralph in acme/api, where do we validate webhook signatures?
+
+- The control-panel agent can't read code itself (and never answers from memory). It hands the
+  question, made self-contained, to its `ask_about_code` tool. The repository must be one of the
+  organization's connected repositories (ralph doesn't need to be enabled); if it's ambiguous the
+  bot asks which one first.
+- The bot posts **"Looking into `owner/repo`…"**, and the answer follows in the thread as a new
+  message, with links to the files it cites. Asking the same question again while it runs doesn't
+  queue it twice.
+- The question is answered from the repository's **default branch** (other branches aren't
+  supported). The agent sees the question, the latest messages of the thread and the thread's
+  previous code question and answer, so follow-ups work.
+- It's usually as quick as a quick review. An answer that runs out of budget says so; try a
+  narrower question.
+
+### The read-only sandbox
+
+A code question is a `chat.ask` job under the agent's `review` capability, published on the same
+topic as reviews and run in the same sandbox:
+
+- A fresh worktree of the default branch's head, on an agent host
+  ([deploy-agent.md](deploy-agent.md)). The control panel never reads code.
+- The Claude session gets only **Read, Grep and Glob**, limited to the worktree: it can't write
+  files, run commands or push. No project settings are loaded; the branch's `CLAUDE.md` is passed
+  as quoted data, as in reviews.
+- Up to 30 turns and a token budget of 25% of the repository's review profile's **max tokens per
+  review**, with the profile's model.
+- If the repository pins reviews to specific agents, only those agents take it.
+
+### Agent version
+
+`chat.ask` needs the `review` capability on **agent version 0.7.0 or later**. Older agents don't
+know the job type. Before queueing, the control panel checks the organization's online agents (the
+version and capabilities they report in heartbeats); when none that would take the job can run it,
+nothing is queued and the bot says so: "no agent … is online", or that the online ones need the
+review capability on 0.7.0 or later. Update or start an agent ([deploy-agent.md](deploy-agent.md))
+and ask again.
 
 ## Access levels
 
 Who may ask what depends on whether Omniralph knows who's asking. Each tool the agent uses has a
-tier: `read` (questions about the organization) or `action` (changing something: starting,
-steering and replying to [ralph runs](#ralph-from-chat)).
+tier: `read` (questions about the organization, including [code questions](#code-questions)) or
+`action` (changing something: starting, steering and replying to [ralph runs](#ralph-from-chat),
+and [filing and delegating Linear issues](#linear-issues-from-chat)).
 
 | Who                                                                                                                                                                             | Gets                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -300,13 +403,17 @@ the opt-out. Leaving the organization ends the link's access straight away.
 
 ## Troubleshooting
 
-| Symptom                                       | Check                                                                                                                                                                                                        |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Connect** is disabled                       | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
-| Slack install fails for other workspaces      | Public distribution is activated (step 1.3).                                                                                                                                                                 |
-| The bot doesn't react to a Slack mention      | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
-| The bot doesn't react to a Discord mention    | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
-| "The Omniralph assistant isn't configured"    | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
-| The bot asks to link although you're a member | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
-| A reply didn't reach the ralph session        | It must not mention the bot (a mention goes to the control-panel agent), you must be a linked member, and the session must still be working: once its request is done, replies go to the agent.              |
-| The bot won't start a ralph request           | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
+| Symptom                                             | Check                                                                                                                                                                                                        |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Connect** is disabled                             | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
+| Slack install fails for other workspaces            | Public distribution is activated (step 1.3).                                                                                                                                                                 |
+| The bot doesn't react to a Slack mention            | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
+| The bot doesn't react to a Discord mention          | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
+| "The Omniralph assistant isn't configured"          | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
+| The bot asks to link although you're a member       | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
+| A reply didn't reach the ralph session              | It must not mention the bot (a mention goes to the control-panel agent), you must be a linked member, and the session must still be working: once its request is done, replies go to the agent.              |
+| The bot won't start a ralph request                 | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
+| The Linear card's buttons do nothing (Slack)        | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
+| "Only the person who asked…" on a card              | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
+| A code question says no capable agent is online     | An agent with the `review` capability on version 0.7.0 or later is online (and, if the repository pins reviews to agents, it's one of them).                                                                 |
+| A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and an agent with `ralph` is online; the run must start within an hour of the delegation.                                                      |
