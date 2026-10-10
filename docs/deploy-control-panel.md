@@ -147,7 +147,7 @@ only allows receive, acknowledge and extend-lease on the agent's topics in the `
 | `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (their messages have left the queue) |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
-| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs, checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |
+| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |
 
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`). Vercel sends it as `Authorization: Bearer …`;
 the routes reject everything else. Cron jobs only run for the production deployment.

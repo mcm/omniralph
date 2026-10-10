@@ -26,6 +26,7 @@ import {
   updateLane,
   type RalphLane,
   type RalphRun,
+  type RalphRunOrigin,
 } from "@omniralph/db";
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
@@ -233,10 +234,13 @@ export async function respondToCiEvent(
 
 /**
  * The reconcile cron's CI check of every open ralph PR/MR of the organization (the fallback for
- * lost or missing webhooks). Failures are logged and counted.
+ * lost or missing webhooks). Only runs of `origin` when given. Failures are logged and counted.
  */
-export async function reconcileCi(deps: RalphDeps): Promise<{ checked: number; failed: number }> {
-  const lanes = await listOpenPullRequestLanes(deps.db, deps.organizationId);
+export async function reconcileCi(
+  deps: RalphDeps,
+  origin?: RalphRunOrigin,
+): Promise<{ checked: number; failed: number }> {
+  const lanes = await listOpenPullRequestLanes(deps.db, deps.organizationId, origin);
   const busyRunIds = await busyRuns(deps, lanes);
   let failed = 0;
   for (const found of lanes) {

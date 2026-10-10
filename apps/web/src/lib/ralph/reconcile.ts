@@ -4,7 +4,7 @@
  * waiting runs' blockers and picks up runs whose last job outcome was never
  * applied).
  */
-import { listRunsAffectedByIssue, listRunsToReconcile } from "@omniralph/db";
+import { listRunsAffectedByIssue, listRunsToReconcile, type RalphRunOrigin } from "@omniralph/db";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
 
 /** How long a pending or running run without a job may sit before the cron advances it. */
@@ -35,16 +35,18 @@ export async function wakeRunsForIssue(issueId: string, deps: RalphDeps): Promis
 
 /**
  * Advances the organization's waiting runs and stale runs without an active
- * job. Failures are logged and counted.
+ * job (only runs of `origin` when given). Failures are logged and counted.
  */
 export async function reconcileRuns(
   deps: RalphDeps,
   now = new Date(),
+  origin?: RalphRunOrigin,
 ): Promise<{ reconciled: number; failed: number }> {
   const runs = await listRunsToReconcile(
     deps.db,
     deps.organizationId,
     new Date(now.getTime() - RECONCILE_STALE_MS),
+    origin,
   );
   let failed = 0;
   for (const run of runs) {

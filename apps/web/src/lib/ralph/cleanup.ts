@@ -37,6 +37,7 @@ import {
   type RalphLane,
   type RalphLaneCleanup,
   type RalphRun,
+  type RalphRunOrigin,
   type RalphStash,
   type RalphTransaction,
   runReference,
@@ -621,11 +622,12 @@ async function expireBranchQuestion(deps: RalphDeps, lane: RalphLane, at: Date):
  * are recorded and cleaned up); merged lanes whose cleanup never started,
  * waits or failed are started; finished cleanup jobs whose outcome was never
  * applied are applied; and kept branches whose question timed out are
- * deleted. Failures are logged and counted.
+ * deleted. Only runs of `origin` when given. Failures are logged and counted.
  */
 export async function reconcileCleanup(
   deps: RalphDeps,
   at = new Date(),
+  origin?: RalphRunOrigin,
 ): Promise<{ checked: number; started: number; expired: number; failed: number }> {
   const counts = { checked: 0, started: 0, expired: 0, failed: 0 };
   const attempt = async (what: string, fn: () => Promise<void>) => {
@@ -650,7 +652,7 @@ export async function reconcileCleanup(
     return optedIn.get(repositoryId) ?? false;
   };
 
-  for (const { lane } of await listOpenPullRequestLanes(deps.db, deps.organizationId)) {
+  for (const { lane } of await listOpenPullRequestLanes(deps.db, deps.organizationId, origin)) {
     if (!(await cleansUp(lane.repositoryId))) continue;
     await attempt(`Checking whether ${lane.prUrl} merged`, async () => {
       counts.checked += 1;
@@ -658,7 +660,7 @@ export async function reconcileCleanup(
     });
   }
 
-  for (const { lane } of await listLanesToCleanUp(deps.db, deps.organizationId)) {
+  for (const { lane } of await listLanesToCleanUp(deps.db, deps.organizationId, origin)) {
     const cleanup = lane.cleanup;
     await attempt(`Cleaning up ${lane.branch} (ralph lane ${lane.id})`, async () => {
       if (cleanup?.jobId) {

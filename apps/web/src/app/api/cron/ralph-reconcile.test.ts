@@ -5,15 +5,18 @@ vi.mock("server-only", () => ({}));
 
 const state = vi.hoisted(() => ({
   organizations: [] as string[],
+  /** Organizations with chat runs. */
+  chatOrganizations: [] as string[],
   /** Organizations whose workspace was disconnected meanwhile. */
   disconnected: new Set<string>(),
   gateways: [] as string[],
-  passes: [] as Array<[string, string, string]>,
+  passes: [] as string[][],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 vi.mock("@omniralph/db", () => ({
   listIntegratedOrganizationIds: async () => state.organizations,
+  listChatRunOrganizationIds: async () => state.chatOrganizations,
 }));
 vi.mock("@/lib/linear/client", async (importOriginal) => {
   const original = await importOriginal<typeof LinearClient>();
@@ -24,27 +27,33 @@ vi.mock("@/lib/linear/client", async (importOriginal) => {
       state.gateways.push(organizationId);
       return { workspaceOf: organizationId };
     },
+    getLinearGatewayOrDisconnected: async () => ({ workspaceOf: "disconnected" }),
   };
 });
 type Deps = { organizationId: string; linear: { workspaceOf: string } };
-const pass = (name: string) => (deps: Deps) => {
-  state.passes.push([name, deps.organizationId, deps.linear.workspaceOf]);
+const pass = (name: string) => (deps: Deps, origin?: string) => {
+  state.passes.push([
+    name,
+    deps.organizationId,
+    deps.linear.workspaceOf,
+    ...(origin ? [origin] : []),
+  ]);
 };
 vi.mock("@/lib/ralph/reconcile", () => ({
-  reconcileRuns: async (deps: Deps) => {
-    pass("runs")(deps);
+  reconcileRuns: async (deps: Deps, _now: Date, origin?: string) => {
+    pass("runs")(deps, origin);
     return { reconciled: 2, failed: 1 };
   },
 }));
 vi.mock("@/lib/ralph/cleanup", () => ({
-  reconcileCleanup: async (deps: Deps) => {
-    pass("cleanup")(deps);
+  reconcileCleanup: async (deps: Deps, _at: Date, origin?: string) => {
+    pass("cleanup")(deps, origin);
     return { checked: 1, started: 1, expired: 0, failed: 0 };
   },
 }));
 vi.mock("@/lib/ralph/ci", () => ({
-  reconcileCi: async (deps: Deps) => {
-    pass("ci")(deps);
+  reconcileCi: async (deps: Deps, origin?: string) => {
+    pass("ci")(deps, origin);
     return { checked: 3, failed: 0 };
   },
 }));
@@ -61,6 +70,7 @@ const cron = () =>
 
 beforeEach(() => {
   state.organizations = [];
+  state.chatOrganizations = [];
   state.disconnected.clear();
   state.gateways = [];
   state.passes = [];
@@ -94,7 +104,21 @@ describe("GET /api/cron/ralph-reconcile", () => {
     ]);
   });
 
-  it("does nothing while no organization has Linear connected", async () => {
+  it("reconciles the chat runs of organizations without Linear, with a disconnected gateway", async () => {
+    state.organizations = ["org-a"];
+    state.chatOrganizations = ["org-a", "org-chat"];
+    expect(await (await cron()).json()).toMatchObject({ organizations: 2, reconciled: 4 });
+    expect(state.passes).toEqual([
+      ["runs", "org-a", "org-a"],
+      ["cleanup", "org-a", "org-a"],
+      ["ci", "org-a", "org-a"],
+      ["runs", "org-chat", "disconnected", "chat"],
+      ["cleanup", "org-chat", "disconnected", "chat"],
+      ["ci", "org-chat", "disconnected", "chat"],
+    ]);
+  });
+
+  it("does nothing while no organization has Linear connected or chat runs", async () => {
     expect(await (await cron()).json()).toMatchObject({ organizations: 0, reconciled: 0 });
     expect(state.passes).toEqual([]);
   });
