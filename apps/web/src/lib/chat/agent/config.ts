@@ -34,6 +34,8 @@ export interface ChatAttachmentLimits {
   maxTextBytes: number;
   /** Attachments of the whole thread fetched for one turn, newest first. */
   perTurn: number;
+  /** How long fetching one attachment may take (ms) before it's skipped. */
+  fetchTimeoutMs: number;
 }
 
 export const CHAT_ATTACHMENT_LIMITS: ChatAttachmentLimits = {
@@ -41,4 +43,5 @@ export const CHAT_ATTACHMENT_LIMITS: ChatAttachmentLimits = {
   maxImageBytes: 5 * 1024 * 1024,
   maxTextBytes: 256 * 1024,
   perTurn: 10,
+  fetchTimeoutMs: 30_000,
 };

@@ -378,7 +378,8 @@ Images and text files attached to messages in the thread reach the model:
 - **Text files**: `text/*`, JSON, XML, YAML, TOML and similar (or a `.log`, `.txt`, `.md`, `.csv`…
   file without a useful type), UTF-8, up to 256 KB each.
 - At most 5 attachments per message are read. Anything else (video, audio, PDFs, archives, other
-  binaries), a file over its cap or one that can't be fetched is skipped, and the model is told
+  binaries), a file over its cap, one whose size the platform didn't report, or one that can't be
+  fetched within 30 seconds is skipped, and the model is told
   (`[attachment skipped: demo.mov — unsupported type (video/quicktime)]`), so it can say so. The
   turn goes on either way.
 - Omniralph stores only each attachment's metadata (name, type, size, the platform's URL) with the
