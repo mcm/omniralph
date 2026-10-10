@@ -72,6 +72,34 @@ describe("SdkLinearGateway reads", () => {
     expect(calls[0]?.authorization).toBe("Bearer lin_oauth_token");
   });
 
+  it("lists every page of teams", async () => {
+    resolvers.Teams = (v) => ({
+      teams: v.after
+        ? {
+            nodes: [{ id: "t2", key: "OPS", name: "Operations" }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          }
+        : {
+            nodes: [{ id: "t1", key: "TOOL", name: "Tooling" }],
+            pageInfo: { hasNextPage: true, endCursor: "c1" },
+          },
+    });
+    expect(await gateway().listTeams()).toEqual([
+      { id: "t1", key: "TOOL", name: "Tooling" },
+      { id: "t2", key: "OPS", name: "Operations" },
+    ]);
+    expect(calls.map((c) => c.variables)).toEqual([
+      { first: 100, after: null },
+      { first: 100, after: "c1" },
+    ]);
+  });
+
+  it("reads the viewer (the app user)", async () => {
+    resolvers.Viewer = () => ({ viewer: { id: "app-user", name: "Omniralph" } });
+    expect(await gateway().getViewer()).toEqual({ id: "app-user", name: "Omniralph" });
+    expect(calls.map((c) => c.operation)).toEqual(["Viewer"]);
+  });
+
   it("reads an issue as a summary in one request", async () => {
     resolvers.Issue = (v) => ({ issue: issueNode(String(v.id)) });
     expect(await gateway().getIssue("42")).toEqual({
@@ -300,6 +328,19 @@ describe("SdkLinearGateway writes", () => {
     });
   });
 
+  it("creates an issue delegated to the app user", async () => {
+    resolvers.CreateIssue = () => ({ issueCreate: { success: true, issue: issueNode("6") } });
+    await gateway().createIssue({
+      teamId: "team-1",
+      title: "T",
+      description: "D",
+      delegateId: "app-user",
+    });
+    expect(calls[0]?.variables).toEqual({
+      input: { teamId: "team-1", title: "T", description: "D", delegateId: "app-user" },
+    });
+  });
+
   it("throws when a mutation doesn't succeed", async () => {
     resolvers.CreateIssue = () => ({ issueCreate: { success: false, issue: null } });
     await expect(
@@ -385,6 +426,12 @@ describe("SdkLinearGateway writes", () => {
         { id: "1", input: { addedLabelIds: ["l1", "l2"] } },
         { id: "1", input: { removedLabelIds: ["l1"] } },
       ]);
+    });
+
+    it("delegates an issue", async () => {
+      resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
+      await gateway().delegateIssue("1", "app-user");
+      expect(updates()).toEqual([{ id: "1", input: { delegateId: "app-user" } }]);
     });
 
     it("throws when the update doesn't succeed", async () => {

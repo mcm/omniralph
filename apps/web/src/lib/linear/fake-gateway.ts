@@ -14,8 +14,10 @@ import type {
   IssueSummary,
   LinearGateway,
   PlanStep,
+  Team,
   UpdateIssueInput,
   UploadDownload,
+  Viewer,
   WorkflowState,
 } from "./gateway";
 
@@ -36,6 +38,12 @@ export class FakeLinearGateway implements LinearGateway {
   plans = new Map<string, PlanStep[][]>();
   urls: Array<{ sessionId: string; label: string; url: string }> = [];
   labels: IssueLabel[] = [];
+  /** What `listTeams` returns. */
+  teams: Team[] = [{ id: "team-1", key: "ENG", name: "Engineering" }];
+  /** What `getViewer` returns: the app user. */
+  viewer: Viewer = { id: "app-user", name: "Omniralph" };
+  /** Every delegation, by `delegateIssue` or `createIssue` with `delegateId`, in order. */
+  delegations: Array<{ issueId: string; delegateId: string }> = [];
   /** Every team's workflow states, in position order. */
   workflowStates: WorkflowState[] = [
     "backlog",
@@ -101,6 +109,14 @@ export class FakeLinearGateway implements LinearGateway {
   async getOrganization() {
     return { id: "org-1", name: "Acme" };
   }
+  async listTeams(): Promise<Team[]> {
+    this.fail("listTeams");
+    return this.teams.map((t) => ({ ...t }));
+  }
+  async getViewer(): Promise<Viewer> {
+    this.fail("getViewer");
+    return { ...this.viewer };
+  }
   async getIssue(idOrIdentifier: string) {
     this.fail("getIssue");
     return { ...this.find(idOrIdentifier) };
@@ -136,18 +152,20 @@ export class FakeLinearGateway implements LinearGateway {
   }
   async createIssue(input: CreateIssueInput) {
     this.fail("createIssue");
-    return {
-      ...this.add({
-        title: input.title,
-        description: input.description,
-        parentId: input.parentId,
-        teamId: input.teamId,
-        priority: input.priority ?? 0,
-        subIssueSortOrder: input.subIssueSortOrder,
-        labels: input.labels ?? [],
-        projectName: input.projectName,
-      }),
-    };
+    const issue = this.add({
+      title: input.title,
+      description: input.description,
+      parentId: input.parentId,
+      teamId: input.teamId,
+      priority: input.priority ?? 0,
+      subIssueSortOrder: input.subIssueSortOrder,
+      labels: input.labels ?? [],
+      projectName: input.projectName,
+    });
+    if (input.delegateId !== undefined) {
+      this.delegations.push({ issueId: issue.id, delegateId: input.delegateId });
+    }
+    return { ...issue };
   }
   async createBlocksRelation(blockerId: string, blockedId: string) {
     this.blocks.set(blockedId, [...(this.blocks.get(blockedId) ?? []), blockerId]);
@@ -193,6 +211,10 @@ export class FakeLinearGateway implements LinearGateway {
     const issue = this.find(issueId);
     const name = this.labelName(labelId).toLowerCase();
     issue.labels = issue.labels.filter((l) => l.toLowerCase() !== name);
+  }
+  async delegateIssue(issueId: string, delegateId: string) {
+    this.fail("delegateIssue");
+    this.delegations.push({ issueId: this.find(issueId).id, delegateId });
   }
   async createAgentSessionOnIssue(issueId: string) {
     this.fail("createAgentSessionOnIssue");
