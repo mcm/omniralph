@@ -14,6 +14,7 @@ import type {
   IssueSummary,
   LinearGateway,
   PlanStep,
+  UpdateIssueInput,
   UploadDownload,
   WorkflowState,
 } from "./gateway";
@@ -45,6 +46,12 @@ export class FakeLinearGateway implements LinearGateway {
   ].map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
   /** Every `setIssueState` call, in order. */
   stateChanges: Array<{ issueId: string; target: { type?: string; name?: string } }> = [];
+  /** Every `updateIssue` call, in order. */
+  issueUpdates: Array<{ issueId: string; input: UpdateIssueInput }> = [];
+  /** Every `addIssueLabels` / `removeIssueLabel` call, in order. */
+  labelChanges: Array<{ issueId: string; added?: string[]; removed?: string[] }> = [];
+  /** Every agent session `createAgentSessionOnIssue` opened, in order. */
+  sessionsCreated: Array<{ issueId: string; sessionId: string }> = [];
   /** Issue ID -> its comments, oldest first. */
   commentsByIssue = new Map<string, IssueComment[]>();
   /** Upload URL -> the file `downloadUpload` returns (any other URL: 404). */
@@ -152,6 +159,42 @@ export class FakeLinearGateway implements LinearGateway {
     if (!state) return;
     issue.stateType = state.type;
     issue.stateName = state.name;
+  }
+  async updateIssue(issueId: string, input: UpdateIssueInput) {
+    this.fail("updateIssue");
+    this.issueUpdates.push({ issueId, input: { ...input } });
+    const issue = this.find(issueId);
+    if (input.title !== undefined) issue.title = input.title;
+    if (input.description !== undefined) issue.description = input.description;
+    if (input.priority !== undefined) issue.priority = input.priority;
+  }
+  /** A label's name in `labels`, else its ID (issues hold label names). */
+  private labelName(labelId: string): string {
+    return this.labels.find((l) => l.id === labelId)?.name ?? labelId;
+  }
+  async addIssueLabels(issueId: string, labelIds: string[]) {
+    this.fail("addIssueLabels");
+    this.labelChanges.push({ issueId, added: [...labelIds] });
+    const issue = this.find(issueId);
+    const have = new Set(issue.labels.map((l) => l.toLowerCase()));
+    for (const name of labelIds.map((id) => this.labelName(id))) {
+      if (!have.has(name.toLowerCase())) issue.labels = [...issue.labels, name];
+      have.add(name.toLowerCase());
+    }
+  }
+  async removeIssueLabel(issueId: string, labelId: string) {
+    this.fail("removeIssueLabel");
+    this.labelChanges.push({ issueId, removed: [labelId] });
+    const issue = this.find(issueId);
+    const name = this.labelName(labelId).toLowerCase();
+    issue.labels = issue.labels.filter((l) => l.toLowerCase() !== name);
+  }
+  async createAgentSessionOnIssue(issueId: string) {
+    this.fail("createAgentSessionOnIssue");
+    const issue = this.find(issueId);
+    const sessionId = `session-${this.sessionsCreated.length + 1}`;
+    this.sessionsCreated.push({ issueId: issue.id, sessionId });
+    return sessionId;
   }
   async addComment(issueId: string, body: string) {
     this.comments.push({ issueId, body });

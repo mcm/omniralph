@@ -350,6 +350,42 @@ describe("SdkLinearGateway writes", () => {
     });
   });
 
+  describe("issue updates", () => {
+    const updates = () =>
+      calls.filter((c) => c.operation === "UpdateIssue").map((c) => c.variables);
+
+    it("updates only the given title, description and priority", async () => {
+      resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
+      const gw = gateway();
+      await gw.updateIssue("1", { title: "PRD", description: "## Introduction", priority: 2 });
+      await gw.updateIssue("1", { description: "" });
+      await gw.updateIssue("1", {});
+      expect(updates()).toEqual([
+        { id: "1", input: { title: "PRD", description: "## Introduction", priority: 2 } },
+        { id: "1", input: { description: "" } },
+      ]);
+    });
+
+    it("adds and removes labels by ID", async () => {
+      resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
+      const gw = gateway();
+      await gw.addIssueLabels("1", ["l1", "l2"]);
+      await gw.addIssueLabels("1", []);
+      await gw.removeIssueLabel("1", "l1");
+      expect(updates()).toEqual([
+        { id: "1", input: { addedLabelIds: ["l1", "l2"] } },
+        { id: "1", input: { removedLabelIds: ["l1"] } },
+      ]);
+    });
+
+    it("throws when the update doesn't succeed", async () => {
+      resolvers.UpdateIssue = () => ({ issueUpdate: { success: false } });
+      await expect(gateway().removeIssueLabel("1", "l1")).rejects.toBeInstanceOf(
+        LinearMutationError,
+      );
+    });
+  });
+
   it("creates a comment", async () => {
     resolvers.CreateComment = () => ({ commentCreate: { success: true } });
     await gateway().addComment("1", "Done: summary");
@@ -393,6 +429,23 @@ describe("SdkLinearGateway agent sessions", () => {
         signalMetadata: { options: [{ value: "Run it" }] },
       },
     ]);
+  });
+
+  it("opens an agent session on an issue and returns its ID", async () => {
+    resolvers.CreateAgentSessionOnIssue = () => ({
+      agentSessionCreateOnIssue: { success: true, agentSession: { id: "session-9" } },
+    });
+    expect(await gateway().createAgentSessionOnIssue("TOOL-1")).toBe("session-9");
+    expect(calls[0]?.variables).toEqual({ input: { issueId: "TOOL-1" } });
+  });
+
+  it("throws when Linear opens no agent session", async () => {
+    resolvers.CreateAgentSessionOnIssue = () => ({
+      agentSessionCreateOnIssue: { success: true, agentSession: null },
+    });
+    await expect(gateway().createAgentSessionOnIssue("TOOL-1")).rejects.toBeInstanceOf(
+      LinearMutationError,
+    );
   });
 
   it("updates the session plan and adds external URLs", async () => {
