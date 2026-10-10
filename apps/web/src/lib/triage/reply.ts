@@ -24,6 +24,7 @@ import { isStopRequest, parseInstruction } from "@omniralph/ralph";
 import { TriageRunResult, type TriageOutcome } from "@omniralph/shared";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { postActivity, quietly } from "@/lib/ralph/notify";
+import { linearConversation } from "@/lib/ralph/conversation";
 import { removeTriageLabelQuietly } from "./label";
 import { enqueueTriage, prepareTriage, type StartTriageOutcome, type TriageDeps } from "./start";
 
@@ -93,13 +94,13 @@ async function afterReply(
     case "none":
       return { kind: "ignored" };
     case "pending":
-      await postActivity(deps.linear, sessionId, {
+      await postActivity(linearConversation(deps.linear, sessionId), {
         type: "thought",
         body: "Got it. Triage is still running; I'll triage again with this once it finishes.",
       });
       return { kind: "pending" };
     case "conflict":
-      await postActivity(deps.linear, sessionId, {
+      await postActivity(linearConversation(deps.linear, sessionId), {
         type: "response",
         body: "The issue is being triaged in another session right now, so I didn't act on this. Reply again once that triage is over.",
       });
@@ -115,7 +116,7 @@ async function retriage(
   run: TriageRun,
   reply: string,
 ): Promise<ContinueTriageOutcome> {
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(linearConversation(deps.linear, run.linearAgentSessionId), {
     type: "thought",
     body: "Got it. Triaging again with your reply…",
   });
@@ -142,7 +143,7 @@ async function stopTriage(
 ): Promise<TriageReplyOutcome> {
   const stopped = await stopTriageRun(deps.db, run.id);
   if (!stopped) {
-    await postActivity(deps.linear, run.linearAgentSessionId, {
+    await postActivity(linearConversation(deps.linear, run.linearAgentSessionId), {
       type: "response",
       body: "Triage isn't running, so there is nothing to stop. Reply here to triage again.",
     });
@@ -159,7 +160,7 @@ async function stopTriage(
   // A canceled job reports nothing more, so the label trigger ends here.
   await removeTriageLabelQuietly(deps.linear, run.linearIssueId);
   const by = authorName ? ` (requested by ${authorName})` : "";
-  await postActivity(deps.linear, run.linearAgentSessionId, {
+  await postActivity(linearConversation(deps.linear, run.linearAgentSessionId), {
     type: "response",
     body: `Stopped${by}. ${canceled ? "I canceled the triage job, and " : ""}nothing more changes in Linear. Reply here to triage again.`,
   });

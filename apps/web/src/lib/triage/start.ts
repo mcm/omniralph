@@ -29,6 +29,7 @@ import {
 import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
+import { linearConversation } from "@/lib/ralph/conversation";
 import { describeRoute, routeIssue } from "@/lib/ralph/routing";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -192,7 +193,7 @@ export async function prepareTriage(
     const locked = lockedIssues(issue, children);
     if (locked.length > 0) {
       await end("stopped");
-      await postActivity(linear, sessionId, {
+      await postActivity(linearConversation(linear, sessionId), {
         type: "response",
         body: lockedMessage(issue, locked),
       });
@@ -202,7 +203,7 @@ export async function prepareTriage(
     blockers = await loadBlockers(deps, [issue, ...children]);
   } catch (error) {
     await end("failed");
-    await postActivity(linear, sessionId, {
+    await postActivity(linearConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't load the issue from Linear: ${errorMessage(error)}`,
     });
@@ -214,7 +215,7 @@ export async function prepareTriage(
     repository = await resolveRepository(deps, issue);
   } catch (error) {
     await end("failed");
-    await postActivity(linear, sessionId, {
+    await postActivity(linearConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
     });
@@ -283,14 +284,14 @@ export async function enqueueTriage(
     await setTriageRunJob(db, run.id, job.id);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(linear, sessionId, {
+    await postActivity(linearConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't queue the triage: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   }
 
-  await postActivity(linear, sessionId, {
+  await postActivity(linearConversation(linear, sessionId), {
     type: "thought",
     body: queuedMessage(
       issue,
@@ -345,7 +346,7 @@ export async function startTriage(
       });
   if (!created) {
     if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
-    await postActivity(linear, sessionId, {
+    await postActivity(linearConversation(linear, sessionId), {
       type: "response",
       body: `**${issue.identifier}** is already being triaged in another session.`,
     });
