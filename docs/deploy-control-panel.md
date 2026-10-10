@@ -30,9 +30,13 @@ uploads the output with `vercel deploy --prebuilt` (see *Deploying from GitHub A
 `.github/workflows/deploy-web.yml` builds and deploys the control panel:
 
 - **Pushes to `main`** (and manual runs of the workflow on `main`) deploy to **production**.
-- **Pull requests** from branches of this repository deploy a **preview** with their own Neon
-  branch (`preview/<branch>`), deleted when the pull request closes. Pull requests from forks and
-  Dependabot get no preview: they can't read the secrets.
+- **Pull requests** don't deploy previews for now: previews can't complete OAuth sign-in (their
+  callback URLs aren't registered), so the workflow only runs when a pull request closes, to delete
+  the Neon branch (`preview/<branch>`) an earlier preview created. To turn previews back on, add
+  `opened`, `synchronize` and `reopened` back to the workflow's `pull_request` types: pull requests
+  from branches of this repository then deploy a **preview** with their own Neon branch, deleted
+  when the pull request closes. Pull requests from forks and Dependabot get no preview: they can't
+  read the secrets.
 
 Each run pulls the Vercel environment's settings and variables (`vercel pull`), builds with
 `vercel build`, migrates the database (see *Migrations*) and uploads the output with

@@ -4,13 +4,17 @@ name: Deploy web
 # `vercel deploy --prebuilt`: Vercel doesn't build (apps/web/vercel.json turns off Git deployments).
 # Pushes to main (and manual runs on main, e.g. after changing variables) deploy to production;
 # pull requests get a preview with their own Neon branch.
+# Preview deploys are disabled for now (TOOL-236): previews can't complete OAuth sign-in (callback
+# URLs), so they only used up resources. Pull requests only trigger the workflow when they close, so
+# cleanup-preview still deletes the Neon branches of earlier previews. To turn previews back on, add
+# opened, synchronize and reopened back to the pull_request types.
 # Setup (secrets, variables, Neon): docs/deploy-control-panel.md.
 on:
   push:
     branches: [main]
   workflow_dispatch:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
 
 permissions:
   contents: read
