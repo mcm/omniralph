@@ -5,6 +5,7 @@ import { diff, isAncestor, showFile } from "./git.js";
 import { planReview, type SkippedFile } from "./plan.js";
 import {
   buildPrompt,
+  MAX_PREVIOUS_FINDINGS,
   type ChangeRequestText,
   type IncrementalScope,
   type ReviewConfig,
@@ -32,8 +33,13 @@ export const CONVENTIONS_PATH = "CLAUDE.md";
 export interface PreviousReview {
   /** Head commit the last complete review covered; null = review the full diff. */
   headSha: string | null;
-  /** Findings of earlier reviews of this PR that are still open. */
-  openFindings?: readonly Pick<Finding, "path" | "startLine" | "endLine" | "category">[];
+  /**
+   * Findings of earlier reviews of this PR that are still open. The review
+   * drops new findings that repeat them, and re-checks them (with their
+   * title and body, when given) to report the fixed ones.
+   */
+  openFindings?: readonly (Pick<Finding, "path" | "startLine" | "endLine" | "category"> &
+    Partial<Pick<Finding, "title" | "body">>)[];
 }
 
 export interface RunReviewInput {
@@ -83,11 +89,11 @@ export interface ReviewResult {
   /** Findings dropped by validation, diff filtering and dedupe. */
   discarded: { invalid: number; outsideDiff: number; duplicate: number };
   /**
-   * Indexes into `previousReview.openFindings` of the open findings this
-   * review raised again (dropped as duplicates). With a full scope, the
-   * others weren't found in the whole diff.
+   * Indexes into `previousReview.openFindings` of the open findings the
+   * model re-checked and found fixed at the head (only from tasks that
+   * completed, and never one a new finding raised again).
    */
-  repeatedOpenFindings: number[];
+  fixedOpenFindings: number[];
 }
 
 /** Picks the commit range to review: the new commits only when possible. */
@@ -175,7 +181,8 @@ const STOP_PRIORITY: Record<ReviewStopReason, number> = {
 
 /**
  * Reviews `baseSha...headSha` (or only the commits since `previousReview`):
- * diff → plan → for each task: prompt → provider → aggregate → dedupe.
+ * diff → plan → for each task: prompt → provider → aggregate → dedupe. The
+ * previous review's open findings are re-checked along the way.
  * Pure git + model work; posting results to the code host is the caller's job.
  */
 export async function runReview(
@@ -202,6 +209,8 @@ export async function runReview(
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   const discarded = { invalid: 0, outsideDiff: 0, duplicate: 0 };
   const collected: Finding[] = [];
+  const openFindings = input.previousReview?.openFindings ?? [];
+  const fixed = new Set<number>();
   let stopReason: ReviewStopReason = "completed";
   let error: string | undefined;
   let retryAfterMs: number | undefined;
@@ -220,6 +229,7 @@ export async function runReview(
       conventions,
       hints: { hotspots: plan.hotspots, complexityScore: plan.complexityScore },
       incremental,
+      previousFindings: openFindings,
     });
     const result = await provider.review({
       task: { ...task, budget: Math.min(task.budget, remaining) },
@@ -235,6 +245,11 @@ export async function runReview(
     discarded.invalid += result.discarded.invalid;
     discarded.outsideDiff += result.discarded.outsideDiff;
     collected.push(...result.findings);
+    if (result.stopReason === "completed") {
+      for (const id of result.fixedPrevious ?? []) {
+        if (id < Math.min(openFindings.length, MAX_PREVIOUS_FINDINGS)) fixed.add(id);
+      }
+    }
     if (STOP_PRIORITY[result.stopReason] > STOP_PRIORITY[stopReason]) {
       stopReason = result.stopReason;
       error = result.error;
@@ -244,7 +259,8 @@ export async function runReview(
   }
 
   const checked = await makeSelfContained(collected, files, input, logger);
-  const deduped = dedupeFindings(checked, input.previousReview?.openFindings);
+  const deduped = dedupeFindings(checked, openFindings);
+  for (const id of deduped.repeated) fixed.delete(id);
   discarded.duplicate = deduped.suppressed.length;
   if (deduped.suppressed.length > 0) {
     logger.info(
@@ -271,6 +287,6 @@ export async function runReview(
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     scope,
     discarded,
-    repeatedOpenFindings: deduped.repeated,
+    fixedOpenFindings: [...fixed].sort((a, b) => a - b),
   };
 }

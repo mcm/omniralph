@@ -264,7 +264,40 @@ describe("runReview", () => {
     );
     expect(result.findings).toEqual([fresh]);
     expect(result.discarded.duplicate).toBe(1);
-    expect(result.repeatedOpenFindings).toEqual([0]);
+    expect(result.fixedOpenFindings).toEqual([]);
+  });
+
+  it("re-checks open prior findings and reports the ones found fixed", async () => {
+    const open = [
+      finding({ title: "Raised again" }),
+      finding({ path: "src/extra.ts", startLine: 1, endLine: 1, title: "Gone" }),
+      finding({ path: "src/lib.ts", startLine: 40, endLine: 40, title: "Still there" }),
+    ];
+    // Id 0 is marked fixed but raised again; 7 doesn't exist.
+    const provider = new FakeProvider(() => ({
+      findings: [finding({ startLine: 5, endLine: 7 })],
+      fixedPrevious: [0, 1, 7],
+    }));
+    const result = await runReview(
+      input({ previousReview: { headSha: first, openFindings: open } }),
+      {
+        provider,
+        logger: quietLogger,
+      },
+    );
+    expect(provider.requests[0]!.prompt).toContain("# Previous findings");
+    expect(provider.requests[0]!.prompt).toContain("Still there");
+    expect(result.fixedOpenFindings).toEqual([1]);
+
+    const stopped = new FakeProvider(() => ({
+      stopReason: "budget_exhausted",
+      fixedPrevious: [1],
+    }));
+    const partial = await runReview(
+      input({ previousReview: { headSha: first, openFindings: open } }),
+      { provider: stopped, logger: quietLogger },
+    );
+    expect(partial.fixedOpenFindings).toEqual([]);
   });
 
   it("keeps partial findings and reports budget exhaustion and provider errors", async () => {

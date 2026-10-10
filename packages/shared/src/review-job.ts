@@ -39,6 +39,9 @@ export const ReviewJobConfig = z.object({
 });
 export type ReviewJobConfig = z.infer<typeof ReviewJobConfig>;
 
+/** Longest open-finding body a review payload carries. */
+export const MAX_OPEN_FINDING_BODY_CHARS = 1000;
+
 /**
  * Payload of a `review.run` job. It carries everything the agent needs except
  * credentials: git gets a short-lived read-only token from the broker.
@@ -72,7 +75,8 @@ export const ReviewJobPayload = z.object({
    */
   mode: z.enum(REVIEW_MODES).optional(),
   /**
-   * Earlier reviews of the PR, for incremental reviews and dedupe. `headSha`
+   * Earlier reviews of the PR, for incremental reviews, dedupe and re-checking
+   * the open findings (see `ReviewJobResult.fixedOpenFindings`). `headSha`
    * is the last fully (`completed`) reviewed head; null when no review got
    * through the whole diff (e.g. only `budget_exhausted` ones), so the full
    * diff is reviewed but their open findings are still suppressed.
@@ -83,10 +87,15 @@ export const ReviewJobPayload = z.object({
       openFindings: z
         .array(
           z.object({
+            /** The finding's row ID; absent on jobs from before re-checks. */
+            id: z.uuid().optional(),
             path: z.string().min(1),
             startLine: z.int().min(1),
             endLine: z.int().min(1),
             category: FindingCategory,
+            /** Title and (truncated) body, so the review can re-check the finding. */
+            title: z.string().max(200).optional(),
+            body: z.string().max(MAX_OPEN_FINDING_BODY_CHARS).optional(),
           }),
         )
         .max(1000),
@@ -136,11 +145,10 @@ export const ReviewJobResult = z.object({
   }),
   /**
    * Indexes into the payload's `previousReview.openFindings` of the open
-   * findings the review raised again. With a full scope, the other open
-   * findings weren't found in the whole diff and get resolved. Absent from
-   * agents that predate it: then nothing is resolved.
+   * findings the review re-checked and found fixed at the head; they get
+   * resolved. Absent from agents that predate it: then nothing is resolved.
    */
-  repeatedOpenFindings: z.array(z.int().min(0)).max(1000).optional(),
+  fixedOpenFindings: z.array(z.int().min(0)).max(1000).optional(),
   durationMs: z.int().min(0),
 });
 export type ReviewJobResult = z.infer<typeof ReviewJobResult>;

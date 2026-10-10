@@ -13,6 +13,7 @@ import {
 } from "@omniralph/db";
 import {
   FindingCategory,
+  MAX_OPEN_FINDING_BODY_CHARS,
   REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
@@ -38,9 +39,9 @@ export interface EnqueueReviewInput {
    * (`@bot review`, Re-run › Incremental). Both drop duplicates of the PR's
    * open findings. `fresh` (`@bot review fresh`, Re-run › Fresh) reviews the
    * whole diff with no open findings passed, so nothing is dropped; matching
-   * earlier open findings are superseded when it completes. A completed
-   * review of the whole diff resolves the earlier open findings it no longer
-   * raises.
+   * earlier open findings are superseded when it completes. `incremental`
+   * and `full` reviews also re-check the open findings they're given and
+   * resolve the ones they find fixed.
    */
   mode?: ReviewMode;
   /** Review profile to use instead of the repository's (`@bot review deep`). */
@@ -147,7 +148,16 @@ export async function enqueueReview(
       headSha: mode === "full" ? null : previous.headSha,
       openFindings: previous.openFindings.flatMap((f) => {
         const category = FindingCategory.safeParse(f.category);
-        return category.success ? [{ ...f, category: category.data }] : [];
+        return category.success
+          ? [
+              {
+                ...f,
+                category: category.data,
+                title: f.title.slice(0, 200),
+                body: f.body.slice(0, MAX_OPEN_FINDING_BODY_CHARS),
+              },
+            ]
+          : [];
       }),
     },
   } satisfies ReviewJobPayload);

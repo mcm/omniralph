@@ -138,7 +138,10 @@ export interface PreviousReviewState {
   /** Head SHA of the PR's most recent `completed` review; null if none. */
   headSha: string | null;
   /** Open findings of all finished reviews of the PR. */
-  openFindings: Pick<FindingRow, "path" | "startLine" | "endLine" | "category">[];
+  openFindings: Pick<
+    FindingRow,
+    "id" | "path" | "startLine" | "endLine" | "category" | "title" | "body"
+  >[];
 }
 
 /**
@@ -165,10 +168,13 @@ export async function previousReviewState(
     .limit(1);
   const openFindings = await db
     .select({
+      id: findings.id,
       path: findings.path,
       startLine: findings.startLine,
       endLine: findings.endLine,
       category: findings.category,
+      title: findings.title,
+      body: findings.body,
     })
     .from(findings)
     .innerJoin(reviews, eq(reviews.id, findings.reviewId))
@@ -407,15 +413,14 @@ export async function supersedeOpenFindings(
 }
 
 /**
- * After a review got through the whole diff: sets every `open` finding of the
- * PR's earlier reviews (created before this one) to `resolved` unless `keep`
- * says the review still raised it. Returns the findings it resolved. Runs
- * once in effect: a replay finds nothing open left to resolve.
+ * Sets the `open` findings of the PR's earlier reviews (created before this
+ * one) that `resolve` picks to `resolved`. Returns the findings it resolved.
+ * Runs once in effect: a replay finds nothing open left to resolve.
  */
 export async function resolveEarlierOpenFindings(
   db: Database,
   reviewId: string,
-  keep: (prior: FindingRow) => boolean,
+  resolve: (prior: FindingRow) => boolean,
 ): Promise<FindingRow[]> {
   return db.transaction(async (tx: Transaction) => {
     const [review] = await tx
@@ -442,7 +447,7 @@ export async function resolveEarlierOpenFindings(
       )
       .orderBy(asc(findings.createdAt), asc(findings.id))
       .for("update", { of: findings });
-    const ids = prior.filter(({ finding }) => !keep(finding)).map(({ finding }) => finding.id);
+    const ids = prior.filter(({ finding }) => resolve(finding)).map(({ finding }) => finding.id);
     if (ids.length === 0) return [];
     return tx
       .update(findings)

@@ -18,14 +18,47 @@ describe("parseFindingsOutput", () => {
     expect(parseFindingsOutput(JSON.stringify({ findings: [f] }))).toEqual({
       ok: true,
       findings: [f],
+      fixedPrevious: [],
     });
-    expect(parseFindingsOutput(JSON.stringify([f]))).toEqual({ ok: true, findings: [f] });
+    expect(parseFindingsOutput(JSON.stringify([f]))).toEqual({
+      ok: true,
+      findings: [f],
+      fixedPrevious: [],
+    });
     expect(
       parseFindingsOutput("Done.\n```json\n" + JSON.stringify({ findings: [] }) + "\n```"),
     ).toEqual({
       ok: true,
       findings: [],
+      fixedPrevious: [],
     });
+  });
+
+  it("reads the previous findings marked fixed, leaving malformed or conflicting ones open", () => {
+    const previousFindings = [
+      { id: 3, status: "fixed" },
+      { id: 0, status: "fixed" },
+      { id: 1, status: "open" },
+      { id: 2, status: "fixed" },
+      { id: 2, status: "open" },
+      { id: "4", status: "fixed" },
+      { id: -1, status: "fixed" },
+      { id: 5, status: "resolved" },
+      null,
+    ];
+    expect(parseFindingsOutput(JSON.stringify({ findings: [], previousFindings }))).toEqual({
+      ok: true,
+      findings: [],
+      fixedPrevious: [0, 3],
+    });
+    expect(
+      parseFindingsOutput(
+        JSON.stringify({
+          findings: [{ path: "a.ts" }],
+          previousFindings: [{ id: 0, status: "fixed" }],
+        }),
+      ),
+    ).toMatchObject({ ok: false, fixedPrevious: [0] });
   });
 
   it("reports missing JSON, bad JSON, wrong shapes and invalid items", () => {

@@ -34,6 +34,11 @@ export interface TaskReviewResult {
   retryAfterMs?: number;
   /** Items dropped by validation and by diff filtering. */
   discarded: { invalid: number; outsideDiff: number };
+  /**
+   * Ids (positions in the prompt's previous findings) the model re-checked
+   * and found fixed. Only meaningful when `completed`.
+   */
+  fixedPrevious?: number[];
 }
 
 export interface ReviewProvider {

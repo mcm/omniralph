@@ -313,7 +313,14 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       expect(payload.mode).toBe("full");
       expect(payload.previousReview).toEqual({
         headSha: null,
-        openFindings: [{ path: "src/app.ts", startLine: 10, endLine: 12, category: "correctness" }],
+        openFindings: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            startLine: 10,
+            endLine: 12,
+            category: "correctness",
+          }),
+        ],
       });
     });
 
@@ -340,7 +347,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
     it("supersedes a matching open finding, replies with a link and resolves its thread", async () => {
       const { number, findings: prior } = await reviewedPr([
         {},
-        // Another file: no match, so it's resolved instead.
+        // Another file: no match, stays open.
         { path: "src/other.ts" },
         // Same lines, other category: no match.
         { category: "security" },
@@ -352,36 +359,27 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
         status: "superseded",
         supersededByFindingId: rows[0]!.id,
       });
-      expect((await findingRow(prior[1]!.id)).status).toBe("resolved");
-      expect((await findingRow(prior[2]!.id)).status).toBe("resolved");
+      expect((await findingRow(prior[1]!.id)).status).toBe("open");
+      expect((await findingRow(prior[2]!.id)).status).toBe("open");
       expect((await findingRow(prior[2]!.id)).supersededByFindingId).toBeNull();
 
       const thread = prior[0]!.scmCommentId!;
+      expect(state.scm.calls.replyToComment).toHaveLength(1);
       expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
       expect(state.scm.calls.replyToComment[0]!.body).toContain("superseded");
       expect(state.scm.calls.replyToComment[0]!.body).toContain(
         `https://omniralph.example.com/reviews/${reviewId}#finding-${rows[0]!.id}`,
       );
-      expect(state.scm.calls.resolveThread).toEqual(
-        prior.map((f) => ({ number, commentId: f.scmCommentId })),
-      );
+      expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
     });
 
-    it("resolves unmatched open findings and their threads", async () => {
+    it("leaves unmatched open findings alone", async () => {
       const { number, findings: prior } = await reviewedPr();
-      const { reviewId, rows } = await completeFresh(number, [
-        newFinding({ startLine: 40, endLine: 41 }),
-      ]);
+      const { rows } = await completeFresh(number, [newFinding({ startLine: 40, endLine: 41 })]);
       expect(rows).toHaveLength(1);
-      expect((await findingRow(prior[0]!.id)).status).toBe("resolved");
-      const thread = prior[0]!.scmCommentId!;
-      expect(state.scm.calls.replyToComment).toHaveLength(1);
-      expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
-      expect(state.scm.calls.replyToComment[0]!.body).toContain("no longer raises this issue");
-      expect(state.scm.calls.replyToComment[0]!.body).toContain(
-        `https://omniralph.example.com/reviews/${reviewId}`,
-      );
-      expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
+      expect((await findingRow(prior[0]!.id)).status).toBe("open");
+      expect(state.scm.calls.replyToComment).toHaveLength(0);
+      expect(state.scm.calls.resolveThread).toHaveLength(0);
     });
 
     it("logs a failed thread resolve as a warning without failing the review", async () => {
@@ -438,83 +436,101 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
     });
   });
 
-  describe("resolving findings a re-review no longer raises", () => {
-    async function completeFull(number: number, outcome: ReviewJobResult) {
-      const enqueued = await enqueue(number, "full");
+  describe("resolving findings a re-review found fixed", () => {
+    /** Completes a review of the PR whose result marks the `fixed` findings (by ID) fixed. */
+    async function completeReview(
+      number: number,
+      outcome: ReviewJobResult,
+      fixed: string[] = [],
+      mode: "incremental" | "full" = "incremental",
+    ) {
+      const enqueued = await enqueue(number, mode);
       if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
       const job = await reviewJob(enqueued.reviewId);
-      await onReviewJobCompleted(db, { ...job, status: "completed", result: outcome });
+      const given = ReviewJobPayload.parse(job.payload).previousReview?.openFindings ?? [];
+      const fixedOpenFindings = fixed.map((id) => given.findIndex((f) => f.id === id));
+      expect(fixedOpenFindings).not.toContain(-1);
+      await onReviewJobCompleted(db, {
+        ...job,
+        status: "completed",
+        result: { ...outcome, fixedOpenFindings },
+      });
       return enqueued.reviewId;
     }
 
-    it("resolves the open findings a full review didn't raise again, keeping repeats", async () => {
-      const { number, findings: prior } = await reviewedPr([
-        {},
-        { path: "src/other.ts" },
-        // Raised again as a new finding (no repeat reported for it).
-        { path: "src/new.ts", startLine: 1, endLine: 3 },
+    it("passes the open findings' IDs, titles and bodies to the review", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      const enqueued = await enqueue(number, "incremental");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const job = await reviewJob(enqueued.reviewId);
+      expect(ReviewJobPayload.parse(job.payload).previousReview?.openFindings).toEqual([
+        expect.objectContaining({
+          id: prior[0]!.id,
+          title: "Missing null check",
+          body: "`load()` can return undefined.",
+        }),
       ]);
-      const reviewId = await completeFull(number, {
-        ...result([newFinding({ path: "src/new.ts", startLine: 2, endLine: 2 })]),
-        repeatedOpenFindings: [0],
-      });
+    });
+
+    it("resolves only the open findings the review found fixed, with their threads", async () => {
+      const { number, findings: prior } = await reviewedPr([{}, { path: "src/other.ts" }]);
+      const reviewId = await completeReview(number, result([]), [prior[1]!.id]);
 
       expect((await findingRow(prior[0]!.id)).status).toBe("open");
       expect((await findingRow(prior[1]!.id)).status).toBe("resolved");
-      expect((await findingRow(prior[2]!.id)).status).toBe("open");
       const thread = prior[1]!.scmCommentId!;
       expect(state.scm.calls.replyToComment).toHaveLength(1);
       expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
+      expect(state.scm.calls.replyToComment[0]!.body).toContain("found it fixed");
       expect(state.scm.calls.replyToComment[0]!.body).toContain(
         `https://omniralph.example.com/reviews/${reviewId}`,
       );
       expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
     });
 
-    it("keeps open findings on files the review skipped", async () => {
-      const { number, findings: prior } = await reviewedPr([{ path: "src/huge.ts" }]);
-      await completeFull(number, {
-        ...result([]),
-        skipped: [{ path: "src/huge.ts", reason: "budget" }],
-        repeatedOpenFindings: [],
-      });
+    it("resolves fixed findings after an incremental review that stopped early", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      await completeReview(
+        number,
+        {
+          ...result([]),
+          stopReason: "budget_exhausted",
+          scope: { mode: "incremental", fromSha: SHA(2), headSha: HEAD },
+        },
+        [prior[0]!.id],
+      );
+      expect((await findingRow(prior[0]!.id)).status).toBe("resolved");
+    });
+
+    it("keeps a finding open when a new finding raises it again", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      await completeReview(number, result([newFinding()]), [prior[0]!.id], "full");
       expect((await findingRow(prior[0]!.id)).status).toBe("open");
       expect(state.scm.calls.resolveThread).toHaveLength(0);
     });
 
-    it("resolves nothing when the review stopped early or only saw new commits", async () => {
+    it("resolves nothing when no finding was found fixed or the agent doesn't report it", async () => {
       const { number, findings: prior } = await reviewedPr();
-      await completeFull(number, {
-        ...result([]),
-        stopReason: "budget_exhausted",
-        repeatedOpenFindings: [],
-      });
+      await completeReview(number, result([]), [], "full");
       const other = await reviewedPr();
-      await completeFull(other.number, {
-        ...result([]),
-        scope: { mode: "incremental", fromSha: SHA(2), headSha: HEAD },
-        repeatedOpenFindings: [],
-      });
+      const enqueued = await enqueue(other.number, "full");
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const job = await reviewJob(enqueued.reviewId);
+      await onReviewJobCompleted(db, { ...job, status: "completed", result: result([]) });
       expect((await findingRow(prior[0]!.id)).status).toBe("open");
       expect((await findingRow(other.findings[0]!.id)).status).toBe("open");
       expect(state.scm.calls.resolveThread).toHaveLength(0);
     });
 
-    it("resolves nothing for an agent that doesn't report repeats", async () => {
-      const { number, findings: prior } = await reviewedPr();
-      await completeFull(number, result([]));
-      expect((await findingRow(prior[0]!.id)).status).toBe("open");
-    });
-
     it("logs a failed thread resolve without failing the review", async () => {
       const { number, findings: prior } = await reviewedPr();
       state.scm.failResolve.add(prior[0]!.scmCommentId!);
-      const reviewId = await completeFull(number, { ...result([]), repeatedOpenFindings: [] });
+      const reviewId = await completeReview(number, result([]), [prior[0]!.id]);
       expect((await findingRow(prior[0]!.id)).status).toBe("resolved");
       const [review] = await db.select().from(reviews).where(eq(reviews.id, reviewId));
       expect(review!.status).toBe("completed");
       expect(console.warn).toHaveBeenCalledWith(
-        "couldn't resolve a stale finding's SCM thread",
+        "couldn't resolve a fixed finding's SCM thread",
         expect.objectContaining({ findingId: prior[0]!.id, error: "GitHub said no" }),
       );
     });

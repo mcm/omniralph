@@ -27,7 +27,7 @@ const base: ReviewResult = {
   stopReason: "completed",
   scope: { mode: "full", baseSha: "a", headSha: "b" },
   discarded: { invalid: 0, outsideDiff: 0, duplicate: 0 },
-  repeatedOpenFindings: [],
+  fixedOpenFindings: [],
 };
 
 const url = "https://omniralph.example.com/reviews/r-1";
