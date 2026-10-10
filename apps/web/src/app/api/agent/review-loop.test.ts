@@ -37,17 +37,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
-}));
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -64,7 +55,7 @@ process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
 process.env.APP_URL = "https://omniralph.example.com";
 
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
-const { VercelQueuesDispatcher } = await import("@/lib/dispatch");
+const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { POST: start } = await import("./jobs/[id]/start/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
@@ -262,13 +253,12 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   });
 
   beforeEach(() => {
-    state.sends.length = 0;
     github.reviews.length = 0;
     postReview.mockClear();
   });
 
   function dispatcher() {
-    return new VercelQueuesDispatcher({ db });
+    return new PostgresDispatcher({ db });
   }
 
   async function newAgent() {
@@ -360,9 +350,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
 
     // The job carries the resolved config and no credentials.
     const job = await jobRow(jobId);
-    expect(state.sends).toEqual([
-      expect.objectContaining({ topic: `review-jobs-org-${orgId}`, payload: { jobId } }),
-    ]);
+    expect(job).toMatchObject({ organizationId: orgId, status: "queued", targetAgentId: null });
     const payload = ReviewJobPayload.parse(job.payload);
     expect(payload).toMatchObject({
       reviewId,

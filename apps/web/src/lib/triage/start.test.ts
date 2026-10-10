@@ -21,8 +21,7 @@ import { TriageRunPayload } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { TriageDeps } from "./start";
@@ -42,7 +41,6 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
   let orgId: string;
   let repoId: string;
   let linear: FakeLinearGateway;
-  let publisher: RecordingPublisher;
   let sessionSeq = 0;
 
   const fakeAdapter = {
@@ -53,7 +51,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     db,
     organizationId: orgId,
     linear,
-    dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
 
@@ -119,7 +117,6 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     await db.delete(jobs);
     await db.delete(ralphRuns);
     linear = new FakeLinearGateway();
-    publisher = new RecordingPublisher();
   });
 
   /** The queued job's payload, parsed. */
@@ -161,7 +158,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
         linear,
-        dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+        dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
     );
@@ -182,8 +179,9 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       type: "triage.run",
       repositoryId: repoId,
       organizationId: orgId,
+      status: "queued",
+      targetAgentId: null,
     });
-    expect(publisher.sent).toEqual([{ topic: `triage-jobs-org-${orgId}`, jobId: job.id }]);
 
     const payload = await payloadOf(job.id);
     expect(payload).toMatchObject({
@@ -237,7 +235,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     const run = await getTriageRunBySession(db, event.sessionId);
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job.repositoryId).toBeNull();
-    expect(publisher.sent).toEqual([{ topic: `triage-jobs-org-${orgId}`, jobId: job.id }]);
+    expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     const payload = await payloadOf(job.id);
     expect(payload.repository).toBeNull();
     expect(payload.reply).toBeNull();
@@ -246,7 +244,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
 
     // A redelivered event doesn't queue a second job.
     expect(await startTriage(event, deps())).toMatchObject({ status: "exists" });
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
   });
 
   it("changes nothing for an issue in progress", async () => {
@@ -262,7 +260,6 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     expect(outcome).toEqual({ status: "in_progress", issues: ["ENG-20"] });
     expect(await getTriageRunBySession(db, event.sessionId)).toBeNull();
     expect(await db.select().from(jobs)).toEqual([]);
-    expect(publisher.sent).toEqual([]);
     const [response] = linear.bodies(event.sessionId, "response");
     expect(response).toContain("**ENG-20** is already in progress or done");
     expect(response).toContain("changed nothing in Linear");
@@ -301,7 +298,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     const second = mention(issue.id);
 
     expect(await startTriage(second, deps())).toMatchObject({ status: "already_running" });
-    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(jobs)).toHaveLength(1);
     expect(linear.bodies(second.sessionId, "response")[0]).toContain(
       "already being triaged in another session",
     );
@@ -315,7 +312,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
         linear,
-        dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+        dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
     );
@@ -341,7 +338,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
         linear,
-        dispatcher: new VercelQueuesDispatcher({ db, publisher }),
+        dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
     );

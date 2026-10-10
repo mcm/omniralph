@@ -4,7 +4,16 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { claimJob, failJob, getJob, insertJob, renewJobLeases, type NewJobInput } from "./jobs.js";
+import { listQueuedJobsTargetingAgent } from "./agents.js";
+import {
+  claimJob,
+  failJob,
+  getJob,
+  insertJob,
+  renewJobLeases,
+  setQueuedJobTarget,
+  type NewJobInput,
+} from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import { agents, jobs, organizations } from "./schema.js";
 
@@ -238,5 +247,27 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     // The renewed job isn't taken over; the other one is.
     const result = await claim(agentA2, at(150), { capabilities: ["review"] });
     expect(result.claim?.job.id).toBe(theirs);
+  });
+
+  it("retargets only queued jobs and lists the queued jobs targeting an agent", async () => {
+    const queued = await enqueue({ createdAt: at(-10), targetAgentId: agentA });
+    const running = await enqueue({ createdAt: at(-20), targetAgentId: agentA });
+    await claim(agentA, at(0));
+    const later = await enqueue({ createdAt: at(10), targetAgentId: agentA });
+    await enqueue({ targetAgentId: agentA2 });
+    await enqueue();
+
+    expect((await listQueuedJobsTargetingAgent(db, agentA)).map((j) => j.id)).toEqual([
+      queued,
+      later,
+    ]);
+
+    expect(await setQueuedJobTarget(db, queued, agentA2)).toBe(true);
+    expect(await setQueuedJobTarget(db, later, null)).toBe(true);
+    expect(await setQueuedJobTarget(db, running, null)).toBe(false);
+    expect((await getJob(db, queued))?.targetAgentId).toBe(agentA2);
+    expect((await getJob(db, later))?.targetAgentId).toBeNull();
+    expect((await getJob(db, running))?.targetAgentId).toBe(agentA);
+    expect(await listQueuedJobsTargetingAgent(db, agentA)).toEqual([]);
   });
 });

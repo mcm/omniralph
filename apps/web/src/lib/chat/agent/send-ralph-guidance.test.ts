@@ -28,8 +28,7 @@ import type { Thread } from "chat";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
@@ -68,7 +67,7 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
     db,
     organizationId,
     linear,
-    dispatcher: new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() }),
+    dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => new FakeScmAdapter().asAdapter(),
     chat: {
       db,

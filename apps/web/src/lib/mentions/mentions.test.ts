@@ -123,7 +123,6 @@ function fakeAdapter() {
 
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
-  sends: [] as { topic: string; payload: unknown }[],
   scm: undefined as unknown as ReturnType<typeof fakeAdapter>,
   linear: undefined as unknown as FakeLinearGateway,
 }));
@@ -131,14 +130,6 @@ vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => state.scm.adapter,
-}));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown) {
-      state.sends.push({ topic, payload });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -194,7 +185,6 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
   beforeEach(() => {
     state.scm = fakeAdapter();
     state.linear = new FakeLinearGateway();
-    state.sends.length = 0;
     deferred = [];
   });
 
@@ -496,7 +486,12 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
 
       const created = (await replyJobs()).slice(before);
       expect(created).toHaveLength(1);
-      expect(created[0]).toMatchObject({ capability: "review", repositoryId: repoId });
+      expect(created[0]).toMatchObject({
+        capability: "review",
+        repositoryId: repoId,
+        status: "queued",
+        targetAgentId: null,
+      });
       const payload = ReviewReplyJobPayload.parse(created[0]!.payload);
       expect(payload).toMatchObject({
         findingId: finding.id,
@@ -511,7 +506,6 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         threadCommentId: commentId,
         finding: { path: "src/app.ts", startLine: 3, endLine: 4, title: "Missing null check" },
       });
-      expect(state.sends.some((s) => s.topic === `review-jobs-org-${orgId}`)).toBe(true);
       // The answer is the reply; nothing is posted yet.
       expect(state.scm.calls.replyToComment).toHaveLength(0);
     });

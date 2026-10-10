@@ -3,26 +3,18 @@ import {
   getAgent,
   getJob,
   insertJob,
-  markJobPublished,
   pinnedAgentFor,
   requestJobCancel,
+  setQueuedJobTarget,
   type CancelJobResult,
   type Database,
   type Job,
   type NewJobInput,
 } from "@omniralph/db";
-import {
-  agentTopic,
-  capabilityTopic,
-  JOB_RETENTION_SECONDS,
-  type JobMessage,
-} from "@omniralph/shared";
-import { QueueClient } from "@vercel/queue";
-import { publishRegion } from "./config";
 
 export interface DispatchJobInput extends NewJobInput {
   /**
-   * Send to this agent's topic regardless of pins (e.g. `repo.sync` pre-clones).
+   * Only this agent may claim the job, regardless of pins (e.g. `repo.sync` pre-clones).
    * Must be an agent of the job's organization.
    */
   targetAgentId?: string;
@@ -30,72 +22,43 @@ export interface DispatchJobInput extends NewJobInput {
 
 export interface DispatchedJob {
   job: Job;
-  /** False when an active job with the same `dedupeKey` already existed (nothing was published). */
+  /** False when an active job with the same `dedupeKey` already existed (nothing was inserted). */
   created: boolean;
 }
 
 /**
- * Creates jobs and gets them to agents. Postgres holds the job; the transport
- * only carries `{ jobId }`. The only place that knows how jobs are delivered
- * (see `docs/adr/0001-job-dispatch.md`).
+ * Creates jobs and gets them to agents, which claim them from Postgres. The
+ * only place that decides which agents may claim a job.
  */
 export interface JobDispatcher {
-  /** Inserts the job (deduped by `dedupeKey`) and publishes it to its topic. */
+  /** Inserts the job (deduped by `dedupeKey`), claimable by its target agent or any of its organization's. */
   createAndPublish(input: DispatchJobInput): Promise<DispatchedJob>;
   /** Requests cancellation (queued jobs are canceled at once, running ones via heartbeat). */
   cancel(jobId: string): Promise<CancelJobResult>;
   /**
-   * Publishes a `queued` job again to the topic its repo's pins now resolve to
-   * (e.g. after the agent it was sent to was revoked). False if it isn't queued.
+   * Re-resolves which agent may claim a `queued` job from its repo's current
+   * pins (e.g. after the agent it targeted was revoked). False if it isn't queued.
    */
   republish(jobId: string): Promise<boolean>;
 }
 
-/** The subset of `QueueClient` the dispatcher uses. */
-export interface QueuePublisher {
-  send(
-    topic: string,
-    payload: JobMessage,
-    options: { idempotencyKey: string; retentionSeconds: number },
-  ): Promise<{ messageId: string | null }>;
-}
-
 /**
- * `JobDispatcher` on Vercel Queues (poll mode). Messages are published
- * deploymentless (`deploymentId: null`) so they survive redeploys, with
- * `idempotencyKey = jobId` and 24h retention, to the job's organization's
- * `<capability>-jobs-org-<organizationId>`, or to
- * `<capability>-jobs-agent-<agentId>` when the repo is pinned (to an agent of
- * that organization).
+ * `JobDispatcher` on Postgres: the `jobs` table is the queue and agents claim
+ * jobs from it. Dispatching only inserts the job, with `target_agent_id` set to
+ * the given target agent, else the repo's pinned agent (both of the job's
+ * organization), else null (any agent of the organization).
  */
-export class VercelQueuesDispatcher implements JobDispatcher {
+export class PostgresDispatcher implements JobDispatcher {
   private readonly db: Database;
-  private publisher: QueuePublisher | undefined;
 
-  constructor(options: { db: Database; publisher?: QueuePublisher }) {
+  constructor(options: { db: Database }) {
     this.db = options.db;
-    this.publisher = options.publisher;
   }
 
   async createAndPublish(input: DispatchJobInput): Promise<DispatchedJob> {
     const { targetAgentId, ...jobInput } = input;
-    const { job, created } = await insertJob(this.db, jobInput);
-    // An existing job whose publish failed (topic still null) is published again;
-    // the idempotency key makes a duplicate publish harmless.
-    if (!created && job.topic !== null) return { job, created };
-
-    return { job: await this.publish(job, targetAgentId), created };
-  }
-
-  private async publish(job: Job, targetAgentId: string | undefined): Promise<Job> {
-    const topic = await this.topicFor(job, targetAgentId);
-    const { messageId } = await this.getPublisher().send(
-      topic,
-      { jobId: job.id },
-      { idempotencyKey: job.id, retentionSeconds: JOB_RETENTION_SECONDS },
-    );
-    await markJobPublished(this.db, job.id, { topic, messageId });
-    return { ...job, topic, queueMessageId: messageId };
+    const target = await this.targetFor(jobInput, targetAgentId);
+    return insertJob(this.db, { ...jobInput, targetAgentId: target });
   }
 
   cancel(jobId: string): Promise<CancelJobResult> {
@@ -105,29 +68,22 @@ export class VercelQueuesDispatcher implements JobDispatcher {
   async republish(jobId: string): Promise<boolean> {
     const job = await getJob(this.db, jobId);
     if (!job || job.status !== "queued") return false;
-    await this.publish(job, undefined);
-    return true;
+    return setQueuedJobTarget(this.db, job.id, await this.targetFor(job, undefined));
   }
 
-  private async topicFor(job: Job, targetAgentId: string | undefined): Promise<string> {
+  private async targetFor(
+    job: Pick<NewJobInput, "organizationId" | "repositoryId">,
+    targetAgentId: string | undefined,
+  ): Promise<string | null> {
     if (targetAgentId) {
       const target = await getAgent(this.db, targetAgentId);
       if (target?.organizationId !== job.organizationId) {
-        throw new Error(`Agent ${targetAgentId} isn't in job ${job.id}'s organization`);
+        throw new Error(
+          `Agent ${targetAgentId} isn't in organization ${job.organizationId} of the job`,
+        );
       }
-      return agentTopic(job.capability, targetAgentId);
+      return targetAgentId;
     }
-    const pinned = job.repositoryId
-      ? await pinnedAgentFor(this.db, job.organizationId, job.repositoryId)
-      : null;
-    return pinned
-      ? agentTopic(job.capability, pinned)
-      : capabilityTopic(job.capability, job.organizationId);
-  }
-
-  private getPublisher(): QueuePublisher {
-    // Created on first publish: the client resolves its OIDC token per request.
-    this.publisher ??= new QueueClient({ region: publishRegion(), deploymentId: null });
-    return this.publisher;
+    return job.repositoryId ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId) : null;
   }
 }

@@ -40,8 +40,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeAgent } from "@/lib/agent-auth/revoke";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
@@ -80,7 +79,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   let agentA: string;
   let agentB: string;
   let linear: FakeLinearGateway;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
 
@@ -168,7 +167,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
     });
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher: new RecordingPublisher() });
+    dispatcher = new PostgresDispatcher({ db });
   });
 
   /** A new agent session on `issueId`: a delegation, or a mention with `body`. */

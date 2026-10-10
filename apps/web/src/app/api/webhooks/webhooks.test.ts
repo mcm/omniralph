@@ -21,23 +21,31 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Dispatch from "@/lib/dispatch";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
-  sends: [] as { topic: string; payload: unknown; options: unknown }[],
-  failSends: false,
+  failDispatch: false,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@vercel/queue", () => ({
-  QueueClient: class {
-    async send(topic: string, payload: unknown, options: unknown) {
-      if (state.failSends) throw new Error("queue unavailable");
-      state.sends.push({ topic, payload, options });
-      return { messageId: `msg-${state.sends.length}` };
-    }
-  },
-}));
+vi.mock("@/lib/dispatch", async (importOriginal) => {
+  const actual = await importOriginal<typeof Dispatch>();
+  return {
+    ...actual,
+    getDispatcher: (): Dispatch.JobDispatcher => {
+      const dispatcher = new actual.PostgresDispatcher({ db: state.db });
+      return {
+        createAndPublish: (input) =>
+          state.failDispatch
+            ? Promise.reject(new Error("database unavailable"))
+            : dispatcher.createAndPublish(input),
+        cancel: (jobId) => dispatcher.cancel(jobId),
+        republish: (jobId) => dispatcher.republish(jobId),
+      };
+    },
+  };
+});
 
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 delete process.env.GITHUB_APP_KMS_ISSUER_ID;
@@ -226,7 +234,6 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
   });
 
   beforeEach(async () => {
-    state.sends.length = 0;
     gitlabMr.lookups = 0;
     gitlabMr.delayMs = 0;
     for (const id of [githubRepoId, gitlabRepoId]) {
@@ -275,12 +282,11 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         baseSha: BASE_SHA,
         changeRequest: { title: "Add login", description: "Please review", author: "octocat" },
       });
-      expect(state.sends).toEqual([
-        expect.objectContaining({
-          topic: `review-jobs-org-${orgId}`,
-          payload: { jobId: body.jobId },
-        }),
-      ]);
+      expect(job).toMatchObject({
+        organizationId: orgId,
+        status: "queued",
+        targetAgentId: null,
+      });
     });
 
     it("enqueues reopened, ready_for_review and synchronize events", async () => {
@@ -302,7 +308,6 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       unsigned.headers.delete("x-hub-signature-256");
       expect((await github(unsigned)).status).toBe(401);
       expect(await prJobs(githubRepoId, number)).toHaveLength(0);
-      expect(state.sends).toHaveLength(0);
     });
 
     it("verifies workflow_run deliveries and ignores them without ralph", async () => {
@@ -317,6 +322,8 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
           pull_requests: [{ number: 1 }],
         },
       });
+      const jobCount = async () => (await db.select().from(jobs)).length;
+      const before = await jobCount();
       const forged = await github(
         githubRequest(payload("failure"), { event: "workflow_run", secret: "wrong-secret" }),
       );
@@ -325,7 +332,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       expect(await passed.json()).toEqual({ status: "ignored", reason: "ci_not_failed" });
       const failed = await github(githubRequest(payload("failure"), { event: "workflow_run" }));
       expect(await failed.json()).toEqual({ status: "ignored", reason: "ralph_disabled" });
-      expect(state.sends).toHaveLength(0);
+      expect(await jobCount()).toBe(before);
     });
 
     it("skips drafts unless includeDrafts (triggers.drafts) is on", async () => {
@@ -361,7 +368,6 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       expect(await unknown.json()).toEqual({ status: "ignored", reason: "unknown_repository" });
 
       expect(await prJobs(githubRepoId, number)).toHaveLength(0);
-      expect(state.sends).toHaveLength(0);
     });
 
     it("honours the onOpen and onPush triggers", async () => {
@@ -413,7 +419,6 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
 
       expect(await prJobs(githubRepoId, number)).toHaveLength(1);
       expect(await db.select().from(reviews).where(eq(reviews.prNumber, number))).toHaveLength(1);
-      expect(state.sends).toHaveLength(1);
       const [row] = await db
         .select()
         .from(webhookDeliveries)
@@ -430,21 +435,22 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       const delivery = randomUUID();
       const payload = githubPayload("opened", { number });
       const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-      state.failSends = true;
+      state.failDispatch = true;
       const failed = await github(githubRequest(payload, { delivery })).finally(() => {
-        state.failSends = false;
+        state.failDispatch = false;
         error.mockRestore();
       });
       expect(failed.status).toBe(500);
-      expect(state.sends).toHaveLength(0);
+      expect(await prJobs(githubRepoId, number)).toHaveLength(0);
+      expect(await db.select().from(reviews).where(eq(reviews.prNumber, number))).toHaveLength(0);
 
-      // The job row survived the failed publish; the redelivery publishes it.
+      // The delivery was released, so the redelivery enqueues the review.
       const retried = await github(githubRequest(payload, { delivery }));
       expect(retried.status).toBe(200);
-      const [job] = await prJobs(githubRepoId, number);
-      expect(await retried.json()).toEqual({ status: "duplicate", jobId: job!.id });
-      expect(job!.topic).toBe(`review-jobs-org-${orgId}`);
-      expect(state.sends).toEqual([expect.objectContaining({ payload: { jobId: job!.id } })]);
+      const [job, ...others] = await prJobs(githubRepoId, number);
+      expect(others).toHaveLength(0);
+      expect(await retried.json()).toMatchObject({ status: "enqueued", jobId: job!.id });
+      expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     });
   });
 

@@ -41,8 +41,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VercelQueuesDispatcher } from "@/lib/dispatch/dispatcher";
-import { RecordingPublisher } from "@/lib/dispatch/recording-publisher";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
@@ -84,8 +83,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   let orgId: string;
   let agentA: string;
   let linear: FakeLinearGateway;
-  let publisher: RecordingPublisher;
-  let dispatcher: VercelQueuesDispatcher;
+  let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
   let repoId: string;
@@ -148,8 +146,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       .returning({ id: agents.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
-    publisher = new RecordingPublisher();
-    dispatcher = new VercelQueuesDispatcher({ db, publisher });
+    dispatcher = new PostgresDispatcher({ db });
   });
 
   async function delegate(issueId: string): Promise<LinearRun> {
@@ -791,7 +788,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         advanced: { action: "preparing" },
       });
       const job = await activeJob(run.id);
-      expect(job).toMatchObject({ type: "ralph.prepare", topic: `ralph-jobs-agent-${agentA}` });
+      expect(job).toMatchObject({ type: "ralph.prepare", targetAgentId: agentA });
       const payload = await prepare(run.id, {});
       expect(payload).toMatchObject({
         commands: PREPARE_COMMANDS,
