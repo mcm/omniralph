@@ -1,4 +1,7 @@
 import { createHmac, generateKeyPairSync, randomBytes } from "node:crypto";
+import type { IncomingMessage } from "node:http";
+import { Readable } from "node:stream";
+import type { AttachmentTransport } from "@chat-adapter/slack";
 import { createMockLogger, createMockState } from "@chat-adapter/tests";
 import {
   chatIdentities,
@@ -98,6 +101,13 @@ const server = setupServer(
     });
     return HttpResponse.json({ ok: true, message_ts: "1700000098.000100" });
   }),
+  http.post("https://slack.com/api/assistant.threads.setStatus", () =>
+    HttpResponse.json({ ok: true }),
+  ),
+  http.post(
+    "https://discord.com/api/v10/channels/:channel/typing",
+    () => new HttpResponse(null, { status: 204 }),
+  ),
   http.post(
     "https://discord.com/api/v10/channels/:channel/messages/:message/threads",
     ({ params }) =>
@@ -128,6 +138,20 @@ const server = setupServer(
     },
   ),
 );
+
+/**
+ * Attachment downloads through `fetch`, so msw serves them: the adapters'
+ * own transport resolves DNS itself, which msw doesn't intercept.
+ */
+const fetchFileTransport: AttachmentTransport = async (url, signal, headers) => {
+  const res = await fetch(url, { signal, headers });
+  const body = Readable.from([Buffer.from(await res.arrayBuffer())]) as IncomingMessage;
+  return Object.assign(body, {
+    statusCode: res.status,
+    statusMessage: res.statusText,
+    headers: Object.fromEntries(res.headers),
+  });
+};
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
@@ -195,7 +219,14 @@ function discordGatewayRequest(event: unknown, token = DISCORD.botToken): Reques
 
 function discordMessage(
   guild: string,
-  data: { id: string; channel: string; content: string; author?: string; mention?: boolean },
+  data: {
+    id: string;
+    channel: string;
+    content: string;
+    author?: string;
+    mention?: boolean;
+    attachments?: Array<Record<string, unknown>>;
+  },
 ) {
   const author = data.author ?? "D1";
   return {
@@ -216,7 +247,7 @@ function discordMessage(
       timestamp: new Date().toISOString(),
       mentions: data.mention ? [{ id: DISCORD_APP_ID, username: "omniralph" }] : [],
       mention_roles: [],
-      attachments: [],
+      attachments: data.attachments ?? [],
     },
   };
 }
@@ -259,8 +290,19 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       handler,
       logger,
       encryptionKey: ENCRYPTION_KEY,
-      slackOptions: { webClientOptions: { retryConfig: { retries: 0 } } },
+      slackOptions: {
+        webClientOptions: { retryConfig: { retries: 0 } },
+        fileTransport: fetchFileTransport,
+      },
       env: ENV,
+    });
+    // Discord takes no transport: its downloads go through `fetch` (msw) too.
+    Object.assign(bot.adapters.discord!, {
+      async downloadAttachment(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`);
+        return Buffer.from(await res.arrayBuffer());
+      },
     });
   };
 
@@ -518,6 +560,168 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
       expect(slackUninstalledId({ type: "event_callback", event: { type: "app_mention" } })).toBe(
         null,
       );
+    });
+  });
+
+  describe("attachments", () => {
+    /** A tiny PNG (signature + IHDR start): enough for the type check. */
+    const PNG = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    ]);
+    type CallOptions = Parameters<MockLanguageModelV2["doGenerate"]>[0];
+
+    /** The control-panel agent with a model that records what it was sent. */
+    function agentWithModel() {
+      const calls: CallOptions[] = [];
+      const model = new MockLanguageModelV2({
+        doGenerate: async (options) => {
+          calls.push(options);
+          return {
+            content: [{ type: "text", text: "I see it." }],
+            finishReason: "stop",
+            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+            warnings: [],
+          };
+        },
+      });
+      build(createChatAgentHandler({ db, model, tools: {}, env: ENV }));
+      return calls;
+    }
+
+    /** The user messages' parts the model got in a call. */
+    const userParts = (call: CallOptions) =>
+      call.prompt.flatMap((m) =>
+        m.role === "user"
+          ? m.content.map((p) =>
+              p.type === "text"
+                ? { type: "text", text: p.text }
+                : {
+                    type: p.type,
+                    mediaType: p.mediaType,
+                    data: Buffer.from(p.data as Uint8Array),
+                  },
+            )
+          : [],
+      );
+
+    const storedAttachments = async () =>
+      (await db.select({ attachments: chatMessages.attachments }).from(chatMessages)).map(
+        (r) => r.attachments,
+      );
+
+    it("passes a Slack image to the model, fetched with the bot token, and fetches it again on a later turn", async () => {
+      const FILE = "https://files.slack.com/files-pri/T1-F1/shot.png";
+      const auth: Array<string | null> = [];
+      server.use(
+        http.get(FILE, ({ request }) => {
+          auth.push(request.headers.get("authorization"));
+          return new HttpResponse(PNG, { headers: { "content-type": "image/png" } });
+        }),
+      );
+      const calls = agentWithModel();
+      await slack(
+        slackEvent("T1", {
+          type: "app_mention",
+          user: "U1",
+          text: `<@${SLACK_BOT_USER}> what is wrong here?`,
+          ts: MENTION_TS,
+          channel: "C1",
+          files: [
+            {
+              id: "F1",
+              name: "shot.png",
+              mimetype: "image/png",
+              size: PNG.length,
+              url_private: FILE,
+            },
+          ],
+        }),
+      );
+
+      expect(calls).toHaveLength(1);
+      const parts = userParts(calls[0]!);
+      expect(parts[0]).toMatchObject({ type: "text" });
+      expect((parts[0] as { text: string }).text).toMatch(
+        /\[attachment [0-9a-f]{8}-1: shot\.png \(image\/png, 16 B\) — image follows\]/,
+      );
+      expect(parts[1]).toEqual({ type: "file", mediaType: "image/png", data: PNG });
+      // Only metadata is recorded, never the bytes.
+      const [stored] = await storedAttachments();
+      expect(stored).toEqual([
+        {
+          type: "image",
+          name: "shot.png",
+          mimeType: "image/png",
+          size: PNG.length,
+          url: FILE,
+          fetchMetadata: expect.objectContaining({ url: FILE, teamId: "T1" }),
+        },
+      ]);
+      expect(JSON.stringify(stored)).not.toContain(PNG.toString("base64"));
+
+      // A later reply: the screenshot is fetched again from the stored metadata.
+      await slack(slackReply("T1", "and now?", "1700000001.000100"));
+      expect(calls).toHaveLength(2);
+      expect(userParts(calls[1]!)).toContainEqual({
+        type: "file",
+        mediaType: "image/png",
+        data: PNG,
+      });
+      expect(auth).toEqual(["Bearer xoxb-T1", "Bearer xoxb-T1"]);
+    });
+
+    it("passes a Discord text file and tells the model which files it skipped", async () => {
+      const LOG = "https://cdn.discordapp.com/attachments/1/2/app.log";
+      const MISSING = "https://cdn.discordapp.com/attachments/1/3/gone.png";
+      server.use(
+        http.get(LOG, () =>
+          HttpResponse.text("Error: boom at login.ts:12", {
+            headers: { "content-type": "text/plain" },
+          }),
+        ),
+        http.get(MISSING, () => new HttpResponse(null, { status: 404 })),
+      );
+      const calls = agentWithModel();
+      const file = (id: string, filename: string, contentType: string, size: number) => ({
+        id,
+        filename,
+        content_type: contentType,
+        size,
+        url: `https://cdn.discordapp.com/attachments/1/${id}/${filename}`,
+        proxy_url: `https://media.discordapp.net/attachments/1/${id}/${filename}`,
+      });
+      await discord(
+        discordMessage("G1", {
+          id: "M1",
+          channel: "CH1",
+          content: `<@${DISCORD_APP_ID}> why does login fail?`,
+          mention: true,
+          attachments: [
+            file("2", "app.log", "text/plain; charset=utf-8", 26),
+            file("3", "gone.png", "image/png", 100),
+            file("4", "demo.mov", "video/quicktime", 1000),
+            file("5", "huge.png", "image/png", 50 * 1024 * 1024),
+          ],
+        }),
+      );
+
+      expect(calls).toHaveLength(1);
+      const parts = userParts(calls[0]!);
+      const text = (parts[0] as { text: string }).text;
+      expect(text).toContain("app.log (text, 26 B) — its text follows as a file]");
+      expect(text).toContain("[attachment skipped: gone.png — couldn't be fetched]");
+      expect(text).toContain("[attachment skipped: demo.mov — unsupported type (video/quicktime)]");
+      expect(text).toContain(
+        "[attachment skipped: huge.png — too large (50 MB; the limit is 5 MB)]",
+      );
+      expect(parts.slice(1)).toHaveLength(1);
+      expect(parts[1]).toMatchObject({ type: "file", mediaType: "text/plain" });
+      const fileText = (parts[1] as { data: Buffer }).data.toString("utf8");
+      expect(fileText).toContain("<untrusted-chat-attachment>");
+      expect(fileText).toContain("Error: boom at login.ts:12");
+      expect((await storedAttachments())[0]).toHaveLength(4);
+      // The turn itself was answered.
+      expect(posts.map((p) => p.text)).toContain("I see it.");
     });
   });
 

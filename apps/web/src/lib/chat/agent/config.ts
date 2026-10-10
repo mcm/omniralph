@@ -23,3 +23,22 @@ export function chatAgentConfig(env: NodeJS.ProcessEnv = process.env): ChatAgent
   if (!gatewayAuth) return null;
   return { model: env.CHAT_AGENT_MODEL?.trim() || DEFAULT_CHAT_AGENT_MODEL };
 }
+
+/** Limits on the files attached to chat messages that the agent reads. */
+export interface ChatAttachmentLimits {
+  /** Attachments read per message; the rest are skipped. */
+  perMessage: number;
+  /** Largest image read (bytes). */
+  maxImageBytes: number;
+  /** Largest text file read (bytes). */
+  maxTextBytes: number;
+  /** Attachments of the whole thread fetched for one turn, newest first. */
+  perTurn: number;
+}
+
+export const CHAT_ATTACHMENT_LIMITS: ChatAttachmentLimits = {
+  perMessage: 5,
+  maxImageBytes: 5 * 1024 * 1024,
+  maxTextBytes: 256 * 1024,
+  perTurn: 10,
+};

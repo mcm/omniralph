@@ -30,6 +30,13 @@ import { eq } from "drizzle-orm";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { sanitizeCapped, sanitizeTitle } from "@/lib/review/sanitize";
+import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentLimits } from "./agent/config";
+import {
+  adapterFetcher,
+  attachmentName,
+  loadAttachment,
+  type FetchAttachment,
+} from "./attachments";
 import type { ChatActor } from "./identity";
 
 /**
@@ -71,6 +78,7 @@ type Draft = Pick<
   | "projectName"
   | "labels"
   | "priority"
+  | "attachments"
   | "linearIssueIdentifier"
   | "linearIssueUrl"
 >;
@@ -87,6 +95,14 @@ function previewFields(draft: Draft): CardChild[] {
   if (draft.priority !== null) {
     fields.push(
       Field({ label: "Priority", value: PRIORITY_NAMES[draft.priority] ?? `${draft.priority}` }),
+    );
+  }
+  if (draft.attachments.length > 0) {
+    fields.push(
+      Field({
+        label: "Screenshots",
+        value: draft.attachments.map((a) => attachmentName(a)).join(", "),
+      }),
     );
   }
   return [Fields(fields)];
@@ -120,10 +136,20 @@ export function draftCard(draft: Draft): CardElement {
   });
 }
 
-/** The draft once its issue was created: identifier and link (and whether ralph has it). */
-export function createdCard(draft: Draft, delegated = false): CardElement {
+/**
+ * The draft once its issue was created: identifier and link (and whether
+ * ralph has it, and the screenshots that couldn't be attached).
+ */
+export function createdCard(
+  draft: Draft,
+  delegated = false,
+  failedScreenshots: readonly string[] = [],
+): CardElement {
   const identifier = draft.linearIssueIdentifier ?? "the issue";
   const children: CardChild[] = [CardText(`Created ${identifier}: ${shownTitle(draft)}`)];
+  if (failedScreenshots.length > 0) {
+    children.push(CardText(`Couldn't attach: ${failedScreenshots.join(", ")}`));
+  }
   if (delegated) {
     children.push(
       CardText("Delegated to ralph: I'll post here when it starts and when it finishes."),
@@ -196,6 +222,49 @@ export async function delegateToRalph(
   await linear.delegateIssue(input.linearIssueId, app.id);
 }
 
+/**
+ * Uploads a draft's screenshots to Linear (fetched again from the chat
+ * platform): the Markdown that embeds them at the end of the description, and
+ * the names of those that couldn't be fetched or uploaded.
+ */
+export async function embedScreenshots(
+  linear: LinearGateway,
+  fetchData: FetchAttachment,
+  attachments: ChatLinearIssueDraft["attachments"],
+  limits: ChatAttachmentLimits = CHAT_ATTACHMENT_LIMITS,
+  logger: Pick<Logger, "warn"> = console,
+): Promise<{ markdown: string; failed: string[] }> {
+  const images: string[] = [];
+  const failed: string[] = [];
+  for (const attachment of attachments) {
+    const name = attachmentName(attachment);
+    const content = await loadAttachment(attachment, fetchData, limits);
+    if (content.status !== "loaded" || content.kind !== "image") {
+      logger.warn("Couldn't load a screenshot for a Linear issue", {
+        ref: attachment.ref,
+        reason: content.status === "skipped" ? content.reason : "not an image",
+      });
+      failed.push(name);
+      continue;
+    }
+    try {
+      const url = await linear.uploadFile({
+        filename: name,
+        contentType: content.mediaType,
+        data: content.data,
+      });
+      images.push(`![${name}](${url})`);
+    } catch (error) {
+      logger.warn("Couldn't upload a screenshot to Linear", { ref: attachment.ref, error });
+      failed.push(name);
+    }
+  }
+  return {
+    markdown: images.length > 0 ? `\n\n## Screenshots\n\n${images.join("\n\n")}` : "",
+    failed,
+  };
+}
+
 export const DELEGATION_FAILED_REPLY =
   "The issue was created, but Linear didn't delegate it to ralph. Ask me to delegate it again, or delegate it to Omniralph in Linear.";
 
@@ -205,6 +274,9 @@ export interface LinearIssueActionDeps {
   resolveActor(connection: ChatConnection, externalUserId: string): Promise<ChatActor>;
   /** The organization's Linear workspace (default: `getLinearGateway`). */
   linear?: (organizationId: string) => Promise<LinearGateway>;
+  /** Fetches the draft's screenshots (default: through the clicked card's adapter). */
+  fetchAttachment?: FetchAttachment;
+  attachmentLimits?: ChatAttachmentLimits;
   now?: () => Date;
   logger?: Logger;
 }
@@ -291,14 +363,23 @@ export async function handleLinearIssueAction(
   }
   let created: ChatLinearIssueDraft | null;
   let linear: LinearGateway;
+  let failedScreenshots: string[] = [];
   try {
     linear = await (deps.linear ?? ((organizationId) => getLinearGateway({ db, organizationId })))(
       chatThread.organizationId,
     );
+    const screenshots = await embedScreenshots(
+      linear,
+      deps.fetchAttachment ?? adapterFetcher(event.adapter),
+      claimed.attachments,
+      deps.attachmentLimits,
+      logger,
+    );
+    failedScreenshots = screenshots.failed;
     const issue = await linear.createIssue({
       teamId: claimed.teamId,
       title: claimed.title,
-      description: claimed.description,
+      description: `${claimed.description}${screenshots.markdown}`,
       ...(claimed.projectName && { projectName: claimed.projectName }),
       ...(claimed.labels.length > 0 && { labels: claimed.labels }),
       ...(claimed.priority !== null && { priority: claimed.priority }),
@@ -329,6 +410,6 @@ export async function handleLinearIssueAction(
       await tell(DELEGATION_FAILED_REPLY);
     }
   }
-  await show(createdCard(created, delegated));
+  await show(createdCard(created, delegated, failedScreenshots));
   await record(createdMessage(created, delegated));
 }

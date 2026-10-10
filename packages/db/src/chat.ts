@@ -18,6 +18,7 @@ import {
   chatThreads,
   chatUserProfiles,
   organizations,
+  type ChatMessageAttachment,
 } from "./schema.js";
 
 export type ChatPlatform = (typeof chatConnections.$inferSelect)["platform"];
@@ -89,6 +90,8 @@ export interface AppendChatMessageInput {
   externalUserId?: string | null;
   authorName?: string | null;
   content: unknown;
+  /** Files attached to a `user` message (metadata only). */
+  attachments?: ChatMessageAttachment[];
   /** The ralph run posting it (a session update in the run's thread). */
   ralphRunId?: string | null;
 }
@@ -535,6 +538,7 @@ export async function appendChatMessage(
       externalUserId: input.externalUserId ?? null,
       authorName: input.authorName ?? null,
       content: input.content,
+      attachments: input.attachments ?? [],
       ralphRunId: input.ralphRunId ?? null,
     })
     .returning();
@@ -572,6 +576,8 @@ export interface CreateChatLinearIssueDraftInput {
   projectName?: string | null;
   labels?: string[];
   priority?: number | null;
+  /** Screenshots to embed in the issue. */
+  attachments?: Array<ChatMessageAttachment & { ref: string }>;
   expiresAt: Date;
 }
 
@@ -587,6 +593,7 @@ export async function createChatLinearIssueDraft(
       projectName: input.projectName ?? null,
       labels: input.labels ?? [],
       priority: input.priority ?? null,
+      attachments: input.attachments ?? [],
     })
     .returning();
   return row!;

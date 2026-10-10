@@ -1,5 +1,6 @@
 import { createMockAdapter } from "@chat-adapter/tests";
 import {
+  appendChatMessage,
   chatLinearDelegations,
   chatLinearIssueDrafts,
   chatMessages,
@@ -7,6 +8,7 @@ import {
   createDb,
   ensureChatThread,
   getChatLinearIssueDraft,
+  listChatMessages,
   organizations,
   runMigrations,
   saveChatConnection,
@@ -26,6 +28,7 @@ import type { LinearGateway } from "@/lib/linear/gateway";
 import type { RalphDeps } from "@/lib/ralph/run";
 import type { ChatActor } from "./identity";
 import type { ChatToolContext } from "./agent/tools";
+import { threadAttachments, type FetchAttachment, type ThreadAttachment } from "./attachments";
 
 vi.mock("server-only", () => ({}));
 
@@ -118,6 +121,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     await db.delete(chatLinearIssueDrafts);
     await db.delete(chatLinearDelegations);
     await db.delete(chatMessages);
+    attachments = undefined;
     linear = new FakeLinearGateway();
     linear.teams = [
       { id: "team-1", key: "ENG", name: "Engineering" },
@@ -130,6 +134,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     } as unknown as Thread;
   });
 
+  let attachments: Map<string, ThreadAttachment> | undefined;
   const context = (actor: ChatActor = ada, externalUserId = "D-ADA"): ChatToolContext => ({
     db,
     organizationId: orgId,
@@ -141,6 +146,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     turnMessages: [{ author: "Ada", text: "file an issue for the login bug" }],
     ralph: async () => ({ linear: gateway }) as unknown as RalphDeps,
     handedOff: () => undefined,
+    attachments,
   });
 
   async function draft(input: Record<string, unknown> = {}, actor?: ChatActor): Promise<Result> {
@@ -190,11 +196,12 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
 
   async function handle(
     event: ActionEvent,
-    options: { now?: Date; via?: ChatConnection } = {},
+    options: { now?: Date; via?: ChatConnection; fetchAttachment?: FetchAttachment } = {},
   ): Promise<void> {
     await handleLinearIssueAction(
       {
         db,
+        fetchAttachment: options.fetchAttachment,
         resolveActor: async (_c, externalUserId) => actors[externalUserId] ?? { kind: "unlinked" },
         linear: async () => gateway,
         now: () => options.now ?? new Date(),
@@ -432,6 +439,109 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
   });
   /** Records the delegations stored when `delegateIssue` is called (to check they come first). */
+  describe("screenshots", () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const SHOT = "https://cdn.discordapp.com/attachments/1/2/login-error.png";
+    const LOG = "https://cdn.discordapp.com/attachments/1/3/app.log";
+    const fetchFile: FetchAttachment = async (meta) => {
+      if (meta.url === SHOT) return PNG;
+      if (meta.url === LOG) return Buffer.from("boom");
+      throw new Error("404");
+    };
+
+    /** Ada's message with a screenshot and a log, as the bot records it; returns their refs. */
+    async function attach(): Promise<{ shot: string; log: string }> {
+      await appendChatMessage(db, {
+        threadId: chatThread.id,
+        role: "user",
+        externalUserId: "D-ADA",
+        authorName: "Ada",
+        content: "login is broken, see screenshot",
+        attachments: [
+          {
+            type: "image",
+            name: "login-error.png",
+            mimeType: "image/png",
+            size: PNG.length,
+            url: SHOT,
+            fetchMetadata: null,
+          },
+          {
+            type: "file",
+            name: "app.log",
+            mimeType: "text/plain",
+            size: 4,
+            url: LOG,
+            fetchMetadata: null,
+          },
+        ],
+      });
+      attachments = await threadAttachments(
+        await listChatMessages(db, chatThread.id, 50),
+        fetchFile,
+      );
+      const [shot, log] = [...attachments.keys()];
+      return { shot: shot!, log: log! };
+    }
+
+    it("lists the screenshots on the card and embeds them in the issue on Create", async () => {
+      const { shot } = await attach();
+      const result = await draft({ attachments: [shot] });
+      expect(result).toMatchObject({
+        status: "drafted",
+        draft: { screenshots: ["login-error.png"] },
+      });
+      const card = cardText(vi.mocked(thread.post).mock.calls[0]![0] as CardElement);
+      expect(card).toContain("Screenshots");
+      expect(card).toContain("login-error.png");
+      // Nothing is uploaded before Create.
+      expect(linear.uploaded).toEqual([]);
+
+      const id = (result.draft as { id: string }).id;
+      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      await handle(event, { fetchAttachment: fetchFile });
+
+      expect(linear.uploaded).toEqual([
+        {
+          filename: "login-error.png",
+          contentType: "image/png",
+          size: PNG.length,
+          assetUrl: "https://uploads.linear.app/fake/1/login-error.png",
+        },
+      ]);
+      const [issue] = [...linear.issues.values()];
+      expect(issue!.description).toBe(
+        "Users signing in with SSO get a 500.\n\n- [ ] SSO login works\n\n## Screenshots\n\n![login-error.png](https://uploads.linear.app/fake/1/login-error.png)",
+      );
+      expect(edited(adapter)[0]!.text).not.toContain("Couldn't attach");
+    });
+
+    it("creates the issue without a screenshot that can't be fetched anymore, and says so", async () => {
+      const { shot } = await attach();
+      const result = await draft({ attachments: [shot] });
+      const id = (result.draft as { id: string }).id;
+      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      await handle(event, {
+        fetchAttachment: async () => {
+          throw new Error("expired");
+        },
+      });
+      const [issue] = [...linear.issues.values()];
+      expect(issue!.description).not.toContain("Screenshots");
+      expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
+    });
+
+    it("refuses refs that aren't images of the thread, listing the ones there are", async () => {
+      const { shot, log } = await attach();
+      for (const ref of [log, "deadbeef-9"]) {
+        const result = await draft({ attachments: [ref] });
+        expect(result).toMatchObject({ error: "unknown_attachment" });
+        expect(result.message).toContain(`${shot} (login-error.png)`);
+      }
+      expect(thread.post).not.toHaveBeenCalled();
+    });
+  });
+
   function watchDelegations(): Array<{ issueId: string; rows: string[] }> {
     const seen: Array<{ issueId: string; rows: string[] }> = [];
     const delegateIssue = linear.delegateIssue.bind(linear);

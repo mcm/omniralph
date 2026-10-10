@@ -17,6 +17,7 @@ import type {
   Team,
   UpdateIssueInput,
   UploadDownload,
+  UploadFileInput,
   Viewer,
   WorkflowState,
 } from "./gateway";
@@ -67,6 +68,8 @@ export class FakeLinearGateway implements LinearGateway {
     string,
     { contentType: string; body: string | Uint8Array<ArrayBuffer>; status?: number }
   >();
+  /** Every file `uploadFile` uploaded, in order (its asset URL is `assetUrl`). */
+  uploaded: Array<{ filename: string; contentType: string; size: number; assetUrl: string }> = [];
   /** Every `downloadUpload` URL, in order. */
   downloads: string[] = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
@@ -253,6 +256,18 @@ export class FakeLinearGateway implements LinearGateway {
       contentLength: bytes.byteLength,
       body: ok ? new Response(bytes).body : null,
     };
+  }
+
+  async uploadFile(input: UploadFileInput): Promise<string> {
+    this.fail("uploadFile");
+    const assetUrl = `https://uploads.linear.app/fake/${this.uploaded.length + 1}/${encodeURIComponent(input.filename)}`;
+    this.uploaded.push({
+      filename: input.filename,
+      contentType: input.contentType,
+      size: input.data.byteLength,
+      assetUrl,
+    });
+    return assetUrl;
   }
 
   /** Bodies of the session's activities of one type, in order. */

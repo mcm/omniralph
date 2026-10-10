@@ -39,9 +39,11 @@ A preview deployment that should receive Slack events needs its own app.
      **Cancel** on a Linear issue draft). An app created from an older manifest needs it turned on
      under **Interactivity & Shortcuts**;
    - the bot scopes (`app_mentions:read`, `channels:history`, `channels:read`, `chat:write`,
-     `groups:history`, `groups:read`, `reactions:read`, `reactions:write`, `users:read`,
-     `users:read.email`). `users:read.email` is what lets Omniralph
-     [recognize people by email](#automatic-linking-by-slack-email).
+     `files:read`, `groups:history`, `groups:read`, `reactions:read`, `reactions:write`,
+     `users:read`, `users:read.email`). `users:read.email` is what lets Omniralph
+     [recognize people by email](#automatic-linking-by-slack-email), and `files:read` lets the bot
+     [see attached files](#attachments). An app created from an older manifest needs `files:read`
+     added, and each workspace must reconnect to grant it.
 2. Under **Basic Information › App Credentials**, copy the **Client ID**, **Client Secret** and
    **Signing Secret** into `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` and `SLACK_SIGNING_SECRET`.
 3. **Turn on distribution** so workspaces other than the app's own can install it: **Manage
@@ -171,6 +173,9 @@ pages. It can [answer questions about a repository's code](#code-questions) by h
 agent. Linked members can also [hand work to ralph](#ralph-from-chat), steer runs, and
 [file Linear issues](#linear-issues-from-chat) (and delegate them to ralph).
 
+You can attach screenshots and text files (e.g. a log) to your messages: the bot sees them
+([Attachments](#attachments)).
+
 Turns are rate-limited to 10 per minute per chat user and 60 per 10 minutes per organization; the
 bot says so once when a limit is reached.
 
@@ -284,6 +289,11 @@ labels, priority, title and a preview of the description) and three buttons:
   fails, the draft stays open and you can click again.
 - In Slack, the buttons need **interactivity** on the app (see
   [step 1](#1-create-the-slack-app)); an app created from an older manifest must turn it on.
+- Screenshots attached in the thread can go into the issue: when they're relevant, the agent
+  passes them to `draft_linear_issue` and the card lists them under **Screenshots**. On **Create**
+  they're fetched from the chat platform again, uploaded to Linear and embedded at the end of the
+  description (`## Screenshots`). One that can't be fetched anymore is left out, and the card says
+  so.
 
 ### Delegating to ralph
 
@@ -324,6 +334,10 @@ of it:
 - The question is answered from the repository's **default branch** (other branches aren't
   supported). The agent sees the question, the latest messages of the thread and the thread's
   previous code question and answer, so follow-ups work.
+- Attached text files (e.g. a pasted log) can go with the question: the agent passes them to
+  `ask_about_code`, and their text (up to 3,000 characters each) is quoted in the question's
+  context. The code agent can't see images, so for a screenshot it gets the file name and the
+  question describes what the screenshot shows.
 - It's usually as quick as a quick review. An answer that runs out of budget says so; try a
   narrower question.
 
@@ -349,6 +363,31 @@ version and capabilities they report in heartbeats); when none that would take t
 nothing is queued and the bot says so: "no agent … is online", or that the online ones need the
 review capability on 0.7.0 or later. Update or start an agent ([deploy-agent.md](deploy-agent.md))
 and ask again.
+
+## Attachments
+
+Images and text files attached to messages in the thread reach the model:
+
+- **Images**: PNG, JPEG, GIF and WebP, up to 5 MB each.
+- **Text files**: `text/*`, JSON, XML, YAML, TOML and similar (or a `.log`, `.txt`, `.md`, `.csv`…
+  file without a useful type), UTF-8, up to 256 KB each.
+- At most 5 attachments per message are read. Anything else (video, audio, PDFs, archives, other
+  binaries), a file over its cap or one that can't be fetched is skipped, and the model is told
+  (`[attachment skipped: demo.mov — unsupported type (video/quicktime)]`), so it can say so. The
+  turn goes on either way.
+- Omniralph stores only each attachment's metadata (name, type, size, the platform's URL) with the
+  message, never the file. Each turn fetches the files again from Slack or Discord: the latest 10
+  attachments of the thread are shown to the model; older ones are listed by name, and tools can
+  still use them.
+- Attachment content is treated as untrusted user data, like the messages: the model uses it as
+  information and doesn't follow instructions in it. Text files are passed inside an
+  untrusted-content fence.
+- In Slack, downloading files needs the bot's `files:read` scope ([step 1](#1-create-the-slack-app)).
+  A workspace connected before the scope was added must reconnect under **Settings ›
+  Integrations**; until then its files are skipped as "couldn't be fetched". Discord's attachment
+  links expire after about a day, so an old screenshot may no longer be fetchable.
+- Screenshots can be [embedded in Linear issues](#filing-an-issue) and attached files included in
+  [code questions](#code-questions).
 
 ## Access levels
 
@@ -416,4 +455,5 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The Linear card's buttons do nothing (Slack)        | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
 | "Only the person who asked…" on a card              | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
 | A code question says no capable agent is online     | An agent with the `review` capability on version 0.7.0 or later is online (and, if the repository pins reviews to agents, it's one of them).                                                                 |
+| The bot says it couldn't fetch a Slack attachment   | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
 | A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and an agent with `ralph` is online; the run must start within an hour of the delegation.                                                      |

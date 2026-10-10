@@ -3,6 +3,7 @@ import {
   appendChatMessage,
   createChatLinearIssueDraft,
   setChatLinearIssueDraftMessage,
+  type ChatMessageAttachment,
   type RalphRun,
   type Repository,
 } from "@omniralph/db";
@@ -12,6 +13,7 @@ import type { IssueSummary, Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
+import { attachmentName } from "../attachments";
 import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
 import { findRalphRunId } from "./read-tools";
 import {
@@ -271,10 +273,38 @@ export function findTeam(teams: readonly Team[], ref: string): Team | undefined 
   );
 }
 
+/** Most screenshots an issue drafted in chat embeds. */
+export const MAX_ISSUE_SCREENSHOTS = 5;
+
+/** The thread's images with these refs, for a draft (an error result for any other ref). */
+function issueScreenshots(
+  context: ChatToolContext,
+  refs: readonly string[],
+):
+  | { attachments: Array<ChatMessageAttachment & { ref: string }> }
+  | { error: "unknown_attachment"; message: string } {
+  const images = [...(context.attachments?.values() ?? [])].filter((a) => a.kind === "image");
+  const attachments: Array<ChatMessageAttachment & { ref: string }> = [];
+  for (const ref of new Set(refs.map((r) => r.trim()))) {
+    const image = images.find((a) => a.ref === ref);
+    if (!image) {
+      return {
+        error: "unknown_attachment",
+        message:
+          images.length > 0
+            ? `"${ref}" isn't an image attached in this thread. The thread's images: ${images.map((a) => `${a.ref} (${attachmentName(a.meta)})`).join(", ")}.`
+            : "No images are attached in this thread: draft the issue without attachments.",
+      };
+    }
+    attachments.push({ ...image.meta, ref });
+  }
+  return { attachments };
+}
+
 export const draftLinearIssue = defineChatTool({
   tier: "action",
   description:
-    "Drafts a Linear issue in the organization's Linear workspace from the conversation: posts a preview card in the thread with Create and Cancel buttons. Nothing is created until the user who asked clicks Create (within 24 hours); then the card shows the issue's identifier and link. Use it when a user asks you to file, open or create an issue/ticket. Write a self-contained title and description (the problem, context and acceptance criteria from the thread, in Markdown). Ask which team when the user hasn't said and the workspace has several.",
+    "Drafts a Linear issue in the organization's Linear workspace from the conversation: posts a preview card in the thread with Create and Cancel buttons. Nothing is created until the user who asked clicks Create (within 24 hours); then the card shows the issue's identifier and link. Use it when a user asks you to file, open or create an issue/ticket. Write a self-contained title and description (the problem, context and acceptance criteria from the thread, in Markdown). Ask which team when the user hasn't said and the workspace has several. Pass the refs of relevant screenshots attached in the thread as `attachments`: the card lists them, and they are uploaded and embedded in the issue on Create.",
   inputSchema: z.object({
     team: z.string().min(1).max(200).describe("The Linear team: its key (e.g. `ENG`), name or ID."),
     title: z.string().min(1).max(255).describe("A short, specific issue title."),
@@ -297,10 +327,19 @@ export const draftLinearIssue = defineChatTool({
       .max(4)
       .optional()
       .describe("Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low."),
+    attachments: z
+      .array(z.string().min(1).max(40))
+      .max(MAX_ISSUE_SCREENSHOTS)
+      .optional()
+      .describe(
+        "Refs of images attached in the thread (`[attachment <ref>: …]`), e.g. screenshots of the bug, to upload to Linear and embed in the description. Only when they are relevant.",
+      ),
   }),
   async execute(input, context: ChatToolContext) {
     const { db, actor, thread, chatThread } = context;
     if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
+    const screenshots = issueScreenshots(context, input.attachments ?? []);
+    if ("error" in screenshots) return screenshots;
     let teams: Team[];
     try {
       teams = await (await context.ralph()).linear.listTeams();
@@ -333,6 +372,7 @@ export const draftLinearIssue = defineChatTool({
       projectName: input.project?.trim() || null,
       labels: input.labels?.map((l) => l.trim()).filter(Boolean) ?? [],
       priority: input.priority ?? null,
+      attachments: screenshots.attachments,
       expiresAt: new Date(Date.now() + LINEAR_ISSUE_DRAFT_TTL_MS),
     });
     const posted = await thread.post(draftCard(draft));
@@ -340,7 +380,12 @@ export const draftLinearIssue = defineChatTool({
     context.handedOff();
     return {
       status: "drafted",
-      draft: { id: draft.id, team: team.key, title: draft.title },
+      draft: {
+        id: draft.id,
+        team: team.key,
+        title: draft.title,
+        screenshots: draft.attachments.map((a) => attachmentName(a)),
+      },
       message:
         "The preview card with Create and Cancel buttons is posted in the thread; nothing is created until the user clicks Create (within 24 hours). Don't repeat the preview: end your turn with no text, or one short line.",
     };

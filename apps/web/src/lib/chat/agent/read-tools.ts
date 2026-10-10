@@ -29,7 +29,8 @@ import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
-import { enqueueChatAsk } from "../ask";
+import { enqueueChatAsk, type ChatAskAttachment } from "../ask";
+import { attachmentName } from "../attachments";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
@@ -439,6 +440,36 @@ export function lookingIntoMessage(fullPath: string): string {
   return `Looking into \`${fullPath}\`…`;
 }
 
+/** Most attached files a code question includes. */
+const MAX_CHAT_ASK_ATTACHMENTS = 5;
+
+/** The thread's attachments with these refs, loaded for a code question (an error result for an unknown ref). */
+async function chatAskAttachments(
+  context: ChatToolContext,
+  refs: readonly string[],
+): Promise<{ files: ChatAskAttachment[] } | { error: "unknown_attachment"; message: string }> {
+  const known = [...(context.attachments?.values() ?? [])];
+  const files: ChatAskAttachment[] = [];
+  for (const ref of new Set(refs.map((r) => r.trim()))) {
+    const attachment = context.attachments?.get(ref);
+    if (!attachment) {
+      return {
+        error: "unknown_attachment",
+        message:
+          known.length > 0
+            ? `"${ref}" isn't a file attached in this thread. The thread's attachments: ${known.map((a) => `${a.ref} (${attachmentName(a.meta)})`).join(", ")}.`
+            : "No files are attached in this thread: ask without attachments.",
+      };
+    }
+    const name = attachmentName(attachment.meta);
+    const content = await attachment.load();
+    if (content.status === "skipped") files.push({ kind: "skipped", name, reason: content.reason });
+    else if (content.kind === "text") files.push({ kind: "text", name, text: content.text });
+    else files.push({ kind: "image", name });
+  }
+  return { files };
+}
+
 export const askAboutCodeTool = defineChatTool({
   tier: "read",
   description:
@@ -458,9 +489,18 @@ export const askAboutCodeTool = defineChatTool({
       .describe(
         "The self-contained question about the code, with every detail from the conversation the agent needs (it only sees the latest messages and the previous code question).",
       ),
+    attachments: z
+      .array(z.string().min(1).max(40))
+      .max(MAX_CHAT_ASK_ATTACHMENTS)
+      .optional()
+      .describe(
+        "Refs of files attached in the thread (`[attachment <ref>: …]`) the question is about, e.g. a pasted log or a screenshot. The agent gets text files' content; it can't see images, so describe what a screenshot shows in the question.",
+      ),
   }),
   async execute(input, context: ChatToolContext) {
     const { db, organizationId, chatThread, thread, appUrl } = context;
+    const attachments = await chatAskAttachments(context, input.attachments ?? []);
+    if ("error" in attachments) return attachments;
     const repository = await findRepository(db, organizationId, input.repository);
     if (!repository) return UNKNOWN_REPOSITORY;
     const { dispatcher, adapterFor } = await context.ralph();
@@ -472,6 +512,7 @@ export const askAboutCodeTool = defineChatTool({
         chatThreadId: chatThread.id,
         question: input.question,
         messages: context.turnMessages,
+        attachments: attachments.files,
       },
     );
     switch (outcome.status) {
