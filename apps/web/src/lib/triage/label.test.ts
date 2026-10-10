@@ -45,6 +45,10 @@ const PRD = [
   "## Quality Gates",
   "",
   "- `pnpm test` - Tests",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "- [ ] It works",
 ].join("\n");
 
 const RESULT: TriageRunResult = {
@@ -234,6 +238,35 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     expect(publisher.sent).toHaveLength(1);
     expect(await db.select().from(triageRuns)).toHaveLength(2);
     expect(linear.labelChanges).toEqual([]);
+  });
+
+  it("doesn't start another triage from a label webhook while the run is running", async () => {
+    const { issue, labelId } = await labeledIssue();
+    await handle(labelEvent(issue, labelId));
+    const run = (await getTriageRunBySession(db, "session-1"))!;
+    await db.update(triageRuns).set({ status: "running" }).where(eq(triageRuns.id, run.id));
+
+    await handle(labelEvent(issue, labelId));
+
+    expect(linear.sessionsCreated).toHaveLength(1);
+    expect(publisher.sent).toHaveLength(1);
+    expect(await db.select().from(triageRuns)).toHaveLength(1);
+    expect(linear.labelChanges).toEqual([]);
+    expect(linear.activities.filter((a) => a.sessionId !== "session-1")).toEqual([]);
+  });
+
+  it("removes the label when the triage job is canceled", async () => {
+    const { issue, labelId } = await labeledIssue();
+    await startLabelTriage(labelEvent(issue, labelId), deps());
+    const run = (await getTriageRunBySession(db, "session-1"))!;
+    const job = (await getJob(db, run.currentJobId!))!;
+
+    await onTriageJobFinishedWithoutResult(db, job, "stopped", null, { db, linear });
+
+    expect((await getTriageRun(db, run.id))?.status).toBe("stopped");
+    expect(linear.bodies("session-1", "response")[0]).toContain("Triage was canceled");
+    expect(linear.labelChanges).toEqual([{ issueId: issue.id, removed: [labelId] }]);
+    expect(await labels(issue.id)).toEqual(["ops"]);
   });
 
   it("changes nothing but the label for an issue in progress, and says why", async () => {

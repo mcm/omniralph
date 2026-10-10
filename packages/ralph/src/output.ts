@@ -315,6 +315,13 @@ function oneLine(title: string): string {
 
 const QUALITY_GATES_HEADING = /^##[ \t]+Quality Gates[ \t]*$/im;
 const ACCEPTANCE_CRITERIA_HEADING = /^##[ \t]+Acceptance Criteria[ \t]*$/im;
+const SECTION_HEADING = /^##[ \t]+(.+?)[ \t]*$/gm;
+
+/** Whether `## Acceptance Criteria` is the description's last section. */
+function endsWithAcceptanceCriteria(description: string): boolean {
+  const last = [...description.matchAll(SECTION_HEADING)].at(-1);
+  return last !== undefined && /^Acceptance Criteria$/i.test(last[1]!);
+}
 
 /**
  * A triage session's result, trimmed (blank and duplicate open questions dropped, dependency indexes
@@ -355,6 +362,9 @@ export function validateTriageOutput(
   }
   if (!epic && data.stories.length > 0) {
     return { problem: `size ${data.size} is a single issue but there are \`stories\`` };
+  }
+  if (data.outcome === "prd" && !epic && !endsWithAcceptanceCriteria(description)) {
+    return { problem: "a single issue must end with its `## Acceptance Criteria` section" };
   }
   if (data.outcome !== "prd" && data.stories.length > 0) {
     return { problem: `outcome ${data.outcome} can't create \`stories\`` };

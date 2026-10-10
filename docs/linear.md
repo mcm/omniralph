@@ -405,8 +405,8 @@ questions. It never writes code, branches, commits or PRs/MRs.
   or can't start), so adding it again triages again.
 
 One triage runs per issue at a time: the label on an issue that is being triaged does nothing,
-and a mention or reply from another session gets "already being triaged in another session". Triage reports in the session like
-ralph does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
+and a mention or reply from another session is answered that the issue is being triaged in
+another session. Triage reports in the session like ralph does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
 final response with what changed (outcome, size, structure, sub-issues created or updated, the
 status set and the open questions).
 
@@ -486,7 +486,9 @@ Ralph doesn't start a delegated issue, or a `/ralph` mention, while the issue's 
 for a sub-issue, its parent epic's) has a non-empty `## Open Questions` section: it answers in the
 session that the questions need answering first, and materializes nothing and changes no state.
 Answer them (a reply in the triage session, or by editing the description) and delegate again.
-Request-mode @mentions and runs that are already going aren't affected.
+The same goes for `/ralph` switching a mention's run to the story loop (in a reply or a new
+mention): the run stays in request mode until the questions are answered. Request-mode @mentions
+and epic runs that are already going aren't affected.
 
 ## Agents and concurrency
 
@@ -495,8 +497,8 @@ An agent's **Concurrency per capability** caps how many of its slots ralph may t
 that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
 reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent.
 Triage jobs run on agents with the `triage` capability; like reviews, they may take every slot by
-default, so lower its limit to keep slots free for other work. Agents under pm2 update themselves to the version chosen on **Settings › Agents**
-([deploy-agent.md](deploy-agent.md#self-update-pm2)).
+default, so lower its limit to keep slots free for other work. Agents under pm2 update themselves
+to the version chosen on **Settings › Agents** ([deploy-agent.md](deploy-agent.md#self-update-pm2)).
 
 ## Troubleshooting
 

@@ -46,6 +46,10 @@ const PRD = [
   "## Quality Gates",
   "",
   "- `pnpm test`",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "- [ ] It works",
 ].join("\n");
 
 const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
