@@ -12,6 +12,7 @@ import {
   matchPermissionAnswer,
   matchPreparationAnswer,
   parseContinueRequest,
+  parseInstruction,
   parseShipRequest,
   permissionQuestion,
   preparationHash,
@@ -209,5 +210,45 @@ describe("permission questions", () => {
     expect(text).toContain("git commit -m 'ˋˋˋ'");
     expect(text).toContain("It matches `Bash(git commit:*)`.");
     expect(text).toContain("with no answer in 30 minutes I'll take it as Deny");
+  });
+});
+
+describe("parseInstruction", () => {
+  it("strips a leading @name and keeps plain text as a request", () => {
+    expect(parseInstruction("@omniralph, fix the typo")).toEqual({
+      text: "fix the typo",
+      wantsLoop: false,
+      wantsTriage: false,
+    });
+    expect(parseInstruction(undefined)).toEqual({ text: "", wantsLoop: false, wantsTriage: false });
+  });
+
+  it("recognizes /ralph (and /label-based-prompt) and strips it", () => {
+    expect(parseInstruction("@omniralph /ralph keep it small")).toEqual({
+      text: "keep it small",
+      wantsLoop: true,
+      wantsTriage: false,
+    });
+    expect(parseInstruction("/LABEL-BASED-PROMPT")).toEqual({
+      text: "",
+      wantsLoop: true,
+      wantsTriage: false,
+    });
+    expect(parseInstruction("see a/ralph path").wantsLoop).toBe(false);
+  });
+
+  it("recognizes /triage anywhere and strips it", () => {
+    expect(parseInstruction("@omniralph /triage")).toEqual({
+      text: "",
+      wantsLoop: false,
+      wantsTriage: true,
+    });
+    expect(parseInstruction("@omniralph it's for the API /Triage")).toEqual({
+      text: "it's for the API",
+      wantsLoop: false,
+      wantsTriage: true,
+    });
+    expect(parseInstruction("see docs/triage.md").wantsTriage).toBe(false);
+    expect(parseInstruction("/triaged").wantsTriage).toBe(false);
   });
 });

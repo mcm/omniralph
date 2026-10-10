@@ -1,5 +1,6 @@
 import "server-only";
 import type { Database } from "@omniralph/db";
+import { parseInstruction } from "@omniralph/ralph";
 import { getDispatcher } from "@/lib/dispatch";
 import { cleanupAfterIssueCompleted } from "@/lib/ralph/cleanup";
 import { wakeRunsForIssue } from "@/lib/ralph/reconcile";
@@ -7,6 +8,7 @@ import { handleReply } from "@/lib/ralph/reply";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { ACKNOWLEDGEMENT, startRun } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { startTriage } from "@/lib/triage/start";
 import { getLinearGateway } from "./client";
 import type { LinearGateway } from "./gateway";
 import type { LinearWebhookEvent } from "./webhook";
@@ -60,7 +62,8 @@ export async function acknowledgeLinearEvent(
 
 /**
  * Acts on a verified, deduplicated Linear event after the webhook response:
- * a new agent session starts a ralph run; an issue's state change (or
+ * a new agent session starts a ralph run (or triage, when its instruction
+ * contains `/triage`); an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
  * completed, cleans up its runs' merged PRs/MRs); a reply in an agent
  * session is the run's guidance.
@@ -79,8 +82,10 @@ export async function handleLinearEvent(
     dispatcher: deps.dispatcher ?? getDispatcher(),
     adapterFor: deps.adapterFor ?? scmAdapterFor,
   };
-  if (event.kind === "session_created") await startRun(event, ralph);
-  else if (event.kind === "session_prompted") await handleReply(event, ralph);
+  if (event.kind === "session_created") {
+    if (parseInstruction(event.commentBody).wantsTriage) await startTriage(event, ralph);
+    else await startRun(event, ralph);
+  } else if (event.kind === "session_prompted") await handleReply(event, ralph);
   else {
     // Done: the issue's merged PRs/MRs are cleaned up (logged, never failing the delivery).
     if (event.stateType === "completed" && !event.removed) {

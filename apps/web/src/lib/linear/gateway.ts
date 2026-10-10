@@ -27,6 +27,8 @@ export interface IssueSummary {
   projectName?: string;
   parentId?: string;
   assigneeId?: string;
+  /** Who created the issue; absent when Linear doesn't say (e.g. an integration). */
+  creator?: { id: string; name: string };
 }
 
 export interface IssueComment {
@@ -38,6 +40,7 @@ export interface IssueComment {
 export interface Blocker {
   id: string;
   identifier: string;
+  title?: string;
   stateType: string;
 }
 
@@ -169,6 +172,10 @@ const ISSUE_FIELDS = /* GraphQL */ `
     assignee {
       id
     }
+    creator {
+      id
+      name
+    }
     team {
       id
       key
@@ -199,6 +206,7 @@ interface IssueNode {
   subIssueSortOrder?: number | null;
   parent?: { id: string } | null;
   assignee?: { id: string } | null;
+  creator?: { id: string; name: string } | null;
   team?: { id: string; key: string } | null;
   state?: { name: string; type: string } | null;
   labels?: { nodes: Array<{ name: string }> } | null;
@@ -233,6 +241,7 @@ function summarize(issue: IssueNode): IssueSummary {
     projectName: issue.project?.name ?? undefined,
     parentId: issue.parent?.id ?? undefined,
     assigneeId: issue.assignee?.id ?? undefined,
+    creator: issue.creator ? { id: issue.creator.id, name: issue.creator.name } : undefined,
   };
 }
 
@@ -385,7 +394,12 @@ export class SdkLinearGateway implements LinearGateway {
   async getBlockers(issueId: string): Promise<Blocker[]> {
     type RelationNode = {
       type: string;
-      issue?: { id: string; identifier: string; state?: { type: string } | null } | null;
+      issue?: {
+        id: string;
+        identifier: string;
+        title?: string | null;
+        state?: { type: string } | null;
+      } | null;
     };
     const nodes = await this.paginate(async (after) => {
       const data = await this.request<{ issue: { inverseRelations: Connection<RelationNode> } }>(
@@ -398,6 +412,7 @@ export class SdkLinearGateway implements LinearGateway {
                   issue {
                     id
                     identifier
+                    title
                     state {
                       type
                     }
@@ -421,6 +436,7 @@ export class SdkLinearGateway implements LinearGateway {
             {
               id: rel.issue.id,
               identifier: rel.issue.identifier,
+              title: rel.issue.title ?? undefined,
               stateType: rel.issue.state?.type ?? "unstarted",
             },
           ]

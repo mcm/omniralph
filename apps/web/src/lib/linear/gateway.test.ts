@@ -56,6 +56,7 @@ function issueNode(id: string, overrides: Record<string, unknown> = {}) {
     subIssueSortOrder: 1.5,
     parent: { id: "epic" },
     assignee: { id: "user-1" },
+    creator: { id: "user-2", name: "Ada" },
     team: { id: "team-1", key: "TOOL" },
     state: { name: "Todo", type: "unstarted" },
     labels: { nodes: [{ name: "backend" }] },
@@ -90,6 +91,7 @@ describe("SdkLinearGateway reads", () => {
       projectName: "Omniralph",
       parentId: "epic",
       assigneeId: "user-1",
+      creator: { id: "user-2", name: "Ada" },
     });
     expect(calls).toHaveLength(1);
   });
@@ -102,6 +104,7 @@ describe("SdkLinearGateway reads", () => {
         subIssueSortOrder: null,
         parent: null,
         assignee: null,
+        creator: null,
         state: null,
         labels: { nodes: [] },
         project: null,
@@ -116,6 +119,7 @@ describe("SdkLinearGateway reads", () => {
     });
     expect(issue.parentId).toBeUndefined();
     expect(issue.projectName).toBeUndefined();
+    expect(issue.creator).toBeUndefined();
   });
 
   it("reads every page of children, deduplicated", async () => {
@@ -170,7 +174,12 @@ describe("SdkLinearGateway reads", () => {
           nodes: [
             {
               type: "blocks",
-              issue: { id: "b1", identifier: "TOOL-7", state: { type: "started" } },
+              issue: {
+                id: "b1",
+                identifier: "TOOL-7",
+                title: "Blocker",
+                state: { type: "started" },
+              },
             },
             {
               type: "related",
@@ -184,8 +193,8 @@ describe("SdkLinearGateway reads", () => {
       },
     });
     expect(await gateway().getBlockers("1")).toEqual([
-      { id: "b1", identifier: "TOOL-7", stateType: "started" },
-      { id: "b2", identifier: "TOOL-9", stateType: "unstarted" },
+      { id: "b1", identifier: "TOOL-7", title: "Blocker", stateType: "started" },
+      { id: "b2", identifier: "TOOL-9", title: undefined, stateType: "unstarted" },
     ]);
   });
 
