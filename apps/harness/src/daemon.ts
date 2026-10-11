@@ -11,11 +11,11 @@ import {
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
   RetryableJobError,
-  type Capability,
   type CapabilityRegistry,
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
+import { runQueryTask } from "./lifecycle/query.js";
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
 import { SessionTokenFile } from "./session-token-file.js";
@@ -55,7 +55,10 @@ export interface DaemonOptions {
   api: ControlPanelApi;
   /** Asked to refresh when an authenticated call gets 401. */
   tokens: { refresh(): Promise<string> };
+  /** Runs legacy jobs (no run spec), by job type. */
   registry: CapabilityRegistry;
+  /** Runs claimed runs of task type `query` (default `runQueryTask`). */
+  runQueryTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
   logger: Logger;
   heartbeatIntervalMs?: number;
   shutdownGraceMs?: number;
@@ -64,6 +67,9 @@ export interface DaemonOptions {
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
 }
+
+/** Runs one claimed job with its context and returns its output. */
+type JobHandler = (ctx: JobContext) => Promise<JobOutput>;
 
 interface RunningJob {
   /** The pool whose slot the job takes; null for `system` jobs (they take a slot, but no pool's). */
@@ -520,8 +526,8 @@ export class AgentDaemon implements DrainableDaemon {
       jobLog.info("not starting a job claimed during shutdown");
       return;
     }
-    const capability = this.options.registry.forJob(job);
-    if (!capability) {
+    const run = start.runSpec ? this.runSpecHandler(start.runSpec) : this.capabilityHandler(job);
+    if (!run) {
       jobLog.error("unknown job type");
       void this.track(
         this.report(job.id, jobLog, () =>
@@ -544,10 +550,31 @@ export class AgentDaemon implements DrainableDaemon {
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
     void this.track(
-      this.runJob(job, capability, running, jobLog).catch((error: unknown) =>
+      this.runJob(job, run, running, jobLog).catch((error: unknown) =>
         jobLog.error({ err: error }, "job handler failed"),
       ),
     );
+  }
+
+  /**
+   * How a claimed run is run, by its task type: `query` through the fixed
+   * query lifecycle; any other task type fails the run.
+   */
+  private runSpecHandler(spec: RunSpec): JobHandler {
+    switch (spec.taskType) {
+      case "query": {
+        const runQuery = this.options.runQueryTask ?? runQueryTask;
+        return (ctx) => runQuery(spec, ctx);
+      }
+      default:
+        return () => Promise.reject(new Error(`unsupported task type ${spec.taskType}`));
+    }
+  }
+
+  /** A legacy job's capability code (by job type), or undefined for an unknown job type. */
+  private capabilityHandler(job: JobPayload): JobHandler | undefined {
+    const capability = this.options.registry.forJob(job);
+    return capability && ((ctx) => capability.run(job, ctx));
   }
 
   /**
@@ -556,14 +583,14 @@ export class AgentDaemon implements DrainableDaemon {
    */
   private async runJob(
     job: JobPayload,
-    capability: Capability,
+    run: JobHandler,
     running: RunningJob,
     jobLog: Logger,
   ): Promise<void> {
     let output: JobOutput | undefined;
     let failure: unknown;
     try {
-      output = await capability.run(job, this.jobContext(job, running, jobLog));
+      output = await run(this.jobContext(job, running, jobLog));
     } catch (error) {
       failure = error ?? new Error("job failed");
     } finally {
