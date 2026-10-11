@@ -47,6 +47,72 @@ describe("HttpControlPanelApi.claim", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer access");
   });
 
+  it("parses a run-spec job's run spec, and rejects a run-spec job without one", async () => {
+    const id = randomUUID();
+    const lifecycle = { jobId: id, token: "lifecycle", expiresIn: 900, kind: "lifecycle" };
+    const session = { jobId: id, token: "session", expiresIn: 900, kind: "session" };
+    const runSpec = {
+      jobId: id,
+      taskType: "query",
+      pool: "short",
+      agent: { id: "builtin:a", name: "A", systemPrompt: "You answer.", taskTypes: ["query"] },
+      task: {
+        id: "builtin:t",
+        name: "T",
+        taskType: "query",
+        agentId: "builtin:a",
+        triggers: ["chat.request"],
+        promptTemplate: "{{question}}",
+        sink: "chat-thread",
+        pool: "short",
+      },
+      trigger: { kind: "chat.request", context: { question: "Why?" } },
+      repository: null,
+      ref: null,
+      requireCheckout: false,
+      tools: { allowedTools: [], disallowedTools: ["WebFetch"] },
+      model: "sonnet",
+      fallbackModel: null,
+      tokenBudget: 1000,
+      tokens: { lifecycle, session },
+    };
+    const start = {
+      action: "run",
+      job: {
+        id,
+        type: "task.run",
+        taskType: "query",
+        pool: "short",
+        taskId: "builtin:t",
+        repositoryId: null,
+        payload: {},
+        deliveryCount: 1,
+      },
+      runSpec,
+      jobToken: lifecycle,
+      sessionToken: session,
+    };
+    const parsed = await apiWith(() => Response.json(start)).api.claim({ pools: ["short"] });
+    expect(parsed).toMatchObject(start);
+    if (parsed?.action !== "run") throw new Error("expected run");
+    // Definition defaults are filled in.
+    expect(parsed.runSpec?.agent.tools).toEqual({
+      builtin: [],
+      harness: [],
+      linear: [],
+      mcpServers: [],
+    });
+
+    const { runSpec: _, ...withoutSpec } = start;
+    await expect(
+      apiWith(() => Response.json(withoutSpec)).api.claim({ pools: ["short"] }),
+    ).rejects.toThrow();
+    const legacyWithSpec = { ...start, job: { ...start.job, taskId: null } };
+    await expect(
+      apiWith(() => Response.json(legacyWithSpec)).api.claim({ pools: ["short"] }),
+    ).rejects.toThrow();
+  });
+
   it("returns null on 204 (nothing to claim)", async () => {
     const { api } = apiWith(() => new Response(null, { status: 204 }));
     expect(await api.claim({ pools: ["short"] })).toBeNull();

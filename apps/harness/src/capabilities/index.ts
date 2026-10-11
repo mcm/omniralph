@@ -1,5 +1,5 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
-import type { JobPayload } from "@omniralph/shared";
+import type { JobPayload, RunSpec } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
@@ -47,6 +47,13 @@ export interface ToolPolicy {
 export interface JobContext {
   /** Aborted when the job is canceled centrally (`cancelJobIds`) or the agent shuts down. */
   signal: AbortSignal;
+  /**
+   * A run-spec job's run (agent, task, trigger, repository, tools, model,
+   * budget and tokens), resolved by the control panel at claim time. Its
+   * `tokens` are as claimed: use `jobToken()`/`sessionToken()` for current ones.
+   * Unset for legacy jobs.
+   */
+  runSpec?: RunSpec;
   /**
    * The job's current token (refreshed by heartbeats): a run-spec job's
    * `lifecycle` token, kept for the harness's own calls (e.g. fetching

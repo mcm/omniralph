@@ -9,7 +9,9 @@ import type {
   JobOutcomeResponse,
   JobPayload,
   JobStartResponse,
+  RunSpec,
 } from "@omniralph/shared";
+import { AgentDefinition, TaskDefinition } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
@@ -58,14 +60,60 @@ function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
   };
 }
 
+function runSpecFor(j: JobPayload, tokens: RunSpec["tokens"]): RunSpec {
+  return {
+    jobId: j.id,
+    taskType: "query",
+    pool: "short",
+    agent: AgentDefinition.parse({
+      id: "builtin:test-agent",
+      name: "Test agent",
+      systemPrompt: "You answer.",
+      taskTypes: ["query"],
+    }),
+    task: TaskDefinition.parse({
+      id: j.taskId,
+      name: "Test task",
+      taskType: "query",
+      agentId: "builtin:test-agent",
+      triggers: ["finding.dismissed"],
+      promptTemplate: "{{finding.title}}",
+      sink: "learned-rule",
+      pool: "short",
+    }),
+    trigger: { kind: "finding.dismissed", context: { finding: { title: "Unused import" } } },
+    repository: null,
+    ref: null,
+    requireCheckout: false,
+    tools: { allowedTools: [], disallowedTools: [] },
+    model: null,
+    fallbackModel: null,
+    tokenBudget: null,
+    tokens,
+  };
+}
+
 function runResponse(j: JobPayload): JobStartResponse {
   if (j.taskId !== null) {
-    // A run-spec job: a lifecycle and a session token.
+    // A run-spec job: a lifecycle and a session token, and its run spec.
+    const lifecycle = {
+      jobId: j.id,
+      token: `lifecycle-${j.id}`,
+      expiresIn: 900,
+      kind: "lifecycle" as const,
+    };
+    const session = {
+      jobId: j.id,
+      token: `session-${j.id}`,
+      expiresIn: 900,
+      kind: "session" as const,
+    };
     return {
       action: "run",
       job: j,
-      jobToken: { jobId: j.id, token: `lifecycle-${j.id}`, expiresIn: 900, kind: "lifecycle" },
-      sessionToken: { jobId: j.id, token: `session-${j.id}`, expiresIn: 900, kind: "session" },
+      runSpec: runSpecFor(j, { lifecycle, session }),
+      jobToken: lifecycle,
+      sessionToken: session,
     };
   }
   return {
@@ -746,6 +794,7 @@ describe("AgentDaemon", () => {
       const file = await readFile(env.OMNIRALPH_JOB_TOKEN_FILE!, "utf8");
       return Object.values(env).some((v) => v?.includes(lifecycle)) || file.includes(lifecycle);
     };
+    expect(ctx?.runSpec).toMatchObject({ jobId: id, task: { id: "builtin:learn-rule" } });
     expect(ctx?.jobToken()).toBe(`lifecycle-${id}`);
     expect(ctx?.env().OMNIRALPH_JOB_TOKEN).toBe(`lifecycle-${id}`);
     expect(ctx?.sessionToken()).toBe(`session-${id}`);
@@ -797,6 +846,7 @@ describe("AgentDaemon", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ctx?.jobToken()).toBe(`job-token-${id}`);
     expect(ctx?.sessionToken()).toBe(`job-token-${id}`);
+    expect(ctx?.runSpec).toBeUndefined();
     gate.resolve();
     await settle();
     await daemon.shutdown();

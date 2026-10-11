@@ -1,9 +1,15 @@
 import { claimJob, getHarness, type Database, type SettledJob } from "@omniralph/db";
-import { ClaimRequest, MAX_JOB_DELIVERIES, type JobStartResponse } from "@omniralph/shared";
+import {
+  ClaimRequest,
+  MAX_JOB_DELIVERIES,
+  type JobStartResponse,
+  type RunSpec,
+} from "@omniralph/shared";
 import { badRequest, readJson, unauthorized } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
+import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
 import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
 /** Room above `MAX_CLAIM_WAIT_SECONDS` for the last claim and the response. */
@@ -19,7 +25,9 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
  * task type the harness accepts, in a pool it asked for (or a `system` job),
  * whose minimum harness version it meets (`claimJob`) and returns it
  * with its tokens (`signJobTokens`: a lifecycle and a session token for a
- * run-spec job, one token for a legacy job), in `JobStartResponse`'s `run` shape. With nothing to claim
+ * run-spec job, one token for a legacy job) and, for a run-spec job (with a
+ * `task_id`), its `runSpec` (`resolveRunSpec`), in `JobStartResponse`'s `run`
+ * shape. A run spec that can never be resolved fails its job. With nothing to claim
  * it looks again every `CLAIM_RETRY_MS` until `waitSeconds` passes (204) or
  * the harness hangs up. The job type's outcome handler hears about the start
  * (`onStarted`, whose `skip` moves the claim on to the next job) and about
@@ -59,6 +67,7 @@ async function claimNext(
 ): Promise<ClaimRun | null> {
   for (;;) {
     let tokens: SignedJobTokens | undefined;
+    let runSpec: RunSpec | undefined;
     const { claim, settled } = await claimJob(db, {
       harnessId: agent.id,
       organizationId: agent.organizationId,
@@ -66,9 +75,21 @@ async function claimNext(
       pools,
       harnessVersion: agent.reportedVersion,
       maxDeliveries: MAX_JOB_DELIVERIES,
-      // Sign while claiming: if signing (KMS) fails, the claim rolls back and no delivery is used up.
+      // Sign and resolve while claiming: if signing (KMS) or loading fails, the
+      // claim rolls back and no delivery is used up.
       beforeClaim: async (job) => {
         tokens = await signJobTokens(job, agent.id);
+        runSpec = undefined;
+        if (!tokens.sessionToken) return;
+        try {
+          runSpec = await resolveRunSpec(db, job, {
+            lifecycle: tokens.jobToken,
+            session: tokens.sessionToken,
+          });
+        } catch (error) {
+          if (error instanceof RunSpecError) return { fail: error.message };
+          throw error;
+        }
       },
     });
     for (const job of settled) await onSettled(db, job);
@@ -84,6 +105,7 @@ async function claimNext(
       action: "run",
       job: { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },
       ...tokens,
+      ...(runSpec ? { runSpec } : {}),
     };
   }
 }

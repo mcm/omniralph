@@ -237,7 +237,7 @@ export function validateTemplate(
 /**
  * A fenced block longer than any backtick run inside `content`, so the content
  * can't close it. A copy of `fence()` in `@omniralph/engine`'s prompt.ts (a
- * test checks both agree), so ported prompts render byte for byte.
+ * test in the engine checks both agree), so ported prompts render byte for byte.
  */
 export function fence(content: string, info = ""): string {
   const longest = Math.max(0, ...[...content.matchAll(/`+/g)].map((m) => m[0].length));

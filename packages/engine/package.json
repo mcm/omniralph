@@ -48,6 +48,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@omniralph/tasks": "workspace:*",
     "@types/picomatch": "^4.0.3",
     "yaml": "^2.9.1"
   }

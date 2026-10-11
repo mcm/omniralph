@@ -1,9 +1,7 @@
-import { fence as engineFence } from "@omniralph/engine";
 import { describe, expect, it } from "vitest";
 import {
   TemplateError,
   availableVariables,
-  fence,
   parseTemplate,
   renderTemplate,
   validateTemplate,
@@ -251,19 +249,5 @@ describe("renderTemplate", () => {
         expect(() => render(template, { pr: { body } })).toThrow(TemplateError);
       },
     );
-  });
-});
-
-describe("fence", () => {
-  it.each([
-    ["no backticks", "plain text", ""],
-    ["a 3-backtick run", "a\n```\nb", ""],
-    ["a 5-backtick run", "x ````` y `` z", ""],
-    ["a trailing newline", "line\n", ""],
-    ["an info string", "+added\n-removed", "diff"],
-    ["everything", "```js\ncode\n```\n", "markdown"],
-    ["empty content", "", ""],
-  ])("matches the engine's fence() for %s", (_, content, info) => {
-    expect(fence(content, info)).toBe(engineFence(content, info));
   });
 });

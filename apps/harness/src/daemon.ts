@@ -6,6 +6,7 @@ import {
   type JobOutcomeResponse,
   type JobPayload,
   type JobStartResponse,
+  type RunSpec,
 } from "@omniralph/shared";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
@@ -76,6 +77,8 @@ interface RunningJob {
   sessionTokenFile: SessionTokenFile;
   /** Delivers a `jobMessages` message into the job's live session, while it has one. */
   injector?: (text: string) => boolean;
+  /** A run-spec job's run, resolved by the control panel at claim time; unset for legacy jobs. */
+  runSpec?: RunSpec;
 }
 
 /** Most message IDs one heartbeat acknowledges (per kind); the rest wait for the next one. */
@@ -536,6 +539,7 @@ export class AgentDaemon implements DrainableDaemon {
       jobToken: start.jobToken.token,
       sessionToken: start.sessionToken?.token,
       sessionTokenFile: new SessionTokenFile(),
+      runSpec: start.runSpec,
     };
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
@@ -599,6 +603,7 @@ export class AgentDaemon implements DrainableDaemon {
       signal: running.controller.signal,
       jobToken: () => running.jobToken,
       sessionToken,
+      ...(running.runSpec ? { runSpec: running.runSpec } : {}),
       env: (extra) => jobProcessEnv(identity(), process.env, extra),
       sessionEnv: (extra) => {
         const token = sessionToken();
