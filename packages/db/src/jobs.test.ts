@@ -276,6 +276,55 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect(await claim(agentA, at(2))).toEqual({ claim: null, settled: [] });
   });
 
+  it("fails a job beforeClaim says can never run and claims the next one", async () => {
+    const broken = await enqueue({ createdAt: at(-20) });
+    const next = await enqueue({ createdAt: at(-10) });
+    const seen: string[] = [];
+    const result = await claimJob(db, {
+      harnessId: agentA,
+      organizationId: orgA,
+      acceptedTaskTypes: ["review"],
+      pools: ["short"],
+      harnessVersion: "1.0.0",
+      maxDeliveries: 3,
+      now: at(1),
+      beforeClaim: async (job) => {
+        seen.push(job.id);
+        return job.id === broken ? { fail: "Unknown task builtin:gone" } : undefined;
+      },
+    });
+    expect(seen).toEqual([broken, next]);
+    expect(result.claim?.job.id).toBe(next);
+    expect(result.settled).toEqual([
+      {
+        outcome: "failed",
+        job: expect.objectContaining({
+          id: broken,
+          status: "failed",
+          error: "Unknown task builtin:gone",
+          deliveryCount: 0,
+        }),
+      },
+    ]);
+  });
+
+  it("rolls the claim back when beforeClaim throws", async () => {
+    const id = await enqueue({ createdAt: at(-10) });
+    await expect(
+      claimJob(db, {
+        harnessId: agentA,
+        organizationId: orgA,
+        acceptedTaskTypes: ["review"],
+        pools: ["short"],
+        harnessVersion: "1.0.0",
+        maxDeliveries: 3,
+        now: at(1),
+        beforeClaim: () => Promise.reject(new Error("KMS down")),
+      }),
+    ).rejects.toThrow("KMS down");
+    expect(await getJob(db, id)).toMatchObject({ status: "queued", deliveryCount: 0 });
+  });
+
   it("renews leases only for jobs running on the agent", async () => {
     const mine = await enqueue({ createdAt: at(-20) });
     const theirs = await enqueue({ createdAt: at(-10) });

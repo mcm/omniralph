@@ -4,7 +4,10 @@
  * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { z } from "zod";
-import { JobTokenKind } from "./harness-protocol.js";
+import { JobRepository, JobToken } from "./job-basics.js";
+import { RunSpec } from "./run-spec.js";
+
+export { JobRepository, JobToken } from "./job-basics.js";
 
 /** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
 export const JOB_RETENTION_SECONDS = 24 * 60 * 60;
@@ -202,17 +205,6 @@ export const Heartbeat = z.object({
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
-/** A freshly signed job token (`HARNESS_TOKEN_TTL_SECONDS`). */
-export const JobToken = z.object({
-  jobId: z.uuid(),
-  token: z.string(),
-  /** Seconds until `token` expires. */
-  expiresIn: z.number(),
-  /** `lifecycle`/`session` for run-spec jobs; `legacy` for a legacy job's single token. */
-  kind: JobTokenKind.default("legacy"),
-});
-export type JobToken = z.infer<typeof JobToken>;
-
 /**
  * A message for a running job's live Claude session (a Linear reply to a ralph
  * run): the agent injects it and acknowledges it in its next heartbeat.
@@ -302,23 +294,44 @@ export const JobSkipReason = z.enum(JOB_SKIP_REASONS);
 export type JobSkipReason = z.infer<typeof JobSkipReason>;
 
 /**
- * A started job: `run` with the job and its token (`POST /api/harness/claim`
+ * A started job: `run` with the job and its tokens (`POST /api/harness/claim`
  * only answers `run`). On `skip` the agent runs nothing.
  */
 export const JobStartResponse = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("run"),
-    job: JobPayload,
-    /**
-     * The job's token, refreshed via heartbeat. For run-spec jobs (with a
-     * `taskId`) the `lifecycle` token, kept by the harness for its own calls;
-     * for legacy jobs the single token in-job processes (e.g. the
-     * `git-credential` helper) use.
-     */
-    jobToken: JobToken,
-    /** Run-spec jobs only: the `session` token, the only one the Claude session gets. */
-    sessionToken: JobToken.optional(),
-  }),
+  z
+    .object({
+      action: z.literal("run"),
+      /**
+       * The job's routing (ID, type, task type, pool, deliveries). A legacy
+       * job's `payload` is its input; a run-spec job's input is `runSpec`.
+       */
+      job: JobPayload,
+      /**
+       * Run-spec jobs (with a `taskId`) only: the run resolved by the control
+       * panel at claim time, with both tokens.
+       */
+      runSpec: RunSpec.optional(),
+      /**
+       * The job's token, refreshed via heartbeat. For run-spec jobs (with a
+       * `taskId`) the `lifecycle` token, kept by the harness for its own calls;
+       * for legacy jobs the single token in-job processes (e.g. the
+       * `git-credential` helper) use.
+       */
+      jobToken: JobToken,
+      /** Run-spec jobs only: the `session` token, the only one the Claude session gets. */
+      sessionToken: JobToken.optional(),
+    })
+    .superRefine((run, ctx) => {
+      if ((run.job.taskId !== null) !== (run.runSpec !== undefined)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["runSpec"],
+          message: "runSpec is required for, and only for, jobs with a taskId",
+        });
+      } else if (run.runSpec && run.runSpec.jobId !== run.job.id) {
+        ctx.addIssue({ code: "custom", path: ["runSpec", "jobId"], message: "not the job's ID" });
+      }
+    }),
   z.object({
     action: z.literal("skip"),
     reason: JobSkipReason,
@@ -369,23 +382,6 @@ export const JobOutcomeResponse = z.discriminatedUnion("status", [
   z.object({ status: z.literal("retry"), retryAfterSeconds: z.int().min(0) }),
 ]);
 export type JobOutcomeResponse = z.infer<typeof JobOutcomeResponse>;
-
-/** Where a job's repository lives; part of the payload of every job that needs a checkout. */
-export const JobRepository = z.object({
-  provider: z.enum(["github", "gitlab"]),
-  /** `owner/repo` or `group/subgroup/project`. */
-  fullPath: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/)
-    .refine((p) => p.split("/").every((segment) => segment !== "." && segment !== ".."), {
-      message: "invalid path segment",
-    }),
-  /** HTTPS clone URL without credentials (the agent's `git-credential` helper supplies them). */
-  cloneUrl: z.url(),
-});
-export type JobRepository = z.infer<typeof JobRepository>;
 
 /** Payload of a `repo.sync` job. */
 export const RepoSyncPayload = z.object({

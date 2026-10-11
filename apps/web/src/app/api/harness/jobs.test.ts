@@ -24,7 +24,7 @@ import {
   JOB_LEASE_SECONDS,
   type HeartbeatResponse,
   type JobOutcomeResponse,
-  type JobStartResponse,
+  JobStartResponse,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq, inArray } from "drizzle-orm";
@@ -32,6 +32,7 @@ import { decodeJwt } from "jose";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type * as Tasks from "@omniralph/tasks";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
@@ -40,6 +41,35 @@ const state = vi.hoisted(() => ({
   replies: [] as { number: number; commentId: string; body: string }[],
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+// Fixture built-ins for run-spec jobs (the registry is filled by the port stories).
+vi.mock("@omniralph/tasks", async (importOriginal) => {
+  const tasks = await importOriginal<typeof Tasks>();
+  const agent = tasks.AgentDefinition.parse({
+    id: "builtin:test-agent",
+    name: "Test agent",
+    systemPrompt: "You answer questions about code.",
+    taskTypes: ["query"],
+    tools: { builtin: ["Read", "Grep"] },
+  });
+  const defined = ["builtin:learn-rule", "builtin:reply"].map((id) =>
+    tasks.TaskDefinition.parse({
+      id,
+      name: id,
+      taskType: "query",
+      agentId: agent.id,
+      triggers: ["finding.dismissed", "finding.mention"],
+      promptTemplate: "{{finding.title}}",
+      sink: "learned-rule",
+      pool: "short",
+      tokenBudget: { tokens: 5000 },
+    }),
+  );
+  return {
+    ...tasks,
+    getBuiltinAgent: (id: string) => (id === agent.id ? agent : null),
+    getBuiltinTask: (id: string) => defined.find((task) => task.id === id) ?? null,
+  };
+});
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => ({
@@ -99,6 +129,11 @@ function agentRequest(
 }
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+/** A run-spec job's payload for the fixture tasks. */
+const RUN_PAYLOAD = {
+  trigger: { kind: "finding.dismissed", context: { finding: { title: "Unused import" } } },
+};
 
 describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
   let container: StartedPostgreSqlContainer;
@@ -502,12 +537,29 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       });
     });
 
-    it("gives a run-spec job a lifecycle and a session token", async () => {
+    it("gives a run-spec job a lifecycle and a session token, and its run spec with both", async () => {
       const { agent, job } = await claimOrg();
-      const jobId = await job("claim.run", { taskId: "builtin:learn-rule" });
+      const jobId = await job("claim.run", {
+        taskId: "builtin:learn-rule",
+        payload: RUN_PAYLOAD,
+      });
       const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
       if (body.action !== "run") throw new Error("expected run");
       expect(body.job.taskId).toBe("builtin:learn-rule");
+      expect(JobStartResponse.safeParse(body).success).toBe(true);
+      expect(body.runSpec).toMatchObject({
+        jobId,
+        taskType: "query",
+        pool: "short",
+        agent: { id: "builtin:test-agent" },
+        task: { id: "builtin:learn-rule" },
+        trigger: RUN_PAYLOAD.trigger,
+        repository: null,
+        ref: null,
+        requireCheckout: false,
+        tokenBudget: 5000,
+        tokens: { lifecycle: body.jobToken, session: body.sessionToken },
+      });
       expect(body.jobToken).toMatchObject({ jobId, expiresIn: 900, kind: "lifecycle" });
       expect(body.sessionToken).toMatchObject({ jobId, expiresIn: 900, kind: "session" });
       expect(body.sessionToken!.token).not.toBe(body.jobToken.token);
@@ -522,6 +574,38 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         harnessId: agent.harnessId,
         kind: "session",
         scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+      });
+    });
+
+    it("fails a run-spec job whose task is unknown and claims the next job", async () => {
+      const { agent, job } = await claimOrg();
+      const unknown = await job("claim.run", { taskId: "builtin:gone", payload: RUN_PAYLOAD });
+      const next = await job();
+      const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
+      if (body.action !== "run") throw new Error("expected run");
+      expect(body.job.id).toBe(next);
+      expect(await jobRow(unknown)).toMatchObject({
+        status: "failed",
+        error: "Unknown task builtin:gone",
+        deliveryCount: 0,
+      });
+      expect(outcomes).toEqual([
+        `failed:${unknown}:Unknown task builtin:gone`,
+        `started:${next}:${agent.harnessId}`,
+      ]);
+    });
+
+    it("fails a run-spec job whose trigger the task doesn't allow", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job("claim.run", {
+        taskId: "builtin:learn-rule",
+        payload: { trigger: { kind: "chat.request", context: {} } },
+      });
+      const res = await claimAs(agent.accessToken);
+      expect(res.status).toBe(204);
+      expect(await jobRow(jobId)).toMatchObject({
+        status: "failed",
+        error: "Task builtin:learn-rule can't be triggered by chat.request",
       });
     });
 
@@ -1105,7 +1189,10 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const legacy = await newJob();
       await startAs(legacy, accessToken);
       const runSpec = await newJob();
-      await db.update(jobs).set({ taskId: "builtin:reply" }).where(eq(jobs.id, runSpec));
+      await db
+        .update(jobs)
+        .set({ type: "task.run", taskType: "query", taskId: "builtin:reply", payload: RUN_PAYLOAD })
+        .where(eq(jobs.id, runSpec));
       await startAs(runSpec, accessToken);
 
       const res = await heartbeat(

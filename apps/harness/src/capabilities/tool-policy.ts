@@ -4,6 +4,7 @@ import {
   type SessionPermissions,
   type SessionPermissionsBuilder,
 } from "@omniralph/engine";
+import { ruleTool } from "@omniralph/shared";
 import type { ToolPolicy } from "./index.js";
 
 /**
@@ -65,11 +66,7 @@ export interface ToolRestrictions {
   disallowedTools?: readonly string[] | null;
 }
 
-/** The tool a permission rule is about: `Bash` for `Bash(pnpm test:*)`. */
-export function ruleTool(rule: string): string {
-  const paren = rule.indexOf("(");
-  return (paren === -1 ? rule : rule.slice(0, paren)).trim();
-}
+export { ruleTool };
 
 const unique = (values: readonly string[]) => [...new Set(values)];
 

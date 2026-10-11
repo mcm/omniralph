@@ -225,7 +225,9 @@ export interface ClaimJobResult {
  * is canceled and one at `maxDeliveries` is failed; both are returned in
  * `settled` and the claim moves on to the next candidate. `beforeClaim` runs
  * on the job about to be claimed (e.g. to sign its job token): if it throws,
- * the whole transaction rolls back and no delivery is used up.
+ * the whole transaction rolls back and no delivery is used up; if it returns
+ * `{ fail }` (the job can never run, e.g. its run spec can't be resolved), the
+ * job is failed with that error, added to `settled`, and the claim moves on.
  */
 export async function claimJob(
   db: Database,
@@ -239,7 +241,7 @@ export async function claimJob(
     maxDeliveries: number;
     leaseSeconds?: number;
     now?: Date;
-    beforeClaim?: (job: Job) => Promise<void>;
+    beforeClaim?: (job: Job) => Promise<void | { fail: string }>;
   },
 ): Promise<ClaimJobResult> {
   const now = input.now ?? new Date();
@@ -311,7 +313,16 @@ export async function claimJob(
         settled.push({ outcome: "failed", job: failed! });
         continue;
       }
-      await input.beforeClaim?.(job);
+      const before = await input.beforeClaim?.(job);
+      if (before) {
+        const [failed] = await tx
+          .update(jobs)
+          .set({ status: "failed", error: before.fail, leaseExpiresAt: null, finishedAt: now })
+          .where(eq(jobs.id, job.id))
+          .returning();
+        settled.push({ outcome: "failed", job: failed! });
+        continue;
+      }
       const [claimed] = await tx
         .update(jobs)
         .set({
