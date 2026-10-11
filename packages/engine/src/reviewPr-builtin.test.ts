@@ -219,11 +219,10 @@ describe("builtin:review-pr agrees with the review prompt builders", () => {
     await expect(prompt).toMatchFileSnapshot(`__snapshots__/review-pr.${name}.md`);
   });
 
-  it("has REVIEW_SYSTEM_PROMPT as the task's systemAppend, after the agent's prompt", () => {
-    expect(task.systemAppend).toBe(REVIEW_SYSTEM_PROMPT);
+  it("has the agent's system prompt + the task's systemAppend = REVIEW_SYSTEM_PROMPT", () => {
     expect(agent.systemPromptMode).toBe("replace");
     const system = [agent.systemPrompt, task.systemAppend].join("\n\n");
-    expect(system.endsWith(REVIEW_SYSTEM_PROMPT)).toBe(true);
+    expect(system).toBe(REVIEW_SYSTEM_PROMPT);
     // The reply task's own system text stays out of reviews.
     const reply = getBuiltinTask("builtin:reply-to-finding")!;
     expect(REPLY_SYSTEM_PROMPT).toBe(`${agent.systemPrompt}\n\n${reply.systemAppend}`);

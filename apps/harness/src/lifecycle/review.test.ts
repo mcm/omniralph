@@ -440,14 +440,11 @@ ${diff}
       task: getBuiltinTask("builtin:review-pr")!,
     });
 
-    it("runs with the agent's prompt and REVIEW_SYSTEM_PROMPT, none of the reply task's system text", async () => {
+    it("runs with exactly REVIEW_SYSTEM_PROMPT, none of the reply task's system text", async () => {
       const { provider, requests } = fakeProvider();
       await runReviewTask(spec({}, builtin()), context(), { provider: () => provider });
       const system = requests[0]!.systemPrompt!;
-      expect(system).toBe(
-        `You are Omniralph, an automated code reviewer.\n\n${REVIEW_SYSTEM_PROMPT}`,
-      );
-      expect(system.endsWith(REVIEW_SYSTEM_PROMPT)).toBe(true);
+      expect(system).toBe(REVIEW_SYSTEM_PROMPT);
       const replyText = REPLY_SYSTEM_PROMPT.slice(builtin().agent.systemPrompt.length).trim();
       for (const line of replyText.split("\n").filter(Boolean)) expect(system).not.toContain(line);
     });
