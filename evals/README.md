@@ -1,8 +1,8 @@
 # Review evals
 
 `pnpm eval` measures how well reviews find real problems and how much they
-cost. It runs the real review (`runReview` with `ClaudeAgentProvider`, exactly
-what an agent runs) over a corpus of small known-bad and known-clean changes
+cost. It runs the real review (`runReview` with `ClaudeAgentProvider`, the same
+pipeline and prompt as the `builtin:review-pr` review task) over a corpus of small known-bad and known-clean changes
 and reports, per profile:
 
 - **precision**: how many reported findings were real (TP / (TP + FP)),
@@ -12,7 +12,9 @@ and reports, per profile:
 
 each compared against the committed baseline (`evals/baseline.json`). Use it
 whenever you change the rubric, the prompts, the provider or a profile, to tell
-whether reviews got better or only cheaper.
+whether reviews got better or only cheaper. It measures one review task on its
+own: other review tasks and a review run's correlation of their findings aren't
+part of it.
 
 > `pnpm eval` spends real Claude tokens (a full run is 27 cases × 3 profiles,
 > Deep on Opus). It is not part of `pnpm test` or CI. The offline tests

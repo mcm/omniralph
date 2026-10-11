@@ -120,7 +120,7 @@ code-host or Vercel credentials. Their identity is:
   | -- | -- | -- | -- |
   | `lifecycle` | run-spec jobs (with a `task_id`) | the harness's own git calls (syncing and checking out the repository) | `credentials:read`; `coding` runs add `credentials:write` |
   | `session` | run-spec jobs | the Claude session: its env (`OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_TOKEN_FILE`), its git credential helper and the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
-  | no `kind` (legacy) | `review.run`, `repo.sync` and other system RPCs | everything in the job | `credentials:read` |
+  | no `kind` (legacy) | `repo.sync` and other system RPCs | everything in the job | `credentials:read` |
   | no `kind` (legacy) | `ralph.*` (until the coding epic ports them) | everything in the job | `credentials:read`, `credentials:write`, `run:activity`, `run:attachments` |
 
   The credential broker hands out a push credential only for

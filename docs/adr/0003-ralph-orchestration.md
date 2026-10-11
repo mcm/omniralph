@@ -10,7 +10,11 @@
 > any running job whose token has them, not only ralph jobs. `ralph.*` jobs keep one token with
 > `credentials:read`, `credentials:write`, `run:activity` and `run:attachments` until a later epic
 > ports them to `coding` tasks. They run on harnesses that accept the `coding` task type, in the
-> `long` pool, instead of on the `ralph` capability.
+> `long` pool, instead of on the `ralph` capability. Since TOOL-303 a review is a review run (one
+> task run per review task, see [ADR 0008](0008-agents-tasks-and-the-harness.md#review-runs)), and
+> the `review.run` outcome handler below is gone: `finishReviewRun` hands a completed review run's
+> open findings to `respondToReview`, once per review run (`handled_review_ids` holds review run
+> IDs).
 
 ## Context
 
