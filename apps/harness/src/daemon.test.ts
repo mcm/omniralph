@@ -47,7 +47,6 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
 function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
   return {
     id,
-    capability: "review",
     type: "review.run",
     taskType: "review",
     pool: "short",
@@ -203,14 +202,13 @@ afterEach(() => {
 });
 
 describe("AgentDaemon", () => {
-  it("heartbeats every 20s with its version, capabilities, running jobs and free slots", async () => {
+  it("heartbeats every 20s with its version, running jobs and free slots", async () => {
     const { api, daemon } = setup({});
     void daemon.run();
     await settle();
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
     expect(api.heartbeat).toHaveBeenLastCalledWith({
       version: "1.2.3",
-      capabilities: ["review"],
       runningJobIds: [],
       freeSlots: 0,
       deliveredMessageIds: [],
@@ -377,9 +375,7 @@ describe("AgentDaemon", () => {
       capabilities: [systemCapability, capability(async () => ({})), ralphCapability],
       config: centralConfig({ poolLimits: { short: 1 } }),
     });
-    claims.push(
-      job(id, { capability: "ralph", type: "ralph.prepare", taskType: "coding", pool: "long" }),
-    );
+    claims.push(job(id, { type: "ralph.prepare", taskType: "coding", pool: "long" }));
     void daemon.run();
     await settle();
     expect(claims.calls).toEqual([["short"]]);
@@ -408,7 +404,7 @@ describe("AgentDaemon", () => {
     expect(run).not.toHaveBeenCalled();
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
-      error: "unknown job type review/review.frobnicate",
+      error: "unknown job type review.frobnicate",
     });
     await daemon.shutdown();
   });
@@ -506,9 +502,7 @@ describe("AgentDaemon", () => {
     });
     const pushRalph = (...ids: string[]) =>
       env.claims.push(
-        ...ids.map((id) =>
-          job(id, { capability: "ralph", type: "ralph.story", taskType: "coding", pool: "long" }),
-        ),
+        ...ids.map((id) => job(id, { type: "ralph.story", taskType: "coding", pool: "long" })),
       );
     return { ...env, gates, runningJobs, signals, pushRalph };
   }
@@ -674,7 +668,6 @@ describe("AgentDaemon", () => {
     const id = randomUUID();
     claims.push(
       job(id, {
-        capability: "system",
         type: "repo.sync",
         taskType: "system",
         pool: null,

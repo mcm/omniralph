@@ -326,7 +326,6 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       .insert(jobs)
       .values({
         organizationId: orgId,
-        capability: "review",
         type: "review.run",
         taskType: "review",
         pool: "short",

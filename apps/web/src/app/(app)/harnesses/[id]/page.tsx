@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getHarnessOverview, listRecentHarnessAudit, listRepositoryOverview } from "@omniralph/db";
-import { CAPABILITIES } from "@omniralph/shared";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
@@ -46,7 +45,6 @@ export default async function HarnessPage({ params }: { params: Promise<{ id: st
           : organizationVersion.version
       }
       now={now.getTime()}
-      knownCapabilities={[...CAPABILITIES]}
       repositories={repositories.map((repo) => ({
         id: repo.id,
         provider: repo.provider,

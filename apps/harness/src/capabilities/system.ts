@@ -1,4 +1,4 @@
-import { REPO_SYNC_JOB_TYPE, RepoSyncPayload, SYSTEM_CAPABILITY } from "@omniralph/shared";
+import { REPO_SYNC_JOB_TYPE, RepoSyncPayload } from "@omniralph/shared";
 import type { Capability, ToolPolicy } from "./index.js";
 
 /** System jobs run no Claude session at all. */
@@ -18,7 +18,7 @@ export const SYSTEM_TOOL_POLICY: ToolPolicy = {
  * fetches it if it's already there, and runs nothing else.
  */
 export const systemCapability: Capability = {
-  name: SYSTEM_CAPABILITY,
+  name: "system",
   jobTypes: [REPO_SYNC_JOB_TYPE],
   toolPolicy: SYSTEM_TOOL_POLICY,
   async run(job, ctx) {

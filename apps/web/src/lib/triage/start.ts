@@ -19,7 +19,6 @@ import {
 import { parseInstruction } from "@omniralph/ralph";
 import {
   LINEAR_STATE_TYPES,
-  TRIAGE_CAPABILITY,
   TRIAGE_RUN_JOB_TYPE,
   TriageRunPayload,
   type TriageBlocker,
@@ -275,7 +274,6 @@ export async function enqueueTriage(
   try {
     const { job } = await deps.dispatcher.createAndPublish({
       organizationId: deps.organizationId,
-      capability: TRIAGE_CAPABILITY,
       type: TRIAGE_RUN_JOB_TYPE,
       ...legacyJobRouting(TRIAGE_RUN_JOB_TYPE),
       payload,

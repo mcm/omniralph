@@ -1,9 +1,7 @@
 import "server-only";
 import {
   HARNESS_TOKEN_TTL_SECONDS,
-  CAPABILITY_JOB_SCOPES,
-  isCapability,
-  SYSTEM_CAPABILITY,
+  type JobTaskType,
   type JobToken,
   type JobTokenScope,
 } from "@omniralph/shared";
@@ -31,20 +29,33 @@ export function notCurrentHarness(): Response {
   return Response.json({ error: "not_current_agent" }, { status: 409 });
 }
 
-export function jobScopes(capability: string): JobTokenScope[] {
-  if (capability === SYSTEM_CAPABILITY) return CAPABILITY_JOB_SCOPES.system;
-  return isCapability(capability) ? CAPABILITY_JOB_SCOPES[capability] : [];
+/** What decides a job token's scopes. */
+export interface JobScopeInput {
+  taskType: JobTaskType;
+  type: string;
 }
 
-/** Signs a job token carrying the capability's scopes. */
+/**
+ * The scopes of a job's token. Legacy `ralph.*` jobs push their commits, relay
+ * session activities and download Linear attachments; every other job may
+ * only read its repository.
+ */
+export function jobScopes(job: JobScopeInput): JobTokenScope[] {
+  if (job.type.startsWith("ralph.")) {
+    return ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"];
+  }
+  return ["credentials:read"];
+}
+
+/** Signs a job token carrying the job's scopes (`jobScopes`). */
 export async function signJobToken(
-  job: { id: string; capability: string },
+  job: { id: string } & JobScopeInput,
   harnessId: string,
 ): Promise<JobToken> {
   const token = await getTokenSigner().signJobToken({
     jobId: job.id,
     harnessId,
-    scopes: jobScopes(job.capability),
+    scopes: jobScopes(job),
   });
   return { jobId: job.id, token, expiresIn: HARNESS_TOKEN_TTL_SECONDS };
 }

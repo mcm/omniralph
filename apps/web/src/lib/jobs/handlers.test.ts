@@ -63,7 +63,6 @@ const reviewPayload: ReviewJobPayload = {
 function job(overrides: Partial<Job>): Job {
   return {
     id: "00000000-0000-4000-8000-000000000009",
-    capability: "review",
     type: "review.run",
     taskType: "review",
     pool: "short",
@@ -74,21 +73,18 @@ function job(overrides: Partial<Job>): Job {
 
 describe("job outcome handlers", () => {
   it("routes review, learn-rule and reply jobs to their handlers by type", () => {
-    expect(jobOutcomeHandler(job({}))?.capability).toBe("review");
+    expect(jobOutcomeHandler(job({}))?.onStarted).toBeDefined();
     for (const type of ["review.learn-rule", "review.reply"]) {
       // Registered, but the payload is a review's: generic lifecycle only.
       expect(jobOutcomeHandler(job({ type }))).toBeUndefined();
     }
   });
 
-  it("ignores jobs whose capability, type or payload don't match", () => {
-    expect(jobOutcomeHandler(job({ capability: "ralph" }))).toBeUndefined();
+  it("ignores jobs whose type or payload don't match", () => {
     expect(jobOutcomeHandler(job({ type: "review.other" }))).toBeUndefined();
     expect(jobOutcomeHandler(job({ payload: { reviewId: "x" } }))).toBeUndefined();
     expect(
-      jobOutcomeHandler(
-        job({ capability: "system", type: "repo.sync", taskType: "system", pool: null }),
-      ),
+      jobOutcomeHandler(job({ type: "repo.sync", taskType: "system", pool: null })),
     ).toBeUndefined();
   });
 
@@ -105,7 +101,6 @@ describe("job outcome handlers", () => {
 
   it("routes triage jobs and accepts well-formed results only", () => {
     const triage = job({
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",
@@ -122,7 +117,6 @@ describe("job outcome handlers", () => {
       },
     });
     const handler = jobOutcomeHandler(triage)!;
-    expect(handler.capability).toBe("triage");
     expect(handler.onStarted).toBeDefined();
     expect(handler.isValidResult!({ summary: "x" })).toBe(false);
     expect(
@@ -134,7 +128,6 @@ describe("job outcome handlers", () => {
         durationMs: 0,
       }),
     ).toBe(true);
-    expect(jobOutcomeHandler({ ...triage, capability: "ralph" })).toBeUndefined();
   });
 
   it("routes chat.ask jobs to the code question hooks", async () => {
@@ -152,7 +145,6 @@ describe("job outcome handlers", () => {
       },
     });
     const handler = jobOutcomeHandler(ask)!;
-    expect(handler.capability).toBe("review");
     expect(handler.isValidResult!("ok")).toBe(true);
     expect(handler.isValidResult!("bad")).toBe(false);
     const db = {} as Database;
@@ -162,23 +154,21 @@ describe("job outcome handlers", () => {
     expect(chatAsk.onChatAskJobFailed).toHaveBeenLastCalledWith(db, ask);
     // A review payload isn't a code question's.
     expect(jobOutcomeHandler(job({ type: "chat.ask" }))).toBeUndefined();
-    expect(jobOutcomeHandler({ ...ask, capability: "ralph" })).toBeUndefined();
   });
 
   it("registers new job types, once each", () => {
     const onCompleted = vi.fn();
     registerJobOutcomeHandler("test.thing", {
-      capability: "ralph",
       payload: z.object({ runId: z.string() }),
       onCompleted,
     });
-    const thing = job({ capability: "ralph", type: "test.thing", payload: { runId: "r" } });
+    const thing = job({ type: "test.thing", payload: { runId: "r" } });
     expect(jobOutcomeHandler(thing)?.onCompleted).toBe(onCompleted);
-    expect(() =>
-      registerJobOutcomeHandler("test.thing", { capability: "ralph", payload: z.object({}) }),
-    ).toThrow(/twice/);
-    expect(() =>
-      registerJobOutcomeHandler("review.run", { capability: "review", payload: z.object({}) }),
-    ).toThrow(/twice/);
+    expect(() => registerJobOutcomeHandler("test.thing", { payload: z.object({}) })).toThrow(
+      /twice/,
+    );
+    expect(() => registerJobOutcomeHandler("review.run", { payload: z.object({}) })).toThrow(
+      /twice/,
+    );
   });
 });

@@ -94,7 +94,6 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
     ) => ({
       id: randomUUID(),
       organizationId: orgId,
-      capability: type.split(".")[0]!,
       type,
       ...legacyJobRouting(type),
       repositoryId,

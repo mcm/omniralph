@@ -36,7 +36,9 @@ export async function POST(req: Request): Promise<Response> {
   const { repository, connection } = found;
 
   const access =
-    principal.scopes.includes("credentials:write") && job.capability === "ralph" ? "write" : "read";
+    principal.scopes.includes("credentials:write") && job.type.startsWith("ralph.")
+      ? "write"
+      : "read";
   const adapter = scmAdapterFor(db, connection);
   const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
   let credential: CloneCredential;

@@ -3,7 +3,6 @@
  * (returned to the harness in its next heartbeat), the audit log and the job list.
  */
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { legacyHarnessRouting } from "@omniralph/shared";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -29,8 +28,8 @@ export interface RepositoryLink {
 
 export interface HarnessJobSummary {
   id: string;
-  capability: string;
   type: string;
+  taskType: Job["taskType"];
   status: JobStatus;
   payload: Record<string, unknown>;
   repository: RepositoryLink | null;
@@ -66,8 +65,8 @@ async function withJobsAndPins(db: Database, rows: HarnessRow[]): Promise<Harnes
       .select({
         id: jobs.id,
         harnessId: jobs.harnessId,
-        capability: jobs.capability,
         type: jobs.type,
+        taskType: jobs.taskType,
         status: jobs.status,
         payload: jobs.payload,
         ...repositoryLinkColumns,
@@ -91,8 +90,8 @@ async function withJobsAndPins(db: Database, rows: HarnessRow[]): Promise<Harnes
       .filter((job) => job.harnessId === agent.id)
       .map((job) => ({
         id: job.id,
-        capability: job.capability,
         type: job.type,
+        taskType: job.taskType,
         status: job.status,
         payload: job.payload,
         repository: repositoryLink(job),
@@ -145,15 +144,15 @@ export async function getHarnessOverview(
 
 export interface HarnessConfigInput {
   maxConcurrency: number;
-  enabledCapabilities: string[];
-  /** Per-capability concurrency limits; capabilities left out use the default. */
-  capabilityLimits?: Partial<Record<string, number>>;
+  /** Task types the harness may claim jobs of (`system` is always accepted). */
+  acceptedTaskTypes: Job["taskType"][];
+  /** Per-pool concurrency limits; pools left out use the default. */
+  poolLimits: Partial<Record<string, number>>;
 }
 
 /**
  * Updates a harness's central configuration. The harness picks it up from its
- * next heartbeat response. Its accepted task types (and, when limits are
- * given, its pool limits) follow from the capabilities (`legacyHarnessRouting`). Returns null for unknown or revoked harnesses and
+ * next heartbeat response. Returns null for unknown or revoked harnesses and
  * harnesses of another organization.
  */
 export async function updateHarnessConfig(
@@ -162,17 +161,12 @@ export async function updateHarnessConfig(
   harnessId: string,
   input: HarnessConfigInput,
 ): Promise<HarnessRow | null> {
-  const routing = legacyHarnessRouting(input.enabledCapabilities, input.capabilityLimits ?? {});
   const [row] = await db
     .update(harnesses)
     .set({
       maxConcurrency: input.maxConcurrency,
-      enabledCapabilities: [...new Set(input.enabledCapabilities)],
-      acceptedTaskTypes: routing.acceptedTaskTypes,
-      ...(input.capabilityLimits && {
-        capabilityLimits: input.capabilityLimits,
-        poolLimits: routing.poolLimits,
-      }),
+      acceptedTaskTypes: [...new Set(input.acceptedTaskTypes)],
+      poolLimits: input.poolLimits,
     })
     .where(
       and(
@@ -282,8 +276,8 @@ export async function listRecentHarnessAudit(
 
 export interface JobListEntry {
   id: string;
-  capability: string;
   type: string;
+  taskType: Job["taskType"];
   status: JobStatus;
   deliveryCount: number;
   cancelRequested: boolean;
@@ -296,7 +290,7 @@ export interface JobListEntry {
   finishedAt: Date | null;
 }
 
-/** An organization's recent jobs across capabilities, newest first, optionally of some statuses and types only. */
+/** An organization's recent jobs of every type, newest first, optionally of some statuses and types only. */
 export async function listRecentJobs(
   db: Database,
   organizationId: string,
@@ -312,8 +306,8 @@ export async function listRecentJobs(
   const rows = await db
     .select({
       id: jobs.id,
-      capability: jobs.capability,
       type: jobs.type,
+      taskType: jobs.taskType,
       status: jobs.status,
       deliveryCount: jobs.deliveryCount,
       cancelRequested: jobs.cancelRequested,
@@ -335,8 +329,8 @@ export async function listRecentJobs(
     .limit(filter.limit ?? 100);
   return rows.map((row) => ({
     id: row.id,
-    capability: row.capability,
     type: row.type,
+    taskType: row.taskType,
     status: row.status,
     deliveryCount: row.deliveryCount,
     cancelRequested: row.cancelRequested,

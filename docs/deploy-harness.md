@@ -21,7 +21,7 @@ user runs the harness *the harness's user*.
   cached).
 - `sudo` on the host only if you create a dedicated user or install a systemd unit.
 - An admin account in the control panel organization the harness should serve.
-- For the `ralph` capability, also a git identity and the target repositories' toolchains: see
+- For ralph (`coding` tasks), also a git identity and the target repositories' toolchains: see
   [Ralph](#ralph).
 
 ### Coder specifics
@@ -364,17 +364,20 @@ response (every 20s), so changes need no restart:
 | Setting | Where | Default |
 | -- | -- | -- |
 | Max concurrency (parallel jobs) | **Harnesses › <harness>** | 1 |
-| Concurrency per capability (1 to max concurrency) | **Harnesses › <harness>** | `ralph`: max concurrency − 1 (at least 1); others: max concurrency |
-| Enabled capabilities (`review`, `ralph`, `triage`) | **Harnesses › <harness>** | `review` |
+| Concurrency per pool (1 to max concurrency) | **Harnesses › <harness>** | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
+| Accepted task types (`query`, `review`, `coding`) | **Harnesses › <harness>** | `query`, `review` |
 | Pinned repositories | **Harnesses › <harness>**, or **Repository › Settings › Harness pinning** | none (every harness is eligible for every repo) |
 | Desired harness version ([self-update](#self-update-pm2), pm2 only) | **Settings › Harnesses**; per-harness override on **Harnesses › <harness>** | none (not managed) |
 | Job cancellations | **Jobs** (cancel) | — |
 
-Per-capability limits cap how many of a harness's slots one capability's jobs may take. The harness only
-claims a capability's jobs while that capability is under its limit, so with the default an
+Accepted task types decide what a host may run (trust): `query` (replies, code questions, learned
+rules, triage), `review` (PR/MR reviews) and `coding` (ralph jobs, which change code and push).
+`repo.sync` and other housekeeping jobs always run. Pool limits decide how many of a harness's
+slots one pool's jobs may take (concurrency): `short` holds query and review jobs, `long` coding
+jobs. The harness only claims a pool's jobs while that pool is under its limit, so with the default a
 harness with two or more slots always keeps one free for reviews while hours-long ralph stories run.
-Lowering a limit cancels nothing: the harness just takes no new jobs of that capability until it is
-under the new limit. The heartbeat's `freeSlots` counts only slots some enabled capability could use.
+Lowering a limit cancels nothing: the harness just takes no new jobs of that pool until it is
+under the new limit.
 
 Pinning a repository to a harness routes its jobs to that harness only and makes the harness pre-clone it
 (`repo.sync`). The **Harnesses** page shows each harness's last heartbeat, version, running jobs and its
@@ -382,7 +385,7 @@ audit log (enrollment, token refreshes, credential issuance, revocation).
 
 ## Ralph
 
-The `ralph` capability builds delegated Linear issues story by story (see [linear.md](linear.md)
+Ralph builds delegated Linear issues story by story (see [linear.md](linear.md)
 for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). A harness
 runs five ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
 `ralph.describe-pr` (a read-only session writing the PR/MR description), `ralph.prepare` (a
@@ -393,11 +396,11 @@ manual story's approved preparation commands), `ralph.request` (one Claude sessi
 (`jobMessages`) and the harness acknowledges them in its next heartbeat. Jobs download the run's
 Linear attachments through the control panel and cache them in `<workspaceRoot>/.attachments/`.
 
-### Enabling the capability
+### Enabling ralph
 
-New harnesses only run reviews. To let a harness run ralph jobs, open **Harnesses › <harness>**, tick
-`ralph` under **Enabled capabilities** and save; it applies with the next heartbeat (no restart).
-The harness then also claims its organization's `ralph` jobs (see
+New harnesses only run query and review tasks. To let a harness run ralph jobs, open **Harnesses ›
+<harness>**, tick `coding` under **Accepted task types** and save; it applies with the next heartbeat
+(no restart). The harness then also claims its organization's `ralph` jobs (see
 [ADR 0004](adr/0004-organizations.md#job-isolation)).
 
 - A run sticks to the harness that started it: all its later jobs are targeted at that harness, so keep
@@ -549,7 +552,7 @@ What to do:
    creates a **new harness** (new ID) and overwrites `harness.json`; the revoked harness stays in the list
    for its history.
 4. Re-apply the old harness's central config to the new one: max concurrency,
-   capabilities and **pinned repositories** (pins belong to the harness ID).
+   accepted task types, pool limits and **pinned repositories** (pins belong to the harness ID).
 5. Start the harness again.
 
 When an admin revokes a harness, its running jobs are re-queued at once. After a `refresh_reuse`, the

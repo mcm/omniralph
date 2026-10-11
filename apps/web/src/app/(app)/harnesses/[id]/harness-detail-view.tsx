@@ -23,6 +23,7 @@ import {
   CardTitle,
   Checkbox,
   Field,
+  InlineCode,
   Input,
   Label,
   Muted,
@@ -36,7 +37,8 @@ import {
   IconPinnedOff,
   IconTrash,
 } from "@tabler/icons-react";
-import { defaultCapabilityLimit } from "@omniralph/shared";
+import { defaultPoolLimit } from "@omniralph/shared";
+import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import type { HarnessRow } from "@/lib/harnesses/rows";
@@ -51,9 +53,10 @@ import {
   updateHarnessConfig,
 } from "../actions";
 import {
+  formatPoolLimits,
   HarnessStatusBadge,
-  CapabilityBadges,
   JobTargetLink,
+  TaskTypeBadges,
   UpdateStatusBadge,
 } from "../harness-parts";
 import { ProviderIcon } from "../../repositories/repositories-view";
@@ -62,8 +65,6 @@ import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit
 interface HarnessDetailViewProps {
   harness: HarnessRow;
   now: number;
-  /** Capabilities the control panel can dispatch. */
-  knownCapabilities: string[];
   /** Connected repositories (for pinning). */
   repositories: { id: string; provider: "github" | "gitlab"; fullPath: string }[];
   audit: AuditRow[];
@@ -86,29 +87,30 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-function ConfigCard({
-  harness,
-  knownCapabilities,
-}: {
-  harness: HarnessRow;
-  knownCapabilities: string[];
-}) {
+/** What each task type the harness may accept runs. */
+const TASK_TYPE_HINTS: Record<(typeof TASK_TYPES)[number], string> = {
+  query: "Read-only questions: replies, code questions, learned rules, triage.",
+  review: "Pull request reviews.",
+  coding: "Ralph runs that change code and push it.",
+};
+
+function ConfigCard({ harness }: { harness: HarnessRow }) {
   const { pending, run } = useAction();
   const [maxConcurrency, setMaxConcurrency] = React.useState(String(harness.maxConcurrency));
-  const [capabilities, setCapabilities] = React.useState<string[]>(
-    harness.enabledCapabilities.filter((c) => knownCapabilities.includes(c)),
+  const [taskTypes, setTaskTypes] = React.useState<string[]>(
+    harness.acceptedTaskTypes.filter((t) => (TASK_TYPES as readonly string[]).includes(t)),
   );
   const [limits, setLimits] = React.useState<Record<string, string>>(() =>
     Object.fromEntries(
-      Object.entries(harness.capabilityLimits).map(([name, limit]) => [name, String(limit)]),
+      Object.entries(harness.poolLimits).map(([name, limit]) => [name, String(limit)]),
     ),
   );
   const disabled = harness.revoked || pending;
   const slots = Number(maxConcurrency) >= 1 ? Math.floor(Number(maxConcurrency)) : 1;
 
-  const toggle = (capability: string, on: boolean) =>
-    setCapabilities((current) =>
-      on ? [...new Set([...current, capability])] : current.filter((c) => c !== capability),
+  const toggle = (taskType: string, on: boolean) =>
+    setTaskTypes((current) =>
+      TASK_TYPES.filter((t) => (t === taskType ? on : current.includes(t))),
     );
 
   const save = (e: React.FormEvent) => {
@@ -117,12 +119,13 @@ function ConfigCard({
       () =>
         updateHarnessConfig(harness.id, {
           maxConcurrency: Number(maxConcurrency),
-          enabledCapabilities: capabilities,
+          acceptedTaskTypes: taskTypes,
           // Blank limits use the default.
-          capabilityLimits: Object.fromEntries(
-            capabilities
-              .filter((capability) => limits[capability]?.trim())
-              .map((capability) => [capability, Number(limits[capability])]),
+          poolLimits: Object.fromEntries(
+            POOLS.filter((pool) => limits[pool]?.trim()).map((pool) => [
+              pool,
+              Number(limits[pool]),
+            ]),
           ),
         }),
       "Saved. The harness picks it up with its next heartbeat.",
@@ -158,62 +161,61 @@ function ConfigCard({
             </Field>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <span style={factLabel}>Enabled capabilities</span>
-            {knownCapabilities.map((capability) => (
+            <span style={factLabel}>Accepted task types</span>
+            <Muted>
+              Which tasks this host may run. Housekeeping jobs (repository syncs) always run.
+            </Muted>
+            {TASK_TYPES.map((taskType) => (
               <div
-                key={capability}
+                key={taskType}
                 style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
               >
                 <Checkbox
-                  id={`capability-${capability}`}
-                  checked={capabilities.includes(capability)}
+                  id={`task-type-${taskType}`}
+                  checked={taskTypes.includes(taskType)}
                   disabled={disabled}
-                  onCheckedChange={(checked) => toggle(capability, checked === true)}
+                  onCheckedChange={(checked) => toggle(taskType, checked === true)}
                 />
-                <Label htmlFor={`capability-${capability}`}>{capability}</Label>
-                {!harness.reportedCapabilities.includes(capability) && (
-                  <Muted>(not reported by the host)</Muted>
-                )}
+                <Label htmlFor={`task-type-${taskType}`}>{taskType}</Label>
+                <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
               </div>
             ))}
           </div>
-          {capabilities.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              <span style={factLabel}>Concurrency per capability</span>
-              <Muted>
-                Caps how many of the harness&apos;s slots a capability&apos;s jobs may take (1 to
-                the max concurrency). Leave blank for the default: ralph leaves one slot free for
-                other work; triage and review may use every slot, so cap triage to keep room for
-                ralph and reviews. Lowering a limit doesn&apos;t cancel running jobs; the harness
-                takes no new ones until it is under the limit.
-              </Muted>
-              <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-                {capabilities.map((capability) => (
-                  <Field
-                    key={capability}
-                    label={capability}
-                    htmlFor={`limit-${capability}`}
-                    hint={`Effective now: ${harness.effectiveCapabilityLimits[capability] ?? "not enabled"}.`}
-                    // Fields size to their hint; keep room for the "Default (n)" placeholder.
-                    style={{ minWidth: "12rem" }}
-                  >
-                    <Input
-                      id={`limit-${capability}`}
-                      type="number"
-                      min={1}
-                      max={slots}
-                      placeholder={`Default (${defaultCapabilityLimit(capability, slots)})`}
-                      disabled={disabled}
-                      value={limits[capability] ?? ""}
-                      onChange={(e) =>
-                        setLimits((current) => ({ ...current, [capability]: e.target.value }))
-                      }
-                    />
-                  </Field>
-                ))}
-              </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+            <span style={factLabel}>Concurrency per pool</span>
+            <Muted>
+              Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
+              concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
+              <InlineCode>long</InlineCode> coding tasks. Leave blank for the default: long leaves
+              one slot free for other work; short may use every slot. Lowering a limit doesn&apos;t
+              cancel running jobs; the harness takes no new ones until it is under the limit.
+            </Muted>
+            <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+              {POOLS.map((pool) => (
+                <Field
+                  key={pool}
+                  label={pool}
+                  htmlFor={`limit-${pool}`}
+                  hint={`Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
+                  // Fields size to their hint; keep room for the "Default (n)" placeholder.
+                  style={{ minWidth: "12rem" }}
+                >
+                  <Input
+                    id={`limit-${pool}`}
+                    type="number"
+                    min={1}
+                    max={slots}
+                    placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
+                    disabled={disabled}
+                    value={limits[pool] ?? ""}
+                    onChange={(e) =>
+                      setLimits((current) => ({ ...current, [pool]: e.target.value }))
+                    }
+                  />
+                </Field>
+              ))}
             </div>
-          )}
+          </div>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <Button type="submit" variant="primary" disabled={disabled}>
               <IconDeviceFloppy size={14} />
@@ -535,7 +537,6 @@ function DeleteCard({ harness }: { harness: HarnessRow }) {
 export function HarnessDetailView({
   harness,
   now,
-  knownCapabilities,
   repositories,
   audit,
   globalDesiredVersion,
@@ -607,11 +608,8 @@ export function HarnessDetailView({
               <Fact label="Failed versions">
                 {harness.failedVersions.length > 0 ? harness.failedVersions.join(", ") : "None"}
               </Fact>
-              <Fact label="Capabilities (reported vs. enabled)">
-                <CapabilityBadges
-                  reported={harness.reportedCapabilities}
-                  enabled={harness.enabledCapabilities}
-                />
+              <Fact label="Accepted task types">
+                <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
               </Fact>
               <Fact label="Running jobs">
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
@@ -623,19 +621,15 @@ export function HarnessDetailView({
                   ))}
                 </div>
               </Fact>
-              <Fact label="Concurrency per capability">
-                {Object.keys(harness.effectiveCapabilityLimits).length === 0
-                  ? "No capabilities enabled"
-                  : Object.entries(harness.effectiveCapabilityLimits)
-                      .map(([capability, limit]) => `${capability}: ${limit}`)
-                      .join(", ")}
+              <Fact label="Concurrency per pool">
+                {formatPoolLimits(harness.effectivePoolLimits)}
               </Fact>
               <Fact label="Enrolled">{formatDateTime(harness.createdAt)}</Fact>
             </div>
           </CardContent>
         </Card>
 
-        <ConfigCard harness={harness} knownCapabilities={knownCapabilities} />
+        <ConfigCard harness={harness} />
         <VersionCard harness={harness} globalDesiredVersion={globalDesiredVersion} />
         <PinsCard harness={harness} repositories={repositories} />
 

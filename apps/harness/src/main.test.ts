@@ -127,7 +127,6 @@ describe("omniralph-harness CLI", () => {
             enrollmentToken: "ore_abc",
             name: "coder-1",
             version: AGENT_VERSION,
-            capabilities: ["system", "review", "ralph", "triage"],
           },
         },
       ]);

@@ -73,7 +73,7 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
     // Target of the job links on the Ralph run pages.
     <TableRow id={`job-${job.id}`}>
       <TableCell>
-        <Badge variant="outline">{job.capability}</Badge>
+        <Badge variant="outline">{job.taskType}</Badge>
       </TableCell>
       <TableCell>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
@@ -198,7 +198,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
         <div>
           <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Jobs</h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Queued, running and finished jobs across all capabilities.
+            Queued, running and finished jobs of every type.
           </Muted>
         </div>
 
@@ -247,7 +247,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Capability</TableHead>
+                    <TableHead>Task type</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Deliveries</TableHead>

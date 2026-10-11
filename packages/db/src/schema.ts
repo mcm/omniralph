@@ -678,7 +678,7 @@ export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
 export const DEFAULT_PROFILE_ID = "standard";
 
 /**
- * Per-repository settings of the `ralph` capability (`repositories.ralph_settings`),
+ * Per-repository settings of ralph (`repositories.ralph_settings`),
  * validated by `RalphSettings` in `@omniralph/shared` (which documents each one).
  */
 export interface RalphSettings {
@@ -761,7 +761,7 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
-    /** Linear delegations may build in this repository (`ralph` capability). */
+    /** Linear delegations may build in this repository (ralph). */
     ralphEnabled: boolean("ralph_enabled").notNull().default(false),
     /** Linear routing: team keys (e.g. `ENG`), project names and labels routed here. */
     linearTeamKeys: text("linear_team_keys")
@@ -839,18 +839,6 @@ export const harnesses = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     maxConcurrency: integer("max_concurrency").notNull().default(1),
-    enabledCapabilities: text("enabled_capabilities")
-      .array()
-      .notNull()
-      .default(sql`'{review}'::text[]`),
-    /**
-     * Per-capability caps on concurrent jobs (e.g. `{ "ralph": 1 }`), within
-     * `maxConcurrency`. Unset capabilities use the protocol's default limit.
-     */
-    capabilityLimits: jsonb("capability_limits")
-      .$type<Partial<Record<string, number>>>()
-      .notNull()
-      .default({}),
     /** Task types the harness runs (`system` is always accepted); trust, not concurrency. */
     acceptedTaskTypes: text("accepted_task_types")
       .array()
@@ -864,7 +852,6 @@ export const harnesses = pgTable(
     /** Overrides the organization's desired harness version (`app_settings` `harness.desiredVersion`). */
     desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
-    reportedCapabilities: text("reported_capabilities").array(),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older harnesses. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The harness's self-update progress, as last reported. */
@@ -1150,9 +1137,7 @@ export const jobs = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    /** Capability that runs the job, e.g. `review`. */
-    capability: text("capability").notNull(),
-    /** Job type within the capability, e.g. `review.run` or `repo.sync`. */
+    /** Job type, e.g. `review.run` or `repo.sync`. */
     type: text("type").notNull(),
     /**
      * How the harness runs the job: `query`, `review`, `coding` or `system` (a

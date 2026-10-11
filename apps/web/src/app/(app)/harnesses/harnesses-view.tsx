@@ -25,9 +25,10 @@ import { formatRelative } from "@/lib/format-date";
 import {
   HarnessStatusBadge,
   HarnessVersionCell,
-  CapabilityBadges,
+  formatPoolLimits,
   JobTargetLink,
   RepositoryBadges,
+  TaskTypeBadges,
 } from "./harness-parts";
 import { EnrollHarnessDialog } from "./enroll-harness-dialog";
 
@@ -69,16 +70,14 @@ function HarnessTableRow({
         <HarnessVersionCell harness={harness} />
       </TableCell>
       <TableCell>
-        <CapabilityBadges
-          reported={harness.reportedCapabilities}
-          enabled={harness.enabledCapabilities}
-        />
+        <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
       </TableCell>
       <TableCell>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
           <span style={cellText}>
             {harness.runningJobs.length} / {harness.maxConcurrency}
           </span>
+          <Muted>Pools: {formatPoolLimits(harness.effectivePoolLimits)}</Muted>
           {harness.runningJobs.map((job) => (
             <JobTargetLink key={job.id} job={job} />
           ))}
@@ -117,9 +116,9 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Harnesses</h1>
             <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Hosts running <InlineCode>omniralph-harness</InlineCode>. Their concurrency,
-              capabilities and pinned repositories are configured here and reach them with their
-              next heartbeat.
+              Hosts running <InlineCode>omniralph-harness</InlineCode>. Their concurrency, accepted
+              task types, pool limits and pinned repositories are configured here and reach them
+              with their next heartbeat.
             </Muted>
           </div>
           {isAdmin && <EnrollHarnessDialog />}
@@ -149,7 +148,7 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
                   <TableRow>
                     <TableHead>Harness</TableHead>
                     <TableHead>Version</TableHead>
-                    <TableHead>Capabilities</TableHead>
+                    <TableHead>Task types</TableHead>
                     <TableHead>Running jobs</TableHead>
                     <TableHead>Pinned repositories</TableHead>
                     <TableHead>Last heartbeat</TableHead>

@@ -1,6 +1,6 @@
 import "server-only";
 import { getRun, type Database, type Job } from "@omniralph/db";
-import { RALPH_CAPABILITY, type RalphActivity } from "@omniralph/shared";
+import type { RalphActivity } from "@omniralph/shared";
 import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
 import { conversationFor, type ChatSource } from "./conversation";
 import { FINISHED_RUN_STATUSES } from "./run";
@@ -13,8 +13,8 @@ export function activityContent(activity: RalphActivity): ActivityContent {
 }
 
 /** Whether a job may relay activities: only ralph jobs do. */
-export function isRalphJob(job: Pick<Job, "capability" | "type">): boolean {
-  return job.capability === RALPH_CAPABILITY && job.type.startsWith(`${RALPH_CAPABILITY}.`);
+export function isRalphJob(job: Pick<Job, "type">): boolean {
+  return job.type.startsWith("ralph.");
 }
 
 export type RelayOutcome =

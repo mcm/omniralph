@@ -4,8 +4,6 @@
  * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { z } from "zod";
-import type { JobTokenScope } from "./harness-protocol.js";
-import type { Capability } from "./index.js";
 
 /** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
 export const JOB_RETENTION_SECONDS = 24 * 60 * 60;
@@ -25,67 +23,8 @@ export const JOB_LEASE_SECONDS = 120;
 /** Longest delay before a retried job may be claimed again (`retryAfterSeconds`). */
 export const MAX_LEASE_SECONDS = 3600;
 
-/**
- * The built-in capability every agent runs, regardless of central config:
- * housekeeping jobs such as `repo.sync`. Its jobs are always targeted at one
- * agent (`jobs.target_harness_id`).
- */
-export const SYSTEM_CAPABILITY = "system";
-export type SystemCapability = typeof SYSTEM_CAPABILITY;
-
 /** `system` job that clones or fetches a repo into the agent's cache without running anything. */
 export const REPO_SYNC_JOB_TYPE = "repo.sync";
-
-/**
- * The job token scopes each capability's jobs get. Review, triage and repo
- * sync are read-only; ralph jobs push their commits, relay session activities and
- * download Linear attachments through the control panel.
- */
-export const CAPABILITY_JOB_SCOPES: Record<Capability | SystemCapability, JobTokenScope[]> = {
-  review: ["credentials:read"],
-  ralph: ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"],
-  triage: ["credentials:read"],
-  system: ["credentials:read"],
-};
-
-const capabilityName = z.string().min(1).max(64);
-
-/**
- * Per-capability caps on concurrent jobs (`agents.capability_limits`), each
- * within `maxConcurrency`. Unset capabilities use `defaultCapabilityLimit`.
- */
-export const CapabilityLimits = z.record(capabilityName, z.int().min(1).max(1000));
-export type CapabilityLimits = z.infer<typeof CapabilityLimits>;
-
-/**
- * A capability's limit when none is set: `ralph` jobs (hours-long stories)
- * leave one slot free for other work on agents with two or more slots; other
- * capabilities may use every slot.
- */
-export function defaultCapabilityLimit(capability: string, maxConcurrency: number): number {
-  return capability === "ralph" ? Math.max(1, maxConcurrency - 1) : maxConcurrency;
-}
-
-/** A capability's effective limit: the stored one (or the default), clamped to 1…`maxConcurrency`. */
-export function effectiveCapabilityLimit(
-  capability: string,
-  limits: Partial<Record<string, number>>,
-  maxConcurrency: number,
-): number {
-  const limit = limits[capability] ?? defaultCapabilityLimit(capability, maxConcurrency);
-  return Math.max(1, Math.min(maxConcurrency, limit));
-}
-
-/** The effective limit of each capability in `capabilities`. */
-export function effectiveCapabilityLimits(
-  capabilities: readonly string[],
-  limits: Partial<Record<string, number>>,
-  maxConcurrency: number,
-): CapabilityLimits {
-  return Object.fromEntries(
-    capabilities.map((name) => [name, effectiveCapabilityLimit(name, limits, maxConcurrency)]),
-  );
-}
 
 /**
  * How a harness runs a job: `query`, `review` and `coding` run a Claude
@@ -133,37 +72,6 @@ export function legacyJobRouting(type: string): JobRouting {
   const routing = LEGACY_JOB_ROUTING[type];
   if (!routing) throw new Error(`Unknown legacy job type ${type}`);
   return { ...routing };
-}
-
-const CAPABILITY_TASK_TYPES: Record<string, readonly JobTaskType[]> = {
-  review: ["query", "review"],
-  ralph: ["coding"],
-  triage: ["query"],
-};
-const CAPABILITY_POOLS: Record<string, string> = {
-  review: "short",
-  triage: "short",
-  ralph: "long",
-};
-
-/**
- * The task types a harness accepts and its pool limits, from its legacy
- * capability settings (`review` → `query`, `review`; `ralph` → `coding`;
- * `triage` → `query`; `review`/`triage` limits → `short`, taking the smaller,
- * `ralph` → `long`). Matches the backfill of migration 0056.
- */
-export function legacyHarnessRouting(
-  enabledCapabilities: readonly string[],
-  capabilityLimits: Partial<Record<string, number>>,
-): { acceptedTaskTypes: JobTaskType[]; poolLimits: PoolLimits } {
-  const accepted = new Set(enabledCapabilities.flatMap((c) => CAPABILITY_TASK_TYPES[c] ?? []));
-  const poolLimits: PoolLimits = {};
-  for (const [capability, limit] of Object.entries(capabilityLimits)) {
-    const pool = CAPABILITY_POOLS[capability];
-    if (pool === undefined || limit === undefined) continue;
-    poolLimits[pool] = Math.min(poolLimits[pool] ?? limit, limit);
-  }
-  return { acceptedTaskTypes: JOB_TASK_TYPES.filter((t) => accepted.has(t)), poolLimits };
 }
 
 /**
@@ -275,8 +183,6 @@ export type HarnessUpdateRequest = z.infer<typeof HarnessUpdateRequest>;
 /** `POST /api/harness/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
-  /** Capabilities the host can run (it may know ones the control panel doesn't yet). */
-  capabilities: z.array(capabilityName).max(32),
   runningJobIds: z.array(z.uuid()).max(100),
   /** Job slots the agent has free right now. */
   freeSlots: z.int().min(0).max(1000),
@@ -363,7 +269,6 @@ export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 /** The job as handed to the agent on `run`. */
 export const JobPayload = z.object({
   id: z.uuid(),
-  capability: z.string(),
   type: z.string(),
   taskType: JobTaskType,
   /** Null for `system` jobs. */
@@ -384,7 +289,8 @@ export const JOB_SKIP_REASONS = [
   "failed",
   "expired",
   "max_deliveries",
-  "capability_disabled",
+  /** The job's task type isn't one the harness accepts. */
+  "task_type_not_accepted",
   "skipped",
   /** A review job whose head SHA already has a completed review. */
   "already_reviewed",
@@ -427,7 +333,7 @@ export const ClaimRequest = z.object({
 });
 export type ClaimRequest = z.input<typeof ClaimRequest>;
 
-/** `POST /api/harness/jobs/{id}/result`: the capability's output (e.g. findings for a review). */
+/** `POST /api/harness/jobs/{id}/result`: the job's output (e.g. findings for a review). */
 export const JobResult = z.object({
   result: z.record(z.string(), z.unknown()),
 });

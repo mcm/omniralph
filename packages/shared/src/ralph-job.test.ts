@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CAPABILITIES, isCapability } from "./index.js";
-import { JobTokenScope } from "./harness-protocol.js";
-import { CAPABILITY_JOB_SCOPES } from "./protocol.js";
 import {
   GitBranch,
-  RALPH_CAPABILITY,
   RALPH_JOB_TYPES,
   RalphActivity,
   RalphCleanupPayload,
@@ -64,21 +60,8 @@ const storyResult = {
   durationMs: 60_000,
 };
 
-describe("ralph capability", () => {
-  it("is a capability whose jobs may push and relay activities", () => {
-    expect(CAPABILITIES).toContain(RALPH_CAPABILITY);
-    expect(isCapability("ralph")).toBe(true);
-    expect(CAPABILITY_JOB_SCOPES.ralph).toEqual([
-      "credentials:read",
-      "credentials:write",
-      "ralph:activity",
-      "ralph:attachments",
-    ]);
-    expect(CAPABILITY_JOB_SCOPES.review).toEqual(["credentials:read"]);
-    expect(CAPABILITY_JOB_SCOPES.system).toEqual(["credentials:read"]);
-    for (const scope of CAPABILITY_JOB_SCOPES.ralph) {
-      expect(JobTokenScope.safeParse(scope).success).toBe(true);
-    }
+describe("ralph jobs", () => {
+  it("have the ralph.* job types", () => {
     expect(RALPH_JOB_TYPES).toEqual([
       "ralph.story",
       "ralph.describe-pr",

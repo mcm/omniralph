@@ -25,7 +25,6 @@ describe("HttpControlPanelApi.claim", () => {
       action: "run",
       job: {
         id,
-        capability: "review",
         type: "review.run",
         taskType: "review",
         pool: "short",
@@ -80,7 +79,7 @@ describe("harness API paths", () => {
     const ignore = () => undefined;
     await enroll(
       SERVER,
-      { enrollmentToken: "e", name: "n", version: "1.0.0", capabilities: [] },
+      { enrollmentToken: "e", name: "n", version: "1.0.0" },
       fetchFn as unknown as FetchFn,
     ).catch(ignore);
     await exchangeRefreshToken(SERVER, "r", fetchFn as unknown as FetchFn).catch(ignore);

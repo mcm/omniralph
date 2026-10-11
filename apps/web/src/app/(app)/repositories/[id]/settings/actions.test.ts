@@ -207,7 +207,6 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     const [job, ...rest] = await syncJobs();
     expect(rest).toHaveLength(0);
     expect(job).toMatchObject({
-      capability: "system",
       type: "repo.sync",
       taskType: "system",
       pool: null,

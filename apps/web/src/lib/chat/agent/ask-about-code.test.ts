@@ -56,24 +56,21 @@ describe("chatAskAgents", () => {
       reportedVersion: "0.8.0",
       revokedAt: null,
       lastHeartbeatAt: now,
-      enabledCapabilities: ["review"],
-      reportedCapabilities: ["review"],
+      acceptedTaskTypes: ["query", "review"],
       pinnedRepositories: [],
       ...over,
     }) as unknown as Parameters<typeof chatAskAgents>[0][number];
 
-  it("counts online agents running the review capability at a recent enough version", () => {
+  it("counts online agents accepting query tasks at a recent enough version", () => {
     expect(chatAskAgents([agent()], "r1", now)).toEqual([
       { name: "a", version: "0.8.0", capable: true },
     ]);
     const incapable = [
       agent({ name: "old", reportedVersion: "0.7.0" }),
       agent({ name: "unknown", reportedVersion: null }),
-      agent({ name: "disabled", enabledCapabilities: ["ralph"] }),
-      agent({ name: "unreported", reportedCapabilities: ["ralph"] }),
+      agent({ name: "no-query", acceptedTaskTypes: ["review", "coding"] }),
     ];
     expect(chatAskAgents(incapable, "r1", now).map((a) => a.capable)).toEqual([
-      false,
       false,
       false,
       false,
@@ -270,7 +267,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     scm = new FakeScmAdapter();
     const capable = {
       reportedVersion: "0.8.0",
-      reportedCapabilities: ["review", "ralph"],
       lastHeartbeatAt: new Date(),
       revokedAt: null,
     };
@@ -294,7 +290,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(result).toMatchObject({ status: "asked" });
     const [job] = await chatAskJobs(h.chatThread.id);
     expect(job).toMatchObject({
-      capability: "review",
       status: "queued",
       repositoryId,
       targetHarnessId: null,
@@ -469,7 +464,6 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
         organizationId: orgId,
         name: "pinned-agent",
         reportedVersion: "0.5.0",
-        reportedCapabilities: ["review"],
         lastHeartbeatAt: new Date(),
       })
       .returning();

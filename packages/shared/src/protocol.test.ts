@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HarnessVersion,
   harnessVersionAtLeast,
-  defaultCapabilityLimit,
   defaultPoolLimit,
-  effectiveCapabilityLimits,
   effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
@@ -20,14 +18,12 @@ describe("protocol", () => {
     expect(
       Heartbeat.safeParse({
         version: "0.1.0",
-        capabilities: ["review"],
         runningJobIds: [ID],
         freeSlots: 0,
       }).success,
     ).toBe(true);
     expect(
-      Heartbeat.safeParse({ version: "0.1.0", capabilities: [], runningJobIds: [], freeSlots: -1 })
-        .success,
+      Heartbeat.safeParse({ version: "0.1.0", runningJobIds: [], freeSlots: -1 }).success,
     ).toBe(false);
   });
 
@@ -40,22 +36,6 @@ describe("protocol", () => {
   it("caps retry delays at the maximum lease", () => {
     expect(JobFailure.safeParse({ retryable: true, retryAfterSeconds: 60 }).success).toBe(true);
     expect(JobFailure.safeParse({ retryable: true, retryAfterSeconds: 7200 }).success).toBe(false);
-  });
-
-  it("leaves a slot free of ralph jobs by default on agents with two or more slots", () => {
-    expect(defaultCapabilityLimit("ralph", 1)).toBe(1);
-    expect(defaultCapabilityLimit("ralph", 2)).toBe(1);
-    expect(defaultCapabilityLimit("ralph", 4)).toBe(3);
-    expect(defaultCapabilityLimit("review", 4)).toBe(4);
-  });
-
-  it("clamps stored capability limits to 1…maxConcurrency", () => {
-    expect(effectiveCapabilityLimits(["review", "ralph"], {}, 2)).toEqual({ review: 2, ralph: 1 });
-    expect(effectiveCapabilityLimits(["review", "ralph"], { ralph: 2, review: 9 }, 3)).toEqual({
-      review: 3,
-      ralph: 2,
-    });
-    expect(effectiveCapabilityLimits(["ralph"], { ralph: 0, review: 1 }, 3)).toEqual({ ralph: 1 });
   });
 
   it("routes every legacy job type to its task type and pool", () => {
@@ -125,7 +105,6 @@ describe("self-update protocol", () => {
   it("stays compatible with agents and control panels that predate self-update", () => {
     const heartbeat = Heartbeat.parse({
       version: "0.1.0",
-      capabilities: [],
       runningJobIds: [],
       freeSlots: 0,
     });

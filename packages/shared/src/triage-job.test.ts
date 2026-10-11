@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, isCapability } from "./index.js";
-import { CAPABILITY_JOB_SCOPES, defaultCapabilityLimit } from "./protocol.js";
+import { legacyJobRouting } from "./protocol.js";
 import {
-  TRIAGE_CAPABILITY,
   TRIAGE_JOB_TYPES,
   TRIAGE_RUN_JOB_TYPE,
   TriageRunPayload,
@@ -63,20 +61,11 @@ const result = {
   durationMs: 30_000,
 };
 
-describe("triage capability", () => {
-  it("is a read-only capability with one job type", () => {
-    expect(CAPABILITIES).toContain(TRIAGE_CAPABILITY);
-    expect(isCapability("triage")).toBe(true);
-    expect(CAPABILITY_JOB_SCOPES.triage).toEqual(["credentials:read"]);
-    expect(CAPABILITY_JOB_SCOPES.triage).not.toContain("credentials:write");
+describe("triage jobs", () => {
+  it("have one job type, a query task in the short pool", () => {
     expect(TRIAGE_RUN_JOB_TYPE).toBe("triage.run");
     expect(TRIAGE_JOB_TYPES).toEqual(["triage.run"]);
-  });
-
-  it("gets the same default concurrency limit as review", () => {
-    for (const slots of [1, 2, 4]) {
-      expect(defaultCapabilityLimit("triage", slots)).toBe(defaultCapabilityLimit("review", slots));
-    }
+    expect(legacyJobRouting(TRIAGE_RUN_JOB_TYPE)).toEqual({ taskType: "query", pool: "short" });
   });
 });
 

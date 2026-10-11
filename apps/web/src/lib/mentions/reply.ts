@@ -10,7 +10,6 @@ import {
 } from "@omniralph/db";
 import {
   MAX_REPLY_QUESTION_LENGTH,
-  REVIEW_REPLY_CAPABILITY,
   REVIEW_REPLY_JOB_TYPE,
   replyTokenCap,
   ReviewReplyJobPayload,
@@ -80,7 +79,6 @@ export async function enqueueReply(
   } satisfies ReviewReplyJobPayload);
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
-    capability: REVIEW_REPLY_CAPABILITY,
     type: REVIEW_REPLY_JOB_TYPE,
     ...legacyJobRouting(REVIEW_REPLY_JOB_TYPE),
     payload,

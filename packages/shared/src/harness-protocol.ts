@@ -26,8 +26,6 @@ export const EnrollRequest = z.object({
   enrollmentToken: z.string().min(1).max(256),
   name: z.string().trim().min(1).max(100),
   version: z.string().min(1).max(64),
-  /** Capabilities the host can run (it may know ones the control panel doesn't yet). */
-  capabilities: z.array(z.string().min(1).max(64)).max(32),
 });
 export type EnrollRequest = z.infer<typeof EnrollRequest>;
 

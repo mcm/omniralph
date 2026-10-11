@@ -15,7 +15,6 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import {
-  CAPABILITY_JOB_SCOPES,
   type CloneCredentialResponse,
   type JobStartResponse,
   type JobTokenScope,
@@ -196,7 +195,6 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       .insert(jobs)
       .values({
         organizationId: orgId,
-        capability: "review",
         type: "review.run",
         taskType: "review",
         pool: "short",
@@ -264,9 +262,13 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
     });
 
     describe("write credentials", () => {
-      const RALPH_SCOPES = CAPABILITY_JOB_SCOPES.ralph;
+      const RALPH_SCOPES: JobTokenScope[] = [
+        "credentials:read",
+        "credentials:write",
+        "ralph:activity",
+        "ralph:attachments",
+      ];
       const ralphJob = {
-        capability: "ralph",
         type: "ralph.story",
         taskType: "coding",
         pool: "long",
@@ -329,7 +331,6 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
       it("gives a started ralph job's token a write credential", async () => {
         const harnessId = await newAgent({
-          enabledCapabilities: ["ralph"],
           acceptedTaskTypes: ["coding"],
         });
         // Targeted at the harness, so the claim takes it before any other queued ralph job.
@@ -367,7 +368,6 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
               await jobToken(jobId, harnessId, ["credentials:read", "credentials:write"]),
               {
                 access: "write",
-                capability: "ralph",
                 scopes: ["credentials:write"],
                 permissions: { contents: "write" },
               },
@@ -564,7 +564,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
   describe("pinning a repository", () => {
     it("pins and enqueues repo.sync targeted at the harness, which it can run and get credentials for", async () => {
-      const harnessId = await newAgent({ enabledCapabilities: [] });
+      const harnessId = await newAgent({ acceptedTaskTypes: [] });
       const dispatcher = new PostgresDispatcher({ db });
       const pinned = await pinRepository(db, dispatcher, { harnessId, repositoryId: gitlabRepoId });
       expect(pinned.result).toBe("pinned");
@@ -587,7 +587,6 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       expect(others).toHaveLength(0);
       expect(job).toMatchObject({
         id: pinned.syncJobId,
-        capability: "system",
         type: "repo.sync",
         taskType: "system",
         pool: null,
@@ -608,7 +607,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       expect(again).toEqual({ result: "already_pinned", syncJobId: pinned.syncJobId });
       expect(await syncJobs()).toHaveLength(1);
 
-      // The harness runs it although no capability is enabled for it (system is built in)...
+      // The harness runs it although it accepts no task types (system jobs always run)...
       const accessToken = await getTokenSigner().signAccessToken(harnessId);
       const res = await claim(
         new Request("http://localhost/api/harness/claim", {

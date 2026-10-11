@@ -7,11 +7,8 @@
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
 import { GitBranch } from "./ralph-job.js";
-import { REVIEW_CAPABILITY } from "./review-job.js";
 
 export const CHAT_ASK_JOB_TYPE = "chat.ask";
-/** Runs on agents with the `review` capability, in the review sandbox. */
-export const CHAT_ASK_CAPABILITY = REVIEW_CAPABILITY;
 /** The first agent release that runs `chat.ask` jobs; older agents leave them queued. */
 export const CHAT_ASK_MIN_AGENT_VERSION = "0.8.0";
 /** Share of the repository profile's review token budget a code question may use. */

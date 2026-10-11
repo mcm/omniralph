@@ -144,7 +144,6 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
     };
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "review",
       type: "chat.ask",
       taskType: "query",
       pool: "short",

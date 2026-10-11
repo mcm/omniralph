@@ -120,7 +120,7 @@ export function exchangeRefreshToken(
 export interface ControlPanelApi {
   heartbeat(body: Heartbeat): Promise<HeartbeatResponse>;
   /**
-   * `POST /api/harness/claim`: long-polls for a job of one of `capabilities`.
+   * `POST /api/harness/claim`: long-polls for a job of the given pools (or a `system` job).
    * Null when the wait passed with nothing to claim (204).
    */
   claim(body: ClaimRequest, signal?: AbortSignal): Promise<JobStartResponse | null>;

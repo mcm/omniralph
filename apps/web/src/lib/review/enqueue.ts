@@ -14,7 +14,6 @@ import {
 import {
   FindingCategory,
   MAX_OPEN_FINDING_BODY_CHARS,
-  REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
   type ReviewMode,
@@ -166,7 +165,6 @@ export async function enqueueReview(
   try {
     const { job, created } = await dispatcher.createAndPublish({
       organizationId: found.repository.organizationId,
-      capability: REVIEW_CAPABILITY,
       type: REVIEW_JOB_TYPE,
       ...legacyJobRouting(REVIEW_JOB_TYPE),
       payload,

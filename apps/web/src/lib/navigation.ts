@@ -26,7 +26,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Sidebar navigation. Capability-agnostic: Harnesses and Jobs serve every capability. */
+/** Sidebar navigation. Harnesses and Jobs serve every task type. */
 export const navGroups: NavGroup[] = [
   {
     label: "Navigation",

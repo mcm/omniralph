@@ -16,7 +16,6 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import {
   harnessVersionAtLeast,
-  CHAT_ASK_CAPABILITY,
   CHAT_ASK_JOB_TYPE,
   CHAT_ASK_MIN_AGENT_VERSION,
   ChatAskJobPayload,
@@ -51,7 +50,7 @@ import { jobRepository } from "@/lib/scm/adapters";
 export interface ChatAskAgentStatus {
   name: string;
   version: string | null;
-  /** Whether it runs `chat.ask`: online, running the review capability, recent enough. */
+  /** Whether it runs `chat.ask`: online, accepting `query` tasks, recent enough. */
   capable: boolean;
 }
 
@@ -73,8 +72,7 @@ export function chatAskAgents(
       name: a.name,
       version: a.reportedVersion,
       capable:
-        a.enabledCapabilities.includes(CHAT_ASK_CAPABILITY) &&
-        (a.reportedCapabilities ?? []).includes(CHAT_ASK_CAPABILITY) &&
+        a.acceptedTaskTypes.includes("query") &&
         a.reportedVersion !== null &&
         harnessVersionAtLeast(a.reportedVersion, CHAT_ASK_MIN_AGENT_VERSION),
     }));
@@ -250,7 +248,6 @@ export async function enqueueChatAsk(
   } satisfies ChatAskJobPayload);
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,
-    capability: CHAT_ASK_CAPABILITY,
     type: CHAT_ASK_JOB_TYPE,
     ...legacyJobRouting(CHAT_ASK_JOB_TYPE),
     payload,

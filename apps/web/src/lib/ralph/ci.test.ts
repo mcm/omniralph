@@ -147,7 +147,11 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     [{ id: agentA }] = (await db
       .insert(harnesses)
       .values([
-        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
+        {
+          organizationId: orgId,
+          name: "agent-a",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }];
     await ralphOn(repoId);
@@ -390,7 +394,6 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
         type: "ralph.request",
         taskType: "coding",
         pool: "long",
-        capability: "ralph",
         payload: {},
         ralphRunId: run.id,
         repositoryId: repoId,

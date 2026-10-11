@@ -177,8 +177,16 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     [{ id: agentA }, { id: agentB }] = (await db
       .insert(harnesses)
       .values([
-        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
-        { organizationId: orgId, name: "agent-b", enabledCapabilities: ["review", "ralph"] },
+        {
+          organizationId: orgId,
+          name: "agent-a",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
+        {
+          organizationId: orgId,
+          name: "agent-b",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();
@@ -345,7 +353,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const run = await delegate(epic.id);
     const first = await activeJob(run.id);
     expect(first).toMatchObject({
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -417,7 +424,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await getRun(db, run.id))?.status).toBe("running");
     const describeJob = await activeJob(run.id);
     expect(describeJob).toMatchObject({
-      capability: "ralph",
       type: "ralph.describe-pr",
       taskType: "query",
       pool: "short",
@@ -558,7 +564,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [foreign] = await db
       .insert(harnesses)
-      .values({ organizationId: other!.id, name: "globex-1", enabledCapabilities: ["ralph"] })
+      .values({ organizationId: other!.id, name: "globex-1", acceptedTaskTypes: ["coding"] })
       .returning();
     const epic = linear.add({ identifier: "ENG-18", title: "Epic" });
     linear.add({ identifier: "ENG-19", title: "One", parentId: epic.id, subIssueSortOrder: 0 });

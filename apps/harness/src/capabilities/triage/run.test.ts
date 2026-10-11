@@ -152,7 +152,6 @@ describe("triage.run", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",

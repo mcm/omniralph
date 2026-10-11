@@ -172,7 +172,6 @@ async function runEnroll(
   const workspaceRoot = values["workspace-root"]
     ? expandHome(values["workspace-root"])
     : defaultWorkspaceRoot();
-  const capabilities = new CapabilityRegistry(deps.capabilities ?? defaultCapabilities()).names();
   let enrolled;
   try {
     enrolled = await enroll(
@@ -181,7 +180,6 @@ async function runEnroll(
         enrollmentToken: values.token,
         name: values.name ?? hostname(),
         version: AGENT_VERSION,
-        capabilities,
       },
       deps.fetch,
     );

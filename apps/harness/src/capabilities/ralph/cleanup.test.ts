@@ -85,7 +85,6 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      capability: "ralph",
       type: "ralph.cleanup",
       taskType: "coding",
       pool: "long",

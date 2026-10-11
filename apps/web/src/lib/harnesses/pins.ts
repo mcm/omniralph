@@ -5,12 +5,7 @@ import {
   type Database,
   type PinRepositoryResult,
 } from "@omniralph/db";
-import {
-  REPO_SYNC_JOB_TYPE,
-  SYSTEM_CAPABILITY,
-  type RepoSyncPayload,
-  legacyJobRouting,
-} from "@omniralph/shared";
+import { REPO_SYNC_JOB_TYPE, type RepoSyncPayload, legacyJobRouting } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
 
@@ -34,7 +29,6 @@ export async function pinRepository(
   };
   const { job } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
-    capability: SYSTEM_CAPABILITY,
     type: REPO_SYNC_JOB_TYPE,
     ...legacyJobRouting(REPO_SYNC_JOB_TYPE),
     payload,

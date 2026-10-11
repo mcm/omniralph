@@ -6,7 +6,6 @@ import { z } from "zod";
 import { Finding, FindingCategory } from "./finding.js";
 import { JobRepository } from "./protocol.js";
 
-export const REVIEW_CAPABILITY = "review";
 export const REVIEW_JOB_TYPE = "review.run";
 
 export const CommitSha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);

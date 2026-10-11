@@ -37,7 +37,6 @@ export async function POST(req: Request): Promise<Response> {
     detail: {
       name: body.data.name,
       version: body.data.version,
-      capabilities: body.data.capabilities,
     },
   });
   return Response.json(enrolled satisfies EnrollResponse);

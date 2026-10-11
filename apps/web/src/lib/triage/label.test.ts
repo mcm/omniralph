@@ -157,7 +157,6 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job).toMatchObject({
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",

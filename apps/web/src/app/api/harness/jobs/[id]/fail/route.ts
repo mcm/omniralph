@@ -19,7 +19,7 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
  * last allowed delivery, fail the job. Otherwise the job is queued again,
  * claimable after `retryAfterSeconds`, and the response is `retry`.
  * The job type's outcome handler (`onFailed`, `onCanceled`, `onRetry`) then
- * updates the capability's state, e.g. a review's final failure fails the
+ * updates the job type's state, e.g. a review's final failure fails the
  * review and posts a failure note.
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {

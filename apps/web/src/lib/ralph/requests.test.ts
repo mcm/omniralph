@@ -154,8 +154,16 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
     [{ id: agentA }, { id: agentB }] = (await db
       .insert(harnesses)
       .values([
-        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
-        { organizationId: orgId, name: "agent-b", enabledCapabilities: ["review", "ralph"] },
+        {
+          organizationId: orgId,
+          name: "agent-a",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
+        {
+          organizationId: orgId,
+          name: "agent-b",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
     await updateRepositoryRalphSettings(db, repoId, {

@@ -11,7 +11,8 @@ import {
   unpinRepositoryFromHarness,
   updateHarnessConfig as updateHarnessConfigRow,
 } from "@omniralph/db";
-import { HarnessVersion, CAPABILITIES, type Capability } from "@omniralph/shared";
+import { HarnessVersion } from "@omniralph/shared";
+import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -93,27 +94,25 @@ export async function createEnrollment(name: string): Promise<EnrollmentActionRe
 const HarnessConfig = z
   .object({
     maxConcurrency: z.number().int().min(1).max(32),
-    enabledCapabilities: z.array(z.enum(CAPABILITIES)),
-    capabilityLimits: z.partialRecord(z.enum(CAPABILITIES), z.number().int().min(1)).optional(),
+    acceptedTaskTypes: z.array(z.enum(TASK_TYPES)),
+    poolLimits: z.partialRecord(z.enum(POOLS), z.number().int().min(1)),
   })
   .superRefine((config, ctx) => {
-    for (const [capability, limit] of Object.entries(config.capabilityLimits ?? {})) {
-      if (!config.enabledCapabilities.includes(capability as Capability)) {
-        ctx.addIssue({ code: "custom", message: `${capability} isn't enabled.` });
-      }
+    for (const [pool, limit] of Object.entries(config.poolLimits)) {
       if (limit !== undefined && limit > config.maxConcurrency) {
-        ctx.addIssue({ code: "custom", message: `${capability}'s limit exceeds max concurrency.` });
+        ctx.addIssue({ code: "custom", message: `${pool}'s limit exceeds max concurrency.` });
       }
     }
   });
 export interface HarnessConfigForm {
   maxConcurrency: number;
-  enabledCapabilities: string[];
+  /** Task types the harness may claim jobs of (`query`, `review`, `coding`). */
+  acceptedTaskTypes: string[];
   /**
-   * Per-capability concurrency limits of enabled capabilities (1 to
-   * `maxConcurrency`); left-out ones use the default. Omitted: unchanged.
+   * Per-pool concurrency limits (1 to `maxConcurrency`); left-out pools use
+   * the default.
    */
-  capabilityLimits?: Record<string, number>;
+  poolLimits: Record<string, number>;
 }
 
 /** Updates a harness's central config; the harness gets it with its next heartbeat. */
@@ -127,7 +126,7 @@ export async function updateHarnessConfig(
       return {
         ok: false,
         error:
-          "Max concurrency must be 1–32, capabilities known ones, and each capability limit 1 to the max concurrency for an enabled capability.",
+          "Max concurrency must be 1–32, task types known ones, and each pool limit 1 to the max concurrency.",
       };
     }
     if (!(await updateHarnessConfigRow(getDb(), admin.organization.id, harnessId, parsed.data))) {

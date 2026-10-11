@@ -23,33 +23,25 @@ export function HarnessStatusBadge({
   );
 }
 
-/**
- * Capabilities the host reports vs. the ones enabled centrally: enabled and
- * reported run; enabled but not reported can't run on this host.
- */
-export function CapabilityBadges({ reported, enabled }: { reported: string[]; enabled: string[] }) {
-  const all = [...new Set([...enabled, ...reported])].sort();
-  if (all.length === 0) return <Muted>None</Muted>;
+/** The task types a harness accepts (it always runs `system` jobs too). */
+export function TaskTypeBadges({ accepted }: { accepted: string[] }) {
+  if (accepted.length === 0) return <Muted>None</Muted>;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
-      {all.map((capability) => {
-        const isEnabled = enabled.includes(capability);
-        const isReported = reported.includes(capability);
-        const [variant, title] = isEnabled
-          ? isReported
-            ? (["success", "Enabled and reported by the host"] as const)
-            : (["warning", "Enabled, but the host doesn't report it"] as const)
-          : (["outline", "Reported by the host, not enabled"] as const);
-        return (
-          <Badge key={capability} variant={variant} title={title}>
-            {capability}
-            {!isEnabled && " (off)"}
-            {isEnabled && !isReported && " (unsupported)"}
-          </Badge>
-        );
-      })}
+      {accepted.map((taskType) => (
+        <Badge key={taskType} variant="outline">
+          {taskType}
+        </Badge>
+      ))}
     </div>
   );
+}
+
+/** Effective pool limits, e.g. `short: 2, long: 1`. */
+export function formatPoolLimits(limits: Record<string, number>): string {
+  return Object.entries(limits)
+    .map(([pool, limit]) => `${pool}: ${limit}`)
+    .join(", ");
 }
 
 export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] }) {

@@ -129,7 +129,6 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
     ]);
     const { job } = await insertJob(db, {
       organizationId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -264,7 +263,6 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
     });
     await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.request",
       taskType: "coding",
       pool: "long",

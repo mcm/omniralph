@@ -164,7 +164,6 @@ describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
       enrollmentToken: enrollment.token,
       name: "journey-agent",
       version: "1.0.0",
-      capabilities: ["review"],
     }))!;
 
     // The teammate's email isn't in ALLOWED_EMAIL_DOMAINS: no sign-in until invited.

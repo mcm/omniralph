@@ -167,7 +167,6 @@ describe("ralph.describe-pr", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      capability: "ralph",
       type: "ralph.describe-pr",
       taskType: "query",
       pool: "short",

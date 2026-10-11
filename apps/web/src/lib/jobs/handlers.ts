@@ -1,13 +1,10 @@
 import "server-only";
 import type { Database, Job } from "@omniralph/db";
 import {
-  CHAT_ASK_CAPABILITY,
   CHAT_ASK_JOB_TYPE,
   ChatAskJobPayload,
-  LEARN_RULE_CAPABILITY,
   LEARN_RULE_JOB_TYPE,
   LearnRuleJobPayload,
-  RALPH_CAPABILITY,
   RALPH_CLEANUP_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
@@ -23,13 +20,10 @@ import {
   RalphRequestResult,
   RalphStoryPayload,
   RalphStoryResult,
-  REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
-  REVIEW_REPLY_CAPABILITY,
   REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
   ReviewReplyJobPayload,
-  TRIAGE_CAPABILITY,
   TRIAGE_RUN_JOB_TYPE,
   TriageRunPayload,
   TriageRunResult,
@@ -57,11 +51,10 @@ import {
 /**
  * Per-job-type hooks into the generic job lifecycle (`/claim`, `/result`,
  * `/fail`, revocation, expiry and cancel). The lifecycle routes update the
- * `jobs` row; these hooks keep the capability's own state (reviews, rules,
+ * `jobs` row; these hooks keep the job type's own state (reviews, rules,
  * ralph runs) in step with it. Every hook is optional.
  */
 export interface JobOutcomeHandler {
-  capability: string;
   /** Jobs whose payload doesn't parse get the generic lifecycle only. */
   payload: z.ZodType;
   /**
@@ -96,17 +89,16 @@ export function registerJobOutcomeHandler(type: string, handler: JobOutcomeHandl
   handlers.set(type, handler);
 }
 
-/** The hooks for `job`, or undefined when its type has none or its capability or payload don't match. */
+/** The hooks for `job`, or undefined when its type has none or its payload doesn't match. */
 export function jobOutcomeHandler(
-  job: Pick<Job, "capability" | "type" | "payload">,
+  job: Pick<Job, "type" | "payload">,
 ): JobOutcomeHandler | undefined {
   const handler = handlers.get(job.type);
-  if (!handler || handler.capability !== job.capability) return undefined;
+  if (!handler) return undefined;
   return handler.payload.safeParse(job.payload).success ? handler : undefined;
 }
 
 registerJobOutcomeHandler(REVIEW_JOB_TYPE, {
-  capability: REVIEW_CAPABILITY,
   payload: ReviewJobPayload,
   onStarted: onReviewJobStarted,
   isValidResult: (result) => parseReviewResult(result) !== null,
@@ -117,14 +109,12 @@ registerJobOutcomeHandler(REVIEW_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(LEARN_RULE_JOB_TYPE, {
-  capability: LEARN_RULE_CAPABILITY,
   payload: LearnRuleJobPayload,
   isValidResult: (result) => parseLearnRuleResult(result) !== null,
   onCompleted: onLearnRuleJobCompleted,
 });
 
 registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
-  capability: REVIEW_REPLY_CAPABILITY,
   payload: ReviewReplyJobPayload,
   isValidResult: (result) => parseReplyResult(result) !== null,
   onCompleted: onReplyJobCompleted,
@@ -132,7 +122,6 @@ registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(CHAT_ASK_JOB_TYPE, {
-  capability: CHAT_ASK_CAPABILITY,
   payload: ChatAskJobPayload,
   isValidResult: (result) => parseChatAskResult(result) !== null,
   onCompleted: (db, job) => onChatAskJobCompleted(db, job),
@@ -140,7 +129,6 @@ registerJobOutcomeHandler(CHAT_ASK_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
-  capability: RALPH_CAPABILITY,
   payload: RalphDescribePrPayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => RalphDescribePrResult.safeParse(result).success,
@@ -150,7 +138,6 @@ registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(RALPH_PREPARE_JOB_TYPE, {
-  capability: RALPH_CAPABILITY,
   payload: RalphPreparePayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => RalphPrepareResult.safeParse(result).success,
@@ -160,7 +147,6 @@ registerJobOutcomeHandler(RALPH_PREPARE_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(RALPH_REQUEST_JOB_TYPE, {
-  capability: RALPH_CAPABILITY,
   payload: RalphRequestPayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => RalphRequestResult.safeParse(result).success,
@@ -170,7 +156,6 @@ registerJobOutcomeHandler(RALPH_REQUEST_JOB_TYPE, {
 });
 
 registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
-  capability: RALPH_CAPABILITY,
   payload: RalphStoryPayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => RalphStoryResult.safeParse(result).success,
@@ -181,7 +166,6 @@ registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
 
 // No `onStarted`: a cleanup runs after the run is over too, and doesn't make its agent sticky.
 registerJobOutcomeHandler(RALPH_CLEANUP_JOB_TYPE, {
-  capability: RALPH_CAPABILITY,
   payload: RalphCleanupPayload,
   isValidResult: (result) => RalphCleanupResult.safeParse(result).success,
   onCompleted: (db, job) => onRalphCleanupJobFinished(db, job),
@@ -192,7 +176,6 @@ registerJobOutcomeHandler(RALPH_CLEANUP_JOB_TYPE, {
 // A well-formed result is accepted even when `validateTriageOutput` rejects it:
 // `onCompleted` then fails the job and the run, and tells the Linear session why.
 registerJobOutcomeHandler(TRIAGE_RUN_JOB_TYPE, {
-  capability: TRIAGE_CAPABILITY,
   payload: TriageRunPayload,
   onStarted: (db, job) => onTriageJobStarted(db, job),
   isValidResult: (result) => TriageRunResult.safeParse(result).success,

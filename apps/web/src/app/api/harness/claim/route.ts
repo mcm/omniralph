@@ -83,11 +83,10 @@ async function claimNext(
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
     }
-    const { id, capability, type, taskType, pool, taskId, repositoryId, payload, deliveryCount } =
-      claim.job;
+    const { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount } = claim.job;
     return {
       action: "run",
-      job: { id, capability, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },
+      job: { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },
       jobToken,
     };
   }

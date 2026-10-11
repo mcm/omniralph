@@ -102,7 +102,6 @@ describe("chat.ask", () => {
     };
     return {
       id: randomUUID(),
-      capability: "review",
       type: "chat.ask",
       taskType: "query",
       pool: "short",

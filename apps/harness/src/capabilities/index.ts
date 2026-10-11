@@ -99,8 +99,13 @@ export class RetryableJobError extends Error {
   }
 }
 
+/**
+ * The harness's legacy job code, grouped by the capability that ships it.
+ * Jobs are dispatched by their type alone; each type belongs to one capability.
+ */
 export class CapabilityRegistry {
   private readonly byName = new Map<string, Capability>();
+  private readonly byJobType = new Map<string, Capability>();
 
   constructor(capabilities: readonly Capability[]) {
     for (const capability of capabilities) {
@@ -108,6 +113,10 @@ export class CapabilityRegistry {
         throw new Error(`capability '${capability.name}' registered twice`);
       }
       this.byName.set(capability.name, capability);
+      for (const type of capability.jobTypes) {
+        if (this.byJobType.has(type)) throw new Error(`job type '${type}' registered twice`);
+        this.byJobType.set(type, capability);
+      }
     }
   }
 
@@ -119,10 +128,9 @@ export class CapabilityRegistry {
     return this.byName.get(name);
   }
 
-  /** The capability that runs `job`, or undefined for an unknown capability or job type. */
-  forJob(job: Pick<JobPayload, "capability" | "type">): Capability | undefined {
-    const capability = this.byName.get(job.capability);
-    return capability?.jobTypes.includes(job.type) ? capability : undefined;
+  /** The capability that runs `job`, or undefined for an unknown job type. */
+  forJob(job: Pick<JobPayload, "type">): Capability | undefined {
+    return this.byJobType.get(job.type);
   }
 }
 

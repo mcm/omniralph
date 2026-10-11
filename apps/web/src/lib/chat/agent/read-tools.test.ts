@@ -177,7 +177,6 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     });
     const { job } = await insertJob(db, {
       organizationId: id,
-      capability: "review",
       type: "review.run",
       taskType: "review",
       pool: "short",
@@ -218,7 +217,6 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       });
       await insertJob(db, {
         organizationId: crowdedOrgId,
-        capability: "ralph",
         type: "ralph.story",
         taskType: "coding",
         pool: "long",

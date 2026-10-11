@@ -13,7 +13,6 @@ import {
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
   LEARN_RULE_JOB_TYPE,
-  REVIEW_CAPABILITY,
   REVIEW_JOB_TYPE,
   REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
@@ -91,7 +90,7 @@ export interface ReviewCapabilityOptions
  */
 export function createReviewCapability(options: ReviewCapabilityOptions = {}): Capability {
   return {
-    name: REVIEW_CAPABILITY,
+    name: "review",
     jobTypes: [REVIEW_JOB_TYPE, LEARN_RULE_JOB_TYPE, REVIEW_REPLY_JOB_TYPE, CHAT_ASK_JOB_TYPE],
     toolPolicy: REVIEW_TOOL_POLICY,
     async run(

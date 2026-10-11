@@ -140,7 +140,6 @@ describe("review capability", () => {
     };
     return {
       id: randomUUID(),
-      capability: "review",
       type: "review.run",
       taskType: "review",
       pool: "short",
@@ -317,7 +316,6 @@ describe("review capability", () => {
       };
       return {
         id: randomUUID(),
-        capability: "review",
         type: "review.learn-rule",
         taskType: "query",
         pool: "short",
@@ -438,7 +436,6 @@ describe("review capability", () => {
       };
       return {
         id: randomUUID(),
-        capability: "review",
         type: "review.reply",
         taskType: "query",
         pool: "short",
