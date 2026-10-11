@@ -22,6 +22,7 @@
     "@omniralph/ralph": "workspace:*",
     "@omniralph/scm": "workspace:*",
     "@omniralph/shared": "workspace:*",
+    "@omniralph/tasks": "workspace:*",
     "@tabler/icons-react": "^3.40.0",
     "@vercel/kms": "^0.3.2",
     "ai": "5.0.273",
