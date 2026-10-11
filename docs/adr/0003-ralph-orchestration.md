@@ -48,7 +48,8 @@ topics, using the v1 job lifecycle, repo cache and credential broker unchanged:
 - `ralph.story`: one attempt at one story in the epic's long-lived branch worktree: Claude session,
   quality gates, commit, push (with a brokered, job-scoped write credential), structured result.
 - `ralph.describe-pr`: a read-only session that writes the PR/MR title and body.
-- `ralph.prepare`: runs a manual story's approved `cyralph-prepare` commands.
+- `ralph.prepare`: runs a manual story's approved `cyralph-prepare` commands (now the
+  `worktree.exec` system RPC, same payload, result and guards; ADR 0008).
 
 A job's payload carries everything the session needs (PRD, story, progress log, feedback,
 guidance, the IDs of its Linear attachments), so an agent keeps no run state beyond caches.

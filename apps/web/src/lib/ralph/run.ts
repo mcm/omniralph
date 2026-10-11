@@ -51,10 +51,10 @@ import {
 import {
   MAX_ATTEMPTS_PER_STORY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
-  RALPH_PREPARE_JOB_TYPE,
   RALPH_PUSH_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
+  WORKTREE_EXEC_JOB_TYPE,
   legacyJobRouting,
   ralphHiddenRef,
 } from "@omniralph/shared";
@@ -231,7 +231,7 @@ export type AdvanceResult =
   | { action: "pushing"; run: RalphRun; jobId: string }
   /** Every story is done: a `ralph.describe-pr` job writes a lane's PR/MR. */
   | { action: "describing"; run: RalphRun; jobId: string }
-  /** An approved manual-story preparation runs as a `ralph.prepare` job. */
+  /** An approved manual-story preparation runs as a `worktree.exec` system RPC. */
   | { action: "preparing"; run: RalphRun; jobId: string }
   /** A lane's pending requests run as a `ralph.request` job. */
   | { action: "requesting"; run: RalphRun; jobId: string }
@@ -753,9 +753,10 @@ async function describeLane(
 }
 
 /**
- * Runs an approved manual-story preparation: a `ralph.prepare` job (the run's
- * one job, on its sticky agent) with the story's commands as they are now and
- * the approval they must match. Its outcome is applied by `applyPreparationJob`.
+ * Runs an approved manual-story preparation: a `worktree.exec` system RPC (the
+ * run's one job, on its sticky agent; on both coding paths) with the story's
+ * commands as they are now and the approval they must match. Its outcome is
+ * applied by `applyPreparationJob`.
  */
 async function enqueuePreparation(
   deps: RalphDeps,
@@ -768,8 +769,9 @@ async function enqueuePreparation(
   if ("action" in found) return found;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    type: RALPH_PREPARE_JOB_TYPE,
-    ...legacyJobRouting(RALPH_PREPARE_JOB_TYPE),
+    // A system RPC: no session and no pool; its token only reads the repository.
+    type: WORKTREE_EXEC_JOB_TYPE,
+    ...legacyJobRouting(WORKTREE_EXEC_JOB_TYPE),
     payload: buildPreparePayload({
       run,
       ...found,

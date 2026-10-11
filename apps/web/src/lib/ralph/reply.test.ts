@@ -31,11 +31,11 @@ import {
 import { preparationHash } from "@omniralph/ralph";
 import {
   MAX_JOB_DELIVERIES,
-  RalphPreparePayload,
   RalphRequestPayload,
   RalphStoryPayload,
-  type RalphPrepareResult,
+  WorktreeExecPayload,
   type RalphStoryResult,
+  type WorktreeExecResult,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq, inArray } from "drizzle-orm";
@@ -243,14 +243,14 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     return RalphRequestPayload.parse(job.payload);
   }
 
-  /** Plays the run's queued `ralph.prepare` job. Returns its payload. */
+  /** Plays the run's queued `worktree.exec` system RPC. Returns its payload. */
   async function prepare(
     runId: string,
-    outcome: Partial<RalphPrepareResult> | { jobError: string },
-  ): Promise<RalphPreparePayload> {
+    outcome: Partial<WorktreeExecResult> | { jobError: string },
+  ): Promise<WorktreeExecPayload> {
     const job = await start(runId);
-    expect(job.type).toBe("ralph.prepare");
-    const payload = RalphPreparePayload.parse(job.payload);
+    expect(job).toMatchObject({ type: "worktree.exec", taskType: "system", pool: null });
+    const payload = WorktreeExecPayload.parse(job.payload);
     await finish(
       job,
       "jobError" in outcome
@@ -789,7 +789,13 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         advanced: { action: "preparing" },
       });
       const job = await activeJob(run.id);
-      expect(job).toMatchObject({ type: "ralph.prepare", targetHarnessId: agentA });
+      expect(job).toMatchObject({
+        type: "worktree.exec",
+        taskType: "system",
+        pool: null,
+        taskId: null,
+        targetHarnessId: agentA,
+      });
       const payload = await prepare(run.id, {});
       expect(payload).toMatchObject({
         commands: PREPARE_COMMANDS,
@@ -823,6 +829,37 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect((await reply(run, "rerun preparation"))?.kind).toBe("rerun_preparation");
       expect(selects(run)).toHaveLength(2);
       expect((await getRun(db, run.id))?.preparation?.request?.headSha).toBe(sha(8));
+    });
+
+    it("runs the preparation as worktree.exec on the tasks coding path too", async () => {
+      const codingPath = (path: "legacy" | "tasks") =>
+        updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+          codingPath: path,
+        });
+      const { bucket, run } = await manualEpic();
+      await work(run.id, { commitSha: sha(7) });
+      await codingPath("tasks");
+      try {
+        await reply(run, "Run it");
+        expect(await activeJob(run.id)).toMatchObject({
+          type: "worktree.exec",
+          taskType: "system",
+          pool: null,
+          taskId: null,
+          targetHarnessId: agentA,
+        });
+        await prepare(run.id, {});
+        expect((await getRun(db, run.id))?.preparation?.handled).toMatchObject({
+          [bucket.id]: { how: "prepared", headSha: sha(7) },
+        });
+      } finally {
+        await codingPath("legacy");
+      }
     });
 
     it("asks again after a stale approval, bound to the HEAD the job found", async () => {
