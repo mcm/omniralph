@@ -8,6 +8,7 @@ vi.mock("server-only", () => ({}));
 const { jobHooks, parseSinkResult, sinkFor, taskSink } = await import("./index");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { learnedRuleSink } = await import("./learned-rule");
+const { findingThreadSink } = await import("./finding-thread");
 
 const legacyCompleted = vi.fn();
 registerJobOutcomeHandler("sinks.legacy", {
@@ -33,6 +34,7 @@ const DEFINITIONS = {
   getTask: (id: string) =>
     ({
       "builtin:learn-rule": getBuiltinTask("builtin:learn-rule"),
+      "builtin:reply": getBuiltinTask("builtin:reply"),
       "builtin:chat": task("builtin:chat", "chat-thread"),
     })[id] ?? null,
   getAgent: () => null,
@@ -48,8 +50,9 @@ const answered = (structured: unknown, answer: string | null = null) => ({
 });
 
 describe("sinkFor", () => {
-  it("finds the learned-rule sink by kind, and nothing for sinks not implemented yet", () => {
+  it("finds the implemented sinks by kind, and nothing for sinks not implemented yet", () => {
     expect(sinkFor("learned-rule")).toBe(learnedRuleSink);
+    expect(sinkFor("finding-thread")).toBe(findingThreadSink);
     expect(sinkFor("chat-thread")).toBeUndefined();
   });
 });
@@ -57,6 +60,7 @@ describe("sinkFor", () => {
 describe("taskSink", () => {
   it("is the sink of the job's task", () => {
     expect(taskSink({ taskId: "builtin:learn-rule" }, DEFINITIONS)).toBe(learnedRuleSink);
+    expect(taskSink({ taskId: "builtin:reply" }, DEFINITIONS)).toBe(findingThreadSink);
     expect(taskSink({ taskId: "builtin:chat" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();

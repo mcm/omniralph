@@ -114,7 +114,7 @@ export async function resolveRunSpec(
     tools,
     model: task.model ?? profile?.model ?? agent.model,
     fallbackModel: agent.fallbackModel,
-    tokenBudget: tokenBudget(task, profile),
+    tokenBudget: runTokenBudget(task, profile),
     tokens,
   };
 }
@@ -131,8 +131,13 @@ export function narrowTools(builtin: readonly string[], tools: RunToolRestrictio
   return builtin.filter((tool) => (allowed.size === 0 || allowed.has(tool)) && !denied.has(tool));
 }
 
-function tokenBudget(
-  task: TaskDefinition,
+/**
+ * A run's token cap: the task's fixed `tokens`, or its `profileFraction` of
+ * the repository profile's budget (at least 1); null for none. Throws
+ * `RunSpecError` for a relative budget without a profile.
+ */
+export function runTokenBudget(
+  task: Pick<TaskDefinition, "id" | "tokenBudget">,
   profile: { maxTokensPerReview: number } | null,
 ): number | null {
   const budget = task.tokenBudget;

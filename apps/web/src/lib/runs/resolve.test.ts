@@ -26,7 +26,7 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
     state.profile && id === REPO_ID ? { profile: state.profile, rules: [] } : null,
 }));
 
-const { RunSpecError, narrowTools, resolveRunSpec } = await import("./resolve");
+const { RunSpecError, narrowTools, resolveRunSpec, runTokenBudget } = await import("./resolve");
 const { runSpecJobInput } = await import("./job");
 
 const ORG_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
@@ -169,6 +169,14 @@ describe("resolveRunSpec", () => {
       expect((await resolveRunSpec(db, job(), tokens, fixed)).tokenBudget).toBe(5000);
       const none = definitions({ tokenBudget: null });
       expect((await resolveRunSpec(db, job(), tokens, none)).tokenBudget).toBeNull();
+    });
+
+    it("is what runTokenBudget computes, at least 1", () => {
+      const task = { id: "builtin:reply", tokenBudget: { profileFraction: 0.1 } };
+      expect(runTokenBudget(task, { maxTokensPerReview: 200_000 })).toBe(20_000);
+      expect(runTokenBudget(task, { maxTokensPerReview: 5 })).toBe(1);
+      expect(runTokenBudget({ id: "builtin:x", tokenBudget: null }, null)).toBeNull();
+      expect(() => runTokenBudget(task, null)).toThrow(RunSpecError);
     });
 
     it("fails a fractional budget without a repository", async () => {

@@ -13,11 +13,6 @@ const review = vi.hoisted(() => ({
   parseReviewResult: vi.fn((result: unknown) => (result === "ok" ? {} : null)),
 }));
 vi.mock("@/lib/review/jobs", () => review);
-vi.mock("@/lib/mentions/reply", () => ({
-  onReplyJobCompleted: vi.fn(),
-  onReplyJobFailed: vi.fn(),
-  parseReplyResult: vi.fn(),
-}));
 const chatAsk = vi.hoisted(() => ({
   onChatAskJobCompleted: vi.fn(),
   onChatAskJobFailed: vi.fn(),
@@ -68,10 +63,12 @@ function job(overrides: Partial<Job>): Job {
 }
 
 describe("job outcome handlers", () => {
-  it("routes review and reply jobs to their handlers by type", () => {
+  it("routes review jobs to their handler by type", () => {
     expect(jobOutcomeHandler(job({}))?.onStarted).toBeDefined();
-    // Registered, but the payload is a review's: generic lifecycle only.
-    expect(jobOutcomeHandler(job({ type: "review.reply" }))).toBeUndefined();
+    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`): their sinks handle them.
+    for (const type of ["review.learn-rule", "review.reply"]) {
+      expect(jobOutcomeHandler(job({ type }))).toBeUndefined();
+    }
   });
 
   it("ignores jobs whose type or payload don't match", () => {

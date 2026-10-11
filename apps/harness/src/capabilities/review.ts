@@ -13,21 +13,18 @@ import {
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
   REVIEW_JOB_TYPE,
-  REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
   type ChatAskJobResult,
   type Finding,
   type ReviewJobResult,
-  type ReviewReplyJobResult,
 } from "@omniralph/shared";
-import { runChatAsk } from "./chat-ask.js";
+import { runChatAsk, type ChatAskOptions } from "./chat-ask.js";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
-import { runReply, type ReplyOptions } from "./reply.js";
 import { sdkPermissions } from "./tool-policy.js";
 
 /**
- * Review sessions (`review.run`, `review.reply`) and code
- * questions from chat (`chat.ask`) only read the job's worktree.
+ * Review sessions (`review.run`) and code questions from chat (`chat.ask`)
+ * only read the job's worktree.
  */
 export const REVIEW_TOOL_POLICY: ToolPolicy = {
   tools: "allowed",
@@ -66,7 +63,7 @@ export function capFindings(findings: readonly Finding[], limit = MAX_REVIEW_FIN
   return findings.filter((_, index) => kept.has(index));
 }
 
-export interface ReviewCapabilityOptions extends Pick<ReplyOptions, "answerer"> {
+export interface ReviewCapabilityOptions extends Pick<ChatAskOptions, "answerer"> {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
   provider?: ReviewProvider;
   /** Retry delay for rate limits whose reset time is unknown. */
@@ -74,8 +71,8 @@ export interface ReviewCapabilityOptions extends Pick<ReplyOptions, "answerer"> 
 }
 
 /**
- * Code review (`review.run`), plus answers to questions in finding threads (`review.reply`, see `reply.ts`) and about a
- * repository from chat (`chat.ask`, see `chat-ask.ts`). Makes sure the repo cache has the PR's base and
+ * Code review (`review.run`), plus answers to questions about a repository
+ * from chat (`chat.ask`, see `chat-ask.ts`). Makes sure the repo cache has the PR's base and
  * head (and the previous review's head, for incremental reviews), runs the
  * engine in a fresh worktree at head and returns the `ReviewJobResult`. It
  * calls no code-host API and holds no write credential: git authenticates
@@ -85,10 +82,9 @@ export interface ReviewCapabilityOptions extends Pick<ReplyOptions, "answerer"> 
 export function createReviewCapability(options: ReviewCapabilityOptions = {}): Capability {
   return {
     name: "review",
-    jobTypes: [REVIEW_JOB_TYPE, REVIEW_REPLY_JOB_TYPE, CHAT_ASK_JOB_TYPE],
+    jobTypes: [REVIEW_JOB_TYPE, CHAT_ASK_JOB_TYPE],
     toolPolicy: REVIEW_TOOL_POLICY,
-    async run(job, ctx): Promise<ReviewJobResult | ReviewReplyJobResult | ChatAskJobResult> {
-      if (job.type === REVIEW_REPLY_JOB_TYPE) return runReply(job, ctx, options);
+    async run(job, ctx): Promise<ReviewJobResult | ChatAskJobResult> {
       if (job.type === CHAT_ASK_JOB_TYPE) return runChatAsk(job, ctx, options);
       const parsed = ReviewJobPayload.safeParse(job.payload);
       if (!parsed.success) throw new Error("invalid review.run payload");

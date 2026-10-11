@@ -19,9 +19,7 @@ import {
   RalphStoryPayload,
   RalphStoryResult,
   REVIEW_JOB_TYPE,
-  REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
-  ReviewReplyJobPayload,
   TRIAGE_RUN_JOB_TYPE,
   TriageRunPayload,
   TriageRunResult,
@@ -29,7 +27,6 @@ import {
 } from "@omniralph/shared";
 import type { z } from "zod";
 import { onChatAskJobCompleted, onChatAskJobFailed, parseChatAskResult } from "@/lib/chat/ask";
-import { onReplyJobCompleted, onReplyJobFailed, parseReplyResult } from "@/lib/mentions/reply";
 import {
   onReviewJobCanceled,
   onReviewJobCompleted,
@@ -104,13 +101,6 @@ registerJobOutcomeHandler(REVIEW_JOB_TYPE, {
   onFailed: (db, job, error) => onReviewJobFailed(db, job, error ?? "Review failed"),
   onRetry: onReviewJobRetry,
   onCanceled: onReviewJobCanceled,
-});
-
-registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {
-  payload: ReviewReplyJobPayload,
-  isValidResult: (result) => parseReplyResult(result) !== null,
-  onCompleted: onReplyJobCompleted,
-  onFailed: (db, job) => onReplyJobFailed(db, job),
 });
 
 registerJobOutcomeHandler(CHAT_ASK_JOB_TYPE, {
