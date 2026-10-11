@@ -121,3 +121,37 @@ describe("FakeLinearGateway teams and delegation", () => {
     );
   });
 });
+
+describe("FakeLinearGateway read tools", () => {
+  it("searches issues by identifier, title or description, up to `first`", async () => {
+    const linear = new FakeLinearGateway();
+    linear.add({ title: "Login page", identifier: "ENG-1" });
+    linear.add({ title: "Billing", description: "the LOGIN flow", identifier: "ENG-2" });
+    linear.add({ title: "Other", identifier: "ENG-3" });
+
+    expect((await linear.searchIssues("login")).map((i) => i.identifier)).toEqual([
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect((await linear.searchIssues("login", { first: 1 })).map((i) => i.identifier)).toEqual([
+      "ENG-1",
+    ]);
+    expect(linear.searches).toEqual([{ query: "login" }, { query: "login", first: 1 }]);
+  });
+
+  it("reads a document by ID or slug ID, and throws for an unknown one", async () => {
+    const linear = new FakeLinearGateway();
+    const document = {
+      id: "doc-1",
+      title: "Design",
+      content: "# Design",
+      url: "https://linear.app/acme/document/design-abc123",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    linear.documents.set(document.id, document);
+
+    expect(await linear.getDocument("doc-1")).toEqual(document);
+    expect(await linear.getDocument("abc123")).toEqual(document);
+    await expect(linear.getDocument("nope")).rejects.toThrow(/no document/);
+  });
+});

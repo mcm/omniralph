@@ -195,6 +195,65 @@ describe("SdkLinearGateway reads", () => {
     ]);
   });
 
+  it("searches issues as summaries, with a default page size", async () => {
+    resolvers.SearchIssues = () => ({
+      searchIssues: { nodes: [issueNode("7"), issueNode("8", { description: null })] },
+    });
+    const issues = await gateway().searchIssues("login bug");
+    expect(issues.map((i) => i.identifier)).toEqual(["TOOL-7", "TOOL-8"]);
+    expect(issues[0]).toMatchObject({ teamKey: "TOOL", labels: ["backend"], parentId: "epic" });
+    expect(issues[1]?.description).toBe("");
+    expect(calls[0]?.variables).toEqual({ term: "login bug", first: 10 });
+    expect(calls[0]?.query).toContain("on IssueSearchResult");
+
+    await gateway().searchIssues("x", { first: 3 });
+    expect(calls[1]?.variables).toEqual({ term: "x", first: 3 });
+  });
+
+  it("reads a document", async () => {
+    resolvers.Document = (v) => ({
+      document: {
+        id: String(v.id),
+        title: "Design",
+        content: "# Design",
+        url: "https://linear.app/acme/document/design-abc",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        project: { name: "Omniralph" },
+        issue: { identifier: "TOOL-1" },
+      },
+    });
+    expect(await gateway().getDocument("abc")).toEqual({
+      id: "abc",
+      title: "Design",
+      content: "# Design",
+      url: "https://linear.app/acme/document/design-abc",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      projectName: "Omniralph",
+      issueIdentifier: "TOOL-1",
+    });
+  });
+
+  it("reads a document without content, project or issue", async () => {
+    resolvers.Document = () => ({
+      document: {
+        id: "d",
+        title: "Empty",
+        content: null,
+        url: "https://linear.app/acme/document/empty-d",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        project: null,
+        issue: null,
+      },
+    });
+    expect(await gateway().getDocument("d")).toEqual({
+      id: "d",
+      title: "Empty",
+      content: "",
+      url: "https://linear.app/acme/document/empty-d",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+  });
+
   it("reads only inverse blocks relations as blockers", async () => {
     resolvers.IssueBlockers = () => ({
       issue: {

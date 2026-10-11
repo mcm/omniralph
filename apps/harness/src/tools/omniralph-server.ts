@@ -7,9 +7,27 @@ import {
   type SdkMcpToolDefinition,
 } from "@anthropic-ai/claude-agent-sdk";
 import { attachmentFileName } from "@omniralph/ralph";
-import { HARNESS_TOOLS_BY_TASK_TYPE, type HarnessTool, type TaskType } from "@omniralph/tasks";
+import {
+  DEFAULT_LINEAR_SEARCH_RESULTS,
+  LinearEntityId,
+  MAX_LINEAR_COMMENTS,
+  MAX_LINEAR_SEARCH_QUERY,
+  MAX_LINEAR_SEARCH_RESULTS,
+  RunLinearCommentsResponse,
+  RunLinearDocumentResponse,
+  RunLinearIssueResponse,
+  RunLinearSearchResponse,
+} from "@omniralph/shared";
+import {
+  HARNESS_TOOLS_BY_TASK_TYPE,
+  type AgentTools,
+  type HarnessTool,
+  type LinearTool,
+  type TaskType,
+  type ToolSettings,
+} from "@omniralph/tasks";
 import { z } from "zod";
-import type { FetchFn } from "../api.js";
+import { getJson, type FetchFn } from "../api.js";
 import type { Logger } from "../logger.js";
 import { ActivityRelay } from "./activities.js";
 import { controlPanelFetcher } from "./attachments.js";
@@ -25,8 +43,8 @@ export const SERVED_HARNESS_TOOLS: readonly HarnessTool[] = [
   "get_attachment",
 ];
 
-/** The name a session's permission rules use for a harness tool. */
-export function harnessToolName(name: HarnessTool): string {
+/** The name a session's permission rules use for a harness or Linear tool. */
+export function harnessToolName(name: HarnessTool | LinearTool): string {
   return `mcp__${OMNIRALPH_SERVER}__${name}`;
 }
 
@@ -37,10 +55,12 @@ export interface OmniralphServerOptions {
   /** The control panel's URL. */
   server: string;
   jobId: string;
-  /** The run's session token (`run:activity`, `run:attachments`); never the lifecycle token. */
+  /** The run's session token (`run:activity`, `run:attachments`, `linear:read`); never the lifecycle token. */
   sessionToken: () => string;
   /** The harness tools the agent lists (`tools.harness`). */
   tools: readonly HarnessTool[];
+  /** The read-only Linear tools of the run (`offeredLinearTools`), served by the control panel. */
+  linearTools?: readonly LinearTool[];
   /** The run's task type: caps `tools` (`ship` is for coding runs only). */
   taskType: TaskType;
   /** The run's temp directory: `get_attachment` saves under its `attachments/`. */
@@ -83,6 +103,14 @@ export function offeredHarnessTools(
   return [...new Set(tools)].filter(
     (name) => allowed.includes(name) && SERVED_HARNESS_TOOLS.includes(name),
   );
+}
+
+/** The Linear tools of the agent's list, when the task turns on `toolSettings.linearRead`; none otherwise. */
+export function offeredLinearTools(
+  tools: Pick<AgentTools, "linear">,
+  settings: Pick<ToolSettings, "linearRead">,
+): LinearTool[] {
+  return settings.linearRead ? [...new Set(tools.linear)] : [];
 }
 
 /**
@@ -178,19 +206,117 @@ export function omniralphTools(options: OmniralphServerOptions): SdkMcpToolDefin
     );
   }
 
+  definitions.push(...linearTools(options));
   return definitions;
 }
 
 /**
- * The in-process MCP server `omniralph` serving a run's harness tools (see
- * `omniralphTools`), with the rules that allow them; null when the agent
- * gets none, so no server is attached at all.
+ * The definitions of the run's Linear tools (`linearTools`), read through
+ * `/api/harness/runs/{id}/linear/*` with the session token: the control panel
+ * holds the Linear token and decides what the run may read. Results are JSON.
+ */
+function linearTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
+  const offered = new Set(options.linearTools ?? []);
+  const base = `${options.server}/api/harness/runs/${encodeURIComponent(options.jobId)}/linear`;
+  const read = async <S extends z.ZodType>(what: string, url: string, schema: S) => {
+    try {
+      const body = await getJson(options.fetch ?? fetch, url, schema, options.sessionToken(), {
+        signal: options.signal,
+      });
+      return text(JSON.stringify(body, null, 2));
+    } catch (error) {
+      return failure(what, error);
+    }
+  };
+  const issueId = LinearEntityId.describe("The issue's identifier (e.g. ENG-123) or ID");
+  const definitions: SdkMcpToolDefinition[] = [];
+
+  if (offered.has("linear_get_issue")) {
+    definitions.push(
+      tool(
+        "linear_get_issue",
+        "Reads a Linear issue: title, description (Markdown), state, priority, labels, team, project and parent.",
+        { issueId },
+        async (args) =>
+          read(
+            "reading the issue",
+            `${base}/issues/${encodeURIComponent(args.issueId)}`,
+            RunLinearIssueResponse,
+          ),
+      ) as unknown as SdkMcpToolDefinition,
+    );
+  }
+
+  if (offered.has("linear_list_comments")) {
+    definitions.push(
+      tool(
+        "linear_list_comments",
+        `Lists the comments on a Linear issue, oldest first (the most recent ${MAX_LINEAR_COMMENTS}; \`omitted\` counts older ones).`,
+        { issueId },
+        async (args) =>
+          read(
+            "listing the comments",
+            `${base}/issues/${encodeURIComponent(args.issueId)}/comments`,
+            RunLinearCommentsResponse,
+          ),
+      ) as unknown as SdkMcpToolDefinition,
+    );
+  }
+
+  if (offered.has("linear_search_issues")) {
+    definitions.push(
+      tool(
+        "linear_search_issues",
+        "Searches the Linear workspace's issues by text (titles and descriptions), best match first.",
+        {
+          query: z.string().trim().min(1).max(MAX_LINEAR_SEARCH_QUERY),
+          first: z
+            .int()
+            .min(1)
+            .max(MAX_LINEAR_SEARCH_RESULTS)
+            .optional()
+            .describe(`How many issues to return (default ${DEFAULT_LINEAR_SEARCH_RESULTS})`),
+        },
+        async (args) => {
+          const params = new URLSearchParams({ query: args.query });
+          if (args.first !== undefined) params.set("first", String(args.first));
+          return read("searching issues", `${base}/issues?${params}`, RunLinearSearchResponse);
+        },
+      ) as unknown as SdkMcpToolDefinition,
+    );
+  }
+
+  if (offered.has("linear_get_document")) {
+    definitions.push(
+      tool(
+        "linear_get_document",
+        "Reads a Linear document (e.g. a PRD or design doc) by its ID or the slug ID at the end of its URL; its content is Markdown.",
+        { documentId: LinearEntityId.describe("The document's ID or slug ID") },
+        async (args) =>
+          read(
+            "reading the document",
+            `${base}/documents/${encodeURIComponent(args.documentId)}`,
+            RunLinearDocumentResponse,
+          ),
+      ) as unknown as SdkMcpToolDefinition,
+    );
+  }
+
+  return definitions;
+}
+
+/**
+ * The in-process MCP server `omniralph` serving a run's harness and Linear
+ * tools (see `omniralphTools`), with the rules that allow them; null when the
+ * agent gets none, so no server is attached at all.
  */
 export function createOmniralphServer(options: OmniralphServerOptions): OmniralphServer | null {
   const tools = omniralphTools(options);
   if (tools.length === 0) return null;
   return {
     config: createSdkMcpServer({ name: OMNIRALPH_SERVER, tools }),
-    allowedTools: tools.map((definition) => harnessToolName(definition.name as HarnessTool)),
+    allowedTools: tools.map((definition) =>
+      harnessToolName(definition.name as HarnessTool | LinearTool),
+    ),
   };
 }

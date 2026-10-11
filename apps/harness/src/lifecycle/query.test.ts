@@ -259,6 +259,24 @@ describe("runQueryTask", () => {
       expect(harnessRules(calls[0]?.options)).toEqual(["mcp__omniralph__ask_permission"]);
     });
 
+    it("attaches the agent's Linear tools when the task turns on linearRead", async () => {
+      const agent = agentFixture({
+        tools: { builtin: ["Read"], linear: ["linear_get_issue", "linear_search_issues"] },
+      });
+      const on = await run(
+        spec({ agent, task: taskFixture({ toolSettings: { linearRead: true } }) }),
+      );
+      expect(Object.keys(on.calls[0]?.options?.mcpServers ?? {})).toEqual(["omniralph"]);
+      expect(harnessRules(on.calls[0]?.options)).toEqual([
+        "mcp__omniralph__linear_get_issue",
+        "mcp__omniralph__linear_search_issues",
+      ]);
+
+      const off = await run(spec({ agent }));
+      expect(off.calls[0]?.options?.mcpServers ?? {}).toEqual({});
+      expect(harnessRules(off.calls[0]?.options)).toEqual([]);
+    });
+
     it("gives get_attachment a run temp directory next to the checkout, removed afterwards", async () => {
       const agent = agentFixture({ tools: { builtin: ["Read"], harness: ["get_attachment"] } });
       const { calls } = await run(spec({ agent }));

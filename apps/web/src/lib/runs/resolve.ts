@@ -40,7 +40,10 @@ export interface DefinitionSource {
   getAgent(id: string): AgentDefinition | null;
 }
 
-const BUILTINS: DefinitionSource = { getTask: getBuiltinTask, getAgent: getBuiltinAgent };
+export const BUILTIN_DEFINITIONS: DefinitionSource = {
+  getTask: getBuiltinTask,
+  getAgent: getBuiltinAgent,
+};
 
 /**
  * Resolves a run-spec job (one with a `task_id`) into the `RunSpec` the
@@ -58,7 +61,7 @@ export async function resolveRunSpec(
     "id" | "organizationId" | "taskType" | "pool" | "taskId" | "repositoryId" | "payload"
   >,
   tokens: { lifecycle: JobToken; session: JobToken },
-  definitions: DefinitionSource = BUILTINS,
+  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
 ): Promise<RunSpec> {
   if (job.taskId === null) throw new RunSpecError("Not a run-spec job (no task)");
   const task = definitions.getTask(job.taskId);

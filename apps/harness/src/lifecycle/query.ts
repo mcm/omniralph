@@ -22,6 +22,7 @@ import {
 import {
   createOmniralphServer,
   offeredHarnessTools,
+  offeredLinearTools,
   type OmniralphServerOptions,
 } from "../tools/omniralph-server.js";
 import { existingReferences } from "./references.js";
@@ -134,9 +135,10 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
  *    lifecycle token). The agent's harness tools (`tools.harness`, capped by
- *    the task type) come from the in-process `omniralph` MCP server, which
- *    calls the control panel with the session token too; with none listed,
- *    no server is attached.
+ *    the task type) and its read-only Linear tools (`tools.linear`, when the
+ *    task turns on `linearRead`) come from the in-process `omniralph` MCP
+ *    server, which calls the control panel with the session token too; with
+ *    none, no server is attached.
  * 4. Finish: a structured result is validated against the task's output
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
@@ -191,6 +193,7 @@ export async function runQueryTask(
       jobId: spec.jobId,
       sessionToken: ctx.sessionToken,
       tools: spec.agent.tools.harness,
+      linearTools: offeredLinearTools(spec.agent.tools, spec.task.toolSettings),
       taskType: spec.taskType,
       tmpDir: runTmpDir,
       signal: ctx.signal,

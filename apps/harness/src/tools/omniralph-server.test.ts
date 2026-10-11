@@ -2,12 +2,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
-import type { HarnessTool, TaskType } from "@omniralph/tasks";
+import type { HarnessTool, LinearTool, TaskType } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FetchFn } from "../api.js";
 import { silentLogger } from "../logger.js";
 import {
   createOmniralphServer,
+  offeredLinearTools,
   omniralphTools,
   type OmniralphServerOptions,
 } from "./omniralph-server.js";
@@ -269,6 +270,119 @@ describe("omniralph server", () => {
         throw new TypeError("fetch failed");
       });
       const failed = await call(down.fn, "get_attachment", { attachmentId: "abc" });
+      expect(failed.isError).toBe(true);
+      expect(resultText(failed)).toContain("fetch failed");
+    });
+  });
+
+  describe("Linear tools", () => {
+    const LINEAR = `${SERVER}/api/harness/runs/${JOB}/linear`;
+    const issue = {
+      id: "i1",
+      identifier: "ENG-7",
+      title: "Login fails",
+      description: "Steps",
+      url: "https://linear.app/acme/issue/ENG-7",
+      team: "ENG",
+      state: "Todo",
+      stateType: "unstarted",
+      priority: 2,
+      labels: ["bug"],
+    };
+
+    function linearOptions(fetch: FetchFn, linearTools: LinearTool[]): OmniralphServerOptions {
+      return { ...options(fetch, []), linearTools };
+    }
+
+    async function callLinear(
+      fetch: FetchFn,
+      name: LinearTool,
+      args: Record<string, unknown>,
+    ): Promise<Result> {
+      const definition = omniralphTools(linearOptions(fetch, [name])).find((t) => t.name === name);
+      if (!definition) throw new Error(`${name} isn't offered`);
+      return definition.handler(args as never, undefined);
+    }
+
+    it("offers the agent's Linear tools only when the task turns on linearRead", () => {
+      const tools = { linear: ["linear_get_issue", "linear_get_issue"] as LinearTool[] };
+      expect(offeredLinearTools(tools, { linearRead: true })).toEqual(["linear_get_issue"]);
+      expect(offeredLinearTools(tools, { linearRead: false })).toEqual([]);
+    });
+
+    it("serves them as mcp__omniralph__<tool>, even without harness tools", () => {
+      const server = createOmniralphServer(
+        linearOptions(fakeFetch(() => json({})).fn, ["linear_get_issue", "linear_get_document"]),
+      );
+      expect(server?.allowedTools).toEqual([
+        "mcp__omniralph__linear_get_issue",
+        "mcp__omniralph__linear_get_document",
+      ]);
+      expect(createOmniralphServer(linearOptions(fakeFetch(() => json({})).fn, []))).toBeNull();
+    });
+
+    it("reads an issue, its comments and a document as JSON with the session token", async () => {
+      const comments = { comments: [{ body: "hi", author: "Bo" }], omitted: 0 };
+      const document = {
+        id: "d1",
+        title: "PRD",
+        content: "# PRD",
+        url: "https://linear.app/acme/document/prd-d1",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      };
+      const { fn, calls } = fakeFetch((c) =>
+        c.url.endsWith("/comments")
+          ? json(comments)
+          : c.url.includes("/documents/")
+            ? json({ document })
+            : json({ issue }),
+      );
+      const got = await callLinear(fn, "linear_get_issue", { issueId: "ENG-7" });
+      expect(got.isError).toBeFalsy();
+      expect(JSON.parse(resultText(got))).toEqual({ issue });
+      expect(
+        JSON.parse(resultText(await callLinear(fn, "linear_list_comments", { issueId: "ENG-7" }))),
+      ).toEqual(comments);
+      expect(
+        JSON.parse(
+          resultText(await callLinear(fn, "linear_get_document", { documentId: "prd-d1" })),
+        ),
+      ).toEqual({ document });
+      expect(calls.map((c) => [c.method, c.url])).toEqual([
+        ["GET", `${LINEAR}/issues/ENG-7`],
+        ["GET", `${LINEAR}/issues/ENG-7/comments`],
+        ["GET", `${LINEAR}/documents/prd-d1`],
+      ]);
+      expectSessionToken(calls);
+    });
+
+    it("searches issues with the query and result count in the URL", async () => {
+      const { fn, calls } = fakeFetch(() => json({ issues: [issue] }));
+      const result = await callLinear(fn, "linear_search_issues", { query: "login & auth" });
+      expect(JSON.parse(resultText(result))).toEqual({ issues: [issue] });
+      await callLinear(fn, "linear_search_issues", { query: "x", first: 3 });
+      expect(calls.map((c) => c.url)).toEqual([
+        `${LINEAR}/issues?query=login+%26+auth`,
+        `${LINEAR}/issues?query=x&first=3`,
+      ]);
+      expectSessionToken(calls);
+    });
+
+    it("returns a tool error on an error status, an invalid body or a network failure", async () => {
+      const refused = fakeFetch(() => json({ error: "linear_tool_not_allowed" }, 403));
+      const denied = await callLinear(refused.fn, "linear_get_issue", { issueId: "ENG-7" });
+      expect(denied.isError).toBe(true);
+      expect(resultText(denied)).toContain("linear_tool_not_allowed");
+
+      const invalid = fakeFetch(() => json({ nope: true }));
+      const bad = await callLinear(invalid.fn, "linear_get_issue", { issueId: "ENG-7" });
+      expect(bad.isError).toBe(true);
+      expect(resultText(bad)).toContain("invalid body");
+
+      const down = fakeFetch(() => {
+        throw new TypeError("fetch failed");
+      });
+      const failed = await callLinear(down.fn, "linear_search_issues", { query: "x" });
       expect(failed.isError).toBe(true);
       expect(resultText(failed)).toContain("fetch failed");
     });
