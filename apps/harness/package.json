@@ -1,6 +1,6 @@
 {
   "name": "@omniralph/harness",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Omniralph harness host daemon",
   "type": "module",
   "repository": {
