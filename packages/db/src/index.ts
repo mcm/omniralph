@@ -219,7 +219,6 @@ export {
   listReviewFindings,
   markReviewQueued,
   markReviewRunning,
-  postReviewOnce,
   postReviewRunOnce,
   previousReviewState,
   resolveEarlierOpenFindings,

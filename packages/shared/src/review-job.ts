@@ -1,13 +1,14 @@
 /**
- * The `review.run` job: its payload (resolved by the control panel when the
- * job is enqueued) and the result an agent reports to `/result`.
+ * Review task runs (`review.task` jobs): the trigger context the control
+ * panel resolves when it enqueues a review run, and the result a harness
+ * reports to `/result`.
  */
 import { z } from "zod";
 import { Finding, FindingCategory } from "./finding.js";
-import { JobRepository } from "./protocol.js";
 import { RunSpecJobPayload } from "./run-spec.js";
 
-export const REVIEW_JOB_TYPE = "review.run";
+/** Job type of a review task's run (one per task of a review run). */
+export const REVIEW_TASK_JOB_TYPE = "review.task";
 
 export const CommitSha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
 
@@ -42,18 +43,23 @@ export type ReviewJobConfig = z.infer<typeof ReviewJobConfig>;
 /** Longest open-finding body a review payload carries. */
 export const MAX_OPEN_FINDING_BODY_CHARS = 1000;
 
-/**
- * Payload of a `review.run` job. It carries everything the agent needs except
- * credentials: git gets a short-lived read-only token from the broker.
- */
-/** See `ReviewJobPayload.mode`. */
+/** See `ReviewTriggerContext.mode`. */
 export const REVIEW_MODES = ["incremental", "full", "fresh"] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
 
-export const ReviewJobPayload = z.object({
+/**
+ * The trigger context `enqueueReview` stores for a run of a `review` task
+ * (`builtin:review-pr`): the review row, the commits, the PR text, the review
+ * configuration, the mode and the earlier reviews, with `repository` as the
+ * template's `owner/repo`, plus `pr`, the PR as the prompt template quotes it
+ * (title and description trimmed; a blank description is null). It carries
+ * everything the run needs except credentials: git gets a short-lived
+ * read-only token from the broker.
+ */
+export const ReviewTriggerContext = z.object({
   reviewId: z.uuid(),
   repositoryId: z.uuid(),
-  repository: JobRepository,
+  repository: z.string().min(1).max(500),
   /** PR number (GitHub) or MR IID (GitLab). */
   prNumber: z.int().min(1),
   baseSha: CommitSha,
@@ -71,7 +77,7 @@ export const ReviewJobPayload = z.object({
    * last review), `full` (`@bot review`; the whole diff, open findings still
    * suppressed) or `fresh` (`@bot review fresh` / Re-run › Fresh; the whole
    * diff with nothing suppressed, and matching earlier open findings are
-   * superseded when it completes). Absent on jobs from before re-runs.
+   * superseded when it completes). Absent: `incremental`.
    */
   mode: z.enum(REVIEW_MODES).optional(),
   /**
@@ -101,8 +107,13 @@ export const ReviewJobPayload = z.object({
         .max(1000),
     })
     .nullable(),
+  pr: z.object({
+    number: z.int().min(1),
+    title: z.string().max(1000),
+    body: z.string().max(100_000).nullable(),
+  }),
 });
-export type ReviewJobPayload = z.infer<typeof ReviewJobPayload>;
+export type ReviewTriggerContext = z.infer<typeof ReviewTriggerContext>;
 
 export const REVIEW_SKIP_REASONS = [
   "excluded",
@@ -119,7 +130,7 @@ export const MAX_REVIEW_FINDINGS = 500;
 export const MAX_REVIEW_SKIPPED = 10_000;
 
 /**
- * Result of a `review.run` job (`/api/harness/jobs/{id}/result`). Reviews that
+ * Result of a review task's run (`/api/harness/jobs/{id}/result`). Reviews that
  * stopped on a rate limit or an error are reported through `/fail` instead.
  */
 export const ReviewJobResult = z.object({
@@ -144,7 +155,7 @@ export const ReviewJobResult = z.object({
     duplicate: z.int().min(0),
   }),
   /**
-   * Indexes into the payload's `previousReview.openFindings` of the open
+   * Indexes into the trigger context's `previousReview.openFindings` of the open
    * findings the review re-checked and found fixed at the head; they get
    * resolved. Absent from agents that predate it: then nothing is resolved.
    */
@@ -157,9 +168,9 @@ export type ReviewJobResult = z.infer<typeof ReviewJobResult>;
  * What a run of a `review` task reads from its trigger context, besides the
  * values its prompt template renders: the commits to review, the PR text,
  * the repository's review configuration and the earlier reviews (as in
- * `ReviewJobPayload`).
+ * `ReviewTriggerContext`).
  */
-export const ReviewTaskContext = ReviewJobPayload.pick({
+export const ReviewTaskContext = ReviewTriggerContext.pick({
   baseSha: true,
   headSha: true,
   changeRequest: true,
@@ -167,24 +178,6 @@ export const ReviewTaskContext = ReviewJobPayload.pick({
   previousReview: true,
 });
 export type ReviewTaskContext = z.infer<typeof ReviewTaskContext>;
-
-/**
- * The trigger context `enqueueReview` stores for a run of a `review` task
- * (`builtin:review-pr`): the `ReviewJobPayload` fields (the review row, the
- * commits, the PR text, the review configuration, the mode and the earlier
- * reviews), with `repository` as the template's `owner/repo`, plus `pr`, the
- * PR as the prompt template quotes it (title and description trimmed; a blank
- * description is null).
- */
-export const ReviewTriggerContext = ReviewJobPayload.omit({ repository: true }).extend({
-  repository: z.string().min(1).max(500),
-  pr: z.object({
-    number: z.int().min(1),
-    title: z.string().max(1000),
-    body: z.string().max(100_000).nullable(),
-  }),
-});
-export type ReviewTriggerContext = z.infer<typeof ReviewTriggerContext>;
 
 /** The `ReviewTriggerContext` of a review task's stored job payload (a `RunSpecJobPayload`); throws if it has none. */
 export function reviewTriggerContext(payload: unknown): ReviewTriggerContext {

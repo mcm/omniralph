@@ -14,14 +14,14 @@ import {
   RALPH_TOOL_POLICY,
   ralphCapability,
 } from "./ralph/index.js";
-import { REVIEW_TOOL_POLICY } from "./review.js";
 
 describe("capability registry", () => {
-  it("ships the review and ralph capabilities, and no system or triage capability", () => {
+  it("ships only the ralph capability, and no system, review or triage capability", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
-    expect(registry.names()).toEqual(["review", "ralph"]);
+    expect(registry.names()).toEqual(["ralph"]);
     expect(registry.forJob({ type: "repo.sync" })).toBeUndefined();
-    expect(registry.forJob({ type: "review.run" })?.name).toBe("review");
+    // Review runs run the review task type (`builtin:review-pr`), by their run spec.
+    expect(registry.forJob({ type: "review.run" })).toBeUndefined();
     // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply-to-finding`, `builtin:ask-about-code`, `builtin:triage`), run by the query lifecycle.
     for (const type of ["review.learn-rule", "review.reply", "chat.ask", "triage.run"]) {
       expect(registry.forJob({ type })).toBeUndefined();
@@ -33,20 +33,10 @@ describe("capability registry", () => {
   });
 
   it("dispatches by job type, so a type may belong to one capability only", () => {
-    const [review, ralph] = defaultCapabilities() as [Capability, Capability];
+    const [ralph] = defaultCapabilities() as [Capability];
     expect(
-      () => new CapabilityRegistry([review, { ...ralph, name: "other", jobTypes: ["review.run"] }]),
-    ).toThrow(/job type 'review.run' registered twice/);
-  });
-
-  it("keeps review sessions read-only", () => {
-    expect([...REVIEW_TOOL_POLICY.allowedTools].sort()).toEqual(["Glob", "Grep", "Read"]);
-    for (const tool of ["Bash", "Write", "Edit", "WebFetch", "WebSearch"]) {
-      expect(REVIEW_TOOL_POLICY.disallowedTools).toContain(tool);
-    }
-    expect(REVIEW_TOOL_POLICY.permissionMode).not.toBe("bypassPermissions");
-    expect(REVIEW_TOOL_POLICY.settingSources).toEqual([]);
-    expect(REVIEW_TOOL_POLICY.writable).toBe(false);
+      () => new CapabilityRegistry([ralph, { ...ralph, name: "other", jobTypes: ["ralph.story"] }]),
+    ).toThrow(/job type 'ralph.story' registered twice/);
   });
 
   it("lets ralph story sessions write, and keeps describe-pr sessions read-only", () => {
@@ -87,7 +77,7 @@ describe("capability registry", () => {
   });
 
   it("rejects duplicate names", () => {
-    const [review] = defaultCapabilities() as [Capability];
-    expect(() => new CapabilityRegistry([review, review])).toThrow(/twice/);
+    const [ralph] = defaultCapabilities() as [Capability];
+    expect(() => new CapabilityRegistry([ralph, ralph])).toThrow(/twice/);
   });
 });

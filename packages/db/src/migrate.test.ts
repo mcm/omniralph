@@ -640,6 +640,96 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("cancels legacy review.run jobs and renames review task jobs (0063)", async () => {
+    await db.execute(sql`create database legacy_review_jobs`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/legacy_review_jobs");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0063_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const { rows: repos } = await client.query<{ id: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '1', 'acme/api', $2) returning id`,
+          [org, connections[0]!.id],
+        );
+        const { rows: reviews } = await client.query<{ id: string }>(
+          `insert into reviews (repository_id, pr_number, head_sha, base_sha, trigger, status, budget)
+           values ($1, 1, 'h', 'b', 'webhook', 'running', 1), ($1, 2, 'h', 'b', 'webhook', 'queued', 1),
+                  ($1, 3, 'h', 'b', 'webhook', 'completed', 1)
+           returning id`,
+          [repos[0]!.id],
+        );
+        const [legacyActive, task, legacyDone] = reviews.map((r) => r.id) as [
+          string,
+          string,
+          string,
+        ];
+        await client.query(
+          `insert into jobs (organization_id, type, task_type, pool, task_id, status, payload, dedupe_key) values
+             ($1, 'review.run', 'review', 'short', null, 'running', $2, 'legacy-active'),
+             ($1, 'review.run', 'review', 'short', 'builtin:review-pr', 'queued', $3, 'task'),
+             ($1, 'review.run', 'review', 'short', null, 'completed', $4, 'legacy-done'),
+             ($1, 'chat.ask', 'query', 'short', null, 'queued', '{}', 'other')`,
+          [
+            org,
+            JSON.stringify({ reviewId: legacyActive }),
+            JSON.stringify({ trigger: { kind: "pr.updated", context: { reviewId: task } } }),
+            JSON.stringify({ reviewId: legacyDone }),
+          ],
+        );
+
+        await runMigrations(uri);
+        const { rows: jobRows } = await client.query(
+          `select dedupe_key, type, status, error is not null as has_error from jobs order by dedupe_key`,
+        );
+        expect(jobRows).toEqual([
+          { dedupe_key: "legacy-active", type: "review.run", status: "canceled", has_error: true },
+          { dedupe_key: "legacy-done", type: "review.run", status: "completed", has_error: false },
+          { dedupe_key: "other", type: "chat.ask", status: "queued", has_error: false },
+          { dedupe_key: "task", type: "review.task", status: "queued", has_error: false },
+        ]);
+        const { rows: reviewRows } = await client.query(
+          `select pr_number, status, error is not null as has_error from reviews order by pr_number`,
+        );
+        expect(reviewRows).toEqual([
+          { pr_number: 1, status: "failed", has_error: true },
+          { pr_number: 2, status: "queued", has_error: false },
+          { pr_number: 3, status: "completed", has_error: false },
+        ]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

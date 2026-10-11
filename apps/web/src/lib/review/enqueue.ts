@@ -20,8 +20,7 @@ import {
 import {
   FindingCategory,
   MAX_OPEN_FINDING_BODY_CHARS,
-  REVIEW_JOB_TYPE,
-  ReviewJobPayload,
+  REVIEW_TASK_JOB_TYPE,
   ReviewTriggerContext,
   RunSpecJobPayload,
   type ReviewMode,
@@ -87,27 +86,22 @@ const TRIGGER_KINDS: Record<Review["trigger"], TriggerKind> = {
   manual: "review.rerun",
 };
 
-/**
- * The review row a PR review job is for: in its trigger context (a
- * `builtin:review-pr` run) or, for a job enqueued before the port, its
- * legacy `review.run` payload; null for neither.
- */
+/** The review row a review task's job is for (in its trigger context); null for none. */
 export function reviewIdOfJob(payload: unknown): string | null {
   const run = RunSpecJobPayload.safeParse(payload);
-  const reviewId = ReviewJobPayload.shape.reviewId.safeParse(
-    run.success
-      ? run.data.trigger.context.reviewId
-      : (payload as { reviewId?: unknown } | null)?.reviewId,
-  );
+  if (!run.success) return null;
+  const reviewId = ReviewTriggerContext.shape.reviewId.safeParse(run.data.trigger.context.reviewId);
   return reviewId.success ? reviewId.data : null;
 }
 
 /**
  * Dedupe key prefix of a PR's review jobs; the full key adds the head SHA and
  * the review task ID (`review.run:<repositoryId>:<pr>:<headSha>:<taskId>`).
+ * It keeps the name of the removed `review.run` job type, so the keys of jobs
+ * enqueued before review task jobs became `review.task` still match.
  */
 export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): string {
-  return `${REVIEW_JOB_TYPE}:${repositoryId}:${prNumber}:`;
+  return `review.run:${repositoryId}:${prNumber}:`;
 }
 
 /** Dedupe key of the job of review task `taskId` of a PR head. */
@@ -161,7 +155,7 @@ export function reviewTasksFor(
  * become `skipped`, and the correlation job of a correlating one is
  * canceled), then creates the `queued` review run and, for each of
  * the repository's review tasks taking this trigger (`reviewTasksFor`), a
- * `queued` review and a `review.run` job running that task (routed by the
+ * `queued` review and a `review.task` job running that task (routed by the
  * task: task type `review`, its pool). Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
  * (profile, rules, instructions, excludes), the PR text, the mode and the
@@ -317,7 +311,7 @@ export async function enqueueReview(
       });
       const { job, created } = await dispatcher.createAndPublish({
         organizationId: repository.organizationId,
-        type: REVIEW_JOB_TYPE,
+        type: REVIEW_TASK_JOB_TYPE,
         ...runSpecJobInput(task, {
           trigger: {
             kind: TRIGGER_KINDS[input.trigger],

@@ -442,6 +442,13 @@
       "when": 1791742045901,
       "tag": "0062_sticky_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791742914853,
+      "tag": "0063_drop_legacy_review_jobs",
+      "breakpoints": true
     }
   ]
 }

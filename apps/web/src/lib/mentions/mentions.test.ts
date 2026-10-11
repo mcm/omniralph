@@ -291,7 +291,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
     return db
       .select()
       .from(jobs)
-      .where(and(eq(jobs.type, "review.run"), eq(jobs.repositoryId, repoId)))
+      .where(and(eq(jobs.type, "review.task"), eq(jobs.repositoryId, repoId)))
       .then((rows) => rows.filter((j) => reviewTriggerContext(j.payload).prNumber === number));
   }
 

@@ -3,16 +3,23 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { ClaudeAgentProvider } from "@omniralph/engine";
+import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import type { ToolPolicy } from "./index.js";
 import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph/index.js";
 import { DESCRIBE_PR_GIT_COMMANDS } from "./ralph/policy.js";
-import { REVIEW_TOOL_POLICY, reviewSessionProvider } from "./review.js";
+import { queryToolPolicy } from "../lifecycle/tool-policy.js";
 import { isReadOnlyCommand, narrowPermissions, ruleTool, sdkPermissions } from "./tool-policy.js";
 
 const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "omniralph-policy-")));
 const controller = new AbortController();
 const silent = { info() {}, warn() {}, error() {} };
+
+/** The policy of `builtin:review-pr` sessions (agent `builtin:reviewer`), as the review lifecycle builds it. */
+const REVIEW_TOOL_POLICY = queryToolPolicy(
+  getBuiltinAgent("builtin:reviewer")!,
+  getBuiltinTask("builtin:review-pr")!.toolSettings,
+);
 
 function optionsFor(provider: ClaudeAgentProvider, allowExploration: boolean): Options {
   return provider.buildOptions({ cwd, model: "claude-x", allowExploration }, controller, 7, "SYS");
@@ -79,7 +86,10 @@ async function guardDecision(options: Options, filePath: string): Promise<unknow
 
 describe("sdkPermissions", () => {
   it("gives review sessions exactly today's SDK options", async () => {
-    const provider = reviewSessionProvider(silent);
+    const provider = new ClaudeAgentProvider({
+      logger: silent,
+      permissions: sdkPermissions(REVIEW_TOOL_POLICY),
+    });
     const engineDefault = new ClaudeAgentProvider({ logger: silent });
     for (const allowExploration of [true, false]) {
       const options = optionsFor(provider, allowExploration);

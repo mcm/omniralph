@@ -1,5 +1,5 @@
 /**
- * PR reviews (`review.run` before the port): one session reviews the PR's
+ * PR reviews (`review.run` jobs before the port): one session reviews the PR's
  * diff (or the commits pushed since the last review) against the rubric and
  * re-checks the open findings of earlier reviews; the `review` task type
  * filters the findings to the diff, makes them self-contained and drops

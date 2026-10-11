@@ -85,7 +85,7 @@ describe("jobHooks", () => {
   });
 
   it("validates a review run's result with the review sink, with every review hook", () => {
-    const hooks = jobHooks({ type: "review.run", payload: {}, taskId: "builtin:review-pr" })!;
+    const hooks = jobHooks({ type: "review.task", payload: {}, taskId: "builtin:review-pr" })!;
     const result = {
       findings: [],
       usage: { inputTokens: 1, outputTokens: 1 },

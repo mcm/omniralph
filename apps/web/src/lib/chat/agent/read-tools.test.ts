@@ -177,7 +177,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     });
     const { job } = await insertJob(db, {
       organizationId: id,
-      type: "review.run",
+      type: "review.task",
       taskType: "review",
       pool: "short",
       repositoryId: repository.id,
@@ -358,7 +358,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       expect.objectContaining({
         id: acme.jobId,
         url: `${APP_URL}/jobs#job-${acme.jobId}`,
-        type: "review.run",
+        type: "review.task",
         status: "queued",
         target: { label: "acme/api#7", url: "https://github.com/acme/api/pull/7" },
         harness: null,
@@ -367,7 +367,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect(list).toMatchObject({ shown: 1, more: false });
     const queuedReviews = await call(
       "list_jobs",
-      { status: "queued", type: "review.run" },
+      { status: "queued", type: "review.task" },
       acme.id,
     );
     expect((queuedReviews.jobs as Result[]).map((j) => j.id)).toEqual([acme.jobId]);

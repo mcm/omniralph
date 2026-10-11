@@ -1,5 +1,6 @@
 import type { RepositoryLink } from "@omniralph/db";
-import { ReviewJobPayload, RunSpecJobPayload } from "@omniralph/shared";
+import { RunSpecJobPayload } from "@omniralph/shared";
+import { z } from "zod";
 import { changeRequestWebUrl, repositoryWebUrl } from "@/lib/repositories/web-url";
 
 /** A harness counts as online while its last heartbeat is younger than this. */
@@ -24,6 +25,8 @@ export function enrollCommand(serverUrl: string, token: string): string {
   return `omniralph-harness enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;
 }
 
+const PR_NUMBER = z.int().min(1);
+
 /** A job's link for the UI: the PR/MR it's for, else its repository. */
 export interface JobTarget {
   label: string;
@@ -36,12 +39,10 @@ export function jobTarget(job: {
 }): JobTarget | null {
   const repo = job.repository;
   if (!repo) return null;
-  // A legacy review job's `prNumber`, or a run's PR trigger context (`pr.number`).
+  // A run's PR trigger context (`pr.number`), or the `prNumber` of an old `review.run` job.
   const run = RunSpecJobPayload.safeParse(job.payload);
   const pr = run.success ? (run.data.trigger.context.pr as { number?: unknown } | undefined) : null;
-  const prNumber = ReviewJobPayload.shape.prNumber.safeParse(
-    run.success ? pr?.number : job.payload.prNumber,
-  );
+  const prNumber = PR_NUMBER.safeParse(run.success ? pr?.number : job.payload.prNumber);
   if (prNumber.success) {
     const sigil = repo.provider === "gitlab" ? "!" : "#";
     return {

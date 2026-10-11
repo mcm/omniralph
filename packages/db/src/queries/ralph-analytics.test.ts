@@ -125,7 +125,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
       // Outside the window, and not a ralph job.
       job(a6.id, repoA, "ralph.story", "2026-09-28T23:59:59Z", usage(9000, 900)),
       {
-        ...job(a1.id, repoA, "review.run", "2026-10-05T01:00:00Z", usage(5000, 500)),
+        ...job(a1.id, repoA, "chat.ask", "2026-10-05T01:00:00Z", usage(5000, 500)),
         ralphRunId: null,
       },
     ]);

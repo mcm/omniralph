@@ -42,7 +42,6 @@ describe("protocol", () => {
 
   it("routes every legacy job type to its task type and pool", () => {
     const routing = (type: string) => legacyJobRouting(type);
-    expect(routing("review.run")).toEqual({ taskType: "review", pool: "short" });
     for (const type of [
       "review.reply",
       "review.learn-rule",
@@ -57,6 +56,8 @@ describe("protocol", () => {
     }
     expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
     expect(() => routing("review.unknown")).toThrow(/Unknown legacy job type/);
+    // Review runs are review task runs (`review.task`, run specs), not a legacy job type.
+    expect(() => routing("review.run")).toThrow(/Unknown legacy job type/);
   });
 
   it("lists the system RPCs, each routed as a system job", () => {
