@@ -1,4 +1,8 @@
-import { QUERY_TASKS_MIN_HARNESS_VERSION, RunSpecJobPayload } from "@omniralph/shared";
+import {
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  RunSpecJobPayload,
+  SETUP_COMMANDS_MIN_HARNESS_VERSION,
+} from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 
 /**
@@ -6,10 +10,13 @@ import type { TaskDefinition } from "@omniralph/tasks";
  * `insertJob`/`createAndPublish` input next to `organizationId`, `type` and
  * `dedupeKey`): the task's type and pool, its ID in `task_id` and the stored
  * `RunSpecJobPayload`, which `resolveRunSpec` turns into a run spec at claim time.
- * Query tasks need a harness with the query lifecycle (`QUERY_TASKS_MIN_HARNESS_VERSION`).
+ * Query tasks need a harness with the query lifecycle (`QUERY_TASKS_MIN_HARNESS_VERSION`),
+ * and tasks with setup or teardown commands one that runs them
+ * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`).
  */
 export function runSpecJobInput(
-  task: Pick<TaskDefinition, "id" | "taskType" | "pool">,
+  task: Pick<TaskDefinition, "id" | "taskType" | "pool"> &
+    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
   payload: RunSpecJobPayload,
 ): {
   taskType: TaskDefinition["taskType"];
@@ -26,6 +33,16 @@ export function runSpecJobInput(
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
-    minHarnessVersion: task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
+    minHarnessVersion: minHarnessVersion(task),
   };
+}
+
+function minHarnessVersion(
+  task: Pick<TaskDefinition, "taskType"> &
+    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
+): string | null {
+  if ((task.setupCommands?.length ?? 0) > 0 || (task.teardownCommands?.length ?? 0) > 0) {
+    return SETUP_COMMANDS_MIN_HARNESS_VERSION;
+  }
+  return task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null;
 }

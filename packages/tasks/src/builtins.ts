@@ -16,7 +16,7 @@ import { REPLY_TASK, REVIEWER_AGENT } from "./builtin/reply.js";
 import { PLANNER_AGENT, TRIAGE_TASK } from "./builtin/triage.js";
 import { isBuiltinId } from "./ids.js";
 import { validateTemplate } from "./template.js";
-import { availableVariables } from "./variables.js";
+import { taskVariables } from "./variables.js";
 
 const AGENT_INPUTS: readonly AgentDefinitionInput[] = [
   RULE_WRITER_AGENT,
@@ -90,7 +90,7 @@ export function builtinProblems(agents: readonly unknown[], tasks: readonly unkn
     } else {
       problems.push(...validateAgentForTask(agent, task).map((p) => `Task ${task.id}: ${p}`));
     }
-    const available = availableVariables(task.taskType, task.triggers);
+    const available = taskVariables(task);
     for (const problem of validateTemplate(task.promptTemplate, available)) {
       const what = problem.kind === "parse" ? problem.message : `unknown variable ${problem.name}`;
       problems.push(`Task ${task.id} template (${problem.line}:${problem.column}): ${what}`);

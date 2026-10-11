@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { TRIGGER_KINDS, VARIABLES, availableVariables, findVariable } from "./index.js";
+import {
+  TRIGGER_KINDS,
+  VARIABLES,
+  availableVariables,
+  findVariable,
+  renderTemplate,
+  setupVariables,
+  taskCatalog,
+  taskVariables,
+  validateTemplate,
+} from "./index.js";
 
 describe("VARIABLES", () => {
   it("has unique dotted names", () => {
@@ -99,5 +109,49 @@ describe("availableVariables", () => {
       "conventions",
       "checkout",
     ]);
+  });
+});
+
+describe("setup variables", () => {
+  const task = {
+    taskType: "query" as const,
+    triggers: ["chat.request" as const],
+    setupCommands: [
+      { name: "semgrep", fence: "json", optional: true },
+      { name: "graph", fence: "", optional: false },
+    ],
+  };
+
+  it("names each setup command's variable `setup.<name>`, untrusted", () => {
+    expect(setupVariables(task.setupCommands)).toEqual([
+      expect.objectContaining({
+        name: "setup.semgrep",
+        source: "setup",
+        trust: "untrusted",
+        fence: "json",
+      }),
+      expect.not.objectContaining({ fence: expect.anything() }),
+    ]);
+    expect(taskCatalog(task).slice(0, VARIABLES.length)).toEqual(VARIABLES);
+  });
+
+  it("makes them available to the task's template, and fences them when rendered", () => {
+    const available = taskVariables(task);
+    expect(available).toEqual([
+      ...availableVariables("query", ["chat.request"]),
+      "setup.semgrep",
+      "setup.graph",
+    ]);
+    expect(validateTemplate("{{setup.semgrep}}{{#setup}}{{graph}}{{/setup}}", available)).toEqual(
+      [],
+    );
+    expect(validateTemplate("{{setup.other}}", available)).toMatchObject([{ name: "setup.other" }]);
+    expect(
+      renderTemplate(
+        "{{setup.semgrep}}\n{{setup.graph}}",
+        { setup: { semgrep: '{"results":[]}', graph: "a -> b" } },
+        taskCatalog(task),
+      ),
+    ).toBe('```json\n{"results":[]}\n```\n```\na -> b\n```');
   });
 });

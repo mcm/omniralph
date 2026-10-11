@@ -79,7 +79,8 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
 Prompt templates are a logic-less subset of Mustache: variables (dotted names, `{{.}}`), sections
 and inverted sections, and comments. Partials, lambdas, delimiter changes, triple mustache and
 `{{& x}}` are parse errors, and nothing is HTML-escaped. `validateTemplate` checks every variable
-against the variables available to the task (`availableVariables(taskType, triggers)`).
+against the variables available to the task (`taskVariables(task)`: `availableVariables(taskType,
+triggers)` plus its `setup.<name>` variables).
 
 Every catalog variable has a source (`trigger`, `taskType` or `setup`) and a trust level.
 `renderTemplate` fences **untrusted** values itself, in a code fence longer than any backtick run
@@ -102,16 +103,32 @@ code:
 1. **Prepare.** Without a `ref`, an empty temp directory. With one, the repository is synced and a
    disposable worktree of the ref checked out. A ref that can't be fetched leaves an empty
    directory without file tools, or, with `requireCheckout`, finishes with `no_checkout` and no
-   session.
+   session. The task's setup commands then run there (see below).
 2. **Render** the task's template over the trigger context plus the query variables (`question`,
-   `hunk`, `conventions`, `checkout`).
+   `hunk`, `conventions`, `checkout`) and the `setup` variables.
 3. **One session**: the agent's system prompt plus the task's `systemAppend`; the agent's tools
    narrowed by the task's tool settings and the repository's tool settings (they only ever
    narrow); the run's model, token budget and turn cap; the `session` token in its environment.
 4. **Finish.** A structured result is validated against the task's output schema; otherwise the
    answer is the final Markdown text plus the checkout's files it cites. A rate limit is a
    retryable failure.
-5. **Teardown.** The worktree or temp directory is removed, whatever happened.
+5. **Teardown.** The task's teardown commands run, then the worktree or temp directory is removed,
+   whatever happened.
+
+### Setup and teardown commands
+
+Any task definition can declare `setupCommands` (each with a `name`, `command`, `timeoutMs`,
+`maxOutputChars`, a `fence` info string and `optional`) and `teardownCommands` (`command`,
+`timeoutMs`). This is how deterministic tools (Semgrep, a code graph) feed a session without
+harness code. Commands run with `bash -lc` in the working directory, in their own process group
+(killed whole on timeout), with the harness's environment minus every `OMNIRALPH_*` variable, so
+neither job token. Each setup command's stdout, cut to `maxOutputChars` and marked when cut,
+becomes the untrusted variable `setup.<name>` (`taskVariables`/`taskCatalog` in
+`@omniralph/tasks` add them to the template's available variables and the render catalog). A
+failing setup command (non-zero exit, timeout) fails the run, unless it's `optional`: then its
+variable holds a short failure note. Teardown commands always run after finish, even when setup or
+the session failed; their failures are logged only. Runs of tasks with any commands carry
+`SETUP_COMMANDS_MIN_HARNESS_VERSION` as their `min_harness_version`.
 
 The daemon dispatches a claimed job by its task type: `system` jobs to the system RPC registry,
 jobs with a run spec to their task type's lifecycle, the rest to the legacy capabilities
@@ -225,8 +242,7 @@ This epic built the plumbing and the query task type. Not built here:
   sinks);
 - the `coding` lifecycle and the port of `ralph.*`, including the `ship` harness tool, the
   `run-result` sink, `describePrTaskId` and the end of legacy single tokens;
-- setup commands with captured output (`setup` variables), installables and the `worktree.*` and
-  `install` system RPCs;
+- installables and the `worktree.*` and `install` system RPCs;
 - user-defined (UUID) agent and task definitions and the UI to create and edit them, and a chat
   tool to run tasks.
 

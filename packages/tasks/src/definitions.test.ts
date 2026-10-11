@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentDefinition,
+  DEFAULT_COMMAND_TIMEOUT_MS,
+  DEFAULT_SETUP_OUTPUT_CHARS,
   TaskDefinition,
   validateAgentForTask,
   type AgentDefinitionInput,
@@ -162,12 +164,68 @@ describe("TaskDefinition", () => {
     expect(issues(TaskDefinition.safeParse({ ...task, pool: "medium" }))).toEqual(["pool"]);
   });
 
-  it("rejects setup commands for now", () => {
-    expect(issues(TaskDefinition.safeParse({ ...task, setupCommands: ["pnpm i"] }))).toEqual([
-      "setupCommands",
+  it("accepts setup and teardown commands and fills their defaults", () => {
+    const parsed = TaskDefinition.parse({
+      ...task,
+      setupCommands: [
+        { name: "semgrep", command: "semgrep --json .", fence: "json", optional: true },
+        { name: "code_graph", command: "graph build", timeoutMs: 60_000, maxOutputChars: 500 },
+      ],
+      teardownCommands: [{ command: "rm -rf .graph" }],
+    });
+    expect(parsed.setupCommands).toEqual([
+      {
+        name: "semgrep",
+        command: "semgrep --json .",
+        timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS,
+        maxOutputChars: DEFAULT_SETUP_OUTPUT_CHARS,
+        fence: "json",
+        optional: true,
+      },
+      {
+        name: "code_graph",
+        command: "graph build",
+        timeoutMs: 60_000,
+        maxOutputChars: 500,
+        fence: "",
+        optional: false,
+      },
     ]);
-    expect(issues(TaskDefinition.safeParse({ ...task, teardownCommands: ["rm -rf x"] }))).toEqual([
-      "teardownCommands",
+    expect(parsed.teardownCommands).toEqual([
+      { command: "rm -rf .graph", timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS },
+    ]);
+  });
+
+  it("rejects bad setup and teardown commands", () => {
+    const setup = (command: Record<string, unknown>) =>
+      issues(
+        TaskDefinition.safeParse({
+          ...task,
+          setupCommands: [{ name: "x", command: "true", ...command }],
+        }),
+      );
+    expect(setup({ name: "1st" })).toEqual(["setupCommands.0.name"]);
+    expect(setup({ name: "a.b" })).toEqual(["setupCommands.0.name"]);
+    expect(setup({ command: " " })).toEqual(["setupCommands.0.command"]);
+    expect(setup({ timeoutMs: 0 })).toEqual(["setupCommands.0.timeoutMs"]);
+    expect(setup({ maxOutputChars: 10_000_000 })).toEqual(["setupCommands.0.maxOutputChars"]);
+    expect(setup({ fence: "a b" })).toEqual(["setupCommands.0.fence"]);
+    expect(issues(TaskDefinition.safeParse({ ...task, setupCommands: ["pnpm i"] }))).toEqual([
+      "setupCommands.0",
+    ]);
+    expect(
+      issues(
+        TaskDefinition.safeParse({
+          ...task,
+          setupCommands: [
+            { name: "x", command: "a" },
+            { name: "x", command: "b" },
+          ],
+        }),
+      ),
+    ).toEqual(["setupCommands.1.name"]);
+    expect(issues(TaskDefinition.safeParse({ ...task, teardownCommands: [{}] }))).toEqual([
+      "teardownCommands.0.command",
     ]);
   });
 

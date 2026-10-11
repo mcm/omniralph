@@ -21,6 +21,12 @@ import { JobRepository, JobToken } from "./job-basics.js";
  */
 export const QUERY_TASKS_MIN_HARNESS_VERSION = "0.9.0";
 
+/**
+ * The first harness release that runs a task's setup and teardown commands;
+ * runs of tasks that declare any carry it as their `min_harness_version`.
+ */
+export const SETUP_COMMANDS_MIN_HARNESS_VERSION = "0.10.0";
+
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
   kind: TriggerKindSchema,
