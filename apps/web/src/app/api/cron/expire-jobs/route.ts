@@ -2,7 +2,7 @@ import { expireQueuedJobs, getJob } from "@omniralph/db";
 import { JOB_RETENTION_SECONDS } from "@omniralph/shared";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
-import { jobOutcomeHandler } from "@/lib/jobs/handlers";
+import { jobHooks } from "@/lib/sinks";
 
 /**
  * Vercel Cron (`vercel.json`): marks jobs still `queued` 24h after creation
@@ -21,7 +21,7 @@ export async function GET(req: Request): Promise<Response> {
   );
   for (const jobId of expired) {
     const job = await getJob(db, jobId);
-    const handler = job && jobOutcomeHandler(job);
+    const handler = job && jobHooks(job);
     if (job && handler?.onFailed) {
       await handler
         .onFailed(db, job, "No agent picked up the job within 24 hours")

@@ -10,7 +10,7 @@ import { requireHarness } from "@/lib/harness-auth/verify";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
-import { jobOutcomeHandler } from "@/lib/jobs/handlers";
+import { jobHooks } from "@/lib/sinks";
 
 /** Room above `MAX_CLAIM_WAIT_SECONDS` for the last claim and the response. */
 export const maxDuration = 60;
@@ -29,7 +29,8 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
  * `task_id`), its `runSpec` (`resolveRunSpec`), in `JobStartResponse`'s `run`
  * shape. A run spec that can never be resolved fails its job. With nothing to claim
  * it looks again every `CLAIM_RETRY_MS` until `waitSeconds` passes (204) or
- * the harness hangs up. The job type's outcome handler hears about the start
+ * the harness hangs up. The job's hooks (`jobHooks`: its task's sink, or its
+ * type's outcome handler for a legacy job) hear about the start
  * (`onStarted`, whose `skip` moves the claim on to the next job) and about
  * candidates the claim canceled (`onCanceled`) or gave up on (`onFailed`).
  */
@@ -95,7 +96,7 @@ async function claimNext(
     for (const job of settled) await onSettled(db, job);
     if (!claim || !tokens) return null;
 
-    const handler = jobOutcomeHandler(claim.job);
+    const handler = jobHooks(claim.job);
     if (handler?.onStarted) {
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
@@ -111,7 +112,7 @@ async function claimNext(
 }
 
 async function onSettled(db: Database, { outcome, job }: SettledJob): Promise<void> {
-  const handler = jobOutcomeHandler(job);
+  const handler = jobHooks(job);
   if (outcome === "failed") {
     await handler?.onFailed?.(db, job, job.error ?? "Gave up after too many deliveries");
   } else {

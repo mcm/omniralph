@@ -7,6 +7,7 @@ import {
   feedback,
   findings,
   getJob,
+  getReview,
   jobs,
   listRepositoryRules,
   restoreFinding,
@@ -20,12 +21,7 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import {
-  LEARN_RULE_TOKEN_CAP,
-  LearnRuleJobPayload,
-  ReviewJobPayload,
-  type LearnRuleJobResult,
-} from "@omniralph/shared";
+import { ReviewJobPayload, RunSpecJobPayload, type QueryRunResult } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -61,7 +57,8 @@ const { addCustomRule, deleteRule, editRule, setRuleEnabled } = await import("./
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
-const { onLearnRuleJobCompleted, parseLearnRuleResult } = await import("@/lib/rules/learn");
+const { jobHooks, parseSinkResult, sinkFor } = await import("@/lib/sinks");
+const { enqueueLearnRule } = await import("@/lib/rules/learn");
 const { ruleView } = await import("@/lib/rules/display");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -175,7 +172,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
   }
 
   /** Completes a rule generation with `result`, like `/result` does. */
-  async function complete(job: Job, result: LearnRuleJobResult): Promise<Job> {
+  async function complete(job: Job, result: QueryRunResult): Promise<Job> {
     const [row] = await db
       .update(jobs)
       .set({ status: "completed", result, finishedAt: new Date() })
@@ -184,12 +181,19 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
     return row!;
   }
 
-  const ruleResult = (rule: string | null): LearnRuleJobResult => ({
-    rule,
-    outcome: rule === null ? "none" : "rule",
+  const ruleResult = (rule: string | null): QueryRunResult => ({
+    outcome: "answered",
+    answer: null,
+    structured: { rule },
+    references: [],
     usage: { inputTokens: 1800, outputTokens: 60 },
     durationMs: 1200,
   });
+
+  /** Applies a completed rule generation through the job's hooks (its task's `learned-rule` sink), like `/result` does. */
+  async function onLearnRuleJobCompleted(_db: Database, job: Job): Promise<unknown> {
+    return jobHooks(job)!.onCompleted!(db, job);
+  }
 
   async function nextReviewRules() {
     prNumber += 1;
@@ -209,35 +213,58 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
   }
 
   describe("rule generation from false-positive dismissals", () => {
-    it("enqueues a review.learn-rule job with the finding, the note and the 5,000-token cap", async () => {
+    it("enqueues a builtin:learn-rule run with the finding, the note, the commits and the repository", async () => {
       const { finding, job } = await dismissFalsePositive();
       expect(job).toMatchObject({
         type: "review.learn-rule",
         taskType: "query",
         pool: "short",
+        taskId: "builtin:learn-rule",
         repositoryId: repoId,
         status: "queued",
         targetHarnessId: null,
+        dedupeKey: expect.stringMatching(/^review\.learn-rule:[0-9a-f-]{36}$/),
       });
-      const payload = LearnRuleJobPayload.parse(job.payload);
-      expect(payload).toMatchObject({
-        findingId: finding.id,
-        repositoryId: repoId,
-        repository: { provider: "gitlab", fullPath: "acme/api" },
-        baseSha: SHA(1),
-        headSha: SHA(2),
-        maxTokens: LEARN_RULE_TOKEN_CAP,
-        note: "config.get() throws on missing keys",
-        finding: {
-          path: "src/config.ts",
-          startLine: 3,
-          endLine: 4,
-          title: "Missing null check",
-          body: "`config.get()` can return undefined.",
+      const payload = RunSpecJobPayload.parse(job.payload);
+      expect(payload).toEqual({
+        trigger: {
+          kind: "finding.dismissed",
+          context: {
+            feedbackId: expect.any(String),
+            repository: "acme/api",
+            finding: {
+              id: finding.id,
+              path: "src/config.ts",
+              file: '"src/config.ts"',
+              startLine: 3,
+              endLine: 4,
+              location: "lines 3-4",
+              severity: "medium",
+              category: "correctness",
+              title: "Missing null check",
+              body: "`config.get()` can return undefined.",
+              baseSha: SHA(1),
+              headSha: SHA(2),
+            },
+            dismissal: { note: "config.get() throws on missing keys" },
+          },
         },
+        repositoryId: repoId,
       });
-      expect(LEARN_RULE_TOKEN_CAP).toBe(5000);
+      expect(job.dedupeKey).toBe(`review.learn-rule:${String(payload.trigger.context.feedbackId)}`);
       expect((await db.select().from(jobs)).map((j) => j.id)).toEqual([job.id]);
+    });
+
+    it("enqueues once per feedback row (same dedupe key as before the port)", async () => {
+      const { finding, job } = await dismissFalsePositive();
+      const [row] = await db.select().from(feedback).where(eq(feedback.findingId, finding.id));
+      const again = await enqueueLearnRule(db, getDispatcher(), {
+        feedback: row!,
+        finding,
+        review: (await getReview(db, reviewId))!,
+      });
+      expect(again).toEqual({ status: "duplicate", jobId: job.id });
+      expect(await learnRuleJobs()).toHaveLength(1);
     });
 
     it("enqueues for @bot dismiss (scm) feedback too, but not for other reasons", async () => {
@@ -343,12 +370,42 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
       expect(await db.select().from(rules)).toEqual([]);
     });
 
-    it("validates results: rule only with outcome 'rule', at most 300 characters", () => {
-      expect(parseLearnRuleResult(ruleResult("Do not flag X."))).not.toBeNull();
-      expect(parseLearnRuleResult(ruleResult(null))).not.toBeNull();
-      expect(parseLearnRuleResult(ruleResult("x".repeat(301)))).toBeNull();
-      expect(parseLearnRuleResult({ ...ruleResult(null), outcome: "rule" })).toBeNull();
-      expect(parseLearnRuleResult({ rule: "x" })).toBeNull();
+    it("stores nothing for a rule over 300 characters or a run out of budget", async () => {
+      const long = await dismissFalsePositive();
+      expect(
+        await onLearnRuleJobCompleted(db, await complete(long.job, ruleResult("x".repeat(301)))),
+      ).toEqual({ status: "no_rule" });
+      const exhausted = await dismissFalsePositive();
+      const budget: QueryRunResult = {
+        ...ruleResult(null),
+        outcome: "budget_exhausted",
+        structured: null,
+      };
+      expect(await onLearnRuleJobCompleted(db, await complete(exhausted.job, budget))).toEqual({
+        status: "no_rule",
+      });
+      expect(await db.select().from(rules)).toEqual([]);
+    });
+
+    it("validates results: a query run result with a {rule} structured output", () => {
+      const sink = sinkFor("learned-rule")!;
+      expect(parseSinkResult(sink, ruleResult("Do not flag X."))).not.toBeNull();
+      expect(parseSinkResult(sink, ruleResult(null))).not.toBeNull();
+      expect(
+        parseSinkResult(sink, {
+          ...ruleResult(null),
+          outcome: "budget_exhausted",
+          structured: null,
+        }),
+      ).not.toBeNull();
+      expect(parseSinkResult(sink, { ...ruleResult(null), structured: { rule: 1 } })).toBeNull();
+      expect(
+        parseSinkResult(sink, { ...ruleResult(null), structured: { rule: "x", extra: 1 } }),
+      ).toBeNull();
+      expect(
+        parseSinkResult(sink, { ...ruleResult(null), structured: null, answer: "Do not flag X." }),
+      ).toBeNull();
+      expect(parseSinkResult(sink, { rule: "x", outcome: "rule" })).toBeNull();
     });
   });
 

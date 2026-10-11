@@ -3,8 +3,6 @@ import type { Database, Job } from "@omniralph/db";
 import {
   CHAT_ASK_JOB_TYPE,
   ChatAskJobPayload,
-  LEARN_RULE_JOB_TYPE,
-  LearnRuleJobPayload,
   RALPH_CLEANUP_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
@@ -41,7 +39,6 @@ import {
   parseReviewResult,
 } from "@/lib/review/jobs";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
-import { onLearnRuleJobCompleted, parseLearnRuleResult } from "@/lib/rules/learn";
 import {
   onTriageJobCompleted,
   onTriageJobFinishedWithoutResult,
@@ -50,7 +47,8 @@ import {
 
 /**
  * Per-job-type hooks into the generic job lifecycle (`/claim`, `/result`,
- * `/fail`, revocation, expiry and cancel). The lifecycle routes update the
+ * `/fail`, revocation, expiry and cancel) for legacy jobs (without a
+ * `task_id`); run-spec jobs use their task's sink (`lib/sinks`) instead. The lifecycle routes update the
  * `jobs` row; these hooks keep the job type's own state (reviews, rules,
  * ralph runs) in step with it. Every hook is optional.
  */
@@ -106,12 +104,6 @@ registerJobOutcomeHandler(REVIEW_JOB_TYPE, {
   onFailed: (db, job, error) => onReviewJobFailed(db, job, error ?? "Review failed"),
   onRetry: onReviewJobRetry,
   onCanceled: onReviewJobCanceled,
-});
-
-registerJobOutcomeHandler(LEARN_RULE_JOB_TYPE, {
-  payload: LearnRuleJobPayload,
-  isValidResult: (result) => parseLearnRuleResult(result) !== null,
-  onCompleted: onLearnRuleJobCompleted,
 });
 
 registerJobOutcomeHandler(REVIEW_REPLY_JOB_TYPE, {

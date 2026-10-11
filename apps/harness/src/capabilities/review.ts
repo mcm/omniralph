@@ -12,24 +12,21 @@ import {
   MAX_LEASE_SECONDS,
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
-  LEARN_RULE_JOB_TYPE,
   REVIEW_JOB_TYPE,
   REVIEW_REPLY_JOB_TYPE,
   ReviewJobPayload,
   type ChatAskJobResult,
   type Finding,
-  type LearnRuleJobResult,
   type ReviewJobResult,
   type ReviewReplyJobResult,
 } from "@omniralph/shared";
 import { runChatAsk } from "./chat-ask.js";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
-import { runLearnRule, type LearnRuleOptions } from "./learn-rule.js";
 import { runReply, type ReplyOptions } from "./reply.js";
 import { sdkPermissions } from "./tool-policy.js";
 
 /**
- * Review sessions (`review.run`, `review.reply`, `review.learn-rule`) and code
+ * Review sessions (`review.run`, `review.reply`) and code
  * questions from chat (`chat.ask`) only read the job's worktree.
  */
 export const REVIEW_TOOL_POLICY: ToolPolicy = {
@@ -69,8 +66,7 @@ export function capFindings(findings: readonly Finding[], limit = MAX_REVIEW_FIN
   return findings.filter((_, index) => kept.has(index));
 }
 
-export interface ReviewCapabilityOptions
-  extends Pick<LearnRuleOptions, "learner">, Pick<ReplyOptions, "answerer"> {
+export interface ReviewCapabilityOptions extends Pick<ReplyOptions, "answerer"> {
   /** Defaults to the engine's Claude Agent SDK provider (host `claude` login). */
   provider?: ReviewProvider;
   /** Retry delay for rate limits whose reset time is unknown. */
@@ -78,9 +74,7 @@ export interface ReviewCapabilityOptions
 }
 
 /**
- * Code review (`review.run`), plus learned-rule generation from false-positive
- * dismissals (`review.learn-rule`, see `learn-rule.ts`) and answers to
- * questions in finding threads (`review.reply`, see `reply.ts`) and about a
+ * Code review (`review.run`), plus answers to questions in finding threads (`review.reply`, see `reply.ts`) and about a
  * repository from chat (`chat.ask`, see `chat-ask.ts`). Makes sure the repo cache has the PR's base and
  * head (and the previous review's head, for incremental reviews), runs the
  * engine in a fresh worktree at head and returns the `ReviewJobResult`. It
@@ -91,13 +85,9 @@ export interface ReviewCapabilityOptions
 export function createReviewCapability(options: ReviewCapabilityOptions = {}): Capability {
   return {
     name: "review",
-    jobTypes: [REVIEW_JOB_TYPE, LEARN_RULE_JOB_TYPE, REVIEW_REPLY_JOB_TYPE, CHAT_ASK_JOB_TYPE],
+    jobTypes: [REVIEW_JOB_TYPE, REVIEW_REPLY_JOB_TYPE, CHAT_ASK_JOB_TYPE],
     toolPolicy: REVIEW_TOOL_POLICY,
-    async run(
-      job,
-      ctx,
-    ): Promise<ReviewJobResult | LearnRuleJobResult | ReviewReplyJobResult | ChatAskJobResult> {
-      if (job.type === LEARN_RULE_JOB_TYPE) return runLearnRule(job, ctx, options);
+    async run(job, ctx): Promise<ReviewJobResult | ReviewReplyJobResult | ChatAskJobResult> {
       if (job.type === REVIEW_REPLY_JOB_TYPE) return runReply(job, ctx, options);
       if (job.type === CHAT_ASK_JOB_TYPE) return runChatAsk(job, ctx, options);
       const parsed = ReviewJobPayload.safeParse(job.payload);

@@ -20,6 +20,11 @@
       "types": "./dist/sameIssue.d.ts",
       "default": "./dist/sameIssue.js"
     },
+    "./learn-rule": {
+      "@omniralph/source": "./src/learnRule.ts",
+      "types": "./dist/learnRule.d.ts",
+      "default": "./dist/learnRule.js"
+    },
     "./rules": {
       "@omniralph/source": "./src/ruleDedupe.ts",
       "types": "./dist/ruleDedupe.d.ts",

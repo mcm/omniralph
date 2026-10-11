@@ -13,6 +13,8 @@ import {
 import {
   AgentDefinition,
   fence,
+  getBuiltinAgent,
+  getBuiltinTask,
   TaskDefinition,
   type AgentDefinitionInput,
   type TaskDefinitionInput,
@@ -370,6 +372,17 @@ describe("runQueryTask", () => {
       await expectTornDown();
     });
 
+    it("is cut to the task's variable limit", async () => {
+      const { calls } = await run(
+        spec({
+          ref: headSha,
+          task: taskFixture({ triggers: ["finding.mention"], variableLimits: { hunk: 12 } }),
+          trigger: trigger({ baseSha, headSha }),
+        }),
+      );
+      expect(calls[0]?.prompt).toMatch(/```diff\n.{12}\n\[… truncated\]\n```/);
+    });
+
     it("is absent without base/head commits", async () => {
       const { calls } = await run(
         spec({ task: taskFixture({ triggers: ["finding.mention"] }), trigger: trigger({}) }),
@@ -385,6 +398,65 @@ describe("runQueryTask", () => {
         }),
       );
       expect(calls[0]?.prompt).toContain("Hunk:\n(not available)");
+      await expectTornDown();
+    });
+  });
+
+  describe("builtin:learn-rule", () => {
+    it("runs with no tools and no preset in an empty directory, from the finding's hunk", async () => {
+      const headSha = await remote.commit(
+        { "src/list.ts": "export function last(xs: number[]) {\n  return xs[xs.length - 1];\n}\n" },
+        "feature",
+      );
+      const task = getBuiltinTask("builtin:learn-rule")!;
+      const agent = getBuiltinAgent(task.agentId)!;
+      const { result, calls } = await run(
+        spec({
+          agent,
+          task,
+          ref: null,
+          tokenBudget: 5000,
+          trigger: {
+            kind: "finding.dismissed",
+            context: {
+              repository: "acme/app",
+              feedbackId: randomUUID(),
+              finding: {
+                id: randomUUID(),
+                path: "src/list.ts",
+                file: '"src/list.ts"',
+                location: "line 2",
+                startLine: 2,
+                endLine: 2,
+                severity: "high",
+                category: "correctness",
+                title: "Off by one",
+                body: "Reads past the end.",
+                baseSha: mainSha,
+                headSha,
+              },
+              dismissal: { note: "It's fine." },
+            },
+          },
+        }),
+        answering([resultMessage("{}", { structured: { rule: "Do not flag last()." } })]),
+      );
+      expect(QueryRunResult.parse(result)).toMatchObject({
+        outcome: "answered",
+        structured: { rule: "Do not flag last()." },
+      });
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([]);
+      expect(call?.options.systemPrompt).toBe([agent.systemPrompt, task.systemAppend].join("\n\n"));
+      expect(call?.options.allowedTools ?? []).toEqual([]);
+      expect(call?.options.mcpServers).toEqual({});
+      expect(call?.options.outputFormat).toEqual({
+        type: "json_schema",
+        schema: task.outputSchema,
+      });
+      expect(call?.prompt).toContain('File: "src/list.ts"\nLocation: line 2\n');
+      expect(call?.prompt).toContain("+  return xs[xs.length - 1];");
+      expect(call?.prompt).toContain("```\nIt's fine.\n```");
       await expectTornDown();
     });
   });

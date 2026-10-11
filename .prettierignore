@@ -7,3 +7,5 @@ coverage
 evals/cases
 evals/reports
 packages/engine/test/fixtures/eval-cases
+# rendered prompts of built-in tasks: must match the prompt builders byte for byte
+packages/tasks/src/builtin/__snapshots__

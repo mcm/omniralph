@@ -23,9 +23,11 @@ describe("capability registry", () => {
     expect(registry.names()).toEqual(["review", "ralph", "triage"]);
     expect(registry.forJob({ type: "triage.run" })?.name).toBe("triage");
     expect(registry.forJob({ type: "repo.sync" })).toBeUndefined();
-    for (const type of ["review.run", "review.reply", "review.learn-rule", "chat.ask"]) {
+    for (const type of ["review.run", "review.reply", "chat.ask"]) {
       expect(registry.forJob({ type })?.name).toBe("review");
     }
+    // A built-in query task now (`builtin:learn-rule`), run by the query lifecycle.
+    expect(registry.forJob({ type: "review.learn-rule" })).toBeUndefined();
     expect(registry.forJob({ type: "review.other" })).toBeUndefined();
     for (const type of ["ralph.story", "ralph.describe-pr", "ralph.prepare"]) {
       expect(registry.forJob({ type })?.name).toBe("ralph");

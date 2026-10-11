@@ -296,6 +296,12 @@ function isFalsy(value: unknown): boolean {
   );
 }
 
+/** Marker after a value cut to its task's variable limit (as today's prompt builders do). */
+export const TRUNCATION_MARKER = "\n[… truncated]";
+
+/** Most characters of each variable rendered, by catalog name; longer values are cut and marked. */
+export type VariableLimits = Readonly<Record<string, number>>;
+
 function stringify(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value;
@@ -310,13 +316,16 @@ function stringify(value: unknown): string {
  * dotted name). Values are not HTML-escaped. A value whose catalog entry is
  * untrusted is fenced with the entry's info string; trusted values render as
  * is; a missing or empty value renders as an empty string. Values without a
- * catalog entry are treated as untrusted. Throws `TemplateError` if the
- * template doesn't parse.
+ * catalog entry are treated as untrusted. A value longer than its entry in
+ * `limits` (a task's `variableLimits`) is cut to that many characters and
+ * followed by `TRUNCATION_MARKER`, before it's fenced. Throws `TemplateError`
+ * if the template doesn't parse.
  */
 export function renderTemplate(
   template: string,
   context: TemplateContext,
   catalog: readonly VariableDefinition[] = VARIABLES,
+  limits: VariableLimits = {},
 ): string {
   const parsed = parseTemplate(template);
   if (!parsed.ok) throw new TemplateError(parsed.error);
@@ -331,8 +340,12 @@ export function renderTemplate(
       }
       const { value, path } = resolve(scopes, node.name);
       if (node.type === "variable") {
-        const text = stringify(value);
+        let text = stringify(value);
         if (text === "") continue;
+        const limit = limits[path];
+        if (limit !== undefined && text.length > limit) {
+          text = `${text.slice(0, limit)}${TRUNCATION_MARKER}`;
+        }
         const entry = entries.get(path);
         out += entry?.trust === "trusted" ? text : fence(text, entry?.fence ?? "");
         continue;
