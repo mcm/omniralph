@@ -3,6 +3,8 @@ import {
   MAX_ATTEMPTS_PER_STORY,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   RalphDescribePrPayload,
+  ralphHiddenRef,
+  type RalphPushPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
 import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
@@ -17,6 +19,10 @@ const {
   describePrText,
   prDescriptionTaskFor,
   jobMaxAttempts,
+  opensPullRequestEarly,
+  pushJobInput,
+  pushResult,
+  pushTimingFor,
   ralphJobInput,
   ralphJobPayload,
   requestTaskFor,
@@ -51,10 +57,20 @@ const misdescribing: TaskDefinition = {
   id: "custom:misdescribing-story",
   prDescriptionTaskId: request.id,
 };
+const atTheEnd: TaskDefinition = { ...story, id: "custom:push-at-end", pushTiming: "end" };
+const earlyDraft: TaskDefinition = {
+  ...story,
+  id: "custom:early-draft",
+  draftPullRequest: "early",
+};
+const lateDraft: TaskDefinition = { ...story, id: "custom:late-draft", draftPullRequest: "end" };
 const DEFINITIONS = {
   getTask: (id: string) =>
     [
       story,
+      atTheEnd,
+      earlyDraft,
+      lateDraft,
       request,
       strict,
       cautious,
@@ -66,7 +82,9 @@ const DEFINITIONS = {
   getAgent: () => null,
 };
 
-const repository = (overrides: Partial<Parameters<typeof storyLimits>[0] & object> = {}) => ({
+const repository = (
+  overrides: Partial<Parameters<typeof storyLimits>[0] & { ralphSettings: unknown }> = {},
+) => ({
   codingPath: "tasks" as const,
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -331,5 +349,86 @@ describe("describing a lane's PR", () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+describe("push and draft PR timing", () => {
+  const early = (openPullRequestEarly: boolean) => ({
+    ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly },
+  });
+
+  it("pushes after each story on the legacy path, and as the story task says on the tasks path", () => {
+    expect(pushTimingFor(repository({ codingPath: "legacy", storyTaskId: atTheEnd.id }))).toBe(
+      "per-story",
+    );
+    expect(pushTimingFor(repository(), DEFINITIONS)).toBe("per-story");
+    expect(pushTimingFor(repository({ storyTaskId: atTheEnd.id }), DEFINITIONS)).toBe("end");
+    expect(pushTimingFor(repository({ storyTaskId: "custom:gone" }), DEFINITIONS)).toBe(
+      "per-story",
+    );
+  });
+
+  it("opens drafts early per the story task's draftPullRequest, else the repository's openPullRequestEarly", () => {
+    const legacy = { codingPath: "legacy" as const, storyTaskId: earlyDraft.id };
+    expect(opensPullRequestEarly(repository({ ...legacy, ...early(true) }), DEFINITIONS)).toBe(
+      true,
+    );
+    expect(opensPullRequestEarly(repository({ ...legacy, ...early(false) }), DEFINITIONS)).toBe(
+      false,
+    );
+    // The built-in leaves draftPullRequest unset: today's setting applies.
+    expect(opensPullRequestEarly(repository(early(true)), DEFINITIONS)).toBe(true);
+    expect(opensPullRequestEarly(repository(early(false)), DEFINITIONS)).toBe(false);
+    expect(
+      opensPullRequestEarly(
+        repository({ storyTaskId: earlyDraft.id, ...early(false) }),
+        DEFINITIONS,
+      ),
+    ).toBe(true);
+    expect(
+      opensPullRequestEarly(repository({ storyTaskId: lateDraft.id, ...early(true) }), DEFINITIONS),
+    ).toBe(false);
+    // Pushing only at the end, there's no branch for an early draft.
+    expect(
+      opensPullRequestEarly(repository({ storyTaskId: atTheEnd.id, ...early(true) }), DEFINITIONS),
+    ).toBe(false);
+  });
+
+  const pushPayload: RalphPushPayload = {
+    runId: "6f1c7f6e-3a59-4f0e-9f53-5a0f4d0c2b11",
+    repositoryId: "0d5e4b1c-8f7a-4c3e-9b2a-1e6d7f8a9b0c",
+    repository: { provider: "github", fullPath: "acme/api", cloneUrl: "https://x/acme/api.git" },
+    branch: "feat/epic",
+    baseBranch: "main",
+    settings: {
+      model: null,
+      setupCommand: null,
+      fallbackModel: null,
+      appendInstruction: null,
+      allowedTools: null,
+      disallowedTools: null,
+    },
+    hiddenRef: ralphHiddenRef("6f1c7f6e-3a59-4f0e-9f53-5a0f4d0c2b11"),
+  };
+
+  it("pushes a lane with a coding run of the story task, the push as its trigger context", () => {
+    const input = pushJobInput({ storyTaskId: atTheEnd.id }, pushPayload, DEFINITIONS);
+    expect(input).toMatchObject({
+      taskType: "coding",
+      pool: "long",
+      taskId: atTheEnd.id,
+      payload: {
+        trigger: { kind: "linear.delegated", context: pushPayload },
+        repositoryId: pushPayload.repositoryId,
+      },
+    });
+    expect(pushJobInput({ storyTaskId: describeTask.id }, pushPayload, DEFINITIONS)).toBeNull();
+  });
+
+  it("reads a push run's result", () => {
+    const pushed = { pushed: { branch: "feat/epic", sha: "a".repeat(40) }, durationMs: 3 };
+    expect(pushResult({ result: pushed })).toEqual(pushed);
+    expect(pushResult({ result: { summary: "x" } })).toBeNull();
+    expect(pushResult({ result: null })).toBeNull();
   });
 });

@@ -7,9 +7,11 @@ import { pathToFileURL } from "node:url";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { RALPH_SYSTEM_APPEND, storyTemplateContext } from "@omniralph/ralph";
 import {
+  RalphPushResult,
   RalphStoryResult,
   RunSpec,
   type JobRepository,
+  type RalphPushPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
 import { getBuiltinAgent, getBuiltinTask, renderTemplate, taskCatalog } from "@omniralph/tasks";
@@ -597,15 +599,88 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       expect(onRemote(hiddenRef)).toBeNull();
       expect(storyStashes()[0]).toContain("push-failed");
     });
+
+    /** The push run before the lane is described: the story task, with a push trigger context. */
+    const pushSpec = (overrides: Partial<RalphPushPayload> = {}) => {
+      const { runId: id, repositoryId, repository, baseBranch, settings } = payload();
+      const context: RalphPushPayload = {
+        runId: id,
+        repositoryId,
+        repository,
+        branch,
+        baseBranch,
+        settings,
+        hiddenRef,
+        ...overrides,
+      };
+      return { ...endSpec(), trigger: { kind: "linear.delegated" as const, context } };
+    };
+
+    it("pushes the branch once at the end, from the hidden ref, with no session", async () => {
+      const first = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const story = await runStoryCoding(endSpec(), context(), options(first.query));
+      expect(onRemote(`refs/heads/${branch}`)).toBeNull();
+
+      // Another harness: no worktree yet, so it is created (with the setup command) from the hidden ref.
+      const other = new RepoCache({
+        workspaceRoot: path.join(root, "other-workspace"),
+        credentialHelper: "!true",
+        lockRetryMs: 20,
+      });
+      const none = fakeQuery(async function* () {
+        yield result({ status: "complete", summary: "x", followUps: [] });
+      });
+      const run = pushSpec({
+        settings: { ...payload().settings, setupCommand: `touch '${root}/setup-ran'` },
+      });
+      const out = await runCodingTask(run, context(other), options(none.query));
+
+      expect(RalphPushResult.safeParse(out).success).toBe(true);
+      expect(out).toMatchObject({ pushed: { branch, sha: story.commitSha } });
+      expect(none.calls).toEqual([]);
+      expect(onRemote(`refs/heads/${branch}`)).toBe(story.commitSha);
+      expect(git(remote.bare, "show", `${branch}:feature.txt`)).toBe("built");
+      await expect(readFile(path.join(root, "setup-ran"), "utf8")).resolves.toBe("");
+      const otherWorktree = other.branchWorktreePath(repo, branch);
+      expect(git(otherWorktree, "rev-parse", "--abbrev-ref", "@{upstream}")).toBe(
+        `origin/${branch}`,
+      );
+
+      // The first harness's own worktree pushes the same head again: nothing changes.
+      const again = await runCodingTask(pushSpec(), context(), options(none.query));
+      expect(again).toMatchObject({ pushed: { branch, sha: story.commitSha } });
+      expect(none.calls).toEqual([]);
+    });
+
+    it("fails a push the remote rejects, leaving the branch alone", async () => {
+      const first = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      await runStoryCoding(endSpec(), context(), options(first.query));
+      const hook = path.join(remote.bare, "hooks", "pre-receive");
+      await writeFile(hook, "#!/bin/sh\necho 'branch is protected' >&2\nexit 1\n");
+      await chmod(hook, 0o755);
+      const none = fakeQuery(async function* () {
+        yield result({ status: "complete", summary: "x", followUps: [] });
+      });
+      await expect(runCodingTask(pushSpec(), context(), options(none.query))).rejects.toThrow(
+        "branch is protected",
+      );
+      expect(onRemote(`refs/heads/${branch}`)).toBeNull();
+    });
   });
 
-  it("rejects a run whose trigger context is neither a story nor a request", async () => {
+  it("rejects a run whose trigger context is neither a story, a request nor a push", async () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ status: "complete", summary: "x", followUps: [] });
     });
     const run = { ...spec(), trigger: { kind: "linear.delegated" as const, context: {} } };
     await expect(runCodingTask(run, context(), options(query))).rejects.toThrow(
-      "the coding run's trigger context is neither a story nor a request",
+      "the coding run's trigger context is neither a story, a request nor a push",
     );
     expect(calls).toEqual([]);
   });

@@ -52,13 +52,17 @@ import {
   MAX_ATTEMPTS_PER_STORY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
+  RALPH_PUSH_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
   legacyJobRouting,
+  ralphHiddenRef,
 } from "@omniralph/shared";
 import {
   describePrJobInput,
   MAX_ITERATIONS_PER_RUN,
+  pushJobInput,
+  pushTimingFor,
   ralphJobInput,
   requestTaskFor,
   requestTrigger,
@@ -80,6 +84,7 @@ import { awaitRepository } from "./repository-selection";
 import {
   buildDescribePrPayload,
   buildPreparePayload,
+  buildPushPayload,
   buildRequestPayload,
   buildStoryPayload,
 } from "./payload";
@@ -222,6 +227,8 @@ export type AdvanceResult =
   /** One of the run's jobs is queued or running: its outcome advances the run. */
   | { action: "busy"; run: RalphRun }
   | { action: "enqueued"; run: RalphRun; story: RalphStory; jobId: string }
+  /** Every story is done and the story task pushes only at the end: a `ralph.push` run pushes a lane's branch. */
+  | { action: "pushing"; run: RalphRun; jobId: string }
   /** Every story is done: a `ralph.describe-pr` job writes a lane's PR/MR. */
   | { action: "describing"; run: RalphRun; jobId: string }
   /** An approved manual-story preparation runs as a `ralph.prepare` job. */
@@ -312,7 +319,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     return enqueuePreparation(deps, tx, run, { story: approved.story, request: approved.request });
   }
   const allDone = isEpicComplete(stories);
-  // openPullRequestEarly: a draft PR/MR once the first story is pushed.
+  // A draft PR/MR once the first story is pushed (`opensPullRequestEarly`).
   if (!allDone) run = await openEarlyPullRequest(deps, tx, run, { epic, rows });
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
@@ -552,10 +559,13 @@ async function enqueueStory(
 /**
  * Every story is done: each lane to publish (`lanesToPublish`: those with
  * commits or a PR/MR) gets a `ralph.describe-pr` job in turn (`describeLane`),
- * whose outcome opens or updates its PR/MR (`applyPullRequestJob`). Once every
- * one of them is through, `finishPublishing` completes the run or, when one
- * failed, waits for a reply. A run none of whose stories committed anything,
- * and without a PR/MR, has nothing to open: it completes.
+ * whose outcome opens or updates its PR/MR (`applyPullRequestJob`). A lane
+ * whose story task pushes only at the end (`pushTimingFor`) first gets a
+ * `ralph.push` run that pushes its branch with the story commits of the run's
+ * hidden ref (`pushLane`). Once every lane is through, `finishPublishing`
+ * completes the run or, when one failed, waits for a reply. A run none of
+ * whose stories committed anything, and without a PR/MR, has nothing to
+ * open: it completes.
  */
 async function publishLanes(
   deps: RalphDeps,
@@ -567,13 +577,17 @@ async function publishLanes(
   if (lanes.length === 0) return complete(deps, tx, run, input);
   const through: PublishedLane[] = [];
   for (const lane of lanes) {
-    // Not published since its last story, or its describe job was dropped (a stop).
-    if (lane.publish === null || lane.publish.status === "describing") {
+    const status = lane.publish?.status ?? null;
+    // Not published since its last story, just pushed, or its push or describe job was dropped (a stop).
+    if (status !== "published" && status !== "failed") {
       const found = await laneRepository(deps, tx, run, lane);
+      const push = status === null || status === "pushing";
       const described =
         typeof found === "string"
           ? found
-          : await describeLane(deps, tx, run, { ...input, ...found, lanes });
+          : push && pushTimingFor(found.repository) === "end"
+            ? await pushLane(deps, tx, run, { ...input, ...found, lanes })
+            : await describeLane(deps, tx, run, { ...input, ...found, lanes });
       if (typeof described !== "string") return described;
       // A lane whose repository can't take jobs any more (or describe its PR/MR) is a problem of that lane.
       const failed = await updateLane(tx, lane.id, {
@@ -607,6 +621,70 @@ async function laneRepositoryName(
 ): Promise<PublishedLane["repository"]> {
   const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
   return found?.repository ?? { provider: "github", fullPath: lane.repositoryId };
+}
+
+/** "All 3 stories are done" (or "**ENG-1** is done" for a single issue). */
+function doneNote(run: RalphRun, input: { epic: Epic; stories: Story[] }): string {
+  return run.kind === "single"
+    ? `**${input.epic.identifier}** is done`
+    : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
+}
+
+/**
+ * Pushes one lane's branch before it is described, for a story task that
+ * pushes only at the end: a `ralph.push` coding run of the lane repository's
+ * story task with no session (on the run's sticky agent), which prepares the
+ * lane's worktree from the run's hidden ref and pushes the branch with its
+ * lifecycle token. Its outcome is applied by `applyPullRequestJob`; then the
+ * lane is described. Returns the lane's problem when the story task can't run it.
+ */
+async function pushLane(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: {
+    epic: Epic;
+    stories: Story[];
+    rows: RalphStory[];
+    lanes: RalphLane[];
+    repository: Repository;
+    connection: ScmConnection;
+    lane: RalphLane;
+  },
+): Promise<AdvanceResult | string> {
+  const { lane, repository, connection } = input;
+  const routing = pushJobInput(
+    repository,
+    buildPushPayload({ run, lane, repository, connection, hiddenRef: ralphHiddenRef(run.id) }),
+  );
+  if (!routing) {
+    return `I couldn't push \`${lane.branch}\`: ${notACodingTask(storyTaskFor(repository), repository, "stories")}`;
+  }
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
+    type: RALPH_PUSH_JOB_TYPE,
+    ...routing,
+    repositoryId: repository.id,
+    ralphRunId: run.id,
+    dedupeKey: runDedupeKey(run.id),
+    targetHarnessId: await stickyHarnessId(deps.db, run),
+  });
+  if (!created) return { action: "busy", run };
+  await updateLane(tx, lane.id, { publish: { status: "pushing", jobId: job.id } });
+  const updated =
+    (await updateRun(tx, run.id, {
+      status: "running",
+      prJobId: job.id,
+      waitingOn: null,
+      error: null,
+    })) ?? run;
+  await publishPlan(conversationFor(run, deps), input.rows);
+  const where = input.lanes.length > 1 ? ` in \`${repository.fullPath}\`` : "";
+  await postActivity(conversationFor(run, deps), {
+    type: "thought",
+    body: `${doneNote(run, input)}. Pushing \`${lane.branch}\`${where}.`,
+  });
+  return { action: "pushing", run: updated, jobId: job.id };
 }
 
 /**
@@ -666,14 +744,10 @@ async function describeLane(
       error: null,
     })) ?? run;
   await publishPlan(conversationFor(run, deps), input.rows);
-  const what =
-    run.kind === "single"
-      ? `**${input.epic.identifier}** is done`
-      : `All ${input.stories.length} ${input.stories.length === 1 ? "story is" : "stories are"} done`;
   const where = input.lanes.length > 1 ? ` of \`${repository.fullPath}\`` : "";
   await postActivity(conversationFor(run, deps), {
     type: "thought",
-    body: `${what}. Writing the ${term} description${where}.`,
+    body: `${doneNote(run, input)}. Writing the ${term} description${where}.`,
   });
   return { action: "describing", run: updated, jobId: job.id };
 }
@@ -759,6 +833,8 @@ async function enqueueRequest(
     requests: input.requests,
     resumeSessionId: resume,
     attachments: payloadAttachments(attachments),
+    // Story commits may only be on the run's hidden ref yet: the request starts from them.
+    ...(pushTimingFor(repository) === "end" && { hiddenRef: ralphHiddenRef(run.id) }),
   });
   const taskId = requestTaskFor(run, repository);
   const routed = ralphJobInput(

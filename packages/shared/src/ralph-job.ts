@@ -22,6 +22,12 @@ export const RALPH_DESCRIBE_PR_JOB_TYPE = "ralph.describe-pr";
 export const RALPH_PREPARE_JOB_TYPE = "ralph.prepare";
 export const RALPH_REQUEST_JOB_TYPE = "ralph.request";
 export const RALPH_CLEANUP_JOB_TYPE = "ralph.cleanup";
+/**
+ * A coding run with no session that pushes a lane's branch once before its
+ * PR/MR is described, when the story task pushes only at the end (`pushTiming:
+ * end`). Only on the `tasks` coding path: no legacy job has this type.
+ */
+export const RALPH_PUSH_JOB_TYPE = "ralph.push";
 export const RALPH_JOB_TYPES = [
   RALPH_STORY_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
@@ -74,6 +80,15 @@ export const RalphJobSettings = z.object({
   disallowedTools: z.array(z.string().min(1).max(500)).max(100).nullable().default(null),
 });
 export type RalphJobSettings = z.infer<typeof RalphJobSettings>;
+
+/** Prefix of the hidden refs runs keep their unpushed story commits on (see `ralphHiddenRef`). */
+export const RALPH_HIDDEN_REF_PREFIX = "refs/omniralph/runs/";
+
+/** A run's hidden ref (`ralphHiddenRef`). */
+const RalphHiddenRef = z
+  .string()
+  .max(255)
+  .regex(/^refs\/omniralph\/runs\/[0-9a-f-]{36}$/);
 
 /** What every ralph job needs: its run, repository and the epic's branch. */
 const RalphJobBase = z.object({
@@ -338,8 +353,31 @@ export const RalphRequestPayload = RalphJobBase.extend({
    * commits, pushes the branch, and opens the PR/MR when there is none.
    */
   ship: z.boolean().default(false),
+  /**
+   * The run's hidden ref when its story task pushes only at the end: the
+   * worktree starts from the story commits kept there (the branch on
+   * `origin` may not have them yet). Absent: the branch has them.
+   */
+  hiddenRef: RalphHiddenRef.optional(),
 });
 export type RalphRequestPayload = z.infer<typeof RalphRequestPayload>;
+
+/**
+ * Trigger context of a `ralph.push` coding run: push the lane's branch, with
+ * the story commits kept on the run's hidden ref, before its PR/MR is
+ * described. No session runs.
+ */
+export const RalphPushPayload = RalphJobBase.extend({
+  hiddenRef: RalphHiddenRef,
+});
+export type RalphPushPayload = z.infer<typeof RalphPushPayload>;
+
+/** Result of a `ralph.push` coding run: the branch's pushed head. */
+export const RalphPushResult = z.object({
+  pushed: z.object({ branch: GitBranch, sha: CommitSha }),
+  durationMs: z.int().min(0),
+});
+export type RalphPushResult = z.infer<typeof RalphPushResult>;
 
 export const RALPH_PULL_REQUEST_ACTIONS = ["open", "update", "ready"] as const;
 
@@ -387,9 +425,6 @@ export type RalphRequestResult = z.infer<typeof RalphRequestResult>;
 export function ralphStashPrefix(runId: string): string {
   return `omniralph ralph ${runId} `;
 }
-
-/** Prefix of the hidden refs runs keep their unpushed story commits on (see `ralphHiddenRef`). */
-export const RALPH_HIDDEN_REF_PREFIX = "refs/omniralph/runs/";
 
 /**
  * The ref outside `refs/heads/` a run that pushes only at the end keeps its
