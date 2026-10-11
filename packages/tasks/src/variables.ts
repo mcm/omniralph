@@ -317,8 +317,97 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "taskType",
     trust: "untrusted",
     fence: "markdown",
-    taskTypes: ["query"],
-    description: "The repository's `CLAUDE.md` from the default branch (may be empty).",
+    taskTypes: ["query", "review"],
+    description:
+      "The repository's `CLAUDE.md`: the checkout's for a query, the base commit's for a review (may be empty).",
+  },
+  // Review: the diff under review, its plan and risk pre-pass, and the open findings to re-check.
+  {
+    name: "diff",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "diff",
+    taskTypes: ["review"],
+    description: "Diff of the files under review (empty when nothing is left to review).",
+  },
+  {
+    name: "plan",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "The review plan (scope, files and skipped files), as JSON.",
+  },
+  ...(
+    [
+      ["mode", "`full` (the whole change) or `incremental` (the commits since the last review)."],
+      ["baseSha", "Base commit of the change."],
+      ["fromSha", "First commit of an incremental review's range, exclusive (null when full)."],
+      ["headSha", "Head commit under review."],
+      ["files", "Paths of the files under review."],
+      ["skipped.path", "Path of a file the plan skipped."],
+      ["skipped.reason", "Why it was skipped (`excluded`, `generated`, `binary`, …)."],
+    ] as const
+  ).map(([field, description]): VariableDefinition => ({
+    name: `plan.${field}`,
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description,
+  })),
+  {
+    name: "risk",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "The risk pre-pass's hints, as JSON.",
+  },
+  {
+    name: "risk.complexityScore",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "Complexity of the diff, 0 to 10.",
+  },
+  {
+    name: "risk.hotspots",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "Markdown list of the files and patterns the risk pre-pass flagged (null when none).",
+  },
+  {
+    name: "previousFindings",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "json",
+    taskTypes: ["review"],
+    description: "Open findings of earlier reviews to re-check (null when none).",
+  },
+  ...(
+    [
+      [
+        "id",
+        "Id of an open finding (its position in the list), for the `previousFindings` answer.",
+      ],
+      ["path", "File of an open finding."],
+      ["lines", "`N` or `N-M`: its lines in the version reviewed then."],
+      ["category", "Its category."],
+    ] as const
+  ).map(([field, description]): VariableDefinition => ({
+    name: `previousFindings.items.${field}`,
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description,
+  })),
+  {
+    name: "previousFindings.items.text",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "markdown",
+    taskTypes: ["review"],
+    description: "Its title and (capped) body (null without either).",
   },
   {
     name: "checkout",

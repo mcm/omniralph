@@ -188,6 +188,17 @@ describe("ClaudeAgentProvider", () => {
     expect(options.systemPrompt).toBe(REVIEW_SYSTEM_PROMPT);
   });
 
+  it("appends a review agent's system text after the output contract, repair included", async () => {
+    const fake = fakeQuery([result("not json")], [result(answer([]))]);
+    await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
+      request({ systemAppend: "  Focus on security.\n" }),
+    );
+    expect(fake.calls).toHaveLength(2);
+    for (const call of fake.calls) {
+      expect(call.options.systemPrompt).toBe(`${REVIEW_SYSTEM_PROMPT}\n\nFocus on security.`);
+    }
+  });
+
   it("allows only Read, Grep and Glob with exploration, guarded to the worktree", async () => {
     const fake = fakeQuery([result(answer([]))]);
     await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
@@ -389,6 +400,47 @@ describe("ClaudeAgentProvider", () => {
     expect(repair.options.maxTurns).toBe(1);
     expect(repair.options.settingSources).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("repair"));
+  });
+
+  it("returns the answer's summary, after one repair of an invalid one", async () => {
+    const valid = fakeQuery([
+      result(JSON.stringify({ findings: [finding()], summary: "Adds a retry loop." })),
+    ]);
+    const res = await new ClaudeAgentProvider({
+      query: valid.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(res).toMatchObject({ stopReason: "completed", summary: "Adds a retry loop." });
+    expect(valid.calls).toHaveLength(1);
+
+    const repaired = fakeQuery(
+      [result(JSON.stringify({ findings: [finding()], summary: ["Adds", "a loop"] }))],
+      [result(JSON.stringify({ findings: [finding()], summary: "Adds a loop." }))],
+    );
+    const fixed = await new ClaudeAgentProvider({
+      query: repaired.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(repaired.calls).toHaveLength(2);
+    expect(repaired.calls[1]!.prompt).toContain("summary: Expected a string.");
+    expect(fixed).toMatchObject({
+      stopReason: "completed",
+      findings: [finding()],
+      summary: "Adds a loop.",
+    });
+
+    // Still invalid after the one repair: the findings are kept, the summary isn't.
+    const stillInvalid = fakeQuery(
+      [result(JSON.stringify({ findings: [finding()], summary: 1 }))],
+      [result(JSON.stringify({ findings: [finding()], summary: 2 }))],
+    );
+    const kept = await new ClaudeAgentProvider({
+      query: stillInvalid.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(stillInvalid.calls).toHaveLength(2);
+    expect(kept.findings).toEqual([finding()]);
+    expect(kept.summary).toBeUndefined();
   });
 
   it("drops and logs items that are still invalid after the repair", async () => {

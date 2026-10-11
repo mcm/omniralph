@@ -151,3 +151,27 @@ export const ReviewJobResult = z.object({
   durationMs: z.int().min(0),
 });
 export type ReviewJobResult = z.infer<typeof ReviewJobResult>;
+
+/**
+ * What a run of a `review` task reads from its trigger context, besides the
+ * values its prompt template renders: the commits to review, the PR text,
+ * the repository's review configuration and the earlier reviews (as in
+ * `ReviewJobPayload`).
+ */
+export const ReviewTaskContext = ReviewJobPayload.pick({
+  baseSha: true,
+  headSha: true,
+  changeRequest: true,
+  reviewConfig: true,
+  previousReview: true,
+});
+export type ReviewTaskContext = z.infer<typeof ReviewTaskContext>;
+
+/** Longest `summary` a review task's result carries. */
+export const MAX_REVIEW_SUMMARY_LENGTH = 20_000;
+
+/** Result of a `review` task run: a `ReviewJobResult` plus the session's optional `summary`. */
+export const ReviewTaskResult = ReviewJobResult.extend({
+  summary: z.string().min(1).max(MAX_REVIEW_SUMMARY_LENGTH).optional(),
+});
+export type ReviewTaskResult = z.infer<typeof ReviewTaskResult>;

@@ -221,6 +221,7 @@ function capability(run: Capability["run"], overrides: Partial<Capability> = {})
 function setup(options: {
   run?: Capability["run"];
   runQueryTask?: DaemonOptions["runQueryTask"];
+  runReviewTask?: DaemonOptions["runReviewTask"];
   capabilities?: Capability[];
   config?: HeartbeatResponse;
   repos?: RepoCache;
@@ -242,6 +243,8 @@ function setup(options: {
     // Never the real query lifecycle (it would start Claude sessions).
     runQueryTask:
       options.runQueryTask ?? (() => Promise.reject(new Error("this test runs no query tasks"))),
+    runReviewTask:
+      options.runReviewTask ?? (() => Promise.reject(new Error("this test runs no review tasks"))),
     logger: silentLogger(),
     reportRetryDelayMs: 10,
     updater: options.updater,
@@ -872,17 +875,32 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
+  it("runs a review run through the review lifecycle", async () => {
+    const id = randomUUID();
+    const runQueryTask = vi.fn(async () => ({}));
+    const runReviewTask = vi.fn(async (spec: RunSpec) => ({ review: spec.jobId }));
+    const { api, claims, daemon } = setup({ runQueryTask, runReviewTask });
+    claims.push(job(id, { taskType: "review", taskId: "builtin:test-task" }));
+    void daemon.run();
+    await settle();
+    expect(runReviewTask).toHaveBeenCalledTimes(1);
+    expect(runReviewTask.mock.calls[0]?.[0]).toMatchObject({ jobId: id, taskType: "review" });
+    expect(api.submitResult).toHaveBeenCalledWith(id, { result: { review: id } });
+    expect(runQueryTask).not.toHaveBeenCalled();
+    await daemon.shutdown();
+  });
+
   it("fails a run of a task type it has no lifecycle for", async () => {
     const id = randomUUID();
     const capabilityRun = vi.fn(async () => ({}));
     const runQueryTask = vi.fn(async () => ({}));
     const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
-    claims.push(job(id, { taskType: "review", taskId: "builtin:test-task" }));
+    claims.push(job(id, { taskType: "coding", taskId: "builtin:test-task" }));
     void daemon.run();
     await settle();
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
-      error: "unsupported task type review",
+      error: "unsupported task type coding",
     });
     expect(runQueryTask).not.toHaveBeenCalled();
     expect(capabilityRun).not.toHaveBeenCalled();

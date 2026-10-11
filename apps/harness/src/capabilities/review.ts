@@ -1,4 +1,5 @@
 import {
+  capFindings,
   ClaudeAgentProvider,
   DISALLOWED_TOOLS,
   EXPLORATION_TOOLS,
@@ -7,13 +8,11 @@ import {
   type ReviewProvider,
 } from "@omniralph/engine";
 import {
-  FINDING_SEVERITIES,
   MAX_LEASE_SECONDS,
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
-  type Finding,
   type ReviewJobResult,
 } from "@omniralph/shared";
 import { RetryableJobError, type Capability, type ToolPolicy } from "./index.js";
@@ -33,28 +32,6 @@ export const REVIEW_TOOL_POLICY: ToolPolicy = {
 /** The Claude provider of review sessions, with permissions from `REVIEW_TOOL_POLICY`. */
 export function reviewSessionProvider(logger: ReviewLogger): ClaudeAgentProvider {
   return new ClaudeAgentProvider({ logger, permissions: sdkPermissions(REVIEW_TOOL_POLICY) });
-}
-
-/**
- * The `limit` most severe (then most confident) findings, in their original
- * order, so the result fits `ReviewJobResult`.
- */
-export function capFindings(findings: readonly Finding[], limit = MAX_REVIEW_FINDINGS): Finding[] {
-  if (findings.length <= limit) return [...findings];
-  const rank = (f: Finding) => FINDING_SEVERITIES.indexOf(f.severity);
-  const kept = new Set(
-    findings
-      .map((finding, index) => ({ finding, index }))
-      .sort(
-        (a, b) =>
-          rank(a.finding) - rank(b.finding) ||
-          b.finding.confidence - a.finding.confidence ||
-          a.index - b.index,
-      )
-      .slice(0, limit)
-      .map(({ index }) => index),
-  );
-  return findings.filter((_, index) => kept.has(index));
 }
 
 export interface ReviewCapabilityOptions {

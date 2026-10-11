@@ -14,6 +14,7 @@ import {
   extractPartialFindings,
   filterToDiff,
   parseFindingsOutput,
+  type ParsedOutput,
   validFindings,
 } from "./findings-output.js";
 import {
@@ -55,6 +56,16 @@ export const DISALLOWED_TOOLS: readonly string[] = [
   "ListMcpResourcesTool",
   "ReadMcpResourceTool",
 ];
+
+/** What a valid answer adds to a task's result besides its findings. */
+function outputExtra(
+  parsed: Extract<ParsedOutput, { ok: true }>,
+): Pick<TaskReviewResult, "fixedPrevious" | "summary"> {
+  return {
+    fixedPrevious: parsed.fixedPrevious,
+    ...(parsed.summary !== undefined && { summary: parsed.summary }),
+  };
+}
 
 export const REVIEW_SYSTEM_PROMPT = `You are Omniralph, an automated code reviewer.
 
@@ -348,7 +359,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
     const finish = (
       stopReason: ReviewStopReason,
       raw: Finding[],
-      extra: Pick<TaskReviewResult, "error" | "retryAfterMs" | "fixedPrevious"> = {},
+      extra: Pick<TaskReviewResult, "error" | "retryAfterMs" | "fixedPrevious" | "summary"> = {},
     ): TaskReviewResult => {
       const { inside, outside } = filterToDiff(raw, request.task.files);
       discarded.outsideDiff += outside.length;
@@ -373,6 +384,9 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       cwd: request.cwd,
       model: request.model,
       signal: request.signal,
+      ...(request.systemAppend?.trim() && {
+        systemPrompt: `${REVIEW_SYSTEM_PROMPT}\n\n${request.systemAppend.trim()}`,
+      }),
     };
     const first = await this.run(target, request.prompt, usage, budget, {
       allowExploration: request.allowExploration,
@@ -387,7 +401,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
 
     const parsed = parseFindingsOutput(first.text);
     if (parsed.ok) {
-      return finish("completed", parsed.findings, { fixedPrevious: parsed.fixedPrevious });
+      return finish("completed", parsed.findings, outputExtra(parsed));
     }
 
     this.logger.warn(
@@ -421,7 +435,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
 
     const repaired = parseFindingsOutput(repair.text);
     if (repaired.ok) {
-      return finish("completed", repaired.findings, { fixedPrevious: repaired.fixedPrevious });
+      return finish("completed", repaired.findings, outputExtra(repaired));
     }
     this.logger.warn(
       { taskId: request.task.id, error: repaired.error },
@@ -549,7 +563,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       quoted,
       "</previous_answer>",
       "",
-      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings (and the same "previousFindings" list, if it had one). Drop any finding you cannot express in the required format.',
+      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings (and the same "previousFindings" list and "summary", if it had them). Drop any finding you cannot express in the required format.',
     ].join("\n");
   }
 

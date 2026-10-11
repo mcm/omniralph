@@ -44,6 +44,48 @@ describe("VARIABLES", () => {
     ).map((variable) => variable.name);
     expect(query).toEqual(["question", "hunk", "conventions", "checkout"]);
   });
+
+  it("gives review tasks the diff, plan, risk, conventions and previous findings", () => {
+    const review = VARIABLES.filter(
+      (variable) => variable.source === "taskType" && variable.taskTypes.includes("review"),
+    );
+    expect(review.map((variable) => variable.name)).toEqual([
+      "conventions",
+      "diff",
+      "plan",
+      "plan.mode",
+      "plan.baseSha",
+      "plan.fromSha",
+      "plan.headSha",
+      "plan.files",
+      "plan.skipped.path",
+      "plan.skipped.reason",
+      "risk",
+      "risk.complexityScore",
+      "risk.hotspots",
+      "previousFindings",
+      "previousFindings.items.id",
+      "previousFindings.items.path",
+      "previousFindings.items.lines",
+      "previousFindings.items.category",
+      "previousFindings.items.text",
+    ]);
+    const untrusted = review.filter((v) => v.trust === "untrusted").map((v) => v.name);
+    expect(untrusted).toEqual([
+      "conventions",
+      "diff",
+      "previousFindings",
+      "previousFindings.items.text",
+    ]);
+    expect(findVariable("diff")).toMatchObject({ fence: "diff" });
+    expect(findVariable("previousFindings.items.text")).toMatchObject({ fence: "markdown" });
+    expect(
+      validateTemplate(
+        "{{#previousFindings}}{{#previousFindings.items}}{{id}} {{text}}{{/previousFindings.items}}{{/previousFindings}}{{diff}}{{plan.mode}}{{risk.hotspots}}",
+        availableVariables("review", ["pr.updated"]),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("availableVariables", () => {

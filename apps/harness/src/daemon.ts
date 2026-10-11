@@ -16,6 +16,7 @@ import {
   type JobOutput,
 } from "./capabilities/index.js";
 import { runQueryTask } from "./lifecycle/query.js";
+import { runReviewTask } from "./lifecycle/review.js";
 import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./rpc/index.js";
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
@@ -62,6 +63,8 @@ export interface DaemonOptions {
   rpcs?: SystemRpcRegistry;
   /** Runs claimed runs of task type `query` (default `runQueryTask`). */
   runQueryTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
+  /** Runs claimed runs of task type `review` (default `runReviewTask`). */
+  runReviewTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
   logger: Logger;
   heartbeatIntervalMs?: number;
   shutdownGraceMs?: number;
@@ -566,14 +569,18 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * How a claimed run is run, by its task type: `query` through the fixed
-   * query lifecycle; any other task type fails the run.
+   * How a claimed run is run, by its task type: `query` and `review` through
+   * their fixed lifecycles; any other task type fails the run.
    */
   private runSpecHandler(spec: RunSpec): JobHandler {
     switch (spec.taskType) {
       case "query": {
         const runQuery = this.options.runQueryTask ?? runQueryTask;
         return (ctx) => runQuery(spec, ctx);
+      }
+      case "review": {
+        const runReview = this.options.runReviewTask ?? runReviewTask;
+        return (ctx) => runReview(spec, ctx);
       }
       default:
         return () => Promise.reject(new Error(`unsupported task type ${spec.taskType}`));
