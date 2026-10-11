@@ -5,13 +5,13 @@ import {
   type Database,
   type PinRepositoryResult,
 } from "@omniralph/db";
-import { REPO_SYNC_JOB_TYPE, type RepoSyncPayload, legacyJobRouting } from "@omniralph/shared";
+import { REPO_SYNC_JOB_TYPE, type RepoSyncPayload } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /**
- * Pins a repository to a harness and enqueues a `repo.sync` job targeted at
- * that harness, so the harness pre-clones the repo before its first
+ * Pins a repository to a harness and enqueues a `repo.sync` system RPC targeted
+ * at that harness, so the harness pre-clones the repo before its first
  * review. The sync is deduped per harness and repository (also when the
  * repository was already pinned, so pinning again re-syncs).
  */
@@ -29,8 +29,10 @@ export async function pinRepository(
   };
   const { job } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
+    // A system RPC: no session, no pool; only the targeted harness claims it.
     type: REPO_SYNC_JOB_TYPE,
-    ...legacyJobRouting(REPO_SYNC_JOB_TYPE),
+    taskType: "system",
+    pool: null,
     payload,
     repositoryId: input.repositoryId,
     dedupeKey: `${REPO_SYNC_JOB_TYPE}:${input.harnessId}:${input.repositoryId}`,

@@ -4,7 +4,6 @@ import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
 import { reviewCapability } from "./review.js";
-import { systemCapability } from "./system.js";
 import { triageCapability } from "./triage/index.js";
 
 /**
@@ -164,7 +163,7 @@ export function toolPolicyFor(capability: Capability, jobType: string): ToolPoli
   return capability.jobToolPolicies?.[jobType] ?? capability.toolPolicy;
 }
 
-/** The capabilities this build of the agent ships; `system` is built in and always enabled. */
+/** The capabilities this build of the harness ships (system RPCs live in `rpc/`). */
 export function defaultCapabilities(): Capability[] {
-  return [systemCapability, reviewCapability, ralphCapability, triageCapability];
+  return [reviewCapability, ralphCapability, triageCapability];
 }
