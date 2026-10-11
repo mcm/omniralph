@@ -13,12 +13,6 @@ const review = vi.hoisted(() => ({
   parseReviewResult: vi.fn((result: unknown) => (result === "ok" ? {} : null)),
 }));
 vi.mock("@/lib/review/jobs", () => review);
-const chatAsk = vi.hoisted(() => ({
-  onChatAskJobCompleted: vi.fn(),
-  onChatAskJobFailed: vi.fn(),
-  parseChatAskResult: vi.fn((result: unknown) => (result === "ok" ? {} : null)),
-}));
-vi.mock("@/lib/chat/ask", () => chatAsk);
 
 const { jobOutcomeHandler, registerJobOutcomeHandler } = await import("./handlers");
 
@@ -65,8 +59,8 @@ function job(overrides: Partial<Job>): Job {
 describe("job outcome handlers", () => {
   it("routes review jobs to their handler by type", () => {
     expect(jobOutcomeHandler(job({}))?.onStarted).toBeDefined();
-    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`): their sinks handle them.
-    for (const type of ["review.learn-rule", "review.reply"]) {
+    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`, `builtin:ask-about-code`): their sinks handle them.
+    for (const type of ["review.learn-rule", "review.reply", "chat.ask"]) {
       expect(jobOutcomeHandler(job({ type }))).toBeUndefined();
     }
   });
@@ -119,32 +113,6 @@ describe("job outcome handlers", () => {
         durationMs: 0,
       }),
     ).toBe(true);
-  });
-
-  it("routes chat.ask jobs to the code question hooks", async () => {
-    const ask = job({
-      type: "chat.ask",
-      payload: {
-        repositoryId: reviewPayload.repositoryId,
-        repository: reviewPayload.repository,
-        defaultBranch: "main",
-        question: "Where is auth?",
-        context: null,
-        chatThreadId: "00000000-0000-4000-8000-000000000004",
-        model: null,
-        maxTokens: 1000,
-      },
-    });
-    const handler = jobOutcomeHandler(ask)!;
-    expect(handler.isValidResult!("ok")).toBe(true);
-    expect(handler.isValidResult!("bad")).toBe(false);
-    const db = {} as Database;
-    await handler.onCompleted!(db, ask);
-    expect(chatAsk.onChatAskJobCompleted).toHaveBeenLastCalledWith(db, ask);
-    await handler.onFailed!(db, ask, "boom");
-    expect(chatAsk.onChatAskJobFailed).toHaveBeenLastCalledWith(db, ask);
-    // A review payload isn't a code question's.
-    expect(jobOutcomeHandler(job({ type: "chat.ask" }))).toBeUndefined();
   });
 
   it("registers new job types, once each", () => {

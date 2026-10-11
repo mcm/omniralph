@@ -65,11 +65,12 @@ export async function hunkVariable(
   }
 }
 
-/** The checkout's `CLAUDE.md` at `sha`, or null without one (or without a checkout). */
+/** The checkout's `CLAUDE.md` at `sha`, trimmed; null without one (or a blank one, or without a checkout). */
 export async function conventionsVariable(
   checkout: { path: string; sha: string } | null,
   gitEnv: NodeJS.ProcessEnv,
 ): Promise<string | null> {
   if (!checkout) return null;
-  return (await showFile(checkout.path, checkout.sha, CONVENTIONS_PATH, gitEnv)) ?? null;
+  const text = (await showFile(checkout.path, checkout.sha, CONVENTIONS_PATH, gitEnv))?.trim();
+  return text ? text : null;
 }

@@ -16,14 +16,15 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import type { ChatAskJobPayload, ChatAskJobResult } from "@omniralph/shared";
+import type { QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { Adapter } from "chat";
 import { asc, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatChannel } from "@/lib/ralph/conversation";
-import { onChatAskJobCompleted, onChatAskJobFailed, parseChatAskResult } from "./ask";
+import { applyChatAnswer, chatThreadSink, onChatAnswerFailed } from "./chat-thread";
+import { parseSinkResult, type SinkResult } from "./index";
 
 vi.mock("server-only", () => ({}));
 
@@ -35,8 +36,9 @@ const dockerAvailable = await getContainerRuntimeClient().then(
 const APP_URL = "https://omniralph.example.com";
 const SLACK_THREAD = "slack:C1:1700000000.000100";
 
-const answered: ChatAskJobResult = {
+const answered: QueryRunResult = {
   outcome: "answered",
+  structured: null,
   answer:
     "`last()` reads one past the end in `src/list.ts:2`. See [the docs](https://evil.example.com/x) and <img src=x>.",
   references: [
@@ -47,14 +49,21 @@ const answered: ChatAskJobResult = {
   durationMs: 5,
 };
 
-describe("parseChatAskResult", () => {
-  it("accepts results of the shared schema only", () => {
-    expect(parseChatAskResult(answered)).toEqual(answered);
-    expect(parseChatAskResult({ ...answered, answer: null })).toBeNull();
+const sinkResult = (result: QueryRunResult): SinkResult<null> =>
+  parseSinkResult(chatThreadSink, result)!;
+
+describe("chatThreadSink", () => {
+  it("takes a Markdown answer, not structured output", () => {
+    expect(chatThreadSink.kind).toBe("chat-thread");
+    expect(parseSinkResult(chatThreadSink, answered)).toEqual(answered);
+    expect(parseSinkResult(chatThreadSink, { ...answered, answer: null })).toBeNull();
+    expect(
+      parseSinkResult(chatThreadSink, { ...answered, answer: null, structured: { rule: "x" } }),
+    ).toBeNull();
   });
 });
 
-describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
+describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
   const key = randomBytes(32);
   let container: StartedPostgreSqlContainer;
   let db: Database;
@@ -126,27 +135,31 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
     }))!;
   }
 
-  /** A finished `chat.ask` job for the thread. */
-  async function askJob(threadId: string, result: ChatAskJobResult | null): Promise<Job> {
-    const payload: ChatAskJobPayload = {
-      repositoryId,
-      repository: {
-        provider: "github",
-        fullPath: "acme/app",
-        cloneUrl: "https://github.com/acme/app.git",
+  /** A finished `builtin:ask-about-code` run for the thread, as `enqueueChatAsk` stores it. */
+  async function askJob(threadId: string, result: QueryRunResult | null): Promise<Job> {
+    const payload: RunSpecJobPayload = {
+      trigger: {
+        kind: "chat.request",
+        context: {
+          repository: "acme/app",
+          branch: "main",
+          provider: "github",
+          question: "Why does last() return undefined?",
+          chatThreadId: threadId,
+          chat: { context: null },
+          budgetTokens: 12_000,
+        },
       },
-      defaultBranch: "main",
-      question: "Why does last() return undefined?",
-      context: null,
-      chatThreadId: threadId,
-      model: null,
-      maxTokens: 12_000,
+      repositoryId,
+      ref: "main",
+      requireCheckout: true,
     };
     const { job } = await insertJob(db, {
       organizationId: orgId,
       type: "chat.ask",
       taskType: "query",
       pool: "short",
+      taskId: "builtin:ask-about-code",
       payload,
       repositoryId,
     });
@@ -194,9 +207,9 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
     const job = await askJob(thread.id, answered);
     const { adapter, tokens } = slackAdapter();
 
-    expect(await onChatAskJobCompleted(db, job, channel(adapter))).toBe(true);
+    expect(await applyChatAnswer(db, job, sinkResult(answered), channel(adapter))).toBe(true);
     // A replayed result doesn't post again.
-    expect(await onChatAskJobCompleted(db, job, channel(adapter))).toBe(false);
+    expect(await applyChatAnswer(db, job, sinkResult(answered), channel(adapter))).toBe(false);
 
     expect(adapter.postMessage).toHaveBeenCalledOnce();
     const [threadId, message] = vi.mocked(adapter.postMessage).mock.calls[0]!;
@@ -220,17 +233,22 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
   it("explains an answer without a result", async () => {
     const thread = await slackThread();
     const { adapter } = slackAdapter();
-    const base = { usage: { inputTokens: 0, outputTokens: 0 }, durationMs: 1, answer: null };
-    await onChatAskJobCompleted(
-      db,
-      await askJob(thread.id, { ...base, outcome: "budget_exhausted" }),
-      channel(adapter),
-    );
-    await onChatAskJobCompleted(
-      db,
-      await askJob(thread.id, { ...base, outcome: "no_checkout" }),
-      channel(adapter),
-    );
+    const base = {
+      usage: { inputTokens: 0, outputTokens: 0 },
+      durationMs: 1,
+      answer: null,
+      structured: null,
+      references: [],
+    };
+    for (const outcome of ["budget_exhausted", "no_checkout"] as const) {
+      const result = { ...base, outcome };
+      await applyChatAnswer(
+        db,
+        await askJob(thread.id, result),
+        sinkResult(result),
+        channel(adapter),
+      );
+    }
     const posted = vi
       .mocked(adapter.postMessage)
       .mock.calls.map(([, message]) => (message as { markdown: string }).markdown);
@@ -241,12 +259,24 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
     expect(await recorded(thread.id)).toHaveLength(2);
   });
 
+  it("caps a long answer as today's code questions did", async () => {
+    const thread = await slackThread();
+    const { adapter } = slackAdapter();
+    const long = { ...answered, answer: "x".repeat(10_000), references: [] };
+    await applyChatAnswer(db, await askJob(thread.id, long), sinkResult(long), channel(adapter));
+    const [[, message]] = vi.mocked(adapter.postMessage).mock.calls as [
+      [string, { markdown: string }],
+    ];
+    expect(message.markdown.length).toBe(4000);
+    expect(message.markdown).toMatch(/_…truncated_$/);
+  });
+
   it("apologizes once when the job failed", async () => {
     const thread = await slackThread();
     const job = await askJob(thread.id, null);
     const { adapter } = slackAdapter();
-    expect(await onChatAskJobFailed(db, job, channel(adapter))).toBe(true);
-    expect(await onChatAskJobFailed(db, job, channel(adapter))).toBe(false);
+    expect(await onChatAnswerFailed(db, job, channel(adapter))).toBe(true);
+    expect(await onChatAnswerFailed(db, job, channel(adapter))).toBe(false);
     expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(SLACK_THREAD, {
       markdown:
         "Sorry, I couldn't answer that question about `acme/app`; the job failed. Try asking again later.",
@@ -258,7 +288,10 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
     const thread = await slackThread();
     const job = await askJob(thread.id, answered);
     expect(
-      await onChatAskJobCompleted(db, job, { ...channel(slackAdapter().adapter), adapters: {} }),
+      await applyChatAnswer(db, job, sinkResult(answered), {
+        ...channel(slackAdapter().adapter),
+        adapters: {},
+      }),
     ).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("the thread or its chat connection is gone"),

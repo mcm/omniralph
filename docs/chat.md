@@ -10,7 +10,7 @@ reviews, jobs, agents and repositories through tools. See
 
 The control panel does all of it: it holds the Slack and Discord credentials, receives their
 events, keeps each thread's history in Postgres and calls the model. Agent hosts are only involved
-when the bot hands work off: [code questions](#code-questions) run as read-only `chat.ask` jobs and
+when the bot hands work off: [code questions](#code-questions) run as read-only query tasks and
 [ralph requests](#ralph-from-chat) as ralph jobs; the control panel never reads code itself.
 
 Setting chat up takes these steps (Slack and Discord are independent; set up either or both):
@@ -349,8 +349,9 @@ of it:
 
 ### The read-only sandbox
 
-A code question is a `chat.ask` job under the agent's `review` capability, published on the same
-topic as reviews and run in the same sandbox:
+A code question is a run of the built-in query task `builtin:ask-about-code` (agent
+`builtin:code-explainer`, job type `chat.ask`, pool `short`); its `chat-thread` sink posts the
+answer in the thread. It runs in a read-only sandbox:
 
 - A fresh worktree of the default branch's head, on an agent host
   ([deploy-harness.md](deploy-harness.md)). The control panel never reads code.
@@ -359,16 +360,19 @@ topic as reviews and run in the same sandbox:
   as quoted data, as in reviews.
 - Up to 30 turns and a token budget of 25% of the repository's review profile's **max tokens per
   review**, with the profile's model.
-- If the repository pins reviews to specific agents, only those agents take it.
+- If the repository pins jobs to specific harnesses, only those harnesses take it.
+- When the default branch doesn't exist (e.g. an empty repository), the run finishes without a
+  session and the bot says there's no branch to read.
 
-### Agent version
+### Harness version
 
-`chat.ask` needs the `review` capability on **agent version 0.8.0 or later**. Older agents don't
-know the job type. Before queueing, the control panel checks the organization's online agents (the
-version and capabilities they report in heartbeats); when none that would take the job can run it,
-nothing is queued and the bot says so: "no agent … is online", or that the online ones need the
-review capability on 0.8.0 or later. Update or start an agent ([deploy-harness.md](deploy-harness.md))
-and ask again.
+A code question needs a harness that accepts **query** tasks on **version 0.9.0 or later** (the
+first release with the query task lifecycle); the job carries that as its minimum harness version,
+so older harnesses leave it queued. Before queueing, the control panel checks the organization's
+online harnesses (the version and task types they report in heartbeats); when none that would take
+the job can run it, nothing is queued and the bot says so: "no harness … is online", or that the
+online ones need to accept query tasks on 0.9.0 or later. Update or start a harness
+([deploy-harness.md](deploy-harness.md)) and ask again.
 
 ## Attachments
 
