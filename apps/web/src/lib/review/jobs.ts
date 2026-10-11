@@ -1,11 +1,14 @@
 import "server-only";
 import {
+  CANCELED_REVIEW_ERROR,
   findCompletedReview,
   finishReview,
   getReview,
   markReviewQueued,
   markReviewRunning,
+  markReviewRunRunning,
   saveReviewOutcome,
+  settleReviewRun,
   skipJob,
   type Database,
   type Job,
@@ -21,7 +24,9 @@ import { supersedeEarlierFindings } from "./supersede";
  * `builtin:review-pr` runs) and, for `review.run` jobs enqueued before the
  * port, the legacy outcome handler call these hooks so that the `reviews`
  * row follows its job, the result is persisted and posted, and final
- * failures get a note on the PR/MR.
+ * failures get a note on the PR/MR. The review's review run follows: it is
+ * `running` once one of its reviews started and ends once all of them did
+ * (`settleReviewRun`).
  */
 
 /**
@@ -47,11 +52,18 @@ export function reviewJobState(job: Pick<Job, "payload" | "taskId">): ReviewJobS
     : reviewTriggerContext(job.payload);
 }
 
+/** Ends the review run of review `reviewId` if that was its last active review. */
+async function settleReviewRunOf(db: Database, reviewId: string): Promise<void> {
+  const review = await getReview(db, reviewId);
+  if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId);
+}
+
 /**
  * After a delivery started: a webhook review of a head SHA that already has a
- * `completed` review isn't reviewed again (job and review become `skipped`);
- * otherwise (and always for an explicit `@bot review` or Re-run) the review is marked
- * `running` on the agent.
+ * `completed` review of the same review task isn't reviewed again (job and
+ * review become `skipped`); otherwise (and always for an explicit
+ * `@bot review` or Re-run) the review is marked `running` on the agent, and
+ * its review run `running`.
  */
 async function onReviewStarted(
   db: Database,
@@ -66,15 +78,18 @@ async function onReviewStarted(
       repositoryId: state.repositoryId,
       prNumber: state.prNumber,
       headSha: state.headSha,
+      taskId: review?.taskId ?? undefined,
       exceptReviewId: state.reviewId,
     }));
   if (completed) {
     const reason = `Head ${state.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
     await skipJob(db, job.id, { reason });
     await finishReview(db, state.reviewId, { status: "skipped", error: reason });
+    if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId);
     return { skip: true, reason: "already_reviewed" };
   }
   await markReviewRunning(db, state.reviewId, harnessId);
+  if (review?.reviewRunId) await markReviewRunRunning(db, review.reviewRunId);
   return { skip: false };
 }
 
@@ -121,11 +136,13 @@ async function onReviewCompleted(
   await resolveFixedFindings(db, { reviewId: state.reviewId, payload: state, result });
   // A ralph PR/MR: the open findings may go back to its run as a request.
   await onReviewForRalph(db, state.reviewId);
+  await settleReviewRunOf(db, state.reviewId);
 }
 
 /** A review job that ended `canceled` (e.g. superseded by a newer push). */
 async function onReviewCanceled(db: Database, state: ReviewJobState): Promise<void> {
-  await finishReview(db, state.reviewId, { status: "skipped", error: "Canceled" });
+  await finishReview(db, state.reviewId, { status: "skipped", error: CANCELED_REVIEW_ERROR });
+  await settleReviewRunOf(db, state.reviewId);
 }
 
 /** A retryable failure: the review waits for the job's redelivery. */
@@ -140,6 +157,7 @@ async function onReviewRetry(db: Database, state: ReviewJobState, error: string 
 async function onReviewFailed(db: Database, state: ReviewJobState, error: string): Promise<void> {
   await finishReview(db, state.reviewId, { status: "failed", error });
   await postFailureNote(db, { reviewId: state.reviewId, payload: state, error });
+  await settleReviewRunOf(db, state.reviewId);
 }
 
 // The hooks by job: the `review` sink's and the legacy `review.run` outcome handler's.

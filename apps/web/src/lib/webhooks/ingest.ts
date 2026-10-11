@@ -223,6 +223,7 @@ export async function handleWebhook(
     if (result.status === "repository_unavailable" || result.status === "profile_not_found") {
       return ignored("repository_disabled");
     }
+    if (result.status === "no_review_tasks") return ignored("no_review_tasks");
     if (delivery) await setWebhookDeliveryJob(db, delivery, result.jobId);
     if (result.status === "duplicate") return reply({ status: "duplicate", jobId: result.jobId });
     return reply({ status: "enqueued", reviewId: result.reviewId, jobId: result.jobId });

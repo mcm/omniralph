@@ -69,6 +69,8 @@ export async function rerunReview(
       return { ok: false, error: "Reviews are disabled or the repository is disconnected." };
     case "profile_not_found":
       return { ok: false, error: "That review profile doesn't exist." };
+    case "no_review_tasks":
+      return { ok: false, error: "None of the repository's review tasks can be re-run." };
     case "scm_error":
       return {
         ok: false,

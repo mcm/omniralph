@@ -10,6 +10,9 @@ import {
   createDb,
   findings,
   jobs,
+  listReviewRunReviews,
+  repositories,
+  reviewRuns,
   reviews,
   rules,
   runMigrations,
@@ -28,6 +31,7 @@ import {
   type JobStartResponse,
   type ReviewJobResult,
 } from "@omniralph/shared";
+import type * as Tasks from "@omniralph/tasks";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, asc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
@@ -40,6 +44,20 @@ const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+// A second review task, as a repository could enable next to builtin:review-pr.
+vi.mock("@omniralph/tasks", async (importOriginal) => {
+  const actual = await importOriginal<typeof Tasks>();
+  const security = {
+    ...actual.getBuiltinTask("builtin:review-pr")!,
+    id: "builtin:security-review",
+    name: "Security review",
+  };
+  return {
+    ...actual,
+    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+  };
+});
+const SECURITY_TASK_ID = "builtin:security-review";
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -252,10 +270,15 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     rmSync(repo.dir, { recursive: true, force: true });
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     github.reviews.length = 0;
     postReview.mockClear();
+    await setReviewTasks(["builtin:review-pr"]);
   });
+
+  async function setReviewTasks(reviewTaskIds: string[]) {
+    await db.update(repositories).set({ reviewTaskIds }).where(eq(repositories.id, repositoryId));
+  }
 
   function dispatcher() {
     return new PostgresDispatcher({ db });
@@ -273,7 +296,11 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     return { harnessId: agent!.id, accessToken: await getTokenSigner().signAccessToken(agent!.id) };
   }
 
-  function enqueue(prNumber: number, headSha: string) {
+  function enqueue(
+    prNumber: number,
+    headSha: string,
+    trigger: "webhook" | "mention" | "manual" = "webhook",
+  ) {
     github.pr = {
       baseSha: base,
       headSha,
@@ -292,7 +319,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       title: "Add login logging",
       description: "Please review",
       author: "octocat",
-      trigger: "webhook",
+      trigger,
     });
   }
 
@@ -377,6 +404,28 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   async function jobRow(id: string) {
     const [row] = await db.select().from(jobs).where(eq(jobs.id, id));
     return row!;
+  }
+
+  async function reviewRunRow(id: string) {
+    const [row] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, id));
+    return row!;
+  }
+
+  async function failFinal(jobId: string, accessToken: string) {
+    const res = await fail(
+      agentRequest(`jobs/${jobId}/fail`, accessToken, { retryable: false, error: "boom" }),
+      ctx(jobId),
+    );
+    expect(await res.json()).toEqual({ status: "failed" });
+  }
+
+  /** Starts, runs and completes a review job. */
+  async function complete(jobId: string, accessToken: string) {
+    const run = await startAs(jobId, accessToken);
+    if (run?.action !== "run") throw new Error("expected run");
+    expect((await submit(jobId, accessToken, await agentRun(run.job.payload))).body).toEqual({
+      status: "completed",
+    });
   }
 
   it("goes from a created job to persisted findings and exactly one postReview, also on replay", async () => {
@@ -716,5 +765,179 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       error: "Gave up after 3 deliveries",
     });
     expect(postReview).toHaveBeenCalledTimes(1);
+  });
+
+  describe("review runs", () => {
+    it("fans one PR event out to every enabled review task with the same previous review", async () => {
+      const prNumber = ++prCounter;
+      const { accessToken } = await newAgent();
+      const first = await enqueue(prNumber, head1);
+      if (first.status !== "enqueued") throw new Error(first.status);
+      expect(first.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr"]);
+      await complete(first.jobId, accessToken);
+      expect(await reviewRunRow(first.reviewRunId)).toMatchObject({ status: "completed" });
+
+      // Unknown and non-review tasks are skipped with a warning.
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await setReviewTasks([
+        "builtin:review-pr",
+        "builtin:missing",
+        SECURITY_TASK_ID,
+        "builtin:ask-about-code",
+      ]);
+      const next = await enqueue(prNumber, head2);
+      if (next.status !== "enqueued") throw new Error(next.status);
+      expect(warn).toHaveBeenCalledTimes(2);
+      warn.mockRestore();
+
+      expect(next.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", SECURITY_TASK_ID]);
+      expect(await reviewRunRow(next.reviewRunId)).toMatchObject({
+        organizationId: orgId,
+        repositoryId,
+        prNumber,
+        headSha: head2,
+        baseSha: base,
+        trigger: "webhook",
+        mode: "incremental",
+        profileId: "standard",
+        status: "queued",
+        correlationJobId: null,
+      });
+      const runReviews = await listReviewRunReviews(db, next.reviewRunId);
+      expect(runReviews.map((r) => [r.id, r.taskId, r.status])).toEqual(
+        next.runs.map((r) => [r.reviewId, r.taskId, "queued"]),
+      );
+      const payloads = [];
+      for (const run of next.runs) {
+        const job = await jobRow(run.jobId);
+        expect(job).toMatchObject({
+          taskId: run.taskId,
+          status: "queued",
+          dedupeKey: `review.run:${repositoryId}:${prNumber}:${head2}:${run.taskId}`,
+        });
+        const payload = reviewTriggerContext(job.payload);
+        expect(payload.reviewId).toBe(run.reviewId);
+        payloads.push(payload);
+      }
+      // previousReviewState is read once: both tasks get the same previous head and findings.
+      expect(payloads[0]!.previousReview).toEqual({
+        headSha: head1,
+        openFindings: [expect.objectContaining({ path: "src/app.ts", startLine: 2 })],
+      });
+      expect(payloads[1]!.previousReview).toEqual(payloads[0]!.previousReview);
+
+      // The run is running once a task job starts, and completed once both ended.
+      const [reviewPr, security] = next.runs;
+      await complete(security!.jobId, accessToken);
+      expect(await reviewRunRow(next.reviewRunId)).toMatchObject({ status: "running" });
+      expect(await reviewRow(security!.reviewId)).toMatchObject({ status: "completed" });
+      await startAs(reviewPr!.jobId, accessToken);
+      await failFinal(reviewPr!.jobId, accessToken);
+      expect(await reviewRunRow(next.reviewRunId)).toMatchObject({ status: "completed" });
+      // Until the posting story, each task's review posts on its own.
+      expect(postReview).toHaveBeenCalledTimes(3);
+    });
+
+    it("returns the active review run for the same head and creates nothing", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const first = await enqueue(prNumber, head1);
+      if (first.status !== "enqueued") throw new Error(first.status);
+      const { accessToken } = await newAgent();
+      // One task already finished: the other's job keeps the run active.
+      await complete(first.runs[0]!.jobId, accessToken);
+
+      const second = await enqueue(prNumber, head1, "mention");
+      if (second.status !== "duplicate") throw new Error(second.status);
+      expect(second).toMatchObject({
+        reviewRunId: first.reviewRunId,
+        runs: [first.runs[1]],
+        canceledJobIds: [],
+      });
+      const prRuns = await db.select().from(reviewRuns).where(eq(reviewRuns.prNumber, prNumber));
+      expect(prRuns).toHaveLength(1);
+      const prReviews = await db.select().from(reviews).where(eq(reviews.prNumber, prNumber));
+      expect(prReviews).toHaveLength(2);
+    });
+
+    it("returns no_review_tasks when no enabled task is a review task", async () => {
+      const prNumber = ++prCounter;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await setReviewTasks(["builtin:missing", "builtin:ask-about-code"]);
+      expect(await enqueue(prNumber, head1)).toEqual({ status: "no_review_tasks" });
+      warn.mockRestore();
+      expect(
+        await db.select().from(reviewRuns).where(eq(reviewRuns.prNumber, prNumber)),
+      ).toHaveLength(0);
+      expect(await db.select().from(reviews).where(eq(reviews.prNumber, prNumber))).toHaveLength(0);
+    });
+
+    it("cancels every task's job of older heads and skips their review runs", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const older = await enqueue(prNumber, head1);
+      if (older.status !== "enqueued") throw new Error(older.status);
+      await startAs(older.runs[1]!.jobId, accessToken);
+
+      const newer = await enqueue(prNumber, head2);
+      if (newer.status !== "enqueued") throw new Error(newer.status);
+      expect(newer.canceledJobIds.sort()).toEqual(older.runs.map((r) => r.jobId).sort());
+      expect(await jobRow(older.runs[0]!.jobId)).toMatchObject({ status: "canceled" });
+      expect(await jobRow(older.runs[1]!.jobId)).toMatchObject({ cancelRequested: true });
+      for (const run of older.runs) {
+        expect(await reviewRow(run.reviewId)).toMatchObject({
+          status: "skipped",
+          error: `Superseded by a newer push (${head2.slice(0, 12)})`,
+        });
+      }
+      expect(await reviewRunRow(older.reviewRunId)).toMatchObject({ status: "skipped" });
+      expect(await reviewRunRow(newer.reviewRunId)).toMatchObject({ status: "queued" });
+      expect(newer.runs).toHaveLength(2);
+    });
+
+    it("skips a webhook review of a task that already reviewed the head, but never a mention", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const first = await enqueue(prNumber, head1);
+      if (first.status !== "enqueued") throw new Error(first.status);
+      await complete(first.runs[0]!.jobId, accessToken);
+      await startAs(first.runs[1]!.jobId, accessToken);
+      await failFinal(first.runs[1]!.jobId, accessToken);
+
+      // A redelivered webhook: builtin:review-pr already reviewed the head, the security task didn't.
+      const again = await enqueue(prNumber, head1);
+      if (again.status !== "enqueued") throw new Error(again.status);
+      expect(await startAs(again.runs[0]!.jobId, accessToken)).toBeNull();
+      expect(await jobRow(again.runs[0]!.jobId)).toMatchObject({ status: "skipped" });
+      expect(await reviewRow(again.runs[0]!.reviewId)).toMatchObject({ status: "skipped" });
+      expect(await startAs(again.runs[1]!.jobId, accessToken)).not.toBeNull();
+      expect(await reviewRunRow(again.reviewRunId)).toMatchObject({ status: "running" });
+      await failFinal(again.runs[1]!.jobId, accessToken);
+      expect(await reviewRunRow(again.reviewRunId)).toMatchObject({ status: "failed" });
+
+      // An explicit @bot review reviews it again with every task.
+      const mention = await enqueue(prNumber, head1, "mention");
+      if (mention.status !== "enqueued") throw new Error(mention.status);
+      for (const run of mention.runs) {
+        expect(await startAs(run.jobId, accessToken)).not.toBeNull();
+      }
+    });
+
+    it("fails the review run when every task run failed or was canceled", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      await startAs(enqueued.runs[0]!.jobId, accessToken);
+      await failFinal(enqueued.runs[0]!.jobId, accessToken);
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "running" });
+      await dispatcher().cancel(enqueued.runs[1]!.jobId);
+      const { onReviewJobCanceled } = await import("@/lib/review/jobs");
+      await onReviewJobCanceled(db, await jobRow(enqueued.runs[1]!.jobId));
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "failed" });
+    });
   });
 });

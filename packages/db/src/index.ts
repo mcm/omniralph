@@ -188,8 +188,16 @@ export {
 } from "./jobs.js";
 export { listPoolNames, seedPools } from "./pools.js";
 export {
+  CANCELED_REVIEW_ERROR,
   createReview,
+  createReviewRun,
   deleteReview,
+  deleteReviewRun,
+  getReviewRun,
+  listReviewRunReviews,
+  markReviewRunRunning,
+  settleReviewRun,
+  skipReviewRuns,
   findCompletedReview,
   finishReview,
   getFindingOrganizationId,
@@ -207,8 +215,11 @@ export {
   supersedeOpenFindings,
   type FindingRow,
   type NewReviewInput,
+  type NewReviewRunInput,
   type PreviousReviewState,
   type Review,
+  type ReviewRun,
+  type ReviewRunStatus,
   type ReviewOutcomeInput,
   type ReviewProfile,
   type ReviewStatus,

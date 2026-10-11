@@ -1,9 +1,12 @@
 /**
- * Reviews and their findings. A review row is created when its `review.run`
- * job is enqueued (`queued`), becomes `running` when an agent starts the job
- * and ends `completed` / `budget_exhausted` (result), `failed` or `skipped`.
- * `summary_comment_id` is set once the review (or its failure note) was
- * posted to the code host, which makes posting idempotent per review.
+ * Review runs, reviews and their findings. A review run is created for a PR
+ * event with one review per review task it fans out to; a review row is
+ * created when its `review.run` job is enqueued (`queued`), becomes `running`
+ * when an agent starts the job and ends `completed` / `budget_exhausted`
+ * (result), `failed` or `skipped`. The review run follows its reviews
+ * (`settleReviewRun`). `summary_comment_id` is set once the review (or its
+ * failure note) was posted to the code host, which makes posting idempotent
+ * per review.
  */
 import { and, asc, desc, eq, inArray, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
@@ -11,12 +14,15 @@ import {
   findings,
   repositories,
   reviewProfiles,
+  reviewRuns,
   reviews,
   rules,
   type SkippedFile,
 } from "./schema.js";
 
 export type Review = typeof reviews.$inferSelect;
+export type ReviewRun = typeof reviewRuns.$inferSelect;
+export type ReviewRunStatus = ReviewRun["status"];
 export type ReviewStatus = Review["status"];
 export type FindingRow = typeof findings.$inferSelect;
 export type ReviewProfile = typeof reviewProfiles.$inferSelect;
@@ -28,6 +34,114 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 const ACTIVE_REVIEW_STATUSES: ReviewStatus[] = ["queued", "running"];
 /** Reviews whose findings count as the PR's reviewed state. */
 const FINISHED_REVIEW_STATUSES: ReviewStatus[] = ["completed", "budget_exhausted"];
+/** Statuses a review run can still leave. */
+const ACTIVE_REVIEW_RUN_STATUSES: ReviewRunStatus[] = ["queued", "running", "correlating"];
+/** The error of a review whose job was canceled. */
+export const CANCELED_REVIEW_ERROR = "Canceled";
+
+export interface NewReviewRunInput {
+  organizationId: string;
+  repositoryId: string;
+  prNumber: number;
+  headSha: string;
+  baseSha: string;
+  trigger: ReviewRun["trigger"];
+  mode: ReviewRun["mode"];
+  profileId: string;
+}
+
+export async function createReviewRun(db: Database, input: NewReviewRunInput): Promise<ReviewRun> {
+  const [row] = await db.insert(reviewRuns).values(input).returning();
+  return row!;
+}
+
+/** Deletes a review run with its reviews. */
+export async function deleteReviewRun(db: Database, reviewRunId: string): Promise<void> {
+  await db.delete(reviewRuns).where(eq(reviewRuns.id, reviewRunId));
+}
+
+export async function getReviewRun(db: Database, reviewRunId: string): Promise<ReviewRun | null> {
+  const [row] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, reviewRunId)).limit(1);
+  return row ?? null;
+}
+
+/** The reviews of a review run (one per task), in creation order. */
+export async function listReviewRunReviews(db: Database, reviewRunId: string): Promise<Review[]> {
+  return db
+    .select()
+    .from(reviews)
+    .where(eq(reviews.reviewRunId, reviewRunId))
+    .orderBy(asc(reviews.createdAt), asc(reviews.id));
+}
+
+/** `queued` → `running`, once one of its task runs started. */
+export async function markReviewRunRunning(db: Database, reviewRunId: string): Promise<void> {
+  await db
+    .update(reviewRuns)
+    .set({ status: "running" })
+    .where(and(eq(reviewRuns.id, reviewRunId), eq(reviewRuns.status, "queued")));
+}
+
+/** Ends review runs that are still active as `skipped` (e.g. superseded by a newer push). */
+export async function skipReviewRuns(
+  db: Database,
+  reviewRunIds: readonly string[],
+  error: string,
+): Promise<void> {
+  if (reviewRunIds.length === 0) return;
+  await db
+    .update(reviewRuns)
+    .set({ status: "skipped", error })
+    .where(
+      and(
+        inArray(reviewRuns.id, [...reviewRunIds]),
+        inArray(reviewRuns.status, ACTIVE_REVIEW_RUN_STATUSES),
+      ),
+    );
+}
+
+/**
+ * Once every review of a `queued`/`running` review run has ended, ends the
+ * run: `completed` when any review finished (`completed`/`budget_exhausted`),
+ * `failed` when none did and one failed or was canceled, else `skipped`
+ * (e.g. every task's head was already reviewed). Returns the run's new
+ * status, or null when it was left alone. Holds a row lock on the run, so
+ * concurrent callers settle it once.
+ */
+export async function settleReviewRun(
+  db: Database,
+  reviewRunId: string,
+): Promise<ReviewRunStatus | null> {
+  return db.transaction(async (tx: Transaction) => {
+    const [run] = await tx
+      .select({ status: reviewRuns.status })
+      .from(reviewRuns)
+      .where(eq(reviewRuns.id, reviewRunId))
+      .for("update");
+    if (!run || (run.status !== "queued" && run.status !== "running")) return null;
+    const runReviews = await tx
+      .select({ status: reviews.status, error: reviews.error })
+      .from(reviews)
+      .where(eq(reviews.reviewRunId, reviewRunId));
+    if (runReviews.some((r) => ACTIVE_REVIEW_STATUSES.includes(r.status))) return null;
+    const status: ReviewRunStatus = runReviews.some((r) =>
+      FINISHED_REVIEW_STATUSES.includes(r.status),
+    )
+      ? "completed"
+      : runReviews.some(
+            (r) =>
+              r.status === "failed" ||
+              (r.status === "skipped" && r.error === CANCELED_REVIEW_ERROR),
+          )
+        ? "failed"
+        : "skipped";
+    await tx
+      .update(reviewRuns)
+      .set({ status, error: status === "failed" ? "Every review task failed" : null })
+      .where(eq(reviewRuns.id, reviewRunId));
+    return status;
+  });
+}
 
 export interface NewReviewInput {
   repositoryId: string;
@@ -39,6 +153,10 @@ export interface NewReviewInput {
   profileId: string;
   model: string | null;
   budget: number;
+  /** The review run the review is one task of. */
+  reviewRunId?: string | null;
+  /** The review task the review runs. */
+  taskId?: string | null;
 }
 
 export async function createReview(db: Database, input: NewReviewInput): Promise<Review> {
@@ -113,10 +231,19 @@ export async function listReviewFindings(db: Database, reviewId: string): Promis
     .orderBy(asc(findings.createdAt), asc(findings.id));
 }
 
-/** A `completed` review of this exact head SHA (other than `exceptReviewId`), if any. */
+/**
+ * A `completed` review of this exact head SHA (other than `exceptReviewId`),
+ * of review task `taskId` when given, if any.
+ */
 export async function findCompletedReview(
   db: Database,
-  input: { repositoryId: string; prNumber: number; headSha: string; exceptReviewId?: string },
+  input: {
+    repositoryId: string;
+    prNumber: number;
+    headSha: string;
+    taskId?: string;
+    exceptReviewId?: string;
+  },
 ): Promise<Review | null> {
   const [row] = await db
     .select()
@@ -127,6 +254,7 @@ export async function findCompletedReview(
         eq(reviews.prNumber, input.prNumber),
         eq(reviews.headSha, input.headSha),
         eq(reviews.status, "completed"),
+        ...(input.taskId ? [eq(reviews.taskId, input.taskId)] : []),
         ...(input.exceptReviewId ? [ne(reviews.id, input.exceptReviewId)] : []),
       ),
     )
