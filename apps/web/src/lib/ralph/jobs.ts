@@ -1,7 +1,7 @@
 import "server-only";
 import {
   findLaneByPullRequest,
-  getReview,
+  getReviewRun,
   getRun,
   listLanes,
   lockRun,
@@ -108,21 +108,22 @@ export async function onRalphCleanupJobFinished(
 }
 
 /**
- * A `review.run` job completed: when it reviewed a ralph PR/MR, its open
- * findings may become a request on that lane (`respondToReview`). Errors are
- * logged, not thrown: the review itself is saved and posted already.
+ * A review run completed and was posted: when it reviewed a ralph PR/MR, its
+ * open findings may become a request on that lane (`respondToReview`).
+ * Errors are logged, not thrown: the review run itself is saved and posted
+ * already.
  */
 export async function onReviewForRalph(
   db: Database,
-  reviewId: string,
+  reviewRunId: string,
   deps?: RalphDeps,
 ): Promise<void> {
   try {
-    const review = await getReview(db, reviewId);
-    const found = review && (await findLaneByPullRequest(db, review.repositoryId, review.prNumber));
+    const run = await getReviewRun(db, reviewRunId);
+    const found = run && (await findLaneByPullRequest(db, run.repositoryId, run.prNumber));
     if (!found) return;
-    await respondToReview(deps ?? (await defaultDeps(db, found.run.organizationId)), reviewId);
+    await respondToReview(deps ?? (await defaultDeps(db, found.run.organizationId)), reviewRunId);
   } catch (error) {
-    console.error(`Handing review ${reviewId} to its ralph run failed`, error);
+    console.error(`Handing review run ${reviewRunId} to its ralph run failed`, error);
   }
 }

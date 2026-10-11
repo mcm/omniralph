@@ -6,6 +6,9 @@ import {
   createReview,
   findings,
   jobs,
+  listReviewRunFindings,
+  repositories,
+  reviewRuns,
   reviews,
   runMigrations,
   scmConnections,
@@ -16,17 +19,32 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
+import type { ChangeRequest, ChangeRequestState, InlineComment, ScmAdapter } from "@omniralph/scm";
 import { reviewTriggerContext, type Finding, type ReviewJobResult } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
+import type * as Tasks from "@omniralph/tasks";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// A second review task, as a repository could enable next to builtin:review-pr.
+vi.mock("@omniralph/tasks", async (importOriginal) => {
+  const actual = await importOriginal<typeof Tasks>();
+  const security = {
+    ...actual.getBuiltinTask("builtin:review-pr")!,
+    id: "builtin:security-review",
+    name: "Security review",
+  };
+  return {
+    ...actual,
+    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+  };
+});
+const SECURITY_TASK_ID = "builtin:security-review";
 
 const HEAD = "f".repeat(40);
 
@@ -34,7 +52,7 @@ const HEAD = "f".repeat(40);
 function fakeAdapter() {
   const calls = {
     getChangeRequest: [] as number[],
-    postReview: [] as { number: number; summary: string }[],
+    postReview: [] as { number: number; summary: string; inlineComments: InlineComment[] }[],
     replyToComment: [] as { number: number; commentId: string; body: string }[],
     resolveThread: [] as { number: number; commentId: string }[],
   };
@@ -59,7 +77,11 @@ function fakeAdapter() {
       };
     },
     async postReview(_repo, number, review) {
-      calls.postReview.push({ number, summary: review.summary });
+      calls.postReview.push({
+        number,
+        summary: review.summary,
+        inlineComments: review.inlineComments,
+      });
       return {
         reviewId: `review-${calls.postReview.length}`,
         summaryCommentId: `summary-${calls.postReview.length}`,
@@ -143,7 +165,8 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com";
 
 const { enqueueReview } = await import("./enqueue");
-const { onReviewJobCompleted } = await import("./jobs");
+const { onReviewJobCompleted, onReviewJobFailed } = await import("./jobs");
+const { onCorrelationFailed } = await import("./correlate");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { rerunReview } = await import("@/app/(app)/reviews/actions");
 
@@ -382,7 +405,11 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       expect((await findingRow(prior[0]!.id)).status).toBe("superseded");
       const [review] = await db.select().from(reviews).where(eq(reviews.id, reviewId));
       expect(review!.status).toBe("completed");
-      expect(review!.summaryCommentId).not.toBeNull();
+      const [run] = await db
+        .select()
+        .from(reviewRuns)
+        .where(eq(reviewRuns.id, review!.reviewRunId!));
+      expect(run!.summaryCommentId).not.toBeNull();
       expect(console.warn).toHaveBeenCalledWith(
         "couldn't resolve a superseded finding's SCM thread",
         expect.objectContaining({ findingId: prior[0]!.id, error: "GitHub said no" }),
@@ -525,6 +552,143 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
         "couldn't resolve a fixed finding's SCM thread",
         expect.objectContaining({ findingId: prior[0]!.id, error: "GitHub said no" }),
       );
+    });
+  });
+
+  describe("review runs of several tasks", () => {
+    beforeEach(async () => {
+      await db
+        .update(repositories)
+        .set({ reviewTaskIds: ["builtin:review-pr", SECURITY_TASK_ID] })
+        .where(eq(repositories.id, repoId));
+    });
+    afterEach(async () => {
+      await db
+        .update(repositories)
+        .set({ reviewTaskIds: ["builtin:review-pr"] })
+        .where(eq(repositories.id, repoId));
+    });
+
+    /**
+     * Enqueues a review run of both tasks and completes each task run with
+     * `outcomes[i]` (null: it fails for good), its `fixed` findings (by ID)
+     * reported fixed. With two finished task runs the correlation fails, so
+     * the run is posted with its findings unmerged.
+     */
+    async function completeRun(
+      number: number,
+      mode: "incremental" | "fresh",
+      outcomes: ({ found: Finding[]; fixed?: string[] } | null)[],
+    ) {
+      const enqueued = await enqueue(number, mode);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      expect(enqueued.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", SECURITY_TASK_ID]);
+      for (const [i, run] of enqueued.runs.entries()) {
+        const job = await reviewJob(run.reviewId);
+        const outcome = outcomes[i];
+        if (!outcome) {
+          await onReviewJobFailed(db, { ...job, status: "failed" }, "boom");
+          continue;
+        }
+        const given = reviewTriggerContext(job.payload).previousReview?.openFindings ?? [];
+        const fixedOpenFindings = (outcome.fixed ?? []).map((id) =>
+          given.findIndex((f) => f.id === id),
+        );
+        expect(fixedOpenFindings).not.toContain(-1);
+        await onReviewJobCompleted(db, {
+          ...job,
+          status: "completed",
+          result: { ...result(outcome.found), fixedOpenFindings },
+        });
+      }
+      const [run] = await db
+        .select()
+        .from(reviewRuns)
+        .where(eq(reviewRuns.id, enqueued.reviewRunId));
+      if (run!.status === "correlating") {
+        // Nothing is posted, superseded or resolved before the correlation ends.
+        expect(state.scm.calls.postReview.filter((p) => p.number === number)).toHaveLength(0);
+        const [correlation] = await db
+          .select()
+          .from(jobs)
+          .where(eq(jobs.id, run!.correlationJobId!));
+        await onCorrelationFailed(db, correlation!, "Correlation failed: boom");
+      }
+      return enqueued;
+    }
+
+    it("resolves an open finding only when every completed task run reported it fixed", async () => {
+      const { number, findings: prior } = await reviewedPr([
+        {},
+        { path: "src/other.ts" },
+        { path: "src/third.ts" },
+      ]);
+      await completeRun(number, "incremental", [
+        { found: [], fixed: [prior[0]!.id, prior[1]!.id] },
+        { found: [], fixed: [prior[1]!.id, prior[2]!.id] },
+      ]);
+      expect((await findingRow(prior[0]!.id)).status).toBe("open");
+      expect((await findingRow(prior[1]!.id)).status).toBe("resolved");
+      expect((await findingRow(prior[2]!.id)).status).toBe("open");
+      expect(state.scm.calls.resolveThread).toEqual([
+        { number, commentId: prior[1]!.scmCommentId },
+      ]);
+      expect(state.scm.calls.postReview.filter((p) => p.number === number)).toHaveLength(1);
+    });
+
+    it("keeps a finding open that another task of the run raised again", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      await completeRun(number, "incremental", [
+        { found: [], fixed: [prior[0]!.id] },
+        { found: [newFinding()], fixed: [prior[0]!.id] },
+      ]);
+      expect((await findingRow(prior[0]!.id)).status).toBe("open");
+    });
+
+    it("lets a failed task run neither block the post nor the resolve", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      const enqueued = await completeRun(number, "incremental", [
+        { found: [], fixed: [prior[0]!.id] },
+        null,
+      ]);
+      expect((await findingRow(prior[0]!.id)).status).toBe("resolved");
+      const posts = state.scm.calls.postReview.filter((p) => p.number === number);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.summary).toContain(
+        "This review task failed, so its findings are missing: Security review.",
+      );
+      const [run] = await db
+        .select()
+        .from(reviewRuns)
+        .where(eq(reviewRuns.id, enqueued.reviewRunId));
+      expect(run!.status).toBe("completed");
+    });
+
+    it("never supersedes findings of the same review run", async () => {
+      const { number, findings: prior } = await reviewedPr();
+      const enqueued = await completeRun(number, "fresh", [
+        { found: [newFinding()] },
+        { found: [newFinding({ title: "Same issue, other task" })] },
+      ]);
+      const runFindings = await listReviewRunFindings(db, enqueued.reviewRunId);
+      expect(runFindings).toHaveLength(2);
+      // Both stay open and are posted (the correlation failed, so unmerged).
+      expect(runFindings.map((f) => f.status)).toEqual(["open", "open"]);
+      expect(runFindings.every((f) => f.scmCommentId !== null)).toBe(true);
+      // The earlier review's matching finding is superseded once, by the run's first finding.
+      expect(await findingRow(prior[0]!.id)).toMatchObject({
+        status: "superseded",
+        supersededByFindingId: runFindings[0]!.id,
+      });
+      expect(state.scm.calls.resolveThread).toEqual([
+        { number, commentId: prior[0]!.scmCommentId },
+      ]);
+      const posts = state.scm.calls.postReview.filter((p) => p.number === number);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.inlineComments.map((c) => c.body.split("\n").at(-1))).toEqual([
+        "_correctness · confidence 90% · Review a pull request_",
+        "_correctness · confidence 90% · Security review_",
+      ]);
     });
   });
 

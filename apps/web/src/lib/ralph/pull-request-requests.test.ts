@@ -6,6 +6,7 @@ import {
   closeDb,
   createDb,
   createReview,
+  createReviewRun,
   findings,
   getJob,
   getLane,
@@ -17,6 +18,7 @@ import {
   listReviewFindings,
   listMessages,
   ralphRuns,
+  reviewRuns,
   reviews,
   runMigrations,
   claimJob,
@@ -239,21 +241,46 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     return { run: (await getRun(db, run.id))!, sessionId };
   }
 
-  /** A completed Omniralph review of `prNumber` at `headSha`, with `count` open findings (and a dismissed one). */
+  /**
+   * A completed Omniralph review run of `prNumber` at `headSha` of two tasks:
+   * the first's review has `count` open findings (and a dismissed one), the
+   * second's a finding merged into the first's. `reviewId`: the first review.
+   */
   async function review(
     options: { prNumber?: number; headSha?: string; count?: number; repositoryId?: string } = {},
   ) {
-    const created = await createReview(db, {
+    const target = {
       repositoryId: options.repositoryId ?? repoId,
       prNumber: options.prNumber ?? 1,
       headSha: options.headSha ?? "head1",
       baseSha: sha(9),
-      trigger: "webhook",
+      trigger: "webhook" as const,
       profileId: "standard",
+    };
+    const reviewRun = await createReviewRun(db, {
+      ...target,
+      organizationId: orgId,
+      mode: "incremental",
+    });
+    await db.update(reviewRuns).set({ status: "completed" }).where(eq(reviewRuns.id, reviewRun.id));
+    const created = await createReview(db, {
+      ...target,
+      reviewRunId: reviewRun.id,
+      taskId: "builtin:review-pr",
       model: null,
       budget: 200_000,
     });
-    await db.update(reviews).set({ status: "completed" }).where(eq(reviews.id, created.id));
+    const sibling = await createReview(db, {
+      ...target,
+      reviewRunId: reviewRun.id,
+      taskId: "builtin:security-review",
+      model: null,
+      budget: 200_000,
+    });
+    await db
+      .update(reviews)
+      .set({ status: "completed" })
+      .where(inArray(reviews.id, [created.id, sibling.id]));
     const count = options.count ?? 1;
     const row = (i: number) => ({
       reviewId: created.id,
@@ -272,8 +299,9 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
       .values([
         ...Array.from({ length: count }, (_, i) => row(i)),
         { ...row(0), title: "Dismissed one", status: "dismissed" as const },
+        { ...row(0), reviewId: sibling.id, title: "Merged one", status: "merged" as const },
       ]);
-    return created;
+    return { ...reviewRun, reviewId: created.id };
   }
 
   const requestJobs = async (runId: string) =>
@@ -301,6 +329,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     expect(text).toContain("if (!x) return;");
     expect(text).toContain(`push \`${branch}\``);
     expect(text).not.toContain("Dismissed one");
+    expect(text).not.toContain("Merged one");
     expect(linear.bodies(sessionId, "thought")).toContain(
       "Omniralph reviewed the pull request with 1 finding. Working through it.",
     );
@@ -326,13 +355,17 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
   it("replies in the threads of the findings the session reported on, and resolves the fixed ones", async () => {
     const { run, sessionId } = await reviewedEpic();
     const reviewed = await review({ count: 3 });
-    const rows = (await listReviewFindings(db, reviewed.id)).filter((f) => f.status === "open");
+    const rows = (await listReviewFindings(db, reviewed.reviewId)).filter(
+      (f) => f.status === "open",
+    );
     const [fixed, skipped, summaryOnly] = rows as [FindingRow, FindingRow, FindingRow];
     await db.update(findings).set({ scmCommentId: "c-fixed" }).where(eq(findings.id, fixed.id));
     await db.update(findings).set({ scmCommentId: "c-skipped" }).where(eq(findings.id, skipped.id));
     // A finding of another PR's review is never touched.
     const other = await review({ prNumber: 99 });
-    const [foreign] = (await listReviewFindings(db, other.id)).filter((f) => f.status === "open");
+    const [foreign] = (await listReviewFindings(db, other.reviewId)).filter(
+      (f) => f.status === "open",
+    );
     await db
       .update(findings)
       .set({ scmCommentId: "c-foreign" })
@@ -385,7 +418,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
   it("keeps a fixed finding resolved when its thread can't be replied to or resolved", async () => {
     const { run } = await reviewedEpic();
     const reviewed = await review();
-    const [finding] = (await listReviewFindings(db, reviewed.id)).filter(
+    const [finding] = (await listReviewFindings(db, reviewed.reviewId)).filter(
       (f) => f.status === "open",
     );
     await db.update(findings).set({ scmCommentId: "c-1" }).where(eq(findings.id, finding!.id));
@@ -407,7 +440,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
   it("leaves findings open when the session reported an error", async () => {
     const { run } = await reviewedEpic();
     const reviewed = await review();
-    const [finding] = (await listReviewFindings(db, reviewed.id)).filter(
+    const [finding] = (await listReviewFindings(db, reviewed.reviewId)).filter(
       (f) => f.status === "open",
     );
     await db.update(findings).set({ scmCommentId: "c-1" }).where(eq(findings.id, finding!.id));
@@ -441,6 +474,16 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     const stale = await review({ headSha: "old" });
     expect(await respondToReview(deps(), stale.id)).toEqual({ status: "stale" });
     expect((await getMainLane(db, run))?.handledReviewIds).toContain(stale.id);
+    // A review run that hasn't completed (e.g. still correlating) isn't acted on yet.
+    const correlating = await review({ headSha: "head1" });
+    await db
+      .update(reviewRuns)
+      .set({ status: "correlating" })
+      .where(eq(reviewRuns.id, correlating.id));
+    expect(await respondToReview(deps(), correlating.id)).toEqual({
+      status: "ignored",
+      reason: "not_completed",
+    });
     expect(await requestJobs(run.id)).toHaveLength(0);
     expect((await getMainLane(db, run))?.reviewRounds).toBe(0);
     expect((await getRun(db, run.id))?.status).toBe("completed");

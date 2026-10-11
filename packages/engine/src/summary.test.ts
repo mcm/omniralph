@@ -76,4 +76,18 @@ describe("renderSummary", () => {
     expect(text).toContain("- **Tokens:** 200,500 / 200,000");
     expect(text).toContain("commits since `0123456789ab`");
   });
+
+  it("places a preamble after the heading and stop warning, before the stats", () => {
+    const text = renderSummary({ ...base, stopReason: "budget_exhausted" }, url, {
+      preamble: "  Two tasks agree on one issue.\n\nFailed review tasks: Security review  ",
+    });
+    const lines = text.split("\n");
+    const warning = lines.findIndex((l) => l.startsWith("> The token budget"));
+    const preamble = lines.indexOf("Two tasks agree on one issue.");
+    expect(warning).toBeGreaterThan(0);
+    expect(preamble).toBe(warning + 2);
+    expect(lines[preamble + 2]).toBe("Failed review tasks: Security review");
+    expect(lines[preamble + 4]).toBe("- **Profile:** Standard");
+    expect(renderSummary(base, url, { preamble: "  " })).toBe(renderSummary(base, url));
+  });
 });

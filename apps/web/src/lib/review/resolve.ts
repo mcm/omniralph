@@ -1,41 +1,58 @@
 import "server-only";
-import { resolveEarlierOpenFindings, type Database, type FindingRow } from "@omniralph/db";
+import {
+  getReview,
+  listReviewFindings,
+  listReviewRunReviews,
+  resolveEarlierOpenFindings,
+  type Database,
+  type FindingRow,
+  type ReviewTarget,
+} from "@omniralph/db";
 import { sameIssue } from "@omniralph/engine/same-issue";
-import type { ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
 import { reviewUrl } from "./post";
 import { inlineCode } from "./sanitize";
 import { closeFindingThreads } from "./threads";
 
 /**
- * The review re-checked the PR's earlier `open` findings it was given and
- * reported some fixed (`fixedOpenFindings`): those become `resolved`, and
- * their SCM threads get a short reply linking the new review and are
- * resolved. A finding the review didn't confirm fixed stays open, whatever
- * the scope: not raising it again is no verdict. One a new finding matches
- * (`sameIssue`) also stays open. Safe to call again.
+ * The finished task runs of a review run (or a legacy review) re-checked the
+ * PR's earlier `open` findings they were given and reported some fixed
+ * (`fixed_finding_ids`): a finding every finished task run reported fixed
+ * becomes `resolved`, and its SCM thread gets a short reply linking the new
+ * review and is resolved. A finding not every task run confirmed fixed stays
+ * open, whatever the scope: not raising it again is no verdict. One a new
+ * finding of the run matches (`sameIssue`) also stays open. Findings of the
+ * same review run never resolve each other. Safe to call again.
  */
 export async function resolveFixedFindings(
   db: Database,
-  input: {
-    reviewId: string;
-    payload: Pick<ReviewJobPayload, "headSha" | "previousReview">;
-    result: ReviewJobResult;
-  },
+  target: ReviewTarget,
 ): Promise<FindingRow[]> {
-  const { payload, result } = input;
-  const given = payload.previousReview?.openFindings ?? [];
-  const fixed = new Set((result.fixedOpenFindings ?? []).flatMap((i) => given[i]?.id ?? []));
+  const targetReviews =
+    "reviewId" in target
+      ? [await getReview(db, target.reviewId)].filter((r) => r !== null)
+      : await listReviewRunReviews(db, target.reviewRunId);
+  const finished = targetReviews.filter(
+    (r) => r.status === "completed" || r.status === "budget_exhausted",
+  );
+  const [first, ...rest] = finished;
+  if (!first) return [];
+  const fixed = new Set(
+    first.fixedFindingIds.filter((id) => rest.every((r) => r.fixedFindingIds.includes(id))),
+  );
   if (fixed.size === 0) return [];
+  const raised = (await Promise.all(finished.map((r) => listReviewFindings(db, r.id))))
+    .flat()
+    .filter((f) => f.status !== "merged");
   const resolved = await resolveEarlierOpenFindings(
     db,
-    input.reviewId,
-    (prior) => fixed.has(prior.id) && !result.findings.some((f) => sameIssue(prior, f)),
+    target,
+    (prior) => fixed.has(prior.id) && !raised.some((f) => sameIssue(prior, f)),
   );
 
-  const link = reviewUrl(input.reviewId);
-  await closeFindingThreads(db, input.reviewId, {
+  const link = reviewUrl(first.id);
+  await closeFindingThreads(db, first.id, {
     kind: "fixed",
-    message: `A re-review of ${inlineCode(payload.headSha.slice(0, 12))} re-checked this issue and found it fixed, so this thread is resolved.`,
+    message: `A re-review of ${inlineCode(first.headSha.slice(0, 12))} re-checked this issue and found it fixed, so this thread is resolved.`,
     threads: resolved
       .filter((finding) => finding.scmCommentId !== null)
       .map((finding) => ({ finding, link })),

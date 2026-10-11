@@ -150,6 +150,8 @@ describe("view mapping", () => {
         skippedFiles: [{ path: "big.lock", reason: "excluded" }],
         summaryCommentId: null,
         summary: null,
+        scope: null,
+        fixedFindingIds: [],
         error: "clone failed",
         createdAt: new Date(0),
         updatedAt: new Date(0),

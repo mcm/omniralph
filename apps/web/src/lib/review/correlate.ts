@@ -22,6 +22,7 @@ import {
 import { getBuiltinTask } from "@omniralph/tasks";
 import { z } from "zod";
 import { runSpecJobInput } from "@/lib/runs/job";
+import { finishReviewRun } from "./run";
 
 /**
  * Review run correlation: once the last task run of a review run ends with
@@ -32,7 +33,8 @@ import { runSpecJobInput } from "@/lib/runs/job";
  * `run-result` sink hands its result back here: a valid output merges the
  * findings (`applyCorrelation`); a final failure, or an output that doesn't
  * match `CorrelationOutput`, leaves them unmerged and completes the run with
- * the error (`failCorrelation`).
+ * the error (`failCorrelation`). Either way the review run is then posted
+ * (`finishReviewRun`).
  */
 
 /** Dedupe key of a review run's correlation job. */
@@ -133,7 +135,8 @@ export type CorrelationOutcome =
  * Applies a correlation run's result to its review run: a valid output
  * merges its findings and stores the summary; a run that didn't answer, or
  * an output that isn't a `CorrelationOutput`, completes the review run with
- * the error and leaves the findings unmerged. Safe to call again for a replayed result.
+ * the error and leaves the findings unmerged. Then the review run is posted
+ * (once). Safe to call again for a replayed result.
  */
 export async function applyCorrelationResult(
   db: Database,
@@ -141,30 +144,46 @@ export async function applyCorrelationResult(
   result: QueryRunResult,
 ): Promise<CorrelationOutcome> {
   const reviewRunId = invokingReviewRun(job);
+  const outcome = await correlate(db, reviewRunId, job.id, result);
+  await finishReviewRun(db, reviewRunId);
+  return outcome;
+}
+
+async function correlate(
+  db: Database,
+  reviewRunId: string,
+  jobId: string,
+  result: QueryRunResult,
+): Promise<CorrelationOutcome> {
   const output =
     result.outcome === "answered" ? CorrelationOutput.safeParse(result.structured) : null;
   if (!output?.success) {
     const error = output
       ? `Correlation output is invalid: ${z.prettifyError(output.error).slice(0, 2000)}`
       : `Correlation didn't finish (${result.outcome})`;
-    return (await failCorrelation(db, { reviewRunId, jobId: job.id, error }))
+    return (await failCorrelation(db, { reviewRunId, jobId, error }))
       ? { status: "failed", error }
       : { status: "ignored" };
   }
   const applied = await applyCorrelation(db, {
     reviewRunId,
-    jobId: job.id,
+    jobId,
     findings: output.data.findings,
     summary: output.data.summary,
   });
   return applied.applied ? { status: "applied", merged: applied.merged } : { status: "ignored" };
 }
 
-/** A correlation run that failed for good or was canceled: the findings stay unmerged. */
+/**
+ * A correlation run that failed for good or was canceled: the findings stay
+ * unmerged, and the review run is posted with them.
+ */
 export async function onCorrelationFailed(
   db: Database,
   job: Pick<Job, "id" | "payload">,
   error: string,
 ): Promise<void> {
-  await failCorrelation(db, { reviewRunId: invokingReviewRun(job), jobId: job.id, error });
+  const reviewRunId = invokingReviewRun(job);
+  await failCorrelation(db, { reviewRunId, jobId: job.id, error });
+  await finishReviewRun(db, reviewRunId);
 }
