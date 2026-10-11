@@ -38,10 +38,23 @@ export const REPO_SYNC_JOB_TYPE = "repo.sync";
 export const WORKTREE_EXEC_JOB_TYPE = "worktree.exec";
 
 /**
+ * `system` job that cleans up a lane's branch worktree after its PR/MR merged
+ * and carries out the answers to the cleanup questions (push or drop leftover
+ * stashes, push or delete a kept branch). Its payload and result are
+ * `WorktreeCleanupPayload`/`WorktreeCleanupResult`. The only system RPC whose
+ * token may push.
+ */
+export const WORKTREE_CLEANUP_JOB_TYPE = "worktree.cleanup";
+
+/**
  * The system RPCs a harness runs: fixed commands with no Claude session,
  * dispatched by job type (`jobs.type`) as jobs of task type `system`.
  */
-export const SYSTEM_RPCS = [REPO_SYNC_JOB_TYPE, WORKTREE_EXEC_JOB_TYPE] as const;
+export const SYSTEM_RPCS = [
+  REPO_SYNC_JOB_TYPE,
+  WORKTREE_EXEC_JOB_TYPE,
+  WORKTREE_CLEANUP_JOB_TYPE,
+] as const;
 export type SystemRpcName = (typeof SYSTEM_RPCS)[number];
 
 export function isSystemRpc(name: string): name is SystemRpcName {
@@ -84,6 +97,7 @@ const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
   "ralph.cleanup": { taskType: "coding", pool: "long" },
   [REPO_SYNC_JOB_TYPE]: { taskType: "system", pool: null },
   [WORKTREE_EXEC_JOB_TYPE]: { taskType: "system", pool: null },
+  [WORKTREE_CLEANUP_JOB_TYPE]: { taskType: "system", pool: null },
 };
 
 /**

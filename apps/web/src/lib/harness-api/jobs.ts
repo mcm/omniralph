@@ -1,6 +1,7 @@
 import "server-only";
 import {
   HARNESS_TOKEN_TTL_SECONDS,
+  WORKTREE_CLEANUP_JOB_TYPE,
   type JobTaskType,
   type JobToken,
   type JobTokenScope,
@@ -39,12 +40,18 @@ export interface JobScopeInput {
 }
 
 /**
- * The scopes of a legacy job's single token. Legacy `ralph.*` jobs push their
- * commits, relay session activities and download Linear attachments; every
- * other job may only read its repository.
+ * The scopes of a legacy job's or a system RPC's single token. Legacy
+ * `ralph.*` jobs push their commits, relay session activities and download
+ * Linear attachments; `worktree.cleanup` pushes leftover stashes and kept
+ * branches, the only system RPC that may push; every other job may only read
+ * its repository.
  */
 export function jobScopes(job: Pick<JobScopeInput, "type" | "taskType">): JobTokenScope[] {
-  if (job.taskType === "system") return ["credentials:read"];
+  if (job.taskType === "system") {
+    return job.type === WORKTREE_CLEANUP_JOB_TYPE
+      ? ["credentials:read", "credentials:write"]
+      : ["credentials:read"];
+  }
   if (job.type.startsWith("ralph.")) {
     return ["credentials:read", "credentials:write", "run:activity", "run:attachments"];
   }
@@ -80,21 +87,29 @@ export interface SignedJobTokens {
 
 /**
  * Signs a job's tokens: a `lifecycle` and a `session` token for a run-spec job
- * (`runTokenScopes`), one token without a kind for a legacy job or a system
- * RPC (`jobScopes`).
+ * (`runTokenScopes`), a single `lifecycle` token for a system RPC (it runs no
+ * session: the token is the harness's own) and one token without a kind for a
+ * legacy job (`jobScopes` for both).
  */
 export async function signJobTokens(
   job: { id: string } & JobScopeInput,
   harnessId: string,
 ): Promise<SignedJobTokens> {
   if (!isRunSpecJob(job)) {
+    const kind = job.taskType === "system" ? ("lifecycle" as const) : undefined;
     const token = await getTokenSigner().signJobToken({
       jobId: job.id,
       harnessId,
       scopes: jobScopes(job),
+      kind,
     });
     return {
-      jobToken: { jobId: job.id, token, expiresIn: HARNESS_TOKEN_TTL_SECONDS, kind: "legacy" },
+      jobToken: {
+        jobId: job.id,
+        token,
+        expiresIn: HARNESS_TOKEN_TTL_SECONDS,
+        kind: kind ?? "legacy",
+      },
     };
   }
   const sign = async (kind: RunTokenKind): Promise<JobToken> => {

@@ -631,7 +631,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       expect((await jobRow(jobId)).status).toBe("queued");
     });
 
-    it("claims system RPCs without a pool, also on a harness accepting no task types, with one read token", async () => {
+    it("claims system RPCs without a pool, also on a harness accepting no task types, with one lifecycle token", async () => {
       const { organizationId, job } = await claimOrg();
       const agent = await newAgent({ organizationId, acceptedTaskTypes: [] });
       const jobId = await job("repo.sync", { taskType: "system", pool: null });
@@ -645,9 +645,10 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       });
       expect(body.runSpec).toBeUndefined();
       expect(body.sessionToken).toBeUndefined();
+      expect(body.jobToken.kind).toBe("lifecycle");
       expect(await jobPrincipal(body.jobToken.token)).toMatchObject({
         jobId,
-        kind: "legacy",
+        kind: "lifecycle",
         scopes: ["credentials:read"],
       });
     });

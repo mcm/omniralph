@@ -48,6 +48,9 @@ import type { ChatChannel } from "./conversation";
 import type { RalphDeps } from "./run";
 
 vi.mock("server-only", () => ({}));
+
+/** A cleanup job: the `worktree.cleanup` RPC, or a legacy `ralph.cleanup` queued before it. */
+const isCleanupJob = (type: string) => type === "worktree.cleanup" || type === "ralph.cleanup";
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const { handleWebhook } = await import("@/lib/webhooks/ingest");
@@ -259,7 +262,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
-    if (type !== "ralph.cleanup") {
+    if (!isCleanupJob(type)) {
       expect(await onRalphJobStarted(db, job!, harnessId)).toEqual({ skip: false });
     }
     return job!;
@@ -270,7 +273,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;
-    if (done.type === "ralph.cleanup") await onRalphCleanupJobFinished(db, done, ralph());
+    if (isCleanupJob(done.type)) await onRalphCleanupJobFinished(db, done, ralph());
     else await onRalphJobFinished(db, done, ralph());
   }
 
@@ -373,7 +376,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       pull_request: { number: 1, merged: true },
     });
     expect(await res.json()).toEqual({ status: "accepted", event: "merged" });
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult({ unmerged: 1 }));
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ unmerged: 1 }));
     const [merged, question] = posted();
     expect(merged).toContain(`The pull request ${pr.url} was merged, so I removed its worktree`);
     expect(question).toContain(`\`${branch}\` has 1 commit that wasn't merged`);
@@ -422,7 +425,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       context,
     );
     expect(reactions).toEqual([SESSION_REACTION]);
-    const answer = await start(run.id, "ralph.cleanup");
+    const answer = await start(run.id, "worktree.cleanup");
     expect(RalphCleanupPayload.parse(answer.payload).action).toEqual({
       kind: "branch",
       push: false,

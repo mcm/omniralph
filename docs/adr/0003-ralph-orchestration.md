@@ -100,7 +100,8 @@ run lock), skips runs with an active job (they may push again; the next check ca
 acts once per head SHA (`handled_ci_shas`), capped by `ci_fix_rounds`, by adding a pending request
 on the lane and advancing the run.
 
-Cleanup after a merge runs as a `ralph.cleanup` job, because only the run's sticky agent has the
+Cleanup after a merge runs as a `worktree.cleanup` system RPC (formerly a `ralph.cleanup` job,
+same payload and result; ADR 0008), because only the run's sticky agent has the
 branch worktree (and the stash list) on disk. Every check that finds a ralph PR/MR merged goes
 through `recordClosedPullRequest`, which starts it: the merge webhook, a Linear issue moving to
 completed, the review and CI follow-ups, and the reconcile cron (the fallback). It is one of the
@@ -108,9 +109,10 @@ run's jobs (`ralph_run_id`, so `advanceRun` waits for it) but has its own dedupe
 runs after the run is over too; while another job of the run is active, the lane's cleanup waits
 (`pending`) and starts when that job finishes. The questions about leftovers (unapplied stashes, a
 branch with unmerged commits) are stored in `ralph_lanes.cleanup`, answered by replies in the
-run's session, and carried out by further `ralph.cleanup` jobs; the cron deletes a kept branch
+run's session, and carried out by further `worktree.cleanup` RPCs; the cron deletes a kept branch
 whose question timed out (`unmergedBranchTimeoutMinutes`). Agents never get a code-host token for
-this: pushes go through the job's write-scoped git credentials, as for stories.
+this: pushes go through the RPC's write-scoped git credentials (its lifecycle token is the only
+system RPC token that may push), as for stories.
 
 ### The sticky agent
 
@@ -260,8 +262,8 @@ sections *Lanes* and *Requests and run modes* above describe the details; this i
   the job ends. No new endpoint or polling: delivery takes at most one heartbeat (20s).
 - **PR/MR follow-up without new orchestration.** Review responses hang off the `review.run`
   outcome handler; CI failures and merges arrive by webhook with `/api/cron/ralph-reconcile` as the
-  fallback; cleanup is a `ralph.cleanup` job on the sticky agent. These are the "waiting on CI and
-  reviews" loops the second *Revisit when* condition anticipated. They fit the state machine as
+  fallback; cleanup is a `worktree.cleanup` system RPC on the sticky agent. These are the "waiting
+  on CI and reviews" loops the second *Revisit when* condition anticipated. They fit the state machine as
   pending requests plus once-per-review/SHA bookkeeping and the existing 10-minute cron, so Vercel
   Workflows stays deferred.
 - **Attachments.** The control panel gathers Linear upload URLs and records them on the run; agents

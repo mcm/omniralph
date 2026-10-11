@@ -16,7 +16,10 @@ import {
   RalphRequestResult,
   RalphStoryPayload,
   RalphStoryResult,
+  WORKTREE_CLEANUP_JOB_TYPE,
   WORKTREE_EXEC_JOB_TYPE,
+  WorktreeCleanupPayload,
+  WorktreeCleanupResult,
   WorktreeExecPayload,
   WorktreeExecResult,
   type JobSkipReason,
@@ -123,6 +126,15 @@ registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
 });
 
 // No `onStarted`: a cleanup runs after the run is over too, and doesn't make its agent sticky.
+registerJobOutcomeHandler(WORKTREE_CLEANUP_JOB_TYPE, {
+  payload: WorktreeCleanupPayload,
+  isValidResult: (result) => WorktreeCleanupResult.safeParse(result).success,
+  onCompleted: (db, job) => onRalphCleanupJobFinished(db, job),
+  onFailed: (db, job) => onRalphCleanupJobFinished(db, job),
+  onCanceled: (db, job) => onRalphCleanupJobFinished(db, job),
+});
+
+// Legacy `ralph.cleanup` jobs queued before cleanups ran as `worktree.cleanup`.
 registerJobOutcomeHandler(RALPH_CLEANUP_JOB_TYPE, {
   payload: RalphCleanupPayload,
   isValidResult: (result) => RalphCleanupResult.safeParse(result).success,

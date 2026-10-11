@@ -11,6 +11,7 @@ import {
   getRunBySession,
   jobs,
   ralphRuns,
+  repositories,
   runMigrations,
   claimJob,
   updateRepositoryRalphSettings,
@@ -39,13 +40,16 @@ import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
-import { reconcileCleanup } from "./cleanup";
+import { cleanupDedupeKey, reconcileCleanup } from "./cleanup";
 import { cleanupLabel } from "./display";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { handleReply } from "./reply";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
+
+/** A cleanup job: the `worktree.cleanup` RPC, or a legacy `ralph.cleanup` queued before it. */
+const isCleanupJob = (type: string) => type === "worktree.cleanup" || type === "ralph.cleanup";
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -166,7 +170,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
-    if (job!.type !== "ralph.cleanup") {
+    if (!isCleanupJob(job!.type)) {
       expect(await onRalphJobStarted(db, job!, agentA)).toEqual({ skip: false });
     }
     return job!;
@@ -177,7 +181,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;
-    if (done.type === "ralph.cleanup") await onRalphCleanupJobFinished(db, done, deps());
+    if (isCleanupJob(done.type)) await onRalphCleanupJobFinished(db, done, deps());
     else await onRalphJobFinished(db, done, deps());
   }
 
@@ -260,7 +264,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
 
   const cleanupJobs = async (runId: string) =>
     (await db.select().from(jobs).where(eq(jobs.ralphRunId, runId)))
-      .filter((j) => j.type === "ralph.cleanup")
+      .filter((j) => isCleanupJob(j.type))
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
   const actionOf = (job: Job) => RalphCleanupPayload.parse(job.payload).action;
@@ -293,7 +297,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     const t = await epicWithPullRequest();
     merge();
     await reconcileCleanup(deps());
-    const job = await start(t.run.id, "ralph.cleanup");
+    const job = await start(t.run.id, "worktree.cleanup");
     await finish(job, cleanupResult(result));
     return t;
   }
@@ -309,8 +313,15 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     await issueDone(epicId);
     const [job, ...more] = await cleanupJobs(run.id);
     expect(more).toEqual([]);
-    // On the run's sticky agent, which holds the worktree.
-    expect(job!.targetHarnessId).toBe(agentA);
+    // A system RPC on the run's sticky agent, which holds the worktree, one per lane.
+    expect(job).toMatchObject({
+      type: "worktree.cleanup",
+      taskType: "system",
+      pool: null,
+      taskId: null,
+      targetHarnessId: agentA,
+      dedupeKey: cleanupDedupeKey((await lane(run)).id),
+    });
     expect(actionOf(job!)).toEqual({ kind: "cleanup", mergedSha: sha(1), stashes: [] });
     expect(RalphCleanupPayload.parse(job!.payload)).toMatchObject({
       branch,
@@ -324,7 +335,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     });
     expect(cleanupLabel((await lane(run)).cleanup)).toBe("Merged: cleaning up");
 
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
     const prUrl = scm.changeRequests[0]!.url;
     expect(responses(run).at(-1)).toBe(
       `The pull request ${prUrl} was merged, so I removed its worktree and the local branch \`${branch}\`.`,
@@ -347,6 +358,50 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(await cleanupJobs(run.id)).toHaveLength(1);
   });
 
+  it("runs the cleanup as worktree.cleanup on the tasks coding path too", async () => {
+    const { run, branch } = await epicWithPullRequest();
+    await db.update(repositories).set({ codingPath: "tasks" }).where(eq(repositories.id, repoId));
+    try {
+      merge();
+      await reconcileCleanup(deps());
+      const [job, ...more] = await cleanupJobs(run.id);
+      expect(more).toEqual([]);
+      expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system", taskId: null });
+      expect(job!.targetHarnessId).toBe(agentA);
+      await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ unmerged: 1 }));
+      expect((await lane(run)).cleanup).toMatchObject({ status: "done" });
+      expect(optionsOf(selects(run).at(-1))).toEqual(["Push to origin", "Delete"]);
+      // The answer runs another worktree.cleanup.
+      await reply(run, "Delete");
+      const answer = await start(run.id, "worktree.cleanup");
+      expect(actionOf(answer)).toEqual({ kind: "branch", push: false });
+      await finish(answer, cleanupResult());
+      expect(responses(run).at(-1)).toContain(`\`${branch}\``);
+    } finally {
+      await db
+        .update(repositories)
+        .set({ codingPath: "legacy" })
+        .where(eq(repositories.id, repoId));
+    }
+  });
+
+  it("still applies a ralph.cleanup job queued before cleanups ran as worktree.cleanup", async () => {
+    const { run, branch } = await epicWithPullRequest();
+    merge();
+    await reconcileCleanup(deps());
+    const [queued] = await cleanupJobs(run.id);
+    await db
+      .update(jobs)
+      .set({ type: "ralph.cleanup", taskType: "coding", pool: "long" })
+      .where(eq(jobs.id, queued!.id));
+    const job = await start(run.id, "ralph.cleanup");
+    await finish(job, cleanupResult());
+    expect(responses(run).at(-1)).toBe(
+      `The pull request ${scm.changeRequests.at(-1)!.url} was merged, so I removed its worktree and the local branch \`${branch}\`.`,
+    );
+    expect((await lane(run)).cleanup).toMatchObject({ status: "done", questions: [] });
+  });
+
   it("cleans up when the cron or the merge webhook sees the PR merged", async () => {
     // The cron, as a fallback for a missed webhook.
     const first = await epicWithPullRequest();
@@ -354,7 +409,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     merge();
     expect(await reconcileCleanup(deps())).toMatchObject({ checked: 1, failed: 0 });
     expect(await cleanupJobs(first.run.id)).toHaveLength(1);
-    await finish(await start(first.run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(first.run.id, "worktree.cleanup"), cleanupResult());
     expect(responses(first.run).at(-1)).toContain("was merged, so I removed its worktree");
 
     // The merge webhook.
@@ -464,7 +519,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(await reply(run, "Push to a branch on origin")).toEqual({ kind: "cleanup_answer" });
     const answer = (await cleanupJobs(run.id)).at(-1)!;
     expect(actionOf(answer)).toEqual({ kind: "stashes", push: true, shas: [stash] });
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult({ handled: 1 }));
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 1 }));
     expect(responses(run).at(-1)).toBe(
       `Pushed 1 stashed change to \`${stashBranch}\` on origin (one commit each) and dropped it here.`,
     );
@@ -489,7 +544,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     await reply(run, "drop");
     const answer = (await cleanupJobs(run.id)).at(-1)!;
     expect(actionOf(answer)).toEqual({ kind: "stashes", push: false, shas: [stash, blocked] });
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult({ handled: 2 }));
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 2 }));
     expect(responses(run).at(-1)).toBe(`Dropped 2 stashed changes from ${run.linearIdentifier}.`);
   });
 
@@ -506,7 +561,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
 
     await reply(run, "Push to origin");
     expect(actionOf((await cleanupJobs(run.id)).at(-1)!)).toEqual({ kind: "branch", push: true });
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
     expect(responses(run).at(-1)).toBe(
       `Pushed \`${branch}\` to origin and deleted the local branch.`,
     );
@@ -520,7 +575,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       kind: "branch",
       push: false,
     });
-    await finish(await start(told.run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(told.run.id, "worktree.cleanup"), cleanupResult());
     expect(responses(told.run).at(-1)).toBe(
       `Deleted the local branch \`${told.branch}\` with its 1 unmerged commit.`,
     );
@@ -535,7 +590,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       kind: "branch",
       push: false,
     });
-    await finish(await start(quiet.run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(quiet.run.id, "worktree.cleanup"), cleanupResult());
     expect((await lane(quiet.run)).cleanup?.questions).toEqual([]);
     expect(responses(quiet.run).at(-1)).toBe(
       `Nobody answered within 60 minutes, so I deleted the local branch \`${quiet.branch}\` with its 2 unmerged commits.`,
@@ -547,7 +602,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     await reconcileCleanup(deps(), new Date(Date.now() + 4 * MINUTE));
     expect(await cleanupJobs(custom.run.id)).toHaveLength(1);
     await reconcileCleanup(deps(), new Date(Date.now() + 6 * MINUTE));
-    await finish(await start(custom.run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(custom.run.id, "worktree.cleanup"), cleanupResult());
     expect(responses(custom.run).at(-1)).toContain("Nobody answered within 5 minutes");
   });
 
@@ -571,11 +626,11 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(linear.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
       "still carrying out the previous answer",
     );
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult({ handled: 1 }));
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 1 }));
     expect((await lane(run)).cleanup?.questions.map((q) => q.kind)).toEqual(["branch"]);
 
     await reply(run, "Push to origin");
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
     expect(responses(run).at(-1)).toBe(
       `Pushed \`${branch}\` to origin and deleted the local branch.`,
     );
@@ -586,7 +641,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     const { run } = await cleanedUp({ unmerged: 1 });
     await reply(run, "Push to origin");
     await finish(
-      await start(run.id, "ralph.cleanup"),
+      await start(run.id, "worktree.cleanup"),
       cleanupResult({ error: "git push failed: rejected" }),
     );
     expect(responses(run).at(-1)).toBe(
@@ -615,11 +670,11 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(await cleanupJobs(run.id)).toHaveLength(1);
 
     // The agent failed to clean up: the cron starts it again.
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult({ error: "disk full" }));
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ error: "disk full" }));
     expect((await lane(run)).cleanup).toMatchObject({ status: "failed", error: "disk full" });
     await reconcileCleanup(deps());
     expect(await cleanupJobs(run.id)).toHaveLength(2);
-    await finish(await start(run.id, "ralph.cleanup"), cleanupResult());
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
     expect((await lane(run)).cleanup).toMatchObject({ status: "done" });
   });
 });

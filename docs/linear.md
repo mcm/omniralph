@@ -329,7 +329,7 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
 - **Cleanup after the merge.** When a ralph PR/MR merges (its merge webhook: GitHub
   `pull_request` closed + merged, GitLab **Merge request events** `merge`; the Linear issue moving
   to a completed state; or `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR), a
-  `ralph.cleanup` job on the run's sticky agent stashes the worktree's uncommitted changes, removes
+  `worktree.cleanup` system RPC on the run's sticky agent stashes the worktree's uncommitted changes, removes
   the branch worktree, and deletes the local branch unless it has commits the merged head doesn't
   (remote branches are never deleted). It waits while one of the run's jobs is queued or running.
   The session then says "The pull request `<url>` was merged, so I removed its worktree and the
