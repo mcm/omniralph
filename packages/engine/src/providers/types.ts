@@ -19,6 +19,8 @@ export interface ReviewRequest {
   model?: string;
   /** Whether the reviewer may read files beyond the diff (`Read`/`Grep`/`Glob`). */
   allowExploration: boolean;
+  /** System text appended after `REVIEW_SYSTEM_PROMPT` (the output contract), e.g. a review agent's. */
+  systemAppend?: string;
   signal?: AbortSignal;
 }
 
@@ -39,6 +41,8 @@ export interface TaskReviewResult {
    * and found fixed. Only meaningful when `completed`.
    */
   fixedPrevious?: number[];
+  /** The answer's optional `summary` (only from a valid, `completed` answer). */
+  summary?: string;
 }
 
 export interface ReviewProvider {

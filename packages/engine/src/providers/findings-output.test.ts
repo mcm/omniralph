@@ -61,6 +61,29 @@ describe("parseFindingsOutput", () => {
     ).toMatchObject({ ok: false, fixedPrevious: [0] });
   });
 
+  it("returns an optional summary string and rejects any other summary", () => {
+    expect(parseFindingsOutput(JSON.stringify({ findings: [f], summary: "Adds a flag." }))).toEqual(
+      {
+        ok: true,
+        findings: [f],
+        fixedPrevious: [],
+        summary: "Adds a flag.",
+      },
+    );
+    // Blank or null summaries are no summary.
+    for (const summary of [" ", null]) {
+      expect(parseFindingsOutput(JSON.stringify({ findings: [], summary }))).toEqual({
+        ok: true,
+        findings: [],
+        fixedPrevious: [],
+      });
+    }
+    const invalid = parseFindingsOutput(JSON.stringify({ findings: [f], summary: { text: "x" } }));
+    expect(invalid).toMatchObject({ ok: false, error: expect.stringContaining("summary") });
+    // The findings are kept for the repair (and for salvaging after it).
+    expect(invalid.ok === false && invalid.items).toEqual([f]);
+  });
+
   it("reports missing JSON, bad JSON, wrong shapes and invalid items", () => {
     expect(parseFindingsOutput("LGTM")).toMatchObject({
       ok: false,

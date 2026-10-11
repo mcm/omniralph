@@ -2,7 +2,8 @@ import { Finding, FindingList } from "@omniralph/shared";
 import type { DiffFile } from "../diff.js";
 
 export type ParsedOutput =
-  | { ok: true; findings: Finding[]; fixedPrevious: number[] }
+  /** `summary` is the answer's optional `summary` string (a review task's overview of the change). */
+  | { ok: true; findings: Finding[]; fixedPrevious: number[]; summary?: string }
   /** `items` (and `fixedPrevious`) are set when the JSON shape was right but some items are invalid. */
   | { ok: false; error: string; items?: unknown[]; fixedPrevious?: number[] };
 
@@ -50,7 +51,20 @@ function fixedPreviousIds(value: unknown): number[] {
     .sort((a, b) => a - b);
 }
 
-/** Parses the model's final answer: `{"findings": [...]}` or a bare array, optionally fenced. */
+/** The answer's `summary`: absent, a string, or an error message when it's anything else. */
+function summaryOf(value: unknown): { summary?: string } | { error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const summary = (value as { summary?: unknown }).summary;
+  if (summary === undefined || summary === null) return {};
+  if (typeof summary !== "string") return { error: "summary: Expected a string." };
+  return summary.trim() === "" ? {} : { summary };
+}
+
+/**
+ * Parses the model's final answer: `{"findings": [...], "summary"?: string}`
+ * or a bare array, optionally fenced. A `summary` that isn't a string makes
+ * the answer invalid.
+ */
 export function parseFindingsOutput(text: string): ParsedOutput {
   const candidate = jsonCandidate(text);
   if (candidate === null) return { ok: false, error: "The answer contains no JSON." };
@@ -63,13 +77,17 @@ export function parseFindingsOutput(text: string): ParsedOutput {
   const items = findingItems(value);
   if (!items) return { ok: false, error: 'Expected an object {"findings": [...]}.' };
   const fixedPrevious = fixedPreviousIds(value);
+  const summary = summaryOf(value);
   const parsed = FindingList.safeParse(items);
-  if (parsed.success) return { ok: true, findings: parsed.data, fixedPrevious };
-  const issues = parsed.error.issues.slice(0, 20).map((issue) => {
+  if (parsed.success && !("error" in summary)) {
+    return { ok: true, findings: parsed.data, fixedPrevious, ...summary };
+  }
+  const issues = (parsed.success ? [] : parsed.error.issues.slice(0, 20)).map((issue) => {
     const [index, ...rest] = issue.path;
     const field = rest.map((key) => `.${String(key)}`).join("");
     return `findings[${String(index)}]${field}: ${issue.message}`;
   });
+  if ("error" in summary) issues.push(summary.error);
   return { ok: false, error: `Invalid findings:\n${issues.join("\n")}`, items, fixedPrevious };
 }
 
