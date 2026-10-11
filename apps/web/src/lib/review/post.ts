@@ -2,7 +2,6 @@ import "server-only";
 import {
   CANCELED_REVIEW_ERROR,
   getRepositoryWithConnection,
-  postReviewOnce,
   postReviewRunOnce,
   type Database,
   type FindingRow,
@@ -12,12 +11,7 @@ import {
 import type { ReviewResult } from "@omniralph/engine";
 import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
-import {
-  REVIEW_SKIP_REASONS,
-  type Finding,
-  type ReviewJobPayload,
-  type ReviewJobResult,
-} from "@omniralph/shared";
+import { REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
 import { getBuiltinTask } from "@omniralph/tasks";
 import { getAppUrl } from "@/lib/app-url";
 import { connectionBotHandle } from "@/lib/mentions/commands";
@@ -40,9 +34,6 @@ const MAX_FAILURE_NOTE_ERROR_CHARS = 1_000;
 export function reviewUrl(reviewId: string): string {
   return `${getAppUrl()}/reviews/${reviewId}`;
 }
-
-/** What posting reads from a review job's payload or trigger context. */
-export type ReviewPostInput = Pick<ReviewJobPayload, "changeRequest" | "reviewConfig">;
 
 /** Where and how to post for a review: the SCM adapter, repository, bot handle and sanitize context. */
 export async function repositoryTarget(
@@ -110,85 +101,6 @@ function asFinding(row: FindingRow): Finding {
     body: row.body,
     confidence: row.confidence,
   };
-}
-
-/**
- * Posts a finished review (inline comments with sanitized text and suggestion
- * blocks, plus the summary comment) and stores the comment IDs. At most once
- * per review: a replayed or concurrent call finds the stored summary comment
- * ID and posts nothing. Returns whether this call posted.
- */
-export async function postReview(
-  db: Database,
-  input: { reviewId: string; payload: ReviewPostInput; result: ReviewJobResult },
-): Promise<boolean> {
-  const { posted } = await postReviewOnce(db, input.reviewId, async (review, rows) => {
-    if (review.status !== "completed" && review.status !== "budget_exhausted") return null;
-    const { adapter, handle, repo, sanitize } = await repositoryTarget(
-      db,
-      review,
-      input.payload.changeRequest.author,
-    );
-    const { profile } = input.payload.reviewConfig;
-    const summaryInput: ReviewResult = {
-      profile: { id: profile.id, name: profile.name },
-      budget: review.budget,
-      findings: rows.map(asFinding),
-      usage: input.result.usage,
-      skipped: input.result.skipped,
-      stopReason: input.result.stopReason,
-      scope: input.result.scope,
-      discarded: input.result.discarded,
-      fixedOpenFindings: input.result.fixedOpenFindings ?? [],
-    };
-    const posted = await adapter.postReview(repo, review.prNumber, {
-      summary: capSummary(renderSummary(summaryInput, reviewUrl(review.id), { botHandle: handle })),
-      inlineComments: rows.map((row) => inlineComment(row, sanitize)),
-      commitSha: review.headSha,
-    });
-    const findingCommentIds = new Map<string, string>();
-    rows.forEach((row, i) => {
-      const id = posted.inlineCommentIds[i];
-      if (id) findingCommentIds.set(row.id, id);
-    });
-    return { summaryCommentId: posted.summaryCommentId, findingCommentIds };
-  });
-  return posted;
-}
-
-/** Posts a short note that the review failed, at most once per review. */
-export async function postFailureNote(
-  db: Database,
-  input: { reviewId: string; payload: ReviewPostInput; error: string },
-): Promise<boolean> {
-  const { posted } = await postReviewOnce(db, input.reviewId, async (review) => {
-    if (review.status !== "failed") return null;
-    const { adapter, repo, sanitize } = await repositoryTarget(
-      db,
-      review,
-      input.payload.changeRequest.author,
-    );
-    const error = sanitizeCapped(
-      input.error.replace(/\s+/g, " ").trim(),
-      sanitize,
-      MAX_FAILURE_NOTE_ERROR_CHARS,
-    );
-    const summary = [
-      "## Omniralph review",
-      "",
-      `The review of ${inlineCode(review.headSha.slice(0, 12))} failed: ${error}`,
-      "",
-      `[View the review](${reviewUrl(review.id)})`,
-      "",
-    ].join("\n");
-    const result = await adapter.postReview(repo, review.prNumber, {
-      summary,
-      inlineComments: [],
-      commitSha: review.headSha,
-    });
-    return { summaryCommentId: result.summaryCommentId };
-  });
-  return posted;
 }
 
 /** Reviews whose findings were saved: a review run's completed task runs. */

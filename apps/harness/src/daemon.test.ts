@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
   CapabilityRegistry,
+  defaultCapabilities,
   RetryableJobError,
   type Capability,
   type JobContext,
@@ -473,6 +474,25 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
+  it("fails a legacy review.run job (no task) instead of running it", async () => {
+    const id = randomUUID();
+    const runReviewTask = vi.fn(async () => ({}));
+    const { api, claims, daemon } = setup({
+      capabilities: defaultCapabilities(),
+      runReviewTask,
+    });
+    claims.push(job(id, { type: "review.run", taskType: "review", taskId: null }));
+    void daemon.run();
+    await settle();
+    expect(runReviewTask).not.toHaveBeenCalled();
+    expect(api.submitResult).not.toHaveBeenCalled();
+    expect(api.submitFailure).toHaveBeenCalledWith(id, {
+      retryable: false,
+      error: "unknown job type review.run",
+    });
+    await daemon.shutdown();
+  });
+
   it("drops the outcome when the job was taken over by another agent (409)", async () => {
     const { api, claims, daemon } = setup({});
     api.submitResult.mockRejectedValueOnce(new ApiError(409, "not_current_agent", "409"));
@@ -859,7 +879,7 @@ describe("AgentDaemon", () => {
       sameSpec: c.runSpec === spec,
     }));
     const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
-    // A run-spec job of type review.run: dispatched by its run spec, not its type.
+    // A run-spec job of a legacy type: dispatched by its run spec, not its type.
     claims.push(job(runId, { taskType: "query", taskId: "builtin:test-task" }));
     claims.push(job(legacyId));
     void daemon.run();

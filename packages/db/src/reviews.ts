@@ -1,7 +1,7 @@
 /**
  * Review runs, reviews and their findings. A review run is created for a PR
  * event with one review per review task it fans out to; a review row is
- * created when its `review.run` job is enqueued (`queued`), becomes `running`
+ * created when its `review.task` job is enqueued (`queued`), becomes `running`
  * when an agent starts the job and ends `completed` / `budget_exhausted`
  * (result), `failed` or `skipped`. The review run follows its reviews
  * (`settleReviewRun`). `summary_comment_id` is set once the review (or its
@@ -719,47 +719,12 @@ export async function saveReviewOutcome(
 }
 
 /**
- * Runs `post` while holding a row lock on the review, unless it was already
- * posted (`summary_comment_id` set): concurrent or replayed calls wait for
- * the lock and then see the stored comment ID, so a review is posted at most
- * once. `post` returns the comment IDs to store, or null when it posted nothing.
- */
-export async function postReviewOnce(
-  db: Database,
-  reviewId: string,
-  post: (
-    review: Review,
-    findings: FindingRow[],
-  ) => Promise<{ summaryCommentId: string; findingCommentIds?: Map<string, string> } | null>,
-): Promise<{ posted: boolean }> {
-  return db.transaction(async (tx: Transaction) => {
-    const [review] = await tx.select().from(reviews).where(eq(reviews.id, reviewId)).for("update");
-    if (!review || review.summaryCommentId !== null) return { posted: false };
-    const rows = await tx
-      .select()
-      .from(findings)
-      .where(eq(findings.reviewId, reviewId))
-      .orderBy(asc(findings.createdAt), asc(findings.id));
-    const posted = await post(review, rows);
-    if (!posted) return { posted: false };
-    const { summaryCommentId, findingCommentIds } = posted;
-    await tx.update(reviews).set({ summaryCommentId }).where(eq(reviews.id, reviewId));
-    for (const [findingId, commentId] of findingCommentIds ?? []) {
-      await tx
-        .update(findings)
-        .set({ scmCommentId: commentId })
-        .where(and(eq(findings.id, findingId), eq(findings.reviewId, reviewId)));
-    }
-    return { posted: true };
-  });
-}
-
-/**
  * Runs `post` while holding a row lock on the review run, unless it was
- * already posted (`summary_comment_id` set), as `postReviewOnce` does for a
- * review: a review run is posted at most once. `post` gets the run, its
- * reviews and their findings (any status) and returns the comment IDs to
- * store (the inline ones on the run's findings), or null when it posted nothing.
+ * already posted (`summary_comment_id` set): concurrent or replayed calls
+ * wait for the lock and then see the stored comment ID, so a review run is
+ * posted at most once. `post` gets the run, its reviews and their findings
+ * (any status) and returns the comment IDs to store (the inline ones on the
+ * run's findings), or null when it posted nothing.
  */
 export async function postReviewRunOnce(
   db: Database,

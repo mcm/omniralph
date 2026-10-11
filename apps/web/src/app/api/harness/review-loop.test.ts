@@ -467,7 +467,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       organizationId: orgId,
       status: "queued",
       targetHarnessId: null,
-      type: "review.run",
+      type: "review.task",
       taskType: "review",
       pool: "short",
       taskId: "builtin:review-pr",

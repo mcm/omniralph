@@ -279,7 +279,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
     });
 
   async function reviewJob(reviewId: string): Promise<Job> {
-    const rows = await db.select().from(jobs).where(eq(jobs.type, "review.run"));
+    const rows = await db.select().from(jobs).where(eq(jobs.type, "review.task"));
     const job = rows.find((j) => reviewTriggerContext(j.payload).reviewId === reviewId);
     if (!job) throw new Error(`no job for review ${reviewId}`);
     return job;
@@ -701,7 +701,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
         await db
           .select()
           .from(jobs)
-          .where(and(eq(jobs.type, "review.run")))
+          .where(and(eq(jobs.type, "review.task")))
       ).filter((j) => reviewTriggerContext(j.payload).prNumber === number);
 
     it("enqueues a manual fresh review of the PR's current head", async () => {

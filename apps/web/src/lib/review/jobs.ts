@@ -13,31 +13,27 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import { ReviewJobPayload, ReviewJobResult, reviewTriggerContext } from "@omniralph/shared";
+import {
+  ReviewJobResult,
+  reviewTriggerContext,
+  type ReviewTriggerContext,
+} from "@omniralph/shared";
 import { startCorrelation } from "./correlate";
-import { postFailureNote, postReview } from "./post";
-import { resolveFixedFindings } from "./resolve";
 import { finishReviewRun } from "./run";
-import { supersedeEarlierFindings } from "./supersede";
 
 /**
- * The review side of the job lifecycle: the `review` sink (for
- * `builtin:review-pr` runs) and, for `review.run` jobs enqueued before the
- * port, the legacy outcome handler call these hooks so that the `reviews`
- * row follows its job and the result is persisted. The review's review run
+ * The review side of the job lifecycle: the `review` sink (review task runs,
+ * e.g. `builtin:review-pr`) calls these hooks so that the `reviews` row
+ * follows its job and the result is persisted. The review's review run
  * follows: it is `running` once one of its reviews started and ends once
  * all of them did (`settleReviewRun`, maybe after a correlation); then it
  * is posted as one review, or one failure note when every task run failed
- * (`finishReviewRun`). A legacy review without a review run is posted
- * itself.
+ * (`finishReviewRun`).
  */
 
-/**
- * What the hooks read from a review job: its legacy `ReviewJobPayload` or the
- * `ReviewTriggerContext` of its run, which has the same fields.
- */
+/** What the hooks read from a review job: the `ReviewTriggerContext` of its run. */
 export type ReviewJobState = Pick<
-  ReviewJobPayload,
+  ReviewTriggerContext,
   | "reviewId"
   | "repositoryId"
   | "prNumber"
@@ -48,11 +44,9 @@ export type ReviewJobState = Pick<
   | "previousReview"
 >;
 
-/** A review job's state: its run's trigger context, or its legacy `review.run` payload. */
-export function reviewJobState(job: Pick<Job, "payload" | "taskId">): ReviewJobState {
-  return job.taskId === null
-    ? ReviewJobPayload.parse(job.payload)
-    : reviewTriggerContext(job.payload);
+/** A review job's state: its run's trigger context. */
+export function reviewJobState(job: Pick<Job, "payload">): ReviewJobState {
+  return reviewTriggerContext(job.payload);
 }
 
 /**
@@ -105,21 +99,12 @@ async function onReviewStarted(
   return { skip: false };
 }
 
-/** Validates a review job's result before the job is completed. */
-export function parseReviewResult(result: unknown): ReviewJobResult | null {
-  const parsed = ReviewJobResult.safeParse(result);
-  return parsed.success ? parsed.data : null;
-}
-
 /**
  * For a `completed` review job: persists the review and its findings (once),
- * with the earlier open findings it re-checked and found fixed. A review of
- * a review run then settles the run, which is posted once it ended
- * (`finishReviewRun`). A legacy review without a review run is posted to
- * the PR/MR itself (once); a `fresh` one then supersedes the earlier open
- * findings it raised again, and the earlier open findings it found fixed
- * are resolved. Safe to call again for a replayed result; that also retries
- * a post that failed before.
+ * with the earlier open findings it re-checked and found fixed, then settles
+ * its review run, which is posted once it ended (`finishReviewRun`). Safe to
+ * call again for a replayed result; that also retries a post that failed
+ * before.
  */
 async function onReviewCompleted(
   db: Database,
@@ -127,14 +112,7 @@ async function onReviewCompleted(
   result: ReviewJobResult & { summary?: string },
 ): Promise<void> {
   await saveReviewResult(db, state, result);
-  const review = await getReview(db, state.reviewId);
-  if (review?.reviewRunId) {
-    await settleAndFinishReviewRun(db, review.reviewRunId);
-    return;
-  }
-  await postReview(db, { reviewId: state.reviewId, payload: state, result });
-  if (state.mode === "fresh") await supersedeEarlierFindings(db, { reviewId: state.reviewId });
-  await resolveFixedFindings(db, { reviewId: state.reviewId });
+  await settleReviewRunOf(db, state.reviewId);
 }
 
 /**
@@ -196,20 +174,14 @@ async function onReviewRetry(db: Database, state: ReviewJobState, error: string 
 /**
  * A final failure: the review becomes `failed` with the error. Its review
  * run settles: it is posted without the task's findings, naming the task,
- * or gets one failure note when every task run failed. A legacy review
- * without a review run gets a short failure note on the PR/MR (once).
+ * or gets one failure note when every task run failed.
  */
 async function onReviewFailed(db: Database, state: ReviewJobState, error: string): Promise<void> {
   await finishReview(db, state.reviewId, { status: "failed", error });
-  const review = await getReview(db, state.reviewId);
-  if (review?.reviewRunId) {
-    await settleAndFinishReviewRun(db, review.reviewRunId);
-    return;
-  }
-  await postFailureNote(db, { reviewId: state.reviewId, payload: state, error });
+  await settleReviewRunOf(db, state.reviewId);
 }
 
-// The hooks by job: the `review` sink's and the legacy `review.run` outcome handler's.
+// The hooks by job, for the `review` sink.
 
 export function onReviewJobStarted(db: Database, job: Job, harnessId: string) {
   return onReviewStarted(db, job, reviewJobState(job), harnessId);

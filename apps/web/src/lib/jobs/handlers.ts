@@ -16,19 +16,9 @@ import {
   RalphRequestResult,
   RalphStoryPayload,
   RalphStoryResult,
-  REVIEW_JOB_TYPE,
-  ReviewJobPayload,
   type JobSkipReason,
 } from "@omniralph/shared";
 import type { z } from "zod";
-import {
-  onReviewJobCanceled,
-  onReviewJobCompleted,
-  onReviewJobFailed,
-  onReviewJobRetry,
-  onReviewJobStarted,
-  parseReviewResult,
-} from "@/lib/review/jobs";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
 
 /**
@@ -81,16 +71,6 @@ export function jobOutcomeHandler(
   if (!handler) return undefined;
   return handler.payload.safeParse(job.payload).success ? handler : undefined;
 }
-
-registerJobOutcomeHandler(REVIEW_JOB_TYPE, {
-  payload: ReviewJobPayload,
-  onStarted: onReviewJobStarted,
-  isValidResult: (result) => parseReviewResult(result) !== null,
-  onCompleted: onReviewJobCompleted,
-  onFailed: (db, job, error) => onReviewJobFailed(db, job, error ?? "Review failed"),
-  onRetry: onReviewJobRetry,
-  onCanceled: onReviewJobCanceled,
-});
 
 registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
   payload: RalphDescribePrPayload,

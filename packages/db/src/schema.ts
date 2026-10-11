@@ -1245,7 +1245,7 @@ export const jobs = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    /** Job type, e.g. `review.run` or `repo.sync`. */
+    /** Job type, e.g. `review.task` or `repo.sync`. */
     type: text("type").notNull(),
     /**
      * How the harness runs the job: `query`, `review`, `coding` or `system` (a

@@ -3,13 +3,12 @@ import type { JobPayload, RunSpec } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
-import { reviewCapability } from "./review.js";
 
 /**
  * What a capability's Claude sessions may do. The agent builds the SDK's
- * permission options from it (`sdkPermissions` in `tool-policy.ts`). Review
- * is read-only: `Read`/`Grep`/`Glob` inside the job's worktree, nothing else.
- * Ralph edits and runs commands in its branch worktree.
+ * permission options from it (`sdkPermissions` in `tool-policy.ts`). Ralph
+ * edits and runs commands in its branch worktree; run-spec sessions get theirs
+ * from their agent and task (`queryToolPolicy` in `lifecycle/tool-policy.ts`).
  */
 export interface ToolPolicy {
   /** The session's tools: exactly `allowedTools`, or Claude Code's whole default set. */
@@ -99,7 +98,7 @@ export type JobOutput = Record<string, unknown>;
 
 export interface Capability {
   name: string;
-  /** Job types (`jobs.type`) this capability runs, e.g. `review.run`. */
+  /** Job types (`jobs.type`) this capability runs, e.g. `ralph.story`. */
   jobTypes: readonly string[];
   toolPolicy: ToolPolicy;
   /** Job types whose sessions run with a different policy than `toolPolicy`. */
@@ -164,5 +163,5 @@ export function toolPolicyFor(capability: Capability, jobType: string): ToolPoli
 
 /** The capabilities this build of the harness ships (system RPCs live in `rpc/`). */
 export function defaultCapabilities(): Capability[] {
-  return [reviewCapability, ralphCapability];
+  return [ralphCapability];
 }

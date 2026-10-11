@@ -250,7 +250,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       .where(eq(jobs.repositoryId, repositoryId))
       .then((rows) =>
         rows.filter(
-          (j) => j.type === "review.run" && reviewTriggerContext(j.payload).prNumber === prNumber,
+          (j) => j.type === "review.task" && reviewTriggerContext(j.payload).prNumber === prNumber,
         ),
       );
 
@@ -277,7 +277,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       const [job] = await prJobs(githubRepoId, number);
       expect(job).toMatchObject({
         id: body.jobId,
-        type: "review.run",
+        type: "review.task",
         taskType: "review",
         pool: "short",
       });

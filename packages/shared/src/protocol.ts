@@ -66,7 +66,6 @@ export interface JobRouting {
 }
 
 const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
-  "review.run": { taskType: "review", pool: "short" },
   "review.reply": { taskType: "query", pool: "short" },
   "review.learn-rule": { taskType: "query", pool: "short" },
   "chat.ask": { taskType: "query", pool: "short" },
