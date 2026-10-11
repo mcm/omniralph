@@ -5,6 +5,7 @@ import type { SinkKind } from "@omniralph/tasks";
 import type { z } from "zod";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
 import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
+import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
 
@@ -46,7 +47,9 @@ function registered<Output>(sink: Sink<Output>): Sink {
 }
 
 const SINKS = new Map<SinkKind, Sink>(
-  [registered(learnedRuleSink), registered(findingThreadSink)].map((sink) => [sink.kind, sink]),
+  [registered(learnedRuleSink), registered(findingThreadSink), registered(chatThreadSink)].map(
+    (sink) => [sink.kind, sink],
+  ),
 );
 
 /** The sink of `kind`, or undefined while none is implemented. */

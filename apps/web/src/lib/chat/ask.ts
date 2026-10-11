@@ -1,82 +1,43 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import {
-  appendChatMessage,
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
   listHarnessOverview,
-  postJobCommentOnce,
-  type HarnessOverview,
   type Database,
-  type Job,
   type Repository,
   type ScmConnection,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import {
-  harnessVersionAtLeast,
   CHAT_ASK_JOB_TYPE,
-  CHAT_ASK_MIN_AGENT_VERSION,
-  ChatAskJobPayload,
-  ChatAskJobResult,
-  chatAskTokenCap,
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
-  legacyJobRouting,
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QueryRunResult,
+  RunSpecJobPayload,
 } from "@omniralph/shared";
-import { isHarnessOnline } from "@/lib/harnesses/display";
+import { getBuiltinTask } from "@omniralph/tasks";
+import { z } from "zod";
 import type { JobDispatcher } from "@/lib/dispatch";
+import { queryClaimableHarnesses, type QueryHarnessStatus } from "@/lib/harnesses/claimable";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
-import {
-  defaultChatChannel,
-  loadChatTarget,
-  type ChatSource,
-  type ChatTarget,
-} from "@/lib/ralph/conversation";
 import { errorMessage } from "@/lib/ralph/notify";
-import { fileWebUrl } from "@/lib/repositories/web-url";
-import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
-import { jobRepository } from "@/lib/scm/adapters";
+import { runSpecJobInput } from "@/lib/runs/job";
+import { runTokenBudget } from "@/lib/runs/resolve";
+import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
 /**
- * Code questions from chat: a `chat.ask` job answers a question about a
- * repository on an agent host (read-only, in the review sandbox); these
- * hooks post its answer in the chat thread it came from and record it in the
- * thread's history. The control panel never reads the code itself.
+ * Code questions from chat: a question about a repository enqueues a run of
+ * the built-in query task `builtin:ask-about-code` (job type `chat.ask`),
+ * answered on a harness from a read-only checkout of the default branch,
+ * capped at 25% of the profile budget; its `chat-thread` sink
+ * (`lib/sinks/chat-thread.ts`) posts the answer in the thread and records it
+ * in the thread's history. The control panel never reads the code itself.
  */
 
-/** An agent that could take a code question, or why it can't. */
-export interface ChatAskAgentStatus {
-  name: string;
-  version: string | null;
-  /** Whether it runs `chat.ask`: online, accepting `query` tasks, recent enough. */
-  capable: boolean;
-}
-
-/**
- * The organization's agents that would get a `chat.ask` job of
- * `repositoryId` (its pinned agents when it has some, else all), each saying
- * whether it can run one now. Revoked and offline agents are left out.
- */
-export function chatAskAgents(
-  agents: readonly HarnessOverview[],
-  repositoryId: string,
-  now: Date = new Date(),
-): ChatAskAgentStatus[] {
-  const live = agents.filter((a) => !a.revokedAt);
-  const pinned = live.filter((a) => a.pinnedRepositories.some((r) => r.id === repositoryId));
-  return (pinned.length > 0 ? pinned : live)
-    .filter((a) => isHarnessOnline(a.lastHeartbeatAt, now))
-    .map((a) => ({
-      name: a.name,
-      version: a.reportedVersion,
-      capable:
-        a.acceptedTaskTypes.includes("query") &&
-        a.reportedVersion !== null &&
-        harnessVersionAtLeast(a.reportedVersion, CHAT_ASK_MIN_AGENT_VERSION),
-    }));
-}
+export const ASK_ABOUT_CODE_TASK_ID = "builtin:ask-about-code";
 
 /** Normalized for dedupe: the same question asked twice in a thread runs once. */
 function questionKey(question: string): string {
@@ -145,6 +106,11 @@ export function chatAskContext(input: {
   return clip(parts.join("\n\n"), MAX_CHAT_ASK_CONTEXT_LENGTH);
 }
 
+/** What a previous code question's trigger context holds for a follow-up. */
+const PreviousQuestion = ChatThreadContext.pick({ repository: true }).extend({
+  question: z.string(),
+});
+
 /** The thread's last answered code question, for a follow-up's context. */
 async function previousQuestion(
   db: Database,
@@ -156,20 +122,21 @@ async function previousQuestion(
     type: CHAT_ASK_JOB_TYPE,
     chatThreadId,
   });
-  const payload = ChatAskJobPayload.safeParse(job?.payload);
-  const result = ChatAskJobResult.safeParse(job?.result);
-  if (!payload.success || !result.success || result.data.answer === null) return null;
+  const payload = RunSpecJobPayload.safeParse(job?.payload);
+  const context = payload.success && PreviousQuestion.safeParse(payload.data.trigger.context);
+  const result = QueryRunResult.safeParse(job?.result);
+  if (!context || !context.success || !result.success || result.data.answer === null) return null;
   return {
-    repository: payload.data.repository.fullPath,
-    question: payload.data.question,
+    repository: context.data.repository,
+    question: context.data.question,
     answer: result.data.answer,
   };
 }
 
 export type EnqueueChatAskOutcome =
   | { status: "unknown_repository" }
-  /** No online agent that would get the job runs `chat.ask`: nothing was enqueued. */
-  | { status: "no_capable_agent"; agents: ChatAskAgentStatus[] }
+  /** No online harness that would get the run can claim it: nothing was enqueued. */
+  | { status: "no_capable_harness"; harnesses: QueryHarnessStatus[] }
   | { status: "failed"; error: string }
   | { status: "enqueued" | "duplicate"; jobId: string; repository: Repository };
 
@@ -181,8 +148,8 @@ export interface EnqueueChatAskDeps {
 
 /**
  * Hands a question about one of the organization's connected repositories
- * (`repositoryId`, already matched by the caller) to an agent as a
- * `chat.ask` job answered from its default branch. The same question asked
+ * (`repositoryId`, already matched by the caller) to a harness as a run of
+ * `builtin:ask-about-code` answered from its default branch. The same question asked
  * again in the thread while the first one runs is not enqueued twice.
  */
 export async function enqueueChatAsk(
@@ -211,12 +178,13 @@ export async function enqueueChatAsk(
   }
   const { repository, connection } = found;
 
-  const agents = chatAskAgents(
+  const harnesses = queryClaimableHarnesses(
     await listHarnessOverview(db, input.organizationId),
     repository.id,
+    QUERY_TASKS_MIN_HARNESS_VERSION,
     input.now,
   );
-  if (!agents.some((a) => a.capable)) return { status: "no_capable_agent", agents };
+  if (!harnesses.some((h) => h.capable)) return { status: "no_capable_harness", harnesses };
 
   let defaultBranch: string;
   try {
@@ -231,142 +199,36 @@ export async function enqueueChatAsk(
     };
   }
 
+  const task = getBuiltinTask(ASK_ABOUT_CODE_TASK_ID);
+  if (!task) throw new Error(`Built-in task ${ASK_ABOUT_CODE_TASK_ID} is missing`);
   const question = clip(input.question.trim(), MAX_CHAT_ASK_QUESTION_LENGTH);
-  const payload = ChatAskJobPayload.parse({
-    repositoryId: repository.id,
-    repository: jobRepository(repository, connection),
-    defaultBranch,
+  const context = chatAskContext({
+    previous: await previousQuestion(db, input.organizationId, input.chatThreadId),
+    messages: input.messages,
+    attachments: input.attachments,
+  });
+  const trigger = {
+    repository: repository.fullPath,
+    branch: defaultBranch,
+    provider: repository.provider,
     question,
-    context: chatAskContext({
-      previous: await previousQuestion(db, input.organizationId, input.chatThreadId),
-      messages: input.messages,
-      attachments: input.attachments,
-    }),
     chatThreadId: input.chatThreadId,
-    model: settings.profile.model,
-    maxTokens: chatAskTokenCap(settings.profile.maxTokensPerReview),
-  } satisfies ChatAskJobPayload);
+    // Trimmed, as `buildChatAskPrompt` quoted it.
+    chat: { context: context?.trim() || null },
+    budgetTokens: runTokenBudget(task, settings.profile) ?? settings.profile.maxTokensPerReview,
+  } satisfies ChatThreadContext & Record<string, unknown>;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,
     type: CHAT_ASK_JOB_TYPE,
-    ...legacyJobRouting(CHAT_ASK_JOB_TYPE),
-    payload,
-    repositoryId: repository.id,
+    ...runSpecJobInput(task, {
+      trigger: { kind: "chat.request", context: trigger },
+      repositoryId: repository.id,
+      // A missing default branch (e.g. an empty repository) finishes with `no_checkout`.
+      ref: defaultBranch,
+      requireCheckout: true,
+    }),
+    minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
-}
-
-/** Validates a code question's result before the job is completed. */
-export function parseChatAskResult(result: unknown): ChatAskJobResult | null {
-  const parsed = ChatAskJobResult.safeParse(result);
-  return parsed.success ? parsed.data : null;
-}
-
-/**
- * Posts `render`'s text (sanitized) in the job's thread and records it as an
- * assistant message, at most once per job (the posted message's ID is kept
- * on the job). False when nothing was posted: already posted, or the thread
- * or its connection is gone (logged). `source` is the deployment's chat bot
- * unless a test passes another.
- */
-async function postInThread(
-  db: Database,
-  job: Job,
-  source: ChatSource,
-  render: (payload: ChatAskJobPayload, target: ChatTarget) => string,
-): Promise<boolean> {
-  const payload = ChatAskJobPayload.parse(job.payload);
-  const { posted } = await postJobCommentOnce(db, job.id, async () => {
-    const target = await loadChatTarget(source, {
-      chatThreadId: payload.chatThreadId,
-      organizationId: job.organizationId,
-      repositoryId: payload.repositoryId,
-    });
-    if (!target) {
-      console.warn(
-        `Skipping the answer of chat.ask job ${job.id}: the thread or its chat connection is gone`,
-      );
-      return null;
-    }
-    const markdown = sanitizeCapped(
-      render(payload, target),
-      { allowedHosts: target.allowedHosts },
-      MAX_BODY_CHARS,
-    );
-    const message = await target.send(() =>
-      target.adapter.postMessage(target.thread.externalThreadId, { markdown }),
-    );
-    await appendChatMessage(db, {
-      threadId: target.thread.id,
-      role: "assistant",
-      content: markdown,
-    });
-    return message.id;
-  });
-  return posted;
-}
-
-/** Our own text (not model output): the files the answer cites, linked on the code host. */
-function referencesLine(
-  payload: ChatAskJobPayload,
-  result: ChatAskJobResult,
-  repositoryUrl: string | null,
-): string | null {
-  const references = result.references ?? [];
-  if (references.length === 0) return null;
-  const links = references.map((reference) => {
-    const lines =
-      reference.startLine === undefined
-        ? ""
-        : reference.endLine !== undefined && reference.endLine !== reference.startLine
-          ? `:${reference.startLine}-${reference.endLine}`
-          : `:${reference.startLine}`;
-    const label = inlineCode(`${reference.path}${lines}`);
-    return repositoryUrl
-      ? `[${label}](${fileWebUrl(payload.repository.provider, repositoryUrl, payload.defaultBranch, reference)})`
-      : label;
-  });
-  return `Files: ${links.join(", ")}`;
-}
-
-/**
- * For a `completed` code question: posts the answer (with links to the
- * files it cites), or a note why there is none, in the thread. Safe to call
- * again for a replayed result: it posts at most once.
- */
-export async function onChatAskJobCompleted(
-  db: Database,
-  job: Job,
-  source: ChatSource = defaultChatChannel,
-): Promise<boolean> {
-  const result = ChatAskJobResult.parse(job.result);
-  return postInThread(db, job, source, (payload, target) => {
-    const repo = inlineCode(payload.repository.fullPath);
-    switch (result.outcome) {
-      case "answered": {
-        const files = referencesLine(payload, result, target.repositoryUrl);
-        return files ? `${result.answer}\n\n${files}` : (result.answer ?? "");
-      }
-      case "budget_exhausted":
-        return `Sorry, I couldn't finish an answer about ${repo} within the token budget for code questions (${payload.maxTokens.toLocaleString("en-US")} tokens). Try a narrower question.`;
-      case "no_checkout":
-        return `Sorry, I couldn't answer: ${repo} has no ${inlineCode(payload.defaultBranch)} branch to read.`;
-    }
-  });
-}
-
-/** A code question that failed for good: a short apology in the thread (once). */
-export async function onChatAskJobFailed(
-  db: Database,
-  job: Job,
-  source: ChatSource = defaultChatChannel,
-): Promise<boolean> {
-  return postInThread(
-    db,
-    job,
-    source,
-    (payload) =>
-      `Sorry, I couldn't answer that question about ${inlineCode(payload.repository.fullPath)}; the job failed. Try asking again later.`,
-  );
 }

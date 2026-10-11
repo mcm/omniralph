@@ -15,7 +15,7 @@ import {
   type Database,
   type RepositoryOverview,
 } from "@omniralph/db";
-import { CHAT_ASK_MIN_AGENT_VERSION, MAX_CHAT_ASK_QUESTION_LENGTH } from "@omniralph/shared";
+import { MAX_CHAT_ASK_QUESTION_LENGTH, QUERY_TASKS_MIN_HARNESS_VERSION } from "@omniralph/shared";
 import { z } from "zod";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
@@ -523,14 +523,14 @@ export const askAboutCodeTool = defineChatTool({
     switch (outcome.status) {
       case "unknown_repository":
         return UNKNOWN_REPOSITORY;
-      case "no_capable_agent":
+      case "no_capable_harness":
         return {
-          error: "no_capable_agent",
+          error: "no_capable_harness",
           message:
-            outcome.agents.length === 0
+            outcome.harnesses.length === 0
               ? `No harness of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the harnesses on ${appUrl}/harnesses.`
-              : `None of the online harnesses that would take this question can answer code questions: that needs a harness accepting query tasks on version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can change or update the harnesses on ${appUrl}/harnesses.`,
-          harnesses: outcome.agents,
+              : `None of the online harnesses that would take this question can answer code questions: that needs a harness accepting query tasks on version ${QUERY_TASKS_MIN_HARNESS_VERSION} or later. Nothing was queued. An admin can change or update the harnesses on ${appUrl}/harnesses.`,
+          harnesses: outcome.harnesses,
         };
       case "failed":
         return { error: "failed", message: outcome.error };

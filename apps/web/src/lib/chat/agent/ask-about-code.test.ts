@@ -17,7 +17,11 @@ import {
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { ChatAskJobPayload, type ChatAskJobResult } from "@omniralph/shared";
+import {
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  RunSpecJobPayload,
+  type QueryRunResult,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { Thread } from "chat";
 import { and, eq } from "drizzle-orm";
@@ -34,7 +38,8 @@ import { toAiTools, type ChatToolContext } from "./tools";
 vi.mock("server-only", () => ({}));
 
 const { chatTools } = await import("./registry");
-const { chatAskAgents, chatAskContext } = await import("../ask");
+const { chatAskContext, chatAskDedupeKey } = await import("../ask");
+const { queryClaimableHarnesses } = await import("@/lib/harnesses/claimable");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -48,53 +53,49 @@ const unlinked: ChatActor = { kind: "unlinked" };
 
 type Result = Record<string, unknown>;
 
-describe("chatAskAgents", () => {
+describe("queryClaimableHarnesses", () => {
   const now = new Date("2026-10-10T12:00:00Z");
-  const agent = (over: Partial<Parameters<typeof chatAskAgents>[0][number]> = {}) =>
+  type Overview = Parameters<typeof queryClaimableHarnesses>[0][number];
+  const harness = (over: Partial<Overview> = {}) =>
     ({
       name: "a",
-      reportedVersion: "0.8.0",
+      reportedVersion: "0.9.0",
       revokedAt: null,
       lastHeartbeatAt: now,
       acceptedTaskTypes: ["query", "review"],
       pinnedRepositories: [],
       ...over,
-    }) as unknown as Parameters<typeof chatAskAgents>[0][number];
+    }) as unknown as Overview;
+  const claimable = (harnesses: Overview[], repositoryId = "r1") =>
+    queryClaimableHarnesses(harnesses, repositoryId, "0.9.0", now);
 
-  it("counts online agents accepting query tasks at a recent enough version", () => {
-    expect(chatAskAgents([agent()], "r1", now)).toEqual([
-      { name: "a", version: "0.8.0", capable: true },
+  it("counts online harnesses accepting query tasks on the minimum version or later", () => {
+    expect(claimable([harness(), harness({ name: "newer", reportedVersion: "0.10.0" })])).toEqual([
+      { name: "a", version: "0.9.0", capable: true },
+      { name: "newer", version: "0.10.0", capable: true },
     ]);
     const incapable = [
-      agent({ name: "old", reportedVersion: "0.7.0" }),
-      agent({ name: "unknown", reportedVersion: null }),
-      agent({ name: "no-query", acceptedTaskTypes: ["review", "coding"] }),
+      harness({ name: "old", reportedVersion: "0.8.0" }),
+      harness({ name: "unknown", reportedVersion: null }),
+      harness({ name: "no-query", acceptedTaskTypes: ["review", "coding"] }),
     ];
-    expect(chatAskAgents(incapable, "r1", now).map((a) => a.capable)).toEqual([
-      false,
-      false,
-      false,
-    ]);
+    expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false]);
   });
 
-  it("leaves out offline and revoked harnesses, and only counts pinned agents of a pinned repository", () => {
+  it("leaves out offline and revoked harnesses, and only counts pinned harnesses of a pinned repository", () => {
     const old = new Date(now.getTime() - 60 * 60_000);
     expect(
-      chatAskAgents(
-        [agent({ lastHeartbeatAt: old }), agent({ revokedAt: now, name: "revoked" })],
-        "r1",
-        now,
-      ),
+      claimable([harness({ lastHeartbeatAt: old }), harness({ revokedAt: now, name: "revoked" })]),
     ).toEqual([]);
-    const pinned = agent({
+    const pinned = harness({
       name: "pinned",
-      reportedVersion: "0.7.0",
+      reportedVersion: "0.8.0",
       pinnedRepositories: [{ id: "r1" }] as never,
     });
-    expect(chatAskAgents([agent(), pinned], "r1", now)).toEqual([
-      { name: "pinned", version: "0.7.0", capable: false },
+    expect(claimable([harness(), pinned])).toEqual([
+      { name: "pinned", version: "0.8.0", capable: false },
     ]);
-    expect(chatAskAgents([agent(), pinned], "r2", now)).toHaveLength(2);
+    expect(claimable([harness(), pinned], "r2")).toHaveLength(2);
   });
 });
 
@@ -201,8 +202,14 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       .from(jobs)
       .where(and(eq(jobs.type, "chat.ask"), eq(jobs.organizationId, orgId)))
       .then((rows) =>
-        rows.filter((j) => (j.payload as { chatThreadId?: string }).chatThreadId === chatThreadId),
+        rows.filter(
+          (j) => RunSpecJobPayload.parse(j.payload).trigger.context.chatThreadId === chatThreadId,
+        ),
       );
+
+  /** A code question's conversation excerpt, as its trigger context stores it. */
+  const contextOf = (payload: unknown) =>
+    (RunSpecJobPayload.parse(payload).trigger.context.chat as { context: string | null }).context;
 
   async function seedOrg(name: string, slug: string) {
     const [org] = await db.insert(organizations).values({ name }).returning();
@@ -266,7 +273,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   beforeEach(async () => {
     scm = new FakeScmAdapter();
     const capable = {
-      reportedVersion: "0.8.0",
+      reportedVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       lastHeartbeatAt: new Date(),
       revokedAt: null,
     };
@@ -279,7 +286,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(chatTools.ask_about_code?.tier).toBe("read");
   });
 
-  it("enqueues a chat.ask job of the default branch and says it's looking into it", async () => {
+  it("enqueues a builtin:ask-about-code run of the default branch and says it's looking into it", async () => {
     const h = await harness();
 
     const result = await ask(h, {
@@ -293,19 +300,33 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       status: "queued",
       repositoryId,
       targetHarnessId: null,
+      taskType: "query",
+      pool: "short",
+      taskId: "builtin:ask-about-code",
+      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      dedupeKey: chatAskDedupeKey(h.chatThread.id, "How are webhooks verified?"),
     });
-    const payload = ChatAskJobPayload.parse(job!.payload);
-    expect(payload).toMatchObject({
+    const payload = RunSpecJobPayload.parse(job!.payload);
+    expect(payload).toEqual({
+      trigger: {
+        kind: "chat.request",
+        context: {
+          repository: "acme/api",
+          branch: "develop",
+          provider: "github",
+          question: "How are webhooks verified?",
+          chatThreadId: h.chatThread.id,
+          chat: {
+            context: "Latest messages:\nAda Lovelace: how are webhooks verified in acme/api?",
+          },
+          // 25% of the default profile's budget.
+          budgetTokens: expect.any(Number),
+        },
+      },
       repositoryId,
-      repository: { provider: "github", fullPath: "acme/api" },
-      defaultBranch: "develop",
-      question: "How are webhooks verified?",
-      chatThreadId: h.chatThread.id,
-      maxTokens: expect.any(Number),
+      ref: "develop",
+      requireCheckout: true,
     });
-    expect(payload.context).toBe(
-      "Latest messages:\nAda Lovelace: how are webhooks verified in acme/api?",
-    );
     expect(h.thread.post).toHaveBeenCalledWith({ markdown: "Looking into `acme/api`…" });
     expect(h.handedOff).toHaveBeenCalled();
     expect((await listChatMessages(db, h.chatThread.id, 10)).at(-1)).toMatchObject({
@@ -364,7 +385,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     });
     expect(result).toMatchObject({ status: "asked" });
     const [job] = await chatAskJobs(h.chatThread.id);
-    const { context } = ChatAskJobPayload.parse(job!.payload);
+    const context = contextOf(job!.payload);
     expect(context).toContain("File app.log:\nError: signature mismatch at 12");
     expect(context).toContain("Image shot.png");
   });
@@ -405,9 +426,11 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     const h = await harness();
     await ask(h, { repository: "acme/api", question: "Where are sessions stored?" });
     const [first] = await chatAskJobs(h.chatThread.id);
-    const result: ChatAskJobResult = {
+    const result: QueryRunResult = {
       answer: "In Redis, see `src/session.ts`.",
       outcome: "answered",
+      structured: null,
+      references: [],
       usage: { inputTokens: 10, outputTokens: 5 },
       durationMs: 1,
     };
@@ -419,7 +442,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     await ask(h, { repository: "acme/api", question: "How long do they live?" });
 
     const followUp = (await chatAskJobs(h.chatThread.id)).find((j) => j.id !== first!.id)!;
-    const context = ChatAskJobPayload.parse(followUp.payload).context!;
+    const context = contextOf(followUp.payload)!;
     expect(context).toContain(
       "Previous code question in this thread (about acme/api):\nWhere are sessions stored?",
     );
@@ -439,17 +462,20 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   it("enqueues nothing when no online harness can answer code questions", async () => {
     const h = await harness();
 
-    await setAgent(harnessId, { reportedVersion: "0.7.0" });
+    await setAgent(harnessId, { reportedVersion: "0.8.0" });
     const old = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(old).toMatchObject({
-      error: "no_capable_agent",
-      harnesses: [{ name: "acme-agent", version: "0.7.0", capable: false }],
+      error: "no_capable_harness",
+      harnesses: [{ name: "acme-agent", version: "0.8.0", capable: false }],
     });
-    expect(old.message).toContain("0.8.0");
+    expect(old.message).toContain(QUERY_TASKS_MIN_HARNESS_VERSION);
 
-    await setAgent(harnessId, { reportedVersion: "0.8.0", lastHeartbeatAt: null });
+    await setAgent(harnessId, {
+      reportedVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      lastHeartbeatAt: null,
+    });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
-    expect(offline).toMatchObject({ error: "no_capable_agent", harnesses: [] });
+    expect(offline).toMatchObject({ error: "no_capable_harness", harnesses: [] });
     expect(offline.message).toContain("online");
 
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
@@ -472,7 +498,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     const result = await ask(h, { repository: "acme/api", question: "What is this?" });
 
     expect(result).toMatchObject({
-      error: "no_capable_agent",
+      error: "no_capable_harness",
       harnesses: [{ name: "pinned-agent", capable: false }],
     });
     await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));

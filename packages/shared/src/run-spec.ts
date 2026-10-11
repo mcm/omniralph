@@ -14,6 +14,13 @@ import {
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
 
+/**
+ * The first harness release that runs query tasks through the fixed
+ * lifecycle; query runs that need it carry it as their
+ * `min_harness_version`, so older harnesses leave them queued.
+ */
+export const QUERY_TASKS_MIN_HARNESS_VERSION = "0.9.0";
+
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
   kind: TriggerKindSchema,

@@ -138,9 +138,9 @@ describe("review capability", () => {
     };
   }
 
-  it("is read-only and runs review.run and chat.ask jobs (not the ported query tasks)", () => {
+  it("is read-only and runs review.run jobs (not the ported query tasks)", () => {
     const capability = createReviewCapability();
-    expect(capability.jobTypes).toEqual(["review.run", "chat.ask"]);
+    expect(capability.jobTypes).toEqual(["review.run"]);
     expect(capability.toolPolicy).toBe(REVIEW_TOOL_POLICY);
     expect(REVIEW_TOOL_POLICY.allowedTools).toEqual(["Read", "Grep", "Glob"]);
     expect(REVIEW_TOOL_POLICY.disallowedTools).toEqual(
