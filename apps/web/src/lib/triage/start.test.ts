@@ -180,7 +180,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",
-      targetAgentId: null,
+      targetHarnessId: null,
     });
 
     const payload = await payloadOf(job.id);
@@ -235,7 +235,7 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     const run = await getTriageRunBySession(db, event.sessionId);
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job.repositoryId).toBeNull();
-    expect(job).toMatchObject({ status: "queued", targetAgentId: null });
+    expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
     const payload = await payloadOf(job.id);
     expect(payload.repository).toBeNull();
     expect(payload.reply).toBeNull();

@@ -7,8 +7,8 @@ import { and, asc, count, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
-  agentRepoPins,
-  agents,
+  harnessRepoPins,
+  harnesses,
   repositories,
   reviewProfiles,
   reviews,
@@ -381,7 +381,7 @@ export async function disconnectRepository(
       .where(and(eq(repositories.id, id), eq(repositories.organizationId, organizationId)))
       .returning();
     if (!row) return null;
-    await tx.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, id));
+    await tx.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, id));
     return row;
   });
 }
@@ -398,7 +398,7 @@ export interface RepositoryOverview {
   baseUrl: string;
   profileId: string;
   profileName: string;
-  pinnedAgents: { id: string; name: string }[];
+  pinnedHarnesses: { id: string; name: string }[];
   lastReviewAt: Date | null;
 }
 
@@ -448,7 +448,7 @@ function overviewQuery(db: Database, organizationId: string) {
     .$dynamic();
 }
 
-type OverviewRow = Omit<RepositoryOverview, "pinnedAgents" | "lastReviewAt">;
+type OverviewRow = Omit<RepositoryOverview, "pinnedHarnesses" | "lastReviewAt">;
 
 async function withPinsAndLastReview(
   db: Database,
@@ -459,11 +459,15 @@ async function withPinsAndLastReview(
   const ids = rows.map((r) => r.id);
   const [pins, lastReviews] = await Promise.all([
     db
-      .select({ repositoryId: agentRepoPins.repositoryId, id: agents.id, name: agents.name })
-      .from(agentRepoPins)
-      .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
-      .where(inArray(agentRepoPins.repositoryId, ids))
-      .orderBy(asc(agents.name)),
+      .select({
+        repositoryId: harnessRepoPins.repositoryId,
+        id: harnesses.id,
+        name: harnesses.name,
+      })
+      .from(harnessRepoPins)
+      .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
+      .where(inArray(harnessRepoPins.repositoryId, ids))
+      .orderBy(asc(harnesses.name)),
     db
       .select({ repositoryId: reviews.repositoryId, at: max(reviews.createdAt) })
       .from(reviews)
@@ -480,7 +484,7 @@ async function withPinsAndLastReview(
   const lastReviewByRepo = new Map(lastReviews.map((r) => [r.repositoryId, r.at]));
   return rows.map((row) => ({
     ...row,
-    pinnedAgents: pinsByRepo.get(row.id) ?? [],
+    pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
     lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
   }));
 }
@@ -523,12 +527,12 @@ export type PinRepositoryResult =
 
 /**
  * Pins a connected repository to an agent: its jobs are then targeted at that
- * agent (see `pinnedAgentFor`). Revoked agents, disconnected repositories and
+ * agent (see `pinnedHarnessFor`). Revoked agents, disconnected repositories and
  * agents of another organization than the repository's can't be pinned.
  */
-export async function pinRepositoryToAgent(
+export async function pinRepositoryToHarness(
   db: Database,
-  input: { agentId: string; repositoryId: string },
+  input: { harnessId: string; repositoryId: string },
 ): Promise<PinRepositoryResult> {
   return db.transaction(async (tx) => {
     const [repo] = await tx
@@ -538,40 +542,40 @@ export async function pinRepositoryToAgent(
       .limit(1);
     if (!repo) return "unknown_repository";
     const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
+      .select({ id: harnesses.id })
+      .from(harnesses)
       .where(
         and(
-          eq(agents.id, input.agentId),
-          eq(agents.organizationId, repo.organizationId),
-          isNull(agents.revokedAt),
+          eq(harnesses.id, input.harnessId),
+          eq(harnesses.organizationId, repo.organizationId),
+          isNull(harnesses.revokedAt),
         ),
       )
       .limit(1);
     if (!agent) return "unknown_agent";
     const inserted = await tx
-      .insert(agentRepoPins)
-      .values({ agentId: input.agentId, repositoryId: input.repositoryId })
+      .insert(harnessRepoPins)
+      .values({ harnessId: input.harnessId, repositoryId: input.repositoryId })
       .onConflictDoNothing()
-      .returning({ id: agentRepoPins.id });
+      .returning({ id: harnessRepoPins.id });
     return inserted.length > 0 ? "pinned" : "already_pinned";
   });
 }
 
 /** Removes a pin. Returns false if there was none. */
-export async function unpinRepositoryFromAgent(
+export async function unpinRepositoryFromHarness(
   db: Database,
-  input: { agentId: string; repositoryId: string },
+  input: { harnessId: string; repositoryId: string },
 ): Promise<boolean> {
   const rows = await db
-    .delete(agentRepoPins)
+    .delete(harnessRepoPins)
     .where(
       and(
-        eq(agentRepoPins.agentId, input.agentId),
-        eq(agentRepoPins.repositoryId, input.repositoryId),
+        eq(harnessRepoPins.harnessId, input.harnessId),
+        eq(harnessRepoPins.repositoryId, input.repositoryId),
       ),
     )
-    .returning({ id: agentRepoPins.id });
+    .returning({ id: harnessRepoPins.id });
   return rows.length > 0;
 }
 

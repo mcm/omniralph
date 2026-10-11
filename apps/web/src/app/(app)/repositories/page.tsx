@@ -53,7 +53,7 @@ export default async function RepositoriesPage({
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
         enabled: repo.enabled,
         profileName: repo.profileName,
-        pinnedAgents: repo.pinnedAgents,
+        pinnedHarnesses: repo.pinnedHarnesses,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       }))}
       connections={connections.map((c) => ({

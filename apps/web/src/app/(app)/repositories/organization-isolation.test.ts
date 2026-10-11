@@ -242,7 +242,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         triggers: { onOpen: false, onPush: false, drafts: false },
         pathExcludes: [],
         customInstructions: "",
-        pinnedAgentIds: [],
+        pinnedHarnessIds: [],
       }),
     ).toEqual(refused);
     expect(
@@ -300,7 +300,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         triggers: { onOpen: true, onPush: true, drafts: false },
         pathExcludes: [],
         customInstructions: "",
-        pinnedAgentIds: [],
+        pinnedHarnessIds: [],
       }),
     ).toEqual({ ok: true });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.profile).toMatchObject({

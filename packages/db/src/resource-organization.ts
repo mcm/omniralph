@@ -1,10 +1,10 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { agents, ralphRuns, repositories, reviews, scmConnections } from "./schema.js";
+import { harnesses, ralphRuns, repositories, reviews, scmConnections } from "./schema.js";
 
 /** Resources with their own URL in the control panel. */
 export type OrganizationResource =
-  "agent" | "ralph_run" | "repository" | "review" | "scm_connection";
+  "harness" | "ralph_run" | "repository" | "review" | "scm_connection";
 
 /**
  * The organization a resource belongs to, whichever organization the caller is
@@ -18,11 +18,11 @@ export async function getResourceOrganizationId(
 ): Promise<string | null> {
   const query = () => {
     switch (resource) {
-      case "agent":
+      case "harness":
         return db
-          .select({ organizationId: agents.organizationId })
-          .from(agents)
-          .where(and(eq(agents.id, id), isNull(agents.deletedAt)));
+          .select({ organizationId: harnesses.organizationId })
+          .from(harnesses)
+          .where(and(eq(harnesses.id, id), isNull(harnesses.deletedAt)));
       case "ralph_run":
         return db
           .select({ organizationId: ralphRuns.organizationId })

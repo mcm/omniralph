@@ -48,7 +48,7 @@ interface RepositorySettingsViewProps {
     triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
     pathExcludes: string[];
     customInstructions: string;
-    pinnedAgentIds: string[];
+    pinnedHarnessIds: string[];
   };
   profiles: ProfileSummary[];
   /** Agents that can be pinned (not revoked). */
@@ -133,14 +133,16 @@ export function RepositorySettingsView({
   const [triggers, setTriggers] = React.useState(settings.triggers);
   const [pathExcludes, setPathExcludes] = React.useState(settings.pathExcludes.join("\n"));
   const [customInstructions, setCustomInstructions] = React.useState(settings.customInstructions);
-  const [pinnedAgentIds, setPinnedAgentIds] = React.useState(settings.pinnedAgentIds);
+  const [pinnedHarnessIds, setPinnedHarnessIds] = React.useState(settings.pinnedHarnessIds);
   const [errors, setErrors] = React.useState<FieldErrors>({});
 
   // Pinned agents that were revoked since are dropped from the selection on save.
-  const knownAgentIds = new Set(agents.map((a) => a.id));
+  const knownHarnessIds = new Set(agents.map((a) => a.id));
 
-  const togglePin = (agentId: string, checked: boolean) =>
-    setPinnedAgentIds((ids) => (checked ? [...ids, agentId] : ids.filter((id) => id !== agentId)));
+  const togglePin = (harnessId: string, checked: boolean) =>
+    setPinnedHarnessIds((ids) =>
+      checked ? [...ids, harnessId] : ids.filter((id) => id !== harnessId),
+    );
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,15 +151,15 @@ export function RepositorySettingsView({
       triggers,
       pathExcludes: parsePathExcludes(pathExcludes),
       customInstructions,
-      pinnedAgentIds: pinnedAgentIds.filter((id) => knownAgentIds.has(id)),
+      pinnedHarnessIds: pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)),
     };
     const parsed = RepositorySettingsInput.safeParse(input);
     if (!parsed.success) {
       setErrors(toFieldErrors(parsed.error));
       return;
     }
-    const newlyPinned = parsed.data.pinnedAgentIds.filter(
-      (id) => !settings.pinnedAgentIds.includes(id),
+    const newlyPinned = parsed.data.pinnedHarnessIds.filter(
+      (id) => !settings.pinnedHarnessIds.includes(id),
     ).length;
     run(
       () => updateRepositorySettings(repository.id, parsed.data),
@@ -397,7 +399,7 @@ export function RepositorySettingsView({
                     >
                       <Checkbox
                         id={`pin-${agent.id}`}
-                        checked={pinnedAgentIds.includes(agent.id)}
+                        checked={pinnedHarnessIds.includes(agent.id)}
                         disabled={disabled}
                         onCheckedChange={(checked) => togglePin(agent.id, checked === true)}
                       />
@@ -407,13 +409,13 @@ export function RepositorySettingsView({
                   ))}
                 </div>
               )}
-              {pinnedAgentIds.filter((id) => knownAgentIds.has(id)).length === 0 && (
+              {pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)).length === 0 && (
                 <Muted>Any agent can run this repository&apos;s jobs.</Muted>
               )}
               <InlineError
                 message={
-                  errors.pinnedAgentIds ??
-                  Object.entries(errors).find(([key]) => key.startsWith("pinnedAgentIds."))?.[1]
+                  errors.pinnedHarnessIds ??
+                  Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1]
                 }
               />
             </CardContent>

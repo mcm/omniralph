@@ -2,11 +2,11 @@
 
 import { Badge, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
-import type { AgentRow } from "@/lib/agents/rows";
-import { UPDATE_STATUS_LABELS } from "@/lib/agents/update";
+import type { HarnessRow } from "@/lib/harnesses/rows";
+import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
 import { ProviderIcon } from "../repositories/repositories-view";
 
-export function AgentStatusBadge({ agent }: { agent: Pick<AgentRow, "online" | "revoked"> }) {
+export function AgentStatusBadge({ agent }: { agent: Pick<HarnessRow, "online" | "revoked"> }) {
   if (agent.revoked) return <Badge variant="danger">Revoked</Badge>;
   return agent.online ? (
     <Badge variant="success" live>
@@ -48,7 +48,7 @@ export function CapabilityBadges({ reported, enabled }: { reported: string[]; en
   );
 }
 
-export function JobTargetLink({ job }: { job: AgentRow["runningJobs"][number] }) {
+export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] }) {
   const label = job.target?.label ?? job.id.slice(0, 8);
   const text = (
     <>
@@ -77,7 +77,7 @@ export function JobTargetLink({ job }: { job: AgentRow["runningJobs"][number] })
 export function RepositoryBadges({
   repositories,
 }: {
-  repositories: AgentRow["pinnedRepositories"];
+  repositories: HarnessRow["pinnedRepositories"];
 }) {
   if (repositories.length === 0) return <Muted>None</Muted>;
   return (
@@ -99,7 +99,7 @@ const UPDATE_STATUS_VARIANTS = {
   manual: "warning",
 } as const;
 
-const UPDATE_STATE_LABELS: Record<NonNullable<AgentRow["update"]>["state"], string | null> = {
+const UPDATE_STATE_LABELS: Record<NonNullable<HarnessRow["update"]>["state"], string | null> = {
   idle: null,
   draining: "waiting for running jobs",
   installing: "installing",
@@ -111,7 +111,7 @@ export function UpdateStatusBadge({
   agent,
 }: {
   agent: Pick<
-    AgentRow,
+    HarnessRow,
     "updateStatus" | "update" | "updateRequest" | "desiredVersion" | "selfUpdate"
   >;
 }) {
@@ -135,7 +135,7 @@ export function UpdateStatusBadge({
 }
 
 /** The reported version, and the desired one when it differs. */
-export function AgentVersionCell({ agent }: { agent: AgentRow }) {
+export function AgentVersionCell({ agent }: { agent: HarnessRow }) {
   const target = agent.updateRequest?.version ?? agent.desiredVersion;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>

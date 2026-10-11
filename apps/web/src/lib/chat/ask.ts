@@ -5,9 +5,9 @@ import {
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
-  listAgentOverview,
+  listHarnessOverview,
   postJobCommentOnce,
-  type AgentOverview,
+  type HarnessOverview,
   type Database,
   type Job,
   type Repository,
@@ -15,7 +15,7 @@ import {
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import {
-  agentVersionAtLeast,
+  harnessVersionAtLeast,
   CHAT_ASK_CAPABILITY,
   CHAT_ASK_JOB_TYPE,
   CHAT_ASK_MIN_AGENT_VERSION,
@@ -25,7 +25,7 @@ import {
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
 } from "@omniralph/shared";
-import { isAgentOnline } from "@/lib/agents/display";
+import { isHarnessOnline } from "@/lib/harnesses/display";
 import type { JobDispatcher } from "@/lib/dispatch";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import {
@@ -60,14 +60,14 @@ export interface ChatAskAgentStatus {
  * whether it can run one now. Revoked and offline agents are left out.
  */
 export function chatAskAgents(
-  agents: readonly AgentOverview[],
+  agents: readonly HarnessOverview[],
   repositoryId: string,
   now: Date = new Date(),
 ): ChatAskAgentStatus[] {
   const live = agents.filter((a) => !a.revokedAt);
   const pinned = live.filter((a) => a.pinnedRepositories.some((r) => r.id === repositoryId));
   return (pinned.length > 0 ? pinned : live)
-    .filter((a) => isAgentOnline(a.lastHeartbeatAt, now))
+    .filter((a) => isHarnessOnline(a.lastHeartbeatAt, now))
     .map((a) => ({
       name: a.name,
       version: a.reportedVersion,
@@ -75,7 +75,7 @@ export function chatAskAgents(
         a.enabledCapabilities.includes(CHAT_ASK_CAPABILITY) &&
         (a.reportedCapabilities ?? []).includes(CHAT_ASK_CAPABILITY) &&
         a.reportedVersion !== null &&
-        agentVersionAtLeast(a.reportedVersion, CHAT_ASK_MIN_AGENT_VERSION),
+        harnessVersionAtLeast(a.reportedVersion, CHAT_ASK_MIN_AGENT_VERSION),
     }));
 }
 
@@ -213,7 +213,7 @@ export async function enqueueChatAsk(
   const { repository, connection } = found;
 
   const agents = chatAskAgents(
-    await listAgentOverview(db, input.organizationId),
+    await listHarnessOverview(db, input.organizationId),
     repository.id,
     input.now,
   );

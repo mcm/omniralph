@@ -20,10 +20,10 @@ import {
   auditDetailSummary,
   hasRefreshReuse,
   type AuditEventName,
-} from "@/lib/agents/display";
+} from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
 
-/** Serializable `agent_audit` row. */
+/** Serializable `harness_audit` row. */
 export interface AuditRow {
   id: string;
   event: AuditEventName;

@@ -19,15 +19,15 @@ vi.mock("@/lib/auth/session", () => ({
   requirePageUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
 vi.mock("@omniralph/db", () => ({
-  DESIRED_AGENT_VERSION_KEY: "agent.desiredVersion",
-  TRACK_LATEST_AGENT_VERSION: "latest",
+  DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
+  TRACK_LATEST_HARNESS_VERSION: "latest",
   getAppSetting: async () => ({
     value: state.desired,
     updatedBy: "admin-1",
     updatedAt: new Date("2026-10-01T00:00:00Z"),
   }),
-  getDesiredAgentVersion: async () => state.desired,
-  getLatestAgentVersionCheck: async () => ({
+  getDesiredHarnessVersion: async () => state.desired,
+  getLatestHarnessVersionCheck: async () => ({
     version: "1.5.0",
     error: null,
     checkedAt: new Date(Date.now() - 1000),

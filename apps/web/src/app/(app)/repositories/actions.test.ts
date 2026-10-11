@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
-  agentRepoPins,
-  agents,
+  harnessRepoPins,
+  harnesses,
   connectionCredentials,
   closeDb,
   createDb,
@@ -443,10 +443,10 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     await connectGitLabProjects([101]);
     const [repo] = await state.db.select().from(repositories);
     const [agent] = await state.db
-      .insert(agents)
+      .insert(harnesses)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning();
-    await state.db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo!.id });
+    await state.db.insert(harnessRepoPins).values({ harnessId: agent!.id, repositoryId: repo!.id });
     await state.db.insert(reviews).values({
       repositoryId: repo!.id,
       prNumber: 3,
@@ -461,12 +461,12 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     const [after] = await state.db.select().from(repositories).where(eq(repositories.id, repo!.id));
     expect(after).toMatchObject({ enabled: false, webhookId: null });
     expect(after!.disconnectedAt).not.toBeNull();
-    expect(await state.db.select().from(agentRepoPins)).toEqual([]);
+    expect(await state.db.select().from(harnessRepoPins)).toEqual([]);
     expect(
       await state.db.select().from(reviews).where(eq(reviews.repositoryId, repo!.id)),
     ).toHaveLength(1);
     expect(await setRepositoryEnabled(repo!.id, true)).toMatchObject({ ok: false });
-    await state.db.delete(agents);
+    await state.db.delete(harnesses);
   });
 
   it("still disconnects when the webhook can't be deleted, with a warning", async () => {

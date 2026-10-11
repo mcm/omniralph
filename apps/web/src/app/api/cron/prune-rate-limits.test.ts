@@ -12,7 +12,7 @@ process.env.CRON_SECRET = "cron-secret";
 
 const { GET: pruneRoute } = await import("./prune-rate-limits/route");
 const {
-  AGENT_RATE_LIMITS,
+  HARNESS_RATE_LIMITS,
   AUTH_FAILURE_LIMIT,
   AUTH_FAILURE_WINDOW_SECONDS,
   AUTH_LOCKOUT_SECONDS,
@@ -73,7 +73,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-rate-limits", () => {
       { key: "token:ip:recent", windowStart: minutesAgo(59), count: 2 },
     ]);
     // Live counters written the way the agent API writes them.
-    await hitRateLimit(db, AGENT_RATE_LIMITS.enrollPerIp("203.0.113.1"));
+    await hitRateLimit(db, HARNESS_RATE_LIMITS.enrollPerIp("203.0.113.1"));
     for (let i = 0; i < AUTH_FAILURE_LIMIT; i += 1) {
       await recordAuthFailure(db, "203.0.113.2");
     }

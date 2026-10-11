@@ -88,7 +88,7 @@ export const RepositorySettingsInput = z.object({
       `Custom instructions can be at most ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString("en-US")} characters.`,
     ),
   /** Agents the repository is pinned to; empty means any agent. */
-  pinnedAgentIds: z.array(z.uuid()).max(100),
+  pinnedHarnessIds: z.array(z.uuid()).max(100),
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 

@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import {
-  agentRepoPins,
+  harnessRepoPins,
   appendChatMessage,
-  agents,
+  harnesses,
   closeDb,
   connectRepository,
   createDb,
@@ -80,7 +80,7 @@ describe("chatAskAgents", () => {
     ]);
   });
 
-  it("leaves out offline and revoked agents, and only counts pinned agents of a pinned repository", () => {
+  it("leaves out offline and revoked harnesses, and only counts pinned agents of a pinned repository", () => {
     const old = new Date(now.getTime() - 60 * 60_000);
     expect(
       chatAskAgents(
@@ -144,8 +144,8 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   let db: Database;
   let orgId: string;
   let repositoryId: string;
-  let agentId: string;
-  let otherAgentId: string;
+  let harnessId: string;
+  let otherHarnessId: string;
   let connectionId: string;
   let scm: FakeScmAdapter;
   let seq = 0;
@@ -230,21 +230,21 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       fullPath: `${slug}/api`,
     });
     const [agent] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values({ organizationId: org!.id, name: `${slug}-agent` })
       .returning();
-    return { id: org!.id, repositoryId: repository.id, agentId: agent!.id };
+    return { id: org!.id, repositoryId: repository.id, harnessId: agent!.id };
   }
 
-  const setAgent = (id: string, values: Partial<typeof agents.$inferInsert>) =>
-    db.update(agents).set(values).where(eq(agents.id, id));
+  const setAgent = (id: string, values: Partial<typeof harnesses.$inferInsert>) =>
+    db.update(harnesses).set(values).where(eq(harnesses.id, id));
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
     await runMigrations(container.getConnectionUri());
     db = createDb(container.getConnectionUri());
-    ({ id: orgId, repositoryId, agentId } = await seedOrg("Acme", "acme"));
-    ({ agentId: otherAgentId } = await seedOrg("Other", "other"));
+    ({ id: orgId, repositoryId, harnessId } = await seedOrg("Acme", "acme"));
+    ({ harnessId: otherHarnessId } = await seedOrg("Other", "other"));
     const saved = await saveChatConnection(
       db,
       {
@@ -274,9 +274,9 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       lastHeartbeatAt: new Date(),
       revokedAt: null,
     };
-    await setAgent(agentId, capable);
-    await setAgent(otherAgentId, capable);
-    await db.delete(agentRepoPins);
+    await setAgent(harnessId, capable);
+    await setAgent(otherHarnessId, capable);
+    await db.delete(harnessRepoPins);
   });
 
   it("is a read tool", () => {
@@ -297,7 +297,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       capability: "review",
       status: "queued",
       repositoryId,
-      targetAgentId: null,
+      targetHarnessId: null,
     });
     const payload = ChatAskJobPayload.parse(job!.payload);
     expect(payload).toMatchObject({
@@ -444,7 +444,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   it("enqueues nothing when no online agent can answer code questions", async () => {
     const h = await harness();
 
-    await setAgent(agentId, { reportedVersion: "0.7.0" });
+    await setAgent(harnessId, { reportedVersion: "0.7.0" });
     const old = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(old).toMatchObject({
       error: "no_capable_agent",
@@ -452,7 +452,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     });
     expect(old.message).toContain("0.8.0");
 
-    await setAgent(agentId, { reportedVersion: "0.8.0", lastHeartbeatAt: null });
+    await setAgent(harnessId, { reportedVersion: "0.8.0", lastHeartbeatAt: null });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(offline).toMatchObject({ error: "no_capable_agent", agents: [] });
     expect(offline.message).toContain("online");
@@ -464,7 +464,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   it("only counts the agents a pinned repository's jobs go to", async () => {
     const h = await harness();
     const [pinned] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values({
         organizationId: orgId,
         name: "pinned-agent",
@@ -473,7 +473,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
         lastHeartbeatAt: new Date(),
       })
       .returning();
-    await db.insert(agentRepoPins).values({ agentId: pinned!.id, repositoryId });
+    await db.insert(harnessRepoPins).values({ harnessId: pinned!.id, repositoryId });
 
     const result = await ask(h, { repository: "acme/api", question: "What is this?" });
 
@@ -481,7 +481,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       error: "no_capable_agent",
       agents: [{ name: "pinned-agent", capable: false }],
     });
-    await db.delete(agents).where(eq(agents.id, pinned!.id));
+    await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));
   });
 
   it("gives an unlinked user no way to ask", async () => {

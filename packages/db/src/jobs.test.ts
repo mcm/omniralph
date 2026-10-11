@@ -4,7 +4,7 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { listQueuedJobsTargetingAgent } from "./agents.js";
+import { listQueuedJobsTargetingHarness } from "./harnesses.js";
 import {
   claimJob,
   failJob,
@@ -15,7 +15,7 @@ import {
   type NewJobInput,
 } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
-import { agents, jobs, organizations } from "./schema.js";
+import { harnesses, jobs, organizations } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -51,12 +51,12 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
   };
 
   const claim = (
-    agentId: string,
+    harnessId: string,
     now: Date,
     options: { organizationId?: string; capabilities?: string[]; enabled?: string[] } = {},
   ) =>
     claimJob(db, {
-      agentId,
+      harnessId,
       organizationId: options.organizationId ?? orgA,
       capabilities: options.capabilities ?? ["review", "ralph"],
       enabledCapabilities: options.enabled ?? ["review", "ralph"],
@@ -73,7 +73,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     orgA = a!.id;
     orgB = b!.id;
     const created = await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgA, name: "a-1" },
         { organizationId: orgA, name: "a-2" },
@@ -106,7 +106,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
       job: {
         id: older,
         status: "running",
-        agentId: agentA,
+        harnessId: agentA,
         deliveryCount: 1,
         startedAt: at(1),
         leaseExpiresAt: at(121),
@@ -118,8 +118,8 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
 
   it("claims jobs targeted at the agent first, and never another agent's", async () => {
     const shared = await enqueue({ createdAt: at(-30) });
-    const mine = await enqueue({ createdAt: at(-10), targetAgentId: agentA });
-    const theirs = await enqueue({ createdAt: at(-40), targetAgentId: agentA2 });
+    const mine = await enqueue({ createdAt: at(-10), targetHarnessId: agentA });
+    const theirs = await enqueue({ createdAt: at(-40), targetHarnessId: agentA2 });
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(mine);
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(shared);
     expect((await claim(agentA, at(1))).claim).toBeNull();
@@ -165,13 +165,13 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect((await claim(agentA2, at(120))).claim).toBeNull();
     expect((await claim(agentA2, at(121))).claim?.job).toMatchObject({
       id,
-      agentId: agentA2,
+      harnessId: agentA2,
       deliveryCount: 2,
       leaseExpiresAt: at(241),
     });
     // The first agent's late result is rejected.
     expect(
-      await failJob(db, { jobId: id, agentId: agentA, retryable: true, maxDeliveries: 3 }),
+      await failJob(db, { jobId: id, harnessId: agentA, retryable: true, maxDeliveries: 3 }),
     ).toEqual({ status: "conflict" });
   });
 
@@ -181,7 +181,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect(
       await failJob(db, {
         jobId: id,
-        agentId: agentA,
+        harnessId: agentA,
         retryable: true,
         error: "busy",
         maxDeliveries: 3,
@@ -191,7 +191,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     ).toEqual({ status: "retry" });
     expect(await getJob(db, id)).toMatchObject({
       status: "queued",
-      agentId: null,
+      harnessId: null,
       availableAt: at(70),
       leaseExpiresAt: null,
     });
@@ -208,7 +208,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     const crashed = await enqueue({ createdAt: at(-15) });
     await db
       .update(jobs)
-      .set({ status: "running", agentId: agentA2, deliveryCount: 3, leaseExpiresAt: at(-1) })
+      .set({ status: "running", harnessId: agentA2, deliveryCount: 3, leaseExpiresAt: at(-1) })
       .where(eq(jobs.id, crashed));
     const next = await enqueue({ createdAt: at(-10) });
 
@@ -250,14 +250,14 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
   });
 
   it("retargets only queued jobs and lists the queued jobs targeting an agent", async () => {
-    const queued = await enqueue({ createdAt: at(-10), targetAgentId: agentA });
-    const running = await enqueue({ createdAt: at(-20), targetAgentId: agentA });
+    const queued = await enqueue({ createdAt: at(-10), targetHarnessId: agentA });
+    const running = await enqueue({ createdAt: at(-20), targetHarnessId: agentA });
     await claim(agentA, at(0));
-    const later = await enqueue({ createdAt: at(10), targetAgentId: agentA });
-    await enqueue({ targetAgentId: agentA2 });
+    const later = await enqueue({ createdAt: at(10), targetHarnessId: agentA });
+    await enqueue({ targetHarnessId: agentA2 });
     await enqueue();
 
-    expect((await listQueuedJobsTargetingAgent(db, agentA)).map((j) => j.id)).toEqual([
+    expect((await listQueuedJobsTargetingHarness(db, agentA)).map((j) => j.id)).toEqual([
       queued,
       later,
     ]);
@@ -265,9 +265,9 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect(await setQueuedJobTarget(db, queued, agentA2)).toBe(true);
     expect(await setQueuedJobTarget(db, later, null)).toBe(true);
     expect(await setQueuedJobTarget(db, running, null)).toBe(false);
-    expect((await getJob(db, queued))?.targetAgentId).toBe(agentA2);
-    expect((await getJob(db, later))?.targetAgentId).toBeNull();
-    expect((await getJob(db, running))?.targetAgentId).toBe(agentA);
-    expect(await listQueuedJobsTargetingAgent(db, agentA)).toEqual([]);
+    expect((await getJob(db, queued))?.targetHarnessId).toBe(agentA2);
+    expect((await getJob(db, later))?.targetHarnessId).toBeNull();
+    expect((await getJob(db, running))?.targetHarnessId).toBe(agentA);
+    expect(await listQueuedJobsTargetingHarness(db, agentA)).toEqual([]);
   });
 });

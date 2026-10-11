@@ -1,14 +1,14 @@
 // The organization journey end to end, through the real actions and pages: a new user
 // signs in, creates an organization, connects a repository and enrolls an agent, invites a
 // teammate who gets past the sign-in gate thanks to the invitation, accepts it and sees
-// the shared repositories and agents. Roles are per organization.
+// the shared repositories and harnesses. Roles are per organization.
 import { randomBytes } from "node:crypto";
 import {
   closeDb,
   connectRepository,
-  createAgentEnrollment,
+  createHarnessEnrollment,
   createDb,
-  enrollAgent,
+  enrollHarness,
   getActiveOrganization,
   hasPendingInvitation,
   listPendingInvitationsForEmail,
@@ -155,12 +155,12 @@ describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
       externalId: "1",
       fullPath: "journey/shared-app",
     });
-    const enrollment = await createAgentEnrollment(db, {
+    const enrollment = await createHarnessEnrollment(db, {
       organizationId: org.id,
       name: "journey-agent",
       createdBy: founder.id,
     });
-    const { agentId } = (await enrollAgent(db, {
+    const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: enrollment.token,
       name: "journey-agent",
       version: "1.0.0",
@@ -191,7 +191,7 @@ describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
     const repositories = props(await RepositoriesPage({ searchParams: Promise.resolve({}) }));
     expect(repositories).toContain(repo.id);
     expect(repositories).toContain("journey/shared-app");
-    expect(props(await AgentsPage())).toContain(agentId);
+    expect(props(await AgentsPage())).toContain(harnessId);
     const settings = props(await OrganizationSettingsPage());
     expect(settings).toContain(founder.email!);
     expect(settings).toContain(teammateEmail);

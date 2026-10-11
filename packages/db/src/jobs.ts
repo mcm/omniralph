@@ -8,7 +8,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
-import { agentRepoPins, agents, jobs, type AgentUpdateState } from "./schema.js";
+import { harnessRepoPins, harnesses, jobs, type HarnessUpdateState } from "./schema.js";
 
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
@@ -33,7 +33,7 @@ export interface NewJobInput {
   /** The ralph run a `ralph.*` job belongs to. */
   ralphRunId?: string | null;
   /** Only this agent may claim the job; null: any agent of the organization. */
-  targetAgentId?: string | null;
+  targetHarnessId?: string | null;
 }
 
 /**
@@ -56,7 +56,7 @@ export async function insertJob(
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
         ralphRunId: input.ralphRunId ?? null,
-        targetAgentId: input.targetAgentId ?? null,
+        targetHarnessId: input.targetHarnessId ?? null,
       })
       .onConflictDoNothing({
         target: jobs.dedupeKey,
@@ -82,11 +82,11 @@ export async function insertJob(
 export async function setQueuedJobTarget(
   db: Database,
   jobId: string,
-  targetAgentId: string | null,
+  targetHarnessId: string | null,
 ): Promise<boolean> {
   const rows = await db
     .update(jobs)
-    .set({ targetAgentId })
+    .set({ targetHarnessId })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
     .returning({ id: jobs.id });
   return rows.length > 0;
@@ -101,16 +101,16 @@ export async function getJob(db: Database, jobId: string): Promise<Job | null> {
  * A job as seen by an agent: null when it doesn't exist or belongs to another
  * organization than the agent's (agents never act on other organizations' jobs).
  */
-export async function getJobForAgent(
+export async function getJobForHarness(
   db: Database,
   jobId: string,
-  agentId: string,
+  harnessId: string,
 ): Promise<Job | null> {
   const [row] = await db
     .select({ job: jobs })
     .from(jobs)
-    .innerJoin(agents, eq(agents.organizationId, jobs.organizationId))
-    .where(and(eq(jobs.id, jobId), eq(agents.id, agentId)))
+    .innerJoin(harnesses, eq(harnesses.organizationId, jobs.organizationId))
+    .where(and(eq(jobs.id, jobId), eq(harnesses.id, harnessId)))
     .limit(1);
   return row?.job ?? null;
 }
@@ -121,36 +121,36 @@ export async function getJobForAgent(
  * heartbeat). Null when the repo isn't pinned (any agent of the organization
  * may serve it). Only agents of `organizationId` count.
  */
-export async function pinnedAgentFor(
+export async function pinnedHarnessFor(
   db: Database,
   organizationId: string,
   repositoryId: string,
 ): Promise<string | null> {
   const active = db
-    .select({ agentId: jobs.agentId, n: count().as("n") })
+    .select({ harnessId: jobs.harnessId, n: count().as("n") })
     .from(jobs)
     .where(inArray(jobs.status, ["queued", "running"]))
-    .groupBy(jobs.agentId)
+    .groupBy(jobs.harnessId)
     .as("active");
   const [row] = await db
-    .select({ agentId: agents.id })
-    .from(agentRepoPins)
-    .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
-    .leftJoin(active, eq(active.agentId, agents.id))
+    .select({ harnessId: harnesses.id })
+    .from(harnessRepoPins)
+    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
+    .leftJoin(active, eq(active.harnessId, harnesses.id))
     .where(
       and(
-        eq(agentRepoPins.repositoryId, repositoryId),
-        eq(agents.organizationId, organizationId),
-        isNull(agents.revokedAt),
+        eq(harnessRepoPins.repositoryId, repositoryId),
+        eq(harnesses.organizationId, organizationId),
+        isNull(harnesses.revokedAt),
       ),
     )
     .orderBy(
       asc(sql`coalesce(${active.n}, 0)`),
-      sql`${agents.lastHeartbeatAt} desc nulls last`,
-      asc(agents.id),
+      sql`${harnesses.lastHeartbeatAt} desc nulls last`,
+      asc(harnesses.id),
     )
     .limit(1);
-  return row?.agentId ?? null;
+  return row?.harnessId ?? null;
 }
 
 export type CancelJobResult = "canceled" | "cancel_requested" | "not_cancelable" | "not_found";
@@ -210,7 +210,7 @@ export interface ClaimJobResult {
 export async function claimJob(
   db: Database,
   input: {
-    agentId: string;
+    harnessId: string;
     organizationId: string;
     capabilities: readonly string[];
     enabledCapabilities: readonly string[];
@@ -233,15 +233,15 @@ export async function claimJob(
           and(
             eq(jobs.organizationId, input.organizationId),
             inArray(jobs.capability, capabilities),
-            or(isNull(jobs.targetAgentId), eq(jobs.targetAgentId, input.agentId)),
+            or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
             or(
               and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
               and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
             ),
           ),
         )
-        // Targeted jobs (`target_agent_id is null` false) first.
-        .orderBy(sql`${jobs.targetAgentId} is null`, asc(jobs.createdAt), asc(jobs.id))
+        // Targeted jobs (`target_harness_id is null` false) first.
+        .orderBy(sql`${jobs.targetHarnessId} is null`, asc(jobs.createdAt), asc(jobs.id))
         .limit(1)
         .for("update", { skipLocked: true });
       if (!job) return { claim: null, settled };
@@ -274,7 +274,7 @@ export async function claimJob(
         .update(jobs)
         .set({
           status: "running",
-          agentId: input.agentId,
+          harnessId: input.harnessId,
           deliveryCount: sql`${jobs.deliveryCount} + 1`,
           startedAt: now,
           leaseExpiresAt: secondsAfter(now, input.leaseSeconds ?? JOB_LEASE_SECONDS),
@@ -287,12 +287,12 @@ export async function claimJob(
 }
 
 /**
- * Extends the lease of the given jobs that are `running` on `agentId` (others
+ * Extends the lease of the given jobs that are `running` on `harnessId` (others
  * are left alone). Returns the IDs whose lease was renewed.
  */
 export async function renewJobLeases(
   db: Database,
-  agentId: string,
+  harnessId: string,
   jobIds: readonly string[],
   now: Date = new Date(),
   leaseSeconds: number = JOB_LEASE_SECONDS,
@@ -302,7 +302,7 @@ export async function renewJobLeases(
     .update(jobs)
     .set({ leaseExpiresAt: secondsAfter(now, leaseSeconds) })
     .where(
-      and(inArray(jobs.id, [...jobIds]), eq(jobs.status, "running"), eq(jobs.agentId, agentId)),
+      and(inArray(jobs.id, [...jobIds]), eq(jobs.status, "running"), eq(jobs.harnessId, harnessId)),
     )
     .returning({ id: jobs.id });
   return rows.map((r) => r.id);
@@ -315,15 +315,15 @@ export type FinishJobResult =
   | { status: "conflict" }
   | { status: "not_found" };
 
-/** Locks a job that must be `running` on `agentId`; returns why not otherwise. */
+/** Locks a job that must be `running` on `harnessId`; returns why not otherwise. */
 async function lockRunningJob(
   tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
   jobId: string,
-  agentId: string,
+  harnessId: string,
 ): Promise<{ job: Job } | { rejected: FinishJobResult }> {
   const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");
   if (!job) return { rejected: { status: "not_found" } };
-  if (job.status !== "running" || job.agentId !== agentId) {
+  if (job.status !== "running" || job.harnessId !== harnessId) {
     return { rejected: { status: "conflict" } };
   }
   return { job };
@@ -335,11 +335,11 @@ async function lockRunningJob(
  */
 export async function completeJob(
   db: Database,
-  input: { jobId: string; agentId: string; result: Record<string, unknown>; now?: Date },
+  input: { jobId: string; harnessId: string; result: Record<string, unknown>; now?: Date },
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx): Promise<FinishJobResult> => {
-    const locked = await lockRunningJob(tx, input.jobId, input.agentId);
+    const locked = await lockRunningJob(tx, input.jobId, input.harnessId);
     if ("rejected" in locked) return locked.rejected;
     const status = locked.job.cancelRequested ? "canceled" : "completed";
     await tx
@@ -360,7 +360,7 @@ export async function failJob(
   db: Database,
   input: {
     jobId: string;
-    agentId: string;
+    harnessId: string;
     retryable: boolean;
     error?: string | null;
     maxDeliveries: number;
@@ -371,7 +371,7 @@ export async function failJob(
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx): Promise<FinishJobResult> => {
-    const locked = await lockRunningJob(tx, input.jobId, input.agentId);
+    const locked = await lockRunningJob(tx, input.jobId, input.harnessId);
     if ("rejected" in locked) return locked.rejected;
     const { job } = locked;
     const error = input.error ?? null;
@@ -393,7 +393,7 @@ export async function failJob(
       .update(jobs)
       .set({
         status: "queued",
-        agentId: null,
+        harnessId: null,
         error,
         availableAt: secondsAfter(now, input.retryAfterSeconds ?? 0),
         leaseExpiresAt: null,
@@ -491,26 +491,26 @@ export async function expireQueuedJobs(
 }
 
 /** Records a heartbeat and returns the agent's (central) configuration row. */
-export async function recordAgentHeartbeat(
+export async function recordHarnessHeartbeat(
   db: Database,
-  agentId: string,
+  harnessId: string,
   input: {
     version: string;
     capabilities: string[];
     /** Self-update reporting; older agents send none, which clears it. */
     selfUpdate?: "supported" | "unsupported";
-    update?: AgentUpdateState;
+    update?: HarnessUpdateState;
     failedVersions?: string[];
     /** The update request the agent acted on: cleared when it's still the pending one. */
     handledUpdateRequestId?: string | null;
     now?: Date;
   },
-): Promise<typeof agents.$inferSelect | null> {
+): Promise<typeof harnesses.$inferSelect | null> {
   const handled = input.handledUpdateRequestId ?? null;
   const clearIfHandled = (column: AnyPgColumn) =>
-    sql`case when ${agents.updateRequestId} = ${handled}::uuid then null else ${column} end`;
+    sql`case when ${harnesses.updateRequestId} = ${handled}::uuid then null else ${column} end`;
   const [row] = await db
-    .update(agents)
+    .update(harnesses)
     .set({
       reportedVersion: input.version,
       reportedCapabilities: input.capabilities,
@@ -518,34 +518,34 @@ export async function recordAgentHeartbeat(
       updateState: input.update ?? null,
       failedVersions: input.failedVersions ?? [],
       ...(handled !== null && {
-        updateRequestId: clearIfHandled(agents.updateRequestId),
-        updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
-        updateRequestedAt: clearIfHandled(agents.updateRequestedAt),
+        updateRequestId: clearIfHandled(harnesses.updateRequestId),
+        updateRequestVersion: clearIfHandled(harnesses.updateRequestVersion),
+        updateRequestedAt: clearIfHandled(harnesses.updateRequestedAt),
       }),
       lastHeartbeatAt: input.now ?? new Date(),
     })
-    .where(eq(agents.id, agentId))
+    .where(eq(harnesses.id, harnessId))
     .returning();
   return row ?? null;
 }
 
-export async function getAgent(
+export async function getHarness(
   db: Database,
-  agentId: string,
-): Promise<typeof agents.$inferSelect | null> {
-  const [row] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  harnessId: string,
+): Promise<typeof harnesses.$inferSelect | null> {
+  const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId)).limit(1);
   return row ?? null;
 }
 
-export async function listAgentPinnedRepositoryIds(
+export async function listHarnessPinnedRepositoryIds(
   db: Database,
-  agentId: string,
+  harnessId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ repositoryId: agentRepoPins.repositoryId })
-    .from(agentRepoPins)
-    .where(eq(agentRepoPins.agentId, agentId))
-    .orderBy(asc(agentRepoPins.createdAt));
+    .select({ repositoryId: harnessRepoPins.repositoryId })
+    .from(harnessRepoPins)
+    .where(eq(harnessRepoPins.harnessId, harnessId))
+    .orderBy(asc(harnessRepoPins.createdAt));
   return rows.map((r) => r.repositoryId);
 }
 
@@ -554,9 +554,9 @@ export async function listAgentPinnedRepositoryIds(
  * running (`running` on this agent, no cancel requested) and those it must
  * stop (canceled, finished, unknown or taken over by another agent).
  */
-export async function classifyAgentRunningJobs(
+export async function classifyHarnessRunningJobs(
   db: Database,
-  agentId: string,
+  harnessId: string,
   jobIds: readonly string[],
 ): Promise<{ keep: Pick<Job, "id" | "capability">[]; cancel: string[] }> {
   if (jobIds.length === 0) return { keep: [], cancel: [] };
@@ -565,7 +565,7 @@ export async function classifyAgentRunningJobs(
       id: jobs.id,
       capability: jobs.capability,
       status: jobs.status,
-      agentId: jobs.agentId,
+      harnessId: jobs.harnessId,
       cancelRequested: jobs.cancelRequested,
     })
     .from(jobs)
@@ -576,7 +576,7 @@ export async function classifyAgentRunningJobs(
   const cancel: string[] = [];
   for (const id of new Set(jobIds)) {
     const row = byId.get(id);
-    if (row && row.status === "running" && row.agentId === agentId && !row.cancelRequested) {
+    if (row && row.status === "running" && row.harnessId === harnessId && !row.cancelRequested) {
       keep.push({ id, capability: row.capability });
     } else {
       cancel.push(id);

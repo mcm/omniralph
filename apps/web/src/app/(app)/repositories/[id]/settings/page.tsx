@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   getRepositoryWithConnection,
-  listPinnableAgents,
-  listRepositoryPinnedAgentIds,
+  listPinnableHarnesses,
+  listRepositoryPinnedHarnessIds,
   listReviewProfiles,
 } from "@omniralph/db";
 import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
@@ -29,10 +29,10 @@ export default async function RepositorySettingsPage({
   const db = getDb();
   const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();
-  const [profiles, agents, pinnedAgentIds] = await Promise.all([
+  const [profiles, agents, pinnedHarnessIds] = await Promise.all([
     listReviewProfiles(db, user.organization.id),
-    listPinnableAgents(db, user.organization.id),
-    listRepositoryPinnedAgentIds(db, id),
+    listPinnableHarnesses(db, user.organization.id),
+    listRepositoryPinnedHarnessIds(db, id),
   ]);
   const { repository, connection } = found;
 
@@ -49,7 +49,7 @@ export default async function RepositorySettingsPage({
         triggers: repository.triggers,
         pathExcludes: repository.pathExcludes,
         customInstructions: repository.customInstructions ?? "",
-        pinnedAgentIds,
+        pinnedHarnessIds,
       }}
       profiles={profiles.map((p) => ({
         id: p.id,

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  agents,
+  harnesses,
   appendChatMessage,
   chatMessages,
   closeDb,
@@ -114,7 +114,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   let appRepoId: string;
   let connection: ChatConnection;
   let chatThread: ChatThread;
-  let agentId: string;
+  let harnessId: string;
   let posts: string[];
   let ephemerals: string[];
   let reactions: { threadId: string; messageId: string; emoji: string }[];
@@ -223,13 +223,13 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   async function startRequestJob(job: Job): Promise<void> {
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId,
+      harnessId,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
   }
 
   /** Plays the run's queued (or started) `ralph.request` job to completion with `result`. */
@@ -243,7 +243,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       durationMs: 10,
       ...result,
     };
-    expect(await completeJob(db, { jobId: job.id, agentId, result: outcome })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, harnessId, result: outcome })).toEqual({
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, ralph());
@@ -309,10 +309,10 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     );
     if (saved === "other_organization") throw new Error("taken");
     connection = saved;
-    [{ id: agentId }] = (await db
-      .insert(agents)
+    [{ id: harnessId }] = (await db
+      .insert(harnesses)
       .values({ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] })
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -414,7 +414,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       type: "ralph.request",
       ralphRunId: run.id,
       status: "queued",
-      targetAgentId: null,
+      targetHarnessId: null,
     });
     const payload = RalphRequestPayload.parse(job!.payload);
     expect(payload).toMatchObject({

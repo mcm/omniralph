@@ -284,7 +284,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       expect(job).toMatchObject({
         organizationId: orgId,
         status: "queued",
-        targetAgentId: null,
+        targetHarnessId: null,
       });
     });
 
@@ -449,7 +449,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       const [job, ...others] = await prJobs(githubRepoId, number);
       expect(others).toHaveLength(0);
       expect(await retried.json()).toMatchObject({ status: "enqueued", jobId: job!.id });
-      expect(job).toMatchObject({ status: "queued", targetAgentId: null });
+      expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
     });
   });
 

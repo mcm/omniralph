@@ -7,7 +7,7 @@
 
 [ADR 0001](0001-job-dispatch.md) kept job state in Postgres and delivered jobs through Vercel
 Queues (VQS) in poll mode. Agents may only call the control panel, so they polled VQS through the
-control panel's queue proxy (`/api/agent/queue/<region>/…`). Each idle agent sent one receive per
+control panel's queue proxy (`/api/harness/queue/<region>/…`). Each idle agent sent one receive per
 topic every 5s. With 6 agents that came to about 310k proxied requests a day, and each was billed as
 a CDN request, a function invocation and an external API request. That alone put Observability Plus
 at about $30/month, and the cost grew with every agent and every capability. This is breaking point
@@ -88,7 +88,7 @@ for update skip locked
 
 ### The long-poll
 
-`POST /api/agent/claim` (`apps/web/src/app/api/agent/claim/route.ts`) takes
+`POST /api/harness/claim` (`apps/web/src/app/api/harness/claim/route.ts`) takes
 `ClaimRequest { capabilities, waitSeconds? }`. `waitSeconds` is 0–50 (`MAX_CLAIM_WAIT_SECONDS`,
 the default). The route answers with `JobStartResponse`'s `run` shape (job plus job token, 200) as
 soon as it claims a job. Otherwise it claims again every 2s until `waitSeconds` passes or the agent
@@ -108,7 +108,7 @@ request is held, but held requests share an instance.
 ### Leasing through the heartbeat
 
 `JOB_LEASE_SECONDS` is 120, six missed 20s heartbeats. The heartbeat
-(`POST /api/agent/heartbeat`) already reports the agent's running job IDs. `classifyAgentRunningJobs`
+(`POST /api/harness/heartbeat`) already reports the agent's running job IDs. `classifyAgentRunningJobs`
 splits them into the jobs to keep (running on this agent, no cancel requested) and the ones to stop
 (`cancelJobIds`). `renewJobLeases` then sets `lease_expires_at = now() + 120s` on the kept ones only.
 The agent sends no lease call of its own.

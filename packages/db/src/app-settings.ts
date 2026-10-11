@@ -4,10 +4,10 @@ import type { Database } from "./client.js";
 import { appSettings } from "./schema.js";
 
 /**
- * The version every agent of the organization should run unless it has its own override: a
- * version, `latest` (`TRACK_LATEST_AGENT_VERSION`: the package's `latest` on npm) or absent.
+ * The version every harness of the organization should run unless it has its own override: a
+ * version, `latest` (`TRACK_LATEST_HARNESS_VERSION`: the package's `latest` on npm) or absent.
  */
-export const DESIRED_AGENT_VERSION_KEY = "agent.desiredVersion";
+export const DESIRED_HARNESS_VERSION_KEY = "harness.desiredVersion";
 
 export interface AppSetting<T> {
   value: T;
@@ -51,36 +51,36 @@ export async function setAppSetting(
     });
 }
 
-/** The organization's desired agent version (possibly `latest`), or null when none is chosen. */
-export async function getDesiredAgentVersion(
+/** The organization's desired harness version (possibly `latest`), or null when none is chosen. */
+export async function getDesiredHarnessVersion(
   db: Database,
   organizationId: string,
 ): Promise<string | null> {
-  const setting = await getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY);
+  const setting = await getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY);
   return typeof setting?.value === "string" ? setting.value : null;
 }
 
-/** Sets (or, with null, clears) the organization's desired agent version. */
-export async function setDesiredAgentVersion(
+/** Sets (or, with null, clears) the organization's desired harness version. */
+export async function setDesiredHarnessVersion(
   db: Database,
   organizationId: string,
   version: string | null,
   updatedBy: string | null,
 ): Promise<void> {
-  await setAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY, version, updatedBy);
+  await setAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY, version, updatedBy);
 }
 
-/** The organization's desired agent version when its agents follow the package's `latest` on npm. */
-export const TRACK_LATEST_AGENT_VERSION = "latest";
+/** The organization's desired harness version when its harnesses follow the package's `latest` on npm. */
+export const TRACK_LATEST_HARNESS_VERSION = "latest";
 
 /**
  * The `latest` version last read from npm for an organization that tracks it
  * (`{ version, error }`; `updatedAt` is when it was read). Kept in the database
- * so every control panel instance hands agents the same version.
+ * so every control panel instance hands harnesses the same version.
  */
-export const LATEST_AGENT_VERSION_KEY = "agent.latestVersion";
+export const LATEST_HARNESS_VERSION_KEY = "harness.latestVersion";
 
-export interface LatestAgentVersionCheck {
+export interface LatestHarnessVersionCheck {
   /** The last version read, kept when a later read failed; null when none was read yet. */
   version: string | null;
   /** Why the last read failed, or null. */
@@ -88,11 +88,11 @@ export interface LatestAgentVersionCheck {
   checkedAt: Date;
 }
 
-export async function getLatestAgentVersionCheck(
+export async function getLatestHarnessVersionCheck(
   db: Database,
   organizationId: string,
-): Promise<LatestAgentVersionCheck | null> {
-  const setting = await getAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY);
+): Promise<LatestHarnessVersionCheck | null> {
+  const setting = await getAppSetting(db, organizationId, LATEST_HARNESS_VERSION_KEY);
   if (!setting || typeof setting.value !== "object" || setting.value === null) return null;
   const { version, error } = setting.value as { version?: unknown; error?: unknown };
   return {
@@ -103,10 +103,10 @@ export async function getLatestAgentVersionCheck(
 }
 
 /** Records a read of npm's `latest` (now). */
-export async function setLatestAgentVersionCheck(
+export async function setLatestHarnessVersionCheck(
   db: Database,
   organizationId: string,
   check: { version: string | null; error: string | null },
 ): Promise<void> {
-  await setAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY, check, null);
+  await setAppSetting(db, organizationId, LATEST_HARNESS_VERSION_KEY, check, null);
 }

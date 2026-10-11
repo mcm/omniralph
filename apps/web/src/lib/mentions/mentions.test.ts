@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  agents,
+  harnesses,
   connectRepository,
   closeDb,
   createDb,
@@ -329,7 +329,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       await conversationComment(number, "@omniralph review");
       const [job] = await prReviewJobs(number);
       const [agent] = await db
-        .insert(agents)
+        .insert(harnesses)
         .values({ organizationId: orgId, name: "agent-1" })
         .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
@@ -382,7 +382,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment[0]!.body).toContain("a fresh **Quick** review");
 
       const [agent] = await db
-        .insert(agents)
+        .insert(harnesses)
         .values({ organizationId: orgId, name: "agent-fresh" })
         .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
@@ -489,7 +489,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         capability: "review",
         repositoryId: repoId,
         status: "queued",
-        targetAgentId: null,
+        targetHarnessId: null,
       });
       const payload = ReviewReplyJobPayload.parse(created[0]!.payload);
       expect(payload).toMatchObject({

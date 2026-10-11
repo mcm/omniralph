@@ -90,7 +90,7 @@ describe("formatting", () => {
       },
       findingsBySeverity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       dismissalsByRepository: [],
-      jobsByAgent: [],
+      jobsByHarness: [],
     });
     expect(data.from).toBe("2026-09-29T00:00:00.000Z");
     expect(data.to).toBe("2026-10-06T00:00:00.000Z");

@@ -7,8 +7,8 @@ import type { Database } from "./client.js";
 import type { Repository } from "./repositories.js";
 import type { ReviewProfile } from "./reviews.js";
 import {
-  agentRepoPins,
-  agents,
+  harnessRepoPins,
+  harnesses,
   repositories,
   reviewProfiles,
   type RepositoryTriggers,
@@ -95,45 +95,45 @@ export async function updateReviewProfile(
 }
 
 /** The organization's agents that can be pinned (not revoked), by name. */
-export async function listPinnableAgents(
+export async function listPinnableHarnesses(
   db: Database,
   organizationId: string,
 ): Promise<{ id: string; name: string; lastHeartbeatAt: Date | null }[]> {
   return db
-    .select({ id: agents.id, name: agents.name, lastHeartbeatAt: agents.lastHeartbeatAt })
-    .from(agents)
-    .where(and(eq(agents.organizationId, organizationId), isNull(agents.revokedAt)))
-    .orderBy(asc(agents.name), asc(agents.createdAt));
+    .select({ id: harnesses.id, name: harnesses.name, lastHeartbeatAt: harnesses.lastHeartbeatAt })
+    .from(harnesses)
+    .where(and(eq(harnesses.organizationId, organizationId), isNull(harnesses.revokedAt)))
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
 }
 
 /** IDs of the agents a repository is pinned to. */
-export async function listRepositoryPinnedAgentIds(
+export async function listRepositoryPinnedHarnessIds(
   db: Database,
   repositoryId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ agentId: agentRepoPins.agentId })
-    .from(agentRepoPins)
-    .where(eq(agentRepoPins.repositoryId, repositoryId))
-    .orderBy(asc(agentRepoPins.createdAt));
-  return rows.map((r) => r.agentId);
+    .select({ harnessId: harnessRepoPins.harnessId })
+    .from(harnessRepoPins)
+    .where(eq(harnessRepoPins.repositoryId, repositoryId))
+    .orderBy(asc(harnessRepoPins.createdAt));
+  return rows.map((r) => r.harnessId);
 }
 
-/** Which of `agentIds` are existing, non-revoked agents of the organization. */
-export async function filterActiveAgentIds(
+/** Which of `harnessIds` are existing, non-revoked agents of the organization. */
+export async function filterActiveHarnessIds(
   db: Database,
   organizationId: string,
-  agentIds: string[],
+  harnessIds: string[],
 ): Promise<Set<string>> {
-  if (agentIds.length === 0) return new Set();
+  if (harnessIds.length === 0) return new Set();
   const rows = await db
-    .select({ id: agents.id })
-    .from(agents)
+    .select({ id: harnesses.id })
+    .from(harnesses)
     .where(
       and(
-        eq(agents.organizationId, organizationId),
-        inArray(agents.id, agentIds),
-        isNull(agents.revokedAt),
+        eq(harnesses.organizationId, organizationId),
+        inArray(harnesses.id, harnessIds),
+        isNull(harnesses.revokedAt),
       ),
     );
   return new Set(rows.map((r) => r.id));

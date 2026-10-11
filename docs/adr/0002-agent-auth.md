@@ -93,11 +93,11 @@ long-lived code-host or Vercel credentials. Their identity is:
 
 - **Enrollment.** An admin creates a one-time enrollment token (256-bit
   random, valid 1 hour, single use, stored as a SHA-256 hash).
-  `POST /api/agent/enroll` consumes it, creates the agent and returns
+  `POST /api/harness/enroll` consumes it, creates the agent and returns
   `{ agentId, refreshToken }`.
 - **Refresh tokens.** Opaque 256-bit random values; only their SHA-256 hash is
   stored (`agent_refresh_tokens`). The agent keeps its token in a 0600 file.
-  `POST /api/agent/token` marks the presented token used and returns a new one
+  `POST /api/harness/token` marks the presented token used and returns a new one
   in the same **family** plus an access token (rotation on every refresh).
 - **Reuse detection.** Presenting an already-used refresh token means two
   parties hold the chain (theft or a cloned host): the whole family **and the
@@ -115,7 +115,7 @@ long-lived code-host or Vercel credentials. Their identity is:
   only see the job token. `LocalTokenSigner` (`jose`, `LOCAL_AGENT_SIGNING_KEY`
   or an in-memory key) exists for local dev and tests and refuses to run with
   `VERCEL_ENV=production`.
-- **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/agent-auth/verify.ts`)
+- **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/harness-auth/verify.ts`)
   check the signature (RS256 only), `aud`, `typ` and `exp` with `jose` against
   the issuer's cached JWKS (`https://kms.vercel.com/<issuer>/jwks.json`), then
   **check the database** that the agent isn't revoked (and, for job tokens,

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -39,7 +39,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeAgent } from "@/lib/agent-auth/revoke";
+import { revokeHarness } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -150,14 +150,14 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(agents);
+    await db.delete(harnesses);
     [{ id: agentA }, { id: agentB }] = (await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
         { organizationId: orgId, name: "agent-b", enabledCapabilities: ["review", "ralph"] },
       ])
-      .returning({ id: agents.id })) as [{ id: string }, { id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
       linearTeamKeys: ["ENG"],
@@ -210,35 +210,35 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
     return job!;
   }
 
-  async function start(runId: string, agentId = agentA): Promise<Job> {
+  async function start(runId: string, harnessId = agentA): Promise<Job> {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId,
+      harnessId,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
     return job;
   }
 
   async function finish(
     job: Job,
     outcome: Record<string, unknown> | { jobError: string },
-    agentId = agentA,
+    harnessId = agentA,
   ): Promise<void> {
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        agentId,
+        harnessId,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      expect(await completeJob(db, { jobId: job.id, agentId, result: outcome })).toEqual({
+      expect(await completeJob(db, { jobId: job.id, harnessId, result: outcome })).toEqual({
         status: "completed",
       });
     }
@@ -290,11 +290,11 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   async function request(
     runId: string,
     outcome: Partial<RalphRequestResult> | { jobError: string } = {},
-    agentId = agentA,
+    harnessId = agentA,
   ): Promise<RalphRequestPayload> {
-    const job = await start(runId, agentId);
+    const job = await start(runId, harnessId);
     expect(job.type).toBe("ralph.request");
-    await finish(job, "jobError" in outcome ? outcome : requestResult(outcome), agentId);
+    await finish(job, "jobError" in outcome ? outcome : requestResult(outcome), harnessId);
     return RalphRequestPayload.parse(job.payload);
   }
 
@@ -503,7 +503,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect((await request(run!.id)).resumeSessionId).toBeNull();
       expect(await getMainLane(db, run!)).toMatchObject({
         requestClaudeSessionId: "claude-req-1",
-        requestAgentId: agentA,
+        requestHarnessId: agentA,
       });
 
       expect((await reply(run!, "Shorter please"))?.kind).toBe("request");
@@ -513,10 +513,10 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect(await getMainLane(db, run!)).toMatchObject({ requestClaudeSessionId: "claude-req-2" });
 
       // Another agent doesn't have the session's files: it starts fresh.
-      await revokeAgent(agentA, { db, dispatcher });
+      await revokeHarness(agentA, { db, dispatcher });
       await reply(run!, "And in French");
       expect((await request(run!.id, {}, agentB)).resumeSessionId).toBeNull();
-      expect(await getMainLane(db, run!)).toMatchObject({ requestAgentId: agentB });
+      expect(await getMainLane(db, run!)).toMatchObject({ requestHarnessId: agentB });
       expect(
         (await db.select().from(jobs).where(eq(jobs.ralphRunId, run!.id))).every(
           (j) => j.type === "ralph.request",

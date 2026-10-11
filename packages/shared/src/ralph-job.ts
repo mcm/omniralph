@@ -107,7 +107,7 @@ export const RalphAttachmentId = z.string().regex(/^[0-9a-f]{32}$/);
 
 /**
  * A file uploaded to Linear (a pasted screenshot, a mockup, a PDF) that the
- * job may download through `GET /api/agent/jobs/{id}/attachments/{attachmentId}`.
+ * job may download through `GET /api/harness/jobs/{id}/attachments/{attachmentId}`.
  */
 export const RalphAttachment = z.object({
   id: RalphAttachmentId,
@@ -184,7 +184,7 @@ export const RalphFollowUp = z.object({
 });
 export type RalphFollowUp = z.infer<typeof RalphFollowUp>;
 
-/** Result of a `ralph.story` job (`/api/agent/jobs/{id}/result`). */
+/** Result of a `ralph.story` job (`/api/harness/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
   /** What was done, or what is in the way; posted to Linear. */
@@ -439,13 +439,13 @@ export const RalphCleanupResult = z.object({
 export type RalphCleanupResult = z.infer<typeof RalphCleanupResult>;
 
 /**
- * An agent-session activity relayed by an agent (`POST /api/agent/jobs/{id}/activities`):
+ * An agent-session activity relayed by an agent (`POST /api/harness/jobs/{id}/activities`):
  * Claude's text as a `thought`, a tool call as an (ephemeral) `action`.
  */
 /**
  * A tool call a running ralph job's session needs a person's approval for
  * (the repository's Claude Code settings `ask` about it):
- * `POST /api/agent/jobs/{id}/permissions`. The control panel asks in the
+ * `POST /api/harness/jobs/{id}/permissions`. The control panel asks in the
  * run's Linear agent session.
  */
 export const RalphPermissionRequest = z.object({
@@ -465,7 +465,7 @@ export type RalphPermissionRequest = z.infer<typeof RalphPermissionRequest>;
 export const RALPH_PERMISSION_STATUSES = ["pending", "allowed", "denied", "expired"] as const;
 export type RalphPermissionStatus = (typeof RALPH_PERMISSION_STATUSES)[number];
 
-/** `GET /api/agent/jobs/{id}/permissions/{requestId}`: the answer so far. */
+/** `GET /api/harness/jobs/{id}/permissions/{requestId}`: the answer so far. */
 export const RalphPermissionAnswer = z.object({
   status: z.enum(RALPH_PERMISSION_STATUSES),
   /** Who answered in Linear, when known. */

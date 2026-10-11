@@ -1,17 +1,17 @@
 // Two organizations, each with an agent and a repository: an admin of one never sees or
 // changes the other's agents, gets a 404 on their URLs, and only sets their own agent version.
 import {
-  agents,
+  harnesses,
   closeDb,
   connectRepository,
-  createAgentEnrollment,
+  createHarnessEnrollment,
   createDb,
   createOrganization,
-  enrollAgent,
-  getAgentOverview,
-  getDesiredAgentVersion,
+  enrollHarness,
+  getHarnessOverview,
+  getDesiredHarnessVersion,
   runMigrations,
-  setDesiredAgentVersion,
+  setDesiredHarnessVersion,
   upsertScmConnection,
   users,
   type Database,
@@ -77,14 +77,14 @@ const { default: AgentPage } = await import("./[id]/page");
 const { default: AgentSettingsPage } = await import("../settings/agents/page");
 const {
   createEnrollment,
-  deleteAgent,
+  deleteHarness,
   pinRepository,
-  revokeAgent,
-  setAgentDesiredVersion,
+  revokeHarness,
+  setHarnessDesiredVersion,
   unpinRepository,
-  updateAgentConfig,
+  updateHarnessConfig,
 } = await import("./actions");
-const { setGlobalAgentVersion } = await import("../settings/agents/actions");
+const { setGlobalHarnessVersion } = await import("../settings/agents/actions");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -94,7 +94,7 @@ const dockerAvailable = await getContainerRuntimeClient().then(
 interface Tenant {
   userId: string;
   orgId: string;
-  agentId: string;
+  harnessId: string;
   repoId: string;
 }
 
@@ -113,11 +113,11 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
       .values({ id: `${name}-admin`, email: `admin@${name}.io` })
       .returning();
     const org = await createOrganization(db, { name, createdBy: user!.id });
-    const enrollment = await createAgentEnrollment(db, {
+    const enrollment = await createHarnessEnrollment(db, {
       organizationId: org.id,
       name: `${name}-agent`,
     });
-    const { agentId } = (await enrollAgent(db, {
+    const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
@@ -137,7 +137,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
       externalId: "500",
       fullPath: "shared/app",
     });
-    return { userId: user!.id, orgId: org.id, agentId, repoId: repo.id };
+    return { userId: user!.id, orgId: org.id, harnessId, repoId: repo.id };
   }
 
   beforeAll(async () => {
@@ -159,59 +159,59 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
   it("lists only the active organization's agents and 404s on the other's", async () => {
     state.userId = a.userId;
     const listed = (await AgentsPage()).props.agents as { id: string }[];
-    expect(listed.map((r) => r.id)).toEqual([a.agentId]);
-    const detail = await AgentPage(params(a.agentId));
-    expect((detail.props.agent as { id: string }).id).toBe(a.agentId);
-    await expect(AgentPage(params(b.agentId))).rejects.toMatchObject(notFound);
+    expect(listed.map((r) => r.id)).toEqual([a.harnessId]);
+    const detail = await AgentPage(params(a.harnessId));
+    expect((detail.props.agent as { id: string }).id).toBe(a.harnessId);
+    await expect(AgentPage(params(b.harnessId))).rejects.toMatchObject(notFound);
   });
 
   it("creates enrollments in the active organization", async () => {
     state.userId = b.userId;
     const created = await createEnrollment("beta-2");
     if (!created.ok) throw new Error(created.error);
-    const { agentId } = (await enrollAgent(db, {
+    const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: created.token,
       name: "host",
       version: "1.0.0",
       capabilities: ["review"],
     }))!;
-    const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
     expect(row!.organizationId).toBe(b.orgId);
   });
 
   it("refuses every agent action on the other organization's agent", async () => {
     state.userId = a.userId;
     const config = { maxConcurrency: 4, enabledCapabilities: ["review"] };
-    expect(await updateAgentConfig(b.agentId, config)).toMatchObject({ ok: false });
-    expect(await setAgentDesiredVersion(b.agentId, "9.9.9")).toMatchObject({ ok: false });
-    expect(await revokeAgent(b.agentId)).toMatchObject({ ok: false });
-    expect(await deleteAgent(b.agentId)).toMatchObject({ ok: false });
+    expect(await updateHarnessConfig(b.harnessId, config)).toMatchObject({ ok: false });
+    expect(await setHarnessDesiredVersion(b.harnessId, "9.9.9")).toMatchObject({ ok: false });
+    expect(await revokeHarness(b.harnessId)).toMatchObject({ ok: false });
+    expect(await deleteHarness(b.harnessId)).toMatchObject({ ok: false });
     // Neither the other's agent with our repository nor our agent with the other's repository.
-    expect(await pinRepository(b.agentId, a.repoId)).toMatchObject({ ok: false });
-    expect(await pinRepository(a.agentId, b.repoId)).toMatchObject({ ok: false });
-    expect(await unpinRepository(b.agentId, b.repoId)).toMatchObject({ ok: false });
+    expect(await pinRepository(b.harnessId, a.repoId)).toMatchObject({ ok: false });
+    expect(await pinRepository(a.harnessId, b.repoId)).toMatchObject({ ok: false });
+    expect(await unpinRepository(b.harnessId, b.repoId)).toMatchObject({ ok: false });
 
-    const other = (await getAgentOverview(db, b.orgId, b.agentId))!;
+    const other = (await getHarnessOverview(db, b.orgId, b.harnessId))!;
     expect(other).toMatchObject({ maxConcurrency: 1, desiredVersion: null, revokedAt: null });
     expect(other.pinnedRepositories).toEqual([]);
 
     // Its own agent and repository still work.
-    expect(await updateAgentConfig(a.agentId, config)).toEqual({ ok: true });
-    expect(await pinRepository(a.agentId, a.repoId)).toEqual({ ok: true });
+    expect(await updateHarnessConfig(a.harnessId, config)).toEqual({ ok: true });
+    expect(await pinRepository(a.harnessId, a.repoId)).toEqual({ ok: true });
   });
 
   it("keeps the desired agent version per organization", async () => {
     state.userId = a.userId;
-    expect(await setGlobalAgentVersion("1.4.0")).toEqual({ ok: true });
-    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
-    expect(await getDesiredAgentVersion(db, b.orgId)).toBeNull();
+    expect(await setGlobalHarnessVersion("1.4.0")).toEqual({ ok: true });
+    expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
+    expect(await getDesiredHarnessVersion(db, b.orgId)).toBeNull();
     expect((await AgentSettingsPage()).props.desiredVersion).toBe("1.4.0");
     const listed = (await AgentsPage()).props.agents as { desiredVersion: string | null }[];
     expect(listed.map((r) => r.desiredVersion)).toEqual(["1.4.0"]);
 
     state.userId = b.userId;
     expect((await AgentSettingsPage()).props.desiredVersion).toBeNull();
-    await setDesiredAgentVersion(db, b.orgId, "2.0.0", b.userId);
-    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
+    await setDesiredHarnessVersion(db, b.orgId, "2.0.0", b.userId);
+    expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
   });
 });

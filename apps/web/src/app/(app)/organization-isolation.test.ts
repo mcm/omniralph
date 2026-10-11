@@ -8,14 +8,14 @@ import {
   addOrganizationDomain,
   closeDb,
   connectRepository,
-  createAgentEnrollment,
+  createHarnessEnrollment,
   createCustomRule,
   createDb,
   createInvitation,
   createOrganization,
   createReview,
   createRun,
-  enrollAgent,
+  enrollHarness,
   ensureLane,
   findings,
   getActiveOrganization,
@@ -26,7 +26,7 @@ import {
   runMigrations,
   saveIntegration,
   setActiveOrganization,
-  setDesiredAgentVersion,
+  setDesiredHarnessVersion,
   claimJob,
   upsertScmConnection,
   upsertStories,
@@ -167,7 +167,7 @@ interface Tenant {
   ruleId: string;
   reviewId: string;
   findingId: string;
-  agentId: string;
+  harnessId: string;
   jobId: string;
   runId: string;
   laneId: string;
@@ -267,20 +267,20 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       }),
     ).not.toBe("other_organization");
 
-    const enrollment = await createAgentEnrollment(db, {
+    const enrollment = await createHarnessEnrollment(db, {
       organizationId: org.id,
       name: `${name}-agent`,
       createdBy: user!.id,
     });
     // A second, unused enrollment stays pending.
-    await createAgentEnrollment(db, { organizationId: org.id, name: `${name}-pending` });
-    const { agentId } = (await enrollAgent(db, {
+    await createHarnessEnrollment(db, { organizationId: org.id, name: `${name}-pending` });
+    const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: enrollment.token,
       name: `${name}-agent`,
       version: "1.0.0",
       capabilities: ["review", "ralph"],
     }))!;
-    await setDesiredAgentVersion(db, org.id, `1.0.0-${name}`, user!.id);
+    await setDesiredHarnessVersion(db, org.id, `1.0.0-${name}`, user!.id);
 
     const { run } = await createRun(db, {
       organizationId: org.id,
@@ -317,7 +317,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     });
     expect(
       await claimJob(db, {
-        agentId,
+        harnessId,
         organizationId: org.id,
         capabilities: ["review"],
         enabledCapabilities: ["review"],
@@ -349,7 +349,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       ruleId: rule.id,
       reviewId: review.id,
       findingId: finding!.id,
-      agentId,
+      harnessId,
       jobId: job.id,
       runId: run.id,
       laneId: lane.id,
@@ -388,7 +388,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
       agents: await AgentsPage(),
-      agent: await AgentPage(params(own.agentId)),
+      agent: await AgentPage(params(own.harnessId)),
       ralphRuns: await RalphRunsPage(search()),
       ralphRun: await RalphRunPage(params(own.runId)),
       jobs: await JobsPage(search()),
@@ -425,7 +425,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
       expect(ids(pages.repositories!.props.repositories)).toEqual([own.repoId]);
       expect(pages.repositorySettings!.props.repository.id).toBe(own.repoId);
-      expect(ids(pages.repositorySettings!.props.agents)).toEqual([own.agentId]);
+      expect(ids(pages.repositorySettings!.props.agents)).toEqual([own.harnessId]);
       expect(ids(pages.repositoryRules!.props.rules)).toEqual([own.ruleId]);
       expect(ids(pages.repositoryReviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.githubInstallation!.props.connectionId).toBe(own.connectionId);
@@ -433,8 +433,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.review!.props.review.id).toBe(own.reviewId);
       expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
-      expect(ids(pages.agents!.props.agents)).toEqual([own.agentId]);
-      expect(pages.agent!.props.agent.id).toBe(own.agentId);
+      expect(ids(pages.agents!.props.agents)).toEqual([own.harnessId]);
+      expect(pages.agent!.props.agent.id).toBe(own.harnessId);
       expect(ids(pages.ralphRuns!.props.runs)).toEqual([own.runId]);
       expect(pages.ralphRuns!.props.linearConnected).toBe(true);
       expect(pages.ralphRun!.props.run.id).toBe(own.runId);
@@ -442,7 +442,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(ids(pages.jobs!.props.jobs)).toHaveLength(2);
       expect(ids(pages.jobs!.props.jobs)).toContain(own.jobId);
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
-      expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.agentId);
+      expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
       expect(pages.agentSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
       expect(pages.integrations!.props.linear).toMatchObject({
@@ -459,7 +459,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     state.userId = a.userId;
     const { analytics, ralph } = (await AnalyticsPage(search())).props;
     expect(JSON.stringify(analytics)).toContain(`"reviews":1`);
-    expect(analytics.jobsByAgent).toMatchObject([{ agent: { id: a.agentId }, total: 1 }]);
+    expect(analytics.jobsByHarness).toMatchObject([{ agent: { id: a.harnessId }, total: 1 }]);
     expect(JSON.stringify(ralph)).not.toContain(b.runId);
     // Another organization's repository as the filter is ignored.
     const filtered = (await AnalyticsPage(search({ repo: b.repoId }))).props;
@@ -488,7 +488,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
     ).rejects.toMatchObject(notFound);
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
-    await expect(AgentPage(params(b.agentId))).rejects.toMatchObject(notFound);
+    await expect(AgentPage(params(b.harnessId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
@@ -525,7 +525,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
-      [`/agents/${b.agentId}`, () => AgentPage(params(b.agentId)), b.agentId],
+      [`/agents/${b.harnessId}`, () => AgentPage(params(b.harnessId)), b.harnessId],
       [`/ralph/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
       [
         `/repositories/${b.repoId}/settings`,

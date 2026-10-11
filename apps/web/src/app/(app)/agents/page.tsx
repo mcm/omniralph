@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { listAgentOverview } from "@omniralph/db";
-import { organizationAgentVersion } from "@/lib/agents/desired-version";
-import { agentRow } from "@/lib/agents/rows";
+import { listHarnessOverview } from "@omniralph/db";
+import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { harnessRow } from "@/lib/harnesses/rows";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { AgentsView } from "./agents-view";
@@ -13,13 +13,13 @@ export default async function AgentsPage() {
   const now = new Date();
   const db = getDb();
   const [agents, organizationVersion] = await Promise.all([
-    listAgentOverview(db, user.organization.id),
-    organizationAgentVersion(db, user.organization.id),
+    listHarnessOverview(db, user.organization.id),
+    organizationHarnessVersion(db, user.organization.id),
   ]);
   return (
     <AgentsView
       agents={agents.map((agent) =>
-        agentRow(agent, now, organizationVersion.version, organizationVersion.tracksLatest),
+        harnessRow(agent, now, organizationVersion.version, organizationVersion.tracksLatest),
       )}
       now={now.getTime()}
     />

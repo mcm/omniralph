@@ -164,7 +164,7 @@ export const TriageRunPayload = z.object({
 });
 export type TriageRunPayload = z.infer<typeof TriageRunPayload>;
 
-/** Result of a `triage.run` job (`/api/agent/jobs/{id}/result`). */
+/** Result of a `triage.run` job (`/api/harness/jobs/{id}/result`). */
 export const TriageRunResult = z
   .object({
     /** For the Linear session: what triage decided, or why it couldn't (`error`). */

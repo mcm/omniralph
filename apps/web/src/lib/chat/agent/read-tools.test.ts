@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  agents,
+  harnesses,
   appendChatMessage,
   closeDb,
   connectRepository,
@@ -55,7 +55,7 @@ interface SeededOrg {
   doneRunId: string;
   reviewId: string;
   jobId: string;
-  agentId: string;
+  harnessId: string;
 }
 
 /** A tool's result as a loose record. */
@@ -116,7 +116,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       .set({ ralphEnabled: true })
       .where(eq(repositories.id, repository.id));
     const [agent] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values({
         organizationId: id,
         name: `${slug}-agent`,
@@ -190,7 +190,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       doneRunId: doneRun.id,
       reviewId: review.id,
       jobId: job.id,
-      agentId: agent!.id,
+      harnessId: agent!.id,
     };
   }
 
@@ -376,8 +376,8 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     const list = await call("list_agents", {}, acme.id);
     expect(list.agents).toEqual([
       expect.objectContaining({
-        id: acme.agentId,
-        url: `${APP_URL}/agents/${acme.agentId}`,
+        id: acme.harnessId,
+        url: `${APP_URL}/agents/${acme.harnessId}`,
         name: "acme-agent",
         status: "online",
         version: "1.2.3",

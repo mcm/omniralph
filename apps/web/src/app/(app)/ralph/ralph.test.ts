@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  agents,
+  harnesses,
   connectRepository,
   closeDb,
   createDb,
@@ -137,7 +137,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   let orgId: string;
   let repoA: string;
   let repoB: string;
-  let agentId: string;
+  let harnessId: string;
   let linear: FakeLinearGateway;
   let session = 0;
 
@@ -188,10 +188,10 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
-    [{ id: agentId }] = (await db
-      .insert(agents)
+    [{ id: harnessId }] = (await db
+      .insert(harnesses)
       .values({ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] })
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -242,7 +242,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   it("lists runs newest first with their row facts, filtered by status and repository", async () => {
     const first = await newRun();
     const second = await newRun({ repositoryId: repoB });
-    await updateRun(db, first.id, { status: "completed", agentId });
+    await updateRun(db, first.id, { status: "completed", harnessId });
     await updateLane(db, (await getMainLane(db, first))!.id, {
       prNumber: 7,
       prUrl: "https://github.com/acme/api/pull/7",
@@ -279,7 +279,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       stories: { total: 2, completed: 1 },
       branch: `eng-${session - 1}`,
       pullRequest: { number: 7, url: "https://github.com/acme/api/pull/7", label: "#7" },
-      agent: { id: agentId, name: "agent-a" },
+      agent: { id: harnessId, name: "agent-a" },
     });
     expect(typeof all.runs[1]!.updatedAt).toBe("string");
     expect(all.runs[0]).toMatchObject({ pullRequest: { label: "!3" }, agent: null });
@@ -359,7 +359,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     });
     await db
       .update(jobs)
-      .set({ status: "completed", agentId, finishedAt: new Date() })
+      .set({ status: "completed", harnessId, finishedAt: new Date() })
       .where(eq(jobs.id, job.id));
     await updateStory(db, s1!.id, {
       status: "completed",
@@ -374,7 +374,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     });
     await updateRun(db, run.id, {
       status: "waiting",
-      agentId,
+      harnessId,
       waitingOn: {
         blockers: [{ id: "x", identifier: "OPS-1", title: "Provision DB" }],
         manual: [],
@@ -395,7 +395,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       repository: { id: repoA, fullPath: "acme/api" },
       branch: `eng-${session}`,
       baseBranch: "main",
-      agent: { id: agentId, name: "agent-a" },
+      agent: { id: harnessId, name: "agent-a" },
       pullRequest: null,
       waitingOn: { blockers: [{ identifier: "OPS-1", title: "Provision DB" }], manual: [] },
       guidance: [{ text: "Use pnpm.", at: "2026-10-06T01:00:00.000Z" }],
@@ -543,7 +543,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       type: "ralph.story",
       ralphRunId: run.id,
     });
-    await db.update(jobs).set({ status: "running", agentId }).where(eq(jobs.id, story.id));
+    await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, story.id));
     const live = async (
       minute: number,
       text: string,

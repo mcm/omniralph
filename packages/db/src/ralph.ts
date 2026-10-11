@@ -26,7 +26,7 @@ import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
 import type { Repository, ScmProvider } from "./repositories.js";
 import {
-  agents,
+  harnesses,
   chatThreads,
   jobs,
   ralphLanes,
@@ -532,13 +532,13 @@ export async function listRuns(
           provider: repositories.provider,
           fullPath: repositories.fullPath,
         },
-        agentId: agents.id,
-        agentName: agents.name,
+        harnessId: harnesses.id,
+        harnessName: harnesses.name,
         chatThread: chatThreadColumns,
       })
       .from(ralphRuns)
       .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
-      .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+      .leftJoin(harnesses, eq(harnesses.id, ralphRuns.harnessId))
       .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
       .leftJoin(ralphLanes, mainLaneOf(ralphRuns))
       .where(where)
@@ -568,9 +568,9 @@ export async function listRuns(
   }
 
   return {
-    runs: rows.map(({ agentId, agentName, ...row }) => ({
+    runs: rows.map(({ harnessId, harnessName, ...row }) => ({
       ...row,
-      agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
+      agent: harnessId && harnessName !== null ? { id: harnessId, name: harnessName } : null,
       stories: storyCounts.get(row.id) ?? { total: 0, completed: 0 },
     })),
     total: totalRow?.total ?? 0,
@@ -645,13 +645,13 @@ export async function getRunDetail(
         provider: repositories.provider,
         fullPath: repositories.fullPath,
       },
-      agentId: agents.id,
-      agentName: agents.name,
+      harnessId: harnesses.id,
+      harnessName: harnesses.name,
       chatThread: chatThreadColumns,
     })
     .from(ralphRuns)
     .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
-    .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
+    .leftJoin(harnesses, eq(harnesses.id, ralphRuns.harnessId))
     .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
     .where(and(eq(ralphRuns.id, runId), eq(ralphRuns.organizationId, organizationId)))
     .limit(1);
@@ -683,11 +683,11 @@ export async function getRunDetail(
         createdAt: jobs.createdAt,
         startedAt: jobs.startedAt,
         finishedAt: jobs.finishedAt,
-        agentId: agents.id,
-        agentName: agents.name,
+        harnessId: harnesses.id,
+        harnessName: harnesses.name,
       })
       .from(jobs)
-      .leftJoin(agents, eq(agents.id, jobs.agentId))
+      .leftJoin(harnesses, eq(harnesses.id, jobs.harnessId))
       .where(eq(jobs.ralphRunId, runId))
       .orderBy(desc(jobs.createdAt), desc(jobs.id)),
     listPendingRequests(db, runId),
@@ -705,15 +705,18 @@ export async function getRunDetail(
   return {
     run: row.run,
     repository: row.repository,
-    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
+    agent:
+      row.harnessId && row.harnessName !== null
+        ? { id: row.harnessId, name: row.harnessName }
+        : null,
     chatThread: row.chatThread,
     lanes: lanes
       .map((l) => ({ ...l, main: l.lane.repositoryId === row.run.repositoryId }))
       .sort((a, b) => Number(b.main) - Number(a.main)),
     stories,
-    jobs: jobRows.map(({ agentId, agentName, ...job }) => ({
+    jobs: jobRows.map(({ harnessId, harnessName, ...job }) => ({
       ...job,
-      agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
+      agent: harnessId && harnessName !== null ? { id: harnessId, name: harnessName } : null,
     })),
     pendingRequests,
     messages: messageRows.map(({ message, job }) => ({ ...message, job })),
@@ -1084,7 +1087,7 @@ export async function copyLanes(
         publish: null,
         // Its requests start a new Claude conversation (cyralph keeps it per session).
         requestClaudeSessionId: null,
-        requestAgentId: null,
+        requestHarnessId: null,
       })),
     )
     .onConflictDoNothing()
@@ -1332,12 +1335,12 @@ export async function listUndeliveredJobMessages(
 }
 
 /**
- * The messages among `ids` still waiting for delivery to a job `agentId` runs
+ * The messages among `ids` still waiting for delivery to a job `harnessId` runs
  * (or ran): what an agent may acknowledge. Others' are ignored.
  */
-export async function listAgentUndeliveredMessages(
+export async function listHarnessUndeliveredMessages(
   db: Executor,
-  agentId: string,
+  harnessId: string,
   ids: readonly string[],
 ): Promise<RalphMessage[]> {
   if (ids.length === 0) return [];
@@ -1348,7 +1351,7 @@ export async function listAgentUndeliveredMessages(
     .where(
       and(
         inArray(ralphMessages.id, [...ids]),
-        eq(jobs.agentId, agentId),
+        eq(jobs.harnessId, harnessId),
         isNull(ralphMessages.deliveredAt),
         isNull(ralphMessages.consumedAt),
       ),
