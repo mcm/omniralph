@@ -40,6 +40,7 @@
     "@omniralph/engine": "workspace:*",
     "@omniralph/ralph": "workspace:*",
     "@omniralph/shared": "workspace:*",
+    "@omniralph/tasks": "workspace:*",
     "@types/proper-lockfile": "^4.1.4",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15"
