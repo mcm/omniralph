@@ -20,7 +20,7 @@ import {
   type Capability,
   type JobContext,
 } from "./capabilities/index.js";
-import { AgentDaemon, JobCanceled, ShutdownAbort } from "./daemon.js";
+import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
@@ -63,7 +63,8 @@ function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
 function runSpecFor(j: JobPayload, tokens: RunSpec["tokens"]): RunSpec {
   return {
     jobId: j.id,
-    taskType: "query",
+    // A legacy-shaped task type on a fixture job stands for a run of that type.
+    taskType: j.taskType === "system" ? "query" : j.taskType,
     pool: "short",
     agent: AgentDefinition.parse({
       id: "builtin:test-agent",
@@ -220,6 +221,7 @@ function capability(run: Capability["run"], overrides: Partial<Capability> = {})
 
 function setup(options: {
   run?: Capability["run"];
+  runQueryTask?: DaemonOptions["runQueryTask"];
   capabilities?: Capability[];
   config?: HeartbeatResponse;
   repos?: RepoCache;
@@ -238,6 +240,9 @@ function setup(options: {
     registry: new CapabilityRegistry(
       options.capabilities ?? [capability(options.run ?? (async () => ({ ok: true })))],
     ),
+    // Never the real query lifecycle (it would start Claude sessions).
+    runQueryTask:
+      options.runQueryTask ?? (() => Promise.reject(new Error("this test runs no query tasks"))),
     logger: silentLogger(),
     reportRetryDelayMs: 10,
     updater: options.updater,
@@ -778,13 +783,13 @@ describe("AgentDaemon", () => {
     const gate = deferred();
     let ctx: JobContext | undefined;
     const { state, claims, daemon } = setup({
-      run: async (_j, c) => {
+      runQueryTask: async (_spec, c) => {
         ctx = c;
         await gate.promise;
         return {};
       },
     });
-    // Dispatched by type until the query lifecycle lands; the task ID makes it a run-spec job.
+    // The task ID makes it a run-spec job.
     claims.push(job(id, { taskType: "query", taskId: "builtin:learn-rule" }));
     void daemon.run();
     await settle();
@@ -823,6 +828,47 @@ describe("AgentDaemon", () => {
     await settle();
     // The session token file goes with the job.
     await expect(readFile(tokenFile, "utf8")).rejects.toThrow();
+    await daemon.shutdown();
+  });
+
+  it("runs a query run through the query lifecycle and legacy jobs through their capability", async () => {
+    const [runId, legacyId] = [randomUUID(), randomUUID()];
+    const capabilityRun = vi.fn(async (j: JobPayload) => ({ legacy: j.id }));
+    const runQueryTask = vi.fn(async (spec: RunSpec, c: JobContext) => ({
+      query: spec.jobId,
+      sameSpec: c.runSpec === spec,
+    }));
+    const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
+    // A run-spec job of type review.run: dispatched by its run spec, not its type.
+    claims.push(job(runId, { taskType: "query", taskId: "builtin:test-task" }));
+    claims.push(job(legacyId));
+    void daemon.run();
+    await settle();
+    expect(runQueryTask).toHaveBeenCalledTimes(1);
+    expect(runQueryTask.mock.calls[0]?.[0]).toMatchObject({ jobId: runId, taskType: "query" });
+    expect(api.submitResult).toHaveBeenCalledWith(runId, {
+      result: { query: runId, sameSpec: true },
+    });
+    expect(capabilityRun).toHaveBeenCalledTimes(1);
+    expect(capabilityRun.mock.calls[0]?.[0]).toMatchObject({ id: legacyId });
+    expect(api.submitResult).toHaveBeenCalledWith(legacyId, { result: { legacy: legacyId } });
+    await daemon.shutdown();
+  });
+
+  it("fails a run of a task type it has no lifecycle for", async () => {
+    const id = randomUUID();
+    const capabilityRun = vi.fn(async () => ({}));
+    const runQueryTask = vi.fn(async () => ({}));
+    const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
+    claims.push(job(id, { taskType: "review", taskId: "builtin:test-task" }));
+    void daemon.run();
+    await settle();
+    expect(api.submitFailure).toHaveBeenCalledWith(id, {
+      retryable: false,
+      error: "unsupported task type review",
+    });
+    expect(runQueryTask).not.toHaveBeenCalled();
+    expect(capabilityRun).not.toHaveBeenCalled();
     await daemon.shutdown();
   });
 

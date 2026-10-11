@@ -1,10 +1,7 @@
-import { stat } from "node:fs/promises";
-import path from "node:path";
 import {
   buildChatAskPrompt,
   CHAT_ASK_SYSTEM_PROMPT,
   CONVENTIONS_PATH,
-  extractFileReferences,
   showFile,
   type QuestionAnswerer,
   type ReplyOutcome,
@@ -17,6 +14,7 @@ import {
   type ChatAskJobResult,
   type JobPayload,
 } from "@omniralph/shared";
+import { existingReferences } from "../lifecycle/references.js";
 import { RetryableJobError, type JobContext } from "./index.js";
 import { reviewSessionProvider } from "./review.js";
 
@@ -28,23 +26,6 @@ export interface ChatAskOptions {
   answerer?: QuestionAnswerer;
   /** Retry delay for rate limits whose reset time is unknown. */
   defaultRetryAfterSeconds?: number;
-}
-
-/** The answer's references to files that exist in the checkout, at most `MAX_CHAT_ASK_REFERENCES`. */
-async function existingReferences(answer: string, root: string): Promise<ChatAskFileReference[]> {
-  const kept: ChatAskFileReference[] = [];
-  for (const reference of extractFileReferences(answer)) {
-    const file = path.resolve(root, reference.path);
-    if (path.relative(root, file).startsWith("..")) continue;
-    const isFile = await stat(file).then(
-      (s) => s.isFile(),
-      () => false,
-    );
-    if (!isFile) continue;
-    kept.push(reference);
-    if (kept.length === MAX_CHAT_ASK_REFERENCES) break;
-  }
-  return kept;
 }
 
 /**
@@ -113,7 +94,7 @@ export async function runChatAsk(
       });
       const references =
         outcome.status === "answered" && outcome.answer !== null
-          ? await existingReferences(outcome.answer, worktree.path)
+          ? await existingReferences(outcome.answer, worktree.path, MAX_CHAT_ASK_REFERENCES)
           : [];
       return { outcome, references };
     },

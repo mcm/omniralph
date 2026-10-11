@@ -1,14 +1,20 @@
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
-import { RALPH_TOOL_POLICY } from "./policy.js";
+import { RALPH_TOOL_POLICY } from "../capabilities/ralph/policy.js";
 import {
   createSessionRunner,
   type MessageInjector,
   type SessionQueryFn,
   PERMISSION_DENIED_TEXT,
   type SessionRequest,
+  sessionOptions,
   WAIT_NUDGE_TEXT,
 } from "./session.js";
+import {
+  assistantMessage,
+  resultMessage,
+  scriptedQuery as scriptedSession,
+} from "../test/fake-query.js";
 
 type Behaviour = "separate-turns" | "folded" | "silent-after-result";
 
@@ -442,5 +448,112 @@ describe("session runner background work", () => {
     expect(inject?.("how is it going?")).toBe(true);
     expect(await r.done).toMatchObject({ stop: "completed", structured: { status: "complete" } });
     expect(r.sent.map(text)).toEqual(["story", "how is it going?"]);
+  });
+});
+
+describe("session options", () => {
+  const request = (extra: Partial<SessionRequest> = {}): SessionRequest => ({
+    prompt: "question",
+    cwd: process.cwd(),
+    policy: RALPH_TOOL_POLICY,
+    systemAppend: "Be brief.",
+    env: {},
+    signal: new AbortController().signal,
+    ...extra,
+  });
+
+  it("appends to Claude Code's preset and asks for a structured result by default", () => {
+    const options = sessionOptions(
+      request({ outputSchema: { type: "object" } }),
+      new AbortController(),
+    );
+    expect(options.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+      append: "Be brief.",
+    });
+    expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
+    expect(options.maxTurns).toBeUndefined();
+  });
+
+  it("replaces the preset, leaves out the output format and caps the turns", () => {
+    const options = sessionOptions(
+      request({ systemPrompt: "You answer questions.", maxTurns: 7 }),
+      new AbortController(),
+    );
+    expect(options.systemPrompt).toBe("You answer questions.");
+    expect(options.outputFormat).toBeUndefined();
+    expect(options.maxTurns).toBe(7);
+  });
+
+  it("gives no tools without exploration", () => {
+    const options = sessionOptions(request({ allowExploration: false }), new AbortController());
+    expect(options.tools).toEqual([]);
+  });
+});
+
+describe("session runner without an output schema", () => {
+  it("returns the final text", async () => {
+    const fake = scriptedSession(() => [resultMessage("The answer.")]);
+    const result = await createSessionRunner(fake.query)({
+      prompt: "question",
+      cwd: process.cwd(),
+      policy: RALPH_TOOL_POLICY,
+      systemAppend: "",
+      env: {},
+      signal: new AbortController().signal,
+    });
+    expect(result).toMatchObject({ stop: "completed", output: "The answer." });
+    expect(fake.calls[0]?.options.outputFormat).toBeUndefined();
+  });
+});
+
+describe("session runner token budget", () => {
+  const runWith = (messages: SDKMessage[], tokenBudget?: number) =>
+    createSessionRunner(scriptedSession(() => messages).query)({
+      prompt: "question",
+      cwd: process.cwd(),
+      policy: RALPH_TOOL_POLICY,
+      systemAppend: "",
+      env: {},
+      signal: new AbortController().signal,
+      ...(tokenBudget !== undefined && { tokenBudget }),
+    });
+
+  it("stops once input + output tokens reach the budget", async () => {
+    const result = await runWith(
+      [
+        assistantMessage("a", { id: "m1", inputTokens: 400, outputTokens: 50 }),
+        // Streamed again with more output: counted once, at its largest.
+        assistantMessage("a", { id: "m1", inputTokens: 400, outputTokens: 100 }),
+        assistantMessage("b", { id: "m2", inputTokens: 450, outputTokens: 50 }),
+        resultMessage("done"),
+      ],
+      1000,
+    );
+    expect(result).toMatchObject({
+      stop: "budget_exhausted",
+      usage: { inputTokens: 850, outputTokens: 150 },
+    });
+  });
+
+  it("stops before a tool call's turn would cross it", async () => {
+    const result = await runWith(
+      [assistantMessage("a", { toolUse: true, inputTokens: 450, outputTokens: 100 })],
+      1000,
+    );
+    expect(result.stop).toBe("budget_exhausted");
+  });
+
+  it("completes under the budget, and without one", async () => {
+    const messages = [
+      assistantMessage("a", { inputTokens: 400, outputTokens: 50 }),
+      resultMessage("done", { inputTokens: 500, outputTokens: 60 }),
+    ];
+    expect(await runWith(messages, 1000)).toMatchObject({
+      stop: "completed",
+      usage: { inputTokens: 500, outputTokens: 60 },
+    });
+    expect(await runWith(messages)).toMatchObject({ stop: "completed" });
   });
 });
