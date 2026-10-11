@@ -88,5 +88,13 @@ describe("auditDetailSummary", () => {
         access: "write",
       }),
     ).toBe("Write token for acme/api, job abcdef12");
+    expect(
+      auditDetailSummary("credential_issued", {
+        repository: "acme/api",
+        jobId: "abcdef12-0",
+        access: "read",
+        tokenKind: "session",
+      }),
+    ).toBe("Read-only token for acme/api, job abcdef12 (session token)");
   });
 });

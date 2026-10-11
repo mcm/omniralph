@@ -17,6 +17,8 @@ import {
   RunSpec,
   type JobRepository,
   type RalphRequestPayload,
+  type RalphStoryPayload,
+  type RalphStoryResult,
 } from "@omniralph/shared";
 import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -186,6 +188,35 @@ function requestPayload(
   };
 }
 
+function storyPayload(repo: JobRepository, runId: string, branch: string): RalphStoryPayload {
+  return {
+    runId,
+    repositoryId: randomUUID(),
+    repository: repo,
+    branch,
+    baseBranch: "main",
+    settings: requestPayload(repo, runId, branch).settings,
+    storyId: randomUUID(),
+    attempt: 1,
+    epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: "" },
+    story: {
+      identifier: "TOOL-91",
+      title: "Run a story",
+      linearIssueId: "issue-91",
+      url: null,
+      description: "Run it.",
+    },
+    stories: [],
+    commitMessage: "feat(TOOL-91): Run a story",
+    qualityGates: [],
+    prdQualityGates: [],
+    progress: "",
+    lastFeedback: null,
+    guidance: [],
+    attachments: [],
+  };
+}
+
 describe("coding runs of a request task", { timeout: 60_000 }, () => {
   let root: string;
   let workspaceRoot: string;
@@ -344,32 +375,7 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ status: "incomplete", summary: "Not yet.", followUps: [] });
     });
-    const story = {
-      runId,
-      repositoryId: randomUUID(),
-      repository: repo,
-      branch,
-      baseBranch: "main",
-      settings: payload().settings,
-      storyId: randomUUID(),
-      attempt: 1,
-      epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: "" },
-      story: {
-        identifier: "TOOL-91",
-        title: "Run a story",
-        linearIssueId: "issue-91",
-        url: null,
-        description: "Run it.",
-      },
-      stories: [],
-      commitMessage: "feat(TOOL-91): Run a story",
-      qualityGates: [],
-      prdQualityGates: [],
-      progress: "",
-      lastFeedback: null,
-      guidance: [],
-      attachments: [],
-    };
+    const story = storyPayload(repo, runId, branch);
     const storySpec = RunSpec.parse({
       ...spec(),
       task: storyTask,
@@ -720,7 +726,8 @@ describe("a coding run's session pushing by itself", { timeout: 120_000 }, () =>
     await rm(root, { recursive: true, force: true });
   });
 
-  it("fails: its credential helper presents the session token and gets a read-only credential; `ship` pushes", async () => {
+  /** A coding run's context against the smart-HTTP remote, with the real CLI credential helper. */
+  async function pushRun() {
     const workspaceRoot = path.join(root, "workspace");
     const cli = fileURLToPath(new URL("../cli.ts", import.meta.url));
     const repos = new RepoCache({
@@ -761,10 +768,6 @@ describe("a coding run's session pushing by itself", { timeout: 120_000 }, () =>
       repos,
       logger: silentLogger(),
     };
-
-    let ownPush: { ok: boolean; stderr: string } | undefined;
-    let remoteAfterOwnPush: string | null | undefined;
-    let shipped: Awaited<ReturnType<typeof ship>> | undefined;
     const remoteBranch = () => {
       try {
         return git(bare, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
@@ -772,45 +775,116 @@ describe("a coding run's session pushing by itself", { timeout: 120_000 }, () =>
         return null;
       }
     };
+    const options = (query: SessionQueryFn): CodingTaskOptions => ({
+      runSession: createSessionRunner(query),
+      fetch: (async () => Response.json({ ok: true })) as typeof fetch,
+    });
+    return { repos, repo, branch, ctx, remoteBranch, options };
+  }
+
+  /** Runs `git` in the session's environment (its own credential helper and token). */
+  function sessionGit(
+    call: Call,
+    args: string[],
+    input?: string,
+  ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = execFile(
+        "git",
+        args,
+        {
+          cwd: call.options.cwd!,
+          env: { ...call.options.env, GIT_TERMINAL_PROMPT: "0" },
+          timeout: 60_000,
+        },
+        (error, stdout, stderr) => resolve({ ok: !error, stdout, stderr }),
+      );
+      child.stdin?.end(input ?? "");
+    });
+  }
+
+  /** What the session's git credential helper resolves for the remote. */
+  async function sessionCredential(call: Call): Promise<string | undefined> {
+    const url = new URL(gitServer.url);
+    const filled = await sessionGit(
+      call,
+      ["credential", "fill"],
+      `protocol=${url.protocol.slice(0, -1)}\nhost=${url.host}\npath=remote.git\n\n`,
+    );
+    return /^password=(.*)$/m.exec(filled.stdout)?.[1];
+  }
+
+  /** The session's own push of its commit; the remote must refuse it. */
+  async function expectOwnPushRefused(
+    call: Call,
+    branch: string,
+    remoteBranch: () => string | null,
+  ) {
+    brokered.length = 0;
+    expect(await sessionCredential(call)).toBe(READ_TOKEN);
+    expect(brokered).toEqual(["Bearer session-token"]);
+    const own = await sessionGit(call, ["push", "origin", `HEAD:refs/heads/${branch}`]);
+    expect(own.ok).toBe(false);
+    expect(brokered.every((auth) => auth === "Bearer session-token")).toBe(true);
+    expect(remoteBranch()).toBeNull();
+    expect(
+      gitServer.requests.some(
+        (r) => r.push && r.authorization === basicAuth("x-access-token", READ_TOKEN),
+      ),
+    ).toBe(true);
+  }
+
+  it("of a story run: its credential helper resolves a read-only credential, its push is refused, the lifecycle's push succeeds", async () => {
+    const { repos, repo, branch, ctx, remoteBranch, options } = await pushRun();
+    const { query } = fakeQuery(async function* (call) {
+      const cwd = call.options.cwd!;
+      await writeFile(path.join(cwd, "story.txt"), "done\n");
+      git(cwd, "add", "-A");
+      git(cwd, "commit", "--quiet", "-m", "Do the story");
+      await expectOwnPushRefused(call, branch, remoteBranch);
+      // The lifecycle commits the story itself: leave the work uncommitted.
+      git(cwd, "reset", "--quiet", "--soft", "HEAD~1");
+      brokered.length = 0;
+      yield result({ status: "complete", summary: "Done.", followUps: [] });
+    });
+    const spec = RunSpec.parse({
+      ...runSpec(repo, requestPayload(repo, randomUUID(), branch)),
+      task: storyTask,
+      trigger: { kind: "linear.delegated", context: storyPayload(repo, randomUUID(), branch) },
+    });
+    const out = (await runCodingTask(spec, ctx, options(query))) as RalphStoryResult;
+
+    expect(out).toMatchObject({ status: "complete", commitSha: expect.any(String) });
+    expect(brokered).toContain("Bearer lifecycle-token");
+    expect(brokered).not.toContain("Bearer session-token");
+    const pushed = remoteBranch();
+    expect(pushed).toBe(git(repos.branchWorktreePath(repo, branch), "rev-parse", "HEAD"));
+    expect(git(path.join(root, "remote.git"), "show", `${pushed}:story.txt`)).toBe("done");
+  });
+
+  it("of a request run: its credential helper resolves a read-only credential, its push is refused, `ship` pushes", async () => {
+    const { repos, repo, branch, ctx, remoteBranch, options } = await pushRun();
+    let shipped: Awaited<ReturnType<typeof ship>> | undefined;
     const { query } = fakeQuery(async function* (call) {
       const cwd = call.options.cwd!;
       await writeFile(path.join(cwd, "button.txt"), "renamed\n");
       git(cwd, "add", "-A");
       git(cwd, "commit", "--quiet", "-m", "Rename the button");
+      await expectOwnPushRefused(call, branch, remoteBranch);
       brokered.length = 0;
-      ownPush = await new Promise((resolve) => {
-        execFile(
-          "git",
-          ["push", "origin", `HEAD:refs/heads/${branch}`],
-          { cwd, env: { ...call.options.env, GIT_TERMINAL_PROMPT: "0" }, timeout: 60_000 },
-          (error, _stdout, stderr) => resolve({ ok: !error, stderr }),
-        );
-      });
-      remoteAfterOwnPush = remoteBranch();
       shipped = await ship(call, {});
       yield result({ summary: "Pushed through ship." });
     });
     const out = (await runCodingTask(
       runSpec(repo, requestPayload(repo, randomUUID(), branch)),
       ctx,
-      {
-        runSession: createSessionRunner(query),
-        fetch: (async () => Response.json({ ok: true })) as typeof fetch,
-      },
+      options(query),
     )) as RalphRequestResult;
 
-    // The session's own push: the helper presented the session token and got the read token, which can't push.
-    expect(ownPush?.ok).toBe(false);
-    expect(brokered[0]).toBe("Bearer session-token");
-    expect(remoteAfterOwnPush).toBeNull();
-    expect(
-      gitServer.requests.some(
-        (r) => r.push && r.authorization === basicAuth("x-access-token", READ_TOKEN),
-      ),
-    ).toBe(true);
     // `ship` pushes with the lifecycle token's write credential.
     expect(shipped).toMatchObject({ isError: false, outcome: { pushed: true, error: null } });
     expect(brokered).toContain("Bearer lifecycle-token");
+    expect(brokered).not.toContain("Bearer session-token");
     expect(remoteBranch()).toBe(git(repos.branchWorktreePath(repo, branch), "rev-parse", "HEAD"));
     expect(out).toMatchObject({ error: null, pushed: true });
   });

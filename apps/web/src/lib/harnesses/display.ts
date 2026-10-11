@@ -90,9 +90,11 @@ export function auditDetailSummary(event: AuditEventName, detail: Record<string,
       const repo = str(detail.repository);
       const job = str(detail.jobId);
       const kind = detail.access === "write" ? "Write token" : "Read-only token";
-      return [repo && `${kind} for ${repo}`, job && `job ${job.slice(0, 8)}`]
+      const tokenKind = str(detail.tokenKind);
+      const line = [repo && `${kind} for ${repo}`, job && `job ${job.slice(0, 8)}`]
         .filter(Boolean)
         .join(", ");
+      return tokenKind && line ? `${line} (${tokenKind} token)` : line;
     }
     case "result_submitted": {
       const job = str(detail.jobId);
