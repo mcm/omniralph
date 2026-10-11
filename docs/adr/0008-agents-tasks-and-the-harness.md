@@ -19,7 +19,7 @@ credentials it needed. Three capabilities, `review`, `ralph` and `triage`, decid
 So a new kind of question for Claude, or a changed prompt, meant new code in the host package and a
 release to every host, and a capability couldn't be made more trusted without also changing its
 concurrency or its persona. The word "agent" also meant two things: the host daemon
-(`@omniralph/agent`) and, increasingly, the AI persona it runs.
+(the npm package now named `@omniralph/harness`) and, increasingly, the AI persona it runs.
 
 ## Decision
 
@@ -62,12 +62,12 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
   variables, limits, agent fit); a test keeps it empty.
 - **Built-ins of this epic** (all `query` tasks in the `short` pool):
 
-  | Task                     | Agent                                                       | Trigger             | Sink             | Notes                                                             |
-  | ------------------------ | ----------------------------------------------------------- | ------------------- | ---------------- | ----------------------------------------------------------------- |
-  | `builtin:learn-rule`     | `builtin:rule-writer` (no tools)                            | `finding.dismissed` | `learned-rule`   | 5000 tokens; output `{ rule: string \| null }`                    |
-  | `builtin:reply`          | `builtin:reviewer` (Read, Grep, Glob)                       | `finding.mention`   | `finding-thread` | 10 % of the profile budget, 10 turns                              |
-  | `builtin:ask-about-code` | `builtin:code-explainer` (Read, Grep, Glob)                 | `chat.request`      | `chat-thread`    | 25 % of the profile budget, 30 turns                              |
-  | `builtin:triage`         | `builtin:planner` (Read, Grep, Glob, the four Linear tools) | `linear.triage`     | `triage`         | `opus`, no budget, 5 min idle timeout, output = the triage schema |
+  | Task                       | Agent                                                       | Trigger             | Sink             | Notes                                                             |
+  | -------------------------- | ----------------------------------------------------------- | ------------------- | ---------------- | ----------------------------------------------------------------- |
+  | `builtin:learn-rule`       | `builtin:rule-writer` (no tools)                            | `finding.dismissed` | `learned-rule`   | 5000 tokens; output `{ rule: string \| null }`                    |
+  | `builtin:reply-to-finding` | `builtin:reviewer` (Read, Grep, Glob)                       | `finding.mention`   | `finding-thread` | 10 % of the profile budget, 10 turns                              |
+  | `builtin:ask-about-code`   | `builtin:code-explainer` (Read, Grep, Glob)                 | `chat.request`      | `chat-thread`    | 25 % of the profile budget, 30 turns                              |
+  | `builtin:triage`           | `builtin:planner` (Read, Grep, Glob, the four Linear tools) | `linear.triage`     | `triage`         | `opus`, no budget, 5 min idle timeout, output = the triage schema |
 
   They replace the job types `review.learn-rule`, `review.reply`, `chat.ask` and `triage.run`,
   whose names stay as job types and dedupe-key prefixes. Their prompts render byte for byte as the

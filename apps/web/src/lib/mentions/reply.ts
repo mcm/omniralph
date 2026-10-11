@@ -15,12 +15,12 @@ import type { FindingThreadContext } from "@/lib/sinks/finding-thread";
 
 /**
  * Thread replies: a question asked by mentioning the bot in a finding's
- * thread enqueues a run of the built-in query task `builtin:reply`
+ * thread enqueues a run of the built-in query task `builtin:reply-to-finding`
  * (read-only, capped at 10% of the profile budget); its `finding-thread`
  * sink (`lib/sinks/finding-thread.ts`) posts the answer in the thread.
  */
 
-export const REPLY_TASK_ID = "builtin:reply";
+export const REPLY_TASK_ID = "builtin:reply-to-finding";
 
 export type EnqueueReplyResult =
   | { status: "enqueued" | "duplicate"; jobId: string }

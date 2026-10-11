@@ -49,12 +49,12 @@ Commands:
                   to the desired version, else the latest on npm, even one that
                   failed before
   git-credential  Git credential helper for job git commands (\`get\` only; reads
-                  OMNIRALPH_JOB_TOKEN, set by the agent for in-job processes)
+                  OMNIRALPH_JOB_TOKEN, set by the harness for in-job processes)
 
 Options:
-  --config <file> Agent config (default: ~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG)
+  --config <file> Harness config (default: ~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG)
   -h, --help      Show this help
-  -v, --version   Print the agent version
+  -v, --version   Print the harness version
 `;
 
 export interface Io {
@@ -74,11 +74,11 @@ export interface MainDeps {
   credentialHelper?: string;
   /** Registers the shutdown handler (SIGTERM/SIGINT by default). */
   onShutdownSignal?: (handler: () => void) => void;
-  /** Installs agent versions for self-update (default: `npm i -g`). */
+  /** Installs harness versions for self-update (default: `npm i -g`). */
   installer?: Installer;
   /** Clock for self-update confirmation (ms since epoch). */
   now?: () => number;
-  /** The running agent version (default: this package's). */
+  /** The running harness version (default: this package's). */
   version?: string;
 }
 

@@ -12,7 +12,7 @@ export const LinearEntityId = z.string().regex(/^[A-Za-z0-9-]{1,128}$/);
 
 export const MAX_LINEAR_SEARCH_QUERY = 500;
 export const DEFAULT_LINEAR_SEARCH_RESULTS = 10;
-export const MAX_LINEAR_SEARCH_RESULTS = 50;
+export const MAX_LINEAR_SEARCH_RESULTS = 25;
 /** `linear_list_comments` returns at most this many comments: the most recent ones. */
 export const MAX_LINEAR_COMMENTS = 100;
 

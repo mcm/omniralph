@@ -54,7 +54,7 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
   const defined = (
     [
       ["builtin:learn-rule", "learned-rule"],
-      ["builtin:reply", "finding-thread"],
+      ["builtin:reply-to-finding", "finding-thread"],
     ] as const
   ).map(([id, sink]) =>
     tasks.TaskDefinition.parse({
@@ -1073,7 +1073,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       });
     });
 
-    it("validates a builtin:reply result and posts the answer in the thread once", async () => {
+    it("validates a builtin:reply-to-finding result and posts the answer in the thread once", async () => {
       const { accessToken } = await newAgent();
       const sha = (n: number) => n.toString(16).padStart(40, "0");
       const review = await createReview(db, {
@@ -1106,7 +1106,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         type: "review.reply",
         taskType: "query",
         pool: "short",
-        taskId: "builtin:reply",
+        taskId: "builtin:reply-to-finding",
         repositoryId,
         dedupeKey: `review.reply:${repositoryId}:778`,
         payload: {
@@ -1265,7 +1265,12 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const runSpec = await newJob();
       await db
         .update(jobs)
-        .set({ type: "task.run", taskType: "query", taskId: "builtin:reply", payload: RUN_PAYLOAD })
+        .set({
+          type: "task.run",
+          taskType: "query",
+          taskId: "builtin:reply-to-finding",
+          payload: RUN_PAYLOAD,
+        })
         .where(eq(jobs.id, runSpec));
       await startAs(runSpec, accessToken);
 

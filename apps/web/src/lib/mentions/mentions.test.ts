@@ -512,7 +512,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(created[0]).toMatchObject({
         taskType: "query",
         pool: "short",
-        taskId: "builtin:reply",
+        taskId: "builtin:reply-to-finding",
         // Once per asking comment.
         dedupeKey: expect.stringMatching(new RegExp(`^review\\.reply:${repoId}:\\d+$`)),
       });
@@ -767,7 +767,9 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const replies = await db.select().from(jobs).where(eq(jobs.type, "review.reply"));
       expect(
         replies.some(
-          (j) => j.taskId === "builtin:reply" && replyContext(j).threadCommentId === commentId,
+          (j) =>
+            j.taskId === "builtin:reply-to-finding" &&
+            replyContext(j).threadCommentId === commentId,
         ),
       ).toBe(true);
       await conversationComment(number, "@omniralph review");

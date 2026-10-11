@@ -31,6 +31,8 @@ const state = vi.hoisted(() => ({
   /** The organization of every gateway asked for. */
   gatewayOrgs: [] as string[],
   notConnected: false,
+  /** Gateways of organizations other than the default one, by organization ID. */
+  gatewaysByOrg: new Map<string, FakeLinearGateway>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/linear/client", async (original) => {
@@ -40,7 +42,7 @@ vi.mock("@/lib/linear/client", async (original) => {
     getLinearGateway: async ({ organizationId }: { organizationId: string }) => {
       state.gatewayOrgs.push(organizationId);
       if (state.notConnected) throw new client.LinearNotConnectedError();
-      return state.linear;
+      return state.gatewaysByOrg.get(organizationId) ?? state.linear;
     },
   };
 });
@@ -65,10 +67,22 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
       pool: "short",
       toolSettings: { linearRead },
     });
-  const defined = [task("builtin:linear-reader", true), task("builtin:no-linear", false)];
+  const documentReader = tasks.AgentDefinition.parse({
+    id: "builtin:document-reader",
+    name: "Document reader",
+    systemPrompt: "You read Linear documents.",
+    taskTypes: ["query"],
+    tools: { linear: ["linear_get_document"] },
+  });
+  const agents = [reader, documentReader];
+  const defined = [
+    task("builtin:linear-reader", true),
+    task("builtin:no-linear", false),
+    { ...task("builtin:document-reader", true), agentId: documentReader.id },
+  ];
   return {
     ...tasks,
-    getBuiltinAgent: (id: string) => (id === reader.id ? reader : null),
+    getBuiltinAgent: (id: string) => agents.find((a) => a.id === id) ?? null,
     getBuiltinTask: (id: string) => defined.find((t) => t.id === id) ?? null,
   };
 });
@@ -150,6 +164,7 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
     state.linear = new FakeLinearGateway();
     state.gatewayOrgs = [];
     state.notConnected = false;
+    state.gatewaysByOrg = new Map();
   });
 
   /** A running query job of `taskId`, and its session token. */
@@ -251,7 +266,7 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
       "",
       "query=",
       `query=${"x".repeat(501)}`,
-      "query=a&first=51",
+      "query=a&first=26",
       "query=a&first=0",
     ]) {
       const bad = await call.search(jobId, query, session);
@@ -306,11 +321,93 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
     expect(state.gatewayOrgs).toEqual([]);
   });
 
-  it("maps Linear failures: not connected 503, not found 404, anything else 502", async () => {
+  it("reads a document by ID", async () => {
+    state.linear.documents.set("doc-1", {
+      id: "doc-1",
+      title: "Design",
+      content: "# Design",
+      url: "https://linear.app/acme/document/design-doc-1",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      projectName: "Web",
+    });
+    const { jobId, session } = await newRun("builtin:document-reader");
+    const res = await call.document(jobId, "doc-1", session);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      document: {
+        id: "doc-1",
+        title: "Design",
+        content: "# Design",
+        url: "https://linear.app/acme/document/design-doc-1",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        project: "Web",
+      },
+    });
+    expect(state.gatewayOrgs).toEqual([orgId]);
+  });
+
+  it("answers 404 for an issue or document the gateway can't find", async () => {
+    const reader = await newRun();
+    let res = await call.issue(reader.jobId, "ENG-404", reader.session);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: "linear_not_found" });
+
+    const documents = await newRun("builtin:document-reader");
+    res = await call.document(documents.jobId, "doc-404", documents.session);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: "linear_not_found" });
+  });
+
+  it("reads only through the run's own organization's integration", async () => {
+    const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
+    const [otherHarness] = await db
+      .insert(harnesses)
+      .values({ organizationId: other!.id, name: "globex-1", acceptedTaskTypes: ["query"] })
+      .returning();
+    const globex = new FakeLinearGateway();
+    globex.add({ title: "Globex secret", identifier: "GLX-1" });
+    state.gatewaysByOrg.set(other!.id, globex);
+
+    // A run of organization A asking for organization B's issue reads A's workspace.
+    const acme = await newRun();
+    let res = await call.issue(acme.jobId, "GLX-1", acme.session);
+    expect(res.status).toBe(404);
+    expect(state.gatewayOrgs).toEqual([orgId]);
+    res = await call.search(acme.jobId, "query=secret", acme.session);
+    expect(await res.json()).toEqual({ issues: [] });
+
+    // Organization B's run, on B's harness, reads B's workspace; A's token can't use it.
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: other!.id,
+        type: "chat.ask",
+        taskType: "query",
+        pool: "short",
+        taskId: "builtin:linear-reader",
+        status: "running",
+        harnessId: otherHarness!.id,
+        payload: { trigger: { kind: "chat.request", context: { question: "Why?" } } },
+      })
+      .returning();
+    expect((await call.issue(job!.id, "GLX-1", acme.session)).status).toBe(403);
+    const globexSession = await getTokenSigner().signJobToken({
+      jobId: job!.id,
+      harnessId: otherHarness!.id,
+      kind: "session",
+      scopes: SESSION_SCOPES,
+    });
+    res = await call.issue(job!.id, "GLX-1", globexSession);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ issue: { identifier: "GLX-1" } });
+    expect(state.gatewayOrgs).toEqual([orgId, orgId, other!.id]);
+  });
+
+  it("maps Linear failures: not connected 409, not found 404, anything else 502", async () => {
     const { jobId, session } = await newRun();
     state.notConnected = true;
     let res = await call.issue(jobId, "ENG-1", session);
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: "linear_not_connected" });
 
     state.notConnected = false;

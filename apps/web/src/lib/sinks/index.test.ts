@@ -36,7 +36,7 @@ const DEFINITIONS = {
   getTask: (id: string) =>
     ({
       "builtin:learn-rule": getBuiltinTask("builtin:learn-rule"),
-      "builtin:reply": getBuiltinTask("builtin:reply"),
+      "builtin:reply-to-finding": getBuiltinTask("builtin:reply-to-finding"),
       "builtin:ask-about-code": getBuiltinTask("builtin:ask-about-code"),
       "builtin:triage": getBuiltinTask("builtin:triage"),
       "test:result": task("builtin:test-result", "run-result"),
@@ -66,7 +66,7 @@ describe("sinkFor", () => {
 describe("taskSink", () => {
   it("is the sink of the job's task", () => {
     expect(taskSink({ taskId: "builtin:learn-rule" }, DEFINITIONS)).toBe(learnedRuleSink);
-    expect(taskSink({ taskId: "builtin:reply" }, DEFINITIONS)).toBe(findingThreadSink);
+    expect(taskSink({ taskId: "builtin:reply-to-finding" }, DEFINITIONS)).toBe(findingThreadSink);
     expect(taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
     expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
     expect(taskSink({ taskId: "test:result" }, DEFINITIONS)).toBeUndefined();

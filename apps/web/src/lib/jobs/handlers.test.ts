@@ -59,7 +59,7 @@ function job(overrides: Partial<Job>): Job {
 describe("job outcome handlers", () => {
   it("routes review jobs to their handler by type", () => {
     expect(jobOutcomeHandler(job({}))?.onStarted).toBeDefined();
-    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`, `builtin:ask-about-code`): their sinks handle them.
+    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply-to-finding`, `builtin:ask-about-code`): their sinks handle them.
     for (const type of ["review.learn-rule", "review.reply", "chat.ask"]) {
       expect(jobOutcomeHandler(job({ type }))).toBeUndefined();
     }

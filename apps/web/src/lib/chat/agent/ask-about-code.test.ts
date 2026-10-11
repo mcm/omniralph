@@ -320,7 +320,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
             context: "Latest messages:\nAda Lovelace: how are webhooks verified in acme/api?",
           },
           // 25% of the default profile's budget.
-          budgetTokens: expect.any(Number),
+          budgetTokens: 50_000,
         },
       },
       repositoryId,

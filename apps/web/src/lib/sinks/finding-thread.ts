@@ -71,7 +71,7 @@ function failureNote(context: FindingThreadContext): string {
 }
 
 /**
- * For a completed `builtin:reply` run: posts the answer (trimmed, capped at
+ * For a completed `builtin:reply-to-finding` run: posts the answer (trimmed, capped at
  * `MAX_REPLY_ANSWER_LENGTH`, through the output sanitizer) in the finding's
  * thread, or a note that the reply budget ran out. Safe to call again for a
  * replayed result: it posts at most once.

@@ -462,7 +462,7 @@ describe("runQueryTask", () => {
     });
   });
 
-  describe("builtin:reply", () => {
+  describe("builtin:reply-to-finding", () => {
     let headSha: string;
 
     beforeEach(async () => {
@@ -472,9 +472,9 @@ describe("runQueryTask", () => {
       );
     });
 
-    /** A run of `builtin:reply` as `enqueueReply` stores it: ref = the review's head. */
+    /** A run of `builtin:reply-to-finding` as `enqueueReply` stores it: ref = the review's head. */
     function replySpec(head: string): RunSpecType {
-      const task = getBuiltinTask("builtin:reply")!;
+      const task = getBuiltinTask("builtin:reply-to-finding")!;
       return spec({
         agent: getBuiltinAgent(task.agentId)!,
         task,
@@ -510,7 +510,7 @@ describe("runQueryTask", () => {
     }
 
     it("answers in a worktree at the review's head with Read/Grep/Glob, from the finding's hunk", async () => {
-      const task = getBuiltinTask("builtin:reply")!;
+      const task = getBuiltinTask("builtin:reply-to-finding")!;
       const agent = getBuiltinAgent(task.agentId)!;
       const { result, calls } = await run(replySpec(headSha));
       expect(QueryRunResult.parse(result)).toMatchObject({

@@ -71,12 +71,12 @@ function emptyState(): UpdateStateFile {
   };
 }
 
-/** `update-state.json` in the agent config's directory. */
+/** `update-state.json` in the harness config's directory. */
 export function updateStatePath(configPath: string): string {
   return path.join(path.dirname(configPath), UPDATE_STATE_FILE);
 }
 
-/** `update-request.json` in the agent config's directory (written by `omniralph-harness update`). */
+/** `update-request.json` in the harness config's directory (written by `omniralph-harness update`). */
 export function updateRequestPath(configPath: string): string {
   return path.join(path.dirname(configPath), UPDATE_REQUEST_FILE);
 }
