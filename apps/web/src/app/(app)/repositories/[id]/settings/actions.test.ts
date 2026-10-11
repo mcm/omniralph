@@ -27,9 +27,24 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { asc, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Tasks from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
+// A second built-in review task, beside `builtin:review-pr`.
+vi.mock("@omniralph/tasks", async (importOriginal) => {
+  const actual = await importOriginal<typeof Tasks>();
+  const security = {
+    ...actual.getBuiltinTask("builtin:review-pr")!,
+    id: "builtin:security-review",
+    name: "Security review",
+  };
+  return {
+    ...actual,
+    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+  };
+});
+const SECURITY_TASK_ID = "builtin:security-review";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
@@ -67,6 +82,7 @@ const baseSettings: RepositorySettingsInput = {
   pathExcludes: [],
   customInstructions: "",
   pinnedHarnessIds: [],
+  reviewTaskIds: ["builtin:review-pr"],
 };
 
 const baseRalph: RalphSettingsInput = {
@@ -183,6 +199,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         pathExcludes: ["*.snap", "/docs/**"],
         customInstructions: "  Prefer early returns.  ",
         pinnedHarnessIds: [],
+        reviewTaskIds: ["builtin:review-pr"],
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
@@ -251,6 +268,67 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(await pinnedHarnessIds()).toEqual([]);
     expect(await db.select().from(jobs)).toHaveLength(0);
     expect((await getRepository(db, repoId))!.profileId).toBe("standard");
+  });
+
+  it("saves the review tasks, and the next review run fans out to them", async () => {
+    expect((await getRepository(db, repoId))!.reviewTaskIds).toEqual(["builtin:review-pr"]);
+    expect(
+      await updateRepositorySettings(repoId, {
+        ...baseSettings,
+        reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+      }),
+    ).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+      // Not editable here: the correlation task keeps its default.
+      correlationTaskId: "builtin:correlate-findings",
+    });
+
+    prNumber += 1;
+    const result = await enqueueReview(db, getDispatcher(), {
+      repositoryId: repoId,
+      prNumber,
+      baseSha: SHA(1),
+      headSha: SHA(2),
+      title: "Change",
+      description: null,
+      author: "dev",
+      trigger: "webhook",
+    });
+    if (result.status !== "enqueued") throw new Error(result.status);
+    expect(result.runs.map((run) => run.taskId)).toEqual([SECURITY_TASK_ID, "builtin:review-pr"]);
+
+    // Removing a reviewer takes effect for the next run.
+    expect(
+      await updateRepositorySettings(repoId, {
+        ...baseSettings,
+        reviewTaskIds: [SECURITY_TASK_ID],
+      }),
+    ).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.reviewTaskIds).toEqual([SECURITY_TASK_ID]);
+    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+  });
+
+  it("rejects no, duplicate, unknown and non-review tasks without saving anything", async () => {
+    const invalid: [string[], string][] = [
+      [[], "Choose at least one review task."],
+      [["builtin:review-pr", "builtin:review-pr"], "Choose each review task once."],
+      [["builtin:review-pr", "builtin:nope"], "Some selected review tasks don't exist."],
+      [["builtin:reply-to-finding"], "Some selected review tasks don't exist."],
+    ];
+    for (const [reviewTaskIds, message] of invalid) {
+      expect(
+        await updateRepositorySettings(repoId, {
+          ...baseSettings,
+          profileId: "deep",
+          reviewTaskIds,
+        }),
+      ).toMatchObject({ ok: false, fieldErrors: { reviewTaskIds: message } });
+    }
+    expect(await getRepository(db, repoId)).toMatchObject({
+      profileId: "standard",
+      reviewTaskIds: ["builtin:review-pr"],
+    });
   });
 
   it("rejects bad globs and too-long instructions with inline field errors", async () => {

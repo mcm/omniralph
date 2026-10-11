@@ -12,6 +12,7 @@ import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
+import { reviewTaskChoices } from "@/lib/repositories/settings";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { RepositorySettingsView } from "./repository-settings-view";
 
@@ -50,7 +51,13 @@ export default async function RepositorySettingsPage({
         pathExcludes: repository.pathExcludes,
         customInstructions: repository.customInstructions ?? "",
         pinnedHarnessIds,
+        reviewTaskIds: repository.reviewTaskIds,
       }}
+      reviewTasks={reviewTaskChoices().map((task) => ({
+        id: task.id,
+        name: task.name,
+        description: task.description,
+      }))}
       profiles={profiles.map((p) => ({
         id: p.id,
         name: p.name,

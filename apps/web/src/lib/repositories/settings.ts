@@ -9,6 +9,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import type { RepositorySettingsInput } from "@omniralph/shared";
+import { BUILTIN_TASKS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import { pinRepository } from "@/lib/harnesses/pins";
 import type { JobDispatcher } from "@/lib/dispatch";
 
@@ -22,12 +23,18 @@ export type SaveRepositorySettingsResult =
     }
   | { status: "unknown_repository" }
   | { status: "unknown_profile" }
-  | { status: "unknown_agents"; harnessIds: string[] };
+  | { status: "unknown_agents"; harnessIds: string[] }
+  | { status: "unknown_review_tasks"; taskIds: string[] };
+
+/** The review tasks a repository can choose to run on its PRs/MRs: the built-in ones. */
+export function reviewTaskChoices(): TaskDefinition[] {
+  return BUILTIN_TASKS.filter((task) => task.taskType === "review");
+}
 
 /**
  * Saves a repository's review settings (a repository of the organization; its profile
- * must be one of the organization's too) (validated with `RepositorySettingsInput`)
- * and reconciles its agent pins: newly pinned agents go through the Agents
+ * must be one of the organization's too, and its review tasks built-in tasks of the
+ * `review` type) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through the Agents
  * page's `pinRepository`, which enqueues a `repo.sync` job for that agent.
  * The next review job enqueued for the repository picks the settings up.
  */
@@ -44,6 +51,10 @@ export async function saveRepositorySettings(
   }
   const profiles = await listReviewProfiles(db, organizationId);
   if (!profiles.some((p) => p.id === input.profileId)) return { status: "unknown_profile" };
+  const unknownTasks = input.reviewTaskIds.filter(
+    (id) => getBuiltinTask(id)?.taskType !== "review",
+  );
+  if (unknownTasks.length > 0) return { status: "unknown_review_tasks", taskIds: unknownTasks };
 
   const wanted = [...new Set(input.pinnedHarnessIds)];
   const current = await listRepositoryPinnedHarnessIds(db, repositoryId);
@@ -57,6 +68,7 @@ export async function saveRepositorySettings(
     triggers: input.triggers,
     pathExcludes: input.pathExcludes,
     customInstructions: input.customInstructions,
+    reviewTaskIds: input.reviewTaskIds,
   });
   if (!saved) return { status: "unknown_repository" };
 
