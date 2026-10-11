@@ -15,7 +15,7 @@ Bump Node to 24 and open a PR.
 ```
 
 ## How to handle it
-- This is a direct request, not a story. Do what it asks, and nothing beyond it.
+- This is a direct request. Do what it asks, and nothing beyond it.
 - You may commit, and publish `chat/bump-node` to `origin`, when the request calls for it. Don't run `git push` (your git credentials are read-only): call the `ship` tool, which commits what is left in the worktree with the `message` you give, pushes `chat/bump-node` and tells you what it did. It never pushes `main` or any other branch.
 - History rewrites are allowed on `chat/bump-node` when the request asks for one. For a rebase: `git fetch origin && git rebase origin/main`, resolve conflicts, run the quality gates, then call `ship` with `forceWithLease: true`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.
 - For the merge request, don't run `gh` or `glab`. Ship `chat/bump-node` first, then ask for it with `pullRequest`, on the `ship` call or in your structured result: `open` opens it into `main` as a draft, `update` changes the open one's title or description, `ready` marks it ready for review. Give `open` a title summarising the change itself and a description of the deliverable written for reviewers who can't see the chat thread: what it does and why, notable changes, and any breaking changes or judgement calls.

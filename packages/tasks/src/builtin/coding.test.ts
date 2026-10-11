@@ -135,11 +135,25 @@ function withShipTool(text: string, ctx: RequestPromptContext): string {
 }
 
 /**
+ * `text` without today's story status and story wording when the request has
+ * no PRD epic (a single issue or a chat thread): the template only renders
+ * them on an epic's run.
+ */
+function withoutEpicWording(text: string, ctx: RequestPromptContext): string {
+  if (ctx.epic.kind !== "single") return text;
+  return text
+    .replace(/\n## Status: \d+\/\d+ stories complete\n(?:- .*\n)*\n/, "\n")
+    .replace("This is a direct request, not a story.", "This is a direct request.")
+    .replaceAll(" Don't list the user stories.", "");
+}
+
+/**
  * Today's request prompt with fenced values (requests are fenced instead of
- * quoted with `> `) and the `ship` tool instead of `git push`.
+ * quoted with `> `), the `ship` tool instead of `git push`, and no story
+ * wording outside an epic's run.
  */
 function expectedRequestPrompt(ctx: RequestPromptContext): string {
-  let prompt = buildRequestPrompt(fenceRequest(ctx));
+  let prompt = withoutEpicWording(buildRequestPrompt(fenceRequest(ctx)), ctx);
   for (const r of ctx.requests) {
     const block = fenced("requests", r.trim());
     prompt = prompt.replace(`> ${block.replace(/\n/g, "\n> ")}`, block);
