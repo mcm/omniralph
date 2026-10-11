@@ -85,8 +85,9 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
   | `builtin:correlate-findings` | `query`  | `builtin:correlator` (no tools, replaces the preset prompt) | `run.invoked`                              | `run-result`     | 50 % of the profile budget, no checkout; fixed output schema (merged findings + summary) |
 
   `builtin:review-pr` replaces the `review.run` job type. Its template renders byte for byte as
-  the engine's `buildPrompt` did and its `systemAppend` is `REVIEW_SYSTEM_PROMPT`
-  (`packages/engine/src/reviewPr-builtin.test.ts` checks both over 11 profile and input cases);
+  the engine's `buildPrompt` did, and `builtin:reviewer`'s prompt plus its `systemAppend` is
+  exactly `REVIEW_SYSTEM_PROMPT` (`packages/engine/src/reviewPr-builtin.test.ts` checks both,
+  the prompt over 11 profile and input cases);
   the rubric moved into `builtin:reviewer`'s reference docs (`builtin/rubric.ts`, generated from
   `packages/engine/src/rubric` by `pnpm --filter @omniralph/tasks generate:rubric`). Templates
   that need a literal `{{` (e.g. GitHub Actions' `${{ }}`) write `\{{`.

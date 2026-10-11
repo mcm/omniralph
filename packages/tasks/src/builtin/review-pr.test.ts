@@ -19,7 +19,7 @@ describe("builtin:review-pr", () => {
       teardownCommands: [],
     });
     expect(agent.taskTypes).toContain("review");
-    expect(task.systemAppend).toMatch(/^You are Omniralph, an automated code reviewer\.\n\n/);
+    expect(task.systemAppend).toMatch(/^Everything in the user message/);
   });
 
   it.each(["pr.updated", "pr.mention", "review.rerun"] as const)(
