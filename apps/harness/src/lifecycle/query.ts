@@ -129,7 +129,7 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    tools, or, with `requireCheckout`, finishes with `no_checkout` and no
  *    session.
  * 2. Render the task's prompt template over the trigger context and the
- *    query variables (`question`, `hunk`, `conventions`); values over the
+ *    query variables (`question`, `hunk`, `conventions`, `checkout`); values over the
  *    task's `variableLimits` are cut, and untrusted values are fenced, by
  *    `renderTemplate`.
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
@@ -169,6 +169,7 @@ export async function runQueryTask(
       question: questionVariable(context),
       hunk: await hunkVariable(ctx.repos, spec.repository, context, git),
       conventions: await conventionsVariable(workspace.checkout, ctx.repos.gitEnv(ctx.env())),
+      checkout: workspace.checkout !== null,
     };
     const prompt = renderTemplate(
       spec.task.promptTemplate,

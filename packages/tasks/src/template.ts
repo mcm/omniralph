@@ -245,6 +245,16 @@ export function fence(content: string, info = ""): string {
   return `${marks}${info}\n${content.replace(/\n$/, "")}\n${marks}`;
 }
 
+/**
+ * `text` (trimmed, `(empty)` when blank) between `<tag>` and `</tag>` lines,
+ * with any `</tag>` inside defused so it can't close the quote. A copy of
+ * `quote()` in `@omniralph/ralph`'s triage prompt, so it renders byte for byte.
+ */
+export function quote(tag: string, text: string): string {
+  const body = text.trim() || "(empty)";
+  return [`<${tag}>`, body.replaceAll(`</${tag}>`, `<\\/${tag}>`), `</${tag}>`].join("\n");
+}
+
 export type TemplateContext = Readonly<Record<string, unknown>>;
 
 interface Scope {
@@ -314,7 +324,8 @@ function stringify(value: unknown): string {
 /**
  * Renders a template against `context` (nested objects; a key may also hold a
  * dotted name). Values are not HTML-escaped. A value whose catalog entry is
- * untrusted is fenced with the entry's info string; trusted values render as
+ * untrusted is fenced with the entry's info string (or, for an entry with a
+ * `quote` tag, quoted between tag lines, even when empty); trusted values render as
  * is; a missing or empty value renders as an empty string. Values without a
  * catalog entry are treated as untrusted. A value longer than its entry in
  * `limits` (a task's `variableLimits`) is cut to that many characters and
@@ -340,14 +351,18 @@ export function renderTemplate(
       }
       const { value, path } = resolve(scopes, node.name);
       if (node.type === "variable") {
+        const entry = entries.get(path);
+        const quoted = entry?.trust === "untrusted" ? entry.quote : undefined;
         let text = stringify(value);
-        if (text === "") continue;
+        // A quoted value is always quoted, so an empty one still reads `(empty)`.
+        if (text === "" && quoted === undefined) continue;
         const limit = limits[path];
         if (limit !== undefined && text.length > limit) {
           text = `${text.slice(0, limit)}${TRUNCATION_MARKER}`;
         }
-        const entry = entries.get(path);
-        out += entry?.trust === "trusted" ? text : fence(text, entry?.fence ?? "");
+        if (entry?.trust === "trusted") out += text;
+        else if (quoted !== undefined) out += quote(quoted, text);
+        else out += fence(text, entry?.fence ?? "");
         continue;
       }
       if (node.type === "inverted") {

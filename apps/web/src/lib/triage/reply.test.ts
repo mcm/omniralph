@@ -14,7 +14,13 @@ import {
   type Database,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
-import { TriageRunPayload, type TriageOutcome, type TriageRunResult } from "@omniralph/shared";
+import { triageTemplateContext } from "@omniralph/ralph";
+import {
+  RunSpecJobPayload,
+  type QueryRunResult,
+  type TriageOutcome,
+  type TriageRunResult,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -69,6 +75,23 @@ const result = (overrides: Partial<TriageOutcome> = {}): TriageRunResult => ({
   usage: { inputTokens: 1, outputTokens: 1 },
   durationMs: 10,
 });
+
+/** `result` as the run's `QueryRunResult` (the triage is its structured output). */
+const asQueryResult = (result: TriageRunResult): QueryRunResult => ({
+  outcome: "answered",
+  answer: null,
+  structured: { ...result.outcome, summary: result.summary },
+  references: [],
+  usage: result.usage,
+  durationMs: result.durationMs,
+});
+
+/** A previous triage as the next run's trigger context holds it. */
+const previousContext = (previous: TriageOutcome | null) =>
+  triageTemplateContext({
+    issue: { identifier: "X-1", title: "", description: "", stateType: "backlog" },
+    previousResult: previous,
+  }).previousResult;
 
 describe.skipIf(!dockerAvailable)("continuing triage from session replies", () => {
   let container: StartedPostgreSqlContainer;
@@ -128,20 +151,24 @@ describe.skipIf(!dockerAvailable)("continuing triage from session replies", () =
   /** Runs the job on a (pretend) agent. */
   const startJob = async (jobId: string) => {
     await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, jobId));
-    await onTriageJobStarted(db, (await getJob(db, jobId))!);
+    await onTriageJobStarted(db, (await getJob(db, jobId))!, deps());
   };
 
   /** Completes the job with `jobResult` and applies it. */
   const completeJob = async (jobId: string, jobResult: TriageRunResult) => {
-    await db.update(jobs).set({ status: "completed", result: jobResult }).where(eq(jobs.id, jobId));
+    await db
+      .update(jobs)
+      .set({ status: "completed", result: asQueryResult(jobResult) })
+      .where(eq(jobs.id, jobId));
     await onTriageJobCompleted(db, (await getJob(db, jobId))!, deps());
   };
 
   const triageJobs = async () =>
     (await db.select().from(jobs)).filter((j) => j.type === "triage.run");
 
+  /** The trigger context of a queued `builtin:triage` run. */
   const payloadOf = async (jobId: string) =>
-    TriageRunPayload.parse((await getJob(db, jobId))!.payload);
+    RunSpecJobPayload.parse((await getJob(db, jobId))!.payload).trigger.context;
 
   it("triages an idle run again with the reply, the issue's current content and the last result", async () => {
     const issue = linear.add({ identifier: "ENG-1", title: "Export", stateType: "backlog" });
@@ -167,8 +194,8 @@ describe.skipIf(!dockerAvailable)("continuing triage from session replies", () =
     expect(payload).toMatchObject({
       triageRunId: runId,
       reply: "1: CSV",
-      previousResult: first.outcome,
-      issue: { id: issue.id, title: "Export widgets", description: described },
+      previousResult: previousContext(first.outcome),
+      issue: { identifier: "ENG-1", title: "Export widgets", description: described },
     });
     expect(linear.bodies(sessionId, "thought")).toContain(
       "Got it. Triaging again with your reply…",
@@ -206,7 +233,7 @@ describe.skipIf(!dockerAvailable)("continuing triage from session replies", () =
     expect(next).toBeDefined();
     expect(await payloadOf(next.id)).toMatchObject({
       reply: "1: CSV\n\n2: owners only",
-      previousResult: first.outcome,
+      previousResult: previousContext(first.outcome),
     });
     expect(await getTriageRun(db, runId)).toMatchObject({
       status: "queued",

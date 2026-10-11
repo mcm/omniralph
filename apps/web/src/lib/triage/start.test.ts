@@ -17,7 +17,8 @@ import {
   type Database,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
-import { TriageRunPayload } from "@omniralph/shared";
+import type { TriageTemplateContext } from "@omniralph/ralph";
+import { QUERY_TASKS_MIN_HARNESS_VERSION, RunSpecJobPayload } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -119,11 +120,17 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     linear = new FakeLinearGateway();
   });
 
-  /** The queued job's payload, parsed. */
-  const payloadOf = async (jobId: string) =>
-    TriageRunPayload.parse((await getJob(db, jobId))!.payload);
+  /** The queued run's payload, parsed, with its trigger context. */
+  const payloadOf = async (jobId: string) => {
+    const payload = RunSpecJobPayload.parse((await getJob(db, jobId))!.payload);
+    expect(payload.trigger.kind).toBe("linear.triage");
+    const context = payload.trigger.context as unknown as TriageTemplateContext & {
+      triageRunId: string;
+    };
+    return { payload, context };
+  };
 
-  it("queues a triage.run job for a routed issue with its comments, children and blockers", async () => {
+  it("queues a builtin:triage run for a routed issue with its comments, children and blockers", async () => {
     const issue = linear.add({
       identifier: "ENG-1",
       title: "Priorities",
@@ -178,45 +185,45 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
       type: "triage.run",
       taskType: "query",
       pool: "short",
+      taskId: "builtin:triage",
+      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",
       targetHarnessId: null,
+      dedupeKey: `triage:${run!.id}`,
     });
 
-    const payload = await payloadOf(job.id);
-    expect(payload).toMatchObject({
+    const { payload, context } = await payloadOf(job.id);
+    // The default branch is checked out when it exists.
+    expect(payload).toMatchObject({ repositoryId: repoId, ref: "develop" });
+    expect(payload.requireCheckout).toBeUndefined();
+    expect(context).toMatchObject({
       triageRunId: run!.id,
       issue: {
-        id: issue.id,
         identifier: "ENG-1",
         title: "Priorities",
         description: "Let people set a priority.",
         stateType: "backlog",
-        creator: { id: "user-1", name: "Ada" },
+        creator: { name: "Ada" },
       },
-      comments: [
-        { author: "Bo", body: "Only admins can set it.", createdAt: "2026-10-01T00:00:00.000Z" },
-      ],
-      repository: {
-        repositoryId: repoId,
-        repository: {
-          provider: "github",
-          fullPath: "acme/api",
-          cloneUrl: "https://github.com/acme/api.git",
-        },
-        defaultBranch: "develop",
+      comments: {
+        items: [
+          { author: "Bo", body: "Only admins can set it.", createdAt: "2026-10-01T00:00:00.000Z" },
+        ],
       },
+      repository: "acme/api",
+      branch: "develop",
       reply: "it's for the API",
       previousResult: null,
     });
-    expect(payload.children.map((c) => [c.identifier, c.stateType, c.priority])).toEqual([
-      ["ENG-2", "unstarted", 2],
-      ["ENG-3", "canceled", 0],
+    expect(context.children?.items.map((c) => [c.identifier, c.stateType, c.priority])).toEqual([
+      ["ENG-2", "unstarted", "High"],
+      ["ENG-3", "canceled", "No priority"],
     ]);
-    expect(payload.blockers).toEqual([
-      { identifier: "ENG-9", title: "Schema", stateType: "started", blocks: "ENG-2" },
-    ]);
+    expect(context.blockers).toEqual({
+      items: [{ identifier: "ENG-9", title: "Schema", stateType: "started", blocks: "ENG-2" }],
+    });
 
     const [thought] = linear.bodies(event.sessionId, "thought");
     expect(thought).toContain("`acme/api` (routed by label `Backend`) at `develop`");
@@ -237,10 +244,18 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job.repositoryId).toBeNull();
     expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
-    const payload = await payloadOf(job.id);
-    expect(payload.repository).toBeNull();
-    expect(payload.reply).toBeNull();
-    expect(payload.issue.creator).toBeNull();
+    const { payload, context } = await payloadOf(job.id);
+    expect(payload.ref).toBeUndefined();
+    expect(payload.repositoryId).toBeUndefined();
+    expect(context).toMatchObject({
+      repository: null,
+      branch: null,
+      reply: null,
+      comments: null,
+      children: null,
+      blockers: null,
+    });
+    expect(context.issue.creator).toBeNull();
     expect(linear.bodies(event.sessionId, "thought")[0]).toContain("No repository routes it");
 
     // A redelivered event doesn't queue a second job.

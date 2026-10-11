@@ -15,11 +15,12 @@ import {
   type Job,
 } from "@omniralph/db";
 import type { TriageAgentOutput } from "@omniralph/ralph";
-import type { TriageOutcome, TriageRunPayload, TriageRunResult } from "@omniralph/shared";
+import type { QueryRunResult, RunSpecJobPayload, TriageOutcome } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { jobHooks } from "@/lib/sinks";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { loadEpic } from "@/lib/ralph/epic-loader";
 import {
@@ -33,6 +34,10 @@ import {
 } from "./apply";
 
 vi.mock("server-only", () => ({}));
+
+/** The gateway the sink's hooks get (they load the organization's own). */
+const gateway = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("@/lib/linear/client", () => ({ getLinearGateway: async () => gateway.current }));
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -75,10 +80,12 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   ...overrides,
 });
 
-const result = (overrides: Partial<TriageOutcome> = {}): TriageRunResult => ({
-  summary: "Sized it and wrote the PRD.",
-  error: null,
-  outcome: outcome(overrides),
+/** A `builtin:triage` run's result: the triage (`TriageAgentOutput`) is its structured output. */
+const result = (overrides: Partial<TriageOutcome> = {}): QueryRunResult => ({
+  outcome: "answered",
+  answer: null,
+  structured: { ...outcome(overrides), summary: "Sized it and wrote the PRD." },
+  references: [],
   usage: { inputTokens: 1, outputTokens: 1 },
   durationMs: 10,
 });
@@ -150,6 +157,7 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     await db.delete(triageRuns);
     await db.delete(jobs);
     linear = new FakeLinearGateway();
+    gateway.current = linear;
   });
 
   const deps = () => ({ db, linear });
@@ -164,29 +172,21 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
       linearAgentSessionId: sessionId,
       trigger: "mention",
     });
-    const payload: TriageRunPayload = {
-      triageRunId: run.id,
-      issue: {
-        id: issue.id,
-        identifier: issue.identifier,
-        title: issue.title,
-        description: issue.description,
-        stateType: "backlog",
-        creator: null,
-        url: null,
+    const payload: RunSpecJobPayload = {
+      trigger: {
+        kind: "linear.triage",
+        context: {
+          triageRunId: run.id,
+          issue: { identifier: issue.identifier, title: issue.title },
+        },
       },
-      comments: [],
-      children: [],
-      blockers: [],
-      repository: null,
-      reply: null,
-      previousResult: null,
     };
     const { job } = await insertJob(db, {
       organizationId: orgId,
       type: "triage.run",
       taskType: "query",
       pool: "short",
+      taskId: "builtin:triage",
       payload,
     });
     await setTriageRunJob(db, run.id, job.id);
@@ -587,23 +587,22 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     expect(responses(sessionId)).toHaveLength(1);
   });
 
-  it("fails a result that reports the session's error", async () => {
+  it("fails a run that ended without a result", async () => {
     const issue = addIssue();
     const { job, sessionId, run } = await completedJob(issue, {
       ...result(),
-      outcome: null,
-      error: "the session ended without a result",
+      outcome: "budget_exhausted",
+      structured: null,
     });
-    expect(await applyTriageJob(deps(), job)).toEqual({
-      status: "invalid",
-      problem: "the session ended without a result",
-    });
+    const problem = "the triage ended without a result (budget_exhausted)";
+    expect(await applyTriageJob(deps(), job)).toEqual({ status: "invalid", problem });
     expect(linear.issueUpdates).toEqual([]);
     expect(responses(sessionId)[0]).toMatchObject({ type: "error" });
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
-    expect(await getJob(db, job.id)).toMatchObject({
-      status: "failed",
-      error: "the session ended without a result",
+    expect(await getJob(db, job.id)).toMatchObject({ status: "failed", error: problem });
+    expect((await getTriageRun(db, run.id))?.lastResult).toMatchObject({
+      error: problem,
+      outcome: null,
     });
   });
 
@@ -611,12 +610,12 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     const issue = addIssue();
     const { job, run } = await completedJob(issue, result());
     await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
-    expect(await onTriageJobStarted(db, job)).toEqual({ skip: false });
+    expect(await onTriageJobStarted(db, job, deps())).toEqual({ skip: false });
     expect((await getTriageRun(db, run.id))?.status).toBe("running");
 
     // Started before it was recorded on its run: it becomes the run's job.
     await setTriageRunJob(db, run.id, null);
-    expect(await onTriageJobStarted(db, job)).toEqual({ skip: false });
+    expect(await onTriageJobStarted(db, job, deps())).toEqual({ skip: false });
     expect((await getTriageRun(db, run.id))?.currentJobId).toBe(job.id);
 
     const { job: other } = await insertJob(db, {
@@ -624,10 +623,11 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
       type: "triage.run",
       taskType: "query",
       pool: "short",
+      taskId: "builtin:triage",
       payload: job.payload,
     });
     await setTriageRunJob(db, run.id, other.id);
-    expect(await onTriageJobStarted(db, job)).toEqual({ skip: true, reason: "skipped" });
+    expect(await onTriageJobStarted(db, job, deps())).toEqual({ skip: true, reason: "skipped" });
     expect((await getJob(db, job.id))?.status).toBe("skipped");
   });
 
@@ -645,5 +645,78 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
       { type: "response", body: "Triage was canceled. Nothing changed in Linear." },
     ]);
     expect(linear.issueUpdates).toEqual([]);
+  });
+
+  it("skips a job whose issue went in progress before it started, without a session", async () => {
+    const issue = addIssue();
+    const { job, run, sessionId } = await completedJob(issue, null);
+    await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
+    linear.add({ identifier: "ENG-77", title: "Busy", parentId: issue.id, stateType: "started" });
+
+    expect(await onTriageJobStarted(db, job, deps())).toEqual({ skip: true, reason: "skipped" });
+    expect(await getJob(db, job.id)).toMatchObject({ status: "skipped" });
+    expect((await getTriageRun(db, run.id))?.status).toBe("stopped");
+    expect(JSON.stringify(responses(sessionId))).toContain("**ENG-77** is already in progress");
+    expect(linear.issueUpdates).toEqual([]);
+  });
+
+  it("lets a job run when re-reading the issue fails", async () => {
+    const issue = addIssue();
+    const { job, run } = await completedJob(issue, null);
+    await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
+    const failing = {
+      getIssue: async () => {
+        throw new Error("Linear is down");
+      },
+    } as unknown as FakeLinearGateway;
+    expect(await onTriageJobStarted(db, job, { db, linear: failing })).toEqual({ skip: false });
+    expect((await getTriageRun(db, run.id))?.status).toBe("running");
+  });
+
+  describe("the triage sink", () => {
+    it("is the hooks of a builtin:triage job", async () => {
+      const issue = addIssue();
+      const { job, run, sessionId } = await completedJob(issue, result());
+      const hooks = jobHooks(job)!;
+
+      // The output must have the triage's shape; a well-formed triage `validateTriageOutput`
+      // rejects is still accepted (and fails the run when applied).
+      expect(hooks.isValidResult?.(result())).toBe(true);
+      expect(hooks.isValidResult?.(result({ size: "XL" }))).toBe(true);
+      expect(hooks.isValidResult?.({ ...result(), structured: { rule: "x" } })).toBe(false);
+      expect(hooks.isValidResult?.({ ...result(), structured: null, answer: "PRD" })).toBe(false);
+
+      await hooks.onCompleted!(db, job);
+      expect(await getTriageRun(db, run.id)).toMatchObject({
+        status: "completed",
+        lastResult: { summary: "Sized it and wrote the PRD.", error: null },
+      });
+      expect(linear.issueUpdates).toHaveLength(1);
+      // A replayed result applies nothing twice.
+      await hooks.onCompleted!(db, job);
+      expect(linear.issueUpdates).toHaveLength(1);
+      expect(responses(sessionId)).toHaveLength(1);
+    });
+
+    it("starts, fails and cancels the run", async () => {
+      const issue = addIssue();
+      const started = await completedJob(issue, null);
+      await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, started.job.id));
+      expect(await jobHooks(started.job)!.onStarted!(db, started.job, "harness")).toEqual({
+        skip: false,
+      });
+      expect((await getTriageRun(db, started.run.id))?.status).toBe("running");
+
+      await jobHooks(started.job)!.onFailed!(db, started.job, "boom");
+      expect((await getTriageRun(db, started.run.id))?.status).toBe("failed");
+      expect(JSON.stringify(responses(started.sessionId))).toContain("Triage failed: boom");
+
+      const canceled = await completedJob(issue, null);
+      await jobHooks(canceled.job)!.onCanceled!(db, canceled.job);
+      expect((await getTriageRun(db, canceled.run.id))?.status).toBe("stopped");
+      expect(responses(canceled.sessionId)).toEqual([
+        { type: "response", body: "Triage was canceled. Nothing changed in Linear." },
+      ]);
+    });
   });
 });

@@ -19,6 +19,11 @@ interface VariableBase {
   trust: VariableTrust;
   /** Info string of the fence around an untrusted value (e.g. `diff`, `markdown`). */
   fence?: string;
+  /**
+   * Quotes an untrusted value between `<tag>` and `</tag>` lines instead of
+   * fencing it (as today's triage prompt quotes Linear text); see `quote()`.
+   */
+  quote?: string;
   description: string;
 }
 
@@ -52,15 +57,15 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "repository",
     source: "trigger",
     trust: "trusted",
-    triggers: [...PR_TRIGGERS, "chat.request"],
-    description: "`owner/repo` or `group/project`.",
+    triggers: [...PR_TRIGGERS, "chat.request", "linear.triage"],
+    description: "`owner/repo` or `group/project` (null when a Linear issue routes to none).",
   },
   {
     name: "branch",
     source: "trigger",
     trust: "trusted",
-    triggers: ["chat.request"],
-    description: "Branch checked out in the working directory.",
+    triggers: ["chat.request", "linear.triage"],
+    description: "Branch checked out in the working directory (the default branch).",
   },
   {
     name: "pr.number",
@@ -150,9 +155,31 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description: "Linear issue identifier, e.g. `ENG-123`.",
   },
   {
+    name: "issue.url",
+    source: "trigger",
+    trust: "trusted",
+    triggers: LINEAR_TRIGGERS,
+    description: "URL of the Linear issue (may be empty).",
+  },
+  {
+    name: "issue.stateType",
+    source: "trigger",
+    trust: "trusted",
+    triggers: LINEAR_TRIGGERS,
+    description: "Linear workflow state type of the issue (`backlog`, `unstarted`, …).",
+  },
+  {
+    name: "issue.creator.name",
+    source: "trigger",
+    trust: "trusted",
+    triggers: LINEAR_TRIGGERS,
+    description: "Name of the issue's creator (`issue.creator` is null when Linear doesn't say).",
+  },
+  {
     name: "issue.title",
     source: "trigger",
     trust: "untrusted",
+    quote: "issue-title",
     triggers: LINEAR_TRIGGERS,
     description: "Title of the Linear issue.",
   },
@@ -160,9 +187,114 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "issue.description",
     source: "trigger",
     trust: "untrusted",
-    fence: "markdown",
+    quote: "issue-description",
     triggers: LINEAR_TRIGGERS,
     description: "Description of the Linear issue.",
+  },
+  // Triage: the issue's comments, sub-issues and blockers, the session's reply and the previous
+  // triage. Lists are `{ items }` objects, null when empty, so a template can head them once.
+  // Names, dates and one-line titles render as is, as today's triage prompt does.
+  {
+    name: "comments.items.author",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["linear.triage"],
+    description: "Author of a comment (null for an integration or a deleted user).",
+  },
+  {
+    name: "comments.items.createdAt",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["linear.triage"],
+    description: "When a comment was posted (ISO 8601).",
+  },
+  {
+    name: "comments.items.body",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "comment",
+    triggers: ["linear.triage"],
+    description: "Body of a comment, oldest first.",
+  },
+  ...(["id", "identifier", "stateType", "priority"] as const).map((field): VariableDefinition => ({
+    name: `children.items.${field}`,
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["linear.triage"],
+    description:
+      field === "priority"
+        ? "Linear priority name of a sub-issue (`No priority`, `Urgent` … `Low`)."
+        : `\`${field}\` of a sub-issue, in sub-issue order.`,
+  })),
+  {
+    name: "children.items.title",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "sub-issue-title",
+    triggers: ["linear.triage"],
+    description: "Title of a sub-issue.",
+  },
+  {
+    name: "children.items.description",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "sub-issue-description",
+    triggers: ["linear.triage"],
+    description: "Description of a sub-issue.",
+  },
+  ...(["identifier", "stateType", "blocks", "title"] as const).map((field): VariableDefinition => ({
+    name: `blockers.items.${field}`,
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["linear.triage"],
+    description:
+      field === "title"
+        ? "Title of an issue blocking the issue or a sub-issue, on one line."
+        : field === "blocks"
+          ? "Identifier of the issue a blocker blocks."
+          : `\`${field}\` of an issue blocking the issue or a sub-issue.`,
+  })),
+  {
+    name: "reply",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "reply",
+    triggers: ["linear.triage"],
+    description: "A reply in the Linear session (e.g. answers to open questions; may be empty).",
+  },
+  ...(
+    [
+      ["outcome", "Outcome of the session's previous triage (`prd`, `reformat`, `unchanged`)."],
+      ["size", "Size of the previous triage."],
+      ["stories.items.index", "0-based index of a story of the previous triage."],
+      ["stories.items.title", "Title of a story of the previous triage."],
+      ["subIssueUpdates.items.id", "Linear ID of a sub-issue the previous triage reformatted."],
+      ["subIssueUpdates.items.title", "Title of a sub-issue the previous triage reformatted."],
+      ["openQuestions.items.number", "1-based number of an open question of the previous triage."],
+      ["openQuestions.items.text", "An open question of the previous triage."],
+    ] as const
+  ).map(([field, description]): VariableDefinition => ({
+    name: `previousResult.${field}`,
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["linear.triage"],
+    description,
+  })),
+  {
+    name: "previousResult.title",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "previous-title",
+    triggers: ["linear.triage"],
+    description: "Title the previous triage wrote.",
+  },
+  {
+    name: "previousResult.description",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "previous-description",
+    triggers: ["linear.triage"],
+    description: "Description the previous triage wrote.",
   },
   {
     name: "question",
@@ -186,6 +318,13 @@ export const VARIABLES: readonly VariableDefinition[] = [
     fence: "markdown",
     taskTypes: ["query"],
     description: "The repository's `CLAUDE.md` from the default branch (may be empty).",
+  },
+  {
+    name: "checkout",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["query"],
+    description: "True when the working directory holds a checkout of the run's ref.",
   },
 ];
 

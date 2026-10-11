@@ -1,5 +1,5 @@
 /**
- * Applies a finished `triage.run` job to Linear (agents hold no Linear token):
+ * Applies a finished `triage.run` job to Linear (harnesses hold no Linear token):
  * the issue's title and description become the PRD (with its open questions
  * at the end), a new epic gets its story sub-issues, a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations and a
@@ -31,7 +31,8 @@ import {
   type MaterializationPlan,
   type TriageAgentOutput,
 } from "@omniralph/ralph";
-import { TriageRunPayload, TriageRunResult } from "@omniralph/shared";
+import { QueryRunResult, RunSpecJobPayload, TriageRunResult } from "@omniralph/shared";
+import { z } from "zod";
 import { getLinearGateway } from "@/lib/linear/client";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
@@ -94,29 +95,75 @@ export const VALIDATION_STORY_BODY = [
   "- [ ] All quality gates pass",
 ].join("\n");
 
+/** What the sink needs from the trigger context `enqueueTriage` stores. */
+export const TriageRunContext = z.object({
+  /** The `triage_runs` row. */
+  triageRunId: z.uuid(),
+});
+export type TriageRunContext = z.infer<typeof TriageRunContext>;
+
+/** The triage run (`triage_runs.id`) a `builtin:triage` job belongs to; null for another job. */
+export function triageRunIdOf(job: Pick<Job, "payload">): string | null {
+  const payload = RunSpecJobPayload.safeParse(job.payload);
+  if (!payload.success) return null;
+  const context = TriageRunContext.safeParse(payload.data.trigger.context);
+  return context.success ? context.data.triageRunId : null;
+}
+
 /** The run a triage job belongs to, when the job is still its current one. */
 async function currentRun(db: Database, job: Job): Promise<TriageRun | null> {
-  const payload = TriageRunPayload.safeParse(job.payload);
-  if (!payload.success) return null;
-  const run = await getTriageRun(db, payload.data.triageRunId);
+  const runId = triageRunIdOf(job);
+  const run = runId ? await getTriageRun(db, runId) : null;
   return run && run.currentJobId === job.id ? run : null;
 }
 
+/** Longest summary or error a triage run keeps (`TriageRunResult`). */
+const MAX_TEXT = 20_000;
+
+function clip(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > MAX_TEXT ? `${trimmed.slice(0, MAX_TEXT - 1)}…` : trimmed;
+}
+
 /**
- * The job's result as a validated triage, or the problem with it (the
- * session's own error, a malformed result, or one `validateTriageOutput`
- * rejects).
+ * The job's result (a `QueryRunResult` whose structured output is the
+ * triage) as a validated triage and the `TriageRunResult` its run keeps, or
+ * the problem with it (a malformed result, a run that ended without one, a
+ * triage `validateTriageOutput` rejects or one too large to keep) and, when
+ * the run reported its usage, the failed `TriageRunResult` to keep.
  */
 export function readTriageResult(
   result: unknown,
-): { triage: TriageAgentOutput; result: TriageRunResult } | { problem: string } {
-  const parsed = TriageRunResult.safeParse(result);
-  if (!parsed.success) return { problem: "the triage job returned a malformed result" };
-  const { outcome, error, summary } = parsed.data;
-  if (error !== null || !outcome) return { problem: error ?? "the triage returned no outcome" };
-  const validated = validateTriageOutput({ ...outcome, summary });
-  if ("problem" in validated) return { problem: validated.problem };
-  return { triage: validated.result, result: parsed.data };
+):
+  | { triage: TriageAgentOutput; result: TriageRunResult }
+  | { problem: string; result: TriageRunResult | null } {
+  const parsed = QueryRunResult.safeParse(result);
+  if (!parsed.success) {
+    return { problem: "the triage job returned a malformed result", result: null };
+  }
+  const run = parsed.data;
+  const base = { usage: run.usage, durationMs: run.durationMs };
+  const failed = (problem: string) => ({
+    problem,
+    result: TriageRunResult.parse({
+      summary: clip(problem),
+      error: clip(problem),
+      outcome: null,
+      ...base,
+    }),
+  });
+  if (run.outcome !== "answered") {
+    return failed(`the triage ended without a result (${run.outcome})`);
+  }
+  const validated = validateTriageOutput(run.structured ?? undefined);
+  if ("problem" in validated) return failed(validated.problem);
+  const { summary, ...outcome } = validated.result;
+  const kept = TriageRunResult.safeParse({ summary: clip(summary), error: null, outcome, ...base });
+  if (!kept.success) {
+    // E.g. more stories than a triage run keeps.
+    return failed(`the triage result is too large: ${z.prettifyError(kept.error)}`);
+  }
+  return { triage: validated.result, result: kept.data };
 }
 
 /** The issue's new description: the PRD, with its open questions at the end. */
@@ -300,7 +347,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   const read = readTriageResult(job.result);
   if ("problem" in read) {
-    const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", job.result ?? null);
+    const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
     await failCompletedJob(db, job.id, read.problem);
     await postActivity(linearConversation(linear, sessionId), {
@@ -387,10 +434,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
     if (triage.outcome === "prd" && EPIC_SIZES.has(triage.size) && triage.stories.length > 0) {
       if (children.length === 0) {
-        const payload = TriageRunPayload.parse(job.payload);
-        const [manualLabel] = await runManualLabels(db, {
-          repositoryId: payload.repository?.repositoryId ?? null,
-        });
+        const [manualLabel] = await runManualLabels(db, { repositoryId: job.repositoryId });
         created = await createPlannedSubIssues(
           linear,
           issue,
@@ -430,16 +474,43 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 /**
  * A triage job started: its run is running (with the job as its current one,
  * when it started before `startTriage` recorded it). A job that is no longer
- * its run's current one, or whose run is over, is skipped.
+ * its run's current one, or whose run is over, is skipped. Then, since work
+ * may have started on the issue while the job was queued, the issue and its
+ * sub-issues are read again: when one is in progress or done, the run stops
+ * and the job is skipped without a session (a failed read lets it run:
+ * `applyTriageJob` checks again before writing).
  */
 export async function onTriageJobStarted(
   db: Database,
   job: Job,
+  deps?: TriageApplyDeps,
 ): Promise<{ skip: false } | { skip: true; reason: "skipped" }> {
-  const payload = TriageRunPayload.safeParse(job.payload);
-  const run = payload.success ? await getTriageRun(db, payload.data.triageRunId) : null;
-  if (run && (await startTriageRunJob(db, run.id, job.id))) return { skip: false };
-  await skipJob(db, job.id, { reason: "The triage run is over" });
+  const runId = triageRunIdOf(job);
+  const run = runId ? await getTriageRun(db, runId) : null;
+  if (!run || !(await startTriageRunJob(db, run.id, job.id))) {
+    await skipJob(db, job.id, { reason: "The triage run is over" });
+    return { skip: true, reason: "skipped" };
+  }
+
+  let linear: LinearGateway;
+  let issue: IssueSummary;
+  let locked: string[];
+  try {
+    linear = deps?.linear ?? (await defaultDeps(db, run)).linear;
+    issue = await linear.getIssue(run.linearIssueId);
+    locked = lockedIssues(issue, await linear.getChildren(issue.id));
+  } catch (error) {
+    console.warn(`Re-checking the issue of triage job ${job.id} failed`, error);
+    return { skip: false };
+  }
+  if (locked.length === 0) return { skip: false };
+  if (!(await finishTriageRunJob(db, run.id, job.id, "stopped"))) return { skip: false };
+  await skipJob(db, job.id, { reason: "The issue is in progress or done" });
+  await postActivity(linearConversation(linear, run.linearAgentSessionId), {
+    type: "response",
+    body: lockedMessage(issue, locked),
+  });
+  await removeTriageLabelQuietly(linear, run.linearIssueId);
   return { skip: true, reason: "skipped" };
 }
 

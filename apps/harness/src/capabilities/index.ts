@@ -4,7 +4,6 @@ import type { Logger } from "../logger.js";
 import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
 import { reviewCapability } from "./review.js";
-import { triageCapability } from "./triage/index.js";
 
 /**
  * What a capability's Claude sessions may do. The agent builds the SDK's
@@ -165,5 +164,5 @@ export function toolPolicyFor(capability: Capability, jobType: string): ToolPoli
 
 /** The capabilities this build of the harness ships (system RPCs live in `rpc/`). */
 export function defaultCapabilities(): Capability[] {
-  return [reviewCapability, ralphCapability, triageCapability];
+  return [reviewCapability, ralphCapability];
 }

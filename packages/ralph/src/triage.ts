@@ -53,7 +53,7 @@ export interface TriagePreviousResult {
   subIssueUpdates?: readonly { id: string; title: string }[];
 }
 
-/** What a triage prompt is built from (the shared `TriageRunPayload`). */
+/** What a triage prompt is built from (what `enqueueTriage` loads from Linear). */
 export interface TriagePromptInput {
   issue: {
     identifier: string;
@@ -87,6 +87,7 @@ export const TRIAGE_HEADING = "## Triage this issue";
 
 /** System prompt addition of a triage session. */
 export const TRIAGE_SYSTEM_APPEND = `You are "Omniralph", a product manager triaging a Linear issue into a PRD (Product Requirements Document), unattended.
+
 - You are a product manager, not a software engineer: produce the PRD only. Never write code, create files, branches, commits or pull requests.
 - Only read. Inspect the repository in your working directory, when there is one, with read-only tools. You can't run commands, edit files or reach the network.
 - Nobody answers questions during this session. Decide what the issue, its comments, its sub-issues and the source answer; turn every remaining ambiguity into an open question instead of asking.
@@ -214,6 +215,110 @@ You can't ask anyone during the session. Answer what you can from the issue, com
 
 ### 9. Summary (\`summary\`)
 A few lines for the Linear session: the outcome, the size and why, the structure (single issue, epic with N stories, or which sub-issues were reformatted), and how many open questions remain.`;
+
+/** A list as a triage template takes it: `{ items }`, or null when empty (so a heading renders once). */
+export type TemplateList<T> = { items: T[] } | null;
+
+function templateList<T>(items: readonly T[] | undefined): TemplateList<T> {
+  return items && items.length > 0 ? { items: [...items] } : null;
+}
+
+/**
+ * The trigger context of a `builtin:triage` run (task `linear.triage`): the
+ * issue, its comments, sub-issues and blockers, the routed repository and the
+ * session's reply and previous triage, shaped for the logic-less prompt
+ * template, which renders it as `buildTriagePrompt` renders `input` (with the
+ * harness's `checkout` saying whether the repository is checked out).
+ */
+export interface TriageTemplateContext {
+  issue: {
+    identifier: string;
+    title: string;
+    description: string;
+    stateType: string;
+    creator: { name: string } | null;
+    url: string | null;
+  };
+  comments: TemplateList<{ author: string | null; body: string; createdAt: string }>;
+  children: TemplateList<{
+    id: string;
+    identifier: string;
+    title: string;
+    description: string;
+    stateType: string;
+    /** The priority's name (`High`), as the prompt shows it. */
+    priority: string;
+  }>;
+  blockers: TemplateList<{ identifier: string; title: string; stateType: string; blocks: string }>;
+  /** The routed repository's path; null without one. */
+  repository: string | null;
+  /** Its default branch; null without a repository. */
+  branch: string | null;
+  /** Trimmed; null when blank. */
+  reply: string | null;
+  previousResult: {
+    outcome: string;
+    size: string;
+    title: string;
+    description: string;
+    stories: TemplateList<{ index: number; title: string }>;
+    subIssueUpdates: TemplateList<{ id: string; title: string }>;
+    openQuestions: TemplateList<{ number: number; text: string }>;
+  } | null;
+}
+
+/** `input` as the trigger context of a `builtin:triage` run (see `TriageTemplateContext`). */
+export function triageTemplateContext(input: TriagePromptInput): TriageTemplateContext {
+  const { issue } = input;
+  const previous = input.previousResult;
+  return {
+    issue: {
+      identifier: issue.identifier,
+      title: issue.title,
+      description: issue.description,
+      stateType: issue.stateType,
+      creator: issue.creator ? { name: issue.creator.name } : null,
+      url: issue.url || null,
+    },
+    comments: templateList(input.comments),
+    children: templateList(
+      input.children?.map((c) => ({
+        id: c.id,
+        identifier: c.identifier,
+        title: c.title,
+        description: c.description,
+        stateType: c.stateType,
+        priority: LINEAR_PRIORITY[c.priority] ?? String(c.priority),
+      })),
+    ),
+    blockers: templateList(
+      input.blockers?.map((b) => ({
+        identifier: b.identifier,
+        title: b.title.replace(/\s+/g, " ").trim(),
+        stateType: b.stateType,
+        blocks: b.blocks,
+      })),
+    ),
+    repository: input.repository?.repository.fullPath ?? null,
+    branch: input.repository?.defaultBranch ?? null,
+    reply: input.reply?.trim() || null,
+    previousResult: previous
+      ? {
+          outcome: previous.outcome ?? "prd",
+          size: previous.size,
+          title: previous.title,
+          description: previous.description,
+          stories: templateList(previous.stories?.map((s, index) => ({ index, title: s.title }))),
+          subIssueUpdates: templateList(
+            previous.subIssueUpdates?.map((u) => ({ id: u.id, title: u.title })),
+          ),
+          openQuestions: templateList(
+            previous.openQuestions.map((text, i) => ({ number: i + 1, text })),
+          ),
+        }
+      : null,
+  };
+}
 
 /** The prompt of a triage session over one issue. */
 export function buildTriagePrompt(input: TriagePromptInput): string {

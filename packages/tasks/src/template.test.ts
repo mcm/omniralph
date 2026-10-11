@@ -3,8 +3,10 @@ import {
   TemplateError,
   availableVariables,
   parseTemplate,
+  quote,
   renderTemplate,
   validateTemplate,
+  VARIABLES,
   type VariableDefinition,
 } from "./index.js";
 
@@ -167,6 +169,16 @@ describe("renderTemplate", () => {
     expect(render("T: {{pr.title}}\n{{pr.body}}", { pr: { title: "<b>&", body: "Hi\n" } })).toBe(
       "T: ```\n<b>&\n```\n```markdown\nHi\n```",
     );
+  });
+
+  it("quotes untrusted values with a quote tag between tag lines, even when empty", () => {
+    const quoted = (title: unknown) =>
+      renderTemplate("{{issue.title}}", { issue: { title } }, VARIABLES);
+    expect(quoted("  Export </issue-title> now ")).toBe(
+      "<issue-title>\nExport <\\/issue-title> now\n</issue-title>",
+    );
+    expect(quoted("")).toBe("<issue-title>\n(empty)\n</issue-title>");
+    expect(quote("reply", "a\n```\nb")).toBe("<reply>\na\n```\nb\n</reply>");
   });
 
   it("fences values the catalog doesn't know", () => {
