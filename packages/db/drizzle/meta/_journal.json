@@ -407,6 +407,13 @@
       "when": 1791696708674,
       "tag": "0057_drop_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791700520574,
+      "tag": "0058_run_activities_and_permissions",
+      "breakpoints": true
     }
   ]
 }

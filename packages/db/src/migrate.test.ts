@@ -359,6 +359,51 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     expect(rows).toEqual([]);
   });
 
+  it("adds run activities and permission requests (0058)", async () => {
+    const { rows: columns } = await db.$client.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+       where table_name in ('run_activities', 'run_permission_requests')
+       order by table_name, ordinal_position`,
+    );
+    expect(columns).toEqual([
+      ...["id", "job_id", "organization_id", "type", "body", "parameter", "created_at"].map(
+        (column_name) => ({ table_name: "run_activities", column_name }),
+      ),
+      ...[
+        "id",
+        "job_id",
+        "request_id",
+        "tool",
+        "detail",
+        "asked_at",
+        "expires_at",
+        "answer",
+        "answered_at",
+        "answered_by",
+      ].map((column_name) => ({ table_name: "run_permission_requests", column_name })),
+    ]);
+    const { rows: indexes } = await db.$client.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes
+       where indexname in ('run_activities_job_id_created_at_idx', 'run_permission_requests_job_request_uq')
+       order by indexname`,
+    );
+    expect(indexes.map((i) => i.indexdef)).toEqual([
+      expect.stringContaining("(job_id, created_at)"),
+      expect.stringMatching(/UNIQUE INDEX .*\(job_id, request_id\)/),
+    ]);
+    const { rows: fks } = await db.$client.query<{ table_name: string; delete_rule: string }>(
+      `select tc.table_name, rc.delete_rule
+       from information_schema.table_constraints tc
+       join information_schema.referential_constraints rc on rc.constraint_name = tc.constraint_name
+       where tc.constraint_name in ('run_activities_job_id_jobs_id_fk', 'run_permission_requests_job_id_jobs_id_fk')
+       order by tc.table_name`,
+    );
+    expect(fks).toEqual([
+      { table_name: "run_activities", delete_rule: "CASCADE" },
+      { table_name: "run_permission_requests", delete_rule: "CASCADE" },
+    ]);
+  });
+
   it("renames agents to harnesses and keeps their rows (0055)", async () => {
     await db.execute(sql`create database harnesses`);
     const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/harnesses");

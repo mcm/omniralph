@@ -1,10 +1,10 @@
-import { getJobForHarness, getRun } from "@omniralph/db";
+import { answerRunPermissionRequest, getJobForHarness } from "@omniralph/db";
 import { requireJob } from "@/lib/harness-auth/verify";
 import { jobIdParam, notFound } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { getLinearGateway } from "@/lib/linear/client";
-import { isRalphJob } from "@/lib/ralph/activities";
-import { expirePermission, readPermission } from "@/lib/ralph/permissions";
+import { expirePermission } from "@/lib/ralph/permissions";
+import { readRunPermission } from "@/lib/runs/permissions";
 
 interface PermissionRouteContext {
   params: Promise<{ id: string; requestId: string }>;
@@ -12,7 +12,7 @@ interface PermissionRouteContext {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The calling job's ralph job and the request ID, or the error response. */
+/** The calling job and the request ID, or the error response. */
 async function resolve(req: Request, ctx: PermissionRouteContext) {
   const principal = await requireJob(req, "run:activity");
   if (principal instanceof Response) return principal;
@@ -25,24 +25,30 @@ async function resolve(req: Request, ctx: PermissionRouteContext) {
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  if (!isRalphJob(job)) return Response.json({ error: "not_a_ralph_job" }, { status: 403 });
   return { db, job, requestId: requestId.toLowerCase() };
 }
 
-/** The answer to a permission question so far (`RalphPermissionAnswer`). */
+/**
+ * The answer to a permission request so far (`RalphPermissionAnswer`), from
+ * the stored request (`readRunPermission`).
+ */
 export async function GET(req: Request, ctx: PermissionRouteContext): Promise<Response> {
   const resolved = await resolve(req, ctx);
   if (resolved instanceof Response) return resolved;
   const { db, job, requestId } = resolved;
-  const run = job.ralphRunId ? await getRun(db, job.ralphRunId) : null;
-  return Response.json(readPermission(run, job, requestId));
+  return Response.json(await readRunPermission(db, job, requestId));
 }
 
-/** The harness stopped waiting for an answer and denied the call: the question is closed. */
+/**
+ * The harness stopped waiting for an answer and denied the call: the request
+ * is closed as expired (unless already answered), and so is a ralph run's question.
+ */
 export async function DELETE(req: Request, ctx: PermissionRouteContext): Promise<Response> {
   const resolved = await resolve(req, ctx);
   if (resolved instanceof Response) return resolved;
   const { db, job, requestId } = resolved;
+  await answerRunPermissionRequest(db, { jobId: job.id, requestId, answer: "expired" });
+  if (!job.ralphRunId) return new Response(null, { status: 204 });
   await expirePermission(
     { db, linear: (organizationId) => getLinearGateway({ db, organizationId }) },
     job,
