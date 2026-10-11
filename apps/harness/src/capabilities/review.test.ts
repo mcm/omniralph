@@ -4,22 +4,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
-  LearnRuleOutcome,
-  LearnRuleRequest,
   QuestionAnswerer,
   ReplyOutcome,
   ReplyRequest,
   ReviewProvider,
   ReviewRequest,
-  RuleLearner,
   TaskReviewResult,
 } from "@omniralph/engine";
 import {
-  LearnRuleJobResult,
   ReviewJobResult,
   ReviewReplyJobResult,
   type ReviewReplyJobPayload,
-  type LearnRuleJobPayload,
   type Finding,
   type JobPayload,
   type JobRepository,
@@ -152,14 +147,9 @@ describe("review capability", () => {
     };
   }
 
-  it("is read-only and runs review.run, review.learn-rule, review.reply and chat.ask jobs", () => {
+  it("is read-only and runs review.run, review.reply and chat.ask jobs (not review.learn-rule)", () => {
     const capability = createReviewCapability();
-    expect(capability.jobTypes).toEqual([
-      "review.run",
-      "review.learn-rule",
-      "review.reply",
-      "chat.ask",
-    ]);
+    expect(capability.jobTypes).toEqual(["review.run", "review.reply", "chat.ask"]);
     expect(capability.toolPolicy).toBe(REVIEW_TOOL_POLICY);
     expect(REVIEW_TOOL_POLICY.allowedTools).toEqual(["Read", "Grep", "Glob"]);
     expect(REVIEW_TOOL_POLICY.disallowedTools).toEqual(
@@ -274,123 +264,6 @@ describe("review capability", () => {
     expect(ReviewJobResult.parse(output)).toMatchObject({
       stopReason: "budget_exhausted",
       findings: [{ title: "Off by one" }],
-    });
-  });
-
-  describe("review.learn-rule", () => {
-    function fakeLearner(outcome: Partial<LearnRuleOutcome> = {}) {
-      const requests: LearnRuleRequest[] = [];
-      const learner: RuleLearner = {
-        async learnRule(request) {
-          requests.push(request);
-          return {
-            status: "rule",
-            rule: "Do not flag out-of-range reads in last(); callers check the length.",
-            usage: { inputTokens: 1200, outputTokens: 40 },
-            ...outcome,
-          };
-        },
-      };
-      return { learner, requests };
-    }
-
-    function learnJob(overrides: Partial<LearnRuleJobPayload> = {}): JobPayload {
-      const payload: LearnRuleJobPayload = {
-        feedbackId: randomUUID(),
-        findingId: randomUUID(),
-        repositoryId: randomUUID(),
-        repository,
-        baseSha: base,
-        headSha: head,
-        model: "claude-haiku-5-5",
-        maxTokens: 5000,
-        finding: {
-          path: "src/list.ts",
-          startLine: 2,
-          endLine: 2,
-          severity: "high",
-          category: "correctness",
-          title: "Out-of-range read",
-          body: "xs[xs.length + 1] is always undefined.",
-        },
-        note: "Callers always check the length first.",
-        ...overrides,
-      };
-      return {
-        id: randomUUID(),
-        type: "review.learn-rule",
-        taskType: "query",
-        pool: "short",
-        taskId: null,
-        repositoryId: payload.repositoryId,
-        payload,
-        deliveryCount: 1,
-      };
-    }
-
-    it("sends the finding, its diff hunk and the note, with the token cap, and returns the rule", async () => {
-      const fetchSpy = vi.spyOn(globalThis, "fetch");
-      const { learner, requests } = fakeLearner();
-      const output = await createReviewCapability({ learner }).run(learnJob(), context());
-      expect(LearnRuleJobResult.parse(output)).toMatchObject({
-        outcome: "rule",
-        rule: "Do not flag out-of-range reads in last(); callers check the length.",
-        usage: { inputTokens: 1200, outputTokens: 40 },
-      });
-      expect(requests).toHaveLength(1);
-      const [request] = requests;
-      expect(request!.maxTokens).toBe(5000);
-      expect(request!.model).toBe("claude-haiku-5-5");
-      expect(request!.prompt).toContain("Out-of-range read");
-      expect(request!.prompt).toContain("-  return xs[xs.length];");
-      expect(request!.prompt).toContain("+  return xs[xs.length + 1];");
-      expect(request!.prompt).toContain("Callers always check the length first.");
-      // No worktree is created for it.
-      expect(await readdir(path.join(workspaceRoot, ".worktrees")).catch(() => [])).toEqual([]);
-      expect(fetchSpy).not.toHaveBeenCalled();
-      fetchSpy.mockRestore();
-    });
-
-    it("generates without the hunk when the commits can't be fetched", async () => {
-      const { learner, requests } = fakeLearner({ status: "none", rule: null });
-      const output = await createReviewCapability({ learner }).run(
-        learnJob({ headSha: "f".repeat(40) }),
-        context(),
-      );
-      expect(LearnRuleJobResult.parse(output)).toMatchObject({ outcome: "none", rule: null });
-      expect(requests[0]!.prompt).toContain("(not available)");
-    });
-
-    it("reports rejected and budget-exhausted generations as results without a rule", async () => {
-      for (const status of ["rejected", "budget_exhausted"] as const) {
-        const { learner } = fakeLearner({ status, rule: null, error: "too long" });
-        const output = await createReviewCapability({ learner }).run(learnJob(), context());
-        expect(LearnRuleJobResult.parse(output)).toMatchObject({ outcome: status, rule: null });
-      }
-    });
-
-    it("retries rate limits and fails on errors", async () => {
-      const limited = fakeLearner({ status: "rate_limited", rule: null, retryAfterMs: 30_000 });
-      const error = await createReviewCapability({ learner: limited.learner })
-        .run(learnJob(), context())
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(RetryableJobError);
-      expect((error as RetryableJobError).retryAfterSeconds).toBe(30);
-
-      const failing = fakeLearner({ status: "error", rule: null, error: "auth failed" });
-      await expect(
-        createReviewCapability({ learner: failing.learner }).run(learnJob(), context()),
-      ).rejects.toThrow("auth failed");
-    });
-
-    it("rejects an invalid payload", async () => {
-      const job = learnJob();
-      await expect(
-        createReviewCapability({ learner: fakeLearner().learner }).run(
-          { ...job, payload: { findingId: "x" } },
-          context(),
-        ),
-      ).rejects.toThrow("invalid review.learn-rule payload");
     });
   });
 

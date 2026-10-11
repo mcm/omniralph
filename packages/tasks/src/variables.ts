@@ -85,11 +85,12 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description: "Description of the pull request.",
   },
   {
-    name: "finding.path",
+    name: "finding.file",
     source: "trigger",
     trust: "trusted",
     triggers: FINDING_TRIGGERS,
-    description: "File of the finding, JSON-quoted.",
+    description:
+      "File of the finding, JSON-quoted (the trigger context's `finding.path` holds the raw path).",
   },
   {
     name: "finding.location",

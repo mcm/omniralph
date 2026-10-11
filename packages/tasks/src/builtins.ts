@@ -10,13 +10,14 @@ import {
   type AgentDefinitionInput,
   type TaskDefinitionInput,
 } from "./definitions.js";
+import { LEARN_RULE_TASK, RULE_WRITER_AGENT } from "./builtin/learn-rule.js";
 import { isBuiltinId } from "./ids.js";
 import { validateTemplate } from "./template.js";
 import { availableVariables } from "./variables.js";
 
-const AGENT_INPUTS: readonly AgentDefinitionInput[] = [];
+const AGENT_INPUTS: readonly AgentDefinitionInput[] = [RULE_WRITER_AGENT];
 
-const TASK_INPUTS: readonly TaskDefinitionInput[] = [];
+const TASK_INPUTS: readonly TaskDefinitionInput[] = [LEARN_RULE_TASK];
 
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = AGENT_INPUTS.map((agent) =>
   AgentDefinition.parse(agent),
@@ -39,8 +40,8 @@ export function getBuiltinTask(id: string): TaskDefinition | null {
 /**
  * Problems with a set of built-in definitions; empty when they're fine. Each
  * must parse, have a unique `builtin:` ID; each task must reference one of
- * `agents`, fit it (`validateAgentForTask`) and have a template using only
- * the variables its task type and triggers provide.
+ * `agents`, fit it (`validateAgentForTask`) and have a template (and
+ * variable limits) using only the variables its task type and triggers provide.
  */
 export function builtinProblems(agents: readonly unknown[], tasks: readonly unknown[]): string[] {
   const problems: string[] = [];
@@ -80,6 +81,10 @@ export function builtinProblems(agents: readonly unknown[], tasks: readonly unkn
     for (const problem of validateTemplate(task.promptTemplate, available)) {
       const what = problem.kind === "parse" ? problem.message : `unknown variable ${problem.name}`;
       problems.push(`Task ${task.id} template (${problem.line}:${problem.column}): ${what}`);
+    }
+    for (const name of Object.keys(task.variableLimits ?? {})) {
+      if (!available.includes(name))
+        problems.push(`Task ${task.id} limits the unknown variable ${name}.`);
     }
   });
   return problems;

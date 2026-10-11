@@ -12,7 +12,7 @@ import {
 import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
-import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
+import { jobHooks, type JobHooks } from "@/lib/sinks";
 
 const REVOKED = "Harness revoked";
 
@@ -120,10 +120,10 @@ export async function deleteHarness(
 /** Runs an outcome hook per job that has a handler; a failing hook (e.g. a code-host call) doesn't stop the rest. */
 async function forEachJob(
   jobs: Job[],
-  hook: (handler: JobOutcomeHandler, job: Job) => Promise<unknown> | undefined,
+  hook: (handler: JobHooks, job: Job) => Promise<unknown> | undefined,
 ): Promise<void> {
   for (const job of jobs) {
-    const handler = jobOutcomeHandler(job);
+    const handler = jobHooks(job);
     if (!handler) continue;
     try {
       await hook(handler, job);

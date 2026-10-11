@@ -24,10 +24,6 @@ const chatAsk = vi.hoisted(() => ({
   parseChatAskResult: vi.fn((result: unknown) => (result === "ok" ? {} : null)),
 }));
 vi.mock("@/lib/chat/ask", () => chatAsk);
-vi.mock("@/lib/rules/learn", () => ({
-  onLearnRuleJobCompleted: vi.fn(),
-  parseLearnRuleResult: vi.fn(),
-}));
 
 const { jobOutcomeHandler, registerJobOutcomeHandler } = await import("./handlers");
 
@@ -72,12 +68,10 @@ function job(overrides: Partial<Job>): Job {
 }
 
 describe("job outcome handlers", () => {
-  it("routes review, learn-rule and reply jobs to their handlers by type", () => {
+  it("routes review and reply jobs to their handlers by type", () => {
     expect(jobOutcomeHandler(job({}))?.onStarted).toBeDefined();
-    for (const type of ["review.learn-rule", "review.reply"]) {
-      // Registered, but the payload is a review's: generic lifecycle only.
-      expect(jobOutcomeHandler(job({ type }))).toBeUndefined();
-    }
+    // Registered, but the payload is a review's: generic lifecycle only.
+    expect(jobOutcomeHandler(job({ type: "review.reply" }))).toBeUndefined();
   });
 
   it("ignores jobs whose type or payload don't match", () => {

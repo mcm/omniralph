@@ -30,7 +30,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq, inArray } from "drizzle-orm";
 import { decodeJwt } from "jose";
 import { getContainerRuntimeClient } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type * as Tasks from "@omniralph/tasks";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -96,6 +96,7 @@ const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
 const { POST: claim } = await import("./claim/route");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
+const { learnedRuleSink } = await import("@/lib/sinks/learned-rule");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: activities } = await import("./jobs/[id]/activities/route");
 const { GET: attachment } = await import("./jobs/[id]/attachments/[attachmentId]/route");
@@ -589,10 +590,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         error: "Unknown task builtin:gone",
         deliveryCount: 0,
       });
-      expect(outcomes).toEqual([
-        `failed:${unknown}:Unknown task builtin:gone`,
-        `started:${next}:${agent.harnessId}`,
-      ]);
+      // A run-spec job never reaches its type's outcome handler; an unknown task has no sink either.
+      expect(outcomes).toEqual([`started:${next}:${agent.harnessId}`]);
     });
 
     it("fails a run-spec job whose trigger the task doesn't allow", async () => {
@@ -926,59 +925,32 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       expect(again.status).toBe(409);
     });
 
-    it("validates a review.learn-rule result and stores its rule once", async () => {
-      const { accessToken } = await newAgent();
+    describe("a run-spec job's sink", () => {
       const sha = (n: number) => n.toString(16).padStart(40, "0");
-      const review = await createReview(db, {
-        repositoryId,
-        prNumber: 9,
-        headSha: sha(2),
-        baseSha: sha(1),
-        trigger: "webhook",
-        profileId: "standard",
-        model: null,
-        budget: 100_000,
+      const sinkCalls: string[] = [];
+
+      afterEach(() => {
+        delete learnedRuleSink.onStarted;
+        delete learnedRuleSink.onFailed;
+        sinkCalls.length = 0;
       });
-      const [finding] = await db
-        .insert(findings)
-        .values({
-          reviewId: review.id,
-          path: "src/a.ts",
-          startLine: 1,
-          endLine: 1,
-          severity: "low",
-          category: "correctness",
-          title: "Unused value",
-          body: "Never read.",
-          confidence: 0.5,
-          status: "dismissed",
-        })
-        .returning();
-      const [row] = await db
-        .insert(feedback)
-        .values({ findingId: finding!.id, source: "ui", reason: "false_positive" })
-        .returning();
-      const { job } = await dispatcher().createAndPublish({
-        organizationId: orgId,
-        type: "review.learn-rule",
-        taskType: "query",
-        pool: "short",
-        repositoryId,
-        dedupeKey: `review.learn-rule:${row!.id}`,
-        payload: {
-          feedbackId: row!.id,
-          findingId: finding!.id,
+
+      /** A dismissed finding and a builtin:learn-rule run for it, as `enqueueLearnRule` inserts it. */
+      async function learnRuleRun() {
+        const review = await createReview(db, {
           repositoryId,
-          repository: {
-            provider: "github",
-            fullPath: "acme/app",
-            cloneUrl: "https://github.com/acme/app.git",
-          },
-          baseSha: sha(1),
+          prNumber: 9,
           headSha: sha(2),
+          baseSha: sha(1),
+          trigger: "webhook",
+          profileId: "standard",
           model: null,
-          maxTokens: 5000,
-          finding: {
+          budget: 100_000,
+        });
+        const [finding] = await db
+          .insert(findings)
+          .values({
+            reviewId: review.id,
             path: "src/a.ts",
             startLine: 1,
             endLine: 1,
@@ -986,36 +958,114 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
             category: "correctness",
             title: "Unused value",
             body: "Never read.",
+            confidence: 0.5,
+            status: "dismissed",
+          })
+          .returning();
+        const [row] = await db
+          .insert(feedback)
+          .values({ findingId: finding!.id, source: "ui", reason: "false_positive" })
+          .returning();
+        const { job } = await dispatcher().createAndPublish({
+          organizationId: orgId,
+          type: "review.learn-rule",
+          taskType: "query",
+          pool: "short",
+          taskId: "builtin:learn-rule",
+          repositoryId,
+          dedupeKey: `review.learn-rule:${row!.id}`,
+          payload: {
+            trigger: {
+              kind: "finding.dismissed",
+              context: {
+                feedbackId: row!.id,
+                repository: "acme/app",
+                finding: {
+                  id: finding!.id,
+                  path: "src/a.ts",
+                  file: '"src/a.ts"',
+                  startLine: 1,
+                  endLine: 1,
+                  location: "line 1",
+                  severity: "low",
+                  category: "correctness",
+                  title: "Unused value",
+                  body: "Never read.",
+                  baseSha: sha(1),
+                  headSha: sha(2),
+                },
+                dismissal: { note: "" },
+              },
+            },
+            repositoryId,
           },
-          note: null,
-        },
+        });
+        return { job, finding: finding! };
+      }
+
+      it("hears about the start on claim", async () => {
+        const { accessToken, harnessId } = await newAgent();
+        learnedRuleSink.onStarted = async (_db, job, id) => {
+          sinkCalls.push(`started:${job.id}:${id}`);
+          return { skip: false };
+        };
+        const { job } = await learnRuleRun();
+        const body = await startAs(job.id, accessToken);
+        expect(body?.runSpec?.task.id).toBe("builtin:learn-rule");
+        expect(sinkCalls).toEqual([`started:${job.id}:${harnessId}`]);
       });
-      await startAs(job.id, accessToken);
-      const submit = (body: unknown) =>
-        result(agentRequest(`jobs/${job.id}/result`, accessToken, { body }), ctx(job.id));
 
-      const valid = {
-        rule: "Do not flag values kept for debugging.",
-        outcome: "rule",
-        usage: { inputTokens: 2000, outputTokens: 50 },
-        durationMs: 900,
-      };
-      expect((await submit({ result: { ...valid, rule: "x".repeat(301) } })).status).toBe(400);
-      expect((await submit({ result: { ...valid, outcome: "none" } })).status).toBe(400);
-      expect((await submit({ result: valid })).status).toBe(200);
-      // The harness's replay after a timeout stores nothing new.
-      expect((await submit({ result: valid })).status).toBe(200);
+      it("hears about a final failure", async () => {
+        const { accessToken } = await newAgent();
+        learnedRuleSink.onFailed = async (_db, job, error) =>
+          void sinkCalls.push(`failed:${job.id}:${error}`);
+        const { job } = await learnRuleRun();
+        await startAs(job.id, accessToken);
+        const res = await failAs(job.id, accessToken, { retryable: false, error: "boom" });
+        expect(res.status).toBe(200);
+        expect(sinkCalls).toEqual([`failed:${job.id}:boom`]);
+      });
 
-      expect(await jobRow(job.id)).toMatchObject({ status: "completed", result: valid });
-      const stored = await db.select().from(rules).where(eq(rules.repositoryId, repositoryId));
-      expect(stored).toMatchObject([
-        {
-          kind: "learned",
-          text: "Do not flag values kept for debugging.",
-          enabled: true,
-          sourceFindingId: finding!.id,
-        },
-      ]);
+      it("validates the result (400 before the job completes) and stores the learned rule once", async () => {
+        const { accessToken } = await newAgent();
+        const { job, finding } = await learnRuleRun();
+        await startAs(job.id, accessToken);
+        const submit = (body: unknown) =>
+          result(agentRequest(`jobs/${job.id}/result`, accessToken, { body }), ctx(job.id));
+
+        const valid = {
+          outcome: "answered",
+          answer: null,
+          structured: { rule: "Do not flag values kept for debugging." },
+          references: [],
+          usage: { inputTokens: 2000, outputTokens: 50 },
+          durationMs: 900,
+        };
+        // Not a query run result, structured output the sink doesn't take, a text answer instead.
+        for (const invalid of [
+          { rule: "x", outcome: "rule", usage: valid.usage, durationMs: 900 },
+          { ...valid, structured: { rule: 42 } },
+          { ...valid, structured: { rule: "x", confidence: 1 } },
+          { ...valid, structured: null, answer: "Do not flag it." },
+        ]) {
+          expect((await submit({ result: invalid })).status).toBe(400);
+          expect(await jobRow(job.id)).toMatchObject({ status: "running", result: null });
+        }
+        expect((await submit({ result: valid })).status).toBe(200);
+        // The harness's replay after a timeout stores nothing new.
+        expect((await submit({ result: valid })).status).toBe(200);
+
+        expect(await jobRow(job.id)).toMatchObject({ status: "completed", result: valid });
+        const stored = await db.select().from(rules).where(eq(rules.repositoryId, repositoryId));
+        expect(stored).toMatchObject([
+          {
+            kind: "learned",
+            text: "Do not flag values kept for debugging.",
+            enabled: true,
+            sourceFindingId: finding.id,
+          },
+        ]);
+      });
     });
 
     it("validates a review.reply result and posts the answer in the thread once", async () => {

@@ -9,7 +9,7 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
-import { jobOutcomeHandler } from "@/lib/jobs/handlers";
+import { jobHooks } from "@/lib/sinks";
 
 /** Delay before a retryable failure may be claimed again, when the harness doesn't name one. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
@@ -18,7 +18,8 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
  * Records a failed delivery. Non-retryable failures, and any failure on the
  * last allowed delivery, fail the job. Otherwise the job is queued again,
  * claimable after `retryAfterSeconds`, and the response is `retry`.
- * The job type's outcome handler (`onFailed`, `onCanceled`, `onRetry`) then
+ * The job's hooks (`jobHooks`: its task's sink, or its type's outcome handler
+ * for a legacy job: `onFailed`, `onCanceled`, `onRetry`) then
  * updates the job type's state, e.g. a review's final failure fails the
  * review and posts a failure note.
  */
@@ -42,7 +43,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     retryAfterSeconds,
   });
   const job = outcome.status === "not_found" ? null : await getJob(db, jobId);
-  const handler = job && jobOutcomeHandler(job);
+  const handler = job && jobHooks(job);
   if (job && handler) {
     const error = body.data.error ?? null;
     if (outcome.status === "failed") await handler.onFailed?.(db, job, error);

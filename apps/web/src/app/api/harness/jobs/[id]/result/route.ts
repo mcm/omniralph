@@ -9,14 +9,15 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
-import { jobOutcomeHandler } from "@/lib/jobs/handlers";
+import { jobHooks } from "@/lib/sinks";
 
 /**
  * Stores a job's result. Only the job's current harness may submit it: a harness
  * whose delivery was taken over by another one gets 409.
  *
- * The job type's outcome handler validates the result (400 when invalid) and
- * acts on it once the job completes (`onCompleted`, `onCanceled`): e.g. a
+ * The job's hooks (`jobHooks`: its task's sink, or its type's outcome handler
+ * for a legacy job) validate the result (400 when invalid) and
+ * act on it once the job completes (`onCompleted`, `onCanceled`): e.g. a
  * review's findings are persisted and posted to the PR/MR, a learned rule is
  * stored, a thread reply is posted. The harness that completed a job with a
  * handler may submit its result again (e.g. after a timeout): that gets
@@ -34,7 +35,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  const handler = jobOutcomeHandler(job);
+  const handler = jobHooks(job);
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {

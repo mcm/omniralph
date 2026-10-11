@@ -9,7 +9,7 @@ import {
   type QueryRunResult,
   type RunSpec,
 } from "@omniralph/shared";
-import { renderTemplate } from "@omniralph/tasks";
+import { renderTemplate, VARIABLES } from "@omniralph/tasks";
 import { z } from "zod";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import type { Logger } from "../logger.js";
@@ -129,8 +129,9 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    tools, or, with `requireCheckout`, finishes with `no_checkout` and no
  *    session.
  * 2. Render the task's prompt template over the trigger context and the
- *    query variables (`question`, `hunk`, `conventions`); untrusted values are
- *    fenced by `renderTemplate`.
+ *    query variables (`question`, `hunk`, `conventions`); values over the
+ *    task's `variableLimits` are cut, and untrusted values are fenced, by
+ *    `renderTemplate`.
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
@@ -169,7 +170,12 @@ export async function runQueryTask(
       hunk: await hunkVariable(ctx.repos, spec.repository, context, git),
       conventions: await conventionsVariable(workspace.checkout, ctx.repos.gitEnv(ctx.env())),
     };
-    const prompt = renderTemplate(spec.task.promptTemplate, { ...context, ...variables });
+    const prompt = renderTemplate(
+      spec.task.promptTemplate,
+      { ...context, ...variables },
+      VARIABLES,
+      spec.task.variableLimits,
+    );
     // `get_attachment` saves to the run's temp directory: the empty working directory, or one of its own next to a checkout.
     const offered = offeredHarnessTools(spec.agent.tools.harness, spec.taskType);
     const downloads =

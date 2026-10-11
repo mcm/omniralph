@@ -119,6 +119,11 @@ export const TaskDefinition = z
     /** Overrides the agent's model. */
     model: Model.optional(),
     tokenBudget: TokenBudget.default(null),
+    /**
+     * Most characters of a variable's value rendered into the prompt, by
+     * catalog name (e.g. `{ hunk: 5000 }`); longer values are cut and marked.
+     */
+    variableLimits: z.record(z.string().min(1).max(200), z.int().min(1)).optional(),
     idleTimeoutMs: z.int().min(1).optional(),
     maxTurns: z.int().min(1).optional(),
   })

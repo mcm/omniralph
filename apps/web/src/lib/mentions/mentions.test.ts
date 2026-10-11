@@ -437,9 +437,14 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const [entry] = await db.select().from(feedback).where(eq(feedback.findingId, finding.id));
       expect(entry).toMatchObject({ source: "scm", reason: "false_positive", note: null });
       const learn = await db.select().from(jobs).where(eq(jobs.type, "review.learn-rule"));
-      expect(learn.some((j) => (j.payload as { findingId: string }).findingId === finding.id)).toBe(
-        true,
-      );
+      const findingIdOf = (payload: unknown) =>
+        (payload as { trigger: { context: { finding: { id: string } } } }).trigger.context.finding
+          .id;
+      expect(
+        learn.some(
+          (j) => j.taskId === "builtin:learn-rule" && findingIdOf(j.payload) === finding.id,
+        ),
+      ).toBe(true);
       expect(state.scm.calls.replyToComment[0]!.body).toContain("I'll learn from it");
     });
 

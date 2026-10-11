@@ -1,36 +1,68 @@
 import "server-only";
 import {
-  getFeedbackWithFinding,
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
-  insertLearnedRule,
   type Database,
   type Feedback,
   type FindingRow,
-  type InsertLearnedRuleResult,
-  type Job,
   type Review,
 } from "@omniralph/db";
-import { findDuplicateRule } from "@omniralph/engine/rules";
-import {
-  LEARN_RULE_JOB_TYPE,
-  LEARN_RULE_TOKEN_CAP,
-  LearnRuleJobPayload,
-  LearnRuleJobResult,
-  legacyJobRouting,
-} from "@omniralph/shared";
+import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
+import { getBuiltinTask } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { jobRepository } from "@/lib/scm/adapters";
+import { runSpecJobInput } from "@/lib/runs/job";
 
 /**
  * Learned rules: a `false_positive` dismissal (from the control panel or
- * `@bot dismiss`) enqueues a `review.learn-rule` job; its result is deduped
- * against the repository's rules and stored as an enabled `learned` rule.
+ * `@bot dismiss`) enqueues a run of the built-in query task
+ * `builtin:learn-rule`; its `learned-rule` sink (`lib/sinks/learned-rule.ts`)
+ * dedupes the result against the repository's rules and stores it as an
+ * enabled `learned` rule.
  */
+
+export const LEARN_RULE_TASK_ID = "builtin:learn-rule";
 
 export type EnqueueLearnRuleResult =
   | { status: "enqueued" | "duplicate"; jobId: string }
   | { status: "skipped"; reason: "not_false_positive" | "repository_unavailable" };
+
+/**
+ * The `finding.dismissed` trigger context of a rule generation: the finding
+ * (raw `path`, lines and the review's base/head commits, from which the
+ * harness computes its diff hunk; the JSON-quoted `file` and `location` the
+ * prompt shows), the dismissal note, the repository, and the feedback row the
+ * sink re-checks before storing the rule.
+ */
+export function learnRuleContext(input: {
+  feedback: Feedback;
+  finding: FindingRow;
+  review: Pick<Review, "baseSha" | "headSha">;
+  repository: string;
+}): Record<string, unknown> {
+  const { feedback, finding, review } = input;
+  return {
+    feedbackId: feedback.id,
+    repository: input.repository,
+    finding: {
+      id: finding.id,
+      path: finding.path,
+      file: JSON.stringify(finding.path),
+      startLine: finding.startLine,
+      endLine: finding.endLine,
+      location:
+        finding.startLine === finding.endLine
+          ? `line ${finding.startLine}`
+          : `lines ${finding.startLine}-${finding.endLine}`,
+      severity: finding.severity,
+      category: finding.category,
+      title: finding.title.slice(0, 200),
+      body: finding.body.slice(0, 10_000),
+      baseSha: review.baseSha,
+      headSha: review.headSha,
+    },
+    dismissal: { note: feedback.note?.slice(0, 1000).trim() ?? "" },
+  };
+}
 
 /** Enqueues rule generation for a false-positive dismissal (once per feedback row). */
 export async function enqueueLearnRule(
@@ -47,65 +79,22 @@ export async function enqueueLearnRule(
   if (!found || !settings || found.repository.disconnectedAt) {
     return { status: "skipped", reason: "repository_unavailable" };
   }
-  const payload = LearnRuleJobPayload.parse({
-    feedbackId: feedback.id,
-    findingId: finding.id,
-    repositoryId: review.repositoryId,
-    repository: jobRepository(found.repository, found.connection),
-    baseSha: review.baseSha,
-    headSha: review.headSha,
-    model: settings.profile.model,
-    maxTokens: LEARN_RULE_TOKEN_CAP,
-    finding: {
-      path: finding.path,
-      startLine: finding.startLine,
-      endLine: finding.endLine,
-      severity: finding.severity,
-      category: finding.category,
-      title: finding.title.slice(0, 200),
-      body: finding.body.slice(0, 10_000),
-    },
-    note: feedback.note?.slice(0, 1000) ?? null,
-  } satisfies LearnRuleJobPayload);
+  const task = getBuiltinTask(LEARN_RULE_TASK_ID);
+  if (!task) throw new Error(`Built-in task ${LEARN_RULE_TASK_ID} is missing`);
+  const context = learnRuleContext({
+    feedback,
+    finding,
+    review,
+    repository: found.repository.fullPath,
+  });
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
     type: LEARN_RULE_JOB_TYPE,
-    ...legacyJobRouting(LEARN_RULE_JOB_TYPE),
-    payload,
-    repositoryId: review.repositoryId,
+    ...runSpecJobInput(task, {
+      trigger: { kind: "finding.dismissed", context },
+      repositoryId: review.repositoryId,
+    }),
     dedupeKey: `${LEARN_RULE_JOB_TYPE}:${feedback.id}`,
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id };
-}
-
-/** Validates a rule generation's result before the job is completed. */
-export function parseLearnRuleResult(result: unknown): LearnRuleJobResult | null {
-  const parsed = LearnRuleJobResult.safeParse(result);
-  return parsed.success ? parsed.data : null;
-}
-
-export type LearnRuleOutcome =
-  | InsertLearnedRuleResult
-  | { status: "no_rule" }
-  /** The finding was restored (or its feedback deleted) before the rule came back. */
-  | { status: "feedback_withdrawn" };
-
-/**
- * For a `completed` rule generation: stores its rule as an enabled `learned`
- * rule linked to the source finding, unless it nearly duplicates (normalized
- * similarity ≥ 0.9) one of the repository's rules. Safe to call again for a
- * replayed result: the stored rule then counts as the duplicate.
- */
-export async function onLearnRuleJobCompleted(db: Database, job: Job): Promise<LearnRuleOutcome> {
-  const payload = LearnRuleJobPayload.parse(job.payload);
-  const result = LearnRuleJobResult.parse(job.result);
-  if (result.rule === null) return { status: "no_rule" };
-  const current = await getFeedbackWithFinding(db, payload.feedbackId);
-  if (!current || current.feedback.restoredAt) return { status: "feedback_withdrawn" };
-  return insertLearnedRule(db, {
-    repositoryId: payload.repositoryId,
-    text: result.rule,
-    sourceFindingId: payload.findingId,
-    findDuplicate: (text, existing) => findDuplicateRule(text, existing),
-  });
 }
