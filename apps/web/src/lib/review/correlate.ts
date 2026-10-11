@@ -15,7 +15,7 @@ import {
   CORRELATION_JOB_TYPE,
   CorrelationOutput,
   CorrelationTriggerContext,
-  RunInvoker,
+  ReviewRunInvoker,
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
@@ -120,7 +120,7 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
 /** The review run a correlation job was invoked by. */
 function invokingReviewRun(job: Pick<Job, "id" | "payload">): string {
   const context = RunSpecJobPayload.parse(job.payload).trigger.context;
-  const invoker = RunInvoker.safeParse(context.invoker);
+  const invoker = ReviewRunInvoker.safeParse(context.invoker);
   if (!invoker.success) throw new Error(`Job ${job.id} wasn't invoked by a review run`);
   return invoker.data.id;
 }

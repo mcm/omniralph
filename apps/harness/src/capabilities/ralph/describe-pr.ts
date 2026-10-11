@@ -1,5 +1,6 @@
 import {
   buildDescribePrPrompt,
+  fitPullRequestDescription,
   PR_DESCRIPTION_SCHEMA,
   PR_DESCRIPTION_SYSTEM_APPEND,
   readPullRequestDescription,
@@ -7,7 +8,6 @@ import {
 } from "@omniralph/ralph";
 import {
   MAX_LEASE_SECONDS,
-  MAX_PULL_REQUEST_TITLE_LENGTH,
   RalphDescribePrPayload,
   RalphDescribePrResult,
   type JobPayload,
@@ -17,18 +17,6 @@ import { ActivityRelay } from "../../tools/activities.js";
 import { RALPH_DESCRIBE_PR_TOOL_POLICY } from "./policy.js";
 import { createSessionRunner } from "./session.js";
 import { DEFAULT_STORY_MODEL, sessionEnv, type StoryOptions } from "./story.js";
-
-/** Longest PR/MR body returned (`RalphDescribePrResult`). */
-const MAX_BODY = 60_000;
-
-/** A title within `max` characters, cut at a word boundary when it's longer. */
-export function fitTitle(title: string, max = MAX_PULL_REQUEST_TITLE_LENGTH): string {
-  const line = title.replace(/\s+/g, " ").trim();
-  if (line.length <= max) return line;
-  const cut = line.slice(0, max - 1);
-  const space = cut.lastIndexOf(" ");
-  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, "")}…`;
-}
 
 function tail(text: string, max: number): string {
   const trimmed = text.trim();
@@ -145,8 +133,7 @@ export async function runDescribePr(
         }
         log.info({ title: text.title }, "described the branch");
         return RalphDescribePrResult.parse({
-          title: fitTitle(text.title),
-          body: text.body.length > MAX_BODY ? `${text.body.slice(0, MAX_BODY - 1)}…` : text.body,
+          ...fitPullRequestDescription(text),
           usage: session.usage,
         });
       },

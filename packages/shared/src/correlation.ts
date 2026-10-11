@@ -12,9 +12,22 @@ export const CORRELATION_JOB_TYPE = "review.correlate";
 /** Longest combined summary a correlation may write. */
 export const MAX_CORRELATION_SUMMARY_LENGTH = 20_000;
 
-/** The run that invoked a `run.invoked` run, which its `run-result` sink hands the result to. */
-export const RunInvoker = z.object({ kind: z.literal("review-run"), id: z.uuid() });
+/**
+ * The run that invoked a `run.invoked` run, which its `run-result` sink hands
+ * the result to: a review run (its correlation) or a ralph run (its PR/MR
+ * description).
+ */
+export const RunInvoker = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("review-run"), id: z.uuid() }),
+  z.object({ kind: z.literal("ralph-run"), id: z.uuid() }),
+]);
 export type RunInvoker = z.infer<typeof RunInvoker>;
+
+/** A review run as the invoker of its correlation. */
+export const ReviewRunInvoker = RunInvoker.options[0];
+
+/** A ralph run as the invoker of its PR/MR description. */
+export const RalphRunInvoker = RunInvoker.options[1];
 
 /** A stored finding of a review run's task, as the correlation sees it. */
 export const CorrelationInputFinding = z.object({
@@ -37,7 +50,7 @@ export type CorrelationInputFinding = z.infer<typeof CorrelationInputFinding>;
  * without any), in the repository's task order.
  */
 export const CorrelationTriggerContext = z.object({
-  invoker: RunInvoker,
+  invoker: ReviewRunInvoker,
   repository: z.string(),
   pr: z.object({ number: z.int() }),
   reviewRun: z.object({

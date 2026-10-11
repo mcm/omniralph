@@ -1,5 +1,10 @@
 import { DEFAULT_RALPH_SETTINGS } from "@omniralph/db";
-import { MAX_ATTEMPTS_PER_STORY, type RalphStoryPayload } from "@omniralph/shared";
+import {
+  MAX_ATTEMPTS_PER_STORY,
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  RalphDescribePrPayload,
+  type RalphStoryPayload,
+} from "@omniralph/shared";
 import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +12,10 @@ vi.mock("server-only", () => ({}));
 
 const {
   MAX_ITERATIONS_PER_RUN,
+  describePrJobInput,
+  describePrPayload,
+  describePrText,
+  prDescriptionTaskFor,
   jobMaxAttempts,
   ralphJobInput,
   ralphJobPayload,
@@ -30,11 +39,30 @@ const cautious: TaskDefinition = {
   maxReviewRounds: 1,
   maxFixRounds: 0,
 };
+const describeTask = getBuiltinTask("builtin:describe-pr")!;
+const customDescribe: TaskDefinition = { ...describeTask, id: "custom:describe-pr" };
+const describing: TaskDefinition = {
+  ...story,
+  id: "custom:describing-story",
+  prDescriptionTaskId: customDescribe.id,
+};
+const misdescribing: TaskDefinition = {
+  ...story,
+  id: "custom:misdescribing-story",
+  prDescriptionTaskId: request.id,
+};
 const DEFINITIONS = {
   getTask: (id: string) =>
-    [story, request, strict, cautious, getBuiltinTask("builtin:describe-pr")!].find(
-      (t) => t.id === id,
-    ) ?? null,
+    [
+      story,
+      request,
+      strict,
+      cautious,
+      describeTask,
+      customDescribe,
+      describing,
+      misdescribing,
+    ].find((t) => t.id === id) ?? null,
   getAgent: () => null,
 };
 
@@ -181,5 +209,127 @@ describe("ralphJobPayload", () => {
       }),
     ).toEqual({ runId: "r" });
     expect(ralphJobPayload({ taskId: story.id, payload: { runId: "r" } })).toBeNull();
+  });
+});
+
+describe("describing a lane's PR", () => {
+  const payload = RalphDescribePrPayload.parse({
+    runId: "6f1c1a4e-8a5c-4d0b-9a57-0e6f2f8f6c12",
+    repositoryId: "6f1c1a4e-8a5c-4d0b-9a57-0e6f2f8f6c11",
+    repository: {
+      provider: "gitlab",
+      fullPath: "group/app",
+      cloneUrl: "https://gitlab.example.com/group/app.git",
+    },
+    branch: "feat/epic",
+    baseBranch: "main",
+    settings: { model: null, setupCommand: null },
+    epic: { identifier: "ENG-1", title: "Epic", url: null, prd: "Build the thing." },
+    stories: [{ identifier: "ENG-2", title: "Alpha", status: "completed", commitSha: null }],
+    progress: "# Log",
+    qualityGates: ["pnpm test"],
+  });
+
+  it("uses the story task's prDescriptionTaskId, the default's without a coding story task", () => {
+    expect(prDescriptionTaskFor(repository(), DEFINITIONS)).toBe("builtin:describe-pr");
+    expect(prDescriptionTaskFor(repository({ storyTaskId: describing.id }), DEFINITIONS)).toBe(
+      customDescribe.id,
+    );
+    expect(prDescriptionTaskFor(repository({ storyTaskId: "builtin:gone" }), DEFINITIONS)).toBe(
+      "builtin:describe-pr",
+    );
+  });
+
+  it("is a ralph.describe-pr job with the payload as is on the legacy path", () => {
+    expect(describePrJobInput(repository({ codingPath: "legacy" }), payload, DEFINITIONS)).toEqual({
+      taskType: "query",
+      pool: "short",
+      payload,
+    });
+  });
+
+  it("is a query run in a checkout of the lane's branch on the tasks path", () => {
+    const input = describePrJobInput(
+      repository({ storyTaskId: describing.id }),
+      payload,
+      DEFINITIONS,
+    );
+    expect(input).toMatchObject({
+      taskType: "query",
+      pool: "short",
+      taskId: customDescribe.id,
+      repositoryId: payload.repositoryId,
+      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      payload: {
+        trigger: {
+          kind: "run.invoked",
+          context: {
+            invoker: { kind: "ralph-run", id: payload.runId },
+            payload,
+            branch: "feat/epic",
+            baseBranch: "main",
+            prTerm: "merge request",
+            epic: { identifier: "ENG-1", title: "Epic", prd: "Build the thing." },
+            stories: { items: [{ identifier: "ENG-2", title: "Alpha", commit: null }] },
+            qualityGates: { items: ["pnpm test"] },
+            progressLog: "# Log",
+          },
+        },
+        repositoryId: payload.repositoryId,
+        ref: "feat/epic",
+        requireCheckout: true,
+      },
+    });
+    const job = input as Exclude<typeof input, string>;
+    expect(describePrPayload({ taskId: customDescribe.id, payload: job.payload })).toEqual(payload);
+    expect(describePrPayload({ taskId: null, payload })).toEqual(payload);
+    expect(describePrPayload({ taskId: customDescribe.id, payload })).toBeNull();
+  });
+
+  it("says why when the description task isn't a query task taking run.invoked", () => {
+    expect(
+      describePrJobInput(repository({ storyTaskId: misdescribing.id }), payload, DEFINITIONS),
+    ).toBe(`${request.id} isn't a query task started by run.invoked`);
+  });
+
+  it("reads a legacy job's result, and a query run's output with its title fitted", () => {
+    const usage = { inputTokens: 1, outputTokens: 1 };
+    expect(
+      describePrText({ taskId: null, result: { title: "Add runs", body: "Adds runs.", usage } }),
+    ).toEqual({ title: "Add runs", body: "Adds runs." });
+    expect(describePrText({ taskId: null, result: { title: "Add runs", usage } })).toBeNull();
+
+    const answered = (structured: unknown) => ({
+      taskId: customDescribe.id,
+      result: {
+        outcome: "answered",
+        answer: null,
+        structured,
+        references: [],
+        usage,
+        durationMs: 1,
+      },
+    });
+    expect(
+      describePrText(answered({ title: `${"word ".repeat(30)}end`, body: " Adds. " })),
+    ).toEqual({
+      title: `${"word ".repeat(13)}word…`,
+      body: "Adds.",
+    });
+    expect(describePrText(answered({ title: " ", body: "Adds." }))).toBeNull();
+    expect(describePrText(answered({ summary: "Adds." }))).toBeNull();
+    expect(
+      describePrText({
+        taskId: customDescribe.id,
+        result: {
+          outcome: "no_checkout",
+          answer: null,
+          structured: null,
+          references: [],
+          usage,
+          durationMs: 1,
+        },
+      }),
+    ).toBeNull();
   });
 });

@@ -57,6 +57,7 @@ import {
   legacyJobRouting,
 } from "@omniralph/shared";
 import {
+  describePrJobInput,
   MAX_ITERATIONS_PER_RUN,
   ralphJobInput,
   requestTaskFor,
@@ -569,11 +570,14 @@ async function publishLanes(
     // Not published since its last story, or its describe job was dropped (a stop).
     if (lane.publish === null || lane.publish.status === "describing") {
       const found = await laneRepository(deps, tx, run, lane);
-      if (typeof found !== "string")
-        return describeLane(deps, tx, run, { ...input, ...found, lanes });
-      // A lane whose repository can't take jobs any more is a problem of that lane.
+      const described =
+        typeof found === "string"
+          ? found
+          : await describeLane(deps, tx, run, { ...input, ...found, lanes });
+      if (typeof described !== "string") return described;
+      // A lane whose repository can't take jobs any more (or describe its PR/MR) is a problem of that lane.
       const failed = await updateLane(tx, lane.id, {
-        publish: { status: "failed", problem: found },
+        publish: { status: "failed", problem: described },
       });
       through.push({ lane: failed ?? lane, repository: await laneRepositoryName(deps, lane) });
       continue;
@@ -606,8 +610,11 @@ async function laneRepositoryName(
 }
 
 /**
- * One lane's `ralph.describe-pr` job (on the run's sticky agent), with the
- * stories worked in that lane: it writes the lane's PR/MR title and body.
+ * One lane's describe job (on the run's sticky agent), with the stories
+ * worked in that lane: it writes the lane's PR/MR title and body. On the
+ * `tasks` path a query run of the story task's `prDescriptionTaskId`
+ * (`describePrJobInput`), otherwise a `ralph.describe-pr` job. Returns the
+ * lane's problem when the repository's description task can't run.
  */
 async function describeLane(
   deps: RalphDeps,
@@ -622,14 +629,13 @@ async function describeLane(
     connection: ScmConnection;
     lane: RalphLane;
   },
-): Promise<AdvanceResult> {
+): Promise<AdvanceResult | string> {
   const { lane, repository, connection } = input;
   const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
-  const { job, created } = await deps.dispatcher.createAndPublish({
-    organizationId: run.organizationId,
-    type: RALPH_DESCRIBE_PR_JOB_TYPE,
-    ...legacyJobRouting(RALPH_DESCRIBE_PR_JOB_TYPE),
-    payload: buildDescribePrPayload({
+  const term = changeRequestTerm(repository.provider);
+  const routing = describePrJobInput(
+    repository,
+    buildDescribePrPayload({
       run,
       lane,
       repository,
@@ -637,6 +643,14 @@ async function describeLane(
       epic: input.epic,
       rows: laneRows(input.rows, lane, main),
     }),
+  );
+  if (typeof routing === "string") {
+    return `I couldn't open the ${term}: writing its description failed: ${routing}.`;
+  }
+  const { job, created } = await deps.dispatcher.createAndPublish({
+    organizationId: run.organizationId,
+    type: RALPH_DESCRIBE_PR_JOB_TYPE,
+    ...routing,
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
@@ -652,7 +666,6 @@ async function describeLane(
       error: null,
     })) ?? run;
   await publishPlan(conversationFor(run, deps), input.rows);
-  const term = changeRequestTerm(repository.provider);
   const what =
     run.kind === "single"
       ? `**${input.epic.identifier}** is done`

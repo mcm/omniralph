@@ -17,7 +17,7 @@ import { firstPrompt } from "../../test/fake-query.js";
 import { ENV, git, Remote } from "../../test/git-remote.js";
 import { RepoCache } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
-import { fitTitle, runDescribePr } from "./describe-pr.js";
+import { runDescribePr } from "./describe-pr.js";
 import { createRalphCapability } from "./index.js";
 import { createSessionRunner, type SessionQueryFn } from "./session.js";
 import type { StoryOptions } from "./story.js";
@@ -238,8 +238,6 @@ describe("ralph.describe-pr", { timeout: 60_000 }, () => {
     expect(output.title).toBe(
       "Add the ralph capability with Linear delegations, branch worktrees and…",
     );
-    expect(fitTitle("Short")).toBe("Short");
-    expect(fitTitle("x".repeat(100))).toHaveLength(72);
   });
 
   it("says merge request for GitLab", async () => {

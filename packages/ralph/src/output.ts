@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { parsePrd } from "./prd.js";
+import { PR_TITLE_MAX_LENGTH } from "./prompt.js";
 import { hasOpenQuestionsHeading } from "./triage.js";
 
 /** At most this many follow-up issues are filed from one story session. */
@@ -422,5 +423,34 @@ export function validateTriageOutput(
       subIssueUpdates,
       summary,
     },
+  };
+}
+
+/** Longest PR/MR body a describe session's description is cut to. */
+export const MAX_PULL_REQUEST_BODY_LENGTH = 60_000;
+
+/** A title within `max` characters, cut at a word boundary when it's longer. */
+export function fitTitle(title: string, max = PR_TITLE_MAX_LENGTH): string {
+  const line = title.replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, "")}…`;
+}
+
+/**
+ * A describe session's title and description as they are published: the
+ * title fitted (`fitTitle`), the body cut to `MAX_PULL_REQUEST_BODY_LENGTH`.
+ */
+export function fitPullRequestDescription(text: { title: string; body: string }): {
+  title: string;
+  body: string;
+} {
+  return {
+    title: fitTitle(text.title),
+    body:
+      text.body.length > MAX_PULL_REQUEST_BODY_LENGTH
+        ? `${text.body.slice(0, MAX_PULL_REQUEST_BODY_LENGTH - 1)}…`
+        : text.body,
   };
 }

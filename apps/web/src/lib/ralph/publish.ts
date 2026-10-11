@@ -29,14 +29,10 @@ import {
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
-import {
-  epicCompletedTarget,
-  parseRalphSettings,
-  RalphDescribePrPayload,
-  RalphDescribePrResult,
-} from "@omniralph/shared";
+import { epicCompletedTarget, parseRalphSettings } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
+import { describePrPayload, describePrText } from "./coding";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -322,9 +318,10 @@ export async function moveCompletedEpic(
 }
 
 /**
- * Applies the outcome of the run's `ralph.describe-pr` job, once it has
+ * Applies the outcome of the run's describe job (a `ralph.describe-pr` job,
+ * or on the `tasks` path a query run of the PR description task), once it has
  * finished (inside the run's row lock): opens or updates its lane's PR/MR
- * with the agent's title and body, marks it ready, stores it on the lane and
+ * with the agent's title and body (`describePrText`), marks it ready, stores it on the lane and
  * adds it to the agent session. A failed job or PR/MR call is recorded on the
  * lane as a problem. Either way `advanceRun`'s next step publishes the next
  * lane or finishes the run (`finishPublishing`). Returns whether the job is
@@ -339,38 +336,39 @@ export async function applyPullRequestJob(
   const job = await getJob(deps.db, run.prJobId);
   if (job && ACTIVE_JOB_STATUSES.has(job.status)) return { busy: true };
 
-  const payload = job ? RalphDescribePrPayload.safeParse(job.payload) : null;
+  const payload = job && describePrPayload(job);
   const lanes = await listLanes(tx, run.id);
   const lane =
     lanes.find((l) => l.publish?.status === "describing" && l.publish.jobId === run.prJobId) ??
-    (payload?.success ? lanes.find((l) => l.repositoryId === payload.data.repositoryId) : null) ??
+    (payload ? lanes.find((l) => l.repositoryId === payload.repositoryId) : null) ??
     lanes.find((l) => l.repositoryId === run.repositoryId);
   await updateRun(tx, run.id, { prJobId: null });
   if (!lane) return { busy: false };
 
-  const provider = payload?.success
-    ? payload.data.repository.provider
+  const provider = payload
+    ? payload.repository.provider
     : ((await getRepository(deps.db, lane.repositoryId))?.provider ?? "github");
   const term = changeRequestTerm(provider);
   const failed = (reason: string) =>
     updateLane(tx, lane.id, {
       publish: { status: "failed", problem: `I couldn't open the ${term}: ${tail(reason, 3000)}` },
     });
-  const parsed = job?.status === "completed" ? RalphDescribePrResult.safeParse(job.result) : null;
-  if (!parsed?.success || !payload?.success) {
-    const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
+  const completed = job?.status === "completed";
+  const text = completed ? describePrText(job) : null;
+  if (!text || !payload) {
+    const why = completed ? "the agent sent an invalid result" : jobFailure(job);
     await failed(`writing its description failed: ${why}.`);
     return { busy: false };
   }
 
   const epic: LinearLink = {
-    identifier: payload.data.epic.identifier,
-    title: payload.data.epic.title,
-    url: payload.data.epic.url,
+    identifier: payload.epic.identifier,
+    title: payload.epic.title,
+    url: payload.epic.url,
   };
   let pr: PublishedPullRequest;
   try {
-    pr = await publishPullRequest(deps, lane, parsed.data, epic);
+    pr = await publishPullRequest(deps, lane, text, epic);
   } catch (error) {
     await failed(`${errorMessage(error)}.`);
     return { busy: false };
@@ -383,7 +381,7 @@ export async function applyPullRequestJob(
   const label = await sessionLinkLabel(
     tx,
     run,
-    { provider, fullPath: payload.data.repository.fullPath },
+    { provider, fullPath: payload.repository.fullPath },
     pr.number,
   );
   const conversation = conversationFor(run, deps);
