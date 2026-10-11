@@ -7,34 +7,39 @@ import { harnessRow } from "@/lib/harnesses/rows";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import type { AuditRow } from "./agent-audit-log";
-import { AgentDetailView } from "./agent-detail-view";
+import type { AuditRow } from "./harness-audit-log";
+import { HarnessDetailView } from "./harness-detail-view";
 
-export const metadata: Metadata = { title: "Agent · Omniralph" };
+export const metadata: Metadata = { title: "Harness · Omniralph" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Number of audit events shown on the page. */
 const AUDIT_LIMIT = 50;
 
-export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function HarnessPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
-  await enterResourceOrganization(await requirePageUser(), "harness", id, `/agents/${id}`);
+  await enterResourceOrganization(await requirePageUser(), "harness", id, `/harnesses/${id}`);
   const admin = await requirePageUser("admin");
   const db = getDb();
-  const [agent, audit, repositories, organizationVersion] = await Promise.all([
+  const [harness, audit, repositories, organizationVersion] = await Promise.all([
     getHarnessOverview(db, admin.organization.id, id),
     listRecentHarnessAudit(db, id, AUDIT_LIMIT),
     listRepositoryOverview(db, admin.organization.id),
     organizationHarnessVersion(db, admin.organization.id),
   ]);
-  if (!agent) notFound();
+  if (!harness) notFound();
   const now = new Date();
 
   return (
-    <AgentDetailView
-      agent={harnessRow(agent, now, organizationVersion.version, organizationVersion.tracksLatest)}
+    <HarnessDetailView
+      harness={harnessRow(
+        harness,
+        now,
+        organizationVersion.version,
+        organizationVersion.tracksLatest,
+      )}
       globalDesiredVersion={
         organizationVersion.tracksLatest
           ? `latest on npm, ${organizationVersion.version ?? "not read yet"}`

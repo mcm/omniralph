@@ -560,7 +560,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Deliveries</TableHead>
-                <TableHead>Agent</TableHead>
+                <TableHead>Harness</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>Finished</TableHead>
               </TableRow>
@@ -737,7 +737,7 @@ export function RalphRunDetailView({
               <Fact label="Base">
                 {run.baseBranch ? <InlineCode>{run.baseBranch}</InlineCode> : "—"}
               </Fact>
-              <Fact label="Agent">
+              <Fact label="Harness">
                 <AgentName agent={run.agent} isAdmin={isAdmin} />
               </Fact>
               <Fact

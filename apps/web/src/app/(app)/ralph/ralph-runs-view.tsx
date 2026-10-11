@@ -147,7 +147,7 @@ export function AgentName({ agent, isAdmin }: { agent: RalphRunRow["agent"]; isA
   if (!agent) return <Muted>—</Muted>;
   return isAdmin ? (
     <Link
-      href={`/agents/${agent.id}`}
+      href={`/harnesses/${agent.id}`}
       style={{ ...cellText, color: "var(--text-primary)", textDecoration: "none" }}
     >
       {agent.name}
@@ -388,7 +388,7 @@ export function RalphRunsView({
                     <TableHead>Stories</TableHead>
                     <TableHead>Branch</TableHead>
                     <TableHead>PR / MR</TableHead>
-                    <TableHead>Agent</TableHead>
+                    <TableHead>Harness</TableHead>
                     <TableHead>Updated</TableHead>
                     <TableHead aria-label="Actions" />
                   </TableRow>

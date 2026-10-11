@@ -15,7 +15,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { saveRepositorySettings } from "@/lib/repositories/settings";
 
 /**
- * Saves a repository's review settings. Newly pinned agents get a `repo.sync`
+ * Saves a repository's review settings. Newly pinned harnesses get a `repo.sync`
  * job; the next review job enqueued for the repository uses the new settings.
  */
 export async function updateRepositorySettings(
@@ -50,13 +50,13 @@ export async function updateRepositorySettings(
       case "unknown_agents":
         return {
           ok: false,
-          error: "Some selected agents don't exist or were revoked.",
-          fieldErrors: { pinnedHarnessIds: "Some selected agents don't exist or were revoked." },
+          error: "Some selected harnesses don't exist or were revoked.",
+          fieldErrors: { pinnedHarnessIds: "Some selected harnesses don't exist or were revoked." },
         };
     }
     revalidatePath(`/repositories/${repositoryId}/settings`);
     revalidatePath("/repositories");
-    revalidatePath("/agents", "layout");
+    revalidatePath("/harnesses", "layout");
   });
 }
 

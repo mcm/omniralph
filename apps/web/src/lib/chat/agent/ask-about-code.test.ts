@@ -441,27 +441,27 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 
-  it("enqueues nothing when no online agent can answer code questions", async () => {
+  it("enqueues nothing when no online harness can answer code questions", async () => {
     const h = await harness();
 
     await setAgent(harnessId, { reportedVersion: "0.7.0" });
     const old = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(old).toMatchObject({
       error: "no_capable_agent",
-      agents: [{ name: "acme-agent", version: "0.7.0", capable: false }],
+      harnesses: [{ name: "acme-agent", version: "0.7.0", capable: false }],
     });
     expect(old.message).toContain("0.8.0");
 
     await setAgent(harnessId, { reportedVersion: "0.8.0", lastHeartbeatAt: null });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
-    expect(offline).toMatchObject({ error: "no_capable_agent", agents: [] });
+    expect(offline).toMatchObject({ error: "no_capable_agent", harnesses: [] });
     expect(offline.message).toContain("online");
 
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 
-  it("only counts the agents a pinned repository's jobs go to", async () => {
+  it("only counts the harnesses a pinned repository's jobs go to", async () => {
     const h = await harness();
     const [pinned] = await db
       .insert(harnesses)
@@ -479,7 +479,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
 
     expect(result).toMatchObject({
       error: "no_capable_agent",
-      agents: [{ name: "pinned-agent", capable: false }],
+      harnesses: [{ name: "pinned-agent", capable: false }],
     });
     await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));
   });

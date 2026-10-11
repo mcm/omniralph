@@ -17,11 +17,11 @@ function shellQuote(value: string): string {
 }
 
 /** Installs the harness on a host (the package is public: no npm auth needed). */
-export const AGENT_INSTALL_COMMAND = "npm install -g @omniralph/agent";
+export const HARNESS_INSTALL_COMMAND = "npm install -g @omniralph/harness";
 
 /** The command an admin runs on the harness host to redeem an enrollment token. */
 export function enrollCommand(serverUrl: string, token: string): string {
-  return `omniralph-agent enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;
+  return `omniralph-harness enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;
 }
 
 /** A job's link for the UI: the PR/MR it's for, else its repository. */
@@ -96,7 +96,7 @@ export function auditDetailSummary(event: AuditEventName, detail: Record<string,
     case "auth_failed":
       return [str(detail.reason), str(detail.path)].filter(Boolean).join(" on ");
     case "refresh_reuse":
-      return "An already used refresh token was presented again. The agent was revoked.";
+      return "An already used refresh token was presented again. The harness was revoked.";
     case "revoke": {
       const requeued = Array.isArray(detail.requeuedJobIds) ? detail.requeuedJobIds.length : 0;
       return [

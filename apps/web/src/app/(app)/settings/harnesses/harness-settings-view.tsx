@@ -19,7 +19,7 @@ import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { setGlobalHarnessVersion, trackLatestHarnessVersion } from "./actions";
 
-export function AgentSettingsView({
+export function HarnessSettingsView({
   desiredVersion,
   updatedAt,
   latest,
@@ -42,10 +42,10 @@ export function AgentSettingsView({
     run(
       () => setGlobalHarnessVersion(version),
       trimmed.toLowerCase() === "latest"
-        ? "Agents will follow the latest version on npm."
+        ? "Harnesses will follow the latest version on npm."
         : trimmed
-          ? `Agents will update to ${trimmed} with their next heartbeat.`
-          : "Cleared. Agents keep the version they run.",
+          ? `Harnesses will update to ${trimmed} with their next heartbeat.`
+          : "Cleared. Harnesses keep the version they run.",
     );
   };
 
@@ -54,13 +54,13 @@ export function AgentSettingsView({
   if (latest) {
     const read = latest.checkedAt ? ` (read ${formatDateTime(latest.checkedAt)})` : "";
     hint = latest.error
-      ? `Following the latest on npm, but reading it failed: ${latest.error}.${latest.version ? ` Agents stay on ${latest.version} meanwhile.` : ""}${changed}`
+      ? `Following the latest on npm, but reading it failed: ${latest.error}.${latest.version ? ` Harnesses stay on ${latest.version} meanwhile.` : ""}${changed}`
       : `Following the latest on npm: ${latest.version ?? "not read yet"}${read}. npm is read again every few minutes.${changed}`;
   }
 
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Agents" }]} />
+      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Harnesses" }]} />
       <main
         style={{
           flex: 1,
@@ -79,23 +79,23 @@ export function AgentSettingsView({
               fontWeight: "var(--font-weight-semibold)",
             }}
           >
-            Agent settings
+            Harness settings
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Settings every agent of this organization gets with its heartbeat.
+            Settings every harness of this organization gets with its heartbeat.
           </Muted>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Agent version</CardTitle>
+            <CardTitle>Harness version</CardTitle>
             <CardDescription>
-              The version of <InlineCode>{packageName}</InlineCode> agents should run, or{" "}
-              <InlineCode>latest</InlineCode> to update them with each release. Agents under pm2
+              The version of <InlineCode>{packageName}</InlineCode> harnesses should run, or{" "}
+              <InlineCode>latest</InlineCode> to update them with each release. Harnesses under pm2
               stop taking jobs, let running ones finish (up to 2 hours), install it and restart; a
-              version that doesn&apos;t stay up is rolled back and not tried again on that agent
-              unless you use &quot;Update now&quot; on its page. Other agents show &quot;Update
-              manually&quot;. An agent&apos;s own override (on its page) wins over this one.
+              version that doesn&apos;t stay up is rolled back and not tried again on that harness
+              unless you use &quot;Update now&quot; on its page. Other harnesses show &quot;Update
+              manually&quot;. A harness&apos;s own override (on its page) wins over this one.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -127,7 +127,7 @@ export function AgentSettingsView({
                       const result = await trackLatestHarnessVersion();
                       if (result.ok) setVersion("latest");
                       return result;
-                    }, "Agents will follow the latest version on npm.")
+                    }, "Harnesses will follow the latest version on npm.")
                   }
                 >
                   <IconCloudDownload size={14} />

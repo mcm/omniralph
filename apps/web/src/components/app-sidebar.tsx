@@ -38,13 +38,13 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
   reviews: IconHistory,
   ralph: IconRepeat,
-  agents: IconServer,
+  harnesses: IconServer,
   jobs: IconListCheck,
   analytics: IconChartBar,
   organization: IconBuildingCommunity,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
-  agentSettings: IconServerCog,
+  harnessSettings: IconServerCog,
   chatAccounts: IconMessageCircleUser,
 };
 

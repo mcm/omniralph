@@ -4,11 +4,11 @@ import { HARNESS_PACKAGE } from "@omniralph/shared";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { AgentSettingsView } from "./agent-settings-view";
+import { HarnessSettingsView } from "./harness-settings-view";
 
-export const metadata: Metadata = { title: "Agent settings · Omniralph" };
+export const metadata: Metadata = { title: "Harness settings · Omniralph" };
 
-export default async function AgentSettingsPage() {
+export default async function HarnessSettingsPage() {
   const admin = await requirePageUser("admin");
   const db = getDb();
   const [setting, resolved] = await Promise.all([
@@ -16,7 +16,7 @@ export default async function AgentSettingsPage() {
     organizationHarnessVersion(db, admin.organization.id),
   ]);
   return (
-    <AgentSettingsView
+    <HarnessSettingsView
       desiredVersion={typeof setting?.value === "string" ? setting.value : null}
       updatedAt={setting?.updatedAt.toISOString() ?? null}
       latest={

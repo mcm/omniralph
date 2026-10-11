@@ -251,7 +251,7 @@ export async function revokeHarness(
         and(eq(harnessRefreshTokens.harnessId, harnessId), isNull(harnessRefreshTokens.revokedAt)),
       );
 
-    const error = "Agent revoked";
+    const error = "Harness revoked";
     const running = and(eq(jobs.harnessId, harnessId), eq(jobs.status, "running"));
     const canceledJobs = await tx
       .update(jobs)

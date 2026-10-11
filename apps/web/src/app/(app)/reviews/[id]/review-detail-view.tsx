@@ -318,11 +318,11 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               <Fact label="Model">
                 {review.model ? <span style={mono}>{review.model}</span> : "—"}
               </Fact>
-              <Fact label="Agent">
+              <Fact label="Harness">
                 {review.agent ? (
                   isAdmin ? (
                     <Link
-                      href={`/agents/${review.agent.id}`}
+                      href={`/harnesses/${review.agent.id}`}
                       style={{ color: "var(--text-accent)", textDecoration: "none" }}
                     >
                       {review.agent.name}

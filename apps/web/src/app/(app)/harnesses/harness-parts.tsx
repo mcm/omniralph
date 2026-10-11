@@ -6,9 +6,13 @@ import type { HarnessRow } from "@/lib/harnesses/rows";
 import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
 import { ProviderIcon } from "../repositories/repositories-view";
 
-export function AgentStatusBadge({ agent }: { agent: Pick<HarnessRow, "online" | "revoked"> }) {
-  if (agent.revoked) return <Badge variant="danger">Revoked</Badge>;
-  return agent.online ? (
+export function HarnessStatusBadge({
+  harness,
+}: {
+  harness: Pick<HarnessRow, "online" | "revoked">;
+}) {
+  if (harness.revoked) return <Badge variant="danger">Revoked</Badge>;
+  return harness.online ? (
     <Badge variant="success" live>
       Online
     </Badge>
@@ -108,38 +112,38 @@ const UPDATE_STATE_LABELS: Record<NonNullable<HarnessRow["update"]>["state"], st
 
 /** Up to date / Updating (with the step) / Failed / Update manually. */
 export function UpdateStatusBadge({
-  agent,
+  harness,
 }: {
-  agent: Pick<
+  harness: Pick<
     HarnessRow,
     "updateStatus" | "update" | "updateRequest" | "desiredVersion" | "selfUpdate"
   >;
 }) {
   const step =
-    (agent.update && UPDATE_STATE_LABELS[agent.update.state]) ??
-    (agent.updateRequest && `${agent.updateRequest.version} requested`);
+    (harness.update && UPDATE_STATE_LABELS[harness.update.state]) ??
+    (harness.updateRequest && `${harness.updateRequest.version} requested`);
   const title =
-    agent.updateStatus === "manual"
-      ? agent.selfUpdate === null
-        ? "This agent version can't update itself; install the desired version on the host."
+    harness.updateStatus === "manual"
+      ? harness.selfUpdate === null
+        ? "This harness version can't update itself; install the desired version on the host."
         : "Not running under pm2, so it can't update itself; install the desired version on the host."
-      : agent.updateStatus === "failed"
-        ? `${agent.desiredVersion} failed on this agent, so it won't try it again unless you use Update now on its page.`
+      : harness.updateStatus === "failed"
+        ? `${harness.desiredVersion} failed on this harness, so it won't try it again unless you use Update now on its page.`
         : undefined;
   return (
-    <Badge variant={UPDATE_STATUS_VARIANTS[agent.updateStatus]} title={title}>
-      {UPDATE_STATUS_LABELS[agent.updateStatus]}
-      {agent.updateStatus === "updating" && step && ` (${step})`}
+    <Badge variant={UPDATE_STATUS_VARIANTS[harness.updateStatus]} title={title}>
+      {UPDATE_STATUS_LABELS[harness.updateStatus]}
+      {harness.updateStatus === "updating" && step && ` (${step})`}
     </Badge>
   );
 }
 
 /** The reported version, and the desired one when it differs. */
-export function AgentVersionCell({ agent }: { agent: HarnessRow }) {
-  const target = agent.updateRequest?.version ?? agent.desiredVersion;
+export function HarnessVersionCell({ harness }: { harness: HarnessRow }) {
+  const target = harness.updateRequest?.version ?? harness.desiredVersion;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-      {agent.version ? (
+      {harness.version ? (
         <span
           style={{
             fontFamily: "var(--font-mono)",
@@ -147,15 +151,15 @@ export function AgentVersionCell({ agent }: { agent: HarnessRow }) {
             color: "var(--text-secondary)",
           }}
         >
-          {agent.version}
-          {target && target !== agent.version && (
+          {harness.version}
+          {target && target !== harness.version && (
             <span style={{ color: "var(--text-tertiary)" }}> → {target}</span>
           )}
         </span>
       ) : (
         <Muted>Unknown</Muted>
       )}
-      {!agent.revoked && <UpdateStatusBadge agent={agent} />}
+      {!harness.revoked && <UpdateStatusBadge harness={harness} />}
     </div>
   );
 }

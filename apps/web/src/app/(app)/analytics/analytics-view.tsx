@@ -710,7 +710,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Agent</TableHead>
+                      <TableHead>Harness</TableHead>
                       <TableHead style={{ textAlign: "right" }}>Jobs</TableHead>
                       <TableHead style={{ textAlign: "right" }}>Completed</TableHead>
                       <TableHead style={{ textAlign: "right" }}>Failed</TableHead>
@@ -722,7 +722,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                         <TableCell>
                           {isAdmin ? (
                             <Link
-                              href={`/agents/${a.agent.id}`}
+                              href={`/harnesses/${a.agent.id}`}
                               style={{ ...cellText, textDecoration: "none" }}
                             >
                               {a.agent.name}

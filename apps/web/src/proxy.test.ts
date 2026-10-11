@@ -18,7 +18,7 @@ describe("proxy matcher", () => {
   });
 
   it("runs for pages and other APIs", () => {
-    for (const url of ["/", "/agents", "/api/other", "/api/harnessx"]) {
+    for (const url of ["/", "/harnesses", "/api/other", "/api/harnessx"]) {
       expect(matches(url), url).toBe(true);
     }
   });

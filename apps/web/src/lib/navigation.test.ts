@@ -8,15 +8,25 @@ describe("navGroups", () => {
       "Repositories",
       "Reviews",
       "Ralph runs",
-      "Agents",
+      "Harnesses",
       "Jobs",
       "Analytics",
       "Organization",
       "Profiles",
       "Integrations",
-      "Agent settings",
+      "Harnesses",
       "Chat accounts",
     ]);
+  });
+
+  it("links the harness pages", () => {
+    const items = navGroups.flatMap((group) => group.items);
+    expect(items).toContainEqual(
+      expect.objectContaining({ href: "/harnesses", label: "Harnesses" }),
+    );
+    expect(items).toContainEqual(
+      expect.objectContaining({ href: "/settings/harnesses", label: "Harnesses", adminOnly: true }),
+    );
   });
 });
 
@@ -26,14 +36,14 @@ describe("navGroupsForRole", () => {
 
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
-      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Agents", "Jobs", "Analytics"]],
-      ["Settings", ["Organization", "Profiles", "Integrations", "Agent settings", "Chat accounts"]],
+      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
+      ["Settings", ["Organization", "Profiles", "Integrations", "Harnesses", "Chat accounts"]],
     ]);
   });
 
   it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
-      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Agents", "Jobs", "Analytics"]],
+      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
       ["Settings", ["Organization", "Chat accounts"]],
     ]);
   });
@@ -41,12 +51,12 @@ describe("navGroupsForRole", () => {
 
 describe("isNavItemActive", () => {
   it("matches the page and its sub-pages", () => {
-    expect(isNavItemActive("/agents", "/agents")).toBe(true);
-    expect(isNavItemActive("/agents", "/agents/abc")).toBe(true);
+    expect(isNavItemActive("/harnesses", "/harnesses")).toBe(true);
+    expect(isNavItemActive("/harnesses", "/harnesses/abc")).toBe(true);
   });
 
   it("does not match sibling paths with a shared prefix", () => {
-    expect(isNavItemActive("/agents", "/agentsx")).toBe(false);
-    expect(isNavItemActive("/jobs", "/agents")).toBe(false);
+    expect(isNavItemActive("/harnesses", "/harnessesx")).toBe(false);
+    expect(isNavItemActive("/jobs", "/harnesses")).toBe(false);
   });
 });

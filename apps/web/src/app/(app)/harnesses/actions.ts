@@ -30,12 +30,12 @@ import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
 
 function revalidate(harnessId?: string): void {
-  revalidatePath("/agents");
-  if (harnessId) revalidatePath(`/agents/${harnessId}`);
+  revalidatePath("/harnesses");
+  if (harnessId) revalidatePath(`/harnesses/${harnessId}`);
   revalidatePath("/repositories");
 }
 
-/** The control panel URL agents should use: `APP_URL`, else the URL this request came in on. */
+/** The control panel URL harnesses should use: `APP_URL`, else the URL this request came in on. */
 async function serverUrl(): Promise<string> {
   try {
     return getAppUrl();
@@ -61,14 +61,14 @@ export type EnrollmentActionResult =
       token: string;
       /** ISO timestamp (1 hour from now). */
       expiresAt: string;
-      /** The `omniralph-agent enroll …` command to run on the agent host. */
+      /** The `omniralph-harness enroll …` command to run on the harness host. */
       command: string;
     }
   | { ok: false; error: string };
 
 const EnrollmentName = z.string().trim().max(100);
 
-/** Creates a one-time enrollment token (valid for 1 hour) for a new agent of the active organization. */
+/** Creates a one-time enrollment token (valid for 1 hour) for a new harness of the active organization. */
 export async function createEnrollment(name: string): Promise<EnrollmentActionResult> {
   let created: Extract<EnrollmentActionResult, { ok: true }> | undefined;
   const result = await runAdminAction(async (admin) => {
@@ -90,7 +90,7 @@ export async function createEnrollment(name: string): Promise<EnrollmentActionRe
   return created ?? { ok: false, error: "Couldn't create an enrollment token." };
 }
 
-const AgentConfig = z
+const HarnessConfig = z
   .object({
     maxConcurrency: z.number().int().min(1).max(32),
     enabledCapabilities: z.array(z.enum(CAPABILITIES)),
@@ -106,7 +106,7 @@ const AgentConfig = z
       }
     }
   });
-export interface AgentConfigForm {
+export interface HarnessConfigForm {
   maxConcurrency: number;
   enabledCapabilities: string[];
   /**
@@ -116,13 +116,13 @@ export interface AgentConfigForm {
   capabilityLimits?: Record<string, number>;
 }
 
-/** Updates an agent's central config; the agent gets it with its next heartbeat. */
+/** Updates a harness's central config; the harness gets it with its next heartbeat. */
 export async function updateHarnessConfig(
   harnessId: string,
-  input: AgentConfigForm,
+  input: HarnessConfigForm,
 ): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
-    const parsed = AgentConfig.safeParse(input);
+    const parsed = HarnessConfig.safeParse(input);
     if (!parsed.success) {
       return {
         ok: false,
@@ -131,15 +131,15 @@ export async function updateHarnessConfig(
       };
     }
     if (!(await updateHarnessConfigRow(getDb(), admin.organization.id, harnessId, parsed.data))) {
-      return { ok: false, error: "That agent doesn't exist or was revoked." };
+      return { ok: false, error: "That harness doesn't exist or was revoked." };
     }
     revalidate(harnessId);
   });
 }
 
 /**
- * Sets the version this agent should run, overriding Settings › Agents; blank
- * clears the override. Agents under pm2 update themselves to it.
+ * Sets the version this harness should run, overriding Settings › Harnesses; blank
+ * clears the override. Harnesses under pm2 update themselves to it.
  */
 export async function setHarnessDesiredVersion(
   harnessId: string,
@@ -159,7 +159,7 @@ export async function setHarnessDesiredVersion(
         parsed?.data ?? null,
       ))
     ) {
-      return { ok: false, error: "That agent doesn't exist or was revoked." };
+      return { ok: false, error: "That harness doesn't exist or was revoked." };
     }
     revalidate(harnessId);
   });
@@ -168,28 +168,28 @@ export async function setHarnessDesiredVersion(
 export type HarnessUpdateActionResult = ActionResult & { version?: string };
 
 /**
- * "Update now": asks the agent to update with its next heartbeat to its desired
+ * "Update now": asks the harness to update with its next heartbeat to its desired
  * version (its override, else the organization's), or to the latest on npm when
  * none is chosen or the organization tracks it. Unlike the automatic update it also retries a version that
- * failed on the agent. Only agents under pm2 can update themselves.
+ * failed on the harness. Only harnesses under pm2 can update themselves.
  */
 export async function requestHarnessUpdate(harnessId: string): Promise<HarnessUpdateActionResult> {
   let version: string | undefined;
   const result = await runAdminAction(async (admin) => {
     const db = getDb();
-    const agent = await getHarnessOverview(db, admin.organization.id, harnessId);
-    if (!agent || agent.revokedAt) {
-      return { ok: false, error: "That agent doesn't exist or was revoked." };
+    const harness = await getHarnessOverview(db, admin.organization.id, harnessId);
+    if (!harness || harness.revokedAt) {
+      return { ok: false, error: "That harness doesn't exist or was revoked." };
     }
-    if (agent.selfUpdate !== "supported") {
+    if (harness.selfUpdate !== "supported") {
       return {
         ok: false,
         error:
-          "This agent can't update itself (it isn't running under pm2). Update it on the host.",
+          "This harness can't update itself (it isn't running under pm2). Update it on the host.",
       };
     }
     const desired =
-      agent.desiredVersion ?? (await getDesiredHarnessVersion(db, admin.organization.id));
+      harness.desiredVersion ?? (await getDesiredHarnessVersion(db, admin.organization.id));
     let target = desired === TRACK_LATEST_HARNESS_VERSION ? null : desired;
     if (!target) {
       try {
@@ -200,16 +200,16 @@ export async function requestHarnessUpdate(harnessId: string): Promise<HarnessUp
         }
         throw error;
       }
-      // Heartbeats then hand out this version too, so the agent isn't sent back to an older one.
+      // Heartbeats then hand out this version too, so the harness isn't sent back to an older one.
       if (desired === TRACK_LATEST_HARNESS_VERSION) {
         await recordLatestHarnessVersion(db, admin.organization.id, target);
       }
     }
-    if (target === agent.reportedVersion) {
-      return { ok: false, error: `${agent.name} already runs ${target}.` };
+    if (target === harness.reportedVersion) {
+      return { ok: false, error: `${harness.name} already runs ${target}.` };
     }
     if (!(await requestHarnessUpdateRow(db, admin.organization.id, harnessId, target))) {
-      return { ok: false, error: "That agent doesn't exist or was revoked." };
+      return { ok: false, error: "That harness doesn't exist or was revoked." };
     }
     version = target;
     revalidate(harnessId);
@@ -218,8 +218,8 @@ export async function requestHarnessUpdate(harnessId: string): Promise<HarnessUp
 }
 
 /**
- * Revokes an agent: its tokens stop working at once, its running jobs are
- * redelivered to other agents and its pins are removed.
+ * Revokes a harness: its tokens stop working at once, its running jobs are
+ * redelivered to other harnesses and its pins are removed.
  */
 export async function revokeHarness(harnessId: string): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
@@ -231,7 +231,7 @@ export async function revokeHarness(harnessId: string): Promise<ActionResult> {
         organizationId: admin.organization.id,
       }))
     ) {
-      return { ok: false, error: "That agent doesn't exist." };
+      return { ok: false, error: "That harness doesn't exist." };
     }
     revalidate(harnessId);
     revalidatePath("/jobs");
@@ -239,8 +239,8 @@ export async function revokeHarness(harnessId: string): Promise<ActionResult> {
 }
 
 /**
- * Deletes an agent: revokes it if it isn't already (see `revokeHarness`), then
- * removes it from the Agents pages for good.
+ * Deletes a harness: revokes it if it isn't already (see `revokeHarness`), then
+ * removes it from the Harnesses pages for good.
  */
 export async function deleteHarness(harnessId: string): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
@@ -251,14 +251,14 @@ export async function deleteHarness(harnessId: string): Promise<ActionResult> {
         ip: await clientIp(),
       }))
     ) {
-      return { ok: false, error: "That agent doesn't exist." };
+      return { ok: false, error: "That harness doesn't exist." };
     }
     revalidate(harnessId);
     revalidatePath("/jobs");
   });
 }
 
-/** Pins a repository to an agent; the agent pre-clones it via a `repo.sync` job. */
+/** Pins a repository to a harness; the harness pre-clones it via a `repo.sync` job. */
 export async function pinRepository(
   harnessId: string,
   repositoryId: string,
@@ -273,14 +273,14 @@ export async function pinRepository(
       repositoryId,
     });
     if (result === "unknown_agent")
-      return { ok: false, error: "That agent doesn't exist or was revoked." };
+      return { ok: false, error: "That harness doesn't exist or was revoked." };
     if (result === "unknown_repository")
       return { ok: false, error: "That repository isn't connected." };
     revalidate(harnessId);
   });
 }
 
-/** Unpins a repository from an agent (any agent may then serve it, unless other pins remain). */
+/** Unpins a repository from a harness (any harness may then serve it, unless other pins remain). */
 export async function unpinRepository(
   harnessId: string,
   repositoryId: string,
@@ -291,7 +291,7 @@ export async function unpinRepository(
       !(await getRepository(db, repositoryId, admin.organization.id)) ||
       !(await unpinRepositoryFromHarness(db, { harnessId, repositoryId }))
     ) {
-      return { ok: false, error: "That repository isn't pinned to this agent." };
+      return { ok: false, error: "That repository isn't pinned to this harness." };
     }
     revalidate(harnessId);
   });

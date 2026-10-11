@@ -591,7 +591,7 @@ export function RepositoriesView({
                     <TableHead>Repository</TableHead>
                     <TableHead>Reviews</TableHead>
                     <TableHead>Profile</TableHead>
-                    <TableHead>Pinned agents</TableHead>
+                    <TableHead>Pinned harnesses</TableHead>
                     <TableHead>Last review</TableHead>
                     <TableHead aria-label="Actions" />
                   </TableRow>

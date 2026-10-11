@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { auditDetailSummary, enrollCommand, isHarnessOnline, jobTarget } from "./display";
+import {
+  auditDetailSummary,
+  enrollCommand,
+  HARNESS_INSTALL_COMMAND,
+  isHarnessOnline,
+  jobTarget,
+} from "./display";
 
 describe("isHarnessOnline", () => {
   const now = new Date("2026-10-05T12:00:00Z");
@@ -10,13 +16,19 @@ describe("isHarnessOnline", () => {
   });
 });
 
+describe("HARNESS_INSTALL_COMMAND", () => {
+  it("installs the harness package", () => {
+    expect(HARNESS_INSTALL_COMMAND).toBe("npm install -g @omniralph/harness");
+  });
+});
+
 describe("enrollCommand", () => {
   it("builds the command and quotes only when needed", () => {
     expect(enrollCommand("https://omniralph.example.com", "ore_abc-DEF_1")).toBe(
-      "omniralph-agent enroll --server https://omniralph.example.com --token ore_abc-DEF_1",
+      "omniralph-harness enroll --server https://omniralph.example.com --token ore_abc-DEF_1",
     );
     expect(enrollCommand("https://x.example/it's here", "t")).toBe(
-      `omniralph-agent enroll --server 'https://x.example/it'\\''s here' --token t`,
+      `omniralph-harness enroll --server 'https://x.example/it'\\''s here' --token t`,
     );
   });
 });

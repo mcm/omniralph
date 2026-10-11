@@ -51,7 +51,7 @@ interface RepositorySettingsViewProps {
     pinnedHarnessIds: string[];
   };
   profiles: ProfileSummary[];
-  /** Agents that can be pinned (not revoked). */
+  /** Harnesses that can be pinned (not revoked). */
   agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
   /** The Ralph section's settings; only passed to admins. */
   ralph: RalphSettingsValues | null;
@@ -136,7 +136,7 @@ export function RepositorySettingsView({
   const [pinnedHarnessIds, setPinnedHarnessIds] = React.useState(settings.pinnedHarnessIds);
   const [errors, setErrors] = React.useState<FieldErrors>({});
 
-  // Pinned agents that were revoked since are dropped from the selection on save.
+  // Pinned harnesses that were revoked since are dropped from the selection on save.
   const knownHarnessIds = new Set(agents.map((a) => a.id));
 
   const togglePin = (harnessId: string, checked: boolean) =>
@@ -164,7 +164,7 @@ export function RepositorySettingsView({
     run(
       () => updateRepositorySettings(repository.id, parsed.data),
       newlyPinned > 0
-        ? "Settings saved; newly pinned agents will pre-clone the repository"
+        ? "Settings saved; newly pinned harnesses will pre-clone the repository"
         : "Settings saved; they apply to the next review",
       () => setErrors({}),
       (result) => setErrors(result.fieldErrors ?? {}),
@@ -381,17 +381,19 @@ export function RepositorySettingsView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Agent pinning</CardTitle>
+              <CardTitle>Harness pinning</CardTitle>
               <CardDescription>
-                Only the selected agents run this repository&apos;s jobs. Leave all unselected to
-                let any agent run them. Newly pinned agents pre-clone the repository.
+                Only the selected harnesses run this repository&apos;s jobs. Leave all unselected to
+                let any harness run them. Newly pinned harnesses pre-clone the repository.
               </CardDescription>
             </CardHeader>
             <CardContent style={stack}>
               {agents.length === 0 ? (
-                <Muted>No agents are enrolled yet; any agent that enrolls can run reviews.</Muted>
+                <Muted>
+                  No harnesses are enrolled yet; any harness that enrolls can run reviews.
+                </Muted>
               ) : (
-                <div role="group" aria-label="Pinned agents" style={stack}>
+                <div role="group" aria-label="Pinned harnesses" style={stack}>
                   {agents.map((agent) => (
                     <div
                       key={agent.id}
@@ -410,7 +412,7 @@ export function RepositorySettingsView({
                 </div>
               )}
               {pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)).length === 0 && (
-                <Muted>Any agent can run this repository&apos;s jobs.</Muted>
+                <Muted>Any harness can run this repository&apos;s jobs.</Muted>
               )}
               <InlineError
                 message={

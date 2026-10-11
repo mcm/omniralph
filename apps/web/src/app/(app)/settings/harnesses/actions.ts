@@ -10,8 +10,8 @@ import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 
 function revalidate(): void {
-  revalidatePath("/settings/agents");
-  revalidatePath("/agents", "layout");
+  revalidatePath("/settings/harnesses");
+  revalidatePath("/harnesses", "layout");
 }
 
 export type HarnessVersionResult = ActionResult & {
@@ -20,8 +20,8 @@ export type HarnessVersionResult = ActionResult & {
 };
 
 /**
- * Sets the version every agent of the organization should run (agents with their own override
- * keep it); blank clears it, `latest` tracks the latest on npm. Agents under pm2 update
+ * Sets the version every harness of the organization should run (harnesses with their own override
+ * keep it); blank clears it, `latest` tracks the latest on npm. Harnesses under pm2 update
  * themselves to it.
  */
 export async function setGlobalHarnessVersion(version: string): Promise<HarnessVersionResult> {
@@ -38,7 +38,7 @@ export async function setGlobalHarnessVersion(version: string): Promise<HarnessV
 }
 
 /**
- * Makes agents follow the agent package's `latest` on npm: they update with each release
+ * Makes harnesses follow the harness package's `latest` on npm: they update with each release
  * (it's read again every few minutes). It's read at once, and nothing changes when it can't be.
  */
 export async function trackLatestHarnessVersion(): Promise<HarnessVersionResult> {

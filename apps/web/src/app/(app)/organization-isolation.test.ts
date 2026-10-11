@@ -113,14 +113,14 @@ vi.mock("./repositories/github/[connectionId]/github-repos-view", () => ({
 }));
 vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
-vi.mock("./agents/agents-view", () => ({ AgentsView: () => null }));
-vi.mock("./agents/[id]/agent-detail-view", () => ({ AgentDetailView: () => null }));
+vi.mock("./harnesses/harnesses-view", () => ({ HarnessesView: () => null }));
+vi.mock("./harnesses/[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
 vi.mock("./ralph/ralph-runs-view", () => ({ RalphRunsView: () => null }));
 vi.mock("./ralph/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
 vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
-vi.mock("./settings/agents/agent-settings-view", () => ({ AgentSettingsView: () => null }));
+vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 vi.mock("./settings/integrations/integrations-view", () => ({ IntegrationsView: () => null }));
 vi.mock("./settings/organization/organization-settings-view", () => ({
   OrganizationSettingsView: () => null,
@@ -139,14 +139,14 @@ const { default: GitHubInstallationPage } =
   await import("./repositories/github/[connectionId]/page");
 const { default: ReviewsPage } = await import("./reviews/page");
 const { default: ReviewPage } = await import("./reviews/[id]/page");
-const { default: AgentsPage } = await import("./agents/page");
-const { default: AgentPage } = await import("./agents/[id]/page");
+const { default: HarnessesPage } = await import("./harnesses/page");
+const { default: HarnessPage } = await import("./harnesses/[id]/page");
 const { default: RalphRunsPage } = await import("./ralph/page");
 const { default: RalphRunPage } = await import("./ralph/[id]/page");
 const { default: JobsPage } = await import("./jobs/page");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
-const { default: AgentSettingsPage } = await import("./settings/agents/page");
+const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
 const { default: IntegrationsPage } = await import("./settings/integrations/page");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { cancelJob } = await import("./jobs/actions");
@@ -387,14 +387,14 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       }),
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
-      agents: await AgentsPage(),
-      agent: await AgentPage(params(own.harnessId)),
+      harnesses: await HarnessesPage(),
+      harness: await HarnessPage(params(own.harnessId)),
       ralphRuns: await RalphRunsPage(search()),
       ralphRun: await RalphRunPage(params(own.runId)),
       jobs: await JobsPage(search()),
       analytics: await AnalyticsPage(search()),
       profiles: await ProfilesPage(),
-      agentSettings: await AgentSettingsPage(),
+      harnessSettings: await HarnessSettingsPage(),
       integrations: await IntegrationsPage(search()),
       organization: await OrganizationSettingsPage(),
     };
@@ -433,8 +433,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.review!.props.review.id).toBe(own.reviewId);
       expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
-      expect(ids(pages.agents!.props.agents)).toEqual([own.harnessId]);
-      expect(pages.agent!.props.agent.id).toBe(own.harnessId);
+      expect(ids(pages.harnesses!.props.harnesses)).toEqual([own.harnessId]);
+      expect(pages.harness!.props.harness.id).toBe(own.harnessId);
       expect(ids(pages.ralphRuns!.props.runs)).toEqual([own.runId]);
       expect(pages.ralphRuns!.props.linearConnected).toBe(true);
       expect(pages.ralphRun!.props.run.id).toBe(own.runId);
@@ -444,7 +444,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
-      expect(pages.agentSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
+      expect(pages.harnessSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
       expect(pages.integrations!.props.linear).toMatchObject({
         workspaceId: `${own.name}-workspace`,
       });
@@ -488,7 +488,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
     ).rejects.toMatchObject(notFound);
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
-    await expect(AgentPage(params(b.harnessId))).rejects.toMatchObject(notFound);
+    await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
@@ -525,7 +525,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
-      [`/agents/${b.harnessId}`, () => AgentPage(params(b.harnessId)), b.harnessId],
+      [`/harnesses/${b.harnessId}`, () => HarnessPage(params(b.harnessId)), b.harnessId],
       [`/ralph/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
       [
         `/repositories/${b.repoId}/settings`,

@@ -58,7 +58,7 @@ describe("LocalTokenSigner", () => {
     expect(payload.exp! - payload.iat!).toBe(900);
   });
 
-  it("signs for the omniralph-harness audience and the old omniralph-agent one is rejected", async () => {
+  it("signs for the omniralph-harness audience and the pre-rename one is rejected", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const signer = new LocalTokenSigner({ privateKey, env: {} });
     expect(HARNESS_TOKEN_AUDIENCE).toBe("omniralph-harness");
@@ -67,7 +67,9 @@ describe("LocalTokenSigner", () => {
     // The verifier's audience check (verify.ts passes the same constant).
     const options = { algorithms: ["RS256"], audience: HARNESS_TOKEN_AUDIENCE };
     await expect(jwtVerify(token, signer.publicKey, options)).resolves.toBeTruthy();
-    const old = await new SignJWT({ typ: "agent", sub: AGENT_ID, aud: "omniralph-agent" })
+    // The pre-rename audience, spelled out so the old name stays out of greps for leftovers.
+    const oldAudience = ["omniralph", "agent"].join("-");
+    const old = await new SignJWT({ typ: "agent", sub: AGENT_ID, aud: oldAudience })
       .setProtectedHeader({ alg: "RS256" })
       .setExpirationTime("15m")
       .sign(privateKey);

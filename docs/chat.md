@@ -197,7 +197,7 @@ ambiguous) and hands the request off with its `start_ralph_request` tool:
 - The repository must be one of the organization's repositories with ralph enabled (see
   [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
   used); otherwise the bot lists the ones it can use. The session runs on an agent with the
-  `ralph` capability ([deploy-agent.md](deploy-agent.md#ralph)) and waits in the queue until one
+  `ralph` capability ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until one
   is online.
 - The bot posts **"Handing this to ralph in `owner/repo`…"** with the request's first sentence
   and a link to the run's page. The session gets the agent's summary of the request plus the
@@ -353,7 +353,7 @@ A code question is a `chat.ask` job under the agent's `review` capability, publi
 topic as reviews and run in the same sandbox:
 
 - A fresh worktree of the default branch's head, on an agent host
-  ([deploy-agent.md](deploy-agent.md)). The control panel never reads code.
+  ([deploy-harness.md](deploy-harness.md)). The control panel never reads code.
 - The Claude session gets only **Read, Grep and Glob**, limited to the worktree: it can't write
   files, run commands or push. No project settings are loaded; the branch's `CLAUDE.md` is passed
   as quoted data, as in reviews.
@@ -367,7 +367,7 @@ topic as reviews and run in the same sandbox:
 know the job type. Before queueing, the control panel checks the organization's online agents (the
 version and capabilities they report in heartbeats); when none that would take the job can run it,
 nothing is queued and the bot says so: "no agent … is online", or that the online ones need the
-review capability on 0.8.0 or later. Update or start an agent ([deploy-agent.md](deploy-agent.md))
+review capability on 0.8.0 or later. Update or start an agent ([deploy-harness.md](deploy-harness.md))
 and ask again.
 
 ## Attachments

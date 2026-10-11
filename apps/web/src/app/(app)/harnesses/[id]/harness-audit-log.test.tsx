@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AgentAuditLog, TokenTheftAlert, type AuditRow } from "./agent-audit-log";
+import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit-log";
 
 let n = 0;
 function entry(event: AuditRow["event"], detail: Record<string, unknown> = {}): AuditRow {
@@ -23,9 +23,9 @@ const audit: AuditRow[] = [
   entry("enroll", { name: "coder-host", version: "0.1.0" }),
 ];
 
-describe("AgentAuditLog", () => {
+describe("HarnessAuditLog", () => {
   it("renders one row per event, in the given order, with labels and details", () => {
-    const html = renderToStaticMarkup(<AgentAuditLog audit={audit} />);
+    const html = renderToStaticMarkup(<HarnessAuditLog audit={audit} />);
     const events = [...html.matchAll(/data-event="([a-z_]+)"/g)].map((m) => m[1]);
     expect(events).toEqual([
       "result_submitted",
@@ -54,7 +54,7 @@ describe("AgentAuditLog", () => {
   });
 
   it("shows an empty state without events", () => {
-    expect(renderToStaticMarkup(<AgentAuditLog audit={[]} />)).toContain("No events yet");
+    expect(renderToStaticMarkup(<HarnessAuditLog audit={[]} />)).toContain("No events yet");
   });
 });
 

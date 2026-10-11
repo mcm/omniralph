@@ -19,7 +19,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { AGENT_INSTALL_COMMAND } from "@/lib/harnesses/display";
+import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
 import { createEnrollment } from "./actions";
 
@@ -81,8 +81,8 @@ function SecretRow({
   );
 }
 
-/** "Enroll agent": creates a one-time enrollment token and shows it (once) with its command. */
-export function EnrollAgentDialog() {
+/** "Enroll harness": creates a one-time enrollment token and shows it (once) with its command. */
+export function EnrollHarnessDialog() {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [enrollment, setEnrollment] = React.useState<Enrollment | null>(null);
@@ -111,7 +111,7 @@ export function EnrollAgentDialog() {
       <DialogTrigger asChild>
         <Button variant="primary">
           <IconPlus size={14} />
-          Enroll agent
+          Enroll harness
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -120,7 +120,7 @@ export function EnrollAgentDialog() {
             <DialogHeader>
               <DialogTitle>Enrollment token created</DialogTitle>
               <DialogDescription>
-                Run these on the agent host as the agent&apos;s Unix user (installing needs npm
+                Run these on the harness host as the harness&apos;s Unix user (installing needs npm
                 access to the private <code>@iamthemcmaster</code> scope). The token works once and
                 expires {formatDateTime(enrollment.expiresAt)}.
               </DialogDescription>
@@ -141,7 +141,7 @@ export function EnrollAgentDialog() {
                   />
                 }
                 label="Install command"
-                value={AGENT_INSTALL_COMMAND}
+                value={HARNESS_INSTALL_COMMAND}
               />
               <SecretRow
                 icon={
@@ -170,20 +170,20 @@ export function EnrollAgentDialog() {
         ) : (
           <form onSubmit={generate}>
             <DialogHeader>
-              <DialogTitle>Enroll an agent</DialogTitle>
+              <DialogTitle>Enroll a harness</DialogTitle>
               <DialogDescription>
-                Creates a one-time enrollment token, valid for 1 hour. The agent exchanges it for
+                Creates a one-time enrollment token, valid for 1 hour. The harness exchanges it for
                 its own rotating refresh token.
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
               <Field
                 label="Name"
-                htmlFor="agent-name"
+                htmlFor="harness-name"
                 hint="Optional. Defaults to the host's name."
               >
                 <Input
-                  id="agent-name"
+                  id="harness-name"
                   maxLength={100}
                   value={name}
                   onChange={(e) => setName(e.target.value)}

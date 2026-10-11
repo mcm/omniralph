@@ -14,7 +14,7 @@ import { getDb } from "@/lib/db";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
 
-const REVOKED = "Agent revoked";
+const REVOKED = "Harness revoked";
 
 /**
  * Revokes a harness (Harnesses page): sets `revoked_at`, revokes every refresh-token

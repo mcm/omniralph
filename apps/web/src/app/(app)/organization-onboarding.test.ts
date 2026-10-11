@@ -79,7 +79,7 @@ vi.mock("@/lib/scm/github-app", () => ({
 }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("./repositories/repositories-view", () => ({ RepositoriesView: () => null }));
-vi.mock("./agents/agents-view", () => ({ AgentsView: () => null }));
+vi.mock("./harnesses/harnesses-view", () => ({ HarnessesView: () => null }));
 vi.mock("./settings/organization/organization-settings-view", () => ({
   OrganizationSettingsView: () => null,
 }));
@@ -91,7 +91,7 @@ const { acceptInvitationAction, createOrganizationAction, switchOrganization } =
   await import("@/lib/organizations/actions");
 const { inviteMember, changeMemberRole } = await import("./settings/organization/actions");
 const { default: RepositoriesPage } = await import("./repositories/page");
-const { default: AgentsPage } = await import("./agents/page");
+const { default: HarnessesPage } = await import("./harnesses/page");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
 
@@ -132,7 +132,7 @@ describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
     return row!;
   }
 
-  it("creates an organization, invites a teammate who signs in, accepts and sees the shared repositories and agents", async () => {
+  it("creates an organization, invites a teammate who signs in, accepts and sees the shared repositories and harnesses", async () => {
     // A new user without an organization creates one and becomes its admin.
     const founder = await signUp("founder@journey.io");
     expect(await getActiveOrganization(db, founder.id)).toBeNull();
@@ -187,11 +187,11 @@ describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
     // Accepted invitations no longer open the sign-in gate.
     expect(await hasPendingInvitation(db, teammateEmail)).toBe(false);
 
-    // The teammate sees the organization's repositories, agents and members.
+    // The teammate sees the organization's repositories, harnesses and members.
     const repositories = props(await RepositoriesPage({ searchParams: Promise.resolve({}) }));
     expect(repositories).toContain(repo.id);
     expect(repositories).toContain("journey/shared-app");
-    expect(props(await AgentsPage())).toContain(harnessId);
+    expect(props(await HarnessesPage())).toContain(harnessId);
     const settings = props(await OrganizationSettingsPage());
     expect(settings).toContain(founder.email!);
     expect(settings).toContain(teammateEmail);
