@@ -113,7 +113,7 @@ over-long values (with `[… truncated]`) before fencing.
 | `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                        |
 | `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                        |
 | `coding`  | A session that changes code and ships it         | `long`  | `ralph.*` still run through their legacy capability code |
-| `system`  | A system RPC, no session                         | none    | `repo.sync`                                              |
+| `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`                             |
 
 `runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
 code:
@@ -345,10 +345,14 @@ So adding a review task (a security reviewer, say) is a definitions-only change:
 
 ### System RPCs
 
-`repo.sync` is a system RPC (`apps/harness/src/rpc/`, `SYSTEM_RPCS` in `@omniralph/shared`): a
-fixed command with no Claude session, no run spec and no session token, targeted at one harness,
-with a single `credentials:read` token. It uses the same claim, lease, result and fail plumbing as
-every other job. Self-update stays on the heartbeat.
+`repo.sync` and `worktree.exec` are system RPCs (`apps/harness/src/rpc/`, `SYSTEM_RPCS` in
+`@omniralph/shared`): fixed commands with no Claude session, no run spec and no session token,
+targeted at one harness, with a single `credentials:read` token. They use the same claim, lease,
+result and fail plumbing as every other job. `worktree.exec` runs a manual story's approved
+`cyralph-prepare` commands in the lane's branch worktree on the run's sticky harness (on both
+coding paths, replacing `ralph.prepare`): nothing runs if the commands' hash or the branch HEAD
+changed since the approval, then `bash -lc` one at a time, stopping at the first failure, without
+the job token (no git credential). Self-update stays on the heartbeat.
 
 ### What later epics add
 

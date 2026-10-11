@@ -31,10 +31,17 @@ export const MAX_LEASE_SECONDS = 3600;
 export const REPO_SYNC_JOB_TYPE = "repo.sync";
 
 /**
+ * `system` job that runs approved commands (a manual story's `cyralph-prepare`
+ * commands) in a lane's branch worktree, with no Claude session and no git
+ * credential. Its payload and result are `WorktreeExecPayload`/`WorktreeExecResult`.
+ */
+export const WORKTREE_EXEC_JOB_TYPE = "worktree.exec";
+
+/**
  * The system RPCs a harness runs: fixed commands with no Claude session,
  * dispatched by job type (`jobs.type`) as jobs of task type `system`.
  */
-export const SYSTEM_RPCS = [REPO_SYNC_JOB_TYPE] as const;
+export const SYSTEM_RPCS = [REPO_SYNC_JOB_TYPE, WORKTREE_EXEC_JOB_TYPE] as const;
 export type SystemRpcName = (typeof SYSTEM_RPCS)[number];
 
 export function isSystemRpc(name: string): name is SystemRpcName {
@@ -76,6 +83,7 @@ const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
   "ralph.prepare": { taskType: "coding", pool: "long" },
   "ralph.cleanup": { taskType: "coding", pool: "long" },
   [REPO_SYNC_JOB_TYPE]: { taskType: "system", pool: null },
+  [WORKTREE_EXEC_JOB_TYPE]: { taskType: "system", pool: null },
 };
 
 /**

@@ -1,6 +1,7 @@
 import type { JobPayload, SystemRpcName } from "@omniralph/shared";
 import type { JobContext, JobOutput } from "../capabilities/index.js";
 import { repoSyncRpc } from "./repo-sync.js";
+import { worktreeExecRpc } from "./worktree-exec.js";
 
 /**
  * What a system RPC gets for running one job: its single job token (in
@@ -41,5 +42,5 @@ export class SystemRpcRegistry {
 
 /** The system RPCs this build of the harness ships. */
 export function defaultSystemRpcs(): SystemRpc[] {
-  return [repoSyncRpc];
+  return [repoSyncRpc, worktreeExecRpc];
 }

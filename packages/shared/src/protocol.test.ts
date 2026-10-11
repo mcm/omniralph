@@ -55,17 +55,20 @@ describe("protocol", () => {
       expect(routing(type)).toEqual({ taskType: "coding", pool: "long" });
     }
     expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
+    expect(routing("worktree.exec")).toEqual({ taskType: "system", pool: null });
     expect(() => routing("review.unknown")).toThrow(/Unknown legacy job type/);
     // Review runs are review task runs (`review.task`, run specs), not a legacy job type.
     expect(() => routing("review.run")).toThrow(/Unknown legacy job type/);
   });
 
   it("lists the system RPCs, each routed as a system job", () => {
-    expect(SYSTEM_RPCS).toEqual(["repo.sync"]);
+    expect(SYSTEM_RPCS).toEqual(["repo.sync", "worktree.exec"]);
     for (const name of SYSTEM_RPCS) {
       expect(legacyJobRouting(name)).toEqual({ taskType: "system", pool: null });
     }
     expect(isSystemRpc("repo.sync")).toBe(true);
+    expect(isSystemRpc("worktree.exec")).toBe(true);
+    expect(isSystemRpc("ralph.prepare")).toBe(false);
     expect(isSystemRpc("review.run")).toBe(false);
   });
 

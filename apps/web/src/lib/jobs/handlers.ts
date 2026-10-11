@@ -16,6 +16,9 @@ import {
   RalphRequestResult,
   RalphStoryPayload,
   RalphStoryResult,
+  WORKTREE_EXEC_JOB_TYPE,
+  WorktreeExecPayload,
+  WorktreeExecResult,
   type JobSkipReason,
 } from "@omniralph/shared";
 import type { z } from "zod";
@@ -81,10 +84,21 @@ registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
   onCanceled: (db, job) => onRalphJobFinished(db, job),
 });
 
+// Legacy `ralph.prepare` jobs queued before preparations ran as `worktree.exec`.
 registerJobOutcomeHandler(RALPH_PREPARE_JOB_TYPE, {
   payload: RalphPreparePayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => RalphPrepareResult.safeParse(result).success,
+  onCompleted: (db, job) => onRalphJobFinished(db, job),
+  onFailed: (db, job) => onRalphJobFinished(db, job),
+  onCanceled: (db, job) => onRalphJobFinished(db, job),
+});
+
+// A manual story's approved preparation (a system RPC of the run, on its sticky harness).
+registerJobOutcomeHandler(WORKTREE_EXEC_JOB_TYPE, {
+  payload: WorktreeExecPayload,
+  onStarted: onRalphJobStarted,
+  isValidResult: (result) => WorktreeExecResult.safeParse(result).success,
   onCompleted: (db, job) => onRalphJobFinished(db, job),
   onFailed: (db, job) => onRalphJobFinished(db, job),
   onCanceled: (db, job) => onRalphJobFinished(db, job),

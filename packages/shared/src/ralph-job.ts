@@ -5,7 +5,9 @@
  * - `ralph.story`: one attempt at one story in the epic's branch worktree
  *   (Claude session, quality gates, commit, push).
  * - `ralph.describe-pr`: a read-only session that writes the PR/MR title and body.
- * - `ralph.prepare`: runs the approved `cyralph-prepare` commands of a manual story.
+ * - `ralph.prepare`: runs the approved `cyralph-prepare` commands of a manual story
+ *   (legacy: the control panel now runs them as the `worktree.exec` system RPC,
+ *   with the same payload and result).
  * - `ralph.request`: one Claude session doing what a request from the Linear
  *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  * - `ralph.cleanup`: removes a merged lane's branch worktree and local branch,
@@ -308,6 +310,13 @@ export const RalphPrepareResult = z.object({
   durationMs: z.int().min(0),
 });
 export type RalphPrepareResult = z.infer<typeof RalphPrepareResult>;
+
+/** Payload of a `worktree.exec` system RPC: the same as a `ralph.prepare` job's. */
+export const WorktreeExecPayload = RalphPreparePayload;
+export type WorktreeExecPayload = RalphPreparePayload;
+/** Result of a `worktree.exec` system RPC: the same as a `ralph.prepare` job's. */
+export const WorktreeExecResult = RalphPrepareResult;
+export type WorktreeExecResult = RalphPrepareResult;
 
 /** Where a run's requests come from: a Linear agent session or a chat thread. */
 export const RALPH_REQUEST_SOURCES = ["linear", "chat"] as const;

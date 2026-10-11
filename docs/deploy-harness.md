@@ -400,7 +400,8 @@ Ralph builds delegated Linear issues story by story (see [linear.md](linear.md)
 for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). A harness
 runs five ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
 `ralph.describe-pr` (a read-only session writing the PR/MR description), `ralph.prepare` (a
-manual story's approved preparation commands), `ralph.request` (one Claude session for an
+manual story's approved preparation commands; now enqueued as the `worktree.exec` system RPC
+instead, with the same guards), `ralph.request` (one Claude session for an
 @mention, a reply, review findings or a failed CI run, on the run's branch) and `ralph.cleanup`
 (removes a merged PR/MR's worktree and local branch, no session). Running `ralph.story` and
 `ralph.request` sessions also take Linear replies live: the heartbeat response carries them

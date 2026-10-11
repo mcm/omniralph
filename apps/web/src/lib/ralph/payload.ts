@@ -233,7 +233,7 @@ export interface PreparePayloadInput {
 }
 
 /**
- * The payload of a `ralph.prepare` job: the manual story's commands as they
+ * The payload of a `worktree.exec` system RPC: the manual story's commands as they
  * are now and the approval they must still match (the agent runs nothing
  * otherwise).
  */

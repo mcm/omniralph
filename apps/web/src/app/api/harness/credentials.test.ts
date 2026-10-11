@@ -19,10 +19,13 @@ import {
   type JobStartResponse,
   JOB_TOKEN_SCOPES,
   type JobTokenScope,
+  legacyJobRouting,
   RalphRequestPayload,
   RalphStoryPayload,
   type RunTokenKind,
+  WorktreeExecPayload,
 } from "@omniralph/shared";
+import { preparationHash } from "@omniralph/ralph";
 import { getBuiltinTask } from "@omniralph/tasks";
 import type { DispatchJobInput } from "@/lib/dispatch/dispatcher";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -605,6 +608,35 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
             password: "ghs_contents_write",
             access: "write",
+            tokenKind: "legacy",
+          });
+        });
+
+        it("gives a worktree.exec system RPC's single token read", async () => {
+          const runId = randomUUID();
+          const commands = ["terraform init"];
+          const { harnessId, started } = await claimEnqueued({
+            type: "worktree.exec",
+            ...legacyJobRouting("worktree.exec"),
+            payload: WorktreeExecPayload.parse({
+              ...jobBase(runId),
+              story: { identifier: "TOOL-40", title: "Create the bucket" },
+              commands,
+              commandsHash: preparationHash(commands),
+              approvedHeadSha: null,
+            }),
+            repositoryId: githubRepoId,
+            dedupeKey: `ralph-run:${runId}`,
+          });
+          expect(started.job).toMatchObject({
+            type: "worktree.exec",
+            taskType: "system",
+            taskId: null,
+          });
+          expect(started.sessionToken).toBeUndefined();
+          expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
+            password: "ghs_contents_read",
+            access: "read",
             tokenKind: "legacy",
           });
         });

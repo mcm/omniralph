@@ -3,8 +3,8 @@
  * and `EpicEngine.runApprovedPreparation`/`askPreparation`): when a manual
  * story with ```cyralph-prepare commands becomes unblocked, the run asks in a
  * `select` elicitation whether to run them, bound to the commands' hash and
- * the branch's last story commit. "Run it" enqueues a `ralph.prepare` job (the
- * run's one job), which runs nothing if either changed. The story stays
+ * the branch's last story commit. "Run it" enqueues a `worktree.exec` system
+ * RPC (the run's one job), which runs nothing if either changed. The story stays
  * manual: a person still moves it to Done. The run pushes nothing to ask.
  */
 import {
@@ -25,7 +25,7 @@ import {
   preparationQuestion,
   type Story,
 } from "@omniralph/ralph";
-import { RalphPreparePayload, RalphPrepareResult } from "@omniralph/shared";
+import { WorktreeExecPayload, WorktreeExecResult } from "@omniralph/shared";
 import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { postActivity, tail } from "./notify";
@@ -47,7 +47,7 @@ const nameOf = (s: Pick<Story, "identifier" | "storyId">) => s.identifier ?? s.s
 /**
  * The branch's HEAD as far as the control panel knows: the newest of the
  * stories' commits (ordered by when their job finished) and the HEAD the last
- * `ralph.prepare` job reported. Null when nothing was committed yet.
+ * `worktree.exec` RPC reported. Null when nothing was committed yet.
  */
 export async function knownBranchHead(
   deps: Pick<RalphDeps, "db">,
@@ -143,7 +143,7 @@ export async function offerPreparation(
 /**
  * The manual story whose preparation was approved ("Run it") and isn't
  * running yet, if it can still run; an approval whose story can't run anymore
- * (done, blocked again) is dropped. `run.ts` enqueues its `ralph.prepare` job.
+ * (done, blocked again) is dropped. `run.ts` enqueues its `worktree.exec` RPC.
  */
 export async function approvedPreparation(
   deps: RalphDeps,
@@ -167,8 +167,8 @@ export async function approvedPreparation(
   return { run: updated };
 }
 
-/** The commands a `ralph.prepare` job ran, with their exit codes and output tails. */
-function ranCommands(result: RalphPrepareResult): string {
+/** The commands a `worktree.exec` RPC ran, with their exit codes and output tails. */
+function ranCommands(result: WorktreeExecResult): string {
   return result.commands
     .map((c) => {
       const exit = c.exitCode === null ? "didn't finish" : `exit ${c.exitCode}`;
@@ -179,7 +179,7 @@ function ranCommands(result: RalphPrepareResult): string {
 }
 
 /**
- * Applies the outcome of the run's `ralph.prepare` job (in phase 1 of
+ * Applies the outcome of the run's `worktree.exec` RPC (in phase 1 of
  * `advanceRun`, under the row lock) and posts it as an activity. Success: the
  * story counts as prepared and isn't asked about again, even when the branch
  * moves later. A failure, a stale approval or a failed job: nothing is retried
@@ -199,8 +199,8 @@ export async function applyPreparationJob(
   if (job && ACTIVE_JOB_STATUSES.has(job.status)) return { busy: true };
 
   const story = `**${request.identifier}**`;
-  const parsed = job?.status === "completed" ? RalphPrepareResult.safeParse(job.result) : null;
-  const payload = job ? RalphPreparePayload.safeParse(job.payload) : null;
+  const parsed = job?.status === "completed" ? WorktreeExecResult.safeParse(job.result) : null;
+  const payload = job ? WorktreeExecPayload.safeParse(job.payload) : null;
   const next: RalphPreparation = { ...state, request: null, handled: { ...state.handled } };
   let body: string;
   if (!parsed?.success) {
