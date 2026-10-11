@@ -15,7 +15,8 @@ import { getDispatcher } from "@/lib/dispatch";
 import { saveRepositorySettings } from "@/lib/repositories/settings";
 
 /**
- * Saves a repository's review settings. Newly pinned harnesses get a `repo.sync`
+ * Saves a repository's review settings, including which review tasks its
+ * review runs fan out to. Newly pinned harnesses get a `repo.sync`
  * job; the next review job enqueued for the repository uses the new settings.
  */
 export async function updateRepositorySettings(
@@ -52,6 +53,12 @@ export async function updateRepositorySettings(
           ok: false,
           error: "Some selected harnesses don't exist or were revoked.",
           fieldErrors: { pinnedHarnessIds: "Some selected harnesses don't exist or were revoked." },
+        };
+      case "unknown_review_tasks":
+        return {
+          ok: false,
+          error: "Some selected review tasks don't exist.",
+          fieldErrors: { reviewTaskIds: "Some selected review tasks don't exist." },
         };
     }
     revalidatePath(`/repositories/${repositoryId}/settings`);

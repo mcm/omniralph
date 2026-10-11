@@ -9,6 +9,7 @@ export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 4000;
 export const MIN_PROFILE_TOKEN_CAP = 5000;
 export const MAX_PATH_EXCLUDES = 200;
 export const MAX_PATH_EXCLUDE_LENGTH = 500;
+export const MAX_REVIEW_TASKS = 20;
 export const BUILT_IN_PROFILE_IDS = ["quick", "standard", "deep"] as const;
 
 const BRACKETS: Record<string, string> = { "{": "}", "(": ")" };
@@ -89,6 +90,15 @@ export const RepositorySettingsInput = z.object({
     ),
   /** Agents the repository is pinned to; empty means any agent. */
   pinnedHarnessIds: z.array(z.uuid()).max(100),
+  /**
+   * Review tasks each review run of the repository's PRs/MRs fans out to, in
+   * order (`repositories.review_task_ids`); the server checks they are review tasks.
+   */
+  reviewTaskIds: z
+    .array(z.string().min(1).max(200))
+    .min(1, "Choose at least one review task.")
+    .max(MAX_REVIEW_TASKS, `At most ${MAX_REVIEW_TASKS} review tasks.`)
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each review task once."),
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 

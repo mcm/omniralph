@@ -145,6 +145,8 @@ export interface RepositorySettingsUpdate {
   pathExcludes: string[];
   /** Empty or null clears them. */
   customInstructions: string | null;
+  /** Review tasks of the repository's review runs; unchanged when left out. */
+  reviewTaskIds?: string[];
 }
 
 /**
@@ -165,6 +167,7 @@ export async function updateRepositorySettings(
       triggers: input.triggers,
       pathExcludes: input.pathExcludes,
       customInstructions: input.customInstructions?.trim() || null,
+      ...(input.reviewTaskIds ? { reviewTaskIds: input.reviewTaskIds } : {}),
     })
     .where(
       and(

@@ -21,6 +21,7 @@ const validSettings: RepositorySettingsInput = {
   pathExcludes: ["*.lock", "/vendor/**", "src/**/*.{gen,pb}.ts", "docs/[!_]*.md"],
   customInstructions: "Prefer early returns.",
   pinnedHarnessIds: [],
+  reviewTaskIds: ["builtin:review-pr"],
 };
 
 const validProfile: ReviewProfileInput = {
@@ -108,6 +109,21 @@ describe("RepositorySettingsInput", () => {
       "pinnedHarnessIds.0",
       "profileId",
     ]);
+  });
+
+  it("requires one to 20 distinct review tasks", () => {
+    const errors = (reviewTaskIds: string[]) => {
+      const result = RepositorySettingsInput.safeParse({ ...validSettings, reviewTaskIds });
+      return result.success ? {} : fieldErrors(result.error);
+    };
+    expect(errors(["builtin:review-pr", "builtin:security-review"])).toEqual({});
+    expect(errors([])).toEqual({ reviewTaskIds: "Choose at least one review task." });
+    expect(errors(["builtin:review-pr", "builtin:review-pr"])).toEqual({
+      reviewTaskIds: "Choose each review task once.",
+    });
+    expect(errors(Array.from({ length: 21 }, (_, i) => `task-${i}`))).toEqual({
+      reviewTaskIds: "At most 20 review tasks.",
+    });
   });
 });
 

@@ -243,6 +243,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         pathExcludes: [],
         customInstructions: "",
         pinnedHarnessIds: [],
+        reviewTaskIds: ["builtin:review-pr"],
       }),
     ).toEqual(refused);
     expect(
@@ -301,6 +302,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         pathExcludes: [],
         customInstructions: "",
         pinnedHarnessIds: [],
+        reviewTaskIds: ["builtin:review-pr"],
       }),
     ).toEqual({ ok: true });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.profile).toMatchObject({

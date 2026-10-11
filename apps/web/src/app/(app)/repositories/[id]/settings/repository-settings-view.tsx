@@ -49,7 +49,10 @@ interface RepositorySettingsViewProps {
     pathExcludes: string[];
     customInstructions: string;
     pinnedHarnessIds: string[];
+    reviewTaskIds: string[];
   };
+  /** The review tasks the repository can run on its PRs/MRs. */
+  reviewTasks: { id: string; name: string; description: string }[];
   profiles: ProfileSummary[];
   /** Harnesses that can be pinned (not revoked). */
   agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
@@ -121,6 +124,7 @@ function TriggerToggle({
 export function RepositorySettingsView({
   repository,
   settings,
+  reviewTasks,
   profiles,
   agents,
   ralph,
@@ -134,6 +138,7 @@ export function RepositorySettingsView({
   const [pathExcludes, setPathExcludes] = React.useState(settings.pathExcludes.join("\n"));
   const [customInstructions, setCustomInstructions] = React.useState(settings.customInstructions);
   const [pinnedHarnessIds, setPinnedHarnessIds] = React.useState(settings.pinnedHarnessIds);
+  const [reviewTaskIds, setReviewTaskIds] = React.useState(settings.reviewTaskIds);
   const [errors, setErrors] = React.useState<FieldErrors>({});
 
   // Pinned harnesses that were revoked since are dropped from the selection on save.
@@ -144,6 +149,9 @@ export function RepositorySettingsView({
       checked ? [...ids, harnessId] : ids.filter((id) => id !== harnessId),
     );
 
+  const toggleReviewTask = (taskId: string, checked: boolean) =>
+    setReviewTaskIds((ids) => (checked ? [...ids, taskId] : ids.filter((id) => id !== taskId)));
+
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     const input: RepositorySettingsInput = {
@@ -152,6 +160,8 @@ export function RepositorySettingsView({
       pathExcludes: parsePathExcludes(pathExcludes),
       customInstructions,
       pinnedHarnessIds: pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)),
+      // In the listed order; review tasks that no longer exist are dropped.
+      reviewTaskIds: reviewTasks.map((t) => t.id).filter((id) => reviewTaskIds.includes(id)),
     };
     const parsed = RepositorySettingsInput.safeParse(input);
     if (!parsed.success) {
@@ -292,6 +302,40 @@ export function RepositorySettingsView({
                 })}
               </RadioGroup>
               <InlineError message={errors.profileId} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Review tasks</CardTitle>
+              <CardDescription>
+                Which reviewers run on each pull or merge request. They run in parallel and their
+                findings are posted as one review.
+              </CardDescription>
+            </CardHeader>
+            <CardContent style={stack}>
+              <div role="group" aria-label="Review tasks" style={stack}>
+                {reviewTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}
+                  >
+                    <Checkbox
+                      id={`review-task-${task.id}`}
+                      checked={reviewTaskIds.includes(task.id)}
+                      disabled={disabled}
+                      onCheckedChange={(checked) => toggleReviewTask(task.id, checked === true)}
+                    />
+                    <div
+                      style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}
+                    >
+                      <Label htmlFor={`review-task-${task.id}`}>{task.name}</Label>
+                      {task.description && <Muted>{task.description}</Muted>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <InlineError message={errors.reviewTaskIds} />
             </CardContent>
           </Card>
 
