@@ -521,7 +521,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
 
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -564,7 +563,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const job = async (status: "queued" | "running" | "completed") => {
       const { job } = await insertJob(db, {
         organizationId: orgId,
-        capability: "ralph",
         type: "ralph.story",
         taskType: "coding",
         pool: "long",
@@ -578,7 +576,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await job("completed");
     await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -622,7 +619,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     await updateRun(db, busy.id, { status: "running" });
     await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -755,7 +751,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     ]);
     const { job: first } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -763,7 +758,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     });
     const { job: second } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.describe-pr",
       taskType: "query",
       pool: "short",
@@ -778,7 +772,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const other = (await createRun(db, runInput())).run;
     await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -810,7 +803,6 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const { run } = await createRun(db, runInput());
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.request",
       taskType: "coding",
       pool: "long",

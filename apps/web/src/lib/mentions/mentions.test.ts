@@ -486,7 +486,6 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const created = (await replyJobs()).slice(before);
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({
-        capability: "review",
         repositoryId: repoId,
         status: "queued",
         targetHarnessId: null,
@@ -626,7 +625,6 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       });
       await db.insert(jobs).values({
         organizationId: orgId,
-        capability: "ralph",
         type: "ralph.story",
         taskType: "coding",
         pool: "long",

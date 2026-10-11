@@ -1,5 +1,5 @@
 /**
- * The `triage` capability: turning a Linear issue into a PRD ralph can build,
+ * Triage: turning a Linear issue into a PRD ralph can build,
  * unattended. The control panel loads the issue and applies the result to
  * Linear (agents hold no Linear token); agents run its job:
  *
@@ -11,7 +11,6 @@ import { z } from "zod";
 import { JobRepository } from "./protocol.js";
 import { GitBranch } from "./ralph-job.js";
 
-export const TRIAGE_CAPABILITY = "triage";
 export const TRIAGE_RUN_JOB_TYPE = "triage.run";
 export const TRIAGE_JOB_TYPES = [TRIAGE_RUN_JOB_TYPE] as const;
 

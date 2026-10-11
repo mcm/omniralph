@@ -50,7 +50,6 @@ import {
 } from "@omniralph/ralph";
 import {
   MAX_ATTEMPTS_PER_STORY,
-  RALPH_CAPABILITY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
@@ -372,8 +371,8 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
 }
 
 /**
- * The run's agent, while it may still take the run's jobs (not revoked, ralph
- * enabled, in the run's organization).
+ * The run's agent, while it may still take the run's jobs (not revoked,
+ * accepting `coding` tasks, in the run's organization).
  */
 export async function stickyHarnessId(
   db: Database,
@@ -385,7 +384,7 @@ export async function stickyHarnessId(
     !agent ||
     agent.revokedAt ||
     agent.organizationId !== run.organizationId ||
-    !agent.enabledCapabilities.includes(RALPH_CAPABILITY)
+    !agent.acceptedTaskTypes.includes("coding")
   ) {
     return undefined;
   }
@@ -481,7 +480,6 @@ async function enqueueStory(
   });
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    capability: RALPH_CAPABILITY,
     type: RALPH_STORY_JOB_TYPE,
     ...legacyJobRouting(RALPH_STORY_JOB_TYPE),
     payload,
@@ -596,7 +594,6 @@ async function describeLane(
   const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    capability: RALPH_CAPABILITY,
     type: RALPH_DESCRIBE_PR_JOB_TYPE,
     ...legacyJobRouting(RALPH_DESCRIBE_PR_JOB_TYPE),
     payload: buildDescribePrPayload({
@@ -651,7 +648,6 @@ async function enqueuePreparation(
   if ("action" in found) return found;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    capability: RALPH_CAPABILITY,
     type: RALPH_PREPARE_JOB_TYPE,
     ...legacyJobRouting(RALPH_PREPARE_JOB_TYPE),
     payload: buildPreparePayload({
@@ -707,7 +703,6 @@ async function enqueueRequest(
     : [];
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    capability: RALPH_CAPABILITY,
     type: RALPH_REQUEST_JOB_TYPE,
     ...legacyJobRouting(RALPH_REQUEST_JOB_TYPE),
     payload: buildRequestPayload({

@@ -39,7 +39,6 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
   ) => {
     const { job } = await insertJob(db, {
       organizationId: orgA,
-      capability: "review",
       type: "review.run",
       taskType: "review",
       pool: "short",
@@ -144,7 +143,6 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
 
   it("only claims task types the harness accepts", async () => {
     const coding = await enqueue({
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -169,7 +167,6 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
 
   it("always claims system jobs, whatever the task types and pools", async () => {
     const sync = await enqueue({
-      capability: "system",
       type: "repo.sync",
       taskType: "system",
       pool: null,

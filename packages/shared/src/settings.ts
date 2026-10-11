@@ -218,7 +218,7 @@ const manualLabels = () =>
   routingValues(RoutingName, "manual labels").min(1, "Enter at least one manual label.");
 
 /**
- * Per-repository settings of the `ralph` capability as stored
+ * Per-repository settings of ralph as stored
  * (`repositories.ralph_settings`; ported from cyralph's `repositories[]`).
  * Every field has its default, so `RalphSettings.parse({})` is the defaults.
  */

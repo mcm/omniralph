@@ -175,7 +175,6 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
 
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job).toMatchObject({
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",

@@ -26,7 +26,7 @@ orchestrates runs).
   **Ralph runs**); harnesses keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
   **Settings › Integrations** (Linear), **Settings › Harnesses** (harness version), **Harnesses › <harness>**
-  (concurrency, capabilities) and **Repository › Settings › Ralph** (everything per repository).
+  (concurrency, accepted task types, pool limits) and **Repository › Settings › Ralph** (everything per repository).
   Changes apply from a run's next decision, without restarts.
 - **Two Linear apps.** Omniralph is its own Linear app (OAuth application). An issue is handled by
   whichever app it's delegated to (or @mentioned); each app's routing only picks the repository.
@@ -46,7 +46,7 @@ always behaves like cyralph's default and has no setting for it.
 | `port`, `baseUrl` | Not needed | The control panel runs on Vercel at `APP_URL`; webhooks and the OAuth callback use it ([env.md](env.md)). No tunnel. |
 | `stateDir` | Not needed | Run state is in Postgres. Harnesses keep repositories and branch worktrees under their `workspaceRoot` ([deploy-harness.md](deploy-harness.md#workspaceroot-and-disk-usage)). |
 | `model`, `fallbackModel` | **Model** / **Fallback model** per repository | Same names and defaults (`opus` / none), set per repository instead of globally. |
-| `maxConcurrentSessions` | **Max concurrency** and **Concurrency per capability** on **Harnesses › <harness>** | Per harness. The `ralph` limit defaults to max concurrency − 1 (at least 1), so a harness with 2+ slots keeps one for reviews. Use several harnesses for more parallel runs. |
+| `maxConcurrentSessions` | **Max concurrency** and **Concurrency per pool** on **Harnesses › <harness>** | Per harness. The `long` pool (ralph) limit defaults to max concurrency − 1 (at least 1), so a harness with 2+ slots keeps one for reviews. Use several harnesses for more parallel runs. |
 | `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repositories › Connect GitLab**), so the code host is known per repository. |
 | `blockerPollMinutes` | Fixed | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes. |
 | `permissionMode` | Fixed | Ralph sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**. |
@@ -194,17 +194,17 @@ For every entry in cyralph's `repositories[]`:
 **Verify:** the form saves without errors, and the repository is listed as ralph-enabled. Nothing
 is delegated to Omniralph yet, so nothing runs.
 
-### 2. Enable the `ralph` capability and limits on harnesses
+### 2. Let harnesses run ralph and set their limits
 
 1. Prepare the harness hosts as in [deploy-harness.md › Ralph](deploy-harness.md#ralph): a git identity
    for commits, the repositories' toolchains (everything the verify commands, PRD gates and setup
    commands call), and private registry credentials, all for the harness's user. Sessions can use
    any `gh`/`glab` login that user has (see the linked section).
-2. On **Harnesses › <harness>**, tick `ralph` under **Enabled capabilities**, set **Max concurrency**
-   (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `ralph` limit under
-   **Concurrency per capability**.
+2. On **Harnesses › <harness>**, tick `coding` under **Accepted task types**, set **Max concurrency**
+   (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `long` limit under
+   **Concurrency per pool**.
 3. For pm2 harnesses, choose the version on **Settings › Harnesses** (replaces cyralph's `autoUpdate`).
-4. If a repository is pinned to harnesses, at least one of them needs `ralph`.
+4. If a repository is pinned to harnesses, at least one of them needs to accept `coding`.
 
 **Verify:** the harness's page shows `ralph` enabled, the limits and a recent heartbeat;
 `curl -s http://127.0.0.1:9310/healthz` on the host says `"connected": true`; for pm2 harnesses the

@@ -212,7 +212,6 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
     it("enqueues a review.learn-rule job with the finding, the note and the 5,000-token cap", async () => {
       const { finding, job } = await dismissFalsePositive();
       expect(job).toMatchObject({
-        capability: "review",
         type: "review.learn-rule",
         taskType: "query",
         pool: "short",

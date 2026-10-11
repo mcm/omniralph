@@ -13,7 +13,6 @@ import {
 } from "@omniralph/db";
 import { findDuplicateRule } from "@omniralph/engine/rules";
 import {
-  LEARN_RULE_CAPABILITY,
   LEARN_RULE_JOB_TYPE,
   LEARN_RULE_TOKEN_CAP,
   LearnRuleJobPayload,
@@ -70,7 +69,6 @@ export async function enqueueLearnRule(
   } satisfies LearnRuleJobPayload);
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
-    capability: LEARN_RULE_CAPABILITY,
     type: LEARN_RULE_JOB_TYPE,
     ...legacyJobRouting(LEARN_RULE_JOB_TYPE),
     payload,

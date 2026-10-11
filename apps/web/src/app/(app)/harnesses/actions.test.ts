@@ -102,7 +102,7 @@ function post(path: string, body: unknown, accessToken?: string): Request {
   });
 }
 
-const HEARTBEAT = { version: "0.2.0", capabilities: ["review"], runningJobIds: [], freeSlots: 1 };
+const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
 
 describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", () => {
   let container: StartedPostgreSqlContainer;
@@ -174,7 +174,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         enrollmentToken,
         name: "coder-host",
         version: "0.1.0",
-        capabilities: ["review"],
       }),
     );
   }
@@ -256,7 +255,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         await updateHarnessConfig(harnessId, {
           maxConcurrency: 4,
-          enabledCapabilities: [],
+          acceptedTaskTypes: [],
+          poolLimits: {},
         }),
       ).toEqual({ ok: true });
       expect(await pinRepository(harnessId, repoA)).toEqual({ ok: true });
@@ -276,7 +276,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
-    it("enabling ralph reaches the harness's accepted task types", async () => {
+    it("saves the accepted task types and they reach the harness", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(before.acceptedTaskTypes).toEqual(["query", "review"]);
@@ -284,11 +284,14 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         await updateHarnessConfig(harnessId, {
           maxConcurrency: 1,
-          enabledCapabilities: ["review", "ralph"],
+          acceptedTaskTypes: ["query", "coding", "query"],
+          poolLimits: {},
         }),
       ).toEqual({ ok: true });
+      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(row!.acceptedTaskTypes).toEqual(["query", "coding"]);
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(after.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
+      expect(after.acceptedTaskTypes).toEqual(["query", "coding"]);
       expect(after.topics).toEqual([]);
     });
 
@@ -300,7 +303,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       // Unset: the long pool leaves one slot for short jobs.
       const config = {
         maxConcurrency: 3,
-        enabledCapabilities: ["review", "ralph"],
+        acceptedTaskTypes: ["query", "review", "coding"],
+        poolLimits: {},
       };
       expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
       const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
@@ -309,25 +313,31 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         await updateHarnessConfig(harnessId, {
           ...config,
-          capabilityLimits: { ralph: 1, review: 3 },
+          poolLimits: { long: 1, short: 3 },
         }),
       ).toEqual({ ok: true });
       const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(row!.capabilityLimits).toEqual({ ralph: 1, review: 3 });
       expect(row!.poolLimits).toEqual({ long: 1, short: 3 });
       const limited = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(limited.poolLimits).toEqual({ short: 3, long: 1 });
 
-      // Saving without limits keeps them; lowering maxConcurrency clamps the effective values.
+      // Lowering maxConcurrency clamps the effective values.
       expect(
         await updateHarnessConfig(harnessId, {
           ...config,
           maxConcurrency: 2,
-          capabilityLimits: undefined,
+          poolLimits: { long: 1, short: 2 },
         }),
       ).toEqual({ ok: true });
       const clamped = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(clamped.poolLimits).toEqual({ short: 2, long: 1 });
+
+      // Blank limits go back to the defaults.
+      expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
+      const [cleared] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(cleared!.poolLimits).toEqual({});
+      const reset = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(reset.poolLimits).toEqual({ short: 3, long: 2 });
     });
 
     it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {
@@ -486,7 +496,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       const targeted = await db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
       expect(targeted).toHaveLength(1);
       expect(targeted[0]).toMatchObject({
-        capability: "system",
         type: "repo.sync",
         taskType: "system",
         pool: null,
@@ -495,18 +504,18 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       });
     });
 
-    it("rejects invalid values, unknown capabilities and non-admins", async () => {
+    it("rejects invalid values, unknown task types and pools, and non-admins", async () => {
       const { harnessId } = await enrolledHarness();
-      const valid = { maxConcurrency: 2, enabledCapabilities: ["review"] };
+      const valid = { maxConcurrency: 2, acceptedTaskTypes: ["review"], poolLimits: {} };
       const invalid: Parameters<typeof updateHarnessConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
         { ...valid, maxConcurrency: 1.5 },
-        { ...valid, enabledCapabilities: ["deploy"] },
-        { ...valid, capabilityLimits: { review: 0 } },
-        { ...valid, capabilityLimits: { review: 3 } },
-        { ...valid, capabilityLimits: { review: 1.5 } },
-        { ...valid, capabilityLimits: { ralph: 1 } },
-        { ...valid, capabilityLimits: { deploy: 1 } },
+        { ...valid, acceptedTaskTypes: ["deploy"] },
+        { ...valid, acceptedTaskTypes: ["system"] },
+        { ...valid, poolLimits: { short: 0 } },
+        { ...valid, poolLimits: { short: 3 } },
+        { ...valid, poolLimits: { long: 1.5 } },
+        { ...valid, poolLimits: { gpu: 1 } },
       ];
       for (const input of invalid) {
         expect(await updateHarnessConfig(harnessId, input)).toMatchObject({ ok: false });
@@ -531,7 +540,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         .values([
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -541,7 +549,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -551,7 +558,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -562,7 +568,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -572,7 +577,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "system",
             type: "repo.sync",
             taskType: "system",
             pool: null,
@@ -642,7 +646,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         await updateHarnessConfig(harnessId, {
           maxConcurrency: 2,
-          enabledCapabilities: [],
+          acceptedTaskTypes: [],
+          poolLimits: {},
         }),
       ).toMatchObject({ ok: false });
       expect(await pinRepository(harnessId, repoB)).toMatchObject({ ok: false });
@@ -667,7 +672,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         .insert(jobs)
         .values({
           organizationId: orgId,
-          capability: "review",
           type: "review.run",
           taskType: "review",
           pool: "short",
@@ -742,7 +746,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         .values([
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -750,7 +753,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -759,7 +761,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           },
           {
             organizationId: orgId,
-            capability: "review",
             type: "review.run",
             taskType: "review",
             pool: "short",
@@ -785,7 +786,6 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         .insert(jobs)
         .values({
           organizationId: orgId,
-          capability: "review",
           type: "review.run",
           taskType: "review",
           pool: "short",

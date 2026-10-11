@@ -13,11 +13,18 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import { CAPABILITY_JOB_SCOPES, type JobTokenScope } from "@omniralph/shared";
+import type { JobTokenScope } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+
+const RALPH_SCOPES: JobTokenScope[] = [
+  "credentials:read",
+  "credentials:write",
+  "ralph:activity",
+  "ralph:attachments",
+];
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
@@ -94,7 +101,11 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     ).id;
     const [agent] = await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "coder-1", enabledCapabilities: ["review", "ralph"] })
+      .values({
+        organizationId: orgId,
+        name: "coder-1",
+        acceptedTaskTypes: ["query", "review", "coding"],
+      })
       .returning();
     harnessId = agent!.id;
   }, 180_000);
@@ -127,7 +138,6 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
       .insert(jobs)
       .values({
         organizationId: orgId,
-        capability: "ralph",
         type: "ralph.story",
         taskType: "coding",
         pool: "long",
@@ -140,7 +150,7 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     return job!.id;
   }
 
-  function token(jobId: string, scopes: JobTokenScope[] = CAPABILITY_JOB_SCOPES.ralph) {
+  function token(jobId: string, scopes: JobTokenScope[] = RALPH_SCOPES) {
     return getTokenSigner().signJobToken({ jobId, harnessId, scopes });
   }
 
@@ -209,19 +219,18 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
 
   it("rejects review jobs, even with a forged ralph:activity scope", async () => {
     const reviewJob = await newJob({
-      capability: "review",
       type: "review.run",
       taskType: "review",
       pool: "short",
     });
     // A review job token never carries the scope.
-    const reviewToken = await token(reviewJob, CAPABILITY_JOB_SCOPES.review);
+    const reviewToken = await token(reviewJob, ["credentials:read"]);
     expect((await activityRequest(reviewJob, reviewToken, THOUGHT)).status).toBe(401);
     const forged = await token(reviewJob, ["credentials:read", "ralph:activity"]);
     const res = await activityRequest(reviewJob, forged, THOUGHT);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "not_a_ralph_job" });
-    // A non-ralph job type under the ralph capability.
+    // A non-ralph job type with the ralph scopes.
     const odd = await newJob({ type: "review.run" });
     expect((await activityRequest(odd, await token(odd), THOUGHT)).status).toBe(403);
     expect(state.linear.activities).toEqual([]);

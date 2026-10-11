@@ -73,7 +73,6 @@ export interface EnrollHarnessInput {
   enrollmentToken: string;
   name: string;
   version: string;
-  capabilities: string[];
   now?: Date;
 }
 
@@ -109,7 +108,6 @@ export async function enrollHarness(
         // The admin's name for the enrollment wins over the host's self-reported one.
         name: enrollment.name ?? input.name,
         reportedVersion: input.version,
-        reportedCapabilities: input.capabilities,
         enrolledBy: enrollment.createdBy,
       })
       .returning({ id: harnesses.id });

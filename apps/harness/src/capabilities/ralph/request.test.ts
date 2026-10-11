@@ -157,7 +157,6 @@ describe("ralph.request", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      capability: "ralph",
       type: "ralph.request",
       taskType: "coding",
       pool: "long",

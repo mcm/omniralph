@@ -38,7 +38,6 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
-      capabilities: ["review"],
     }))!.harnessId;
   };
 
@@ -74,9 +73,17 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(await getHarnessOverview(db, orgB, a)).toBeNull();
     expect((await getHarnessOverview(db, orgA, a))?.id).toBe(a);
 
-    const config = { maxConcurrency: 2, enabledCapabilities: ["review"] };
+    const config = {
+      maxConcurrency: 2,
+      acceptedTaskTypes: ["query" as const, "coding" as const, "query" as const],
+      poolLimits: { long: 1 },
+    };
     expect(await updateHarnessConfig(db, orgB, a, config)).toBeNull();
-    expect(await updateHarnessConfig(db, orgA, a, config)).toMatchObject({ maxConcurrency: 2 });
+    expect(await updateHarnessConfig(db, orgA, a, config)).toMatchObject({
+      maxConcurrency: 2,
+      acceptedTaskTypes: ["query", "coding"],
+      poolLimits: { long: 1 },
+    });
     expect(await setHarnessDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
     expect(await setHarnessDesiredVersion(db, orgA, a, "1.2.3")).toMatchObject({
       desiredVersion: "1.2.3",
@@ -117,7 +124,7 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(second?.updateRequestId).not.toBe(first?.updateRequestId);
 
     const heartbeat = (handledUpdateRequestId?: string | null) =>
-      recordHarnessHeartbeat(db, a, { version: "1.0.0", capabilities: [], handledUpdateRequestId });
+      recordHarnessHeartbeat(db, a, { version: "1.0.0", handledUpdateRequestId });
     expect(await heartbeat()).toMatchObject({ updateRequestId: second!.updateRequestId });
     // An older request is handled: the new one stays.
     expect(await heartbeat(first!.updateRequestId)).toMatchObject({

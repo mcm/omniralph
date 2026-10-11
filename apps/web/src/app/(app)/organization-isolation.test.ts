@@ -278,7 +278,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       enrollmentToken: enrollment.token,
       name: `${name}-agent`,
       version: "1.0.0",
-      capabilities: ["review", "ralph"],
     }))!;
     await setDesiredHarnessVersion(db, org.id, `1.0.0-${name}`, user!.id);
 
@@ -310,7 +309,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     ]);
     const { job } = await insertJob(db, {
       organizationId: org.id,
-      capability: "review",
       type: "review.run",
       taskType: "review",
       pool: "short",
@@ -331,7 +329,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     });
     await insertJob(db, {
       organizationId: org.id,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",

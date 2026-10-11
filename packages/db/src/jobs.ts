@@ -31,7 +31,6 @@ const secondsAfter = (now: Date, seconds: number) => new Date(now.getTime() + se
 export interface NewJobInput {
   /** Only this organization's agents receive the job (its repository's / run's organization). */
   organizationId: string;
-  capability: string;
   type: string;
   /** How the harness runs the job (`legacyJobRouting(type)` for legacy job types). */
   taskType: JobTaskType;
@@ -65,7 +64,6 @@ export async function insertJob(
       .insert(jobs)
       .values({
         organizationId: input.organizationId,
-        capability: input.capability,
         type: input.type,
         taskType: input.taskType,
         pool: input.pool,
@@ -540,7 +538,6 @@ export async function recordHarnessHeartbeat(
   harnessId: string,
   input: {
     version: string;
-    capabilities: string[];
     /** Self-update reporting; older agents send none, which clears it. */
     selfUpdate?: "supported" | "unsupported";
     update?: HarnessUpdateState;
@@ -557,7 +554,6 @@ export async function recordHarnessHeartbeat(
     .update(harnesses)
     .set({
       reportedVersion: input.version,
-      reportedCapabilities: input.capabilities,
       selfUpdate: input.selfUpdate ?? null,
       updateState: input.update ?? null,
       failedVersions: input.failedVersions ?? [],
@@ -602,12 +598,13 @@ export async function classifyHarnessRunningJobs(
   db: Database,
   harnessId: string,
   jobIds: readonly string[],
-): Promise<{ keep: Pick<Job, "id" | "capability">[]; cancel: string[] }> {
+): Promise<{ keep: Pick<Job, "id" | "type" | "taskType">[]; cancel: string[] }> {
   if (jobIds.length === 0) return { keep: [], cancel: [] };
   const rows = await db
     .select({
       id: jobs.id,
-      capability: jobs.capability,
+      type: jobs.type,
+      taskType: jobs.taskType,
       status: jobs.status,
       harnessId: jobs.harnessId,
       cancelRequested: jobs.cancelRequested,
@@ -616,12 +613,12 @@ export async function classifyHarnessRunningJobs(
     .where(inArray(jobs.id, [...jobIds]))
     .orderBy(desc(jobs.createdAt));
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const keep: Pick<Job, "id" | "capability">[] = [];
+  const keep: Pick<Job, "id" | "type" | "taskType">[] = [];
   const cancel: string[] = [];
   for (const id of new Set(jobIds)) {
     const row = byId.get(id);
     if (row && row.status === "running" && row.harnessId === harnessId && !row.cancelRequested) {
-      keep.push({ id, capability: row.capability });
+      keep.push({ id, type: row.type, taskType: row.taskType });
     } else {
       cancel.push(id);
     }

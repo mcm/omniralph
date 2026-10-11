@@ -9,7 +9,7 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import { MAX_JOB_DELIVERIES, SYSTEM_CAPABILITY } from "@omniralph/shared";
+import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
@@ -64,7 +64,7 @@ export async function revokeHarness(
   const dispatcher = options.dispatcher ?? getDispatcher();
   for (const job of await listQueuedJobsTargetingHarness(db, harnessId)) {
     try {
-      if (job.capability === SYSTEM_CAPABILITY) {
+      if (job.taskType === "system") {
         await skipJob(db, job.id, { reason: REVOKED });
       } else {
         await dispatcher.republish(job.id);

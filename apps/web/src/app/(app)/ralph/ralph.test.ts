@@ -190,7 +190,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     });
     [{ id: harnessId }] = (await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] })
+      .values({ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] })
       .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 
@@ -353,7 +353,6 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     ]);
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -541,7 +540,6 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     // Live messages: delivered, rejected (kept as guidance), still waiting.
     const { job: story } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",
@@ -642,7 +640,6 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
     ]);
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "ralph",
       type: "ralph.story",
       taskType: "coding",
       pool: "long",

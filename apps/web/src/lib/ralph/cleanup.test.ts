@@ -133,7 +133,11 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     [{ id: agentA }] = (await db
       .insert(harnesses)
       .values([
-        { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
+        {
+          organizationId: orgId,
+          name: "agent-a",
+          acceptedTaskTypes: ["query", "review", "coding"],
+        },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }];
     await ralphOn();

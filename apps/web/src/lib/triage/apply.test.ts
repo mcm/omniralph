@@ -184,7 +184,6 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
     };
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",
@@ -622,7 +621,6 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
 
     const { job: other } = await insertJob(db, {
       organizationId: orgId,
-      capability: "triage",
       type: "triage.run",
       taskType: "query",
       pool: "short",

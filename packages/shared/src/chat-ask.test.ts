@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHAT_ASK_CAPABILITY,
   CHAT_ASK_JOB_TYPE,
   ChatAskJobPayload,
   ChatAskJobResult,
@@ -33,9 +32,8 @@ const result = {
 };
 
 describe("chat.ask", () => {
-  it("is a review job", () => {
+  it("has the chat.ask job type", () => {
     expect(CHAT_ASK_JOB_TYPE).toBe("chat.ask");
-    expect(CHAT_ASK_CAPABILITY).toBe("review");
   });
 
   it("parses a payload and rejects one without a thread or with a bad branch", () => {

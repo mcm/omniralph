@@ -170,7 +170,9 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("puts jobs in an organization (0034)", async () => {
     await expect(
-      db.execute(sql`insert into jobs (capability, type) values ('review', 'review.run')`),
+      db.execute(
+        sql`insert into jobs (type, task_type, pool) values ('review.run', 'review', 'short')`,
+      ),
     ).rejects.toThrow();
   });
 
@@ -343,6 +345,16 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     const { rows } = await db.$client.query<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_name = 'harnesses' and column_name = 'poll_interval_seconds'`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("drops the capability columns from jobs and harnesses (0057)", async () => {
+    const { rows } = await db.$client.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+       where (table_name = 'jobs' and column_name = 'capability')
+          or (table_name = 'harnesses'
+              and column_name in ('enabled_capabilities', 'capability_limits', 'reported_capabilities'))`,
     );
     expect(rows).toEqual([]);
   });
@@ -557,15 +569,15 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         // New rows need a valid task type, and a pool exactly when not `system`.
         await expect(
           client.query(
-            `insert into jobs (organization_id, capability, type, task_type, pool)
-             values ($1, 'review', 'review.run', 'deploy', 'short')`,
+            `insert into jobs (organization_id, type, task_type, pool)
+             values ($1, 'review.run', 'deploy', 'short')`,
             [acme],
           ),
         ).rejects.toThrow(/jobs_task_type_valid/);
         await expect(
           client.query(
-            `insert into jobs (organization_id, capability, type, task_type)
-             values ($1, 'review', 'review.run', 'review')`,
+            `insert into jobs (organization_id, type, task_type)
+             values ($1, 'review.run', 'review')`,
             [acme],
           ),
         ).rejects.toThrow(/jobs_pool_system_only_null/);
@@ -628,7 +640,6 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     const [org] = await db.insert(organizations).values({ name: "Jobs" }).returning();
     const job = {
       organizationId: org!.id,
-      capability: "review",
       type: "review.run",
       taskType: "review" as const,
       pool: "short",

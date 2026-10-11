@@ -269,7 +269,6 @@ export class AgentDaemon implements DrainableDaemon {
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
-        capabilities: this.options.registry.names(),
         runningJobIds: [...this.running.keys()],
         freeSlots: this.freeSlots(),
         deliveredMessageIds,
@@ -508,7 +507,7 @@ export class AgentDaemon implements DrainableDaemon {
         this.report(job.id, jobLog, () =>
           this.options.api.submitFailure(job.id, {
             retryable: false,
-            error: `unknown job type ${job.capability}/${job.type}`,
+            error: `unknown job type ${job.type}`,
           }),
         ),
       );

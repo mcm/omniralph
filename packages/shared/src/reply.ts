@@ -6,10 +6,9 @@
  */
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
-import { CommitSha, REVIEW_CAPABILITY } from "./review-job.js";
+import { CommitSha } from "./review-job.js";
 
 export const REVIEW_REPLY_JOB_TYPE = "review.reply";
-export const REVIEW_REPLY_CAPABILITY = REVIEW_CAPABILITY;
 /** Share of the profile's `maxTokensPerReview` one answer may use. */
 export const REPLY_BUDGET_FRACTION = 0.1;
 /** Longest question passed to the agent; longer ones are truncated. */

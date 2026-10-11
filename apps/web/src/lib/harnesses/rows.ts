@@ -1,6 +1,7 @@
 import type { HarnessOverview, JobListEntry } from "@omniralph/db";
 import {
-  effectiveCapabilityLimits,
+  DEFAULT_POOLS,
+  effectivePoolLimits,
   type HarnessUpdateReport,
   type SelfUpdateSupport,
 } from "@omniralph/shared";
@@ -28,14 +29,14 @@ export interface HarnessRow {
   /** An admin's "Update now" the harness hasn't acted on yet (`requestedAt` is ISO). */
   updateRequest: { version: string; requestedAt: string } | null;
   updateStatus: HarnessUpdateStatus;
-  reportedCapabilities: string[];
-  enabledCapabilities: string[];
+  /** Task types the harness may claim jobs of (`system` jobs always run). */
+  acceptedTaskTypes: string[];
   maxConcurrency: number;
-  /** Per-capability limits as stored (unset ones use the default). */
-  capabilityLimits: Record<string, number>;
-  /** Effective per-capability limits of the enabled capabilities, as sent to the harness. */
-  effectiveCapabilityLimits: Record<string, number>;
-  runningJobs: { id: string; capability: string; type: string; target: JobTarget | null }[];
+  /** Per-pool limits as stored (unset ones use the default). */
+  poolLimits: Record<string, number>;
+  /** Effective limits of the `short` and `long` pools, as sent to the harness. */
+  effectivePoolLimits: Record<string, number>;
+  runningJobs: { id: string; type: string; taskType: string; target: JobTarget | null }[];
   pinnedRepositories: {
     id: string;
     provider: "github" | "gitlab";
@@ -88,19 +89,14 @@ export function harnessRow(
       failedVersions: agent.failedVersions,
       updateRequested: updateRequest !== null,
     }),
-    reportedCapabilities: agent.reportedCapabilities ?? [],
-    enabledCapabilities: agent.enabledCapabilities,
+    acceptedTaskTypes: agent.acceptedTaskTypes,
     maxConcurrency: agent.maxConcurrency,
-    capabilityLimits: storedLimits(agent.capabilityLimits),
-    effectiveCapabilityLimits: effectiveCapabilityLimits(
-      agent.enabledCapabilities,
-      agent.capabilityLimits,
-      agent.maxConcurrency,
-    ),
+    poolLimits: storedLimits(agent.poolLimits),
+    effectivePoolLimits: effectivePoolLimits(agent.poolLimits, agent.maxConcurrency, DEFAULT_POOLS),
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
-      capability: job.capability,
       type: job.type,
+      taskType: job.taskType,
       target: jobTarget(job),
     })),
     pinnedRepositories: agent.pinnedRepositories.map((repo) => ({
@@ -118,8 +114,8 @@ export function harnessRow(
 /** Serializable job row for the Jobs page. */
 export interface JobRow {
   id: string;
-  capability: string;
   type: string;
+  taskType: string;
   status: JobListEntry["status"];
   deliveryCount: number;
   cancelRequested: boolean;
@@ -133,8 +129,8 @@ export interface JobRow {
 export function jobRow(job: JobListEntry): JobRow {
   return {
     id: job.id,
-    capability: job.capability,
     type: job.type,
+    taskType: job.taskType,
     status: job.status,
     deliveryCount: job.deliveryCount,
     cancelRequested: job.cancelRequested,

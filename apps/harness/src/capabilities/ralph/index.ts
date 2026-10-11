@@ -1,5 +1,4 @@
 import {
-  RALPH_CAPABILITY,
   RALPH_CLEANUP_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_JOB_TYPES,
@@ -40,7 +39,7 @@ export class NotImplementedJobError extends Error {
  */
 export function createRalphCapability(options: StoryOptions = {}): Capability {
   return {
-    name: RALPH_CAPABILITY,
+    name: "ralph",
     jobTypes: RALPH_JOB_TYPES,
     toolPolicy: RALPH_TOOL_POLICY,
     jobToolPolicies: {

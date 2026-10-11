@@ -59,7 +59,6 @@ import {
 import type { ChangeRequestStatus } from "@omniralph/scm";
 import {
   parseRalphSettings,
-  RALPH_CAPABILITY,
   RALPH_CLEANUP_JOB_TYPE,
   RalphCleanupPayload,
   RalphCleanupResult,
@@ -143,7 +142,6 @@ async function enqueueCleanupJob(
   });
   const { job } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    capability: RALPH_CAPABILITY,
     type: RALPH_CLEANUP_JOB_TYPE,
     ...legacyJobRouting(RALPH_CLEANUP_JOB_TYPE),
     payload,

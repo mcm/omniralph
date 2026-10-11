@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
-import { CommitSha, REVIEW_CAPABILITY } from "./review-job.js";
+import { CommitSha } from "./review-job.js";
 
 export const RULE_KINDS = ["custom", "learned"] as const;
 export type RuleKindValue = (typeof RULE_KINDS)[number];
@@ -29,9 +29,8 @@ export const RuleInput = z.object({
 });
 export type RuleInput = z.infer<typeof RuleInput>;
 
-/** Generates a "do not flag" rule from a false-positive dismissal; runs on the `review` capability. */
+/** Generates a "do not flag" rule from a false-positive dismissal (a `query` task). */
 export const LEARN_RULE_JOB_TYPE = "review.learn-rule";
-export const LEARN_RULE_CAPABILITY = REVIEW_CAPABILITY;
 
 /**
  * Payload of a `review.learn-rule` job. The agent computes the finding's diff

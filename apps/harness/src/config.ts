@@ -6,7 +6,7 @@ import { z } from "zod";
 
 /**
  * The agent's only local configuration. Everything else (concurrency,
- * capabilities, limits, pinned repos) comes from the control panel
+ * accepted task types, pool limits, pinned repos) comes from the control panel
  * in every heartbeat response.
  */
 export const AgentConfig = z.object({

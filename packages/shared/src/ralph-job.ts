@@ -1,5 +1,5 @@
 /**
- * The `ralph` capability: building a delegated Linear epic story by story.
+ * Ralph: building a delegated Linear epic story by story.
  * The control panel orchestrates the run; agents run its jobs:
  *
  * - `ralph.story`: one attempt at one story in the epic's branch worktree
@@ -16,7 +16,6 @@ import { JobRepository } from "./protocol.js";
 import { CommitSha } from "./review-job.js";
 import { RALPH_HISTORY_REWRITE_POLICIES } from "./settings.js";
 
-export const RALPH_CAPABILITY = "ralph";
 export const RALPH_STORY_JOB_TYPE = "ralph.story";
 export const RALPH_DESCRIBE_PR_JOB_TYPE = "ralph.describe-pr";
 export const RALPH_PREPARE_JOB_TYPE = "ralph.prepare";

@@ -349,7 +349,7 @@ export const listJobsTool = defineChatTool({
           id: job.id,
           url: `${appUrl}${jobHref(job.id)}`,
           type: job.type,
-          capability: job.capability,
+          taskType: job.taskType,
           status: job.status,
           target: job.target,
           harness: job.agent?.name ?? null,
@@ -367,7 +367,7 @@ export const listJobsTool = defineChatTool({
 
 export const listHarnessesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's harnesses (the hosts that run review and ralph jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, capabilities, last heartbeat and running jobs.`,
+  description: `Lists the organization's harnesses (the hosts that run review and ralph jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, accepted task types, pool limits, last heartbeat and running jobs.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
@@ -387,9 +387,9 @@ export const listHarnessesTool = defineChatTool({
           version: harness.version,
           desiredVersion: harness.desiredVersion,
           updateStatus: harness.updateStatus,
-          enabledCapabilities: harness.enabledCapabilities,
-          reportedCapabilities: harness.reportedCapabilities,
+          acceptedTaskTypes: harness.acceptedTaskTypes,
           maxConcurrency: harness.maxConcurrency,
+          poolLimits: harness.effectivePoolLimits,
           lastHeartbeatAt: harness.lastHeartbeatAt,
           runningJobs: harness.runningJobs.map((job) => ({
             type: job.type,
@@ -529,7 +529,7 @@ export const askAboutCodeTool = defineChatTool({
           message:
             outcome.agents.length === 0
               ? `No harness of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the harnesses on ${appUrl}/harnesses.`
-              : `None of the online harnesses that would take this question can answer code questions: that needs the review capability on harness version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can update the agents on ${appUrl}/agents.`,
+              : `None of the online harnesses that would take this question can answer code questions: that needs a harness accepting query tasks on version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can change or update the harnesses on ${appUrl}/harnesses.`,
           harnesses: outcome.agents,
         };
       case "failed":

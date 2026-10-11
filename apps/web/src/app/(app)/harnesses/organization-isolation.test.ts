@@ -121,7 +121,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
-      capabilities: ["review"],
     }))!;
     const connection = (await upsertScmConnection(db, {
       organizationId: org.id,
@@ -173,7 +172,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
       enrollmentToken: created.token,
       name: "host",
       version: "1.0.0",
-      capabilities: ["review"],
     }))!;
     const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
     expect(row!.organizationId).toBe(b.orgId);
@@ -181,7 +179,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
 
   it("refuses every harness action on the other organization's harness", async () => {
     state.userId = a.userId;
-    const config = { maxConcurrency: 4, enabledCapabilities: ["review"] };
+    const config = { maxConcurrency: 4, acceptedTaskTypes: ["query", "review"], poolLimits: {} };
     expect(await updateHarnessConfig(b.harnessId, config)).toMatchObject({ ok: false });
     expect(await setHarnessDesiredVersion(b.harnessId, "9.9.9")).toMatchObject({ ok: false });
     expect(await revokeHarness(b.harnessId)).toMatchObject({ ok: false });

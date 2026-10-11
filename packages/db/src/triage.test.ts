@@ -69,7 +69,6 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
     (
       await insertJob(db, {
         organizationId: orgId,
-        capability: "triage",
         type: "triage.run",
         taskType: "query",
         pool: "short",

@@ -199,7 +199,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     connection = saved;
     [{ id: harnessId }] = (await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] })
+      .values({ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] })
       .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 

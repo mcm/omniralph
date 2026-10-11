@@ -106,7 +106,6 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
           enrollmentToken: enrollment.token,
           name: "coder-1",
           version: "0.1.0",
-          capabilities: ["review"],
         },
         ip,
       ),
@@ -131,7 +130,6 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
       .insert(jobs)
       .values({
         organizationId: orgId,
-        capability: "review",
         type: "review.run",
         taskType: "review",
         pool: "short",
@@ -153,7 +151,6 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
         enrollmentToken: enrollment.token,
         name: "coder-1",
         version: "0.1.0",
-        capabilities: ["review"],
       };
       const res = await enroll(post("enroll", body, ip));
       expect(res.status).toBe(200);
@@ -169,7 +166,6 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
         organizationId: orgId,
         name: "Build box",
         reportedVersion: "0.1.0",
-        reportedCapabilities: ["review"],
         revokedAt: null,
       });
       const tokens = await db
@@ -193,7 +189,7 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
         organizationId: orgId,
         now: new Date(Date.now() - 61 * 60 * 1000),
       });
-      const base = { name: "x", version: "0.1.0", capabilities: [] };
+      const base = { name: "x", version: "0.1.0" };
       const ip = newIp();
       expect(
         (await enroll(post("enroll", { ...base, enrollmentToken: expired.token }, ip))).status,

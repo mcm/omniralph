@@ -21,18 +21,23 @@ describe("capability registry", () => {
   it("ships the system, review, ralph and triage capabilities", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
     expect(registry.names()).toEqual(["system", "review", "ralph", "triage"]);
-    expect(registry.forJob({ capability: "triage", type: "triage.run" })?.name).toBe("triage");
-    expect(registry.forJob({ capability: "ralph", type: "triage.run" })).toBeUndefined();
-    expect(registry.forJob({ capability: "triage", type: "ralph.story" })).toBeUndefined();
-    expect(registry.forJob({ capability: "system", type: "repo.sync" })?.name).toBe("system");
-    expect(registry.forJob({ capability: "system", type: "review.run" })).toBeUndefined();
-    expect(registry.forJob({ capability: "review", type: "review.run" })?.name).toBe("review");
-    expect(registry.forJob({ capability: "review", type: "review.other" })).toBeUndefined();
-    for (const type of ["ralph.story", "ralph.describe-pr", "ralph.prepare"]) {
-      expect(registry.forJob({ capability: "ralph", type })?.name).toBe("ralph");
-      expect(registry.forJob({ capability: "review", type })).toBeUndefined();
+    expect(registry.forJob({ type: "triage.run" })?.name).toBe("triage");
+    expect(registry.forJob({ type: "repo.sync" })?.name).toBe("system");
+    for (const type of ["review.run", "review.reply", "review.learn-rule", "chat.ask"]) {
+      expect(registry.forJob({ type })?.name).toBe("review");
     }
-    expect(registry.forJob({ capability: "ralph", type: "review.run" })).toBeUndefined();
+    expect(registry.forJob({ type: "review.other" })).toBeUndefined();
+    for (const type of ["ralph.story", "ralph.describe-pr", "ralph.prepare"]) {
+      expect(registry.forJob({ type })?.name).toBe("ralph");
+    }
+  });
+
+  it("dispatches by job type, so a type may belong to one capability only", () => {
+    const [system, review] = defaultCapabilities() as [Capability, Capability];
+    expect(
+      () =>
+        new CapabilityRegistry([review, { ...system, name: "other", jobTypes: ["review.run"] }]),
+    ).toThrow(/job type 'review.run' registered twice/);
   });
 
   it("keeps review sessions read-only", () => {
@@ -83,7 +88,6 @@ describe("capability registry", () => {
     for (const type of ["ralph.frobnicate"]) {
       const job: JobPayload = {
         id: "00000000-0000-4000-8000-000000000001",
-        capability: "ralph",
         type,
         taskType: "coding",
         pool: "long",

@@ -90,7 +90,6 @@ describe("ralph.prepare", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      capability: "ralph",
       type: "ralph.prepare",
       taskType: "coding",
       pool: "long",
