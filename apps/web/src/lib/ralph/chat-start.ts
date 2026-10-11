@@ -163,6 +163,7 @@ export async function startChatRequest(
         author: input.author,
         wantsLoop: false,
         ...(input.ship && { ship: true }),
+        trigger: "chat.request",
       },
       applyGuidance,
     );

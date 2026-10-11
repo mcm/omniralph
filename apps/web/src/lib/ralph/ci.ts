@@ -31,6 +31,7 @@ import {
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
 import { parseRalphSettings } from "@omniralph/shared";
+import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
@@ -111,7 +112,8 @@ export async function respondToCi(
   const term = changeRequestTerm(repository.provider) as ChangeRequestWord;
   const sha = ci.headSha.slice(0, 7);
   const prUrl = found.lane.prUrl ?? "";
-  const overLimit = found.lane.ciFixRounds >= settings.maxFixRounds;
+  const { maxFixRounds } = roundLimits(found.run, repository);
+  const overLimit = found.lane.ciFixRounds >= maxFixRounds;
   // Read outside the run lock: the logs come from the code host.
   const jobs = overLimit
     ? []
@@ -138,7 +140,7 @@ export async function respondToCi(
     if (lane.handledCiShas.includes(ci.headSha)) return { status: "handled" };
     const handledCiShas = [...lane.handledCiShas, ci.headSha];
     const rounds = lane.ciFixRounds;
-    if (rounds >= settings.maxFixRounds) {
+    if (rounds >= maxFixRounds) {
       await updateLane(tx, lane.id, { handledCiShas });
       const active = (await listActiveRunJobIds(tx, run.id)).length > 0;
       await postActivity(
@@ -166,6 +168,7 @@ export async function respondToCi(
       }),
       author: null,
       what: `CI failed on the ${term}`,
+      trigger: "pr.ci-failed",
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledCiShas, ciFixRounds: rounds + 1 });

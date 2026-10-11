@@ -266,6 +266,7 @@ export async function handleReply(
           author: event.authorName ?? null,
           wantsLoop: false,
           ship: true,
+          trigger: "linear.mention",
         },
         applyGuidance,
       );
@@ -285,7 +286,13 @@ export async function handleReply(
     }
     // Running: a message for the live session (push/PR requests stay away from a story agent).
     if (instruction.text && !instruction.wantsLoop) {
-      const live = await queueLiveReply(tx, resumed, instruction.text, event.authorName);
+      const live = await queueLiveReply(
+        tx,
+        resumed,
+        instruction.text,
+        event.authorName,
+        "linear.mention",
+      );
       if (live) return { kind: live.kind, advance: false, note: live.note };
     }
     const added = await addInstruction(
@@ -295,6 +302,7 @@ export async function handleReply(
         text: instruction.text,
         author: event.authorName ?? null,
         wantsLoop: instruction.wantsLoop,
+        trigger: "linear.mention",
       },
       applyGuidance,
     );

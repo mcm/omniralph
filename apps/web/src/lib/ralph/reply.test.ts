@@ -461,8 +461,8 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       const next = await work(run.id);
       expect(next.story.identifier).toBe("ENG-3");
       expect(next.guidance).toEqual([]);
-      expect((await listPendingRequests(db, run.id)).map((r) => r.text)).toEqual([
-        "Please use glab to create an MR",
+      expect((await listPendingRequests(db, run.id)).map((r) => [r.text, r.trigger])).toEqual([
+        ["Please use glab to create an MR", "linear.mention"],
       ]);
     });
 

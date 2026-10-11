@@ -27,6 +27,7 @@ import {
   parseLines,
   RalphSettingsInput,
   type FieldErrors,
+  type RalphCodingPath,
   type RalphHistoryRewrite,
 } from "@omniralph/shared";
 import { useAction } from "@/components/use-action";
@@ -119,6 +120,7 @@ export function RalphSettingsSection({
   const [teamKeys, setTeamKeys] = React.useState(settings.linearTeamKeys.join(", "));
   const [projectNames, setProjectNames] = React.useState(settings.linearProjectNames.join(", "));
   const [labels, setLabels] = React.useState(settings.linearLabels.join(", "));
+  const [codingPath, setCodingPath] = React.useState<RalphCodingPath>(settings.codingPath);
   // Verification
   const [verifyCommands, setVerifyCommands] = React.useState(settings.verifyCommands.join("\n"));
   const [runPrdQualityGates, setRunPrdQualityGates] = React.useState(settings.runPrdQualityGates);
@@ -162,6 +164,7 @@ export function RalphSettingsSection({
       linearTeamKeys: parseCommaList(teamKeys),
       linearProjectNames: parseCommaList(projectNames),
       linearLabels: parseCommaList(labels),
+      codingPath,
       verifyCommands: parseLines(verifyCommands),
       runPrdQualityGates,
       setupCommand,
@@ -291,6 +294,22 @@ export function RalphSettingsSection({
             disabled={pending}
             onChange={setRalphEnabled}
           />
+          <Field
+            label="Coding path"
+            htmlFor="ralph-coding-path"
+            hint="How runs work stories and requests: the legacy ralph jobs, or coding runs of the built-in implement-story and handle-request tasks."
+            error={errors.codingPath}
+          >
+            <NativeSelect
+              id="ralph-coding-path"
+              disabled={pending}
+              value={codingPath}
+              onChange={(e) => setCodingPath(e.target.value as RalphCodingPath)}
+            >
+              <option value="legacy">Legacy jobs</option>
+              <option value="tasks">Coding tasks</option>
+            </NativeSelect>
+          </Field>
           {textInput(
             "ralph-labels",
             "Linear labels",

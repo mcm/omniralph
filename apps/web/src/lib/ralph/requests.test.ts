@@ -805,6 +805,10 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       ]);
 
       await reply(run!, "go on");
+      expect((await listPendingRequests(db, run!.id)).map((r) => r.trigger)).toEqual([
+        "linear.mention",
+        "linear.mention",
+      ]);
       const payload = await request(run!.id);
       expect(payload.requests.map((r) => r.text)).toEqual(["rebase onto main", "go on"]);
       expect((await listMessages(db, run!.id)).every((m) => m.consumedAt !== null)).toBe(true);

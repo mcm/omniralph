@@ -10,6 +10,7 @@ import {
   type ScmProvider,
 } from "@omniralph/db";
 import { parseRalphSettings } from "@omniralph/shared";
+import { roundLimits } from "./coding";
 import {
   cleanupLabel,
   ralphMessageState,
@@ -75,8 +76,9 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       main?.lane.prNumber ?? null,
       main?.lane.prUrl ?? null,
     ),
-    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain, ralphSettings }) => {
-      const settings = parseRalphSettings(ralphSettings);
+    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain, ...repo }) => {
+      const settings = parseRalphSettings(repo.ralphSettings);
+      const limits = roundLimits(run, { ...repo.coding, ralphSettings: repo.ralphSettings });
       return {
         id: lane.id,
         repository: laneRepository,
@@ -87,11 +89,11 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
         cleanup: cleanupLabel(lane.cleanup),
         reviewRounds: {
           done: lane.reviewRounds,
-          max: settings.respondToReviews ? settings.maxReviewRounds : null,
+          max: settings.respondToReviews ? limits.maxReviewRounds : null,
         },
         ciFixRounds: {
           done: lane.ciFixRounds,
-          max: settings.respondToCiFailures ? settings.maxFixRounds : null,
+          max: settings.respondToCiFailures ? limits.maxFixRounds : null,
         },
       };
     }),

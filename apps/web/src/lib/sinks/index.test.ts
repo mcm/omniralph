@@ -14,6 +14,7 @@ const { triageSink } = await import("./triage");
 const { reviewSink } = await import("./review");
 const { runResultSink } = await import("./run-result");
 const { stickyCommentSink } = await import("./sticky-comment");
+const { ralphRunSink } = await import("./ralph-run");
 
 const legacyCompleted = vi.fn();
 registerJobOutcomeHandler("sinks.legacy", {
@@ -31,6 +32,8 @@ const DEFINITIONS = {
       "builtin:triage": getBuiltinTask("builtin:triage"),
       "builtin:review-pr": getBuiltinTask("builtin:review-pr"),
       "builtin:summarize-pr": getBuiltinTask("builtin:summarize-pr"),
+      "builtin:implement-story": getBuiltinTask("builtin:implement-story"),
+      "builtin:handle-request": getBuiltinTask("builtin:handle-request"),
     })[id] ?? null,
   getAgent: () => null,
 };
@@ -53,6 +56,7 @@ describe("sinkFor", () => {
     expect(sinkFor("review")).toBe(reviewSink);
     expect(sinkFor("run-result")).toBe(runResultSink);
     expect(sinkFor("sticky-comment")).toBe(stickyCommentSink);
+    expect(sinkFor("ralph-run")).toBe(ralphRunSink);
   });
 });
 
@@ -64,6 +68,8 @@ describe("taskSink", () => {
     expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
     expect(taskSink({ taskId: "builtin:review-pr" }, DEFINITIONS)).toBe(reviewSink);
     expect(taskSink({ taskId: "builtin:summarize-pr" }, DEFINITIONS)).toBe(stickyCommentSink);
+    expect(taskSink({ taskId: "builtin:implement-story" }, DEFINITIONS)).toBe(ralphRunSink);
+    expect(taskSink({ taskId: "builtin:handle-request" }, DEFINITIONS)).toBe(ralphRunSink);
     expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
   });
@@ -102,6 +108,36 @@ describe("jobHooks", () => {
     for (const hook of ["onStarted", "onCompleted", "onFailed", "onRetry", "onCanceled"] as const) {
       expect(hooks[hook]).toBeTypeOf("function");
     }
+  });
+
+  it("hands a coding run's story or request result to its ralph run, with the ralph hooks", () => {
+    const hooks = jobHooks({
+      type: "ralph.story",
+      payload: {},
+      taskId: "builtin:implement-story",
+    })!;
+    const story = {
+      status: "complete",
+      summary: "Did it.",
+      followUps: [],
+      feedback: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 1,
+    };
+    expect(hooks.isValidResult!(story)).toBe(true);
+    const request = {
+      summary: "Done.",
+      sessionId: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 1,
+    };
+    expect(hooks.isValidResult!(request)).toBe(true);
+    expect(hooks.isValidResult!(answered(null, "text"))).toBe(false);
+    for (const hook of ["onStarted", "onCompleted", "onFailed", "onCanceled"] as const) {
+      expect(hooks[hook]).toBeTypeOf("function");
+    }
+    // A retried delivery isn't an attempt: nothing to apply until it ends.
+    expect(hooks.onRetry).toBeUndefined();
   });
 
   it("has no hooks for a run-spec job without an implemented sink", () => {

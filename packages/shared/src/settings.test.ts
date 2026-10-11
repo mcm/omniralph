@@ -162,6 +162,7 @@ const validRalph: RalphSettingsInput = {
   linearTeamKeys: ["TOOL", "eng_2"],
   linearProjectNames: ["Omniralph v2"],
   linearLabels: ["backend", "needs: api"],
+  codingPath: "tasks",
   verifyCommands: ["pnpm typecheck", "pnpm test"],
   runPrdQualityGates: true,
   setupCommand: "pnpm install --frozen-lockfile",

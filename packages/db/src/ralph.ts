@@ -24,7 +24,7 @@ import {
 import type { ChatPlatform } from "./chat.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
-import type { Repository, ScmProvider } from "./repositories.js";
+import type { Repository, RepositoryCodingPath, ScmProvider } from "./repositories.js";
 import {
   harnesses,
   chatThreads,
@@ -105,6 +105,8 @@ export interface RepositoryRalphSettingsUpdate {
   linearProjectNames: string[];
   linearLabels: string[];
   ralphSettings: RalphSettings;
+  /** Omitted: unchanged. */
+  codingPath?: RepositoryCodingPath;
 }
 
 /**
@@ -124,6 +126,7 @@ export async function updateRepositoryRalphSettings(
       linearProjectNames: input.linearProjectNames,
       linearLabels: input.linearLabels,
       ralphSettings: input.ralphSettings,
+      ...(input.codingPath && { codingPath: input.codingPath }),
     })
     .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
     .returning();
@@ -611,6 +614,8 @@ export interface RalphLaneDetail {
   repository: { id: string; provider: ScmProvider; fullPath: string };
   /** The repository's stored ralph settings (unparsed: old rows may lack newer fields). */
   ralphSettings: unknown;
+  /** The repository's coding path and tasks (the round caps of its request task). */
+  coding: Pick<Repository, "codingPath" | "storyTaskId" | "requestTaskId">;
   /** The lane of the run's own repository. */
   main: boolean;
 }
@@ -666,6 +671,11 @@ export async function getRunDetail(
           fullPath: repositories.fullPath,
         },
         ralphSettings: repositories.ralphSettings,
+        coding: {
+          codingPath: repositories.codingPath,
+          storyTaskId: repositories.storyTaskId,
+          requestTaskId: repositories.requestTaskId,
+        },
       })
       .from(ralphLanes)
       .innerJoin(repositories, eq(repositories.id, ralphLanes.repositoryId))
@@ -1217,6 +1227,8 @@ export async function updateStory(
 
 export type RalphMessage = typeof ralphMessages.$inferSelect;
 export type RalphMessageKind = RalphMessage["kind"];
+/** Where a request came from: the trigger kind of the request run that takes it. */
+export type RalphMessageTrigger = NonNullable<RalphMessage["trigger"]>;
 
 /** The run's job of one of `types` that an agent is running right now (the newest), if any. */
 export async function getRunningRunJob(
@@ -1267,6 +1279,8 @@ export interface NewRalphMessageInput {
   author?: string | null;
   /** `/ship` (requests only). */
   ship?: boolean;
+  /** Where it came from (a Linear reply or mention, chat, a review, CI, a fix command). */
+  trigger?: RalphMessageTrigger | null;
 }
 
 export async function insertMessage(
@@ -1283,6 +1297,7 @@ export async function insertMessage(
       laneId: input.laneId ?? null,
       author: input.author ?? null,
       ship: input.ship ?? false,
+      trigger: input.trigger ?? null,
     })
     .returning();
   return row!;

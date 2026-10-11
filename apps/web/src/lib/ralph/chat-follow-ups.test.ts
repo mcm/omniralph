@@ -508,6 +508,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       text: "Commit the work on the branch, push it, and open the pull/merge request if there isn't one.",
       ship: true,
       jobId: null,
+      trigger: "chat.request",
     });
     // The chat assistant's `ship` flag ships without the `/ship` prefix.
     expect(
@@ -521,6 +522,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     expect((await listPendingRequests(db, started.run.id)).at(-1)).toMatchObject({
       text: "Bump the version first.",
       ship: true,
+      trigger: "chat.request",
     });
     expect(linearCalls).toEqual([]);
   });

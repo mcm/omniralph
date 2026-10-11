@@ -19,6 +19,7 @@ import {
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
+import { jobMaxAttempts } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
 import { storyLane } from "./lanes";
@@ -106,10 +107,14 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
       continue;
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
-    if (parsed?.success) await applyStoryResult(ctx, story, parsed.data);
+    // A coding run's story gets its task's attempts.
+    const maxAttempts = jobMaxAttempts(job);
+    if (parsed?.success) await applyStoryResult(ctx, story, parsed.data, maxAttempts);
     else {
       const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
-      await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`);
+      await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`, {
+        maxAttempts,
+      });
     }
   }
   return { busy };
@@ -119,6 +124,7 @@ async function applyStoryResult(
   ctx: OutcomeContext,
   story: RalphStory,
   result: RalphStoryResult,
+  maxAttempts: number,
 ): Promise<void> {
   const { tx, linear } = ctx;
   let run = ctx.run;
@@ -139,6 +145,7 @@ async function applyStoryResult(
       // Another attempt can't get past it; blocking follow-ups hold its retry instead.
       setAside: blocked && result.followUps.length === 0,
       wipSha,
+      maxAttempts,
     });
     // Work the story turned up has to be done first (cyralph: follow-ups of an unfinished story block it).
     await fileFollowUps({ ...ctx, run }, story, result.followUps, { blocking: true });
@@ -201,9 +208,9 @@ export async function recordFailedAttempt(
   ctx: OutcomeContext,
   story: RalphStory,
   feedback: string,
-  options: { setAside?: boolean; wipSha?: string | null } = {},
+  options: { setAside?: boolean; wipSha?: string | null; maxAttempts?: number } = {},
 ): Promise<void> {
-  const max = MAX_ATTEMPTS_PER_STORY;
+  const max = options.maxAttempts ?? MAX_ATTEMPTS_PER_STORY;
   const attempt = options.setAside ? Math.max(story.attempts + 1, max) : story.attempts + 1;
   const exhausted = attempt >= max;
   await updateStory(ctx.tx, story.id, {

@@ -144,7 +144,7 @@ describe("TaskDefinition", () => {
       ...rest,
       taskType: "coding",
       triggers: ["linear.delegated"],
-      sink: "run-result",
+      sink: "ralph-run",
       pool: "long",
       maxTurns: 200,
       idleTimeoutMs: 600_000,

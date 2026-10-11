@@ -111,6 +111,10 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       enabled: true,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
+      // Ralph runs stay on the legacy jobs until an admin switches (0064).
+      codingPath: "legacy",
+      storyTaskId: "builtin:implement-story",
+      requestTaskId: "builtin:handle-request",
     });
 
     // The profile must be one of the repository's organization.
@@ -124,6 +128,23 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         connectionId: connection!.id,
       }),
     ).rejects.toThrow();
+  });
+
+  it("adds the coding path and a request's trigger (0064)", async () => {
+    const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
+      `select column_name, is_nullable from information_schema.columns
+       where table_schema = 'public'
+         and ((table_name = 'repositories' and column_name in ('coding_path', 'story_task_id', 'request_task_id'))
+           or (table_name = 'ralph_messages' and column_name = 'trigger'))
+       order by column_name`,
+    );
+    expect(rows).toEqual([
+      { column_name: "coding_path", is_nullable: "NO" },
+      { column_name: "request_task_id", is_nullable: "NO" },
+      { column_name: "story_task_id", is_nullable: "NO" },
+      { column_name: "trigger", is_nullable: "YES" },
+    ]);
+    await expect(db.$client.query(`select 'other'::repository_coding_path`)).rejects.toThrow();
   });
 
   it("creates the organization tables (0029)", async () => {

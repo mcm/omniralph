@@ -79,6 +79,7 @@ export default async function RepositorySettingsPage({
               linearTeamKeys: repository.linearTeamKeys,
               linearProjectNames: repository.linearProjectNames,
               linearLabels: repository.linearLabels,
+              codingPath: repository.codingPath,
               ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
               manualLabels: repositoryManualLabels(repository),
             }

@@ -24,6 +24,7 @@ import {
   type Database,
   type Job,
   type RalphMessage,
+  type RalphMessageTrigger,
   type RalphRun,
   type RalphTransaction,
 } from "@omniralph/db";
@@ -114,12 +115,19 @@ export async function queueLiveReply(
   run: RalphRun,
   text: string,
   author: string | undefined,
+  trigger: RalphMessageTrigger,
 ): Promise<LiveReply | null> {
   const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
   if (!job) return null;
   const mode = runMode(run);
   if (mode === "epic" && asksForPushOrPullRequest(text)) {
-    await insertMessage(tx, { runId: run.id, kind: "request", text, author: author ?? null });
+    await insertMessage(tx, {
+      runId: run.id,
+      kind: "request",
+      text,
+      author: author ?? null,
+      trigger,
+    });
     return { kind: "request", note: { type: "thought", body: undeliveredNote(mode) } };
   }
   await insertMessage(tx, {
@@ -130,6 +138,7 @@ export async function queueLiveReply(
     kind: mode === "epic" ? "guidance" : "request",
     text,
     author: author ?? null,
+    trigger,
   });
   return { kind: "live", note: null };
 }
@@ -153,6 +162,7 @@ export async function deliverToRunningJob(
   run: RalphRun,
   text: string,
   author: string | undefined,
+  trigger: RalphMessageTrigger,
 ): Promise<boolean> {
   const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
   if (!job) return false;
@@ -163,6 +173,7 @@ export async function deliverToRunningJob(
     kind: runMode(run) === "epic" ? "guidance" : "request",
     text,
     author: author ?? null,
+    trigger,
   });
   return true;
 }

@@ -717,7 +717,11 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
     }
 
     const pending = async (runId: string) =>
-      (await listPendingRequests(db, runId)).map((r) => ({ text: r.text, author: r.author }));
+      (await listPendingRequests(db, runId)).map((r) => ({
+        text: r.text,
+        author: r.author,
+        trigger: r.trigger,
+      }));
 
     it("@bot fix [text] becomes a request on the lane, with a link to the Linear issue", async () => {
       const { number } = await reviewedPr();
@@ -728,6 +732,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const [request, ...more] = await pending(run.id);
       expect(more).toEqual([]);
       expect(request!.author).toBe("maintainer");
+      expect(request!.trigger).toBe("pr.fix-command");
       expect(request!.text).toContain(
         `@maintainer asked on pull request #${number} (https://github.com/acme/app/pull/${number}):`,
       );

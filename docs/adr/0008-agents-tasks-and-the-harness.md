@@ -282,6 +282,7 @@ with 400 before the job completes.
 | `review`         | Saves a review task run's findings and summary on its review, then settles its review run        |
 | `sticky-comment` | Posts a summary-only review task's summary to its sticky comment on the PR/MR (findings dropped) |
 | `run-result`     | Hands a query task's result back to the run that invoked it (a review run's correlation)         |
+| `ralph-run`      | Hands a coding run's story or request result to its ralph run (the `ralph.*` outcome hooks)      |
 
 Sinks stay idempotent: results can be replayed, and comments go through `postJobCommentOnce`.
 Every model output is sanitized (`sanitizeCapped`) before it's posted. Sinks other than query
