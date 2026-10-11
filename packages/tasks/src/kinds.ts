@@ -34,6 +34,22 @@ export const TRIGGER_KINDS = [
 ] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
+/** The trigger of a story run: an epic (or single issue) delegated in Linear. */
+export const STORY_TRIGGERS = ["linear.delegated"] as const satisfies readonly TriggerKind[];
+
+/**
+ * Triggers of a request run: a mention in Linear, a chat request, review
+ * findings, a failed CI run or a fix command on the PR. Their runs need not
+ * have an epic, so their prompts can't count on a PRD or a story.
+ */
+export const REQUEST_TRIGGERS = [
+  "linear.mention",
+  "chat.request",
+  "pr.review-findings",
+  "pr.ci-failed",
+  "pr.fix-command",
+] as const satisfies readonly TriggerKind[];
+
 /** Control-panel code that applies a run's output, keyed by kind. */
 export const SINK_KINDS = [
   "chat-thread",

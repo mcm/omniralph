@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentDefinition,
+  CODING_DEFAULTS,
+  CODING_MAX_FIX_ROUNDS,
   DEFAULT_COMMAND_OUTPUT_BYTES,
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   MAX_COMMAND_OUTPUT_BYTES,
@@ -136,10 +138,7 @@ describe("TaskDefinition", () => {
     expect(TaskDefinition.safeParse(withoutSchema).success).toBe(true);
   });
 
-  it("allows describePrTaskId only on coding tasks", () => {
-    expect(issues(TaskDefinition.safeParse({ ...task, describePrTaskId: UUID }))).toEqual([
-      "describePrTaskId",
-    ]);
+  describe("coding-only fields", () => {
     const { outputSchema: _, ...rest } = task;
     const coding = {
       ...rest,
@@ -147,14 +146,67 @@ describe("TaskDefinition", () => {
       triggers: ["linear.delegated"],
       sink: "run-result",
       pool: "long",
-      describePrTaskId: "builtin:describe-pr",
       maxTurns: 200,
       idleTimeoutMs: 600_000,
     };
-    expect(TaskDefinition.safeParse(coding).success).toBe(true);
-    expect(issues(TaskDefinition.safeParse({ ...coding, describePrTaskId: "pr" }))).toEqual([
-      "describePrTaskId",
-    ]);
+
+    it("fills their defaults on coding tasks, leaving draftPullRequest unset", () => {
+      const parsed = TaskDefinition.parse(coding);
+      expect(parsed).toMatchObject({
+        maxAttemptsPerStory: 3,
+        maxIterationsPerRun: 50,
+        maxReviewRounds: CODING_MAX_FIX_ROUNDS,
+        maxFixRounds: CODING_MAX_FIX_ROUNDS,
+        pushTiming: "per-story",
+        prDescriptionTaskId: "builtin:describe-pr",
+      });
+      expect(parsed).not.toHaveProperty("draftPullRequest");
+      expect(CODING_DEFAULTS.maxFixRounds).toBe(20);
+    });
+
+    it("keeps the values a coding task sets", () => {
+      const set = {
+        ...coding,
+        maxAttemptsPerStory: 5,
+        maxIterationsPerRun: 10,
+        maxReviewRounds: 1,
+        maxFixRounds: 0,
+        pushTiming: "end",
+        draftPullRequest: "end",
+        prDescriptionTaskId: UUID,
+      };
+      expect(TaskDefinition.parse(set)).toMatchObject(set);
+      // Parsing a parsed task again changes nothing (run specs carry parsed tasks).
+      const parsed = TaskDefinition.parse(coding);
+      expect(TaskDefinition.parse(parsed)).toEqual(parsed);
+    });
+
+    it("rejects them on other task types, and out-of-range values", () => {
+      const fields = {
+        maxAttemptsPerStory: 3,
+        maxIterationsPerRun: 50,
+        maxReviewRounds: 2,
+        maxFixRounds: 2,
+        pushTiming: "per-story",
+        draftPullRequest: "early",
+        prDescriptionTaskId: "builtin:describe-pr",
+      };
+      expect(issues(TaskDefinition.safeParse({ ...task, ...fields })).sort()).toEqual(
+        Object.keys(fields).sort(),
+      );
+      expect(TaskDefinition.parse(task)).not.toHaveProperty("pushTiming");
+      for (const [field, value] of [
+        ["maxAttemptsPerStory", 0],
+        ["maxIterationsPerRun", 0],
+        ["maxReviewRounds", CODING_MAX_FIX_ROUNDS + 1],
+        ["maxFixRounds", -1],
+        ["pushTiming", "never"],
+        ["draftPullRequest", "late"],
+        ["prDescriptionTaskId", "pr"],
+      ] as const) {
+        expect(issues(TaskDefinition.safeParse({ ...coding, [field]: value }))).toEqual([field]);
+      }
+    });
   });
 
   it("rejects unknown triggers, sinks and pools", () => {

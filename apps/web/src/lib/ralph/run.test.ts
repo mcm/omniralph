@@ -56,6 +56,7 @@ import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
 import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
+import { CODING_DEFAULTS } from "@omniralph/tasks";
 import { advanceRun, MAX_ITERATIONS_PER_RUN } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -76,6 +77,10 @@ const EPIC_DESCRIPTION = `Build the thing.
 - \`pnpm test\`
 - \`pnpm lint\`
 `;
+
+it("caps a run's story attempts at the coding tasks' default maxIterationsPerRun", () => {
+  expect(CODING_DEFAULTS.maxIterationsPerRun).toBe(MAX_ITERATIONS_PER_RUN);
+});
 
 describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", () => {
   let container: StartedPostgreSqlContainer;

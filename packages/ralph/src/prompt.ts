@@ -6,6 +6,7 @@
  * Custom templates use a Handlebars-compatible subset: `{{var}}`, `{{#if var}}...{{else}}...{{/if}}`.
  */
 import { extractCodebasePatterns, recentProgressEntries } from "./progress.js";
+import { templateList, type TemplateList } from "./triage.js";
 import { type Epic, type Story, dependencyLabel } from "./types.js";
 
 /**
@@ -258,16 +259,27 @@ export function formatStoryList(epic: Epic, current?: Story): string {
     .join("\n");
 }
 
-export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
-  const { epic, story } = ctx;
-  const completed = epic.stories.filter(
-    (s) => s.status === "completed" || s.status === "cancelled",
-  ).length;
+function completedCount(epic: Epic): number {
+  return epic.stories.filter((s) => s.status === "completed" || s.status === "cancelled").length;
+}
+
+/** The commands the orchestrator runs, and the PRD's quality gates not among them (each runs once). */
+function storyGates(ctx: Pick<PromptContext, "epic" | "verifyCommands">): {
+  verifyCommands: string[];
+  qualityGates: string[];
+} {
   const verifyCommands = uniqueCommands(ctx.verifyCommands ?? []);
   const checked = new Set(verifyCommands.map(normalizeCommand));
-  const qualityGates = uniqueCommands(epic.qualityGates).filter(
+  const qualityGates = uniqueCommands(ctx.epic.qualityGates).filter(
     (g) => !checked.has(normalizeCommand(g)),
   );
+  return { verifyCommands, qualityGates };
+}
+
+export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
+  const { epic, story } = ctx;
+  const completed = completedCount(epic);
+  const { verifyCommands, qualityGates } = storyGates(ctx);
   const vars: Vars = {
     epicTitle: epic.title,
     epicIdentifier: epic.identifier,
@@ -338,6 +350,16 @@ function lastPart(text: string, max: number): string {
   return text.length > max ? `…\n${text.slice(-max)}` : text;
 }
 
+/** The stories a PR/MR description lists: `ctx.stories`, or the epic's. */
+function describedStories(
+  ctx: DescribePrPromptContext,
+): NonNullable<DescribePrPromptContext["stories"]> {
+  return (
+    ctx.stories ??
+    ctx.epic.stories.map((s) => ({ identifier: s.identifier ?? s.storyId, title: s.title }))
+  );
+}
+
 /**
  * Prompt for a short session that reads the branch's changes and writes the PR/MR title and
  * description: a summary of the deliverable a reviewer without access to Linear can follow, the
@@ -346,9 +368,7 @@ function lastPart(text: string, max: number): string {
 export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
   const { epic, baseBranch, prTerm } = ctx;
   const background = epic.description.trim();
-  const stories: NonNullable<DescribePrPromptContext["stories"]> =
-    ctx.stories ??
-    epic.stories.map((s) => ({ identifier: s.identifier ?? s.storyId, title: s.title }));
+  const stories = describedStories(ctx);
   const gates = uniqueCommands(epic.qualityGates);
   const progress = ctx.progress?.trim();
   return [
@@ -358,7 +378,7 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
       ? [
           `Background from the issue tracker (for context only; readers of the ${prTerm} can't see it):`,
           "<issue-background>",
-          background.length > 6000 ? `${background.slice(0, 6000)}\n…` : background,
+          prdExcerpt(background),
           "</issue-background>",
           "",
         ]
@@ -519,9 +539,7 @@ function capitalize(text: string): string {
 export function buildRequestPrompt(ctx: RequestPromptContext): string {
   const { epic } = ctx;
   const term = ctx.prTerm ?? "pull request";
-  const done = epic.stories.filter(
-    (s) => s.status === "completed" || s.status === "cancelled",
-  ).length;
+  const done = completedCount(epic);
   const prd = epic.kind === "single" ? "" : epic.description.trim();
   const gates = uniqueCommands(ctx.qualityGates);
   const chat = ctx.source === "chat";
@@ -546,14 +564,7 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
     `- ${capitalize(term)}: ${ctx.prUrl ?? "none opened yet"}`,
     `- Progress log (learnings from earlier sessions): \`${ctx.progressFile}\``,
     ...(gates.length ? [`- Quality gates: ${gates.map((g) => `\`${g}\``).join(", ")}`] : []),
-    ...(prd
-      ? [
-          "",
-          "<prd-document>",
-          prd.length > 6000 ? `${prd.slice(0, 6000)}\n…` : prd,
-          "</prd-document>",
-        ]
-      : []),
+    ...(prd ? ["", "<prd-document>", prdExcerpt(prd), "</prd-document>"] : []),
     ...(ctx.attachments
       ? [
           "",
@@ -625,4 +636,278 @@ function shipInstructions(
     "- If something stops you (failing gates you can't fix, a conflict, missing credentials), leave `commit` out and say exactly what's wrong in `summary`: nothing is committed or pushed then.",
     `- \`summary\` is posted to the ${chat ? "chat" : "Linear"} thread: say what is being committed and pushed, in a sentence or two.`,
   ];
+}
+
+/*
+ * Template contexts: the values the built-in coding tasks' prompt templates
+ * (`builtin:implement-story`, `builtin:handle-request`, `builtin:describe-pr`
+ * in `@omniralph/tasks`) render, computed from the inputs of the builders
+ * above so both render the same prompt. The renderer fences the untrusted
+ * values (issue text, the PRD, requests, guidance, progress and feedback)
+ * itself; titles and names are put on one line instead.
+ */
+
+/** One line: whitespace (newlines included) collapsed. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** A list of quality gates or commands: the commands, and them inline (`` `a`, `b` ``). */
+export type CommandList = { items: string[]; inline: string } | null;
+
+function commandList(commands: readonly string[]): CommandList {
+  return commands.length > 0
+    ? { items: [...commands], inline: commands.map((c) => `\`${c}\``).join(", ") }
+    : null;
+}
+
+/** A story of the epic's story list (`formatStoryList`). */
+export interface StoryListItem {
+  /** `[x]` completed, `[-]` cancelled, `[~]` in progress, `[ ]` open. */
+  mark: string;
+  identifier: string;
+  title: string;
+  manual: boolean;
+  /** The repository it's worked in, when not the epic's main one. */
+  repository: string | null;
+  /** The stories (or external issues) it waits for, comma-separated; null for none. */
+  dependsOn: string | null;
+  /** The story the session works on. */
+  current: boolean;
+}
+
+export interface StoryListContext {
+  completed: number;
+  total: number;
+  items: StoryListItem[];
+}
+
+function storyListContext(epic: Epic, current?: Story): StoryListContext {
+  return {
+    completed: completedCount(epic),
+    total: epic.stories.length,
+    items: epic.stories.map((s) => ({
+      mark: STATUS_MARK[s.status],
+      identifier: s.storyId,
+      title: oneLine(s.title),
+      manual: s.manual === true,
+      repository: s.repo?.name ?? null,
+      dependsOn: s.dependsOn.map((d) => dependencyLabel(epic, d)).join(", ") || null,
+      current: current?.key === s.key,
+    })),
+  };
+}
+
+/** What `builtin:implement-story`'s template renders (see `buildStoryPrompt`). */
+export interface StoryTemplateContext {
+  epic: {
+    identifier: string;
+    title: string;
+    url: string | null;
+    /** The PRD; null for a single issue or a blank one. */
+    prd: string | null;
+    single: boolean;
+  };
+  stories: StoryListContext;
+  story: {
+    /** The story's ID in the epic (its Linear identifier for a Linear-backed epic). */
+    id: string;
+    /** Its Linear identifier; null when it has none. */
+    identifier: string | null;
+    url: string | null;
+    title: string;
+    /** The repository it's worked in, when not the epic's main one. */
+    repository: string | null;
+    /** Trimmed; null when blank. */
+    description: string | null;
+    acceptanceCriteria: TemplateList<string>;
+    notes: string | null;
+  };
+  /** The PRD's quality gates the orchestrator doesn't run itself. */
+  qualityGates: CommandList;
+  /** The commands the orchestrator runs after the session. */
+  verifyCommands: CommandList;
+  /** The latest guidance from the team, oldest first. */
+  guidance: TemplateList<string>;
+  /** Why the previous attempt didn't complete; null on the first attempt. */
+  feedback: string | null;
+  attempt: number;
+  maxAttempts: number;
+  stashes: TemplateList<OfferedStash>;
+  progress: string | null;
+  codebasePatterns: string | null;
+  recentProgress: string | null;
+  progressFile: string;
+  /** Today's date (`YYYY-MM-DD`). */
+  today: string;
+  attachments: string | null;
+  appendInstruction: string | null;
+  followUps: boolean;
+}
+
+/** `ctx` as the context of a `builtin:implement-story` run (see `StoryTemplateContext`). */
+export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
+  const { epic, story } = ctx;
+  const { verifyCommands, qualityGates } = storyGates(ctx);
+  return {
+    epic: {
+      identifier: epic.identifier,
+      title: oneLine(epic.title),
+      url: epic.url ?? null,
+      prd: epic.kind === "single" ? null : epic.description.trim() || null,
+      single: epic.kind === "single",
+    },
+    stories: storyListContext(epic, story),
+    story: {
+      id: story.storyId,
+      identifier: story.identifier || null,
+      url: story.url || null,
+      title: oneLine(story.title),
+      repository: story.repo?.name ?? null,
+      description: story.description.trim() || null,
+      acceptanceCriteria: templateList(story.acceptanceCriteria),
+      notes: story.notes || null,
+    },
+    qualityGates: commandList(qualityGates),
+    verifyCommands: commandList(verifyCommands),
+    guidance: templateList(ctx.guidance),
+    feedback: ctx.previousAttemptFeedback || null,
+    attempt: ctx.attempt,
+    maxAttempts: ctx.maxAttempts,
+    stashes: templateList(ctx.stashes),
+    progress: ctx.progress || null,
+    codebasePatterns:
+      (ctx.codebasePatterns ??
+        (ctx.progress ? extractCodebasePatterns(ctx.progress) : undefined)) ||
+      null,
+    recentProgress:
+      (ctx.recentProgress ?? (ctx.progress ? recentProgressEntries(ctx.progress) : undefined)) ||
+      null,
+    progressFile: ctx.progressFile,
+    today: (ctx.now ?? new Date()).toISOString().slice(0, 10),
+    attachments: ctx.attachments || null,
+    appendInstruction: ctx.appendInstruction || null,
+    followUps: ctx.followUps === true,
+  };
+}
+
+/** What `builtin:handle-request`'s template renders (see `buildRequestPrompt`). */
+export interface RequestTemplateContext {
+  /** The requests come from a chat thread (else from a Linear agent session). */
+  fromChat: boolean;
+  epic: {
+    identifier: string;
+    title: string;
+    url: string | null;
+    /** The PRD, cut to 6000 characters; null for a single issue or a blank one. */
+    prd: string | null;
+    single: boolean;
+  };
+  /** The epic's stories and their status; null for a chat request. */
+  stories: (Omit<StoryListContext, "items"> & { items: Omit<StoryListItem, "current">[] }) | null;
+  /** The requests, trimmed, oldest first. */
+  requests: string[];
+  branch: string;
+  baseBranch: string;
+  remoteUrl: string | null;
+  prUrl: string | null;
+  /** `pull request` or `merge request`. */
+  prTerm: string;
+  /** `Pull request` or `Merge request`. */
+  prTermCapitalized: string;
+  progressFile: string;
+  qualityGates: CommandList;
+  /** An explicit request may rewrite the branch's history (`historyRewrite: when-asked`). */
+  historyRewriteAllowed: boolean;
+  /** `/ship`: the session prepares one commit; the orchestrator commits and pushes. */
+  ship: boolean;
+  /** `/ship`: what earlier request sessions left stashed, newest first. */
+  stashes: TemplateList<ShipStash>;
+  attachments: string | null;
+  appendInstruction: string | null;
+}
+
+/** The start of a long PRD, marked as cut (as the request and describe prompts show it). */
+function prdExcerpt(prd: string): string {
+  return prd.length > 6000 ? `${prd.slice(0, 6000)}\n…` : prd;
+}
+
+/** `ctx` as the context of a `builtin:handle-request` run (see `RequestTemplateContext`). */
+export function requestTemplateContext(ctx: RequestPromptContext): RequestTemplateContext {
+  const { epic } = ctx;
+  const term = ctx.prTerm ?? "pull request";
+  const prd = epic.kind === "single" ? "" : epic.description.trim();
+  const fromChat = ctx.source === "chat";
+  const stories = storyListContext(epic);
+  return {
+    fromChat,
+    epic: {
+      identifier: epic.identifier,
+      title: oneLine(epic.title),
+      url: epic.url ?? null,
+      prd: prd ? prdExcerpt(prd) : null,
+      single: epic.kind === "single",
+    },
+    stories: fromChat
+      ? null
+      : { ...stories, items: stories.items.map(({ current: _, ...item }) => item) },
+    requests: ctx.requests.map((r) => r.trim()),
+    branch: ctx.branch,
+    baseBranch: ctx.baseBranch,
+    remoteUrl: ctx.remoteUrl || null,
+    prUrl: ctx.prUrl || null,
+    prTerm: term,
+    prTermCapitalized: capitalize(term),
+    progressFile: ctx.progressFile,
+    qualityGates: commandList(uniqueCommands(ctx.qualityGates)),
+    historyRewriteAllowed: (ctx.historyRewrite ?? "when-asked") === "when-asked",
+    ship: ctx.ship !== undefined,
+    stashes: templateList(ctx.ship?.stashes),
+    attachments: ctx.attachments || null,
+    appendInstruction: ctx.appendInstruction?.trim() || null,
+  };
+}
+
+/** What `builtin:describe-pr`'s template renders (see `buildDescribePrPrompt`). */
+export interface DescribePrTemplateContext {
+  branch: string;
+  baseBranch: string;
+  prTerm: string;
+  epic: {
+    identifier: string;
+    title: string;
+    /** The issue's description (the PRD), cut to 6000 characters; null when blank. */
+    prd: string | null;
+  };
+  /** The stories the branch implements, in order. */
+  stories: TemplateList<{ identifier: string; title: string; commit: string | null }>;
+  qualityGates: CommandList;
+  /** The end of the progress log (12,000 characters); null when blank. */
+  progressLog: string | null;
+}
+
+/** `ctx` as the trigger context of a `builtin:describe-pr` run (see `DescribePrTemplateContext`). */
+export function describePrTemplateContext(ctx: DescribePrPromptContext): DescribePrTemplateContext {
+  const { epic } = ctx;
+  const background = epic.description.trim();
+  const progress = ctx.progress?.trim();
+  return {
+    branch: ctx.branch,
+    baseBranch: ctx.baseBranch,
+    prTerm: ctx.prTerm,
+    epic: {
+      identifier: epic.identifier,
+      title: oneLine(epic.title),
+      prd: background ? prdExcerpt(background) : null,
+    },
+    stories: templateList(
+      describedStories(ctx).map((s) => ({
+        identifier: s.identifier,
+        title: oneLine(s.title),
+        commit: s.commitSha ? s.commitSha.slice(0, 10) : null,
+      })),
+    ),
+    qualityGates: commandList(uniqueCommands(epic.qualityGates)),
+    progressLog: progress ? lastPart(progress, 12_000) : null,
+  };
 }

@@ -12,12 +12,17 @@ import {
 } from "./definitions.js";
 import { ASK_ABOUT_CODE_TASK, CODE_EXPLAINER_AGENT } from "./builtin/ask-about-code.js";
 import { CORRELATE_FINDINGS_TASK, CORRELATOR_AGENT } from "./builtin/correlate-findings.js";
+import { DESCRIBE_PR_TASK, PR_WRITER_AGENT } from "./builtin/describe-pr.js";
+import { ENGINEER_AGENT } from "./builtin/engineer.js";
+import { HANDLE_REQUEST_TASK } from "./builtin/handle-request.js";
+import { IMPLEMENT_STORY_TASK } from "./builtin/implement-story.js";
 import { LEARN_RULE_TASK, RULE_WRITER_AGENT } from "./builtin/learn-rule.js";
 import { REPLY_TASK } from "./builtin/reply.js";
 import { REVIEW_PR_TASK } from "./builtin/review-pr.js";
 import { REVIEWER_AGENT } from "./builtin/reviewer.js";
 import { SUMMARIZE_PR_TASK } from "./builtin/summarize-pr.js";
 import { PLANNER_AGENT, TRIAGE_TASK } from "./builtin/triage.js";
+import { validateCodingTask } from "./coding.js";
 import { isBuiltinId } from "./ids.js";
 import { validateTemplate } from "./template.js";
 import { taskVariables } from "./variables.js";
@@ -28,6 +33,8 @@ const AGENT_INPUTS: readonly AgentDefinitionInput[] = [
   CODE_EXPLAINER_AGENT,
   PLANNER_AGENT,
   CORRELATOR_AGENT,
+  ENGINEER_AGENT,
+  PR_WRITER_AGENT,
 ];
 
 const TASK_INPUTS: readonly TaskDefinitionInput[] = [
@@ -38,6 +45,9 @@ const TASK_INPUTS: readonly TaskDefinitionInput[] = [
   ASK_ABOUT_CODE_TASK,
   TRIAGE_TASK,
   CORRELATE_FINDINGS_TASK,
+  IMPLEMENT_STORY_TASK,
+  HANDLE_REQUEST_TASK,
+  DESCRIBE_PR_TASK,
 ];
 
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = AGENT_INPUTS.map((agent) =>
@@ -62,12 +72,13 @@ export function getBuiltinTask(id: string): TaskDefinition | null {
  * Problems with a set of built-in definitions; empty when they're fine. Each
  * must parse, have a unique `builtin:` ID; each task must reference one of
  * `agents`, fit it (`validateAgentForTask`) and have a template (and
- * variable limits) using only the variables its task type and triggers provide.
+ * variable limits) using only the variables its task type and triggers provide;
+ * a coding task must pass `validateCodingTask` against `tasks`.
  */
 export function builtinProblems(agents: readonly unknown[], tasks: readonly unknown[]): string[] {
   const problems: string[] = [];
   const parsedAgents = new Map<string, AgentDefinition>();
-  const parsedTaskIds = new Set<string>();
+  const parsedTasks = new Map<string, TaskDefinition>();
   const checkId = (kind: string, id: string, seen: { has(id: string): boolean }) => {
     if (!isBuiltinId(id)) problems.push(`${kind} ${id} doesn't have a builtin: ID.`);
     if (seen.has(id)) problems.push(`${kind} ${id} is defined twice.`);
@@ -90,8 +101,8 @@ export function builtinProblems(agents: readonly unknown[], tasks: readonly unkn
       return;
     }
     const task = parsed.data;
-    checkId("Task", task.id, parsedTaskIds);
-    parsedTaskIds.add(task.id);
+    checkId("Task", task.id, parsedTasks);
+    parsedTasks.set(task.id, task);
     const agent = parsedAgents.get(task.agentId);
     if (!agent) {
       problems.push(`Task ${task.id} references the unknown agent ${task.agentId}.`);
@@ -108,5 +119,11 @@ export function builtinProblems(agents: readonly unknown[], tasks: readonly unkn
         problems.push(`Task ${task.id} limits the unknown variable ${name}.`);
     }
   });
+  for (const task of parsedTasks.values()) {
+    const errors = validateCodingTask(task, (id) => parsedTasks.get(id) ?? null);
+    for (const [field, message] of Object.entries(errors)) {
+      problems.push(`Task ${task.id} ${field}: ${message}`);
+    }
+  }
   return problems;
 }

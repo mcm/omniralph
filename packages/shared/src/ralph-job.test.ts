@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { CODING_DEFAULTS, CODING_MAX_FIX_ROUNDS } from "@omniralph/tasks";
 import { z } from "zod";
 import {
   GitBranch,
+  MAX_ATTEMPTS_PER_STORY,
   RALPH_JOB_TYPES,
   RalphActivity,
   RalphCleanupPayload,
@@ -17,6 +19,7 @@ import {
   RalphStoryPayload,
   RalphStoryResult,
 } from "./ralph-job.js";
+import { MAX_FIX_ROUNDS } from "./settings.js";
 
 const sha = "a".repeat(40);
 const base = {
@@ -314,5 +317,14 @@ describe("RalphActivity", () => {
   it("rejects other types and empty bodies", () => {
     expect(RalphActivity.safeParse({ type: "response", body: "Done" }).success).toBe(false);
     expect(RalphActivity.safeParse({ type: "thought", body: "  " }).success).toBe(false);
+  });
+});
+
+describe("the coding tasks' limits", () => {
+  it("default to ralph's", () => {
+    expect(CODING_DEFAULTS.maxAttemptsPerStory).toBe(MAX_ATTEMPTS_PER_STORY);
+    expect(CODING_MAX_FIX_ROUNDS).toBe(MAX_FIX_ROUNDS);
+    expect(CODING_DEFAULTS.maxReviewRounds).toBe(MAX_FIX_ROUNDS);
+    expect(CODING_DEFAULTS.maxFixRounds).toBe(MAX_FIX_ROUNDS);
   });
 });
