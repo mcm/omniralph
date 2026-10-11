@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   harnessRepoPins,
   harnesses,
@@ -19,8 +19,12 @@ import {
   type JobStartResponse,
   JOB_TOKEN_SCOPES,
   type JobTokenScope,
+  RalphRequestPayload,
+  RalphStoryPayload,
   type RunTokenKind,
 } from "@omniralph/shared";
+import { getBuiltinTask } from "@omniralph/tasks";
+import type { DispatchJobInput } from "@/lib/dispatch/dispatcher";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
@@ -51,6 +55,9 @@ const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { pinRepository } = await import("@/lib/harnesses/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
+const { ralphJobInput } = await import("@/lib/ralph/coding");
+const { runSpecJobInput } = await import("@/lib/runs/job");
+const { signJobTokens } = await import("@/lib/harness-api/jobs");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -243,6 +250,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         repository: "group/sub/app",
         provider: "gitlab",
         access: "read",
+        tokenKind: "legacy",
         expiresAt: body.expiresAt,
       });
       expect(audit[0]!.ip).toMatch(/^203\.0\.113\./);
@@ -303,6 +311,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         expect(audit[0]!.detail).toMatchObject({
           jobId,
           access: "write",
+          tokenKind: "legacy",
           expiresAt: body.expiresAt,
         });
       });
@@ -449,6 +458,201 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           expect(await passwordFor(codingTask, ["credentials:read"], "lifecycle")).toBe(
             "ghs_contents_read",
           );
+        });
+      });
+
+      describe("coding runs as advanceRun enqueues them", () => {
+        function jobBase(runId: string) {
+          return {
+            runId,
+            repositoryId: githubRepoId,
+            repository: {
+              provider: "github",
+              fullPath: "acme/app",
+              cloneUrl: "https://github.com/acme/app.git",
+            },
+            branch: "omniralph/tool-32-ralph",
+            baseBranch: "main",
+            settings: { model: null, setupCommand: null },
+            epic: { identifier: "TOOL-32", title: "Ralph core", prd: "# PRD" },
+            progress: "",
+          };
+        }
+        const storyPayload = (runId: string) =>
+          RalphStoryPayload.parse({
+            ...jobBase(runId),
+            storyId: randomUUID(),
+            attempt: 1,
+            story: {
+              identifier: "TOOL-83",
+              title: "Add the ralph capability",
+              linearIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
+              description: "As a developer...",
+            },
+            commitMessage: "feat(TOOL-83): Add the ralph capability",
+            qualityGates: ["pnpm test"],
+            lastFeedback: null,
+            guidance: [],
+          });
+        const requestPayload = (runId: string) =>
+          RalphRequestPayload.parse({
+            ...jobBase(runId),
+            requests: [{ id: randomUUID(), text: "push this" }],
+          });
+
+        /**
+         * Enqueues a job like `advanceRun`'s `enqueueStory`/`enqueueRequest`
+         * (`ralphJobInput` on the repository's coding path), claims it through
+         * the claim route and returns the tokens the harness got.
+         */
+        async function claimRalphJob(
+          type: "ralph.story" | "ralph.request",
+          codingPath: "legacy" | "tasks",
+        ) {
+          const runId = randomUUID();
+          const routed =
+            type === "ralph.story"
+              ? ralphJobInput(
+                  type,
+                  { codingPath },
+                  { taskId: "builtin:implement-story", trigger: "linear.delegated" },
+                  storyPayload(runId),
+                )
+              : ralphJobInput(
+                  type,
+                  { codingPath },
+                  { taskId: "builtin:handle-request", trigger: "linear.mention" },
+                  requestPayload(runId),
+                );
+          if (!routed) throw new Error("expected a coding task");
+          return claimEnqueued({
+            type,
+            ...routed,
+            repositoryId: githubRepoId,
+            dedupeKey: `ralph-run:${runId}`,
+          });
+        }
+
+        async function claimEnqueued(
+          input: Omit<DispatchJobInput, "organizationId" | "targetHarnessId">,
+        ) {
+          // A current harness: query and review runs need a minimum version.
+          const harnessId = await newAgent({
+            acceptedTaskTypes: ["coding", "query", "review"],
+            reportedVersion: "99.0.0",
+          });
+          const { job } = await new PostgresDispatcher({ db }).createAndPublish({
+            ...input,
+            organizationId: orgId,
+            targetHarnessId: harnessId,
+          });
+          const accessToken = await getTokenSigner().signAccessToken(harnessId);
+          const res = await claim(
+            new Request("http://localhost/api/harness/claim", {
+              method: "POST",
+              headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.252" },
+              body: JSON.stringify({ pools: ["long", "short"], waitSeconds: 0 }),
+            }),
+          );
+          const started = (await res.json()) as JobStartResponse;
+          expect(started).toMatchObject({ action: "run", job: { id: job.id } });
+          if (started.action !== "run") throw new Error("expected run");
+          return { harnessId, jobId: job.id, started };
+        }
+
+        /** The password the broker issues for `token`, and the audited access and token kind. */
+        async function issuedFor(token: string, harnessId: string) {
+          const before = (await issued(harnessId)).length;
+          // A forged body never changes the access.
+          const res = await credentials(credentialRequest(token, { access: "write" }));
+          expect(res.status).toBe(200);
+          const { password } = (await res.json()) as CloneCredentialResponse;
+          const audit = await issued(harnessId);
+          expect(audit).toHaveLength(before + 1);
+          const { access, tokenKind } = audit.at(-1)!.detail;
+          return { password, access, tokenKind };
+        }
+
+        it.each(["ralph.story", "ralph.request"] as const)(
+          "gives a %s coding run's lifecycle token write and its session token read",
+          async (type) => {
+            const { harnessId, jobId, started } = await claimRalphJob(type, "tasks");
+            expect(started.job).toMatchObject({
+              type,
+              taskType: "coding",
+              taskId: type === "ralph.story" ? "builtin:implement-story" : "builtin:handle-request",
+            });
+            expect(started.jobToken.kind).toBe("lifecycle");
+            expect(started.sessionToken?.kind).toBe("session");
+            expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
+              password: "ghs_contents_write",
+              access: "write",
+              tokenKind: "lifecycle",
+            });
+            expect(await issuedFor(started.sessionToken!.token, harnessId)).toEqual({
+              password: "ghs_contents_read",
+              access: "read",
+              tokenKind: "session",
+            });
+            expect((await issued(harnessId)).every((e) => e.detail.jobId === jobId)).toBe(true);
+          },
+        );
+
+        it("gives a legacy ralph.story job's single token write", async () => {
+          const { harnessId, started } = await claimRalphJob("ralph.story", "legacy");
+          expect(started.job).toMatchObject({ type: "ralph.story", taskId: null });
+          expect(started.sessionToken).toBeUndefined();
+          expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
+            password: "ghs_contents_write",
+            access: "write",
+            tokenKind: "legacy",
+          });
+        });
+
+        it("gives the lifecycle and session tokens of query and review runs read", async () => {
+          const describePr = getBuiltinTask("builtin:describe-pr")!;
+          const query = await claimEnqueued({
+            type: "task.run",
+            ...runSpecJobInput(describePr, {
+              trigger: { kind: "run.invoked", context: {} },
+              repositoryId: githubRepoId,
+            }),
+          });
+          expect(query.started.job.taskType).toBe("query");
+          // A review run's claim needs its whole review context: sign its
+          // tokens as the claim does instead.
+          const reviewHarnessId = await newAgent();
+          const reviewPr = getBuiltinTask("builtin:review-pr")!;
+          const reviewJob = {
+            id: await newJob({
+              type: "task.run",
+              taskType: reviewPr.taskType,
+              pool: reviewPr.pool,
+              taskId: reviewPr.id,
+              status: "running",
+              harnessId: reviewHarnessId,
+              repositoryId: githubRepoId,
+            }),
+            type: "task.run",
+            taskType: reviewPr.taskType,
+            taskId: reviewPr.id,
+          };
+          const runs = [
+            { harnessId: query.harnessId, tokens: query.started },
+            { harnessId: reviewHarnessId, tokens: await signJobTokens(reviewJob, reviewHarnessId) },
+          ];
+          for (const { harnessId, tokens } of runs) {
+            for (const token of [tokens.jobToken, tokens.sessionToken!]) {
+              expect(await issuedFor(token.token, harnessId)).toEqual({
+                password: "ghs_contents_read",
+                access: "read",
+                tokenKind: token.kind,
+              });
+            }
+          }
+          for (const { body } of tokenRequests) {
+            expect(JSON.stringify(body)).not.toMatch(/write/);
+          }
         });
       });
 

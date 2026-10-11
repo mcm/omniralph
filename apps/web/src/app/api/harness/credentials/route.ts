@@ -42,7 +42,8 @@ function canPush(
  * connection that access (e.g. the GitHub App installation lacks Contents:
  * Read and write), 403 `scm_permission_missing` with a `message` saying what
  * to change. The request body is ignored. Every issuance is audited as
- * `credential_issued` with its `access`.
+ * `credential_issued` with its `access` and the token kind
+ * (`tokenKind`: `lifecycle`, `session` or `legacy`).
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireJob(req, "credentials:read");
@@ -82,6 +83,7 @@ export async function POST(req: Request): Promise<Response> {
       repository: repository.fullPath,
       provider: repository.provider,
       access,
+      tokenKind: principal.kind,
       expiresAt: credential.expiresAt.toISOString(),
     },
   });
