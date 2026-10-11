@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  AgentVersion,
-  agentVersionAtLeast,
+  HarnessVersion,
+  harnessVersionAtLeast,
   defaultCapabilityLimit,
   effectiveCapabilityLimits,
   Heartbeat,
@@ -89,10 +89,10 @@ describe("protocol", () => {
 describe("self-update protocol", () => {
   it("accepts semver versions only", () => {
     for (const ok of ["1.0.0", "0.1.1", "1.5.0-beta.1", "2.0.0+build.7"]) {
-      expect(AgentVersion.safeParse(ok).success).toBe(true);
+      expect(HarnessVersion.safeParse(ok).success).toBe(true);
     }
     for (const bad of ["latest", "v1.0.0", "1.0", "01.0.0", "1.0.0; rm -rf /", ""]) {
-      expect(AgentVersion.safeParse(bad).success).toBe(false);
+      expect(HarnessVersion.safeParse(bad).success).toBe(false);
     }
   });
 
@@ -121,12 +121,12 @@ describe("self-update protocol", () => {
   });
 
   it("compares agent versions by major, minor and patch", () => {
-    expect(agentVersionAtLeast("0.7.0", "0.7.0")).toBe(true);
-    expect(agentVersionAtLeast("0.10.0", "0.7.0")).toBe(true);
-    expect(agentVersionAtLeast("1.0.0", "0.7.3")).toBe(true);
-    expect(agentVersionAtLeast("0.7.0-beta.1", "0.7.0")).toBe(true);
-    expect(agentVersionAtLeast("0.6.9", "0.7.0")).toBe(false);
-    expect(agentVersionAtLeast("0.7.0", "0.7.1")).toBe(false);
-    expect(agentVersionAtLeast("dev", "0.7.0")).toBe(false);
+    expect(harnessVersionAtLeast("0.7.0", "0.7.0")).toBe(true);
+    expect(harnessVersionAtLeast("0.10.0", "0.7.0")).toBe(true);
+    expect(harnessVersionAtLeast("1.0.0", "0.7.3")).toBe(true);
+    expect(harnessVersionAtLeast("0.7.0-beta.1", "0.7.0")).toBe(true);
+    expect(harnessVersionAtLeast("0.6.9", "0.7.0")).toBe(false);
+    expect(harnessVersionAtLeast("0.7.0", "0.7.1")).toBe(false);
+    expect(harnessVersionAtLeast("dev", "0.7.0")).toBe(false);
   });
 });

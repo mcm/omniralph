@@ -150,21 +150,21 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     ).rejects.toThrow();
   });
 
-  it("keys app settings by organization and puts agents in an organization (0033)", async () => {
+  it("keys app settings by organization and puts harnesses in an organization (0033)", async () => {
     const [a] = await db.insert(organizations).values({ name: "Settings A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "Settings B" }).returning();
     await db.insert(appSettings).values([
-      { organizationId: a!.id, key: "agent.desiredVersion", value: "1.0.0" },
-      { organizationId: b!.id, key: "agent.desiredVersion", value: "2.0.0" },
+      { organizationId: a!.id, key: "harness.desiredVersion", value: "1.0.0" },
+      { organizationId: b!.id, key: "harness.desiredVersion", value: "2.0.0" },
     ]);
     await expect(
       db
         .insert(appSettings)
-        .values({ organizationId: a!.id, key: "agent.desiredVersion", value: 1 }),
+        .values({ organizationId: a!.id, key: "harness.desiredVersion", value: 1 }),
     ).rejects.toThrow();
-    await expect(db.execute(sql`insert into agents (name) values ('no-org')`)).rejects.toThrow();
+    await expect(db.execute(sql`insert into harnesses (name) values ('no-org')`)).rejects.toThrow();
     await expect(
-      db.execute(sql`insert into agent_enrollments (token_hash, expires_at) values ('h', now())`),
+      db.execute(sql`insert into harness_enrollments (token_hash, expires_at) values ('h', now())`),
     ).rejects.toThrow();
   });
 
@@ -313,15 +313,15 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
         await runMigrations(uri);
         const { rows } = await client.query(
-          `select dedupe_key, target_agent_id, lease_expires_at > now() + interval '100 seconds' as leased,
+          `select dedupe_key, target_harness_id, lease_expires_at > now() + interval '100 seconds' as leased,
                   available_at <= now() as available
            from jobs order by dedupe_key`,
         );
         expect(rows).toEqual([
-          { dedupe_key: "done", target_agent_id: null, leased: null, available: true },
-          { dedupe_key: "pinned", target_agent_id: agent, leased: null, available: true },
-          { dedupe_key: "shared", target_agent_id: null, leased: null, available: true },
-          { dedupe_key: "sync", target_agent_id: agent, leased: true, available: true },
+          { dedupe_key: "done", target_harness_id: null, leased: null, available: true },
+          { dedupe_key: "pinned", target_harness_id: agent, leased: null, available: true },
+          { dedupe_key: "shared", target_harness_id: null, leased: null, available: true },
+          { dedupe_key: "sync", target_harness_id: agent, leased: true, available: true },
         ]);
       } finally {
         await client.end();
@@ -342,9 +342,104 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
   it("drops the poll interval from agents (0054)", async () => {
     const { rows } = await db.$client.query<{ column_name: string }>(
       `select column_name from information_schema.columns
-       where table_name = 'agents' and column_name = 'poll_interval_seconds'`,
+       where table_name = 'harnesses' and column_name = 'poll_interval_seconds'`,
     );
     expect(rows).toEqual([]);
+  });
+
+  it("renames agents to harnesses and keeps their rows (0055)", async () => {
+    await db.execute(sql`create database harnesses`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/harnesses");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0055_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        const { rows: agentRows } = await client.query<{ id: string }>(
+          `insert into agents (organization_id, name) values ($1, 'a') returning id`,
+          [org],
+        );
+        const agent = agentRows[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const { rows: repos } = await client.query<{ id: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '1', 'acme/api', $2) returning id`,
+          [org, connections[0]!.id],
+        );
+        await client.query(
+          `insert into jobs (organization_id, capability, type, agent_id, target_agent_id)
+           values ($1, 'review', 'review.run', $2, $2)`,
+          [org, agent],
+        );
+        await client.query(
+          `insert into agent_repo_pins (agent_id, repository_id) values ($1, $2)`,
+          [agent, repos[0]!.id],
+        );
+        await client.query(`insert into agent_audit (agent_id, event) values ($1, 'enroll')`, [
+          agent,
+        ]);
+        await client.query(
+          `insert into app_settings (organization_id, key, value) values ($1, 'agent.desiredVersion', '"1.2.3"'), ($1, 'agent.latestVersion', '{"version": "0.8.0"}')`,
+          [org],
+        );
+
+        await runMigrations(uri);
+        const { rows: harnesses } = await client.query(`select id, name from harnesses`);
+        expect(harnesses).toEqual([{ id: agent, name: "a" }]);
+        const { rows: jobRows } = await client.query(
+          `select harness_id, target_harness_id from jobs`,
+        );
+        expect(jobRows).toEqual([{ harness_id: agent, target_harness_id: agent }]);
+        const { rows: pins } = await client.query(
+          `select harness_id, repository_id from harness_repo_pins`,
+        );
+        expect(pins).toEqual([{ harness_id: agent, repository_id: repos[0]!.id }]);
+        const { rows: audit } = await client.query(`select harness_id, event from harness_audit`);
+        expect(audit).toEqual([{ harness_id: agent, event: "enroll" }]);
+        const { rows: settings } = await client.query(`select key, value from app_settings`);
+        expect(settings).toEqual([{ key: "harness.desiredVersion", value: "1.2.3" }]);
+        const { rows: old } = await client.query(
+          `select table_name from information_schema.tables
+           where table_schema = 'public' and table_name like 'agent%'`,
+        );
+        expect(old).toEqual([]);
+        // The renamed foreign keys still hold.
+        await expect(
+          client.query(
+            `insert into harness_repo_pins (harness_id, repository_id) values ($1, $2)`,
+            [agent, repos[0]!.id],
+          ),
+        ).rejects.toThrow(/harness_repo_pins_harness_repo_uq/);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
   });
 
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {

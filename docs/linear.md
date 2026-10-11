@@ -8,8 +8,8 @@ story, then opens a pull/merge request to the repository's default branch. See
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
 Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
-their activities through the control panel (`POST /api/agent/jobs/{id}/activities`), download
-[Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
+their activities through the control panel (`POST /api/harness/jobs/{id}/activities`), download
+[Linear attachments](#attachments) through it (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`)
 and never see a Linear token.
 
 Runs can also start from a Slack or Discord thread: a linked member asks the chat bot and it hands

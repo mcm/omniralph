@@ -119,7 +119,7 @@ export const MAX_REVIEW_FINDINGS = 500;
 export const MAX_REVIEW_SKIPPED = 10_000;
 
 /**
- * Result of a `review.run` job (`/api/agent/jobs/{id}/result`). Reviews that
+ * Result of a `review.run` job (`/api/harness/jobs/{id}/result`). Reviews that
  * stopped on a rate limit or an error are reported through `/fail` instead.
  */
 export const ReviewJobResult = z.object({

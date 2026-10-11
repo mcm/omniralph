@@ -74,7 +74,7 @@ export const LEARN_RULE_OUTCOMES = [
   "budget_exhausted",
 ] as const;
 
-/** Result of a `review.learn-rule` job (`/api/agent/jobs/{id}/result`). */
+/** Result of a `review.learn-rule` job (`/api/harness/jobs/{id}/result`). */
 export const LearnRuleJobResult = z
   .object({
     rule: z.string().trim().min(1).max(MAX_LEARNED_RULE_LENGTH).nullable(),

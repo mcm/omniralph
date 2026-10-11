@@ -64,7 +64,7 @@ function runResponse(j: JobPayload): JobStartResponse {
 }
 
 /**
- * An in-memory stand-in for `POST /api/agent/claim`: hands out the first
+ * An in-memory stand-in for `POST /api/harness/claim`: hands out the first
  * queued job of a requested capability, else holds the claim until a job is
  * pushed, the claim is aborted or 50s pass (null).
  */

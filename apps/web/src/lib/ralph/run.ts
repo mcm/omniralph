@@ -6,7 +6,7 @@
  * idempotent (calling it again with nothing new changes nothing).
  */
 import {
-  getAgent,
+  getHarness,
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
@@ -374,12 +374,12 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
  * The run's agent, while it may still take the run's jobs (not revoked, ralph
  * enabled, in the run's organization).
  */
-export async function stickyAgentId(
+export async function stickyHarnessId(
   db: Database,
-  run: Pick<RalphRun, "agentId" | "organizationId">,
+  run: Pick<RalphRun, "harnessId" | "organizationId">,
 ): Promise<string | undefined> {
-  if (!run.agentId) return undefined;
-  const agent = await getAgent(db, run.agentId);
+  if (!run.harnessId) return undefined;
+  const agent = await getHarness(db, run.harnessId);
   if (
     !agent ||
     agent.revokedAt ||
@@ -486,7 +486,7 @@ async function enqueueStory(
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run),
+    targetHarnessId: await stickyHarnessId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
 
@@ -607,7 +607,7 @@ async function describeLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run),
+    targetHarnessId: await stickyHarnessId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "describing", jobId: job.id } });
@@ -659,7 +659,7 @@ async function enqueuePreparation(
     repositoryId: run.repositoryId,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await stickyAgentId(deps.db, run),
+    targetHarnessId: await stickyHarnessId(deps.db, run),
   });
   if (!created) return { action: "busy", run };
   const state = preparationOf(run);
@@ -692,9 +692,9 @@ async function enqueueRequest(
   const found = await usableRepository(deps, tx, run, input.lane);
   if ("action" in found) return found;
   const { lane, repository, connection } = found;
-  const targetAgentId = await stickyAgentId(deps.db, run);
+  const targetHarnessId = await stickyHarnessId(deps.db, run);
   const resume =
-    lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
+    lane.requestClaudeSessionId && targetHarnessId && lane.requestHarnessId === targetHarnessId
       ? lane.requestClaudeSessionId
       : null;
   // Attachments are Linear's; a chat run has none.
@@ -719,7 +719,7 @@ async function enqueueRequest(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId,
+    targetHarnessId,
   });
   if (!created) return { action: "busy", run };
   const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;

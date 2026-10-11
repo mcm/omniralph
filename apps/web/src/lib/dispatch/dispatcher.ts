@@ -1,9 +1,9 @@
 import "server-only";
 import {
-  getAgent,
+  getHarness,
   getJob,
   insertJob,
-  pinnedAgentFor,
+  pinnedHarnessFor,
   requestJobCancel,
   setQueuedJobTarget,
   type CancelJobResult,
@@ -17,7 +17,7 @@ export interface DispatchJobInput extends NewJobInput {
    * Only this agent may claim the job, regardless of pins (e.g. `repo.sync` pre-clones).
    * Must be an agent of the job's organization.
    */
-  targetAgentId?: string;
+  targetHarnessId?: string;
 }
 
 export interface DispatchedJob {
@@ -44,7 +44,7 @@ export interface JobDispatcher {
 
 /**
  * `JobDispatcher` on Postgres: the `jobs` table is the queue and agents claim
- * jobs from it. Dispatching only inserts the job, with `target_agent_id` set to
+ * jobs from it. Dispatching only inserts the job, with `target_harness_id` set to
  * the given target agent, else the repo's pinned agent (both of the job's
  * organization), else null (any agent of the organization).
  */
@@ -56,9 +56,9 @@ export class PostgresDispatcher implements JobDispatcher {
   }
 
   async createAndPublish(input: DispatchJobInput): Promise<DispatchedJob> {
-    const { targetAgentId, ...jobInput } = input;
-    const target = await this.targetFor(jobInput, targetAgentId);
-    return insertJob(this.db, { ...jobInput, targetAgentId: target });
+    const { targetHarnessId, ...jobInput } = input;
+    const target = await this.targetFor(jobInput, targetHarnessId);
+    return insertJob(this.db, { ...jobInput, targetHarnessId: target });
   }
 
   cancel(jobId: string): Promise<CancelJobResult> {
@@ -73,17 +73,19 @@ export class PostgresDispatcher implements JobDispatcher {
 
   private async targetFor(
     job: Pick<NewJobInput, "organizationId" | "repositoryId">,
-    targetAgentId: string | undefined,
+    targetHarnessId: string | undefined,
   ): Promise<string | null> {
-    if (targetAgentId) {
-      const target = await getAgent(this.db, targetAgentId);
+    if (targetHarnessId) {
+      const target = await getHarness(this.db, targetHarnessId);
       if (target?.organizationId !== job.organizationId) {
         throw new Error(
-          `Agent ${targetAgentId} isn't in organization ${job.organizationId} of the job`,
+          `Agent ${targetHarnessId} isn't in organization ${job.organizationId} of the job`,
         );
       }
-      return targetAgentId;
+      return targetHarnessId;
     }
-    return job.repositoryId ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId) : null;
+    return job.repositoryId
+      ? pinnedHarnessFor(this.db, job.organizationId, job.repositoryId)
+      : null;
   }
 }

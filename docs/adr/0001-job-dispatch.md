@@ -51,8 +51,8 @@ delivers jobs.**
 - All agents use one consumer group, `agents`, on every topic, so they compete
   for messages.
 - **Agents never talk to Vercel.** They use `PollingQueueClient` with
-  `resolveBaseUrl: (region) => new URL(`${server}/api/agent/queue/${region}`)`.
-  The proxy route `apps/web/src/app/api/agent/queue/[region]/[...path]/route.ts`
+  `resolveBaseUrl: (region) => new URL(`${server}/api/harness/queue/${region}`)`.
+  The proxy route `apps/web/src/app/api/harness/queue/[region]/[...path]/route.ts`
   authenticates the agent's access token (`requireAgent`). It then forwards to
   `https://{region}.vercel-queue.com` with the control panel's own Vercel OIDC
   token (`@vercel/oidc`) and streams the response back. Its allowlists:
@@ -73,7 +73,7 @@ delivers jobs.**
     trusted.
   - **Redirects:** never followed (`redirect: "manual"` → 502).
   - Everything else gets 403.
-- **Lifecycle** (`/api/agent/*`, all authenticated by `requireAgent`):
+- **Lifecycle** (`/api/harness/*`, all authenticated by `requireAgent`):
   1. The agent receives a message and calls `POST /jobs/{id}/start`. This
      atomically sets `running`, the agent and `started_at`, and increments
      `delivery_count`. It returns `run` with the job and a **job token** whose
@@ -101,7 +101,7 @@ delivers jobs.**
      `canceled` at once. Running jobs are listed in the agent's next heartbeat
      response under `cancelJobIds`, and so are running jobs that were taken
      over by another agent.
-- **Heartbeat** (`POST /api/agent/heartbeat`, every 20s): the agent reports its
+- **Heartbeat** (`POST /api/harness/heartbeat`, every 20s): the agent reports its
   version, capabilities, running job IDs and free slots. The response carries
   the central config: `maxConcurrency`, `pollIntervalSeconds`,
   `enabledCapabilities`, `capabilityLimits` (effective per-capability caps
@@ -166,7 +166,7 @@ Vercel project; the region is the first entry of `QUEUE_REGIONS`):
    Enroll a local agent, or use a script with a valid access token.
 2. Create a job (`getDispatcher().createAndPublish`, e.g. from a temporary
    route). Redeploy. Receive through
-   `PollingQueueClient({ region, deploymentId: null, resolveBaseUrl: r => new URL(`${APP_URL}/api/agent/queue/${r}`), token })`
+   `PollingQueueClient({ region, deploymentId: null, resolveBaseUrl: r => new URL(`${APP_URL}/api/harness/queue/${r}`), token })`
    and confirm the message arrives after the redeploy.
 3. In the same receive, confirm the handler gets the `{ jobId }` payload.
    Multipart streaming then works through the proxy (including Vercel's
@@ -214,7 +214,7 @@ already has.
 
 When one of these happens we revisit the decision rather than add more
 workarounds. The `JobDispatcher` interface and the
-`/api/agent/jobs/{id}/start|result|fail` contract don't depend on the
+`/api/harness/jobs/{id}/start|result|fail` contract don't depend on the
 transport, so only `lib/dispatch` and the agent's poll loop would change.
 
 ## Consequences

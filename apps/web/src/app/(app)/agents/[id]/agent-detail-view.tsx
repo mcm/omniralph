@@ -39,16 +39,16 @@ import {
 import { defaultCapabilityLimit } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
-import type { AgentRow } from "@/lib/agents/rows";
+import type { HarnessRow } from "@/lib/harnesses/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
 import {
-  deleteAgent,
+  deleteHarness,
   pinRepository,
-  requestAgentUpdate,
-  revokeAgent,
-  setAgentDesiredVersion,
+  requestHarnessUpdate,
+  revokeHarness,
+  setHarnessDesiredVersion,
   unpinRepository,
-  updateAgentConfig,
+  updateHarnessConfig,
 } from "../actions";
 import {
   AgentStatusBadge,
@@ -60,7 +60,7 @@ import { ProviderIcon } from "../../repositories/repositories-view";
 import { AgentAuditLog, TokenTheftAlert, type AuditRow } from "./agent-audit-log";
 
 interface AgentDetailViewProps {
-  agent: AgentRow;
+  agent: HarnessRow;
   now: number;
   /** Capabilities the control panel can dispatch. */
   knownCapabilities: string[];
@@ -90,7 +90,7 @@ function ConfigCard({
   agent,
   knownCapabilities,
 }: {
-  agent: AgentRow;
+  agent: HarnessRow;
   knownCapabilities: string[];
 }) {
   const { pending, run } = useAction();
@@ -115,7 +115,7 @@ function ConfigCard({
     e.preventDefault();
     run(
       () =>
-        updateAgentConfig(agent.id, {
+        updateHarnessConfig(agent.id, {
           maxConcurrency: Number(maxConcurrency),
           enabledCapabilities: capabilities,
           // Blank limits use the default.
@@ -227,7 +227,7 @@ function ConfigCard({
                 title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
                 onClick={() =>
                   run(
-                    () => requestAgentUpdate(agent.id),
+                    () => requestHarnessUpdate(agent.id),
                     `${agent.name} will update with its next heartbeat.`,
                   )
                 }
@@ -256,7 +256,7 @@ function VersionCard({
   agent,
   globalDesiredVersion,
 }: {
-  agent: AgentRow;
+  agent: HarnessRow;
   globalDesiredVersion: string | null;
 }) {
   const { pending, run } = useAction();
@@ -266,7 +266,7 @@ function VersionCard({
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     run(
-      () => setAgentDesiredVersion(agent.id, override),
+      () => setHarnessDesiredVersion(agent.id, override),
       override.trim()
         ? `${agent.name} will update to ${override.trim()} with its next heartbeat.`
         : `${agent.name} follows the organization's version again.`,
@@ -317,7 +317,7 @@ function PinsCard({
   agent,
   repositories,
 }: {
-  agent: AgentRow;
+  agent: HarnessRow;
   repositories: AgentDetailViewProps["repositories"];
 }) {
   const { pending, run } = useAction();
@@ -430,7 +430,7 @@ function PinsCard({
 
 // ── Revoke ────────────────────────────────────────────────────────────────────
 
-function RevokeCard({ agent }: { agent: AgentRow }) {
+function RevokeCard({ agent }: { agent: HarnessRow }) {
   const { pending, run } = useAction();
   return (
     <Card>
@@ -463,7 +463,7 @@ function RevokeCard({ agent }: { agent: AgentRow }) {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => run(() => revokeAgent(agent.id), `Revoked ${agent.name}`)}
+                onClick={() => run(() => revokeHarness(agent.id), `Revoked ${agent.name}`)}
               >
                 Revoke
               </AlertDialogAction>
@@ -477,7 +477,7 @@ function RevokeCard({ agent }: { agent: AgentRow }) {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
-function DeleteCard({ agent }: { agent: AgentRow }) {
+function DeleteCard({ agent }: { agent: HarnessRow }) {
   const router = useRouter();
   const { pending, run } = useAction();
   return (
@@ -514,7 +514,7 @@ function DeleteCard({ agent }: { agent: AgentRow }) {
               <AlertDialogAction
                 onClick={() =>
                   run(
-                    () => deleteAgent(agent.id),
+                    () => deleteHarness(agent.id),
                     `Deleted ${agent.name}`,
                     () => router.push("/agents"),
                   )

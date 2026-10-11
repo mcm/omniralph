@@ -216,7 +216,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
         type: "review.learn-rule",
         repositoryId: repoId,
         status: "queued",
-        targetAgentId: null,
+        targetHarnessId: null,
       });
       const payload = LearnRuleJobPayload.parse(job.payload);
       expect(payload).toMatchObject({

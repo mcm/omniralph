@@ -82,7 +82,7 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- When a user asks how something works in a repository's code, or where something is, hand the question to ask_about_code: you can't read code yourself. Never answer from memory.",
     "- The repository must be unambiguous (named, or the only one that fits; list_repositories shows them). If it isn't, ask which one first.",
     "- Make the question self-contained. The tool posts that it is looking into it, and the answer follows in the thread: after it succeeds, end your turn without repeating it.",
-    "- If it says no capable agent is online, explain that to the user (and that an admin can update or start the agents); nothing was queued.",
+    "- If it says no capable agent is online, explain that to the user (and that an admin can update or start the harnesses); nothing was queued.",
     "Filing Linear issues (draft_linear_issue):",
     "- When a user asks you to file, open or create an issue or ticket, draft it from the conversation: a specific title, and a self-contained Markdown description (problem, context, acceptance criteria), since Linear readers don't see the thread.",
     "- The tool posts a preview card; the issue is only created when the user who asked clicks Create. After it succeeds, don't repeat the preview.",

@@ -76,7 +76,7 @@ export interface RepositoryRow {
   webUrl: string;
   enabled: boolean;
   profileName: string;
-  pinnedAgents: { id: string; name: string }[];
+  pinnedHarnesses: { id: string; name: string }[];
   /** ISO timestamp. */
   lastReviewAt: string | null;
 }
@@ -268,9 +268,9 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         <Badge variant="outline">{repo.profileName}</Badge>
       </TableCell>
       <TableCell>
-        {repo.pinnedAgents.length > 0 ? (
+        {repo.pinnedHarnesses.length > 0 ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
-            {repo.pinnedAgents.map((agent) => (
+            {repo.pinnedHarnesses.map((agent) => (
               <Badge key={agent.id} variant="info">
                 {agent.name}
               </Badge>

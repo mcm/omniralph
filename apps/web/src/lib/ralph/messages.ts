@@ -13,7 +13,7 @@ import {
   getLaneByRepository,
   getRunningRunJob,
   insertMessage,
-  listAgentUndeliveredMessages,
+  listHarnessUndeliveredMessages,
   listStories,
   listStrandedMessages,
   listUndeliveredJobMessages,
@@ -220,20 +220,20 @@ export interface JobMessageAcks {
 export async function exchangeJobMessages(
   /** `linear` gives the gateway of an organization's workspace (each run's is told). */
   deps: { db: Database; linear: (organizationId: string) => Promise<LinearGateway> },
-  agentId: string,
+  harnessId: string,
   runningJobIds: readonly string[],
   acks: JobMessageAcks,
 ): Promise<JobMessageDelivery[]> {
   const delivered = new Set(acks.deliveredMessageIds);
   const ids = [...delivered, ...acks.rejectedMessageIds];
-  const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
+  const acked = await listHarnessUndeliveredMessages(deps.db, harnessId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
   const notes: { run: RalphRun; content: ActivityContent }[] = [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
       // Re-read under the lock: the job's end may have settled them meanwhile.
-      const messages = await listAgentUndeliveredMessages(tx, agentId, ids);
+      const messages = await listHarnessUndeliveredMessages(tx, harnessId, ids);
       for (const message of messages.filter((m) => m.runId === runId)) {
         if (delivered.has(message.id)) {
           if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);

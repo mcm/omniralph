@@ -41,7 +41,7 @@ A job's payload carries everything the session needs (PRD, story, progress log, 
 guidance, the IDs of its Linear attachments), so an agent keeps no run state beyond caches.
 Linear attachments are gathered by the control panel from the run's Linear text and recorded on
 the run (`ralph_runs.attachments`: ID → upload URL); agents download those listed in their job's
-payload through `GET /api/agent/jobs/{id}/attachments/{attachmentId}` (job scope
+payload through `GET /api/harness/jobs/{id}/attachments/{attachmentId}` (job scope
 `ralph:attachments`), which the control panel proxies with its Linear token. Every completed story is pushed, so the remote branch
 is the only state that matters between jobs.
 

@@ -72,7 +72,7 @@ import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
 import { jobSettings } from "./payload";
 import { changeRequestTerm } from "./publish";
-import { advanceRun, FINISHED_RUN_STATUSES, stickyAgentId, type RalphDeps } from "./run";
+import { advanceRun, FINISHED_RUN_STATUSES, stickyHarnessId, type RalphDeps } from "./run";
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
@@ -127,8 +127,8 @@ async function enqueueCleanupJob(
   if (!found || found.repository.disconnectedAt) {
     return { why: "the repository is no longer connected" };
   }
-  const agentId = await stickyAgentId(deps.db, run);
-  if (!agentId) return { why: "the agent that holds the branch can't take ralph jobs anymore" };
+  const harnessId = await stickyHarnessId(deps.db, run);
+  if (!harnessId) return { why: "the agent that holds the branch can't take ralph jobs anymore" };
   const { repository, connection } = found;
   const payload = RalphCleanupPayload.parse({
     runId: run.id,
@@ -148,7 +148,7 @@ async function enqueueCleanupJob(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: cleanupDedupeKey(lane.id),
-    targetAgentId: agentId,
+    targetHarnessId: harnessId,
   });
   return { jobId: job.id };
 }
@@ -179,7 +179,7 @@ export async function startCleanup(
     if (!parseRalphSettings(found.repository.ralphSettings).cleanupMergedWorktrees) {
       return { status: "ignored", reason: "opted_out" };
     }
-    if (!run.agentId) {
+    if (!run.harnessId) {
       await updateLane(tx, laneId, { cleanup: { ...state, status: "done", at: now() } });
       return { status: "nothing" };
     }

@@ -95,7 +95,7 @@ details.
   opens the PR/MR. A run sticks to one agent, which keeps the branch worktree warm.
   See [ADR 0003: ralph orchestration](docs/adr/0003-ralph-orchestration.md).
 - **Postgres is the job queue.** The `jobs` table holds every job's state, and agents claim jobs
-  from it through the control panel (`POST /api/agent/claim`, which holds the request for up to
+  from it through the control panel (`POST /api/harness/claim`, which holds the request for up to
   50s while there's nothing to claim). The claim only hands an agent jobs of its organization and
   enabled capabilities, and jobs targeted at it (pinned repos, running ralph runs, `repo.sync`)
   come first. The heartbeat renews the leases of running jobs: a crashed agent's jobs are taken

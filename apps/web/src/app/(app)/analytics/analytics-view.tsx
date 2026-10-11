@@ -263,7 +263,9 @@ function RalphSection({
         <Card ribbon style={{ minWidth: 0 }}>
           <CardHeader>
             <CardTitle>Ralph tokens per day</CardTitle>
-            <CardDescription>{period}, ralph jobs next to reviews (tokens in + out)</CardDescription>
+            <CardDescription>
+              {period}, ralph jobs next to reviews (tokens in + out)
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {noRuns && tokens === 0 ? (
@@ -429,7 +431,15 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: "var(--font-weight-semibold)" }}>Analytics</h1>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "var(--text-2xl)",
+                fontWeight: "var(--font-weight-semibold)",
+              }}
+            >
+              Analytics
+            </h1>
             <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
               Token usage, review quality and ralph runs for {scope}, by UTC day.
             </Muted>
@@ -694,7 +704,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
             </CardHeader>
             <CardContent>
-              {analytics.jobsByAgent.length === 0 ? (
+              {analytics.jobsByHarness.length === 0 ? (
                 <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" />
               ) : (
                 <Table>
@@ -707,7 +717,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics.jobsByAgent.map((a) => (
+                    {analytics.jobsByHarness.map((a) => (
                       <TableRow key={a.agent.id}>
                         <TableCell>
                           {isAdmin ? (

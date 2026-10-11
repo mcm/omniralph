@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
 import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
-import { agents, feedback, findings, jobs, reviews, organizations } from "../schema.js";
+import { harnesses, feedback, findings, jobs, reviews, organizations } from "../schema.js";
 import { analyticsWindow, getAnalytics, listAnalyticsRepositories } from "./analytics.js";
 import { seedReviewProfiles } from "../settings.js";
 
@@ -75,7 +75,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       })
     ).id;
     const [a1, a2] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgId, name: "coder-1" },
         { organizationId: orgId, name: "coder-2" },
@@ -164,7 +164,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     ]);
 
     const job = (
-      agentId: string | null,
+      harnessId: string | null,
       repositoryId: string,
       status: (typeof jobs.$inferInsert)["status"],
       createdAt: string,
@@ -172,7 +172,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       organizationId: orgId,
       capability: "review",
       type: "review.run",
-      agentId,
+      harnessId,
       repositoryId,
       status,
       createdAt: new Date(createdAt),
@@ -282,13 +282,13 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   });
 
   it("counts jobs per agent, most first, ignoring unassigned jobs", async () => {
-    const { jobsByAgent } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
-    expect(jobsByAgent).toEqual([
+    const { jobsByHarness } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
+    expect(jobsByHarness).toEqual([
       { agent: { id: agent1, name: "coder-1" }, total: 3, completed: 2, failed: 1 },
       { agent: { id: agent2, name: "coder-2" }, total: 1, completed: 0, failed: 0 },
     ]);
     const quarter = await getAnalytics(db, { organizationId: orgId, days: 90, now });
-    expect(quarter.jobsByAgent[1]).toMatchObject({ total: 2, completed: 1 });
+    expect(quarter.jobsByHarness[1]).toMatchObject({ total: 2, completed: 1 });
   });
 
   it("filters everything by repository", async () => {
@@ -305,7 +305,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     expect(analytics.reviewsByStatus).toMatchObject({ completed: 1, queued: 1, failed: 0 });
     expect(analytics.findingsBySeverity).toMatchObject({ high: 2, critical: 0 });
     expect(analytics.dismissalsByRepository.map((d) => d.repository.id)).toEqual([repoB]);
-    expect(analytics.jobsByAgent).toEqual([
+    expect(analytics.jobsByHarness).toEqual([
       { agent: { id: agent2, name: "coder-2" }, total: 1, completed: 0, failed: 0 },
     ]);
   });
@@ -320,7 +320,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     expect(analytics.daily.every((d) => d.reviews === 0)).toBe(true);
     expect(analytics.byProfile).toEqual([]);
     expect(analytics.dismissalsByRepository).toEqual([]);
-    expect(analytics.jobsByAgent).toEqual([]);
+    expect(analytics.jobsByHarness).toEqual([]);
     expect(Object.values(analytics.findingsBySeverity).every((n) => n === 0)).toBe(true);
   });
 
@@ -339,7 +339,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
     expect(Object.values(analytics.reviewsByStatus).every((n) => n === 0)).toBe(true);
     expect(Object.values(analytics.findingsBySeverity).every((n) => n === 0)).toBe(true);
     expect(analytics.dismissalsByRepository).toEqual([]);
-    expect(analytics.jobsByAgent).toEqual([]);
+    expect(analytics.jobsByHarness).toEqual([]);
     // Another organization's repository as the filter doesn't widen it either.
     expect(
       (await getAnalytics(db, { organizationId: other!.id, days: 90, now, repositoryId: repoA }))

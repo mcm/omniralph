@@ -51,7 +51,7 @@ export async function updateRepositorySettings(
         return {
           ok: false,
           error: "Some selected agents don't exist or were revoked.",
-          fieldErrors: { pinnedAgentIds: "Some selected agents don't exist or were revoked." },
+          fieldErrors: { pinnedHarnessIds: "Some selected agents don't exist or were revoked." },
         };
     }
     revalidatePath(`/repositories/${repositoryId}/settings`);

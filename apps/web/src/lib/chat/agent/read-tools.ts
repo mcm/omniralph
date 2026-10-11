@@ -2,11 +2,11 @@ import "server-only";
 import {
   ACTIVE_RALPH_RUN_STATUSES,
   appendChatMessage,
-  getDesiredAgentVersion,
+  getDesiredHarnessVersion,
   getReviewDetail,
   getRunDetail,
   jobStatus,
-  listAgentOverview,
+  listHarnessOverview,
   listRecentJobs,
   listRepositoryOverview,
   listRepositoryOverviewPage,
@@ -17,7 +17,7 @@ import {
 } from "@omniralph/db";
 import { CHAT_ASK_MIN_AGENT_VERSION, MAX_CHAT_ASK_QUESTION_LENGTH } from "@omniralph/shared";
 import { z } from "zod";
-import { agentRow, jobRow } from "@/lib/agents/rows";
+import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
 import {
   lastRunActivity,
@@ -372,13 +372,13 @@ export const listAgentsTool = defineChatTool({
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
     const [agents, desiredVersion] = await Promise.all([
-      listAgentOverview(db, organizationId),
-      getDesiredAgentVersion(db, organizationId),
+      listHarnessOverview(db, organizationId),
+      getDesiredHarnessVersion(db, organizationId),
     ]);
     const shown = agents.slice(0, CHAT_TOOL_RESULT_LIMIT);
     return {
       agents: shown.map((overview) => {
-        const agent = agentRow(overview, now, desiredVersion);
+        const agent = harnessRow(overview, now, desiredVersion);
         return {
           id: agent.id,
           url: `${appUrl}/agents/${agent.id}`,
@@ -422,7 +422,7 @@ export const listRepositoriesTool = defineChatTool({
         reviewsEnabled: repo.enabled,
         ralphEnabled: repo.ralphEnabled,
         reviewProfile: repo.profileName,
-        pinnedAgents: repo.pinnedAgents.map((a) => a.name),
+        pinnedHarnesses: repo.pinnedHarnesses.map((a) => a.name),
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       })),
       ...listInfo(

@@ -244,7 +244,7 @@ export async function applyRequestJob(
       await updateLane(tx, lane.id, {
         ...(result.sessionId && {
           requestClaudeSessionId: result.sessionId,
-          requestAgentId: job.agentId,
+          requestHarnessId: job.harnessId,
         }),
         ...(result.stashSha && {
           stashes: [

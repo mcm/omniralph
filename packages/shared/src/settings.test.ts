@@ -20,7 +20,7 @@ const validSettings: RepositorySettingsInput = {
   triggers: { onOpen: true, onPush: false, drafts: false },
   pathExcludes: ["*.lock", "/vendor/**", "src/**/*.{gen,pb}.ts", "docs/[!_]*.md"],
   customInstructions: "Prefer early returns.",
-  pinnedAgentIds: [],
+  pinnedHarnessIds: [],
 };
 
 const validProfile: ReviewProfileInput = {
@@ -102,10 +102,10 @@ describe("RepositorySettingsInput", () => {
     const result = RepositorySettingsInput.safeParse({
       ...validSettings,
       profileId: "turbo",
-      pinnedAgentIds: ["not-a-uuid"],
+      pinnedHarnessIds: ["not-a-uuid"],
     });
     expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual([
-      "pinnedAgentIds.0",
+      "pinnedHarnessIds.0",
       "profileId",
     ]);
   });

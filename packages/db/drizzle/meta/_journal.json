@@ -386,6 +386,13 @@
       "when": 1791662922470,
       "tag": "0054_drop_agent_poll_interval",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791691934594,
+      "tag": "0055_rename_agents_to_harnesses",
+      "breakpoints": true
     }
   ]
 }

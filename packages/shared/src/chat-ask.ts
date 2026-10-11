@@ -72,7 +72,7 @@ export const CHAT_ASK_OUTCOMES = [
   "no_checkout",
 ] as const;
 
-/** Result of a `chat.ask` job (`/api/agent/jobs/{id}/result`). */
+/** Result of a `chat.ask` job (`/api/harness/jobs/{id}/result`). */
 export const ChatAskJobResult = z
   .object({
     answer: z.string().trim().min(1).max(MAX_CHAT_ASK_ANSWER_LENGTH).nullable(),

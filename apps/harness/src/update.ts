@@ -19,10 +19,10 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   HARNESS_PACKAGE,
-  AgentVersion,
-  type AgentUpdateReport,
-  type AgentUpdateRequest,
-  type AgentUpdateStateName,
+  HarnessVersion,
+  type HarnessUpdateReport,
+  type HarnessUpdateRequest,
+  type HarnessUpdateStateName,
   type Heartbeat,
   type HeartbeatResponse,
   type SelfUpdateSupport,
@@ -162,7 +162,9 @@ export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
           (error, stdout, stderr) => {
             if (!error) return resolve(String(stdout).trim());
             const tail = String(stderr).trim().split("\n").slice(-5).join("\n");
-            reject(new Error(`npm view ${HARNESS_PACKAGE} version failed: ${tail || error.message}`));
+            reject(
+              new Error(`npm view ${HARNESS_PACKAGE} version failed: ${tail || error.message}`),
+            );
           },
         );
       }),
@@ -221,7 +223,7 @@ export interface SelfUpdaterOptions {
 
 export class SelfUpdater {
   private state: UpdateStateFile = emptyState();
-  private phase: AgentUpdateStateName = "idle";
+  private phase: HarnessUpdateStateName = "idle";
   /** The version being drained for or installed. */
   private target: string | null = null;
   /** Start of the current run of successful heartbeats while confirming. */
@@ -286,7 +288,7 @@ export class SelfUpdater {
   report(): Pick<Heartbeat, "selfUpdate" | "update" | "failedVersions" | "handledUpdateRequestId"> {
     const confirming = this.phase === "confirming";
     const updating = this.phase === "draining" || this.phase === "installing";
-    const update: AgentUpdateReport = {
+    const update: HarnessUpdateReport = {
       state: this.phase,
       version: confirming ? this.state.pending : this.target,
       previous: confirming ? this.state.previous : updating ? this.options.runningVersion : null,
@@ -334,7 +336,7 @@ export class SelfUpdater {
    * anything is installed, so a failing one isn't retried.
    */
   private async onRequest(response: HeartbeatResponse, daemon: DrainableDaemon): Promise<boolean> {
-    const fromPanel: AgentUpdateRequest | null =
+    const fromPanel: HarnessUpdateRequest | null =
       response.updateRequest && response.updateRequest.id !== this.state.handledRequestId
         ? response.updateRequest
         : null;
@@ -370,7 +372,7 @@ export class SelfUpdater {
         return true;
       }
     }
-    if (!AgentVersion.safeParse(version).success) {
+    if (!HarnessVersion.safeParse(version).success) {
       this.state.lastError = `An update was requested, but ${JSON.stringify(version.slice(0, 64))} isn't a version`;
       await this.save();
       return true;
@@ -395,7 +397,7 @@ export class SelfUpdater {
     if (desired === this.options.runningVersion) return null;
     if (this.state.failed.includes(desired)) return null;
     // The protocol validates it already; never hand npm anything but a version.
-    return AgentVersion.safeParse(desired).success ? desired : null;
+    return HarnessVersion.safeParse(desired).success ? desired : null;
   }
 
   private async confirm(): Promise<void> {

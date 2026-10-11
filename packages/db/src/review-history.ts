@@ -8,7 +8,7 @@ import type { Database } from "./client.js";
 import { listFindingFeedback, type FeedbackEntry } from "./feedback.js";
 import type { FindingRow, Review } from "./reviews.js";
 import {
-  agents,
+  harnesses,
   findings,
   findingSeverity,
   repositories,
@@ -107,8 +107,8 @@ const reviewColumns = {
   },
   profileId: reviewProfiles.id,
   profileName: reviewProfiles.name,
-  agentId: agents.id,
-  agentName: agents.name,
+  harnessId: harnesses.id,
+  harnessName: harnesses.name,
 };
 
 /**
@@ -138,7 +138,7 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
       .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
       .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
       .leftJoin(reviewProfiles, profileOfReview)
-      .leftJoin(agents, eq(agents.id, reviews.agentId))
+      .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
       .where(where)
       .orderBy(desc(reviews.createdAt), desc(reviews.id))
       .limit(pageSize)
@@ -165,10 +165,10 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
   }
 
   return {
-    reviews: rows.map(({ profileId, profileName, agentId, agentName, ...row }) => ({
+    reviews: rows.map(({ profileId, profileName, harnessId, harnessName, ...row }) => ({
       ...row,
       profile: profileId && profileName ? { id: profileId, name: profileName } : null,
-      agent: agentId && agentName ? { id: agentId, name: agentName } : null,
+      agent: harnessId && harnessName ? { id: harnessId, name: harnessName } : null,
       findingCounts: counts.get(row.id) ?? emptyFindingCounts(),
     })),
     total: totalRow?.total ?? 0,
@@ -210,14 +210,14 @@ export async function getReviewDetail(
       },
       profileId: reviewProfiles.id,
       profileName: reviewProfiles.name,
-      agentId: agents.id,
-      agentName: agents.name,
+      harnessId: harnesses.id,
+      harnessName: harnesses.name,
     })
     .from(reviews)
     .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
     .leftJoin(reviewProfiles, profileOfReview)
-    .leftJoin(agents, eq(agents.id, reviews.agentId))
+    .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
     .where(and(eq(reviews.id, reviewId), eq(repositories.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
@@ -240,7 +240,7 @@ export async function getReviewDetail(
     review: row.review,
     repository: row.repository,
     profile: row.profileId && row.profileName ? { id: row.profileId, name: row.profileName } : null,
-    agent: row.agentId && row.agentName ? { id: row.agentId, name: row.agentName } : null,
+    agent: row.harnessId && row.harnessName ? { id: row.harnessId, name: row.harnessName } : null,
     findings: rows,
     feedback: await listFindingFeedback(
       db,

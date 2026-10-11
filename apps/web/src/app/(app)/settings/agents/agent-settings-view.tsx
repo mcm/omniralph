@@ -17,7 +17,7 @@ import { IconCloudDownload, IconDeviceFloppy } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
-import { setGlobalAgentVersion, trackLatestAgentVersion } from "./actions";
+import { setGlobalHarnessVersion, trackLatestHarnessVersion } from "./actions";
 
 export function AgentSettingsView({
   desiredVersion,
@@ -40,7 +40,7 @@ export function AgentSettingsView({
     e.preventDefault();
     const trimmed = version.trim();
     run(
-      () => setGlobalAgentVersion(version),
+      () => setGlobalHarnessVersion(version),
       trimmed.toLowerCase() === "latest"
         ? "Agents will follow the latest version on npm."
         : trimmed
@@ -124,7 +124,7 @@ export function AgentSettingsView({
                   disabled={pending}
                   onClick={() =>
                     run(async () => {
-                      const result = await trackLatestAgentVersion();
+                      const result = await trackLatestHarnessVersion();
                       if (result.ok) setVersion("latest");
                       return result;
                     }, "Agents will follow the latest version on npm.")

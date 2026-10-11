@@ -6,7 +6,7 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import { connectRepository, upsertScmConnection } from "./repositories.js";
 import { emptyFindingCounts, getReviewDetail, listReviews } from "./review-history.js";
-import { agents, findings, reviews, organizations } from "./schema.js";
+import { harnesses, findings, reviews, organizations } from "./schema.js";
 import { seedReviewProfiles } from "./settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -22,7 +22,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
   let orgId: string;
   let repoId: string;
   let otherRepoId: string;
-  let agentId: string;
+  let harnessId: string;
   /** Review IDs of `repoId`, newest first. */
   const newestFirst: string[] = [];
 
@@ -60,8 +60,11 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
     });
     repoId = repo.id;
     otherRepoId = other.id;
-    const [agent] = await db.insert(agents).values({ organizationId: orgId, name: "coder-1" }).returning();
-    agentId = agent!.id;
+    const [agent] = await db
+      .insert(harnesses)
+      .values({ organizationId: orgId, name: "coder-1" })
+      .returning();
+    harnessId = agent!.id;
 
     // 30 reviews of `repoId`: every third is a mention, every fifth failed.
     const base = Date.parse("2026-10-01T00:00:00Z");
@@ -76,7 +79,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
       status: i % 5 === 0 ? ("failed" as const) : ("completed" as const),
       error: i % 5 === 0 ? "boom" : null,
       profileId: "standard",
-      agentId,
+      harnessId,
       budget: 200_000,
       tokensIn: 1000 + i,
       tokensOut: 100,
@@ -158,7 +161,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
         baseUrl: "https://gitlab.example.com",
       },
       profile: { id: "standard", name: "Standard" },
-      agent: { id: agentId, name: "coder-1" },
+      agent: { id: harnessId, name: "coder-1" },
       tokensIn: 1029,
       tokensOut: 100,
       budget: 200_000,
@@ -223,7 +226,7 @@ describe.skipIf(!dockerAvailable)("review history queries", () => {
       review: { id: newestFirst[0], prNumber: 30, model: null },
       repository: { id: repoId, fullPath: "acme/api" },
       profile: { id: "standard", name: "Standard" },
-      agent: { id: agentId, name: "coder-1" },
+      agent: { id: harnessId, name: "coder-1" },
     });
     expect(detail!.findings.map((f) => f.title)).toEqual(["Finding 1", "Finding 2", "Finding 3"]);
     expect(await getReviewDetail(db, orgId, randomUUID())).toBeNull();

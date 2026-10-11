@@ -35,7 +35,7 @@ function reviewPayload(job: Job): ReviewJobPayload {
 export async function onReviewJobStarted(
   db: Database,
   job: Job,
-  agentId: string,
+  harnessId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
   const payload = reviewPayload(job);
   const review = await getReview(db, payload.reviewId);
@@ -53,7 +53,7 @@ export async function onReviewJobStarted(
     await finishReview(db, payload.reviewId, { status: "skipped", error: reason });
     return { skip: true, reason: "already_reviewed" };
   }
-  await markReviewRunning(db, payload.reviewId, agentId);
+  await markReviewRunning(db, payload.reviewId, harnessId);
   return { skip: false };
 }
 

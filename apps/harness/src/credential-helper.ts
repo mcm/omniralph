@@ -43,7 +43,7 @@ function safeValue(value: string): boolean {
  * `omniralph-harness git-credential <operation>`: a git credential helper
  * (https://git-scm.com/docs/gitcredentials). Only `get` does anything: it
  * fetches a short-lived, read-only credential for the job's repository from
- * `POST /api/agent/credentials`, authenticated with the job token in
+ * `POST /api/harness/credentials`, authenticated with the job token in
  * `OMNIRALPH_JOB_TOKEN`, or read from the file `OMNIRALPH_JOB_TOKEN_FILE`
  * names (which the agent keeps current), never the agent's own tokens. `store` and `erase`
  * are ignored. Hosts other than the job repository's get no credential.
@@ -88,7 +88,7 @@ export async function runGitCredential(
   try {
     credential = await postJson(
       fetchFn,
-      `${server}/api/agent/credentials`,
+      `${server}/api/harness/credentials`,
       {},
       CloneCredentialResponse,
       jobToken,
@@ -114,7 +114,9 @@ export async function runGitCredential(
     return 0;
   }
   if (!safeValue(credential.username) || !safeValue(credential.password)) {
-    io.stderr("omniralph-harness git-credential: the control panel returned an invalid credential\n");
+    io.stderr(
+      "omniralph-harness git-credential: the control panel returned an invalid credential\n",
+    );
     return 1;
   }
   const expiry = Math.floor(new Date(credential.expiresAt).getTime() / 1000);

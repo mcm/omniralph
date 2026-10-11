@@ -12,7 +12,7 @@ import { z } from "zod";
 export const AgentConfig = z.object({
   server: z.string(),
   agentId: z.string(),
-  /** Rotated on every `/api/agent/token` call; reusing an old one revokes the agent. */
+  /** Rotated on every `/api/harness/token` call; reusing an old one revokes the agent. */
   refreshToken: z.string(),
   workspaceRoot: z.string(),
 });

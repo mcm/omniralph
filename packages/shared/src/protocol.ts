@@ -1,10 +1,10 @@
 /**
  * Job protocol between the control panel and agents: the heartbeat and the
- * job lifecycle endpoints (`/api/agent/heartbeat`, `/api/agent/claim`,
- * `/api/agent/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
+ * job lifecycle endpoints (`/api/harness/heartbeat`, `/api/harness/claim`,
+ * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { z } from "zod";
-import type { JobTokenScope } from "./agent-protocol.js";
+import type { JobTokenScope } from "./harness-protocol.js";
 import type { Capability } from "./index.js";
 
 /** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
@@ -28,7 +28,7 @@ export const MAX_LEASE_SECONDS = 3600;
 /**
  * The built-in capability every agent runs, regardless of central config:
  * housekeeping jobs such as `repo.sync`. Its jobs are always targeted at one
- * agent (`jobs.target_agent_id`).
+ * agent (`jobs.target_harness_id`).
  */
 export const SYSTEM_CAPABILITY = "system";
 export type SystemCapability = typeof SYSTEM_CAPABILITY;
@@ -95,15 +95,15 @@ export const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 /** An agent version: valid semver, at most 64 characters. */
-export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
-export type AgentVersion = z.infer<typeof AgentVersion>;
+export const HarnessVersion = z.string().max(64).regex(SEMVER_PATTERN);
+export type HarnessVersion = z.infer<typeof HarnessVersion>;
 
 /**
  * Whether agent `version` is at least `minimum`, comparing major.minor.patch
  * only (a prerelease of `minimum` counts: it's built from the same code).
  * False for a version that isn't semver.
  */
-export function agentVersionAtLeast(version: string, minimum: string): boolean {
+export function harnessVersionAtLeast(version: string, minimum: string): boolean {
   const core = (v: string) => {
     const match = SEMVER_PATTERN.exec(v.trim());
     return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
@@ -129,11 +129,11 @@ export type SelfUpdateSupport = (typeof SELF_UPDATE_SUPPORT)[number];
  * running ones finish), `installing`, or `confirming` (running a freshly
  * installed version that hasn't stayed up for a minute yet).
  */
-export const AGENT_UPDATE_STATES = ["idle", "draining", "installing", "confirming"] as const;
-export type AgentUpdateStateName = (typeof AGENT_UPDATE_STATES)[number];
+export const HARNESS_UPDATE_STATES = ["idle", "draining", "installing", "confirming"] as const;
+export type HarnessUpdateStateName = (typeof HARNESS_UPDATE_STATES)[number];
 
-export const AgentUpdateReport = z.object({
-  state: z.enum(AGENT_UPDATE_STATES),
+export const HarnessUpdateReport = z.object({
+  state: z.enum(HARNESS_UPDATE_STATES),
   /** The version being installed or confirmed. */
   version: z.string().max(64).nullable(),
   /** The version before the update (the rollback target). */
@@ -143,20 +143,20 @@ export const AgentUpdateReport = z.object({
   /** Why the last update failed, if it did. */
   error: z.string().max(2000).nullable(),
 });
-export type AgentUpdateReport = z.infer<typeof AgentUpdateReport>;
+export type HarnessUpdateReport = z.infer<typeof HarnessUpdateReport>;
 
 /**
  * An admin's "Update now" from the control panel: the agent updates to
  * `version` at once, even if it failed before (it's taken off the failed
  * versions), and reports `id` back as `handledUpdateRequestId`.
  */
-export const AgentUpdateRequest = z.object({
+export const HarnessUpdateRequest = z.object({
   id: z.uuid(),
-  version: AgentVersion,
+  version: HarnessVersion,
 });
-export type AgentUpdateRequest = z.infer<typeof AgentUpdateRequest>;
+export type HarnessUpdateRequest = z.infer<typeof HarnessUpdateRequest>;
 
-/** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
+/** `POST /api/harness/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
   /** Capabilities the host can run (it may know ones the control panel doesn't yet). */
@@ -171,7 +171,7 @@ export const Heartbeat = z.object({
   /** Whether the agent updates itself to `desiredVersion` (absent from older agents). */
   selfUpdate: z.enum(SELF_UPDATE_SUPPORT).optional(),
   /** The agent's self-update progress. */
-  update: AgentUpdateReport.optional(),
+  update: HarnessUpdateReport.optional(),
   /** Versions that failed to install or to stay up; the agent never retries them. */
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
   /** The last `updateRequest` the agent acted on; the control panel then clears it. */
@@ -179,7 +179,7 @@ export const Heartbeat = z.object({
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
-/** A freshly signed job token (`AGENT_TOKEN_TTL_SECONDS`). */
+/** A freshly signed job token (`HARNESS_TOKEN_TTL_SECONDS`). */
 export const JobToken = z.object({
   jobId: z.uuid(),
   token: z.string(),
@@ -206,7 +206,7 @@ export const LEGACY_POLL_INTERVAL_SECONDS = 5;
 export const HeartbeatResponse = z.object({
   maxConcurrency: z.int().min(1),
   /**
-   * @deprecated Agents claim jobs through `POST /api/agent/claim`. Always
+   * @deprecated Agents claim jobs through `POST /api/harness/claim`. Always
    * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
    */
   pollIntervalSeconds: z.int().min(1).optional(),
@@ -222,7 +222,7 @@ export const HeartbeatResponse = z.object({
   organizationId: z.uuid(),
   /**
    * @deprecated Vercel Queues topics old agents poll. Always empty, so old agents
-   * stop polling; agents claim jobs through `POST /api/agent/claim`.
+   * stop polling; agents claim jobs through `POST /api/harness/claim`.
    */
   topics: z.array(z.string()).optional(),
   /** @deprecated Vercel Queues region of `topics`. Always `""`. */
@@ -237,9 +237,9 @@ export const HeartbeatResponse = z.object({
    * The version the agent should run (the agent's override, else its
    * organization's setting); null when none is chosen. Agents under pm2 update themselves to it.
    */
-  desiredVersion: AgentVersion.nullable().default(null),
+  desiredVersion: HarnessVersion.nullable().default(null),
   /** An update an admin asked for and the agent hasn't acted on yet. */
-  updateRequest: AgentUpdateRequest.nullable().default(null),
+  updateRequest: HarnessUpdateRequest.nullable().default(null),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
@@ -271,7 +271,7 @@ export const JobSkipReason = z.enum(JOB_SKIP_REASONS);
 export type JobSkipReason = z.infer<typeof JobSkipReason>;
 
 /**
- * A started job: `run` with the job and its token (`POST /api/agent/claim`
+ * A started job: `run` with the job and its token (`POST /api/harness/claim`
  * only answers `run`). On `skip` the agent runs nothing.
  */
 export const JobStartResponse = z.discriminatedUnion("action", [
@@ -288,11 +288,11 @@ export const JobStartResponse = z.discriminatedUnion("action", [
 ]);
 export type JobStartResponse = z.infer<typeof JobStartResponse>;
 
-/** Longest `POST /api/agent/claim` holds the request while there's nothing to claim. */
+/** Longest `POST /api/harness/claim` holds the request while there's nothing to claim. */
 export const MAX_CLAIM_WAIT_SECONDS = 50;
 
 /**
- * `POST /api/agent/claim` request. The response is `JobStartResponse`'s `run`
+ * `POST /api/harness/claim` request. The response is `JobStartResponse`'s `run`
  * shape (200), or 204 once `waitSeconds` passed with nothing to claim.
  */
 export const ClaimRequest = z.object({
@@ -302,13 +302,13 @@ export const ClaimRequest = z.object({
 });
 export type ClaimRequest = z.input<typeof ClaimRequest>;
 
-/** `POST /api/agent/jobs/{id}/result`: the capability's output (e.g. findings for a review). */
+/** `POST /api/harness/jobs/{id}/result`: the capability's output (e.g. findings for a review). */
 export const JobResult = z.object({
   result: z.record(z.string(), z.unknown()),
 });
 export type JobResult = z.infer<typeof JobResult>;
 
-/** `POST /api/agent/jobs/{id}/fail` */
+/** `POST /api/harness/jobs/{id}/fail` */
 export const JobFailure = z.object({
   /** Transient failure (e.g. a Claude rate limit): claimable again after `retryAfterSeconds`. */
   retryable: z.boolean(),
@@ -353,7 +353,7 @@ export const RepoSyncPayload = z.object({
 export type RepoSyncPayload = z.infer<typeof RepoSyncPayload>;
 
 /**
- * `POST /api/agent/credentials` response (authenticated with a job token): a
+ * `POST /api/harness/credentials` response (authenticated with a job token): a
  * short-lived, read-only credential for the job's repository.
  */
 export const CloneCredentialResponse = z.object({

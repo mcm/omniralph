@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { jobStatus, listRecentJobs, type JobStatus } from "@omniralph/db";
-import { jobRow } from "@/lib/agents/rows";
+import { jobRow } from "@/lib/harnesses/rows";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { JobsView } from "./jobs-view";

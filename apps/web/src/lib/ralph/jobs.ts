@@ -31,12 +31,12 @@ import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 export async function onRalphJobStarted(
   db: Database,
   job: Job,
-  agentId: string,
+  harnessId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "skipped" }> {
   if (!job.ralphRunId) return { skip: false };
   const finished = await lockRun(db, job.ralphRunId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return true;
-    if (run.agentId !== agentId) await updateRun(tx, run.id, { agentId });
+    if (run.harnessId !== harnessId) await updateRun(tx, run.id, { harnessId });
     return false;
   });
   if (finished ?? true) {

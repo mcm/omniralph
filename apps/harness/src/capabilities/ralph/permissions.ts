@@ -47,7 +47,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 /**
  * Asks a person in the run's Linear session to approve a tool call that the
  * repository's Claude Code settings `ask` about (request sessions bypass
- * everything else): `POST /api/agent/jobs/{id}/permissions`, then polls
+ * everything else): `POST /api/harness/jobs/{id}/permissions`, then polls
  * `GET …/permissions/{requestId}` until someone answers. With no answer
  * within `timeoutMs` (or when the session ends) the call is denied and the
  * question closed (`DELETE`). One question at a time: concurrent calls wait
@@ -58,7 +58,7 @@ export class PermissionRelay {
   private readonly base: string;
 
   constructor(private readonly options: PermissionRelayOptions) {
-    this.base = `${options.server}/api/agent/jobs/${encodeURIComponent(options.jobId)}/permissions`;
+    this.base = `${options.server}/api/harness/jobs/${encodeURIComponent(options.jobId)}/permissions`;
   }
 
   /** Whether the call may run. */

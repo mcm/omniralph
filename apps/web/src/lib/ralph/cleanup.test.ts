@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -128,14 +128,14 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(agents);
+    await db.delete(harnesses);
     await db.delete(webhookDeliveries);
     [{ id: agentA }] = (await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
       ])
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
     await ralphOn();
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
@@ -155,7 +155,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -168,7 +168,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, agentId: agentA, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;
@@ -305,7 +305,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     const [job, ...more] = await cleanupJobs(run.id);
     expect(more).toEqual([]);
     // On the run's sticky agent, which holds the worktree.
-    expect(job!.targetAgentId).toBe(agentA);
+    expect(job!.targetHarnessId).toBe(agentA);
     expect(actionOf(job!)).toEqual({ kind: "cleanup", mergedSha: sha(1), stashes: [] });
     expect(RalphCleanupPayload.parse(job!.payload)).toMatchObject({
       branch,

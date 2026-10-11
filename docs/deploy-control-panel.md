@@ -124,7 +124,7 @@ PEM file. Do the same per environment if previews use their own GitHub App.
 ## 6. Job dispatch
 
 There's nothing to provision: the `jobs` table in Postgres is the job queue
-([ADR 0006](adr/0006-postgres-job-queue.md)). Agents claim jobs with `POST /api/agent/claim`, which
+([ADR 0006](adr/0006-postgres-job-queue.md)). Agents claim jobs with `POST /api/harness/claim`, which
 holds the request for up to 50s while there's nothing to claim (its `maxDuration` is 60s), and
 renew the leases of their running jobs with each heartbeat.
 

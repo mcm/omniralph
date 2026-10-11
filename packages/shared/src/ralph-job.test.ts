@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CAPABILITIES, isCapability } from "./index.js";
-import { JobTokenScope } from "./agent-protocol.js";
+import { JobTokenScope } from "./harness-protocol.js";
 import { CAPABILITY_JOB_SCOPES } from "./protocol.js";
 import {
   GitBranch,

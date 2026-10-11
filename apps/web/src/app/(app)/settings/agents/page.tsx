@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { DESIRED_AGENT_VERSION_KEY, getAppSetting } from "@omniralph/db";
+import { DESIRED_HARNESS_VERSION_KEY, getAppSetting } from "@omniralph/db";
 import { HARNESS_PACKAGE } from "@omniralph/shared";
-import { organizationAgentVersion } from "@/lib/agents/desired-version";
+import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { AgentSettingsView } from "./agent-settings-view";
@@ -12,8 +12,8 @@ export default async function AgentSettingsPage() {
   const admin = await requirePageUser("admin");
   const db = getDb();
   const [setting, resolved] = await Promise.all([
-    getAppSetting(db, admin.organization.id, DESIRED_AGENT_VERSION_KEY),
-    organizationAgentVersion(db, admin.organization.id),
+    getAppSetting(db, admin.organization.id, DESIRED_HARNESS_VERSION_KEY),
+    organizationHarnessVersion(db, admin.organization.id),
   ]);
   return (
     <AgentSettingsView

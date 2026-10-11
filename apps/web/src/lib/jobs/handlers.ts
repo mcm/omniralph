@@ -71,7 +71,7 @@ export interface JobOutcomeHandler {
   onStarted?(
     db: Database,
     job: Job,
-    agentId: string,
+    harnessId: string,
   ): Promise<{ skip: false } | { skip: true; reason: JobSkipReason }>;
   /** Whether a submitted result is valid; an invalid one is rejected (400) before the job completes. */
   isValidResult?(result: unknown): boolean;

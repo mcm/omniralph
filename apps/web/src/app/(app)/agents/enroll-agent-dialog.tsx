@@ -19,7 +19,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { AGENT_INSTALL_COMMAND } from "@/lib/agents/display";
+import { AGENT_INSTALL_COMMAND } from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
 import { createEnrollment } from "./actions";
 

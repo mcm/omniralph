@@ -225,11 +225,11 @@ export async function getRepositoryReviewSettings(
 export async function markReviewRunning(
   db: Database,
   reviewId: string,
-  agentId: string,
+  harnessId: string,
 ): Promise<void> {
   await db
     .update(reviews)
-    .set({ status: "running", agentId, error: null })
+    .set({ status: "running", harnessId, error: null })
     .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)));
 }
 

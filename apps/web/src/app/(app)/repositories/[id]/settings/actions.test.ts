@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  agentRepoPins,
-  agents,
+  harnessRepoPins,
+  harnesses,
   connectRepository,
   closeDb,
   createDb,
@@ -65,7 +65,7 @@ const baseSettings: RepositorySettingsInput = {
   triggers: { onOpen: true, onPush: true, drafts: false },
   pathExcludes: [],
   customInstructions: "",
-  pinnedAgentIds: [],
+  pinnedHarnessIds: [],
 };
 
 const baseRalph: RalphSettingsInput = {
@@ -124,19 +124,19 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     ).id;
     [agentA, agentB, revokedAgent] = (
       await db
-        .insert(agents)
+        .insert(harnesses)
         .values([
           { organizationId: orgId, name: "coder-a" },
           { organizationId: orgId, name: "coder-b" },
           { organizationId: orgId, name: "coder-old", revokedAt: new Date() },
         ])
-        .returning({ id: agents.id })
+        .returning({ id: harnesses.id })
     ).map((a) => a.id) as [string, string, string];
   }, 180_000);
 
   beforeEach(async () => {
     state.user = { id: "admin-1", role: "admin", name: null, email: null, image: null };
-    await db.delete(agentRepoPins);
+    await db.delete(harnessRepoPins);
     await db.delete(jobs);
   });
 
@@ -145,12 +145,12 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     await container?.stop();
   });
 
-  async function pinnedAgentIds(): Promise<string[]> {
+  async function pinnedHarnessIds(): Promise<string[]> {
     const rows = await db
-      .select({ agentId: agentRepoPins.agentId })
-      .from(agentRepoPins)
-      .where(eq(agentRepoPins.repositoryId, repoId));
-    return rows.map((r) => r.agentId).sort();
+      .select({ harnessId: harnessRepoPins.harnessId })
+      .from(harnessRepoPins)
+      .where(eq(harnessRepoPins.repositoryId, repoId));
+    return rows.map((r) => r.harnessId).sort();
   }
 
   async function syncJobs() {
@@ -181,7 +181,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         triggers: { onOpen: true, onPush: false, drafts: true },
         pathExcludes: ["*.snap", "/docs/**"],
         customInstructions: "  Prefer early returns.  ",
-        pinnedAgentIds: [],
+        pinnedHarnessIds: [],
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
@@ -201,9 +201,9 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
 
   it("pinning an agent enqueues a repo.sync job for that agent; unpinning removes the pin", async () => {
     expect(
-      await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentA] }),
+      await updateRepositorySettings(repoId, { ...baseSettings, pinnedHarnessIds: [agentA] }),
     ).toEqual({ ok: true });
-    expect(await pinnedAgentIds()).toEqual([agentA]);
+    expect(await pinnedHarnessIds()).toEqual([agentA]);
     const [job, ...rest] = await syncJobs();
     expect(rest).toHaveLength(0);
     expect(job).toMatchObject({
@@ -211,42 +211,42 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       type: "repo.sync",
       status: "queued",
       repositoryId: repoId,
-      targetAgentId: agentA,
+      targetHarnessId: agentA,
     });
     expect(job!.payload).toMatchObject({ repository: { fullPath: "acme/api" } });
 
     // Swapping A for B syncs only to B, and keeping B pinned doesn't sync again.
     expect(
-      await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentB] }),
+      await updateRepositorySettings(repoId, { ...baseSettings, pinnedHarnessIds: [agentB] }),
     ).toEqual({ ok: true });
-    expect(await pinnedAgentIds()).toEqual([agentB]);
-    expect((await syncJobs()).map((j) => j.targetAgentId)).toEqual([agentA, agentB]);
+    expect(await pinnedHarnessIds()).toEqual([agentB]);
+    expect((await syncJobs()).map((j) => j.targetHarnessId)).toEqual([agentA, agentB]);
     expect(
-      await updateRepositorySettings(repoId, { ...baseSettings, pinnedAgentIds: [agentB] }),
+      await updateRepositorySettings(repoId, { ...baseSettings, pinnedHarnessIds: [agentB] }),
     ).toEqual({ ok: true });
     expect(await syncJobs()).toHaveLength(2);
 
     // Empty means any agent.
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
-    expect(await pinnedAgentIds()).toEqual([]);
+    expect(await pinnedHarnessIds()).toEqual([]);
   });
 
   it("rejects revoked, unknown and other organizations' agents without saving anything", async () => {
     const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
     const [foreignAgent] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values({ organizationId: otherOrg!.id, name: "coder-foreign" })
-      .returning({ id: agents.id });
-    for (const agentId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
+      .returning({ id: harnesses.id });
+    for (const harnessId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
           profileId: "deep",
-          pinnedAgentIds: [agentA, agentId],
+          pinnedHarnessIds: [agentA, harnessId],
         }),
-      ).toMatchObject({ ok: false, fieldErrors: { pinnedAgentIds: expect.any(String) } });
+      ).toMatchObject({ ok: false, fieldErrors: { pinnedHarnessIds: expect.any(String) } });
     }
-    expect(await pinnedAgentIds()).toEqual([]);
+    expect(await pinnedHarnessIds()).toEqual([]);
     expect(await db.select().from(jobs)).toHaveLength(0);
     expect((await getRepository(db, repoId))!.profileId).toBe("standard");
   });

@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  agentRepoPins,
+  harnessRepoPins,
   chatLinearDelegations,
   chatMessages,
   createChatLinearDelegation,
   ensureChatThread,
   saveChatConnection,
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -21,7 +21,7 @@ import {
   listLanes,
   jobs,
   listStories,
-  pinRepositoryToAgent,
+  pinRepositoryToHarness,
   ralphRuns,
   runMigrations,
   claimJob,
@@ -46,7 +46,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { and, eq, inArray } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeAgent } from "@/lib/agent-auth/revoke";
+import { revokeHarness } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
@@ -172,15 +172,15 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(agentRepoPins);
-    await db.delete(agents);
+    await db.delete(harnessRepoPins);
+    await db.delete(harnesses);
     [{ id: agentA }, { id: agentB }] = (await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
         { organizationId: orgId, name: "agent-b", enabledCapabilities: ["review", "ralph"] },
       ])
-      .returning({ id: agents.id })) as [{ id: string }, { id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -235,22 +235,22 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   async function work(
     runId: string,
     outcome: Outcome = {},
-    agentId = agentA,
+    harnessId = agentA,
   ): Promise<RalphStoryPayload> {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId,
+      harnessId,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        agentId,
+        harnessId,
         retryable: false,
         error: outcome.jobError,
         maxDeliveries: MAX_JOB_DELIVERIES,
@@ -258,7 +258,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     } else {
       const status = await completeJob(db, {
         jobId: job.id,
-        agentId,
+        harnessId,
         result: result(outcome),
       });
       expect(status).toEqual({ status: "completed" });
@@ -281,29 +281,29 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   async function describePr(
     runId: string,
     outcome: Partial<RalphDescribePrResult> | { jobError: string } = {},
-    agentId = agentA,
+    harnessId = agentA,
   ): Promise<RalphDescribePrPayload> {
     const job = await activeJob(runId);
     expect(job.type).toBe("ralph.describe-pr");
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId,
+      harnessId,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        agentId,
+        harnessId,
         retryable: false,
         error: outcome.jobError,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      await completeJob(db, { jobId: job.id, agentId, result: description(outcome) });
+      await completeJob(db, { jobId: job.id, harnessId, result: description(outcome) });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     return RalphDescribePrPayload.parse(job.payload);
@@ -347,7 +347,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       type: "ralph.story",
       repositoryId: repoId,
       ralphRunId: run.id,
-      targetAgentId: null,
+      targetHarnessId: null,
     });
     const payload = RalphStoryPayload.parse(first.payload);
     expect(payload).toMatchObject({
@@ -394,9 +394,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         body: `✅ Completed by Omniralph in \`${sha(1).slice(0, 10)}\` on \`feat/epic\`.\n\nGamma done.`,
       },
     ]);
-    expect((await getRun(db, run.id))?.agentId).toBe(agentA);
+    expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
     const second = await activeJob(run.id);
-    expect(second.targetAgentId).toBe(agentA);
+    expect(second.targetHarnessId).toBe(agentA);
     const betaPayload = RalphStoryPayload.parse(second.payload);
     expect(betaPayload.story.identifier).toBe("ENG-3");
     expect(betaPayload.progress).toContain("ENG-4: Gamma");
@@ -415,7 +415,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(describeJob).toMatchObject({
       capability: "ralph",
       type: "ralph.describe-pr",
-      targetAgentId: agentA,
+      targetHarnessId: agentA,
       ralphRunId: run.id,
     });
     const describePayload = await describePr(run.id);
@@ -502,28 +502,28 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   });
 
   it("sends the first job to the pinned agent, then sticks to the agent that ran it until it's revoked", async () => {
-    await pinRepositoryToAgent(db, { agentId: agentB, repositoryId: repoId });
+    await pinRepositoryToHarness(db, { harnessId: agentB, repositoryId: repoId });
     const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
     for (const [i, title] of ["One", "Two", "Three"].entries()) {
       linear.add({ identifier: `ENG-1${i + 1}`, title, parentId: epic.id, subIssueSortOrder: i });
     }
     const run = await delegate(epic.id);
-    expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
+    expect((await activeJob(run.id)).targetHarnessId).toBe(agentB);
 
     // The pin is removed and the job retargeted, so agent A takes it: the run sticks to A from now on.
-    await db.delete(agentRepoPins);
+    await db.delete(harnessRepoPins);
     expect(await dispatcher.republish((await activeJob(run.id)).id)).toBe(true);
-    expect((await activeJob(run.id)).targetAgentId).toBeNull();
+    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
     await work(run.id, {}, agentA);
     const second = await activeJob(run.id);
-    expect(second.targetAgentId).toBe(agentA);
+    expect(second.targetHarnessId).toBe(agentA);
 
-    // A is revoked while the job waits for it: it goes back to any of the org's ralph agents.
-    await revokeAgent(agentA, { db, dispatcher });
-    expect(await getJob(db, second.id)).toMatchObject({ status: "queued", targetAgentId: null });
+    // A is revoked while the job waits for it: it goes back to any of the org's ralph harnesses.
+    await revokeHarness(agentA, { db, dispatcher });
+    expect(await getJob(db, second.id)).toMatchObject({ status: "queued", targetHarnessId: null });
     await work(run.id, {}, agentB);
-    expect((await getRun(db, run.id))?.agentId).toBe(agentB);
-    expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
+    expect((await getRun(db, run.id))?.harnessId).toBe(agentB);
+    expect((await activeJob(run.id)).targetHarnessId).toBe(agentB);
   });
 
   it("goes back to the organization's ralph agents when the sticky agent was revoked before the next job", async () => {
@@ -534,23 +534,23 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
-    await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
-    await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentA));
+    await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
+    await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentA));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).targetAgentId).toBeNull();
+    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
 
   it("never sticks to an agent of another organization", async () => {
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [foreign] = await db
-      .insert(agents)
+      .insert(harnesses)
       .values({ organizationId: other!.id, name: "globex-1", enabledCapabilities: ["ralph"] })
       .returning();
     const epic = linear.add({ identifier: "ENG-18", title: "Epic" });
@@ -560,17 +560,17 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
-    await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
-    await db.update(ralphRuns).set({ agentId: foreign!.id }).where(eq(ralphRuns.id, run.id));
+    await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
+    await db.update(ralphRuns).set({ harnessId: foreign!.id }).where(eq(ralphRuns.id, run.id));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).targetAgentId).toBeNull();
+    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
 
   it("retries a failed attempt with its feedback and completes", async () => {
@@ -617,7 +617,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       await lapseLease();
       const started = await claimJob(db, {
         organizationId: orgId,
-        agentId: agentA,
+        harnessId: agentA,
         capabilities: ["ralph"],
         enabledCapabilities: ["ralph"],
         maxDeliveries: MAX_JOB_DELIVERIES,
@@ -630,7 +630,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await lapseLease();
     const gaveUp = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -668,7 +668,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -676,7 +676,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(claim?.job.id).toBe(job.id);
     const failed = await failJob(db, {
       jobId: job.id,
-      agentId: agentA,
+      harnessId: agentA,
       retryable: true,
       error: "Claude rate limit",
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -1101,7 +1101,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     // The job completes, but its outcome hook never ran (e.g. the control panel crashed).
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -1109,7 +1109,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(claim?.job.id).toBe(job.id);
     await completeJob(db, {
       jobId: job.id,
-      agentId: agentA,
+      harnessId: agentA,
       result: result({ commitSha: sha(7) }),
     });
     expect(await reconcileRuns(deps())).toEqual({ reconciled: 0, failed: 0 });
@@ -1305,7 +1305,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         const job = await activeJob(run.id);
         expect(job).toMatchObject({
           repositoryId: gitlabRepoId,
-          targetAgentId: agentA,
+          targetHarnessId: agentA,
         });
         const second = await work(run.id, { commitSha: sha(42) }, agentA);
         expect(second).toMatchObject({
@@ -1322,7 +1322,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         );
 
         // The sticky agent takes every lane's jobs.
-        expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
+        expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
         expect((await work(run.id, { commitSha: sha(43) }, agentA)).repositoryId).toBe(repoId);
 
         // Each lane is published with its own describe job and its own PR/MR, the main one first.

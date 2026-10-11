@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -142,14 +142,14 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(agents);
+    await db.delete(harnesses);
     await db.delete(webhookDeliveries);
     [{ id: agentA }] = (await db
-      .insert(agents)
+      .insert(harnesses)
       .values([
         { organizationId: orgId, name: "agent-a", enabledCapabilities: ["review", "ralph"] },
       ])
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);
     linear = new FakeLinearGateway();
@@ -169,7 +169,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -180,7 +180,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, agentId: agentA, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());

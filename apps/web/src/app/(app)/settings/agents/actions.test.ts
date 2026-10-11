@@ -25,17 +25,17 @@ vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
 vi.mock("@omniralph/db", () => ({
-  TRACK_LATEST_AGENT_VERSION: "latest",
-  getDesiredAgentVersion: async () => state.version,
-  getLatestAgentVersionCheck: async () => null,
-  setLatestAgentVersionCheck: async (
+  TRACK_LATEST_HARNESS_VERSION: "latest",
+  getDesiredHarnessVersion: async () => state.version,
+  getLatestHarnessVersionCheck: async () => null,
+  setLatestHarnessVersionCheck: async (
     _db: unknown,
     _organizationId: string,
     check: { version: string | null; error: string | null },
   ) => {
     state.latest = check;
   },
-  setDesiredAgentVersion: async (
+  setDesiredHarnessVersion: async (
     _db: unknown,
     organizationId: string,
     version: string | null,
@@ -47,7 +47,7 @@ vi.mock("@omniralph/db", () => ({
   },
 }));
 
-const { setGlobalAgentVersion, trackLatestAgentVersion } = await import("./actions");
+const { setGlobalHarnessVersion, trackLatestHarnessVersion } = await import("./actions");
 
 const REGISTRY = "https://registry.npmjs.org/@omniralph%2fharness";
 const requests: { authorization: string | null; accept: string | null }[] = [];
@@ -85,30 +85,36 @@ describe("Settings › Agents actions", () => {
   });
 
   it("sets the organization's version, which must be semver", async () => {
-    expect(await setGlobalAgentVersion(" 1.4.0 ")).toEqual({ ok: true });
+    expect(await setGlobalHarnessVersion(" 1.4.0 ")).toEqual({ ok: true });
     // The active organization's version.
     expect(state).toMatchObject({
       organizationId: "org-1",
       version: "1.4.0",
       updatedBy: "admin-1",
     });
-    expect(await setGlobalAgentVersion("v1.5.0-beta.1")).toEqual({ ok: true });
+    expect(await setGlobalHarnessVersion("v1.5.0-beta.1")).toEqual({ ok: true });
     expect(state.version).toBe("1.5.0-beta.1");
 
     for (const bad of ["1.4", "01.2.3", "1.2.3; rm -rf /", "next"]) {
-      expect(await setGlobalAgentVersion(bad)).toEqual({ ok: false, error: expect.any(String) });
+      expect(await setGlobalHarnessVersion(bad)).toEqual({ ok: false, error: expect.any(String) });
     }
     expect(state.version).toBe("1.5.0-beta.1");
 
-    expect(await setGlobalAgentVersion("")).toEqual({ ok: true });
+    expect(await setGlobalHarnessVersion("")).toEqual({ ok: true });
     expect(state.version).toBeNull();
   });
 
   it("is admin-only", async () => {
     state.user = user("member");
-    expect(await setGlobalAgentVersion("1.4.0")).toEqual({ ok: false, error: expect.any(String) });
-    expect(await trackLatestAgentVersion()).toEqual({ ok: false, error: expect.any(String) });
-    expect(await setGlobalAgentVersion("latest")).toEqual({ ok: false, error: expect.any(String) });
+    expect(await setGlobalHarnessVersion("1.4.0")).toEqual({
+      ok: false,
+      error: expect.any(String),
+    });
+    expect(await trackLatestHarnessVersion()).toEqual({ ok: false, error: expect.any(String) });
+    expect(await setGlobalHarnessVersion("latest")).toEqual({
+      ok: false,
+      error: expect.any(String),
+    });
     expect(state.version).toBeNull();
     expect(requests).toEqual([]);
   });
@@ -116,7 +122,7 @@ describe("Settings › Agents actions", () => {
   it("tracks the latest version on npm, read at once without a token", async () => {
     process.env.NPM_TOKEN = "npm_secret";
     try {
-      expect(await trackLatestAgentVersion()).toEqual({ ok: true, version: "1.4.2" });
+      expect(await trackLatestHarnessVersion()).toEqual({ ok: true, version: "1.4.2" });
     } finally {
       delete process.env.NPM_TOKEN;
     }
@@ -130,24 +136,24 @@ describe("Settings › Agents actions", () => {
     // Typing it works too.
     state.version = null;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "1.5.0" } });
-    expect(await setGlobalAgentVersion(" Latest ")).toEqual({ ok: true, version: "1.5.0" });
+    expect(await setGlobalHarnessVersion(" Latest ")).toEqual({ ok: true, version: "1.5.0" });
     expect(state.version).toBe("latest");
     expect(state.latest).toEqual({ version: "1.5.0", error: null });
   });
 
   it("reports registry errors and keeps the version", async () => {
     registry = () => HttpResponse.json({ error: "Not found" }, { status: 404 });
-    expect(await trackLatestAgentVersion()).toEqual({
+    expect(await trackLatestHarnessVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("doesn't know @omniralph/harness"),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });
-    expect(await trackLatestAgentVersion()).toEqual({
+    expect(await trackLatestHarnessVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("didn't list a latest version"),
     });
     registry = () => new HttpResponse("oops", { status: 500 });
-    expect(await trackLatestAgentVersion()).toEqual({
+    expect(await trackLatestHarnessVersion()).toEqual({
       ok: false,
       error: expect.stringContaining("answered 500"),
     });

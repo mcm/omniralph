@@ -33,7 +33,7 @@ import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { useAction } from "@/components/use-action";
-import type { JobRow } from "@/lib/agents/rows";
+import type { JobRow } from "@/lib/harnesses/rows";
 import { formatDateTime } from "@/lib/format-date";
 import { cancelJob } from "./actions";
 

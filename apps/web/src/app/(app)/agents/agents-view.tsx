@@ -20,7 +20,7 @@ import {
 import { IconServer } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import type { AgentRow } from "@/lib/agents/rows";
+import type { HarnessRow } from "@/lib/harnesses/rows";
 import { formatRelative } from "@/lib/format-date";
 import {
   AgentStatusBadge,
@@ -32,7 +32,7 @@ import {
 import { EnrollAgentDialog } from "./enroll-agent-dialog";
 
 interface AgentsViewProps {
-  agents: AgentRow[];
+  agents: HarnessRow[];
   /** When the page was rendered (ms since epoch), for relative times. */
   now: number;
 }
@@ -44,7 +44,7 @@ function AgentTableRow({
   isAdmin,
   now,
 }: {
-  agent: AgentRow;
+  agent: HarnessRow;
   isAdmin: boolean;
   now: number;
 }) {

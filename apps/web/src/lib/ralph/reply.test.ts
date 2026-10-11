@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -139,11 +139,11 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(agents);
+    await db.delete(harnesses);
     [{ id: agentA }] = (await db
-      .insert(agents)
+      .insert(harnesses)
       .values([{ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] }])
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -178,7 +178,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: agentA,
+      harnessId: agentA,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
@@ -196,13 +196,13 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        agentId: agentA,
+        harnessId: agentA,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      await completeJob(db, { jobId: job.id, agentId: agentA, result: outcome });
+      await completeJob(db, { jobId: job.id, harnessId: agentA, result: outcome });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
   }
@@ -398,9 +398,9 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
     const heartbeat = (
       runningJobIds: string[],
       acks: { delivered?: string[]; rejected?: string[] } = {},
-      agentId = agentA,
+      harnessId = agentA,
     ) =>
-      exchangeJobMessages({ db, linear: async () => linear }, agentId, runningJobIds, {
+      exchangeJobMessages({ db, linear: async () => linear }, harnessId, runningJobIds, {
         deliveredMessageIds: acks.delivered ?? [],
         rejectedMessageIds: acks.rejected ?? [],
       });
@@ -788,7 +788,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         advanced: { action: "preparing" },
       });
       const job = await activeJob(run.id);
-      expect(job).toMatchObject({ type: "ralph.prepare", targetAgentId: agentA });
+      expect(job).toMatchObject({ type: "ralph.prepare", targetHarnessId: agentA });
       const payload = await prepare(run.id, {});
       expect(payload).toMatchObject({
         commands: PREPARE_COMMANDS,

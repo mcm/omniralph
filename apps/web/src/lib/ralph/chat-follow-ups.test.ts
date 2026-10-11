@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  agents,
+  harnesses,
   completeJob,
   connectRepository,
   closeDb,
@@ -78,7 +78,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
   let repoId: string;
   let connection: ChatConnection;
   let chatThread: ChatThread;
-  let agentId: string;
+  let harnessId: string;
   let scm: FakeScmAdapter;
   let dispatcher: PostgresDispatcher;
   let adapter: Adapter;
@@ -197,10 +197,10 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     );
     if (saved === "other_organization") throw new Error("taken");
     connection = saved;
-    [{ id: agentId }] = (await db
-      .insert(agents)
+    [{ id: harnessId }] = (await db
+      .insert(harnesses)
       .values({ organizationId: orgId, name: "agent-a", enabledCapabilities: ["ralph"] })
-      .returning({ id: agents.id })) as [{ id: string }];
+      .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -252,20 +252,20 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId,
+      harnessId,
       capabilities: ["ralph"],
       enabledCapabilities: ["ralph"],
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
     if (type !== "ralph.cleanup") {
-      expect(await onRalphJobStarted(db, job!, agentId)).toEqual({ skip: false });
+      expect(await onRalphJobStarted(db, job!, harnessId)).toEqual({ skip: false });
     }
     return job!;
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, agentId, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, harnessId, result })).toEqual({
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;

@@ -275,7 +275,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(call!.prompt).not.toContain("Stashed Work");
 
     expect(new Set(posted.map((p) => p.url))).toEqual(
-      new Set([`https://omniralph.example.com/api/agent/jobs/${storyJob.id}/activities`]),
+      new Set([`https://omniralph.example.com/api/harness/jobs/${storyJob.id}/activities`]),
     );
     expect(posted.every((p) => p.auth === "Bearer job-token")).toBe(true);
     expect(posted.map((p) => p.body)).toEqual([
@@ -473,7 +473,7 @@ describe("ralph.story", { timeout: 60_000 }, () => {
 
     expect(downloads).toEqual([
       {
-        url: `https://omniralph.example.com/api/agent/jobs/${storyJob.id}/attachments/${id}`,
+        url: `https://omniralph.example.com/api/harness/jobs/${storyJob.id}/attachments/${id}`,
         auth: "Bearer job-token",
       },
     ]);

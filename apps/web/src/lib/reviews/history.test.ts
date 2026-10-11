@@ -142,7 +142,7 @@ describe("view mapping", () => {
         budget: 1,
         durationMs: null,
         model: "claude-opus-5-5",
-        agentId: null,
+        harnessId: null,
         skippedFiles: [{ path: "big.lock", reason: "excluded" }],
         summaryCommentId: null,
         error: "clone failed",

@@ -62,7 +62,7 @@ export const REVIEW_REPLY_OUTCOMES = [
   "budget_exhausted",
 ] as const;
 
-/** Result of a `review.reply` job (`/api/agent/jobs/{id}/result`). */
+/** Result of a `review.reply` job (`/api/harness/jobs/{id}/result`). */
 export const ReviewReplyJobResult = z
   .object({
     answer: z.string().trim().min(1).max(MAX_REPLY_ANSWER_LENGTH).nullable(),
