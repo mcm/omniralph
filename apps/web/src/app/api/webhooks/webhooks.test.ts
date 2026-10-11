@@ -14,7 +14,7 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import { ReviewJobPayload } from "@omniralph/shared";
+import { reviewTriggerContext } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
@@ -249,7 +249,9 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       .from(jobs)
       .where(eq(jobs.repositoryId, repositoryId))
       .then((rows) =>
-        rows.filter((j) => ReviewJobPayload.safeParse(j.payload).data?.prNumber === prNumber),
+        rows.filter(
+          (j) => j.type === "review.run" && reviewTriggerContext(j.payload).prNumber === prNumber,
+        ),
       );
 
   describe("GitHub", () => {
@@ -279,7 +281,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         taskType: "review",
         pool: "short",
       });
-      const payload = ReviewJobPayload.parse(job!.payload);
+      const payload = reviewTriggerContext(job!.payload);
       expect(payload).toMatchObject({
         reviewId: body.reviewId,
         headSha: head,
@@ -471,8 +473,8 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       const [review] = await db.select().from(reviews).where(eq(reviews.id, body.reviewId));
       expect(review).toMatchObject({ status: "queued", headSha: head, baseSha: START_SHA });
       const [job] = await prJobs(gitlabRepoId, iid);
-      expect(ReviewJobPayload.parse(job!.payload)).toMatchObject({
-        repository: { provider: "gitlab", fullPath: "acme/app" },
+      expect(reviewTriggerContext(job!.payload)).toMatchObject({
+        repository: "acme/app",
         headSha: head,
         baseSha: START_SHA,
         changeRequest: { title: "Add login", author: "mr-author" },

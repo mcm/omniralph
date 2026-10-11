@@ -23,7 +23,7 @@ import {
 } from "@omniralph/db";
 import {
   QUERY_TASKS_MIN_HARNESS_VERSION,
-  ReviewJobPayload,
+  reviewTriggerContext,
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
@@ -214,7 +214,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
     });
     if (result.status !== "enqueued") throw new Error(result.status);
     const job = await getJob(db, result.jobId);
-    return ReviewJobPayload.parse(job!.payload).reviewConfig.rules;
+    return reviewTriggerContext(job!.payload).reviewConfig.rules;
   }
 
   describe("rule generation from false-positive dismissals", () => {

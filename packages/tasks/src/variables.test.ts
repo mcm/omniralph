@@ -45,12 +45,18 @@ describe("VARIABLES", () => {
     expect(query).toEqual(["question", "hunk", "conventions", "checkout"]);
   });
 
-  it("gives review tasks the diff, plan, risk, conventions and previous findings", () => {
+  it("gives review tasks the depth, rubric, rules, diff, plan, risk, conventions and previous findings", () => {
     const review = VARIABLES.filter(
       (variable) => variable.source === "taskType" && variable.taskTypes.includes("review"),
     );
     expect(review.map((variable) => variable.name)).toEqual([
       "conventions",
+      "depth",
+      "rubric",
+      "repositoryRules",
+      "repositoryRules.instructions",
+      "repositoryRules.rules.items.number",
+      "repositoryRules.rules.items.text",
       "diff",
       "plan",
       "plan.mode",

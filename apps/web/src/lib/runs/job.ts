@@ -1,5 +1,7 @@
 import {
+  harnessVersionAtLeast,
   QUERY_TASKS_MIN_HARNESS_VERSION,
+  REVIEW_TASKS_MIN_HARNESS_VERSION,
   RunSpecJobPayload,
   SETUP_COMMANDS_MIN_HARNESS_VERSION,
 } from "@omniralph/shared";
@@ -10,9 +12,10 @@ import type { TaskDefinition } from "@omniralph/tasks";
  * `insertJob`/`createAndPublish` input next to `organizationId`, `type` and
  * `dedupeKey`): the task's type and pool, its ID in `task_id` and the stored
  * `RunSpecJobPayload`, which `resolveRunSpec` turns into a run spec at claim time.
- * Query tasks need a harness with the query lifecycle (`QUERY_TASKS_MIN_HARNESS_VERSION`),
+ * Query and review tasks need a harness with their lifecycle
+ * (`QUERY_TASKS_MIN_HARNESS_VERSION`, `REVIEW_TASKS_MIN_HARNESS_VERSION`),
  * and tasks with setup or teardown commands one that runs them
- * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`).
+ * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`): the highest that applies.
  */
 export function runSpecJobInput(
   task: Pick<TaskDefinition, "id" | "taskType" | "pool"> &
@@ -41,8 +44,16 @@ function minHarnessVersion(
   task: Pick<TaskDefinition, "taskType"> &
     Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
 ): string | null {
-  if ((task.setupCommands?.length ?? 0) > 0 || (task.teardownCommands?.length ?? 0) > 0) {
-    return SETUP_COMMANDS_MIN_HARNESS_VERSION;
-  }
-  return task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null;
+  const commands =
+    (task.setupCommands?.length ?? 0) > 0 || (task.teardownCommands?.length ?? 0) > 0;
+  const needed = [
+    task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
+    task.taskType === "review" ? REVIEW_TASKS_MIN_HARNESS_VERSION : null,
+    commands ? SETUP_COMMANDS_MIN_HARNESS_VERSION : null,
+  ].filter((version) => version !== null);
+  return needed.reduce<string | null>(
+    (highest, version) =>
+      highest === null || !harnessVersionAtLeast(highest, version) ? version : highest,
+    null,
+  );
 }

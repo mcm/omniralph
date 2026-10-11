@@ -11,6 +11,7 @@ const { learnedRuleSink } = await import("./learned-rule");
 const { findingThreadSink } = await import("./finding-thread");
 const { chatThreadSink } = await import("./chat-thread");
 const { triageSink } = await import("./triage");
+const { reviewSink } = await import("./review");
 
 const legacyCompleted = vi.fn();
 registerJobOutcomeHandler("sinks.legacy", {
@@ -39,6 +40,7 @@ const DEFINITIONS = {
       "builtin:reply-to-finding": getBuiltinTask("builtin:reply-to-finding"),
       "builtin:ask-about-code": getBuiltinTask("builtin:ask-about-code"),
       "builtin:triage": getBuiltinTask("builtin:triage"),
+      "builtin:review-pr": getBuiltinTask("builtin:review-pr"),
       "test:result": task("builtin:test-result", "run-result"),
     })[id] ?? null,
   getAgent: () => null,
@@ -59,6 +61,7 @@ describe("sinkFor", () => {
     expect(sinkFor("finding-thread")).toBe(findingThreadSink);
     expect(sinkFor("chat-thread")).toBe(chatThreadSink);
     expect(sinkFor("triage")).toBe(triageSink);
+    expect(sinkFor("review")).toBe(reviewSink);
     expect(sinkFor("run-result")).toBeUndefined();
   });
 });
@@ -69,6 +72,7 @@ describe("taskSink", () => {
     expect(taskSink({ taskId: "builtin:reply-to-finding" }, DEFINITIONS)).toBe(findingThreadSink);
     expect(taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
     expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
+    expect(taskSink({ taskId: "builtin:review-pr" }, DEFINITIONS)).toBe(reviewSink);
     expect(taskSink({ taskId: "test:result" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
@@ -88,6 +92,26 @@ describe("jobHooks", () => {
       status: "no_rule",
     });
     expect(legacyCompleted).not.toHaveBeenCalled();
+  });
+
+  it("validates a review run's result with the review sink, with every review hook", () => {
+    const hooks = jobHooks({ type: "review.run", payload: {}, taskId: "builtin:review-pr" })!;
+    const result = {
+      findings: [],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      skipped: [],
+      stopReason: "completed",
+      scope: { mode: "full", baseSha: "a".repeat(40), headSha: "b".repeat(40) },
+      discarded: { invalid: 0, outsideDiff: 0, duplicate: 0 },
+      summary: "Looks fine.",
+      durationMs: 1,
+    };
+    expect(hooks.isValidResult!(result)).toBe(true);
+    expect(hooks.isValidResult!({ ...result, findings: "x" })).toBe(false);
+    expect(hooks.isValidResult!(answered(null, "text"))).toBe(false);
+    for (const hook of ["onStarted", "onCompleted", "onFailed", "onRetry", "onCanceled"] as const) {
+      expect(hooks[hook]).toBeTypeOf("function");
+    }
   });
 
   it("has no hooks for a run-spec job without an implemented sink", () => {

@@ -30,7 +30,10 @@ export function reviewUrl(reviewId: string): string {
   return `${getAppUrl()}/reviews/${reviewId}`;
 }
 
-async function repositoryTarget(db: Database, review: Review, payload: ReviewJobPayload) {
+/** What posting reads from a review job's payload or trigger context. */
+export type ReviewPostInput = Pick<ReviewJobPayload, "changeRequest" | "reviewConfig">;
+
+async function repositoryTarget(db: Database, review: Review, payload: ReviewPostInput) {
   const found = await getRepositoryWithConnection(db, review.repositoryId);
   if (!found) throw new Error(`repository ${review.repositoryId} not found`);
   const { repository, connection } = found;
@@ -81,7 +84,7 @@ function asFinding(row: FindingRow): Finding {
  */
 export async function postReview(
   db: Database,
-  input: { reviewId: string; payload: ReviewJobPayload; result: ReviewJobResult },
+  input: { reviewId: string; payload: ReviewPostInput; result: ReviewJobResult },
 ): Promise<boolean> {
   const { posted } = await postReviewOnce(db, input.reviewId, async (review, rows) => {
     if (review.status !== "completed" && review.status !== "budget_exhausted") return null;
@@ -116,7 +119,7 @@ export async function postReview(
 /** Posts a short note that the review failed, at most once per review. */
 export async function postFailureNote(
   db: Database,
-  input: { reviewId: string; payload: ReviewJobPayload; error: string },
+  input: { reviewId: string; payload: ReviewPostInput; error: string },
 ): Promise<boolean> {
   const { posted } = await postReviewOnce(db, input.reviewId, async (review) => {
     if (review.status !== "failed") return null;

@@ -17,7 +17,7 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
-import { ReviewJobPayload, type Finding, type ReviewJobResult } from "@omniralph/shared";
+import { reviewTriggerContext, type Finding, type ReviewJobResult } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -254,7 +254,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
 
   async function reviewJob(reviewId: string): Promise<Job> {
     const rows = await db.select().from(jobs).where(eq(jobs.type, "review.run"));
-    const job = rows.find((j) => (j.payload as { reviewId?: string }).reviewId === reviewId);
+    const job = rows.find((j) => reviewTriggerContext(j.payload).reviewId === reviewId);
     if (!job) throw new Error(`no job for review ${reviewId}`);
     return job;
   }
@@ -292,7 +292,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const enqueued = await enqueue(number, "fresh");
       expect(enqueued.status).toBe("enqueued");
       if (enqueued.status !== "enqueued") return;
-      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      const payload = reviewTriggerContext((await reviewJob(enqueued.reviewId)).payload);
       expect(payload.mode).toBe("fresh");
       expect(payload.previousReview).toBeNull();
     });
@@ -301,7 +301,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const { number } = await reviewedPr();
       const enqueued = await enqueue(number, "full");
       if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
-      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      const payload = reviewTriggerContext((await reviewJob(enqueued.reviewId)).payload);
       expect(payload.mode).toBe("full");
       expect(payload.previousReview).toEqual({
         headSha: null,
@@ -320,7 +320,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const { number } = await reviewedPr();
       const enqueued = await enqueue(number, "incremental");
       if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
-      const payload = ReviewJobPayload.parse((await reviewJob(enqueued.reviewId)).payload);
+      const payload = reviewTriggerContext((await reviewJob(enqueued.reviewId)).payload);
       expect(payload.mode).toBe("incremental");
       expect(payload.previousReview?.headSha).toBe(SHA(2));
     });
@@ -439,7 +439,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const enqueued = await enqueue(number, mode);
       if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
       const job = await reviewJob(enqueued.reviewId);
-      const given = ReviewJobPayload.parse(job.payload).previousReview?.openFindings ?? [];
+      const given = reviewTriggerContext(job.payload).previousReview?.openFindings ?? [];
       const fixedOpenFindings = fixed.map((id) => given.findIndex((f) => f.id === id));
       expect(fixedOpenFindings).not.toContain(-1);
       await onReviewJobCompleted(db, {
@@ -455,7 +455,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const enqueued = await enqueue(number, "incremental");
       if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
       const job = await reviewJob(enqueued.reviewId);
-      expect(ReviewJobPayload.parse(job.payload).previousReview?.openFindings).toEqual([
+      expect(reviewTriggerContext(job.payload).previousReview?.openFindings).toEqual([
         expect.objectContaining({
           id: prior[0]!.id,
           title: "Missing null check",
@@ -535,7 +535,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
           .select()
           .from(jobs)
           .where(and(eq(jobs.type, "review.run")))
-      ).filter((j) => (j.payload as { prNumber?: number }).prNumber === number);
+      ).filter((j) => reviewTriggerContext(j.payload).prNumber === number);
 
     it("enqueues a manual fresh review of the PR's current head", async () => {
       const { number, review } = await reviewedPr();
@@ -544,7 +544,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       if (!res.ok) return;
 
       expect(state.scm.calls.getChangeRequest).toEqual([number]);
-      const payload = ReviewJobPayload.parse((await reviewJob(res.reviewId)).payload);
+      const payload = reviewTriggerContext((await reviewJob(res.reviewId)).payload);
       expect(payload).toMatchObject({ mode: "fresh", headSha: HEAD, previousReview: null });
       expect(payload.reviewConfig.profile.id).toBe("deep");
       const [created] = await db.select().from(reviews).where(eq(reviews.id, res.reviewId));
@@ -555,7 +555,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
       const { review } = await reviewedPr();
       const res = await rerunReview(review.id, { mode: "incremental", profileId: null });
       if (!res.ok) throw new Error(res.error);
-      const payload = ReviewJobPayload.parse((await reviewJob(res.reviewId)).payload);
+      const payload = reviewTriggerContext((await reviewJob(res.reviewId)).payload);
       expect(payload.mode).toBe("full");
       expect(payload.previousReview?.openFindings).toHaveLength(1);
       expect(payload.reviewConfig.profile.id).toBe("standard");

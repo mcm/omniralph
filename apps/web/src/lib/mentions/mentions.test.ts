@@ -28,7 +28,7 @@ import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
   MAX_REPLY_ANSWER_LENGTH,
   QUERY_TASKS_MIN_HARNESS_VERSION,
-  ReviewJobPayload,
+  reviewTriggerContext,
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
@@ -289,7 +289,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       .select()
       .from(jobs)
       .where(and(eq(jobs.type, "review.run"), eq(jobs.repositoryId, repoId)))
-      .then((rows) => rows.filter((j) => (j.payload as { prNumber?: number }).prNumber === number));
+      .then((rows) => rows.filter((j) => reviewTriggerContext(j.payload).prNumber === number));
   }
 
   describe("@bot review", () => {
@@ -299,7 +299,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(res).toEqual({ status: "accepted", command: "review" });
 
       const [job] = await prReviewJobs(number);
-      const payload = ReviewJobPayload.parse(job!.payload);
+      const payload = reviewTriggerContext(job!.payload);
       expect(payload.headSha).toBe("f".repeat(40));
       expect(payload.baseSha).toBe("a".repeat(40));
       // Full (not incremental) review: no previous head, but open findings are deduped.
@@ -329,7 +329,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const { number } = await reviewedPr();
       await conversationComment(number, "@OmniRalph  Review   DEEP");
       const [job] = await prReviewJobs(number);
-      const payload = ReviewJobPayload.parse(job!.payload);
+      const payload = reviewTriggerContext(job!.payload);
       expect(payload.reviewConfig.profile).toMatchObject({
         id: "deep",
         maxTokensPerReview: 500_000,
@@ -387,7 +387,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(res).toEqual({ status: "accepted", command: "review" });
 
       const [job] = await prReviewJobs(number);
-      const payload = ReviewJobPayload.parse(job!.payload);
+      const payload = reviewTriggerContext(job!.payload);
       expect(payload.mode).toBe("fresh");
       expect(payload.headSha).toBe("f".repeat(40));
       expect(payload.previousReview).toBeNull();

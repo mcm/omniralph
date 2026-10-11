@@ -18,7 +18,8 @@ import {
 import {
   DEFAULT_RALPH_SETTINGS,
   ralphSettingsFormValues,
-  ReviewJobPayload,
+  reviewTriggerContext,
+  type ReviewTriggerContext,
   type RalphSettingsInput,
   type RepositorySettingsInput,
 } from "@omniralph/shared";
@@ -157,7 +158,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     return db.select().from(jobs).where(eq(jobs.type, "repo.sync")).orderBy(asc(jobs.createdAt));
   }
 
-  async function enqueuedPayload(): Promise<ReviewJobPayload> {
+  async function enqueuedPayload(): Promise<ReviewTriggerContext> {
     prNumber += 1;
     const result = await enqueueReview(db, getDispatcher(), {
       repositoryId: repoId,
@@ -171,7 +172,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     });
     if (result.status !== "enqueued") throw new Error(result.status);
     const [job] = await db.select().from(jobs).where(eq(jobs.id, result.jobId));
-    return ReviewJobPayload.parse(job!.payload);
+    return reviewTriggerContext(job!.payload);
   }
 
   it("saves the profile, triggers, excludes and instructions", async () => {

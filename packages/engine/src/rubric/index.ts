@@ -117,3 +117,24 @@ export function languageRubric(language: RubricLanguage): string {
 export function renderRubric(languages: readonly RubricLanguage[]): string {
   return [universalRubric(), ...languages.map(languageRubric)].join("\n\n");
 }
+
+/** Name of a rubric file as an agent's reference doc: `rubric/universal.md`, `rubric/languages/<language>.md`. */
+export function rubricDocName(language: RubricLanguage | "universal"): string {
+  return language === "universal" ? "rubric/universal.md" : `rubric/languages/${language}.md`;
+}
+
+/**
+ * `renderRubric` from an agent's reference docs instead of the shipped files:
+ * the universal doc followed by each language's (by `rubricDocName`), each
+ * trimmed, skipping the ones the agent doesn't have; undefined without any.
+ */
+export function rubricFromDocs(
+  docs: readonly { name: string; content: string }[],
+  languages: readonly RubricLanguage[],
+): string | undefined {
+  const byName = new Map(docs.map((doc) => [doc.name, doc.content.trim()]));
+  const parts = (["universal", ...languages] as const)
+    .map((language) => byName.get(rubricDocName(language)))
+    .filter((content): content is string => Boolean(content));
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
