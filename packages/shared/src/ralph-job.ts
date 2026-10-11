@@ -191,6 +191,12 @@ export const RalphStoryResult = z.object({
   summary: z.string().max(20_000),
   /** The pushed story commit; absent when nothing was committed. */
   commitSha: CommitSha.optional(),
+  /**
+   * A run that pushes only at the end (`pushTiming: end`): the hidden ref
+   * (`ralphHiddenRef`) HEAD was pushed to instead of the branch, and the SHA
+   * pushed. Absent when the branch was pushed, or nothing was.
+   */
+  hiddenRef: z.object({ ref: z.string().min(1).max(255), sha: CommitSha }).optional(),
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
   /** Why the attempt didn't complete (e.g. failed gate output), for the next attempt; null when complete. */
   feedback: z.string().max(20_000).nullable(),
@@ -380,6 +386,18 @@ export type RalphRequestResult = z.infer<typeof RalphRequestResult>;
 /** Label prefix of every stash entry a run's jobs make (story, request and cleanup stashes). */
 export function ralphStashPrefix(runId: string): string {
   return `omniralph ralph ${runId} `;
+}
+
+/** Prefix of the hidden refs runs keep their unpushed story commits on (see `ralphHiddenRef`). */
+export const RALPH_HIDDEN_REF_PREFIX = "refs/omniralph/runs/";
+
+/**
+ * The ref outside `refs/heads/` a run that pushes only at the end keeps its
+ * story commits on, on `origin`: it starts no CI, and another harness picking
+ * the run up starts from it.
+ */
+export function ralphHiddenRef(runId: string): string {
+  return `${RALPH_HIDDEN_REF_PREFIX}${runId}`;
 }
 
 /** Branch on `origin` that keeps an epic's leftover stash entries (cyralph's `cyralph/stash/<epic>`). */

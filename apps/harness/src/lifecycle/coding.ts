@@ -1,6 +1,7 @@
 import { requestTemplateContext, storyTemplateContext } from "@omniralph/ralph";
 import {
   MAX_ATTEMPTS_PER_STORY,
+  ralphHiddenRef,
   RalphRequestPayload,
   RalphStoryPayload,
   type RalphRequestResult,
@@ -136,8 +137,10 @@ export async function runCodingTask(
  * system prompt, ralph's tool policy narrowed by the repository's tool
  * settings, the story outcome schema and `sessionEnv()` (the session token
  * only, also for its git credential helper); then the quality gates, the
- * commit and the push with `-u`, with the lifecycle token. The result is a
- * `RalphStoryResult`.
+ * commit and the push with `-u`, with the lifecycle token (with the task's
+ * `pushTiming: end`, a force-push of HEAD to the run's hidden ref
+ * `refs/omniralph/runs/<runId>` instead, the branch left alone). The result
+ * is a `RalphStoryResult`.
  */
 export async function runStoryRun(
   spec: RunSpec,
@@ -151,6 +154,8 @@ export async function runStoryRun(
     jobId: spec.jobId,
     ctx,
     options,
+    // Pushing only at the end keeps the story commits on the run's hidden ref meanwhile.
+    ...(spec.task.pushTiming === "end" && { hiddenRef: ralphHiddenRef(payload.runId) }),
     session: (prepared) => {
       // `get_attachment` saves next to the progress log, a directory the session may use.
       const harness = createOmniralphServer({

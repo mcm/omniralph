@@ -191,6 +191,12 @@ export interface StoryAttemptArgs {
   options: StoryOptions;
   /** The session's prompt and settings, from what the attempt prepared. */
   session(prepared: StoryAttemptPrepared): StorySessionSettings;
+  /**
+   * A run that pushes only at the end (`pushTiming: end`): the hidden ref
+   * (`ralphHiddenRef`) story commits are force-pushed to instead of the
+   * branch, and the worktree starts from. Unset pushes the branch.
+   */
+  hiddenRef?: string;
 }
 
 /**
@@ -200,7 +206,8 @@ export interface StoryAttemptArgs {
  * stashes, download the attachments, write the progress file and run the
  * Claude session `args.session` describes, then on `complete` run the quality
  * gates, commit, require a clean tree and push with `-u` through the
- * brokered helper with the job's (lifecycle) token. Work of an attempt that
+ * brokered helper with the job's (lifecycle) token (or, with `hiddenRef`,
+ * force-push HEAD to that ref and leave the branch on `origin` alone). Work of an attempt that
  * doesn't complete is stashed and offered to the story's next attempt, except
  * a blocked story's work that passes the gates: that is committed as
  * `wip(<ID>): …` and pushed. A failed push resets the commit, so the work is
@@ -240,6 +247,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
         branch: payload.branch,
         baseBranch: payload.baseBranch,
         ...(payload.settings.setupCommand && { setupCommand: payload.settings.setupCommand }),
+        ...(args.hiddenRef && { hiddenRef: args.hiddenRef }),
         env: git.env,
         signal: ctx.signal,
       },
@@ -325,11 +333,12 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           const followUps = followUpsOf(outcome);
           const result = (
             status: RalphStoryStatus,
-            extra: { feedback: string | null; commitSha?: string },
+            extra: { feedback: string | null; commitSha?: string; hiddenRef?: HiddenRefPush },
           ): RalphStoryResult => ({
             status,
             summary,
             ...(extra.commitSha && { commitSha: extra.commitSha }),
+            ...(extra.hiddenRef && { hiddenRef: extra.hiddenRef }),
             followUps,
             feedback: extra.feedback === null ? null : clip(extra.feedback),
             ...progress,
@@ -355,6 +364,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
               worktree,
               payload,
               summary: outcome.commit?.summary ?? payload.story.title,
+              hiddenRef: args.hiddenRef,
               env: plainEnv,
               signal: ctx.signal,
               relay,
@@ -374,6 +384,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             return result("blocked", {
               feedback: `${feedback}\n\nIts work so far is committed on the branch as \`${kept.sha.slice(0, 10)}\`.`,
               commitSha: kept.sha,
+              ...(kept.hiddenRef && { hiddenRef: kept.hiddenRef }),
             });
           }
           if (outcome.status === "waiting") {
@@ -410,8 +421,9 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           const commit = await commitStory(worktree, commitMessage(payload));
           if ("feedback" in commit) return notDone("failed", commit.feedback, "uncommitted");
 
+          let pushed: HiddenRefPush | undefined;
           try {
-            await worktree.git(["push", "--quiet", "-u", "origin", payload.branch]);
+            pushed = await pushWork(worktree, payload, args.hiddenRef);
           } catch (error) {
             ctx.signal.throwIfAborted();
             log.warn({ err: error }, "pushing the story failed");
@@ -429,10 +441,14 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
               log.warn({ err: error, stash: entry.sha }, "dropping a stash failed");
             });
           }
-          log.info({ commit: commit.sha ?? null }, "story complete");
+          log.info(
+            { commit: commit.sha ?? null, hiddenRef: pushed?.ref ?? null },
+            "story complete",
+          );
           return result("complete", {
             feedback: null,
             ...(commit.sha && { commitSha: commit.sha }),
+            ...(pushed && { hiddenRef: pushed }),
           });
         } catch (error) {
           if (ctx.signal.aborted) await stashQuietly(worktree, label("stopped"), log);
@@ -446,6 +462,26 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
     await git.close();
     await relay.flush();
   }
+}
+
+/** What a push to the run's hidden ref pushed. */
+type HiddenRefPush = NonNullable<RalphStoryResult["hiddenRef"]>;
+
+/**
+ * Pushes the story's work: the branch with `-u`, or with `hiddenRef`, HEAD
+ * force-pushed to that ref (the branch on `origin` isn't touched). Returns
+ * what was pushed to the hidden ref.
+ */
+async function pushWork(
+  worktree: BranchWorktree,
+  payload: RalphStoryPayload,
+  hiddenRef: string | undefined,
+): Promise<HiddenRefPush | undefined> {
+  if (!hiddenRef) {
+    await worktree.git(["push", "--quiet", "-u", "origin", payload.branch]);
+    return undefined;
+  }
+  return { ref: hiddenRef, sha: await worktree.pushHiddenRef(hiddenRef) };
 }
 
 function errorText(error: unknown): string {
@@ -526,7 +562,8 @@ function commitMessage(payload: RalphStoryPayload, subject = payload.commitMessa
 
 /**
  * Commits a blocked story's work so far as `wip(<ID>): <summary>` once the
- * story's quality gates pass, and pushes it (cyralph's `commitBlockedWork`),
+ * story's quality gates pass, and pushes it (cyralph's `commitBlockedWork`;
+ * to the run's hidden ref when there is one),
  * so it survives on the branch whichever agent picks the run up next. A clean
  * tree commits nothing. A failing gate, commit or push leaves the work
  * uncommitted (the caller stashes it), with a note saying why.
@@ -535,11 +572,12 @@ async function commitBlockedWork(args: {
   worktree: BranchWorktree;
   payload: RalphStoryPayload;
   summary: string;
+  hiddenRef: string | undefined;
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
   relay: ActivityRelay;
   log: JobContext["logger"];
-}): Promise<{ sha?: string; note?: string }> {
+}): Promise<{ sha?: string; hiddenRef?: HiddenRefPush; note?: string }> {
   const { worktree, payload, env, signal, relay, log } = args;
   const changes = await worktree.git(["status", "--porcelain", "--untracked-files=all"]);
   if (!changes.trim()) return {};
@@ -563,8 +601,9 @@ async function commitBlockedWork(args: {
     return { note: "Its work so far passed the quality gates, but committing it failed." };
   }
   if (!commit.sha) return {};
+  let pushed: HiddenRefPush | undefined;
   try {
-    await worktree.git(["push", "--quiet", "-u", "origin", payload.branch]);
+    pushed = await pushWork(worktree, payload, args.hiddenRef);
   } catch (error) {
     signal.throwIfAborted();
     log.warn({ err: error }, "pushing the blocked story's work failed");
@@ -579,7 +618,7 @@ async function commitBlockedWork(args: {
     body: `Committed ${payload.story.identifier}'s work so far as \`${commit.sha.slice(0, 10)}\` (\`${subject}\`).`,
     ephemeral: false,
   });
-  return { sha: commit.sha };
+  return { sha: commit.sha, ...(pushed && { hiddenRef: pushed }) };
 }
 
 /**

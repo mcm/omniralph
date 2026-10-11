@@ -123,7 +123,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  function context(): JobContext {
+  function context(cache = repos): JobContext {
     return {
       signal: controller.signal,
       jobToken: () => "lifecycle-token",
@@ -139,8 +139,8 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         throw new Error("coding runs must not spawn processes through the context");
       },
       server: "https://omniralph.example.com",
-      workspaceRoot,
-      repos,
+      workspaceRoot: cache === repos ? workspaceRoot : path.join(root, "other-workspace"),
+      repos: cache,
       logger: silentLogger(),
     };
   }
@@ -260,6 +260,10 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     const out = await runStoryCoding(run, context(), options(query, { now: () => now }));
 
     expect(RalphStoryResult.safeParse(out).success).toBe(true);
+    // The built-in story task pushes the branch after each story.
+    expect(run.task.pushTiming).toBe("per-story");
+    expect(out.hiddenRef).toBeUndefined();
+    expect(git(remote.bare, "for-each-ref", "refs/omniralph")).toBe("");
     expect(out).toMatchObject({
       status: "complete",
       summary: "Built it.",
@@ -480,6 +484,119 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(out.status).toBe("complete");
     expect(git(remote.bare, "show", `${out.commitSha}:feature.txt`)).toBe("from attempt 1");
     expect(storyStashes()).toEqual([]);
+  });
+
+  describe("with pushTiming end", () => {
+    const hiddenRef = `refs/omniralph/runs/${runId}`;
+    const endSpec = (trigger: RalphStoryPayload = payload()) =>
+      spec(trigger, { task: { ...storyTask, pushTiming: "end" } });
+    const onRemote = (ref: string) =>
+      git(remote.bare, "for-each-ref", "--format=%(objectname)", ref) || null;
+
+    it("commits locally and force-pushes HEAD to the run's hidden ref, not the branch", async () => {
+      const { query } = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const run = endSpec();
+      expect(run.task.pushTiming).toBe("end");
+      const out = await runStoryCoding(run, context(), options(query));
+
+      expect(RalphStoryResult.safeParse(out).success).toBe(true);
+      expect(out.status).toBe("complete");
+      const head = git(worktreePath(), "rev-parse", "HEAD");
+      expect(out.commitSha).toBe(head);
+      expect(out.hiddenRef).toEqual({ ref: hiddenRef, sha: head });
+      expect(onRemote(hiddenRef)).toBe(head);
+      expect(git(remote.bare, "show", `${hiddenRef}:feature.txt`)).toBe("built");
+      // The branch on origin isn't touched.
+      expect(onRemote(`refs/heads/${branch}`)).toBeNull();
+      expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    });
+
+    it("lets another harness start the next story from the hidden ref", async () => {
+      const first = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const firstOut = await runStoryCoding(endSpec(), context(), options(first.query));
+      expect(firstOut.status).toBe("complete");
+
+      // Another harness: its own cache root, no worktree for the branch yet.
+      const other = new RepoCache({
+        workspaceRoot: path.join(root, "other-workspace"),
+        credentialHelper: "!true",
+        lockRetryMs: 20,
+      });
+      let seen: string | null = null;
+      const second = fakeQuery(async function* (call) {
+        seen = await readFile(path.join(cwdOf(call), "feature.txt"), "utf8");
+        await writeFile(path.join(cwdOf(call), "second.txt"), "more\n");
+        yield result({ status: "complete", summary: "Built more.", followUps: [] });
+      });
+      const next = payload({
+        story: { ...payload().story, identifier: "TOOL-92", title: "Run another story" },
+        commitMessage: "feat(TOOL-92): Run another story",
+        qualityGates: ["test -f second.txt"],
+      });
+      const out = await runStoryCoding(endSpec(next), context(other), options(second.query));
+
+      expect(seen).toBe("built\n");
+      expect(out.status).toBe("complete");
+      expect(out.hiddenRef).toEqual({ ref: hiddenRef, sha: out.commitSha });
+      expect(git(remote.bare, "rev-parse", `${out.commitSha}^`)).toBe(firstOut.commitSha);
+      expect(onRemote(hiddenRef)).toBe(out.commitSha);
+      expect(onRemote(`refs/heads/${branch}`)).toBeNull();
+
+      // The first harness's reused worktree catches up with the hidden ref.
+      const third = fakeQuery(async function* (call) {
+        seen = await readFile(path.join(cwdOf(call), "second.txt"), "utf8");
+        yield result({ status: "incomplete", summary: "Looked around.", followUps: [] });
+      });
+      await runStoryCoding(endSpec(), context(), options(third.query));
+      expect(seen).toBe("more\n");
+      expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(out.commitSha);
+    });
+
+    it("pushes a blocked story's wip commit to the hidden ref", async () => {
+      const { query } = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "partial\n");
+        yield result({
+          status: "blocked",
+          summary: "I need an API key.",
+          commit: { summary: "Add the payment client" },
+          followUps: [],
+        });
+      });
+      const out = await runStoryCoding(endSpec(), context(), options(query));
+      expect(out.status).toBe("blocked");
+      expect(out.commitSha).toBeDefined();
+      expect(out.hiddenRef).toEqual({ ref: hiddenRef, sha: out.commitSha });
+      expect(git(remote.bare, "log", "-1", "--format=%s", hiddenRef)).toBe(
+        "wip(TOOL-91): Add the payment client",
+      );
+      expect(onRemote(`refs/heads/${branch}`)).toBeNull();
+    });
+
+    it("undoes the commit and stashes the work when the hidden ref push is rejected", async () => {
+      const hook = path.join(remote.bare, "hooks", "pre-receive");
+      await writeFile(hook, "#!/bin/sh\necho 'hidden refs are not allowed' >&2\nexit 1\n");
+      await chmod(hook, 0o755);
+      const { query } = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const before = git(remote.bare, "rev-parse", "refs/heads/main");
+      const out = await runStoryCoding(endSpec(), context(), options(query));
+      expect(out.status).toBe("failed");
+      expect(out.commitSha).toBeUndefined();
+      expect(out.hiddenRef).toBeUndefined();
+      expect(out.feedback).toContain("pushing it failed, so the commit was undone");
+      expect(out.feedback).toContain("hidden refs are not allowed");
+      expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(before);
+      expect(onRemote(hiddenRef)).toBeNull();
+      expect(storyStashes()[0]).toContain("push-failed");
+    });
   });
 
   it("rejects a run whose trigger context is neither a story nor a request", async () => {

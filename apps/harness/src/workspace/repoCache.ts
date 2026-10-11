@@ -11,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { JobRepository } from "@omniralph/shared";
+import { RALPH_HIDDEN_REF_PREFIX, type JobRepository } from "@omniralph/shared";
 import lockfile from "proper-lockfile";
 import { withoutJobEnv } from "../job-env.js";
 import type { Logger } from "../logger.js";
@@ -43,26 +43,35 @@ const PROVIDERS = ["github", "gitlab"] as const;
  */
 const HOST_CONFIG = "omniralph.hostDir";
 
+/** Environment variable naming the hidden ref a lifecycle push may update (see `PUSH_GUARD_HOOK`). */
+export const PUSH_REF_ENV = "OMNIRALPH_PUSH_REF";
+
 /**
  * The `pre-push` hook of the cached repositories (shared by their
  * worktrees): in a branch worktree, a push may only update that worktree's
- * own branch. A guardrail against mistakes (a request session pushing the
- * base branch), not a security boundary: sessions run with
- * `bypassPermissions` and could remove it.
+ * own branch, or the run's hidden ref (`refs/omniralph/runs/<runId>`) when
+ * the lifecycle names it for this push (`OMNIRALPH_PUSH_REF`, see
+ * `BranchWorktree.pushHiddenRef`). A guardrail against mistakes (a request
+ * session pushing the base branch), not a security boundary: sessions run
+ * with `bypassPermissions` and could remove it.
  */
 export const PUSH_GUARD_HOOK = `#!/bin/sh
-# Installed by the Omniralph agent: a branch worktree only pushes its own branch.
+# Installed by the Omniralph agent: a branch worktree only pushes its own branch (or its run's hidden ref).
 common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 here=$(git rev-parse --path-format=absolute --git-dir 2>/dev/null) || exit 0
 # The bare repository itself (e.g. an empty repository's first commit) isn't a branch worktree.
 [ "$common" = "$here" ] && exit 0
 branch=$(git symbolic-ref --quiet HEAD) || exit 0
+hidden=
+case "\${${PUSH_REF_ENV}:-}" in
+  ${RALPH_HIDDEN_REF_PREFIX}?*) hidden=$${PUSH_REF_ENV} ;;
+esac
 status=0
 while read -r local_ref local_sha remote_ref remote_sha; do
-  if [ "$remote_ref" != "$branch" ]; then
-    echo "omniralph: this worktree may only push \${branch#refs/heads/}, not \${remote_ref#refs/heads/}." >&2
-    status=1
-  fi
+  [ "$remote_ref" = "$branch" ] && continue
+  [ -n "$hidden" ] && [ "$remote_ref" = "$hidden" ] && continue
+  echo "omniralph: this worktree may only push \${branch#refs/heads/}, not \${remote_ref#refs/heads/}." >&2
+  status=1
 done
 exit $status
 `;
@@ -113,6 +122,13 @@ export interface BranchWorktreeOptions extends GitJobOptions {
   baseBranch: string;
   /** Runs once (`bash -lc`) in a newly created worktree. */
   setupCommand?: string;
+  /**
+   * The run's hidden ref (`refs/omniralph/runs/<runId>`, see `ralphHiddenRef`)
+   * holding commits not pushed to the branch yet. When it exists on `origin`
+   * it is fetched, and a new worktree, or one whose branch is an ancestor of
+   * it, starts from it.
+   */
+  hiddenRef?: string;
 }
 
 /**
@@ -157,6 +173,12 @@ export interface BranchWorktree {
    * credential helper (so `git push` authenticates through the broker).
    */
   git(args: readonly string[], options?: WorktreeCallOptions): Promise<string>;
+  /**
+   * Force-pushes HEAD to `ref` (a hidden ref under `refs/omniralph/runs/`) on
+   * `origin`, naming it for the `pre-push` guard; the branch isn't touched.
+   * Returns the pushed SHA.
+   */
+  pushHiddenRef(ref: string, options?: WorktreeCallOptions): Promise<string>;
 }
 
 export interface BranchCleanupOptions extends GitJobOptions {
@@ -822,13 +844,16 @@ export class RepoCache {
     const job = { env: options.env, signal: options.signal };
     const git = (args: string[]) => this.runGit(args, { ...job, cwd: worktreePath });
     let created = false;
+    // The fetched hidden ref's SHA; null when there's none on `origin`.
+    let hidden: string | null = null;
 
     await this.withRepoLock(repo, options.signal, async () => {
       // Fetch every branch first: a reused worktree compares itself with the remote.
       await this.syncLocked(repo, [], job);
       await installPushGuard(repoDir);
+      if (options.hiddenRef) hidden = await this.fetchHiddenRef(repoDir, options.hiddenRef, job);
       if (await this.isBranchWorktree(worktreePath, branch, job)) return;
-      await this.createBranchWorktree(repoDir, worktreePath, options);
+      await this.createBranchWorktree(repoDir, worktreePath, options, hidden);
       created = true;
     });
 
@@ -855,6 +880,16 @@ export class RepoCache {
       }
     } else {
       await this.fastForward(worktreePath, branch, job);
+      if (hidden && (await this.isAncestor(worktreePath, "HEAD", hidden, job))) {
+        this.logger?.info(
+          { path: worktreePath, branch, hidden },
+          "fast-forwarding to the hidden ref",
+        );
+        await git(["merge", "--ff-only", "--quiet", hidden]);
+      } else if (hidden && !(await this.isAncestor(worktreePath, hidden, "HEAD", job))) {
+        // Another harness pushed other commits there: this worktree's branch wins (its next push replaces them).
+        this.logger?.warn({ path: worktreePath, branch, hidden }, "the hidden ref has diverged");
+      }
     }
 
     return {
@@ -868,7 +903,68 @@ export class RepoCache {
       listStashes: (call) => this.listStashes(worktreePath, withCall(job, call)),
       dropStash: (sha, call) => this.dropStash(worktreePath, sha, withCall(job, call)),
       git: (args, call) => this.runGit([...args], { ...withCall(job, call), cwd: worktreePath }),
+      pushHiddenRef: async (ref, call) => {
+        await this.checkHiddenRef(ref);
+        const options = withCall(job, call);
+        const run = (args: string[], env = options.env) =>
+          this.runGit(args, { ...options, env, cwd: worktreePath });
+        const sha = (await run(["rev-parse", "HEAD"])).trim();
+        await run(["push", "--quiet", "--force", "origin", `${sha}:${ref}`], {
+          ...options.env,
+          [PUSH_REF_ENV]: ref,
+        });
+        return sha;
+      },
     };
+  }
+
+  /** Rejects anything but a valid ref under `refs/omniralph/runs/`. */
+  private async checkHiddenRef(ref: string): Promise<void> {
+    const valid =
+      ref.startsWith(RALPH_HIDDEN_REF_PREFIX) &&
+      ref.length > RALPH_HIDDEN_REF_PREFIX.length &&
+      (await runGit(["check-ref-format", ref], { env: hostEnv(), git: this.git }).then(
+        () => true,
+        () => false,
+      ));
+    if (!valid) throw new Error(`invalid hidden ref ${JSON.stringify(ref)}`);
+  }
+
+  /**
+   * Fetches `ref` from `origin` into the same ref of the cached repository
+   * (called with the repo lock held); returns its SHA, or null (dropping a
+   * local copy) when `origin` doesn't have it.
+   */
+  private async fetchHiddenRef(
+    repoDir: string,
+    ref: string,
+    options: GitJobOptions,
+  ): Promise<string | null> {
+    await this.checkHiddenRef(ref);
+    const git = (args: string[]) => this.runGit(args, { ...options, cwd: repoDir });
+    const listed = (await git(["ls-remote", "--refs", "origin", ref])).trim();
+    const sha = listed.split(/\s+/)[0] ?? "";
+    if (!SHA.test(sha)) {
+      await git(["update-ref", "-d", ref]).catch(() => undefined);
+      return null;
+    }
+    await git(["fetch", "--quiet", "--no-tags", "origin", `+${ref}:${ref}`]);
+    return sha;
+  }
+
+  private isAncestor(
+    cwd: string,
+    ancestor: string,
+    descendant: string,
+    options: GitJobOptions,
+  ): Promise<boolean> {
+    return this.runGit(["merge-base", "--is-ancestor", ancestor, descendant], {
+      ...options,
+      cwd,
+    }).then(
+      () => true,
+      () => false,
+    );
   }
 
   /**
@@ -903,6 +999,7 @@ export class RepoCache {
     repoDir: string,
     worktreePath: string,
     options: BranchWorktreeOptions,
+    hidden: string | null,
   ): Promise<void> {
     const { branch, baseBranch } = options;
     const job = { env: options.env, signal: options.signal };
@@ -915,8 +1012,11 @@ export class RepoCache {
 
     let start = `refs/remotes/origin/${branch}`;
     if (!(await hasRef(start))) {
-      start = `refs/remotes/origin/${baseBranch}`;
+      // A branch not pushed yet starts from its run's hidden ref, when there is one.
+      start = hidden ?? `refs/remotes/origin/${baseBranch}`;
       if (!(await hasRef(start))) await this.createInitialCommit(repoDir, baseBranch, job);
+    } else if (hidden && (await this.isAncestor(repoDir, start, hidden, job))) {
+      start = hidden;
     }
     // Drops the bookkeeping of a worktree whose directory is gone, which would block the branch
     // (unlocked first: branch worktrees are locked).
