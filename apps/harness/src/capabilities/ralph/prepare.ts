@@ -3,7 +3,7 @@ import { RalphPreparePayload, RalphPrepareResult, type JobPayload } from "@omnir
 import type { JobContext } from "../index.js";
 import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { CommandError, runShell } from "../../workspace/git.js";
-import { ActivityRelay } from "./activities.js";
+import { ActivityRelay } from "../../tools/activities.js";
 import { sessionEnv, type StoryOptions } from "./story.js";
 
 /** Longest output (tail) returned per command. */

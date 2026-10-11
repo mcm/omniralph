@@ -1,11 +1,12 @@
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
-import {
-  worktreeGuard,
-  type SessionPermissions,
-  type SessionPermissionsBuilder,
-} from "@omniralph/engine";
+import { worktreeGuard, type SessionPermissions, type SessionScope } from "@omniralph/engine";
 import { ruleTool } from "@omniralph/shared";
 import type { ToolPolicy } from "./index.js";
+
+/** A session's scope, with the directories outside `cwd` a worktree-scoped session may use too. */
+export interface SessionDirectories extends SessionScope {
+  additionalDirectories?: readonly string[];
+}
 
 /**
  * The SDK permission options of a capability's sessions, built from its tool
@@ -16,7 +17,9 @@ import type { ToolPolicy } from "./index.js";
  * Throws for a policy that bypasses permissions without being write-capable,
  * so a read-only capability can never end up with `bypassPermissions`.
  */
-export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
+export function sdkPermissions(
+  policy: ToolPolicy,
+): (scope: SessionDirectories) => SessionPermissions {
   if (policy.permissionMode === "bypassPermissions" && !policy.writable) {
     throw new Error("only write-capable tool policies may bypass permissions");
   }
@@ -26,7 +29,11 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
       "read-only commands are only for read-only policies with an explicit tool list",
     );
   }
-  return ({ cwd, allowExploration }): SessionPermissions => {
+  return ({
+    cwd,
+    allowExploration,
+    additionalDirectories = [],
+  }: SessionDirectories): SessionPermissions => {
     const allowed = allowExploration ? [...policy.allowedTools] : [];
     const shell = allowExploration && commands.length > 0;
     const tools: SessionPermissions["tools"] = !allowExploration
@@ -36,7 +43,14 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
         : [...policy.allowedTools, ...(shell ? ["Bash"] : [])];
     const guarded = policy.fileScope === "worktree" && allowed.length > 0;
     const preToolUse = [
-      ...(guarded ? [{ matcher: allowed.join("|"), hooks: [worktreeGuard(cwd)] }] : []),
+      ...(guarded
+        ? [
+            {
+              matcher: allowed.join("|"),
+              hooks: [directoriesGuard([cwd, ...additionalDirectories])],
+            },
+          ]
+        : []),
       ...(shell ? [{ matcher: "Bash", hooks: [readOnlyCommandGuard(commands)] }] : []),
     ];
     return {
@@ -57,6 +71,23 @@ export function sdkPermissions(policy: ToolPolicy): SessionPermissionsBuilder {
         : {}),
       hooks: preToolUse.length > 0 ? { PreToolUse: preToolUse } : {},
     };
+  };
+}
+
+/**
+ * `worktreeGuard` over several directories: a call passes when every path it
+ * names is inside one of them (and it names no `..`).
+ */
+export function directoriesGuard(dirs: readonly string[]): HookCallback {
+  const guards = dirs.map((dir) => worktreeGuard(dir));
+  return async (input, toolUseId, options) => {
+    let denial: Awaited<ReturnType<HookCallback>> = {};
+    for (const guard of guards) {
+      const result = await guard(input, toolUseId, options);
+      if (!("hookSpecificOutput" in result) || !result.hookSpecificOutput) return result;
+      denial = result;
+    }
+    return denial;
   };
 }
 

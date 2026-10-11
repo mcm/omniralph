@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { RalphPermissionAnswer } from "@omniralph/shared";
 import { z } from "zod";
-import { postJson, type FetchFn } from "../../api.js";
-import type { Logger } from "../../logger.js";
+import { postJson, type FetchFn } from "../api.js";
+import type { Logger } from "../logger.js";
 import { toolParameter } from "./activities.js";
-import type { PermissionCall } from "./session.js";
+import type { PermissionCall } from "../session/session.js";
 
 /** How long a session waits for a person to answer in Linear before the call is denied. */
 export const PERMISSION_TIMEOUT_MS = 30 * 60_000;
@@ -44,6 +44,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** A permission question: the tool, what the call does, and why it is asked (optional). */
+export interface PermissionQuestion {
+  tool: string;
+  detail: string;
+  reason?: string;
+}
+
+/** How a permission question ended (`expired`: nobody answered in time). */
+export type PermissionDecision = "allowed" | "denied" | "expired";
+
 /**
  * Asks a person in the run's Linear session to approve a tool call that the
  * repository's Claude Code settings `ask` about (request sessions bypass
@@ -62,15 +72,37 @@ export class PermissionRelay {
   }
 
   /** Whether the call may run. */
-  ask(call: PermissionCall, signal: AbortSignal): Promise<boolean> {
-    const turn = this.chain.then(() => this.askNow(call, signal));
+  async ask(call: PermissionCall, signal: AbortSignal): Promise<boolean> {
+    const question = {
+      tool: call.tool,
+      detail: toolParameter(call.input),
+      ...(call.reason && { reason: call.reason }),
+    };
+    try {
+      return (await this.decide(question, signal)) === "allowed";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Asks `question` and waits for its answer: `expired` when nobody answered
+   * within `timeoutMs` (or the control panel expired it), `denied` when the
+   * signal fires first. Throws when the question can't be asked, or its
+   * answer can't be read for good.
+   */
+  decide(question: PermissionQuestion, signal: AbortSignal): Promise<PermissionDecision> {
+    const turn = this.chain.then(() => this.askNow(question, signal));
     this.chain = turn.catch(() => {});
     return turn;
   }
 
-  private async askNow(call: PermissionCall, signal: AbortSignal): Promise<boolean> {
-    if (signal.aborted) return false;
-    const log = this.options.logger.child({ tool: call.tool });
+  private async askNow(
+    question: PermissionQuestion,
+    signal: AbortSignal,
+  ): Promise<PermissionDecision> {
+    if (signal.aborted) return "denied";
+    const log = this.options.logger.child({ tool: question.tool });
     const requestId = randomUUID();
     const timeoutMs = this.options.timeoutMs ?? PERMISSION_TIMEOUT_MS;
     try {
@@ -79,9 +111,9 @@ export class PermissionRelay {
         this.base,
         {
           requestId,
-          tool: call.tool,
-          detail: toolParameter(call.input),
-          ...(call.reason && { reason: call.reason.slice(0, 1000) }),
+          tool: question.tool,
+          detail: question.detail,
+          ...(question.reason && { reason: question.reason.slice(0, 1000) }),
           timeoutSeconds: Math.max(1, Math.ceil(timeoutMs / 1000)),
         },
         z.unknown(),
@@ -89,13 +121,14 @@ export class PermissionRelay {
       );
     } catch (error) {
       log.warn({ err: error }, "asking for a tool permission failed; denying the call");
-      return false;
+      throw error;
     }
     log.info({ requestId }, "asked for a tool permission in Linear");
 
     const deadline = Date.now() + timeoutMs;
     const interval = this.options.pollIntervalMs ?? PERMISSION_POLL_INTERVAL_MS;
     let failures = 0;
+    let failure: unknown;
     try {
       while (Date.now() < deadline) {
         await sleep(Math.min(interval, Math.max(0, deadline - Date.now())), signal);
@@ -110,14 +143,18 @@ export class PermissionRelay {
         }
         if (answer.status === "pending") continue;
         log.info({ requestId, status: answer.status }, "tool permission answered");
-        return answer.status === "allowed";
+        return answer.status;
       }
       log.info({ requestId }, "nobody answered the tool permission in time; denying the call");
     } catch (error) {
-      if (!signal.aborted) log.warn({ err: error }, "reading a tool permission failed; denying it");
+      if (!signal.aborted) {
+        log.warn({ err: error }, "reading a tool permission failed; denying it");
+        failure = error;
+      }
     }
     await this.close(requestId, log);
-    return false;
+    if (failure !== undefined) throw failure;
+    return signal.aborted ? "denied" : "expired";
   }
 
   private async read(requestId: string): Promise<RalphPermissionAnswer> {

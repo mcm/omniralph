@@ -21,9 +21,9 @@ import {
 } from "@omniralph/shared";
 import type { BranchWorktree } from "../../workspace/repoCache.js";
 import { RetryableJobError, type JobContext } from "../index.js";
-import { ActivityRelay } from "./activities.js";
-import { PermissionRelay } from "./permissions.js";
-import { controlPanelFetcher, jobAttachments } from "./attachments.js";
+import { ActivityRelay } from "../../tools/activities.js";
+import { PermissionRelay } from "../../tools/permissions.js";
+import { controlPanelFetcher, jobAttachments } from "../../tools/attachments.js";
 import { RALPH_TOOL_POLICY } from "./policy.js";
 import { sessionGitAccess } from "./git-access.js";
 import { createSessionRunner, type SessionRequest, type SessionResult } from "./session.js";

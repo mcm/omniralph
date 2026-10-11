@@ -19,6 +19,11 @@ import {
   type SessionResult,
   type SessionRunner,
 } from "../session/session.js";
+import {
+  createOmniralphServer,
+  offeredHarnessTools,
+  type OmniralphServerOptions,
+} from "../tools/omniralph-server.js";
 import { existingReferences } from "./references.js";
 import { queryToolPolicy } from "./tool-policy.js";
 import {
@@ -35,6 +40,8 @@ export interface QueryTaskOptions {
   defaultRetryAfterSeconds?: number;
   /** Where empty working directories are created (default: the OS temp directory). */
   tmpDir?: string;
+  /** Options of the `omniralph` harness tools (tests). */
+  harnessTools?: Pick<OmniralphServerOptions, "fetch" | "permissionTimeoutMs" | "pollIntervalMs">;
 }
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -126,7 +133,10 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
- *    lifecycle token).
+ *    lifecycle token). The agent's harness tools (`tools.harness`, capped by
+ *    the task type) come from the in-process `omniralph` MCP server, which
+ *    calls the control panel with the session token too; with none listed,
+ *    no server is attached.
  * 4. Finish: a structured result is validated against the task's output
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
@@ -158,7 +168,36 @@ export async function runQueryTask(
       conventions: await conventionsVariable(workspace.checkout, ctx.repos.gitEnv(ctx.env())),
     };
     const prompt = renderTemplate(spec.task.promptTemplate, { ...context, ...variables });
-    const session = await runner({
+    // `get_attachment` saves to the run's temp directory: the empty working directory, or one of its own next to a checkout.
+    const offered = offeredHarnessTools(spec.agent.tools.harness, spec.taskType);
+    const downloads =
+      offered.includes("get_attachment") && workspace.checkout
+        ? await mkdtemp(path.join(options.tmpDir ?? tmpdir(), "omniralph-run-"))
+        : null;
+    try {
+      return await session(prompt, workspace, downloads ?? workspace.cwd);
+    } finally {
+      if (downloads) await rm(downloads, { recursive: true, force: true });
+    }
+  };
+
+  const session = async (
+    prompt: string,
+    workspace: Workspace,
+    runTmpDir: string,
+  ): Promise<QueryRunResult> => {
+    const harness = createOmniralphServer({
+      server: ctx.server,
+      jobId: spec.jobId,
+      sessionToken: ctx.sessionToken,
+      tools: spec.agent.tools.harness,
+      taskType: spec.taskType,
+      tmpDir: runTmpDir,
+      signal: ctx.signal,
+      logger: log,
+      ...options.harnessTools,
+    });
+    const result = await runner({
       prompt,
       cwd: workspace.cwd,
       policy: queryToolPolicy(spec.agent, spec.task.toolSettings, { files: workspace.files }),
@@ -170,11 +209,15 @@ export async function runQueryTask(
       ...(spec.model !== null && { model: spec.model }),
       ...(spec.fallbackModel !== null && { fallbackModel: spec.fallbackModel }),
       ...(spec.task.idleTimeoutMs !== undefined && { idleTimeoutMs: spec.task.idleTimeoutMs }),
+      ...(harness && {
+        mcpServers: { servers: { omniralph: harness.config }, allowedTools: harness.allowedTools },
+      }),
+      ...(runTmpDir !== workspace.cwd && { additionalDirectories: [runTmpDir] }),
       env: ctx.sessionEnv(),
       signal: ctx.signal,
     });
-    log.info({ stop: session.stop, usage: session.usage }, "query session finished");
-    return finish(session, workspace);
+    log.info({ stop: result.stop, usage: result.usage }, "query session finished");
+    return finish(result, workspace);
   };
 
   const finish = async (session: SessionResult, workspace: Workspace): Promise<QueryRunResult> => {

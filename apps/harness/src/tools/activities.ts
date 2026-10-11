@@ -1,8 +1,8 @@
 import type { RalphActivity } from "@omniralph/shared";
 import { z } from "zod";
-import { postJson, type FetchFn } from "../../api.js";
-import type { Logger } from "../../logger.js";
-import type { SessionEvent } from "./session.js";
+import { postJson, type FetchFn } from "../api.js";
+import type { Logger } from "../logger.js";
+import type { SessionEvent } from "../session/session.js";
 
 const MAX_BODY = 10_000;
 const MAX_PARAMETER = 500;
@@ -80,16 +80,22 @@ export class ActivityRelay {
     this.url = `${options.server}/api/harness/jobs/${encodeURIComponent(options.jobId)}/activities`;
   }
 
+  /** Posts one activity now; throws when the control panel refuses it or can't be reached. */
+  async send(activity: RalphActivity): Promise<void> {
+    await postJson(
+      this.options.fetch ?? fetch,
+      this.url,
+      activity,
+      z.unknown(),
+      this.options.jobToken(),
+    );
+  }
+
+  /** Queues an activity behind the ones posted before; a failure is logged and dropped. */
   post(activity: RalphActivity): void {
     this.chain = this.chain.then(async () => {
       try {
-        await postJson(
-          this.options.fetch ?? fetch,
-          this.url,
-          activity,
-          z.unknown(),
-          this.options.jobToken(),
-        );
+        await this.send(activity);
       } catch (error) {
         this.options.logger.warn(
           { err: error, type: activity.type },
