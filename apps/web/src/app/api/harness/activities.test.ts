@@ -129,6 +129,8 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
         organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
         status: "running",
         harnessId,
         repositoryId,
@@ -206,7 +208,12 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
   });
 
   it("rejects review jobs, even with a forged ralph:activity scope", async () => {
-    const reviewJob = await newJob({ capability: "review", type: "review.run" });
+    const reviewJob = await newJob({
+      capability: "review",
+      type: "review.run",
+      taskType: "review",
+      pool: "short",
+    });
     // A review job token never carries the scope.
     const reviewToken = await token(reviewJob, CAPABILITY_JOB_SCOPES.review);
     expect((await activityRequest(reviewJob, reviewToken, THOUGHT)).status).toBe(401);

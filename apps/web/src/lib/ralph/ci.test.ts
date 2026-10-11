@@ -170,8 +170,9 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     const started = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
@@ -387,6 +388,8 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
       .values({
         organizationId: orgId,
         type: "ralph.request",
+        taskType: "coding",
+        pool: "long",
         capability: "ralph",
         payload: {},
         ralphRunId: run.id,

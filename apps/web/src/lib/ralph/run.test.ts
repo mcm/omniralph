@@ -241,8 +241,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const started = await claimJob(db, {
       organizationId: orgId,
       harnessId,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -288,8 +289,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const { claim } = await claimJob(db, {
       organizationId: orgId,
       harnessId,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -345,6 +347,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(first).toMatchObject({
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       repositoryId: repoId,
       ralphRunId: run.id,
       targetHarnessId: null,
@@ -415,6 +419,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(describeJob).toMatchObject({
       capability: "ralph",
       type: "ralph.describe-pr",
+      taskType: "query",
+      pool: "short",
       targetHarnessId: agentA,
       ralphRunId: run.id,
     });
@@ -535,8 +541,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const { claim } = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -561,8 +568,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const { claim } = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -618,8 +626,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       const started = await claimJob(db, {
         organizationId: orgId,
         harnessId: agentA,
-        capabilities: ["ralph"],
-        enabledCapabilities: ["ralph"],
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(started.claim?.job.id).toBe(job.id);
@@ -631,8 +640,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const gaveUp = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(gaveUp).toMatchObject({
@@ -669,8 +679,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const { claim } = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -1102,8 +1113,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     const { claim } = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);

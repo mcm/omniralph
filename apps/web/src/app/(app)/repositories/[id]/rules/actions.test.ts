@@ -214,6 +214,8 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
       expect(job).toMatchObject({
         capability: "review",
         type: "review.learn-rule",
+        taskType: "query",
+        pool: "short",
         repositoryId: repoId,
         status: "queued",
         targetHarnessId: null,

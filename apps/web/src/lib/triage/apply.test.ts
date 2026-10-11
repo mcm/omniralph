@@ -186,6 +186,8 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
       organizationId: orgId,
       capability: "triage",
       type: "triage.run",
+      taskType: "query",
+      pool: "short",
       payload,
     });
     await setTriageRunJob(db, run.id, job.id);
@@ -622,6 +624,8 @@ describe.skipIf(!dockerAvailable)("applying triage results to Linear", () => {
       organizationId: orgId,
       capability: "triage",
       type: "triage.run",
+      taskType: "query",
+      pool: "short",
       payload: job.payload,
     });
     await setTriageRunJob(db, run.id, other.id);

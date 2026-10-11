@@ -209,6 +209,8 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(job).toMatchObject({
       capability: "system",
       type: "repo.sync",
+      taskType: "system",
+      pool: null,
       status: "queued",
       repositoryId: repoId,
       targetHarnessId: agentA,

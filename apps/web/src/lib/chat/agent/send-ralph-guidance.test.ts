@@ -131,6 +131,8 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
       organizationId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       repositoryId: repository,
       ralphRunId: run.id,
     });
@@ -264,6 +266,8 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.request",
+      taskType: "coding",
+      pool: "long",
       repositoryId,
       ralphRunId: run.id,
     });

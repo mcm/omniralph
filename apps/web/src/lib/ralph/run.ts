@@ -55,6 +55,7 @@ import {
   RALPH_PREPARE_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
@@ -482,6 +483,7 @@ async function enqueueStory(
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_STORY_JOB_TYPE,
+    ...legacyJobRouting(RALPH_STORY_JOB_TYPE),
     payload,
     repositoryId: found.repository.id,
     ralphRunId: run.id,
@@ -596,6 +598,7 @@ async function describeLane(
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_DESCRIBE_PR_JOB_TYPE,
+    ...legacyJobRouting(RALPH_DESCRIBE_PR_JOB_TYPE),
     payload: buildDescribePrPayload({
       run,
       lane,
@@ -650,6 +653,7 @@ async function enqueuePreparation(
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_PREPARE_JOB_TYPE,
+    ...legacyJobRouting(RALPH_PREPARE_JOB_TYPE),
     payload: buildPreparePayload({
       run,
       ...found,
@@ -705,6 +709,7 @@ async function enqueueRequest(
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_REQUEST_JOB_TYPE,
+    ...legacyJobRouting(RALPH_REQUEST_JOB_TYPE),
     payload: buildRequestPayload({
       run,
       lane,

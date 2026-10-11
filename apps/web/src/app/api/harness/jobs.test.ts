@@ -173,6 +173,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       organizationId: input.organizationId ?? orgId,
       capability: "review",
       type: "review.run",
+      taskType: "review",
+      pool: "short",
       payload: { prNumber: 7 },
       repositoryId: input.repositoryId ?? null,
       dedupeKey: input.dedupeKey ?? randomUUID(),
@@ -205,7 +207,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
     try {
       const res = await claim(
         agentRequest("claim", accessToken, {
-          body: { capabilities: [before.capability], waitSeconds: 0 },
+          body: { pools: before.pool ? [before.pool] : [], waitSeconds: 0 },
         }),
       );
       if (res.status === 204) return null;
@@ -231,6 +233,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         payload: { prNumber: 7 },
         dedupeKey: "review:insert",
       });
@@ -240,6 +244,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         payload: { prNumber: 7 },
         status: "queued",
         targetHarnessId: null,
@@ -252,12 +258,16 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         dedupeKey: "review:dedupe",
       });
       const second = await dispatcher().createAndPublish({
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         dedupeKey: "review:dedupe",
       });
       expect(second.created).toBe(false);
@@ -272,6 +282,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         dedupeKey: "review:dedupe",
       });
       expect(third.created).toBe(true);
@@ -291,6 +303,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         status: "running",
         harnessId: busy.harnessId,
       });
@@ -306,6 +320,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           capability: "review",
           type: "repo.sync",
+          taskType: "system",
+          pool: null,
           repositoryId,
           targetHarnessId: busy.harnessId,
         });
@@ -411,6 +427,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
           organizationId,
           capability: "review",
           type,
+          taskType: "query",
+          pool: "short",
           payload: {},
           dedupeKey: randomUUID(),
         });
@@ -424,7 +442,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
 
     function claimAs(
       accessToken: string,
-      body: unknown = { capabilities: ["review"], waitSeconds: 0 },
+      body: unknown = { pools: ["short"], waitSeconds: 0 },
       signal?: AbortSignal,
     ) {
       const req = agentRequest("claim", accessToken, { body });
@@ -434,12 +452,20 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
     it("claims a queued job at once and returns it with a job token", async () => {
       const { agent, job } = await claimOrg();
       const jobId = await job();
-      const res = await claimAs(agent.accessToken, { capabilities: ["review"] });
+      const res = await claimAs(agent.accessToken, { pools: ["short"] });
       expect(res.status).toBe(200);
       const body = (await res.json()) as JobStartResponse;
       expect(body).toMatchObject({
         action: "run",
-        job: { id: jobId, capability: "review", type: "claim.run", deliveryCount: 1 },
+        job: {
+          id: jobId,
+          capability: "review",
+          type: "claim.run",
+          taskType: "query",
+          pool: "short",
+          taskId: null,
+          deliveryCount: 1,
+        },
         jobToken: { jobId, expiresIn: 900 },
       });
       if (body.action !== "run") throw new Error("expected run");
@@ -461,26 +487,47 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
 
     it("returns 204 with nothing to claim after waitSeconds: 0", async () => {
       const { agent, job } = await claimOrg();
-      // Not claimable: a capability the harness didn't ask for, and a delayed retry.
+      // Not claimable: a pool the harness didn't ask for, and a delayed retry.
       const delayed = await job("claim.run", { availableAt: new Date(Date.now() + 60_000) });
-      const res = await claimAs(agent.accessToken, { capabilities: ["ralph"], waitSeconds: 0 });
+      await job();
+      const res = await claimAs(agent.accessToken, { pools: ["long"], waitSeconds: 0 });
       expect(res.status).toBe(204);
-      expect((await claimAs(agent.accessToken)).status).toBe(204);
       expect((await jobRow(delayed)).status).toBe("queued");
     });
 
-    it("never claims capabilities the harness hasn't enabled", async () => {
+    it("never claims task types the harness doesn't accept", async () => {
       const { organizationId, job } = await claimOrg();
-      const disabled = await newAgent({ organizationId, enabledCapabilities: [] });
+      const untrusted = await newAgent({ organizationId, acceptedTaskTypes: ["review"] });
       const jobId = await job();
-      expect((await claimAs(disabled.accessToken)).status).toBe(204);
+      expect((await claimAs(untrusted.accessToken)).status).toBe(204);
       expect((await jobRow(jobId)).status).toBe("queued");
+    });
+
+    it("claims system jobs without a pool", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job("claim.run", { taskType: "system", pool: null });
+      const res = await claimAs(agent.accessToken, { pools: [], waitSeconds: 0 });
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job).toMatchObject({
+        id: jobId,
+        taskType: "system",
+        pool: null,
+      });
+    });
+
+    it("only claims jobs whose minimum version the harness reported", async () => {
+      const { organizationId, job } = await claimOrg();
+      const old = await newAgent({ organizationId, reportedVersion: "0.9.0" });
+      const current = await newAgent({ organizationId, reportedVersion: "0.10.0" });
+      const jobId = await job("claim.run", { minHarnessVersion: "0.10.0" });
+      expect((await claimAs(old.accessToken)).status).toBe(204);
+      const res = await claimAs(current.accessToken);
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
     });
 
     it("returns a job dispatched while the request waits", async () => {
       const { agent, job } = await claimOrg();
       const started = Date.now();
-      const pending = claimAs(agent.accessToken, { capabilities: ["review"], waitSeconds: 10 });
+      const pending = claimAs(agent.accessToken, { pools: ["short"], waitSeconds: 10 });
       await new Promise((resolve) => setTimeout(resolve, 500));
       const jobId = await job();
       const res = await pending;
@@ -495,7 +542,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const started = Date.now();
       const pending = claimAs(
         agent.accessToken,
-        { capabilities: ["review"], waitSeconds: 50 },
+        { pools: ["short"], waitSeconds: 50 },
         controller.signal,
       );
       setTimeout(() => controller.abort(), 300);
@@ -610,9 +657,9 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
     it("rejects invalid bodies, bad tokens and revoked harnesses", async () => {
       const { agent, job } = await claimOrg();
       await job();
-      expect(
-        (await claimAs(agent.accessToken, { capabilities: ["review"], waitSeconds: 51 })).status,
-      ).toBe(400);
+      expect((await claimAs(agent.accessToken, { pools: ["short"], waitSeconds: 51 })).status).toBe(
+        400,
+      );
       expect((await claimAs(agent.accessToken, { waitSeconds: 0 })).status).toBe(400);
       expect((await claimAs("garbage")).status).toBe(401);
       await db
@@ -782,6 +829,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.learn-rule",
+        taskType: "query",
+        pool: "short",
         repositoryId,
         dedupeKey: `review.learn-rule:${row!.id}`,
         payload: {
@@ -869,6 +918,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.reply",
+        taskType: "query",
+        pool: "short",
         repositoryId,
         dedupeKey: `review.reply:${repositoryId}:778`,
         payload: {
@@ -973,7 +1024,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const body = (await res.json()) as HeartbeatResponse;
       expect(body).toMatchObject({
         maxConcurrency: 2,
-        enabledCapabilities: ["review"],
+        acceptedTaskTypes: ["query", "review"],
         pinnedRepoIds: [repositoryId],
         organizationId: orgId,
       });
@@ -1035,6 +1086,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           capability: "ralph",
           type: "ralph.story",
+          taskType: "coding",
+          pool: "long",
           status: "running",
           harnessId,
           ralphRunId: run!.id,
@@ -1132,6 +1185,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         organizationId: otherOrgId,
         capability: input.capability ?? "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         repositoryId: input.repositoryId ?? null,
         dedupeKey: randomUUID(),
       });
@@ -1167,6 +1222,8 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           capability: "review",
           type: "repo.sync",
+          taskType: "system",
+          pool: null,
           repositoryId,
           targetHarnessId: foreign.harnessId,
           dedupeKey,
@@ -1277,11 +1334,20 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const [ours, theirs] = await db
         .insert(jobs)
         .values([
-          { organizationId: orgId, capability: "review", type: "review.run", createdAt: dayAgo },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            taskType: "review",
+            pool: "short",
+            createdAt: dayAgo,
+          },
           {
             organizationId: otherOrgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             createdAt: dayAgo,
           },
         ])
@@ -1312,12 +1378,27 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const [stale, fresh, oldRunning] = await db
         .insert(jobs)
         .values([
-          { organizationId: orgId, capability: "review", type: "review.run", createdAt: dayAgo },
-          { organizationId: orgId, capability: "review", type: "review.run" },
           {
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
+            createdAt: dayAgo,
+          },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            taskType: "review",
+            pool: "short",
+          },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "running",
             createdAt: dayAgo,
           },

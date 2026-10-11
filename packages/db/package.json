@@ -24,6 +24,7 @@
     "migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@omniralph/shared": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1"
   },

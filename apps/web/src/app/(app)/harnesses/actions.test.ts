@@ -249,7 +249,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(before).toMatchObject({
         maxConcurrency: 1,
         pollIntervalSeconds: 5,
-        enabledCapabilities: ["review"],
+        acceptedTaskTypes: ["query", "review"],
         pinnedRepoIds: [],
       });
 
@@ -266,7 +266,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         maxConcurrency: 4,
         // Legacy constants: harnesses claim jobs instead of polling queue topics.
         pollIntervalSeconds: 5,
-        enabledCapabilities: [],
+        acceptedTaskTypes: [],
         pinnedRepoIds: [repoA],
         topics: [],
       });
@@ -276,10 +276,10 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
-    it("enabling ralph reaches the harness's enabled capabilities", async () => {
+    it("enabling ralph reaches the harness's accepted task types", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(before.enabledCapabilities).toEqual(["review"]);
+      expect(before.acceptedTaskTypes).toEqual(["query", "review"]);
 
       expect(
         await updateHarnessConfig(harnessId, {
@@ -288,23 +288,23 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         }),
       ).toEqual({ ok: true });
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(after.enabledCapabilities).toEqual(["review", "ralph"]);
+      expect(after.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
       expect(after.topics).toEqual([]);
     });
 
-    it("sends the effective per-capability limits and stores the edited ones", async () => {
+    it("sends the effective per-pool limits and stores the edited ones", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const initial = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(initial.capabilityLimits).toEqual({ review: 1 });
+      expect(initial.poolLimits).toEqual({ short: 1, long: 1 });
 
-      // Unset: ralph leaves one slot for reviews.
+      // Unset: the long pool leaves one slot for short jobs.
       const config = {
         maxConcurrency: 3,
         enabledCapabilities: ["review", "ralph"],
       };
       expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
       const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(defaults.capabilityLimits).toEqual({ review: 3, ralph: 2 });
+      expect(defaults.poolLimits).toEqual({ short: 3, long: 2 });
 
       expect(
         await updateHarnessConfig(harnessId, {
@@ -314,8 +314,9 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       ).toEqual({ ok: true });
       const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       expect(row!.capabilityLimits).toEqual({ ralph: 1, review: 3 });
+      expect(row!.poolLimits).toEqual({ long: 1, short: 3 });
       const limited = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(limited.capabilityLimits).toEqual({ review: 3, ralph: 1 });
+      expect(limited.poolLimits).toEqual({ short: 3, long: 1 });
 
       // Saving without limits keeps them; lowering maxConcurrency clamps the effective values.
       expect(
@@ -326,18 +327,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         }),
       ).toEqual({ ok: true });
       const clamped = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(clamped.capabilityLimits).toEqual({ review: 2, ralph: 1 });
-
-      // Disabled capabilities aren't sent.
-      expect(
-        await updateHarnessConfig(harnessId, {
-          ...config,
-          enabledCapabilities: ["review"],
-          capabilityLimits: {},
-        }),
-      ).toEqual({ ok: true });
-      const reviewOnly = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(reviewOnly.capabilityLimits).toEqual({ review: 3 });
+      expect(clamped.poolLimits).toEqual({ short: 2, long: 1 });
     });
 
     it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {
@@ -498,6 +488,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(targeted[0]).toMatchObject({
         capability: "system",
         type: "repo.sync",
+        taskType: "system",
+        pool: null,
         status: "queued",
         repositoryId: repoB,
       });
@@ -541,6 +533,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "running",
             harnessId,
             deliveryCount: 1,
@@ -549,6 +543,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "running",
             harnessId,
             deliveryCount: 3,
@@ -557,6 +553,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "running",
             harnessId,
             deliveryCount: 1,
@@ -566,6 +564,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "queued",
             repositoryId: repoA,
             targetHarnessId: harnessId,
@@ -574,6 +574,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "system",
             type: "repo.sync",
+            taskType: "system",
+            pool: null,
             status: "queued",
             repositoryId: repoA,
             targetHarnessId: harnessId,
@@ -667,6 +669,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           organizationId: orgId,
           capability: "review",
           type: "review.run",
+          taskType: "review",
+          pool: "short",
           status: "running",
           harnessId,
           deliveryCount: 1,
@@ -736,11 +740,20 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       const [queued, running, done] = await db
         .insert(jobs)
         .values([
-          { organizationId: orgId, capability: "review", type: "review.run", status: "queued" },
           {
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
+            status: "queued",
+          },
+          {
+            organizationId: orgId,
+            capability: "review",
+            type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "running",
             harnessId,
           },
@@ -748,6 +761,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
             organizationId: orgId,
             capability: "review",
             type: "review.run",
+            taskType: "review",
+            pool: "short",
             status: "completed",
             harnessId,
           },
@@ -772,6 +787,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
           organizationId: orgId,
           capability: "review",
           type: "review.run",
+          taskType: "review",
+          pool: "short",
           status: "queued",
         })
         .returning();

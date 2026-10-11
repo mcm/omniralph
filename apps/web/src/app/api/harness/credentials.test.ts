@@ -194,7 +194,14 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   async function newJob(values: Partial<typeof jobs.$inferInsert>) {
     const [job] = await db
       .insert(jobs)
-      .values({ organizationId: orgId, capability: "review", type: "review.run", ...values })
+      .values({
+        organizationId: orgId,
+        capability: "review",
+        type: "review.run",
+        taskType: "review",
+        pool: "short",
+        ...values,
+      })
       .returning();
     return job!.id;
   }
@@ -258,7 +265,12 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
 
     describe("write credentials", () => {
       const RALPH_SCOPES = CAPABILITY_JOB_SCOPES.ralph;
-      const ralphJob = { capability: "ralph", type: "ralph.story" } as const;
+      const ralphJob = {
+        capability: "ralph",
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+      } as const;
 
       it("issues a GitLab write_repository token to a running ralph job and audits it as write", async () => {
         const harnessId = await newAgent();
@@ -316,7 +328,10 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       });
 
       it("gives a started ralph job's token a write credential", async () => {
-        const harnessId = await newAgent({ enabledCapabilities: ["ralph"] });
+        const harnessId = await newAgent({
+          enabledCapabilities: ["ralph"],
+          acceptedTaskTypes: ["coding"],
+        });
         // Targeted at the harness, so the claim takes it before any other queued ralph job.
         const jobId = await newJob({
           ...ralphJob,
@@ -329,7 +344,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           new Request("http://localhost/api/harness/claim", {
             method: "POST",
             headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.251" },
-            body: JSON.stringify({ capabilities: ["ralph"], waitSeconds: 0 }),
+            body: JSON.stringify({ pools: ["long"], waitSeconds: 0 }),
           }),
         );
         const started = (await res.json()) as JobStartResponse;
@@ -574,6 +589,8 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         id: pinned.syncJobId,
         capability: "system",
         type: "repo.sync",
+        taskType: "system",
+        pool: null,
         status: "queued",
         targetHarnessId: harnessId,
         repositoryId: gitlabRepoId,
@@ -597,7 +614,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
         new Request("http://localhost/api/harness/claim", {
           method: "POST",
           headers: { authorization: `Bearer ${accessToken}`, "x-real-ip": "203.0.113.250" },
-          body: JSON.stringify({ capabilities: ["system"], waitSeconds: 0 }),
+          body: JSON.stringify({ pools: [], waitSeconds: 0 }),
         }),
       );
       const started = (await res.json()) as JobStartResponse;

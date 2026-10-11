@@ -133,6 +133,8 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         status,
         harnessId,
       })

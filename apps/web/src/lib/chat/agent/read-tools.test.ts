@@ -179,6 +179,8 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       organizationId: id,
       capability: "review",
       type: "review.run",
+      taskType: "review",
+      pool: "short",
       repositoryId: repository.id,
       payload: { prNumber: 7 },
     });
@@ -218,6 +220,8 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
         organizationId: crowdedOrgId,
         capability: "ralph",
         type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
       });
     }
   }, 180_000);

@@ -30,8 +30,9 @@ const ORG_ID = randomUUID();
 function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   return {
     maxConcurrency: 1,
-    enabledCapabilities: ["review"],
-    capabilityLimits: {},
+    acceptedTaskTypes: ["query", "review"],
+    // The short pool may use every slot (as the control panel's default).
+    poolLimits: { short: overrides.maxConcurrency ?? 1 },
     pinnedRepoIds: [],
     organizationId: ORG_ID,
     cancelJobIds: [],
@@ -48,6 +49,9 @@ function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
     id,
     capability: "review",
     type: "review.run",
+    taskType: "review",
+    pool: "short",
+    taskId: null,
     repositoryId: null,
     payload: {},
     deliveryCount: 1,
@@ -65,15 +69,15 @@ function runResponse(j: JobPayload): JobStartResponse {
 
 /**
  * An in-memory stand-in for `POST /api/harness/claim`: hands out the first
- * queued job of a requested capability, else holds the claim until a job is
+ * queued job of a requested pool (or a `system` job, which has none), else holds the claim until a job is
  * pushed, the claim is aborted or 50s pass (null).
  */
 class FakeClaims {
   private readonly jobs: JobPayload[] = [];
   private readonly waiting = new Set<() => void>();
-  /** Capabilities of every claim, in order. */
+  /** Pools of every claim, in order. */
   readonly calls: string[][] = [];
-  /** Capabilities of every aborted claim. */
+  /** Pools of every aborted claim. */
   readonly aborted: string[][] = [];
   inFlight = 0;
   maxInFlight = 0;
@@ -84,15 +88,15 @@ class FakeClaims {
   }
 
   readonly claim = async (
-    { capabilities }: ClaimRequest,
+    { pools }: ClaimRequest,
     signal?: AbortSignal,
   ): Promise<JobStartResponse | null> => {
-    this.calls.push(capabilities);
+    this.calls.push(pools);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {
       for (;;) {
-        const index = this.jobs.findIndex((j) => capabilities.includes(j.capability));
+        const index = this.jobs.findIndex((j) => j.pool === null || pools.includes(j.pool));
         if (index >= 0) return runResponse(this.jobs.splice(index, 1)[0]!);
         const outcome = await new Promise<"pushed" | "timeout">((resolve, reject) => {
           const finish = (settle: () => void) => {
@@ -103,7 +107,7 @@ class FakeClaims {
           };
           const onPush = () => finish(() => resolve("pushed"));
           const onAbort = () => {
-            this.aborted.push(capabilities);
+            this.aborted.push(pools);
             finish(() => reject(signal!.reason));
           };
           const timer = setTimeout(() => finish(() => resolve("timeout")), 50_000);
@@ -228,7 +232,7 @@ describe("AgentDaemon", () => {
     await settle();
     expect(claims.calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(claims.calls).toEqual([["review"]]);
+    expect(claims.calls).toEqual([["short"]]);
     await daemon.shutdown();
   });
 
@@ -254,10 +258,10 @@ describe("AgentDaemon", () => {
     claims.push(job(id));
     void daemon.run();
     await settle();
-    expect(api.claim).toHaveBeenCalledWith({ capabilities: ["review"] }, expect.any(AbortSignal));
+    expect(api.claim).toHaveBeenCalledWith({ pools: ["short"] }, expect.any(AbortSignal));
     expect(seen).toEqual({ jobToken: `job-token-${id}`, workspaceRoot: "/tmp/omniralph-test" });
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { findings: [], jobId: id } });
-    expect(claims.calls).toEqual([["review"], ["review"]]);
+    expect(claims.calls).toEqual([["short"], ["short"]]);
     expect(claims.inFlight).toBe(1);
     await daemon.shutdown();
   });
@@ -327,8 +331,8 @@ describe("AgentDaemon", () => {
       expect.objectContaining({ runningJobIds: [], freeSlots: 1 }),
     );
     expect(api.claim.mock.calls.map(([body]) => body)).toEqual([
-      { capabilities: ["review"] },
-      { capabilities: ["review"] },
+      { pools: ["short"] },
+      { pools: ["short"] },
     ]);
     expect(daemon.status().runningJobIds).toEqual([]);
     await daemon.shutdown();
@@ -363,28 +367,30 @@ describe("AgentDaemon", () => {
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { ok: true } });
     // Long-polls instead of waiting pollIntervalSeconds.
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(claims.calls).toEqual([["review"], ["review"]]);
+    expect(claims.calls).toEqual([["short"], ["short"]]);
     await daemon.shutdown();
   });
 
-  it("claims ralph jobs only once ralph is enabled, and runs them", async () => {
+  it("claims long jobs only once the long pool is sent, and runs them by job type", async () => {
     const id = randomUUID();
     const { api, state, claims, daemon } = setup({
       capabilities: [systemCapability, capability(async () => ({})), ralphCapability],
-      config: centralConfig({ enabledCapabilities: ["review"] }),
+      config: centralConfig({ poolLimits: { short: 1 } }),
     });
-    claims.push(job(id, { capability: "ralph", type: "ralph.prepare" }));
+    claims.push(
+      job(id, { capability: "ralph", type: "ralph.prepare", taskType: "coding", pool: "long" }),
+    );
     void daemon.run();
     await settle();
-    expect(claims.calls).toEqual([["system", "review"]]);
+    expect(claims.calls).toEqual([["short"]]);
     expect(api.submitFailure).not.toHaveBeenCalled();
 
-    state.config = centralConfig({ enabledCapabilities: ["review", "ralph"] });
+    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
-    // The claim without ralph was aborted and replaced.
-    expect(claims.aborted).toEqual([["system", "review"]]);
-    expect(claims.calls[1]).toEqual(["system", "review", "ralph"]);
+    // The claim without the long pool was aborted and replaced.
+    expect(claims.aborted).toEqual([["short"]]);
+    expect(claims.calls[1]).toEqual(["short", "long"]);
     expect(api.submitFailure).toHaveBeenCalledWith(id, {
       retryable: false,
       error: "invalid ralph.prepare payload",
@@ -499,28 +505,28 @@ describe("AgentDaemon", () => {
       ],
     });
     const pushRalph = (...ids: string[]) =>
-      env.claims.push(...ids.map((id) => job(id, { capability: "ralph", type: "ralph.story" })));
+      env.claims.push(
+        ...ids.map((id) =>
+          job(id, { capability: "ralph", type: "ralph.story", taskType: "coding", pool: "long" }),
+        ),
+      );
     return { ...env, gates, runningJobs, signals, pushRalph };
   }
 
-  it("caps ralph jobs at their limit so a slot stays free for reviews", async () => {
+  it("caps the long pool at its limit so a slot stays free for short jobs", async () => {
     const { api, claims, daemon, gates, runningJobs, pushRalph } = gatedCapabilities(
-      centralConfig({
-        maxConcurrency: 2,
-        enabledCapabilities: ["review", "ralph"],
-        // No ralph limit sent: the default (maxConcurrency - 1) applies.
-        capabilityLimits: { review: 2 },
-      }),
+      centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
     );
     const ralph = Array.from({ length: 3 }, () => randomUUID());
     pushRalph(...ralph);
     void daemon.run();
     await settle();
-    expect(daemon.capabilityLimit("ralph")).toBe(1);
+    expect(daemon.poolLimit("long")).toBe(1);
     expect(runningJobs.ralph).toEqual([ralph[0]]);
     expect(daemon.freeSlots()).toBe(1);
-    // Only reviews are claimed while ralph is at its limit.
-    expect(claims.calls).toEqual([["review", "ralph"], ["review"]]);
+    // With one coding job running at the long limit of 1, only `short` is asked for.
+    expect(claims.calls).toEqual([["short", "long"], ["short"]]);
+    expect(daemon.claimablePools()).toEqual(["short"]);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ freeSlots: 1 }));
 
@@ -531,18 +537,18 @@ describe("AgentDaemon", () => {
     expect(runningJobs.ralph).toEqual([ralph[0]]);
     expect(daemon.freeSlots()).toBe(0);
 
-    // A finished review frees its slot, but ralph still has none.
+    // A finished review frees its slot, but the long pool still has none.
     gates.get(review)!.resolve();
     await settle();
     expect(runningJobs.ralph).toEqual([ralph[0]]);
-    expect(claims.calls.at(-1)).toEqual(["review"]);
+    expect(claims.calls.at(-1)).toEqual(["short"]);
     expect(daemon.freeSlots()).toBe(1);
 
-    // A finished ralph job aborts the review-only claim and claims ralph again.
+    // A finished coding job aborts the short-only claim and claims the long pool again.
     gates.get(ralph[0]!)!.resolve();
     await settle();
     expect(runningJobs.ralph).toEqual([ralph[1]]);
-    expect(claims.aborted).toEqual([["review"]]);
+    expect(claims.aborted).toEqual([["short"]]);
     gates.get(ralph[1]!)!.resolve();
     await settle();
     gates.get(ralph[2]!)!.resolve();
@@ -555,8 +561,7 @@ describe("AgentDaemon", () => {
   it("keeps running jobs when a limit is lowered and aborts the claim when it's raised", async () => {
     const config = centralConfig({
       maxConcurrency: 3,
-      enabledCapabilities: ["review", "ralph"],
-      capabilityLimits: { review: 3, ralph: 2 },
+      poolLimits: { short: 3, long: 2 },
     });
     const { state, claims, daemon, gates, runningJobs, signals, pushRalph } =
       gatedCapabilities(config);
@@ -566,15 +571,15 @@ describe("AgentDaemon", () => {
     await settle();
     expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
     expect(daemon.freeSlots()).toBe(1);
-    expect(claims.calls.at(-1)).toEqual(["review"]);
+    expect(claims.calls.at(-1)).toEqual(["short"]);
 
-    state.config = { ...config, capabilityLimits: { review: 3, ralph: 1 } };
+    state.config = { ...config, poolLimits: { short: 3, long: 1 } };
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(daemon.capabilityLimit("ralph")).toBe(1);
+    expect(daemon.poolLimit("long")).toBe(1);
     expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
     expect(signals.get(ralph[0]!)!.aborted).toBe(false);
     expect(signals.get(ralph[1]!)!.aborted).toBe(false);
-    // Over the limit: only non-ralph work could still start, as the claim already asks.
+    // Over the limit: only short jobs could still start, as the claim already asks.
     expect(daemon.freeSlots()).toBe(1);
     expect(claims.aborted).toEqual([]);
 
@@ -583,11 +588,11 @@ describe("AgentDaemon", () => {
     expect(runningJobs.ralph).toEqual([ralph[1]]);
     expect(claims.aborted).toEqual([]);
 
-    // Raising the limit aborts the review-only claim; the new one gets ralph's job.
-    state.config = { ...config, capabilityLimits: { review: 3, ralph: 3 } };
+    // Raising the limit aborts the short-only claim; the new one gets the long job.
+    state.config = { ...config, poolLimits: { short: 3, long: 3 } };
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
-    expect(claims.aborted).toEqual([["review"]]);
+    expect(claims.aborted).toEqual([["short"]]);
     expect(runningJobs.ralph).toEqual([ralph[1], ralph[2]]);
     for (const gate of gates.values()) gate.resolve();
     await settle();
@@ -638,13 +643,14 @@ describe("AgentDaemon", () => {
     await settle();
     expect(api.submitResult).toHaveBeenCalledTimes(5);
 
-    // Disabling the capability centrally stops claiming.
-    state.config = centralConfig({ enabledCapabilities: [] });
+    // Without pools centrally, only system jobs are claimed.
+    state.config = centralConfig({ poolLimits: {} });
     await vi.advanceTimersByTimeAsync(20_000);
-    const calls = claims.calls.length;
-    expect(claims.inFlight).toBe(0);
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(claims.calls.length).toBe(calls);
+    expect(claims.calls.at(-1)).toEqual([]);
+    claims.push(job(randomUUID()));
+    await vi.advanceTimersByTimeAsync(20_000);
+    await settle();
+    expect(api.submitResult).toHaveBeenCalledTimes(5);
     await daemon.shutdown();
   });
 
@@ -661,15 +667,23 @@ describe("AgentDaemon", () => {
     }));
     const { api, claims, daemon } = setup({
       capabilities: [systemCapability, capability(async () => ({}))],
-      // Review is disabled centrally; system is built in.
-      config: centralConfig({ enabledCapabilities: [] }),
+      // No pools: system jobs need none.
+      config: centralConfig({ poolLimits: {} }),
       repos: { sync } as unknown as RepoCache,
     });
     const id = randomUUID();
-    claims.push(job(id, { capability: "system", type: "repo.sync", payload: { repository } }));
+    claims.push(
+      job(id, {
+        capability: "system",
+        type: "repo.sync",
+        taskType: "system",
+        pool: null,
+        payload: { repository },
+      }),
+    );
     void daemon.run();
     await settle();
-    expect(claims.calls[0]).toEqual(["system"]);
+    expect(claims.calls[0]).toEqual([]);
     expect(sync).toHaveBeenCalledTimes(1);
     const [repo, options] = sync.mock.calls[0] as unknown as [unknown, { env: NodeJS.ProcessEnv }];
     expect(repo).toEqual(repository);
@@ -861,7 +875,7 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
     expect(await exit).toBe(0);
     expect(claims.inFlight).toBe(0);
-    expect(claims.aborted).toEqual([["review"]]);
+    expect(claims.aborted).toEqual([["short"]]);
     expect(signal?.reason).toBeInstanceOf(ShutdownAbort);
     expect(api.submitFailure).not.toHaveBeenCalled();
     expect(api.submitResult).not.toHaveBeenCalled();
@@ -988,7 +1002,7 @@ describe("self-update", () => {
     expect(daemon.status().draining).toBe(true);
     // Draining aborted the in-flight claim.
     expect(claims.inFlight).toBe(0);
-    expect(claims.aborted).toEqual([["review"]]);
+    expect(claims.aborted).toEqual([["short"]]);
     // The next heartbeat reports the drain.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(

@@ -442,6 +442,147 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("backfills task types, pools, accepted task types and pool limits (0056)", async () => {
+    await db.execute(sql`create database task_types`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/task_types");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0056_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme'), ('Globex') returning id`,
+        );
+        const [acme, globex] = orgs.map((o) => o.id) as [string, string];
+        const legacy: [string, string][] = [
+          ["review", "review.run"],
+          ["review", "review.reply"],
+          ["review", "review.learn-rule"],
+          ["review", "chat.ask"],
+          ["triage", "triage.run"],
+          ["ralph", "ralph.describe-pr"],
+          ["ralph", "ralph.story"],
+          ["ralph", "ralph.request"],
+          ["ralph", "ralph.prepare"],
+          ["ralph", "ralph.cleanup"],
+          ["system", "repo.sync"],
+        ];
+        for (const [capability, type] of legacy) {
+          await client.query(
+            `insert into jobs (organization_id, capability, type) values ($1, $2, $3)`,
+            [acme, capability, type],
+          );
+        }
+        const harnesses: [string, string[], Record<string, number>][] = [
+          ["review-only", ["review"], {}],
+          ["ralph-only", ["ralph"], { ralph: 1 }],
+          ["triage-only", ["triage"], { triage: 3 }],
+          ["everything", ["review", "ralph", "triage"], { review: 4, triage: 2, ralph: 1 }],
+          ["nothing", [], {}],
+        ];
+        for (const [name, capabilities, limits] of harnesses) {
+          await client.query(
+            `insert into harnesses (organization_id, name, enabled_capabilities, capability_limits)
+             values ($1, $2, $3, $4)`,
+            [acme, name, capabilities, JSON.stringify(limits)],
+          );
+        }
+
+        await runMigrations(uri);
+        const { rows: jobRows } = await client.query<{
+          type: string;
+          task_type: string;
+          pool: string | null;
+          task_id: string | null;
+          min_harness_version: string | null;
+        }>(`select type, task_type, pool, task_id, min_harness_version from jobs order by type`);
+        expect(Object.fromEntries(jobRows.map((r) => [r.type, [r.task_type, r.pool]]))).toEqual({
+          "review.run": ["review", "short"],
+          "review.reply": ["query", "short"],
+          "review.learn-rule": ["query", "short"],
+          "chat.ask": ["query", "short"],
+          "triage.run": ["query", "short"],
+          "ralph.describe-pr": ["query", "short"],
+          "ralph.story": ["coding", "long"],
+          "ralph.request": ["coding", "long"],
+          "ralph.prepare": ["coding", "long"],
+          "ralph.cleanup": ["coding", "long"],
+          "repo.sync": ["system", null],
+        });
+        expect(jobRows.every((r) => r.task_id === null && r.min_harness_version === null)).toBe(
+          true,
+        );
+
+        const { rows: harnessRows } = await client.query<{
+          name: string;
+          accepted_task_types: string[];
+          pool_limits: Record<string, number>;
+        }>(`select name, accepted_task_types, pool_limits from harnesses`);
+        expect(
+          Object.fromEntries(
+            harnessRows.map((r) => [r.name, [r.accepted_task_types, r.pool_limits]]),
+          ),
+        ).toEqual({
+          "review-only": [["query", "review"], {}],
+          "ralph-only": [["coding"], { long: 1 }],
+          "triage-only": [["query"], { short: 3 }],
+          everything: [["coding", "query", "review"], { short: 2, long: 1 }],
+          nothing: [[], {}],
+        });
+
+        const { rows: pools } = await client.query<{ organization_id: string; name: string }>(
+          `select organization_id, name from pools order by organization_id, name`,
+        );
+        expect(pools).toEqual(
+          [acme, globex].toSorted().flatMap((org) => [
+            { organization_id: org, name: "long" },
+            { organization_id: org, name: "short" },
+          ]),
+        );
+        await expect(
+          client.query(`insert into pools (organization_id, name) values ($1, 'short')`, [acme]),
+        ).rejects.toThrow(/pools_organization_name_uq/);
+
+        // New rows need a valid task type, and a pool exactly when not `system`.
+        await expect(
+          client.query(
+            `insert into jobs (organization_id, capability, type, task_type, pool)
+             values ($1, 'review', 'review.run', 'deploy', 'short')`,
+            [acme],
+          ),
+        ).rejects.toThrow(/jobs_task_type_valid/);
+        await expect(
+          client.query(
+            `insert into jobs (organization_id, capability, type, task_type)
+             values ($1, 'review', 'review.run', 'review')`,
+            [acme],
+          ),
+        ).rejects.toThrow(/jobs_pool_system_only_null/);
+
+        const { rows: indexes } = await client.query<{ indexdef: string }>(
+          `select indexdef from pg_indexes where indexname in ('jobs_claim_queued_idx', 'jobs_claim_lease_idx')`,
+        );
+        expect(indexes).toHaveLength(2);
+        expect(indexes.every((i) => i.indexdef.includes("task_type"))).toBe(true);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns
@@ -489,6 +630,8 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       organizationId: org!.id,
       capability: "review",
       type: "review.run",
+      taskType: "review" as const,
+      pool: "short",
       dedupeKey: "repo:1:pr:2",
     };
     const [first] = await db.insert(jobs).values(job).returning();

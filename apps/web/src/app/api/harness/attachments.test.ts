@@ -135,6 +135,8 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
         organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
         status: "running",
         harnessId,
         repositoryId,
@@ -188,7 +190,12 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
     const listedOnly = await newJob([unknown]);
     expect((await downloadRequest(listedOnly, unknown, await token(listedOnly))).status).toBe(404);
     // A review job, even with a forged scope.
-    const review = await newJob([ID], { capability: "review", type: "review.run" });
+    const review = await newJob([ID], {
+      capability: "review",
+      type: "review.run",
+      taskType: "review",
+      pool: "short",
+    });
     const forged = await token(review, ["credentials:read", "ralph:attachments"]);
     const reviewRes = await downloadRequest(review, ID, forged);
     expect(reviewRes.status).toBe(403);

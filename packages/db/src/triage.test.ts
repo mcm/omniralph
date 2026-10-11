@@ -66,7 +66,15 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
   };
 
   const triageJob = async () =>
-    (await insertJob(db, { organizationId: orgId, capability: "triage", type: "triage.run" })).job;
+    (
+      await insertJob(db, {
+        organizationId: orgId,
+        capability: "triage",
+        type: "triage.run",
+        taskType: "query",
+        pool: "short",
+      })
+    ).job;
 
   it("creates a queued run with no job or result", async () => {
     const input = runInput({ trigger: "label" });

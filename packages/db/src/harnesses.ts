@@ -3,6 +3,7 @@
  * (returned to the harness in its next heartbeat), the audit log and the job list.
  */
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { legacyHarnessRouting } from "@omniralph/shared";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -151,7 +152,8 @@ export interface HarnessConfigInput {
 
 /**
  * Updates a harness's central configuration. The harness picks it up from its
- * next heartbeat response. Returns null for unknown or revoked harnesses and
+ * next heartbeat response. Its accepted task types (and, when limits are
+ * given, its pool limits) follow from the capabilities (`legacyHarnessRouting`). Returns null for unknown or revoked harnesses and
  * harnesses of another organization.
  */
 export async function updateHarnessConfig(
@@ -160,12 +162,17 @@ export async function updateHarnessConfig(
   harnessId: string,
   input: HarnessConfigInput,
 ): Promise<HarnessRow | null> {
+  const routing = legacyHarnessRouting(input.enabledCapabilities, input.capabilityLimits ?? {});
   const [row] = await db
     .update(harnesses)
     .set({
       maxConcurrency: input.maxConcurrency,
       enabledCapabilities: [...new Set(input.enabledCapabilities)],
-      ...(input.capabilityLimits && { capabilityLimits: input.capabilityLimits }),
+      acceptedTaskTypes: routing.acceptedTaskTypes,
+      ...(input.capabilityLimits && {
+        capabilityLimits: input.capabilityLimits,
+        poolLimits: routing.poolLimits,
+      }),
     })
     .where(
       and(

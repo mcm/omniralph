@@ -628,6 +628,8 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
         ralphRunId: run.id,
         repositoryId: repoId,
       });

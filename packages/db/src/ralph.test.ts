@@ -523,6 +523,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     expect(job.ralphRunId).toBe(run.id);
@@ -564,6 +566,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         organizationId: orgId,
         capability: "ralph",
         type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
         ralphRunId: run.id,
       });
       await db.update(jobs).set({ status }).where(eq(jobs.id, job.id));
@@ -572,7 +576,13 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const queued = await job("queued");
     const running = await job("running");
     await job("completed");
-    await insertJob(db, { organizationId: orgId, capability: "ralph", type: "ralph.story" });
+    await insertJob(db, {
+      organizationId: orgId,
+      capability: "ralph",
+      type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
+    });
     expect(await listActiveRunJobIds(db, run.id)).toEqual([queued, running]);
   });
 
@@ -614,6 +624,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: busy.id,
     });
     const { run: finished } = await createRun(db, runInput());
@@ -745,12 +757,16 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     const { job: second } = await insertJob(db, {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.describe-pr",
+      taskType: "query",
+      pool: "short",
       ralphRunId: run.id,
     });
     await db
@@ -764,6 +780,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: other.id,
     });
 
@@ -794,6 +812,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.request",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     const pending = await insertMessage(db, { runId: run.id, kind: "request", text: "Open a PR" });

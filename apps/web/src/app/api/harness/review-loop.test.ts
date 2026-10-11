@@ -313,7 +313,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     ).map((j) => j.id);
     try {
       const res = await claim(
-        agentRequest("claim", accessToken, { capabilities: ["review"], waitSeconds: 0 }),
+        agentRequest("claim", accessToken, { pools: ["short"], waitSeconds: 0 }),
       );
       if (res.status === 204) return null;
       expect(res.status).toBe(200);

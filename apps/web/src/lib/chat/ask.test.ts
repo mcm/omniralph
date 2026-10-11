@@ -146,6 +146,8 @@ describe.skipIf(!dockerAvailable)("chat.ask outcomes", () => {
       organizationId: orgId,
       capability: "review",
       type: "chat.ask",
+      taskType: "query",
+      pool: "short",
       payload,
       repositoryId,
     });

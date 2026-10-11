@@ -393,6 +393,13 @@
       "when": 1791691934594,
       "tag": "0055_rename_agents_to_harnesses",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791695120718,
+      "tag": "0056_task_types_and_pools",
+      "breakpoints": true
     }
   ]
 }

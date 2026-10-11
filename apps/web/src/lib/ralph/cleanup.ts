@@ -65,6 +65,7 @@ import {
   RalphCleanupResult,
   ralphStashBranch,
   type RalphCleanupAction,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
 import { conversationFor } from "./conversation";
@@ -144,6 +145,7 @@ async function enqueueCleanupJob(
     organizationId: run.organizationId,
     capability: RALPH_CAPABILITY,
     type: RALPH_CLEANUP_JOB_TYPE,
+    ...legacyJobRouting(RALPH_CLEANUP_JOB_TYPE),
     payload,
     repositoryId: repository.id,
     ralphRunId: run.id,

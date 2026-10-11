@@ -1,7 +1,6 @@
 import {
   HEARTBEAT_INTERVAL_SECONDS,
-  SYSTEM_CAPABILITY,
-  effectiveCapabilityLimit,
+  effectivePoolLimit,
   type HeartbeatResponse,
   type JobFailure,
   type JobOutcomeResponse,
@@ -65,7 +64,8 @@ export interface DaemonOptions {
 }
 
 interface RunningJob {
-  capability: string;
+  /** The pool whose slot the job takes; null for `system` jobs (they take a slot, but no pool's). */
+  pool: string | null;
   controller: AbortController;
   jobToken: string;
   /** Delivers a `jobMessages` message into the job's live session, while it has one. */
@@ -99,8 +99,8 @@ export class AgentDaemon implements DrainableDaemon {
   private readonly running = new Map<string, RunningJob>();
   /** Running job handlers (for the shutdown wait). */
   private readonly handlers = new Set<Promise<unknown>>();
-  /** The in-flight claim and the capabilities it asked for. */
-  private claim: { controller: AbortController; capabilities: string[] } | null = null;
+  /** The in-flight claim and the pools it asked for. */
+  private claim: { controller: AbortController; pools: string[] } | null = null;
   /** Wakes the claim loop while it waits for a free slot. */
   private wakeClaimLoop: (() => void) | null = null;
   private claimBackoffMs = 0;
@@ -313,15 +313,15 @@ export class AgentDaemon implements DrainableDaemon {
     if (
       !previous ||
       previous.maxConcurrency !== config.maxConcurrency ||
-      JSON.stringify(previous.capabilityLimits) !== JSON.stringify(config.capabilityLimits) ||
-      previous.enabledCapabilities.join() !== config.enabledCapabilities.join()
+      JSON.stringify(previous.poolLimits) !== JSON.stringify(config.poolLimits) ||
+      previous.acceptedTaskTypes.join() !== config.acceptedTaskTypes.join()
     ) {
       this.options.logger.info(
         {
           maxConcurrency: config.maxConcurrency,
-          enabledCapabilities: config.enabledCapabilities,
-          capabilityLimits: config.capabilityLimits,
-          claimableCapabilities: this.claimableCapabilities(),
+          acceptedTaskTypes: config.acceptedTaskTypes,
+          poolLimits: config.poolLimits,
+          claimablePools: this.claimablePools(),
         },
         "applied central config",
       );
@@ -368,69 +368,56 @@ export class AgentDaemon implements DrainableDaemon {
 
   // --- Claiming --------------------------------------------------------------------------
 
-  /** Capabilities this host has registered and the control panel has enabled (plus `system`). */
-  private enabledCapabilities(): string[] {
-    const config = this.config;
-    if (!config) return [];
-    return this.options.registry
-      .names()
-      .filter((name) => name === SYSTEM_CAPABILITY || config.enabledCapabilities.includes(name));
+  /** The pools of the harness's organization, from the heartbeat. */
+  private pools(): string[] {
+    return this.config ? Object.keys(this.config.poolLimits) : [];
   }
 
   /**
-   * How many of a capability's jobs may run at once: the heartbeat's limit, or
-   * the protocol default when the control panel sent none.
+   * How many of a pool's jobs may run at once: the heartbeat's limit, or the
+   * protocol default when the control panel sent none.
    */
-  capabilityLimit(capability: string): number {
+  poolLimit(pool: string): number {
     const config = this.config;
     if (!config) return 0;
-    return effectiveCapabilityLimit(capability, config.capabilityLimits, config.maxConcurrency);
+    return effectivePoolLimit(pool, config.poolLimits, config.maxConcurrency);
   }
 
-  private runningByCapability(): Map<string, number> {
+  private runningByPool(): Map<string, number> {
     const running = new Map<string, number>();
-    for (const job of this.running.values()) {
-      running.set(job.capability, (running.get(job.capability) ?? 0) + 1);
+    for (const { pool } of this.running.values()) {
+      if (pool !== null) running.set(pool, (running.get(pool) ?? 0) + 1);
     }
     return running;
   }
 
-  /**
-   * Jobs the agent could take right now: its free slots, but no more than the
-   * enabled capabilities still have room for under their limits.
-   */
+  /** Jobs the harness could take right now: its free slots (none while draining). */
   freeSlots(): number {
     const config = this.config;
     if (!config || this.draining) return 0;
-    const running = this.runningByCapability();
-    const room = this.enabledCapabilities().reduce(
-      (sum, name) => sum + Math.max(0, this.capabilityLimit(name) - (running.get(name) ?? 0)),
-      0,
-    );
-    return Math.max(0, Math.min(config.maxConcurrency - this.running.size, room));
+    return Math.max(0, config.maxConcurrency - this.running.size);
   }
 
   /**
-   * What to claim for now: the enabled capabilities still under their limits,
-   * while a slot is free. Empty while stopping or draining. A lowered limit
-   * cancels nothing: the capability just isn't claimed until it's under it.
+   * What to claim for now: the pools still under their limits, while a slot
+   * is free (`system` jobs need no pool, so a claim with none still gets
+   * them). Null while stopping, draining or without a free slot. A lowered
+   * limit cancels nothing: the pool just isn't claimed until it's under it.
    */
-  claimableCapabilities(): string[] {
-    if (this.stopping || this.freeSlots() === 0) return [];
-    const running = this.runningByCapability();
-    return this.enabledCapabilities().filter(
-      (name) => (running.get(name) ?? 0) < this.capabilityLimit(name),
-    );
+  claimablePools(): string[] | null {
+    if (this.stopping || this.freeSlots() === 0) return null;
+    const running = this.runningByPool();
+    return this.pools().filter((pool) => (running.get(pool) ?? 0) < this.poolLimit(pool));
   }
 
   /**
    * Re-checks what to claim: aborts the in-flight claim when it asked for
-   * other capabilities (a limit, slot, drain or stop changed them) and wakes
-   * the loop, which claims again with the current ones.
+   * other pools (a limit, slot, drain or stop changed them) and wakes the
+   * loop, which claims again with the current ones.
    */
   private refreshClaim(): void {
-    const capabilities = this.claimableCapabilities();
-    if (this.claim && this.claim.capabilities.join() !== capabilities.join()) {
+    const pools = this.claimablePools();
+    if (this.claim && (pools === null || this.claim.pools.join() !== pools.join())) {
       this.claim.controller.abort();
     }
     this.wakeClaimLoop?.();
@@ -442,17 +429,17 @@ export class AgentDaemon implements DrainableDaemon {
    */
   private async claimLoop(): Promise<void> {
     while (!this.stopping) {
-      const capabilities = this.claimableCapabilities();
-      if (capabilities.length === 0) {
+      const pools = this.claimablePools();
+      if (pools === null) {
         await new Promise<void>((resolve) => (this.wakeClaimLoop = resolve));
         this.wakeClaimLoop = null;
         continue;
       }
       const controller = new AbortController();
-      this.claim = { controller, capabilities };
+      this.claim = { controller, pools };
       let start: JobStartResponse | null;
       try {
-        start = await this.options.api.claim({ capabilities }, controller.signal);
+        start = await this.options.api.claim({ pools }, controller.signal);
         this.claimBackoffMs = 0;
       } catch (error) {
         if (controller.signal.aborted) continue;
@@ -503,7 +490,12 @@ export class AgentDaemon implements DrainableDaemon {
       return;
     }
     const { job } = start;
-    const jobLog = log.child({ jobId: job.id, capability: job.capability, type: job.type });
+    const jobLog = log.child({
+      jobId: job.id,
+      taskType: job.taskType,
+      pool: job.pool,
+      type: job.type,
+    });
     if (this.stopping) {
       // Claimed as the agent stopped: the lease lapses and the job is redelivered.
       jobLog.info("not starting a job claimed during shutdown");
@@ -523,7 +515,7 @@ export class AgentDaemon implements DrainableDaemon {
       return;
     }
     const running: RunningJob = {
-      capability: job.capability,
+      pool: job.pool,
       controller: new AbortController(),
       jobToken: start.jobToken.token,
     };

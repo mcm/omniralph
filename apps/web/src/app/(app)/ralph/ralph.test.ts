@@ -355,6 +355,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     await db
@@ -541,6 +543,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, story.id));
@@ -640,6 +644,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: run.id,
     });
     await updateStory(db, story!.id, { status: "running", lastJobId: job.id });

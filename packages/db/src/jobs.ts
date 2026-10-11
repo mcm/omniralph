@@ -7,8 +7,15 @@
  */
 import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
 import type { Database } from "./client.js";
-import { harnessRepoPins, harnesses, jobs, type HarnessUpdateState } from "./schema.js";
+import {
+  harnessRepoPins,
+  harnesses,
+  jobs,
+  type HarnessUpdateState,
+  type JobTaskType,
+} from "./schema.js";
 
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
@@ -26,6 +33,14 @@ export interface NewJobInput {
   organizationId: string;
   capability: string;
   type: string;
+  /** How the harness runs the job (`legacyJobRouting(type)` for legacy job types). */
+  taskType: JobTaskType;
+  /** The pool whose slots the job takes; null exactly for `system` jobs. */
+  pool: string | null;
+  /** The task definition the job runs; null for legacy jobs. */
+  taskId?: string | null;
+  /** Only harnesses reporting at least this version claim the job. */
+  minHarnessVersion?: string | null;
   payload?: Record<string, unknown>;
   repositoryId?: string | null;
   /** At most one queued/running job per key; a second insert returns the active job. */
@@ -52,6 +67,10 @@ export async function insertJob(
         organizationId: input.organizationId,
         capability: input.capability,
         type: input.type,
+        taskType: input.taskType,
+        pool: input.pool,
+        taskId: input.taskId ?? null,
+        minHarnessVersion: input.minHarnessVersion ?? null,
         payload: input.payload ?? {},
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
@@ -194,26 +213,31 @@ export interface ClaimJobResult {
 }
 
 /**
- * Claims the next job for an agent from the `jobs` table, in one transaction.
- * Eligible: the agent's organization's jobs whose capability is in both
- * `capabilities` (asked for) and `enabledCapabilities`, targeted at this
- * agent or at none, that are `queued` with `available_at <= now` or `running`
- * with a lapsed lease (the previous agent's results are then rejected). Jobs
- * targeted at this agent come first, then the oldest. The claim sets
- * `running`, the agent, `started_at` and the lease and increments
- * `delivery_count`. A cancel-requested candidate is canceled
- * and one at `maxDeliveries` is failed; both are returned in `settled` and
- * the claim moves on to the next candidate. `beforeClaim` runs on the job
- * about to be claimed (e.g. to sign its job token): if it throws, the whole
- * transaction rolls back and no delivery is used up.
+ * Claims the next job for a harness from the `jobs` table, in one transaction.
+ * Eligible: the harness's organization's jobs whose task type is in
+ * `acceptedTaskTypes` and whose pool is in `pools` (the pools it has a free
+ * slot in), plus `system` jobs (always accepted, no pool); whose
+ * `min_harness_version` is null or at most `harnessVersion`
+ * (`harnessVersionAtLeast`; none when the harness reported no version);
+ * targeted at this harness or at none; that are `queued` with
+ * `available_at <= now` or `running` with a lapsed lease (the previous
+ * harness's results are then rejected). Jobs targeted at this harness come
+ * first, then the oldest. The claim sets `running`, the harness, `started_at`
+ * and the lease and increments `delivery_count`. A cancel-requested candidate
+ * is canceled and one at `maxDeliveries` is failed; both are returned in
+ * `settled` and the claim moves on to the next candidate. `beforeClaim` runs
+ * on the job about to be claimed (e.g. to sign its job token): if it throws,
+ * the whole transaction rolls back and no delivery is used up.
  */
 export async function claimJob(
   db: Database,
   input: {
     harnessId: string;
     organizationId: string;
-    capabilities: readonly string[];
-    enabledCapabilities: readonly string[];
+    acceptedTaskTypes: readonly string[];
+    pools: readonly string[];
+    /** The harness's reported version; null when it reported none. */
+    harnessVersion: string | null;
     maxDeliveries: number;
     leaseSeconds?: number;
     now?: Date;
@@ -221,25 +245,45 @@ export async function claimJob(
   },
 ): Promise<ClaimJobResult> {
   const now = input.now ?? new Date();
-  const capabilities = input.capabilities.filter((c) => input.enabledCapabilities.includes(c));
   const settled: SettledJob[] = [];
-  if (capabilities.length === 0) return { claim: null, settled };
+  const pooledTaskTypes = input.acceptedTaskTypes
+    .filter(isJobTaskType)
+    .filter((t) => t !== "system");
+  const claimable = and(
+    eq(jobs.organizationId, input.organizationId),
+    or(
+      eq(jobs.taskType, "system"),
+      pooledTaskTypes.length > 0 && input.pools.length > 0
+        ? and(inArray(jobs.taskType, pooledTaskTypes), inArray(jobs.pool, [...input.pools]))
+        : sql`false`,
+    ),
+    or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
+    or(
+      and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
+      and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
+    ),
+  );
+  // The minimum versions among the candidates this harness meets (semver isn't SQL-comparable).
+  const minimums = await db
+    .selectDistinct({ version: jobs.minHarnessVersion })
+    .from(jobs)
+    .where(and(claimable, sql`${jobs.minHarnessVersion} is not null`));
+  const harnessVersion = input.harnessVersion;
+  const metMinimums = minimums
+    .map((m) => m.version!)
+    .filter((minimum) => harnessVersion !== null && harnessVersionAtLeast(harnessVersion, minimum));
+  const eligible = and(
+    claimable,
+    metMinimums.length > 0
+      ? or(isNull(jobs.minHarnessVersion), inArray(jobs.minHarnessVersion, metMinimums))
+      : isNull(jobs.minHarnessVersion),
+  );
   return db.transaction(async (tx): Promise<ClaimJobResult> => {
     for (;;) {
       const [job] = await tx
         .select()
         .from(jobs)
-        .where(
-          and(
-            eq(jobs.organizationId, input.organizationId),
-            inArray(jobs.capability, capabilities),
-            or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
-            or(
-              and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
-              and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
-            ),
-          ),
-        )
+        .where(eligible)
         // Targeted jobs (`target_harness_id is null` false) first.
         .orderBy(sql`${jobs.targetHarnessId} is null`, asc(jobs.createdAt), asc(jobs.id))
         .limit(1)

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { legacyJobRouting } from "@omniralph/shared";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
@@ -95,6 +96,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
       organizationId: orgId,
       capability: type.split(".")[0]!,
       type,
+      ...legacyJobRouting(type),
       repositoryId,
       ralphRunId: runId,
       status: "completed" as const,
