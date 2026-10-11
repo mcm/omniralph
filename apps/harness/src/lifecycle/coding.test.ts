@@ -1,0 +1,491 @@
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { appendFile, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { RALPH_SYSTEM_APPEND, storyTemplateContext } from "@omniralph/ralph";
+import {
+  RalphStoryResult,
+  RunSpec,
+  type JobRepository,
+  type RalphStoryPayload,
+} from "@omniralph/shared";
+import { getBuiltinAgent, getBuiltinTask, renderTemplate, taskCatalog } from "@omniralph/tasks";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { JobContext } from "../capabilities/index.js";
+import { silentLogger } from "../logger.js";
+import { createSessionRunner, type SessionQueryFn } from "../session/session.js";
+import { firstPrompt } from "../test/fake-query.js";
+import { ENV, git, Remote } from "../test/git-remote.js";
+import { PUSH_GUARD_HOOK, RepoCache } from "../workspace/repoCache.js";
+import { runCodingTask, storyRunPrompt, type CodingTaskOptions } from "./coding.js";
+import { promptEpic, stashPrefix } from "./story-attempt.js";
+
+interface Call {
+  prompt: string;
+  options: Options;
+}
+
+/** A fake Agent SDK `query()`: `script` does the session's work and yields its messages. */
+function fakeQuery(script: (call: Call) => AsyncGenerator<unknown>): {
+  query: SessionQueryFn;
+  calls: Call[];
+} {
+  const calls: Call[] = [];
+  const query: SessionQueryFn = (params) =>
+    (async function* () {
+      const call = { prompt: await firstPrompt(params.prompt), options: params.options ?? {} };
+      calls.push(call);
+      yield* script(call) as AsyncGenerator<SDKMessage>;
+    })();
+  return { query, calls };
+}
+
+function assistant(...content: unknown[]) {
+  return { type: "assistant", parent_tool_use_id: null, message: { content } };
+}
+
+function result(structured: unknown) {
+  return {
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result: "Done.",
+    structured_output: structured,
+    modelUsage: {
+      opus: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadInputTokens: 5,
+        cacheCreationInputTokens: 0,
+      },
+    },
+  };
+}
+
+function cwdOf(call: Call): string {
+  return call.options.cwd!;
+}
+
+function progressFileOf(call: Call): string {
+  return path.join(call.options.additionalDirectories![0]!, "progress.md");
+}
+
+const PRD = `# PRD: Ralph core
+
+## Quality Gates
+- \`true\`
+`;
+
+const engineer = getBuiltinAgent("builtin:engineer")!;
+const storyTask = getBuiltinTask("builtin:implement-story")!;
+
+describe("coding runs of a story task", { timeout: 60_000 }, () => {
+  let root: string;
+  let workspaceRoot: string;
+  let remote: Remote;
+  let repo: JobRepository;
+  let repos: RepoCache;
+  let controller: AbortController;
+  let posted: { url: string; auth: string | null; body: Record<string, unknown> }[];
+  const runId = randomUUID();
+  const branch = "feat/tool-32";
+
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    posted.push({
+      url: String(input),
+      auth: headers.get("authorization"),
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
+    return Response.json({ ok: true });
+  }) as typeof fetch;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), "omniralph-coding-"));
+    workspaceRoot = path.join(root, "workspace");
+    remote = new Remote(root);
+    remote.init();
+    await remote.commit({ "README.md": "hello\n" });
+    repo = { provider: "gitlab", fullPath: "group/app", cloneUrl: pathToFileURL(remote.bare).href };
+    repos = new RepoCache({ workspaceRoot, credentialHelper: "!true", lockRetryMs: 20 });
+    controller = new AbortController();
+    posted = [];
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  function context(): JobContext {
+    return {
+      signal: controller.signal,
+      jobToken: () => "lifecycle-token",
+      sessionToken: () => "session-token",
+      env: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "lifecycle-token", ...extra }),
+      sessionEnv: (extra) => ({
+        ...ENV,
+        OMNIRALPH_JOB_TOKEN: "session-token",
+        OMNIRALPH_JOB_TOKEN_FILE: path.join(root, "session-token"),
+        ...extra,
+      }),
+      spawn: () => {
+        throw new Error("coding runs must not spawn processes through the context");
+      },
+      server: "https://omniralph.example.com",
+      workspaceRoot,
+      repos,
+      logger: silentLogger(),
+    };
+  }
+
+  function payload(overrides: Partial<RalphStoryPayload> = {}): RalphStoryPayload {
+    return {
+      runId,
+      repositoryId: randomUUID(),
+      repository: repo,
+      branch,
+      baseBranch: "main",
+      settings: {
+        model: null,
+        setupCommand: null,
+        fallbackModel: null,
+        appendInstruction: null,
+        allowedTools: null,
+        disallowedTools: null,
+      },
+      storyId: randomUUID(),
+      attempt: 1,
+      epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: PRD },
+      story: {
+        identifier: "TOOL-91",
+        title: "Run a story",
+        linearIssueId: "issue-91",
+        url: null,
+        description: "Run it.\n\n## Acceptance Criteria\n- [ ] it runs\n",
+      },
+      stories: [
+        {
+          identifier: "TOOL-90",
+          title: "Start runs",
+          status: "completed",
+          manual: false,
+          dependsOn: [],
+          repository: null,
+        },
+        {
+          identifier: "TOOL-91",
+          title: "Run a story",
+          status: "open",
+          manual: false,
+          dependsOn: ["TOOL-90"],
+          repository: null,
+        },
+      ],
+      commitMessage: "feat(TOOL-91): Run a story",
+      qualityGates: ["test -f feature.txt", "true"],
+      prdQualityGates: ["true"],
+      progress: "# Ralph Progress Log\n",
+      lastFeedback: null,
+      guidance: [],
+      attachments: [],
+      ...overrides,
+    };
+  }
+
+  function spec(trigger: RalphStoryPayload = payload(), overrides: Partial<RunSpec> = {}): RunSpec {
+    const jobId = randomUUID();
+    const token = (value: string, kind: "lifecycle" | "session") => ({
+      jobId,
+      token: value,
+      expiresIn: 600,
+      kind,
+    });
+    return RunSpec.parse({
+      jobId,
+      taskType: "coding",
+      pool: "long",
+      agent: engineer,
+      task: storyTask,
+      trigger: { kind: "linear.delegated", context: trigger },
+      repository: repo,
+      ref: null,
+      requireCheckout: false,
+      tools: { allowedTools: [], disallowedTools: [] },
+      model: "opus",
+      fallbackModel: null,
+      tokenBudget: null,
+      tokens: {
+        lifecycle: token("lifecycle-token", "lifecycle"),
+        session: token("session-token", "session"),
+      },
+      ...overrides,
+    });
+  }
+
+  function options(query: SessionQueryFn, extra: CodingTaskOptions = {}): CodingTaskOptions {
+    return { runSession: createSessionRunner(query), fetch: fetchFn, ...extra };
+  }
+
+  function worktreePath(): string {
+    return repos.branchWorktreePath(repo, branch);
+  }
+
+  function storyStashes(): string[] {
+    const list = git(worktreePath(), "stash", "list", "--format=%H %gs");
+    return list
+      .split("\n")
+      .filter((line) =>
+        line.includes(stashPrefix({ runId, story: { identifier: "TOOL-91" } as never })),
+      );
+  }
+
+  it("renders the task's template, runs the agent's session, then gates, commits and pushes", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      await appendFile(progressFileOf(call), "\n## TOOL-91: learned things\n");
+      yield assistant({ type: "text", text: "Reading the PRD." });
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const run = spec(
+      payload({ settings: { ...payload().settings, setupCommand: `touch '${root}/setup-ran'` } }),
+    );
+    const now = new Date("2026-10-11T12:00:00Z");
+    const out = await runCodingTask(run, context(), options(query, { now: () => now }));
+
+    expect(RalphStoryResult.safeParse(out).success).toBe(true);
+    expect(out).toMatchObject({
+      status: "complete",
+      summary: "Built it.",
+      feedback: null,
+      followUps: [],
+      usage: { inputTokens: 105, outputTokens: 20 },
+      progress: "# Ralph Progress Log\n\n## TOOL-91: learned things\n",
+    });
+    const pushed = git(remote.bare, "rev-parse", `refs/heads/${branch}`);
+    expect(out.commitSha).toBe(pushed);
+    expect(git(remote.bare, "log", "-1", "--format=%B", pushed)).toBe(
+      "feat(TOOL-91): Run a story\n\nEpic: TOOL-32 Ralph core",
+    );
+    expect(git(remote.bare, "show", `${pushed}:feature.txt`)).toBe("built");
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    expect(git(worktreePath(), "rev-parse", "--abbrev-ref", "@{upstream}")).toBe(
+      `origin/${branch}`,
+    );
+    // The repository's setup command ran in the new worktree; the pre-push guard is installed.
+    expect(await readFile(path.join(root, "setup-ran"), "utf8")).toBe("");
+    const hooks = git(worktreePath(), "rev-parse", "--path-format=absolute", "--git-common-dir");
+    expect(await readFile(path.join(hooks, "hooks", "pre-push"), "utf8")).toBe(PUSH_GUARD_HOOK);
+
+    const [call] = calls;
+    // The prompt is the task's template over the story's trigger and task-type variables.
+    const progressFile = progressFileOf(call!);
+    const { epic, story } = promptEpic(run.trigger.context as RalphStoryPayload);
+    expect(call!.prompt).toBe(
+      renderTemplate(
+        storyTask.promptTemplate,
+        {
+          ...storyTemplateContext({
+            epic,
+            story,
+            progressFile,
+            progress: "# Ralph Progress Log\n",
+            guidance: [],
+            attempt: 1,
+            maxAttempts: 3,
+            followUps: true,
+            verifyCommands: ["test -f feature.txt", "true"],
+            stashes: [],
+            now,
+          }),
+        },
+        taskCatalog(storyTask),
+      ),
+    );
+    expect(call!.prompt).toBe(
+      storyRunPrompt(
+        run,
+        run.trigger.context as RalphStoryPayload,
+        { offered: [], progressFile },
+        now,
+      ),
+    );
+    expect(call!.prompt).toContain("## Your Task: TOOL-91 - Run a story");
+    expect(call!.prompt).toContain("Never run git commit, git push");
+    // The system prompt is the agent's, not ralph's story system prompt.
+    expect(call!.options.systemPrompt).toMatchObject({
+      type: "preset",
+      preset: "claude_code",
+      append: engineer.systemPrompt,
+    });
+    expect(JSON.stringify(call!.options.systemPrompt)).not.toContain(
+      RALPH_SYSTEM_APPEND.slice(0, 60),
+    );
+    expect(call!.options).toMatchObject({
+      cwd: worktreePath(),
+      model: "opus",
+      permissionMode: "bypassPermissions",
+      outputFormat: { type: "json_schema" },
+    });
+    expect(Object.keys(call!.options.mcpServers ?? {})).toEqual(["omniralph"]);
+
+    // Activities are relayed with the lifecycle token, for the run's job.
+    expect(new Set(posted.map((p) => p.url))).toEqual(
+      new Set([`https://omniralph.example.com/api/harness/jobs/${run.jobId}/activities`]),
+    );
+    expect(posted.every((p) => p.auth === "Bearer lifecycle-token")).toBe(true);
+  });
+
+  it("gives the session the session token only, its git credential helper included", async () => {
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const out = await runCodingTask(spec(), context(), options(query));
+    expect(out.status).toBe("complete");
+    const env = calls[0]!.options.env!;
+    expect(env.OMNIRALPH_JOB_TOKEN).toBe("session-token");
+    expect(env.OMNIRALPH_JOB_TOKEN_FILE).toBe(path.join(root, "session-token"));
+    expect(Object.values(env).some((value) => value?.includes("lifecycle-token"))).toBe(false);
+    // The credential helper is the agent's, which reads the session's token file.
+    const keys = Object.keys(env).filter((name) => name.startsWith("GIT_CONFIG_KEY_"));
+    const helpers = keys
+      .filter((key) => env[key] === "credential.helper")
+      .map((key) => env[key.replace("KEY", "VALUE")]);
+    expect(helpers).toEqual(["", "!true"]);
+  });
+
+  it("pushes with the lifecycle token, read from a file", async () => {
+    const seen = path.join(root, "push-env");
+    const hook = path.join(remote.bare, "hooks", "pre-receive");
+    await writeFile(
+      hook,
+      `#!/bin/sh\n{ echo "env=\${OMNIRALPH_JOB_TOKEN:-none}"; echo "file=$(cat "$OMNIRALPH_JOB_TOKEN_FILE")"; } > '${seen}'\n`,
+    );
+    await chmod(hook, 0o755);
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const out = await runCodingTask(spec(), context(), options(query));
+    expect(out.status).toBe("complete");
+    expect(await readFile(seen, "utf8")).toBe("env=none\nfile=lifecycle-token\n");
+  });
+
+  it("fails the attempt with the gate's output and stashes the work when a gate fails", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "broken\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const out = await runCodingTask(
+      spec(payload({ qualityGates: ["true", "echo 'type error in feature.txt'; exit 3"] })),
+      context(),
+      options(query),
+    );
+    expect(RalphStoryResult.safeParse(out).success).toBe(true);
+    expect(out.status).toBe("failed");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).toContain(
+      "quality gate `echo 'type error in feature.txt'; exit 3` failed (exit 3)",
+    );
+    expect(out.feedback).toContain("type error in feature.txt");
+    expect(() => git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`)).toThrow();
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    const stashes = storyStashes();
+    expect(stashes).toHaveLength(1);
+    expect(stashes[0]).toContain("unverified (attempt 1)");
+  });
+
+  it("commits and pushes a blocked story's work as wip once its gates pass", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "partial\n");
+      yield result({
+        status: "blocked",
+        summary: "I need an API key for the payment sandbox.",
+        commit: { summary: "Add the payment client" },
+        followUps: [{ title: "Get a sandbox key", description: "We need one.", manual: true }],
+      });
+    });
+    const out = await runCodingTask(spec(), context(), options(query));
+    expect(RalphStoryResult.safeParse(out).success).toBe(true);
+    expect(out.status).toBe("blocked");
+    const pushed = git(remote.bare, "rev-parse", `refs/heads/${branch}`);
+    expect(out.commitSha).toBe(pushed);
+    expect(git(remote.bare, "log", "-1", "--format=%B", pushed)).toBe(
+      "wip(TOOL-91): Add the payment client\n\nEpic: TOOL-32 Ralph core",
+    );
+    expect(out.feedback).toContain("reported it was blocked");
+    expect(out.followUps).toEqual([
+      { title: "Get a sandbox key", description: "We need one.", manual: true },
+    ]);
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+  });
+
+  it("undoes the commit, stashes the work and fails the attempt when the push is rejected", async () => {
+    const hook = path.join(remote.bare, "hooks", "pre-receive");
+    await writeFile(hook, "#!/bin/sh\necho 'protected branch' >&2\nexit 1\n");
+    await chmod(hook, 0o755);
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const before = git(remote.bare, "rev-parse", "refs/heads/main");
+    const out = await runCodingTask(spec(), context(), options(query));
+    expect(out.status).toBe("failed");
+    expect(out.commitSha).toBeUndefined();
+    expect(out.feedback).toContain("pushing it failed, so the commit was undone");
+    expect(out.feedback).toContain("protected branch");
+    expect(git(worktreePath(), "rev-parse", "HEAD")).toBe(before);
+    expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
+    const stashes = storyStashes();
+    expect(stashes).toHaveLength(1);
+    expect(stashes[0]).toContain("push-failed");
+  });
+
+  it("offers the run's stashes with the last feedback, and drops the applied ones", async () => {
+    const first = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "from attempt 1\n");
+      yield result({ status: "incomplete", summary: "Ran out of time.", followUps: [] });
+    });
+    const firstOut = await runCodingTask(spec(), context(), options(first.query));
+    expect(firstOut.status).toBe("incomplete");
+    const [offered] = storyStashes()[0]!.split(" ");
+
+    const second = fakeQuery(async function* (call) {
+      execFileSync("git", ["stash", "apply", "--quiet", offered!], { cwd: cwdOf(call), env: ENV });
+      yield result({
+        status: "complete",
+        summary: "Finished it.",
+        appliedStashes: [offered!.slice(0, 10)],
+        followUps: [],
+      });
+    });
+    const out = await runCodingTask(
+      spec(payload({ attempt: 2, lastFeedback: firstOut.feedback })),
+      context(),
+      options(second.query),
+    );
+
+    const prompt = second.calls[0]!.prompt;
+    expect(prompt).toContain("## Stashed Work From Earlier Sessions");
+    expect(prompt).toContain(offered);
+    expect(prompt).toContain("reported the story incomplete");
+    expect(prompt).toContain("(attempt 2 of 3)");
+    expect(out.status).toBe("complete");
+    expect(git(remote.bare, "show", `${out.commitSha}:feature.txt`)).toBe("from attempt 1");
+    expect(storyStashes()).toEqual([]);
+  });
+
+  it("rejects a run whose trigger context isn't a story", async () => {
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ status: "complete", summary: "x", followUps: [] });
+    });
+    const run = { ...spec(), trigger: { kind: "linear.delegated" as const, context: {} } };
+    await expect(runCodingTask(run, context(), options(query))).rejects.toThrow(
+      "the coding run's trigger context is not a story",
+    );
+    expect(calls).toEqual([]);
+  });
+});

@@ -15,6 +15,7 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
+import { runCodingTask } from "./lifecycle/coding.js";
 import { runQueryTask } from "./lifecycle/query.js";
 import { runReviewTask } from "./lifecycle/review.js";
 import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./rpc/index.js";
@@ -65,6 +66,8 @@ export interface DaemonOptions {
   runQueryTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
   /** Runs claimed runs of task type `review` (default `runReviewTask`). */
   runReviewTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
+  /** Runs claimed runs of task type `coding` (default `runCodingTask`). */
+  runCodingTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
   logger: Logger;
   heartbeatIntervalMs?: number;
   shutdownGraceMs?: number;
@@ -569,8 +572,8 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * How a claimed run is run, by its task type: `query` and `review` through
-   * their fixed lifecycles; any other task type fails the run.
+   * How a claimed run is run, by its task type: `query`, `review` and
+   * `coding` through their fixed lifecycles; any other task type fails the run.
    */
   private runSpecHandler(spec: RunSpec): JobHandler {
     switch (spec.taskType) {
@@ -581,6 +584,10 @@ export class AgentDaemon implements DrainableDaemon {
       case "review": {
         const runReview = this.options.runReviewTask ?? runReviewTask;
         return (ctx) => runReview(spec, ctx);
+      }
+      case "coding": {
+        const runCoding = this.options.runCodingTask ?? runCodingTask;
+        return async (ctx) => ({ ...(await runCoding(spec, ctx)) });
       }
       default:
         return () => Promise.reject(new Error(`unsupported task type ${spec.taskType}`));
