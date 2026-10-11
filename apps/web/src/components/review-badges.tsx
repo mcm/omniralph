@@ -32,6 +32,7 @@ const FINDING_STATUS_BADGES: Record<FindingStatus, Variant> = {
   dismissed: "neutral",
   resolved: "success",
   superseded: "outline",
+  merged: "outline",
 };
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {

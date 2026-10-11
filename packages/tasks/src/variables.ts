@@ -58,7 +58,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "repository",
     source: "trigger",
     trust: "trusted",
-    triggers: [...PR_TRIGGERS, "chat.request", "linear.triage"],
+    triggers: [...PR_TRIGGERS, "chat.request", "linear.triage", "run.invoked"],
     description: "`owner/repo` or `group/project` (null when a Linear issue routes to none).",
   },
   {
@@ -72,7 +72,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "pr.number",
     source: "trigger",
     trust: "trusted",
-    triggers: PR_TRIGGERS,
+    triggers: [...PR_TRIGGERS, "run.invoked"],
     description: "PR number (GitHub) or MR IID (GitLab).",
   },
   {
@@ -296,6 +296,38 @@ export const VARIABLES: readonly VariableDefinition[] = [
     quote: "previous-description",
     triggers: ["linear.triage"],
     description: "Description the previous triage wrote.",
+  },
+  // Correlation: the review run that invoked the run, with each task's results.
+  {
+    name: "reviewRun.tasks.items.taskId",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "ID of a review task of the review run, in the repository's task order.",
+  },
+  {
+    name: "reviewRun.tasks.items.name",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Name of the review task.",
+  },
+  {
+    name: "reviewRun.tasks.items.summary",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: ["run.invoked"],
+    description: "The summary the task's run wrote (null without one).",
+  },
+  {
+    name: "reviewRun.tasks.items.findings",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "The task's findings as a JSON array (`id`, `path`, `startLine`, `endLine`, `severity`, `category`, `confidence`, `title`, `body`, `suggestion`); null without any.",
   },
   {
     name: "question",

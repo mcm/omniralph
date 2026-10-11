@@ -100,47 +100,265 @@ export async function skipReviewRuns(
     );
 }
 
+/** A finished review of a review run with its open findings: one input of its correlation. */
+export interface CorrelationInput {
+  review: Review;
+  findings: FindingRow[];
+}
+
 /**
- * Once every review of a `queued`/`running` review run has ended, ends the
- * run: `completed` when any review finished (`completed`/`budget_exhausted`),
- * `failed` when none did and one failed or was canceled, else `skipped`
- * (e.g. every task's head was already reviewed). Returns the run's new
- * status, or null when it was left alone. Holds a row lock on the run, so
- * concurrent callers settle it once.
+ * Starts a review run's correlation inside `settleReviewRun`'s transaction
+ * (`tx`, which holds the run's row lock): inserts the correlation job and
+ * returns its ID, or returns an error when the run can't be correlated (e.g.
+ * its correlation task is unknown).
+ */
+export type StartCorrelation = (
+  tx: Database,
+  run: ReviewRun,
+  inputs: CorrelationInput[],
+) => Promise<{ jobId: string } | { error: string }>;
+
+/**
+ * Once every review of a `queued`/`running` review run without a correlation
+ * job has ended, moves the run on. With two or more finished reviews
+ * (`completed`/`budget_exhausted`) and a `correlate` callback, it starts the
+ * correlation (`correlate` inserts its job) and becomes `correlating` with
+ * `correlation_job_id` set (or `completed` with the error when it can't);
+ * with one finished review (or no `correlate`) it is `completed`; with none,
+ * `failed` when a review failed or was canceled, else `skipped` (e.g. every
+ * task's head was already reviewed). Returns the run's new status, or null
+ * when it was left alone. Holds a row lock on the run, so of concurrent
+ * callers exactly one moves it on (and starts its correlation).
  */
 export async function settleReviewRun(
   db: Database,
   reviewRunId: string,
+  correlate?: StartCorrelation,
 ): Promise<ReviewRunStatus | null> {
   return db.transaction(async (tx: Transaction) => {
     const [run] = await tx
-      .select({ status: reviewRuns.status })
+      .select()
       .from(reviewRuns)
       .where(eq(reviewRuns.id, reviewRunId))
       .for("update");
     if (!run || (run.status !== "queued" && run.status !== "running")) return null;
+    if (run.correlationJobId !== null) return null;
     const runReviews = await tx
-      .select({ status: reviews.status, error: reviews.error })
+      .select()
       .from(reviews)
-      .where(eq(reviews.reviewRunId, reviewRunId));
+      .where(eq(reviews.reviewRunId, reviewRunId))
+      .orderBy(asc(reviews.createdAt), asc(reviews.id));
     if (runReviews.some((r) => ACTIVE_REVIEW_STATUSES.includes(r.status))) return null;
-    const status: ReviewRunStatus = runReviews.some((r) =>
-      FINISHED_REVIEW_STATUSES.includes(r.status),
-    )
-      ? "completed"
-      : runReviews.some(
-            (r) =>
-              r.status === "failed" ||
-              (r.status === "skipped" && r.error === CANCELED_REVIEW_ERROR),
-          )
-        ? "failed"
-        : "skipped";
+    const finished = runReviews.filter((r) => FINISHED_REVIEW_STATUSES.includes(r.status));
+
+    if (finished.length >= 2 && correlate) {
+      const runFindings = await tx
+        .select()
+        .from(findings)
+        .where(
+          and(
+            inArray(
+              findings.reviewId,
+              finished.map((r) => r.id),
+            ),
+            eq(findings.status, "open"),
+          ),
+        )
+        .orderBy(asc(findings.createdAt), asc(findings.id));
+      const inputs = finished.map((review) => ({
+        review,
+        findings: runFindings.filter((f) => f.reviewId === review.id),
+      }));
+      const started = await correlate(tx as unknown as Database, run, inputs);
+      if ("jobId" in started) {
+        await tx
+          .update(reviewRuns)
+          .set({ status: "correlating", correlationJobId: started.jobId, error: null })
+          .where(eq(reviewRuns.id, reviewRunId));
+        return "correlating";
+      }
+      await tx
+        .update(reviewRuns)
+        .set({ status: "completed", error: started.error })
+        .where(eq(reviewRuns.id, reviewRunId));
+      return "completed";
+    }
+
+    const status: ReviewRunStatus =
+      finished.length > 0
+        ? "completed"
+        : runReviews.some(
+              (r) =>
+                r.status === "failed" ||
+                (r.status === "skipped" && r.error === CANCELED_REVIEW_ERROR),
+            )
+          ? "failed"
+          : "skipped";
     await tx
       .update(reviewRuns)
       .set({ status, error: status === "failed" ? "Every review task failed" : null })
       .where(eq(reviewRuns.id, reviewRunId));
     return status;
   });
+}
+
+/** The parts of one correlated finding `applyCorrelation` stores. */
+export interface CorrelatedFindingInput {
+  sourceFindingIds: readonly string[];
+  sourceTaskIds: readonly string[];
+  severity: FindingRow["severity"];
+  confidence: number;
+  title: string;
+  body: string;
+  suggestion?: string | null;
+}
+
+/**
+ * Applies the output of review run `reviewRunId`'s correlation job `jobId`,
+ * while holding a row lock on the run (only while the job is still its
+ * correlation job and the run `correlating`, or `completed` by it before).
+ * For each correlated finding, the earliest of its source findings that
+ * belong to the run (IDs outside the run, and IDs an earlier entry already
+ * took, are ignored) gets the output's severity, confidence, title, body,
+ * suggestion and the union of the source tasks; its other source findings
+ * that are still `open` become `merged` into it. Findings the output leaves
+ * out stay unchanged. The summary is stored on the run, which becomes
+ * `completed`. Applying the same output again changes nothing more.
+ * Returns whether it applied, and how many findings it merged away.
+ */
+export async function applyCorrelation(
+  db: Database,
+  input: {
+    reviewRunId: string;
+    jobId: string;
+    findings: readonly CorrelatedFindingInput[];
+    summary: string;
+  },
+): Promise<{ applied: boolean; merged: number }> {
+  return db.transaction(async (tx: Transaction) => {
+    const [run] = await tx
+      .select()
+      .from(reviewRuns)
+      .where(eq(reviewRuns.id, input.reviewRunId))
+      .for("update");
+    if (
+      !run ||
+      run.correlationJobId !== input.jobId ||
+      (run.status !== "correlating" && run.status !== "completed")
+    ) {
+      return { applied: false, merged: 0 };
+    }
+    const runReviews = await tx
+      .select({ id: reviews.id, taskId: reviews.taskId })
+      .from(reviews)
+      .where(eq(reviews.reviewRunId, run.id));
+    const runTaskIds = new Set(runReviews.flatMap((r) => (r.taskId ? [r.taskId] : [])));
+    const runFindings =
+      runReviews.length === 0
+        ? []
+        : (
+            await tx
+              .select({ finding: findings })
+              .from(findings)
+              .where(
+                inArray(
+                  findings.reviewId,
+                  runReviews.map((r) => r.id),
+                ),
+              )
+              .orderBy(asc(findings.createdAt), asc(findings.id))
+              .for("update")
+          ).map((row) => row.finding);
+    const taken = new Set<string>();
+    let merged = 0;
+    for (const entry of input.findings) {
+      const ids = new Set(entry.sourceFindingIds);
+      const sources = runFindings.filter((f) => ids.has(f.id) && !taken.has(f.id));
+      for (const source of sources) taken.add(source.id);
+      const [target, ...others] = sources;
+      if (!target || target.status === "merged") continue;
+      const sourceTaskIds = [
+        ...new Set([
+          ...target.sourceTaskIds,
+          ...entry.sourceTaskIds.filter((id) => runTaskIds.has(id)),
+          ...others.flatMap((f) => f.sourceTaskIds),
+        ]),
+      ];
+      await tx
+        .update(findings)
+        .set({
+          severity: entry.severity,
+          confidence: entry.confidence,
+          title: entry.title,
+          body: entry.body,
+          suggestion: entry.suggestion ?? null,
+          sourceTaskIds,
+        })
+        .where(eq(findings.id, target.id));
+      if (others.length === 0) continue;
+      const rows = await tx
+        .update(findings)
+        .set({ status: "merged", mergedIntoFindingId: target.id })
+        .where(
+          and(
+            inArray(
+              findings.id,
+              others.map((f) => f.id),
+            ),
+            eq(findings.status, "open"),
+          ),
+        )
+        .returning({ id: findings.id });
+      merged += rows.length;
+    }
+    await tx
+      .update(reviewRuns)
+      .set({ status: "completed", summary: input.summary.trim() || null, error: null })
+      .where(eq(reviewRuns.id, run.id));
+    return { applied: true, merged };
+  });
+}
+
+/**
+ * Ends review run `reviewRunId`'s correlation job `jobId` that failed (or
+ * whose output was unusable): the run, if still `correlating` on that job,
+ * becomes `completed` with `error` and every finding stays unmerged. Returns
+ * whether it changed the run.
+ */
+export async function failCorrelation(
+  db: Database,
+  input: { reviewRunId: string; jobId: string; error: string },
+): Promise<boolean> {
+  const rows = await db
+    .update(reviewRuns)
+    .set({ status: "completed", error: input.error })
+    .where(
+      and(
+        eq(reviewRuns.id, input.reviewRunId),
+        eq(reviewRuns.correlationJobId, input.jobId),
+        eq(reviewRuns.status, "correlating"),
+      ),
+    )
+    .returning({ id: reviewRuns.id });
+  return rows.length > 0;
+}
+
+/** A PR's review runs that are still active, other than those of head `exceptHeadSha`. */
+export async function listActiveReviewRuns(
+  db: Database,
+  input: { repositoryId: string; prNumber: number; exceptHeadSha: string },
+): Promise<ReviewRun[]> {
+  return db
+    .select()
+    .from(reviewRuns)
+    .where(
+      and(
+        eq(reviewRuns.repositoryId, input.repositoryId),
+        eq(reviewRuns.prNumber, input.prNumber),
+        ne(reviewRuns.headSha, input.exceptHeadSha),
+        inArray(reviewRuns.status, ACTIVE_REVIEW_RUN_STATUSES),
+      ),
+    );
 }
 
 export interface NewReviewInput {
@@ -396,14 +614,24 @@ export interface ReviewOutcomeInput {
   tokensOut: number;
   durationMs: number;
   skippedFiles: SkippedFile[];
+  /** The task run's summary (the review run's correlation reads it); null without one. */
+  summary?: string | null;
   findings: Omit<
     typeof findings.$inferInsert,
-    "id" | "reviewId" | "scmCommentId" | "status" | "createdAt" | "updatedAt"
+    | "id"
+    | "reviewId"
+    | "scmCommentId"
+    | "status"
+    | "sourceTaskIds"
+    | "mergedIntoFindingId"
+    | "createdAt"
+    | "updatedAt"
   >[];
 }
 
 /**
- * Stores a review's outcome and findings, once: a review that already left
+ * Stores a review's outcome, summary and findings (each reported by the
+ * review's task, `source_task_ids`), once: a review that already left
  * `queued`/`running` is left alone (`saved: false`), so a replayed result
  * never duplicates findings.
  */
@@ -414,7 +642,7 @@ export async function saveReviewOutcome(
 ): Promise<{ saved: boolean }> {
   return db.transaction(async (tx) => {
     const [review] = await tx
-      .select({ status: reviews.status })
+      .select({ status: reviews.status, taskId: reviews.taskId })
       .from(reviews)
       .where(eq(reviews.id, reviewId))
       .for("update");
@@ -427,6 +655,7 @@ export async function saveReviewOutcome(
         tokensOut: input.tokensOut,
         durationMs: input.durationMs,
         skippedFiles: input.skippedFiles,
+        summary: input.summary ?? null,
         error: null,
       })
       .where(eq(reviews.id, reviewId));
@@ -437,6 +666,7 @@ export async function saveReviewOutcome(
         input.findings.map((finding, i) => ({
           ...finding,
           reviewId,
+          sourceTaskIds: review.taskId ? [review.taskId] : [],
           createdAt: new Date(base + i),
         })),
       );

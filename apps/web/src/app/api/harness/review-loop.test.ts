@@ -11,6 +11,7 @@ import {
   findings,
   jobs,
   listReviewRunReviews,
+  previousReviewState,
   repositories,
   reviewRuns,
   reviews,
@@ -24,6 +25,9 @@ import {
 import { runReview, type ReviewProvider } from "@omniralph/engine";
 import { GitHubAdapter } from "@omniralph/scm";
 import {
+  CORRELATION_JOB_TYPE,
+  CorrelationTriggerContext,
+  RunSpecJobPayload,
   reviewTriggerContext,
   REVIEW_TASKS_MIN_HARNESS_VERSION,
   type Finding,
@@ -938,6 +942,261 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       const { onReviewJobCanceled } = await import("@/lib/review/jobs");
       await onReviewJobCanceled(db, await jobRow(enqueued.runs[1]!.jobId));
       expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "failed" });
+    });
+  });
+  describe("correlation", () => {
+    const queryResult = (structured: unknown) => ({
+      outcome: "answered",
+      answer: null,
+      structured,
+      references: [],
+      usage: { inputTokens: 100, outputTokens: 50 },
+      durationMs: 10,
+    });
+
+    async function submitQuery(jobId: string, accessToken: string, body: unknown) {
+      const res = await result(
+        agentRequest(`jobs/${jobId}/result`, accessToken, { result: body }),
+        ctx(jobId),
+      );
+      return { status: res.status, body: (await res.json()) as JobOutcomeResponse };
+    }
+
+    async function correlationJobs(reviewRunId: string) {
+      return db
+        .select()
+        .from(jobs)
+        .where(eq(jobs.dedupeKey, `${CORRELATION_JOB_TYPE}:${reviewRunId}`));
+    }
+
+    async function runFindings(reviewRunId: string) {
+      const rows = await db
+        .select({ finding: findings, taskId: reviews.taskId })
+        .from(findings)
+        .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+        .where(eq(reviews.reviewRunId, reviewRunId))
+        .orderBy(asc(findings.createdAt), asc(findings.id));
+      return rows;
+    }
+
+    /**
+     * A review run of two tasks on a new PR whose task runs both completed at
+     * once, each with one finding on the same line: it is correlating.
+     */
+    async function correlatingRun() {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      const outputs: (ReviewJobResult & { summary?: string })[] = [];
+      for (const run of enqueued.runs) {
+        const started = await startAs(run.jobId, accessToken);
+        if (started?.action !== "run") throw new Error("expected run");
+        const output = await agentRun(started.job.payload);
+        // The first task's run writes a summary (the correlation reads it).
+        outputs.push(outputs.length === 0 ? { ...output, summary: "Adds login logging." } : output);
+      }
+      // Both task runs complete at once: exactly one of them starts the correlation.
+      const submitted = await Promise.all(
+        enqueued.runs.map((run, i) => submit(run.jobId, accessToken, outputs[i]!)),
+      );
+      expect(submitted.map((s) => s.body)).toEqual([
+        { status: "completed" },
+        { status: "completed" },
+      ]);
+      const correlation = await correlationJobs(enqueued.reviewRunId);
+      expect(correlation).toHaveLength(1);
+      return { prNumber, enqueued, accessToken, correlationJob: correlation[0]! };
+    }
+
+    it("starts one correlation job when the last of two finished task runs ends", async () => {
+      const { prNumber, enqueued, correlationJob } = await correlatingRun();
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "correlating",
+        correlationJobId: correlationJob.id,
+      });
+      expect(correlationJob).toMatchObject({
+        type: CORRELATION_JOB_TYPE,
+        taskId: "builtin:correlate-findings",
+        taskType: "query",
+        pool: "short",
+        status: "queued",
+        repositoryId,
+      });
+      const payload = RunSpecJobPayload.parse(correlationJob.payload);
+      expect(payload.trigger.kind).toBe("run.invoked");
+      const context = CorrelationTriggerContext.parse(payload.trigger.context);
+      const rows = await runFindings(enqueued.reviewRunId);
+      expect(rows).toHaveLength(2);
+      // Each finding records the task that reported it.
+      for (const row of rows) expect(row.finding.sourceTaskIds).toEqual([row.taskId]);
+      expect(context).toMatchObject({
+        invoker: { kind: "review-run", id: enqueued.reviewRunId },
+        repository: "acme/app",
+        pr: { number: prNumber },
+      });
+      expect(context.reviewRun.tasks.items.map((t) => [t.taskId, t.name])).toEqual([
+        ["builtin:review-pr", "Review a pull request"],
+        [SECURITY_TASK_ID, "Security review"],
+      ]);
+      expect(context.reviewRun.tasks.items.map((t) => t.summary)).toEqual([
+        "Adds login logging.",
+        null,
+      ]);
+      expect((await reviewRow(enqueued.runs[0]!.reviewId)).summary).toBe("Adds login logging.");
+      for (const item of context.reviewRun.tasks.items) {
+        const row = rows.find((r) => r.taskId === item.taskId)!;
+        expect(item.findings).toEqual([
+          expect.objectContaining({ id: row.finding.id, path: "src/app.ts", startLine: 2 }),
+        ]);
+      }
+    });
+
+    it("skips correlation when only one task run finished", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      await complete(enqueued.runs[0]!.jobId, accessToken);
+      await startAs(enqueued.runs[1]!.jobId, accessToken);
+      await failFinal(enqueued.runs[1]!.jobId, accessToken);
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "completed",
+        correlationJobId: null,
+      });
+      expect(await correlationJobs(enqueued.reviewRunId)).toHaveLength(0);
+    });
+
+    it("merges the findings a canned correlation result names, once", async () => {
+      const { prNumber, enqueued, accessToken, correlationJob } = await correlatingRun();
+      const [first, second] = await runFindings(enqueued.reviewRunId);
+      // A finding the output leaves out, and one of another PR the output names.
+      const [leftOut] = await db
+        .insert(findings)
+        .values({
+          ...first!.finding,
+          id: undefined,
+          title: "Unrelated",
+          createdAt: new Date(first!.finding.createdAt.getTime() + 5000),
+        })
+        .returning();
+      const other = await enqueue(++prCounter, head1);
+      if (other.status !== "enqueued") throw new Error(other.status);
+      await complete(other.runs[0]!.jobId, accessToken);
+      const [outside] = await db
+        .select()
+        .from(findings)
+        .where(eq(findings.reviewId, other.runs[0]!.reviewId));
+
+      const claimed = await startAs(correlationJob.id, accessToken);
+      expect(claimed?.action).toBe("run");
+      const output = {
+        findings: [
+          {
+            sourceFindingIds: [second!.finding.id, first!.finding.id, outside!.id],
+            sourceTaskIds: [SECURITY_TASK_ID, "builtin:not-in-run"],
+            path: "src/app.ts",
+            startLine: 2,
+            endLine: 2,
+            severity: "critical",
+            category: "security",
+            title: "Token logged (merged)",
+            body: "Both tasks found the token in the log.",
+            suggestion: "logger.info({ user }, `login`);",
+            confidence: 0.97,
+          },
+        ],
+        summary: "  Adds login logging; the token leaks.  ",
+      };
+      expect((await submitQuery(correlationJob.id, accessToken, queryResult(output))).body).toEqual(
+        { status: "completed" },
+      );
+
+      const after = await runFindings(enqueued.reviewRunId);
+      const target = after.find((r) => r.finding.id === first!.finding.id)!.finding;
+      expect(target).toMatchObject({
+        status: "open",
+        severity: "critical",
+        title: "Token logged (merged)",
+        body: "Both tasks found the token in the log.",
+        suggestion: "logger.info({ user }, `login`);",
+        path: "src/app.ts",
+        mergedIntoFindingId: null,
+      });
+      expect(target.confidence).toBeCloseTo(0.97);
+      expect([...target.sourceTaskIds].sort()).toEqual(["builtin:review-pr", SECURITY_TASK_ID]);
+      expect(after.find((r) => r.finding.id === second!.finding.id)!.finding).toMatchObject({
+        status: "merged",
+        mergedIntoFindingId: first!.finding.id,
+        title: second!.finding.title,
+      });
+      expect(after.find((r) => r.finding.id === leftOut!.id)!.finding).toMatchObject({
+        status: "open",
+        title: "Unrelated",
+        severity: leftOut!.severity,
+      });
+      const [outsideAfter] = await db.select().from(findings).where(eq(findings.id, outside!.id));
+      expect(outsideAfter).toMatchObject({ status: "open", title: outside!.title });
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "completed",
+        summary: "Adds login logging; the token leaks.",
+        error: null,
+      });
+
+      // A replayed result changes nothing more.
+      const strip = (rows: Awaited<ReturnType<typeof runFindings>>) =>
+        rows.map(({ finding: { updatedAt: _, ...rest } }) => rest);
+      expect((await submitQuery(correlationJob.id, accessToken, queryResult(output))).body).toEqual(
+        { status: "completed" },
+      );
+      expect(strip(await runFindings(enqueued.reviewRunId))).toEqual(strip(after));
+
+      // A merged finding isn't open: the next review doesn't get it.
+      const previous = await previousReviewState(db, { repositoryId, prNumber, headSha: head2 });
+      const openIds = previous!.openFindings.map((f) => f.id);
+      expect(openIds).toContain(first!.finding.id);
+      expect(openIds).not.toContain(second!.finding.id);
+    });
+
+    it("leaves every finding unmerged when the correlation fails for good", async () => {
+      const { enqueued, accessToken, correlationJob } = await correlatingRun();
+      const before = await runFindings(enqueued.reviewRunId);
+      await startAs(correlationJob.id, accessToken);
+      await failFinal(correlationJob.id, accessToken);
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "completed",
+        summary: null,
+        error: "Correlation failed: boom",
+      });
+      expect(await runFindings(enqueued.reviewRunId)).toEqual(before);
+    });
+
+    it("leaves every finding unmerged when the correlation's output doesn't match its schema", async () => {
+      const { enqueued, accessToken, correlationJob } = await correlatingRun();
+      const before = await runFindings(enqueued.reviewRunId);
+      await startAs(correlationJob.id, accessToken);
+      const invalid = {
+        findings: [{ sourceFindingIds: before.map((r) => r.finding.id), severity: "urgent" }],
+        summary: "Merged",
+      };
+      expect(
+        (await submitQuery(correlationJob.id, accessToken, queryResult(invalid))).body,
+      ).toEqual({ status: "completed" });
+      const run = await reviewRunRow(enqueued.reviewRunId);
+      expect(run).toMatchObject({ status: "completed", summary: null });
+      expect(run.error).toMatch(/^Correlation output is invalid/);
+      expect(await runFindings(enqueued.reviewRunId)).toEqual(before);
+    });
+
+    it("cancels the correlation of an older head on a newer push", async () => {
+      const { prNumber, enqueued, correlationJob } = await correlatingRun();
+      const newer = await enqueue(prNumber, head2);
+      if (newer.status !== "enqueued") throw new Error(newer.status);
+      expect(newer.canceledJobIds).toEqual([correlationJob.id]);
+      expect(await jobRow(correlationJob.id)).toMatchObject({ status: "canceled" });
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "skipped" });
     });
   });
 });

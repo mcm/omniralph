@@ -11,6 +11,7 @@ import {
   type TaskDefinitionInput,
 } from "./definitions.js";
 import { ASK_ABOUT_CODE_TASK, CODE_EXPLAINER_AGENT } from "./builtin/ask-about-code.js";
+import { CORRELATE_FINDINGS_TASK, CORRELATOR_AGENT } from "./builtin/correlate-findings.js";
 import { LEARN_RULE_TASK, RULE_WRITER_AGENT } from "./builtin/learn-rule.js";
 import { REPLY_TASK } from "./builtin/reply.js";
 import { REVIEW_PR_TASK } from "./builtin/review-pr.js";
@@ -25,6 +26,7 @@ const AGENT_INPUTS: readonly AgentDefinitionInput[] = [
   REVIEWER_AGENT,
   CODE_EXPLAINER_AGENT,
   PLANNER_AGENT,
+  CORRELATOR_AGENT,
 ];
 
 const TASK_INPUTS: readonly TaskDefinitionInput[] = [
@@ -33,6 +35,7 @@ const TASK_INPUTS: readonly TaskDefinitionInput[] = [
   REVIEW_PR_TASK,
   ASK_ABOUT_CODE_TASK,
   TRIAGE_TASK,
+  CORRELATE_FINDINGS_TASK,
 ];
 
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = AGENT_INPUTS.map((agent) =>
