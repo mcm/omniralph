@@ -1031,6 +1031,11 @@ export interface SkippedFile {
   reason: string;
 }
 
+/** What a review covered: the full diff, or the commits since an earlier review. */
+export type ReviewScope =
+  | { mode: "full"; baseSha: string; headSha: string; fallbackFrom?: string }
+  | { mode: "incremental"; fromSha: string; headSha: string };
+
 /**
  * One PR event's review: fans out to one review (and job) per enabled review
  * task of the repository, all of the same head.
@@ -1060,6 +1065,12 @@ export const reviewRuns = pgTable(
     }),
     /** The combined summary the correlation wrote; null without a correlation. */
     summary: text("summary"),
+    /** SCM ID of the run's summary comment, so the run is posted at most once. */
+    summaryCommentId: text("summary_comment_id"),
+    /** The PR/MR author when the run was enqueued (a mention the posted text keeps). */
+    prAuthor: text("pr_author"),
+    /** The profile's name when the run was enqueued (the posted summary names it). */
+    profileName: text("profile_name"),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1100,6 +1111,10 @@ export const reviews = pgTable(
     summaryCommentId: text("summary_comment_id"),
     /** The task run's own summary (input to the review run's correlation); null without one. */
     summary: text("summary"),
+    /** What the task run covered (its result's `scope`); null until it finished. */
+    scope: jsonb("scope").$type<ReviewScope>(),
+    /** The earlier open findings the task run re-checked and found fixed. */
+    fixedFindingIds: text("fixed_finding_ids").array().notNull().default([]),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

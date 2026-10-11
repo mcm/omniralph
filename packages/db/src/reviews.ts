@@ -8,7 +8,7 @@
  * failure note) was posted to the code host, which makes posting idempotent
  * per review.
  */
-import { and, asc, desc, eq, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne, notInArray } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   findings,
@@ -17,6 +17,7 @@ import {
   reviewRuns,
   reviews,
   rules,
+  type ReviewScope,
   type SkippedFile,
 } from "./schema.js";
 
@@ -48,6 +49,10 @@ export interface NewReviewRunInput {
   trigger: ReviewRun["trigger"];
   mode: ReviewRun["mode"];
   profileId: string;
+  /** The PR/MR author (a mention the posted review keeps). */
+  prAuthor?: string | null;
+  /** The profile's name (the posted summary names it). */
+  profileName?: string | null;
 }
 
 export async function createReviewRun(db: Database, input: NewReviewRunInput): Promise<ReviewRun> {
@@ -72,6 +77,20 @@ export async function listReviewRunReviews(db: Database, reviewRunId: string): P
     .from(reviews)
     .where(eq(reviews.reviewRunId, reviewRunId))
     .orderBy(asc(reviews.createdAt), asc(reviews.id));
+}
+
+/** The findings of a review run's reviews (any status), oldest first. */
+export async function listReviewRunFindings(
+  db: Database,
+  reviewRunId: string,
+): Promise<FindingRow[]> {
+  const rows = await db
+    .select({ finding: findings })
+    .from(findings)
+    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+    .where(eq(reviews.reviewRunId, reviewRunId))
+    .orderBy(asc(findings.createdAt), asc(findings.id));
+  return rows.map((r) => r.finding);
 }
 
 /** `queued` → `running`, once one of its task runs started. */
@@ -616,6 +635,10 @@ export interface ReviewOutcomeInput {
   skippedFiles: SkippedFile[];
   /** The task run's summary (the review run's correlation reads it); null without one. */
   summary?: string | null;
+  /** What the task run covered. */
+  scope?: ReviewScope | null;
+  /** The earlier open findings the task run re-checked and found fixed. */
+  fixedFindingIds?: readonly string[];
   findings: Omit<
     typeof findings.$inferInsert,
     | "id"
@@ -656,6 +679,8 @@ export async function saveReviewOutcome(
         durationMs: input.durationMs,
         skippedFiles: input.skippedFiles,
         summary: input.summary ?? null,
+        scope: input.scope ?? null,
+        fixedFindingIds: [...(input.fixedFindingIds ?? [])],
         error: null,
       })
       .where(eq(reviews.id, reviewId));
@@ -711,6 +736,96 @@ export async function postReviewOnce(
   });
 }
 
+/**
+ * Runs `post` while holding a row lock on the review run, unless it was
+ * already posted (`summary_comment_id` set), as `postReviewOnce` does for a
+ * review: a review run is posted at most once. `post` gets the run, its
+ * reviews and their findings (any status) and returns the comment IDs to
+ * store (the inline ones on the run's findings), or null when it posted nothing.
+ */
+export async function postReviewRunOnce(
+  db: Database,
+  reviewRunId: string,
+  post: (
+    run: ReviewRun,
+    reviews: Review[],
+    findings: FindingRow[],
+  ) => Promise<{ summaryCommentId: string; findingCommentIds?: Map<string, string> } | null>,
+): Promise<{ posted: boolean }> {
+  return db.transaction(async (tx: Transaction) => {
+    const [run] = await tx
+      .select()
+      .from(reviewRuns)
+      .where(eq(reviewRuns.id, reviewRunId))
+      .for("update");
+    if (!run || run.summaryCommentId !== null) return { posted: false };
+    const runReviews = await listReviewRunReviews(tx as unknown as Database, reviewRunId);
+    const rows = await listReviewRunFindings(tx as unknown as Database, reviewRunId);
+    const posted = await post(run, runReviews, rows);
+    if (!posted) return { posted: false };
+    const { summaryCommentId, findingCommentIds } = posted;
+    await tx.update(reviewRuns).set({ summaryCommentId }).where(eq(reviewRuns.id, reviewRunId));
+    const runFindingIds = new Set(rows.map((f) => f.id));
+    for (const [findingId, commentId] of findingCommentIds ?? []) {
+      if (!runFindingIds.has(findingId)) continue;
+      await tx.update(findings).set({ scmCommentId: commentId }).where(eq(findings.id, findingId));
+    }
+    return { posted: true };
+  });
+}
+
+/** A review, or every review of a review run: what supersedes or resolves earlier findings. */
+export type ReviewTarget = { reviewId: string } | { reviewRunId: string };
+
+/**
+ * The PR, start time and review IDs of a review target (a review run starts
+ * with its creation); null when it doesn't exist.
+ */
+async function reviewTargetScope(
+  tx: Transaction,
+  target: ReviewTarget,
+): Promise<{
+  repositoryId: string;
+  prNumber: number;
+  createdAt: Date;
+  reviewIds: string[];
+} | null> {
+  if ("reviewId" in target) {
+    const [review] = await tx
+      .select({
+        repositoryId: reviews.repositoryId,
+        prNumber: reviews.prNumber,
+        createdAt: reviews.createdAt,
+      })
+      .from(reviews)
+      .where(eq(reviews.id, target.reviewId));
+    return review ? { ...review, reviewIds: [target.reviewId] } : null;
+  }
+  const [run] = await tx
+    .select({
+      repositoryId: reviewRuns.repositoryId,
+      prNumber: reviewRuns.prNumber,
+      createdAt: reviewRuns.createdAt,
+    })
+    .from(reviewRuns)
+    .where(eq(reviewRuns.id, target.reviewRunId));
+  if (!run) return null;
+  const runReviews = await tx
+    .select({ id: reviews.id })
+    .from(reviews)
+    .where(eq(reviews.reviewRunId, target.reviewRunId));
+  return { ...run, reviewIds: runReviews.map((r) => r.id) };
+}
+
+/** The PR's reviews other than the target's (nor of its review run). */
+function otherReviewsOf(scope: { repositoryId: string; prNumber: number; reviewIds: string[] }) {
+  return and(
+    eq(reviews.repositoryId, scope.repositoryId),
+    eq(reviews.prNumber, scope.prNumber),
+    ...(scope.reviewIds.length > 0 ? [notInArray(reviews.id, scope.reviewIds)] : []),
+  );
+}
+
 export interface SupersededFinding {
   /** The earlier finding, now `superseded`. */
   finding: FindingRow;
@@ -719,40 +834,31 @@ export interface SupersededFinding {
 }
 
 /**
- * After a fresh review: sets every `open` finding of the PR's other reviews
- * that `matches` one of this review's findings to `superseded` (pointing at
- * the first match). Unmatched findings stay `open`. Runs once in effect: a
- * replay finds nothing open left to supersede.
+ * After a fresh review (or review run): sets every `open` finding of the
+ * PR's other reviews (not of the same review run) that `matches` one of the
+ * target's findings (`merged` ones aside) to `superseded`, pointing at the
+ * first match. Unmatched findings stay `open`. Runs once in effect: a replay
+ * finds nothing open left to supersede.
  */
 export async function supersedeOpenFindings(
   db: Database,
-  reviewId: string,
+  target: ReviewTarget,
   matches: (prior: FindingRow, next: FindingRow) => boolean,
 ): Promise<SupersededFinding[]> {
   return db.transaction(async (tx: Transaction) => {
-    const [review] = await tx
-      .select({ repositoryId: reviews.repositoryId, prNumber: reviews.prNumber })
-      .from(reviews)
-      .where(eq(reviews.id, reviewId));
-    if (!review) return [];
+    const scope = await reviewTargetScope(tx, target);
+    if (!scope || scope.reviewIds.length === 0) return [];
     const next = await tx
       .select()
       .from(findings)
-      .where(eq(findings.reviewId, reviewId))
+      .where(and(inArray(findings.reviewId, scope.reviewIds), ne(findings.status, "merged")))
       .orderBy(asc(findings.createdAt), asc(findings.id));
     if (next.length === 0) return [];
     const prior = await tx
       .select({ finding: findings })
       .from(findings)
       .innerJoin(reviews, eq(reviews.id, findings.reviewId))
-      .where(
-        and(
-          eq(reviews.repositoryId, review.repositoryId),
-          eq(reviews.prNumber, review.prNumber),
-          ne(reviews.id, reviewId),
-          eq(findings.status, "open"),
-        ),
-      )
+      .where(and(otherReviewsOf(scope), eq(findings.status, "open")))
       .orderBy(asc(findings.createdAt), asc(findings.id))
       .for("update", { of: findings });
     const superseded: SupersededFinding[] = [];
@@ -771,35 +877,27 @@ export async function supersedeOpenFindings(
 }
 
 /**
- * Sets the `open` findings of the PR's earlier reviews (created before this
- * one) that `resolve` picks to `resolved`. Returns the findings it resolved.
- * Runs once in effect: a replay finds nothing open left to resolve.
+ * Sets the `open` findings of the PR's earlier reviews (created before the
+ * review or review run, and not of the same review run) that `resolve`
+ * picks to `resolved`. Returns the findings it resolved. Runs once in
+ * effect: a replay finds nothing open left to resolve.
  */
 export async function resolveEarlierOpenFindings(
   db: Database,
-  reviewId: string,
+  target: ReviewTarget,
   resolve: (prior: FindingRow) => boolean,
 ): Promise<FindingRow[]> {
   return db.transaction(async (tx: Transaction) => {
-    const [review] = await tx
-      .select({
-        repositoryId: reviews.repositoryId,
-        prNumber: reviews.prNumber,
-        createdAt: reviews.createdAt,
-      })
-      .from(reviews)
-      .where(eq(reviews.id, reviewId));
-    if (!review) return [];
+    const scope = await reviewTargetScope(tx, target);
+    if (!scope) return [];
     const prior = await tx
       .select({ finding: findings })
       .from(findings)
       .innerJoin(reviews, eq(reviews.id, findings.reviewId))
       .where(
         and(
-          eq(reviews.repositoryId, review.repositoryId),
-          eq(reviews.prNumber, review.prNumber),
-          ne(reviews.id, reviewId),
-          lt(reviews.createdAt, review.createdAt),
+          otherReviewsOf(scope),
+          lt(reviews.createdAt, scope.createdAt),
           eq(findings.status, "open"),
         ),
       )

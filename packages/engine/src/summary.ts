@@ -33,6 +33,11 @@ function code(raw: string): string {
 export interface SummaryOptions {
   /** The bot's `@` handle for the re-run footer (`BOT_HANDLE`); default `omniralph`. */
   botHandle?: string;
+  /**
+   * Markdown placed after the heading (and stop warning), before the stats:
+   * e.g. a review run's combined summary. Must already be sanitized.
+   */
+  preamble?: string;
 }
 
 /**
@@ -56,6 +61,8 @@ export function renderSummary(
   const lines = ["## Omniralph review", ""];
   const note = STOP_NOTES[result.stopReason];
   if (note) lines.push(`> [!WARNING]`, `> ${note}`, "");
+  const preamble = options.preamble?.trim();
+  if (preamble) lines.push(preamble, "");
 
   lines.push(
     `- **Profile:** ${result.profile.name}`,

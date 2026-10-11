@@ -239,6 +239,8 @@ export async function enqueueReview(
     trigger: input.trigger,
     mode,
     profileId: profile.id,
+    profileName: profile.name,
+    prAuthor: input.author,
   });
   const context = {
     repositoryId: input.repositoryId,

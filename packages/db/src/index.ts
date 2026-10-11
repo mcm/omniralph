@@ -194,6 +194,7 @@ export {
   deleteReview,
   deleteReviewRun,
   getReviewRun,
+  listReviewRunFindings,
   listReviewRunReviews,
   markReviewRunRunning,
   settleReviewRun,
@@ -214,6 +215,7 @@ export {
   markReviewQueued,
   markReviewRunning,
   postReviewOnce,
+  postReviewRunOnce,
   previousReviewState,
   resolveEarlierOpenFindings,
   resolveOpenFindings,
@@ -230,6 +232,7 @@ export {
   type ReviewProfile,
   type ReviewStatus,
   type Rule,
+  type ReviewTarget,
   type SupersededFinding,
 } from "./reviews.js";
 export {

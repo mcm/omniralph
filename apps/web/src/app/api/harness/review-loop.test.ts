@@ -10,6 +10,7 @@ import {
   createDb,
   findings,
   jobs,
+  listReviewRunFindings,
   listReviewRunReviews,
   previousReviewState,
   repositories,
@@ -512,6 +513,11 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       tokensIn: 1200,
       tokensOut: 300,
       durationMs: 1234,
+      // The review run is posted, not its task runs.
+      summaryCommentId: null,
+    });
+    expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+      status: "completed",
       summaryCommentId: "9000",
     });
     const rows = await db
@@ -545,6 +551,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     expect(comment).toMatchObject({ path: "src/app.ts", line: 2, side: "RIGHT" });
     // Sanitized: no HTML/images, foreign links as code, foreign mentions neutralized.
     expect(comment.body).toContain("**[high] Token logged**");
+    // The footer names the task that reported it.
+    expect(comment.body).toContain("_security · confidence 90% · Review a pull request_");
     expect(comment.body).not.toContain("<img");
     expect(comment.body).toContain("GitHub (`https://github-login.evil.example/session`)");
     expect(comment.body).toContain("`@acme/security`");
@@ -741,7 +749,11 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     );
     expect(await res.json()).toEqual({ status: "failed" });
     const review = await reviewRow(enqueued.reviewId);
-    expect(review).toMatchObject({ status: "failed", error, summaryCommentId: "9000" });
+    expect(review).toMatchObject({ status: "failed", error });
+    expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+      status: "failed",
+      summaryCommentId: "9000",
+    });
     expect(postReview).toHaveBeenCalledTimes(1);
     const note = github.reviews[0]!.body as { body: string; comments: unknown[] };
     expect(note.comments).toEqual([]);
@@ -835,11 +847,22 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       await complete(security!.jobId, accessToken);
       expect(await reviewRunRow(next.reviewRunId)).toMatchObject({ status: "running" });
       expect(await reviewRow(security!.reviewId)).toMatchObject({ status: "completed" });
+      // A task run's completion doesn't post on its own.
+      expect(postReview).toHaveBeenCalledTimes(1);
       await startAs(reviewPr!.jobId, accessToken);
       await failFinal(reviewPr!.jobId, accessToken);
       expect(await reviewRunRow(next.reviewRunId)).toMatchObject({ status: "completed" });
-      // Until the posting story, each task's review posts on its own.
-      expect(postReview).toHaveBeenCalledTimes(3);
+      // One review for the run, with the failed task named and the other's finding.
+      expect(postReview).toHaveBeenCalledTimes(2);
+      const posted = github.reviews.at(-1)!.body as {
+        body: string;
+        comments: { path: string; body: string }[];
+      };
+      expect(posted.body).toContain(
+        "This review task failed, so its findings are missing: Review a pull request.",
+      );
+      expect(posted.comments.map((c) => c.path)).toEqual(["src/other.ts"]);
+      expect(posted.comments[0]!.body).toContain("· Security review_");
     });
 
     it("returns the active review run for the same head and creates nothing", async () => {
@@ -942,6 +965,34 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       const { onReviewJobCanceled } = await import("@/lib/review/jobs");
       await onReviewJobCanceled(db, await jobRow(enqueued.runs[1]!.jobId));
       expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "failed" });
+      // One failure note for the run.
+      expect(postReview).toHaveBeenCalledTimes(1);
+      const note = github.reviews[0]!.body as { body: string; comments: unknown[] };
+      expect(note.comments).toEqual([]);
+      expect(note.body).toContain(
+        `The review of \`${head1.slice(0, 12)}\` failed: Review a pull request: boom; Security review: Canceled`,
+      );
+    });
+
+    it("posts one failure note when every task run failed, also on replay", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      for (const run of enqueued.runs) {
+        await startAs(run.jobId, accessToken);
+        await failFinal(run.jobId, accessToken);
+      }
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "failed",
+        summaryCommentId: "9000",
+      });
+      const { onReviewJobFailed } = await import("@/lib/review/jobs");
+      await onReviewJobFailed(db, await jobRow(enqueued.runs[0]!.jobId), "boom");
+      expect(postReview).toHaveBeenCalledTimes(1);
+      const note = github.reviews[0]!.body as { body: string };
+      expect(note.body).toContain("Review a pull request: boom; Security review: boom");
     });
   });
   describe("correlation", () => {
@@ -1007,7 +1058,21 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       ]);
       const correlation = await correlationJobs(enqueued.reviewRunId);
       expect(correlation).toHaveLength(1);
-      return { prNumber, enqueued, accessToken, correlationJob: correlation[0]! };
+      // Nothing is posted until the correlation ends.
+      expect(postsTo(prNumber)).toBe(0);
+      return { prNumber, enqueued, accessToken, outputs, correlationJob: correlation[0]! };
+    }
+
+    /** How many reviews were posted to PR `prNumber`. */
+    function postsTo(prNumber: number): number {
+      return postReview.mock.calls.filter((call) => call[1] === prNumber).length;
+    }
+
+    /** A run's findings without what posting sets. */
+    async function unposted(reviewRunId: string) {
+      return (await runFindings(reviewRunId)).map(
+        ({ finding: { scmCommentId: _, updatedAt: __, ...rest }, taskId }) => ({ rest, taskId }),
+      );
     }
 
     it("starts one correlation job when the last of two finished task runs ends", async () => {
@@ -1070,7 +1135,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     });
 
     it("merges the findings a canned correlation result names, once", async () => {
-      const { prNumber, enqueued, accessToken, correlationJob } = await correlatingRun();
+      const { prNumber, enqueued, accessToken, outputs, correlationJob } = await correlatingRun();
       const [first, second] = await runFindings(enqueued.reviewRunId);
       // A finding the output leaves out, and one of another PR the output names.
       const [leftOut] = await db
@@ -1145,6 +1210,25 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
         error: null,
       });
 
+      // One review is posted for the run: the merged finding once, naming both tasks.
+      expect(postsTo(prNumber)).toBe(1);
+      const posted = postReview.mock.calls.find((call) => call[1] === prNumber)![2];
+      expect(posted.summary).toContain("Adds login logging; the token leaks.");
+      expect(posted.summary).toContain("**Findings:** 2");
+      expect(posted.summary).toContain("**Tokens:** 3,000 /");
+      expect(posted.inlineComments.map((c) => c.body.split("\n")[0])).toEqual([
+        "**[critical] Token logged (merged)**",
+        "**[high] Unrelated**",
+      ]);
+      expect(posted.inlineComments[0]!.body).toContain(
+        "_security · confidence 97% · Review a pull request, Security review_",
+      );
+      expect((await reviewRunRow(enqueued.reviewRunId)).summaryCommentId).not.toBeNull();
+      const postedRows = (await listReviewRunFindings(db, enqueued.reviewRunId)).filter(
+        (f) => f.scmCommentId !== null,
+      );
+      expect(postedRows.map((f) => f.id).sort()).toEqual([first!.finding.id, leftOut!.id].sort());
+
       // A replayed result changes nothing more.
       const strip = (rows: Awaited<ReturnType<typeof runFindings>>) =>
         rows.map(({ finding: { updatedAt: _, ...rest } }) => rest);
@@ -1152,6 +1236,13 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
         { status: "completed" },
       );
       expect(strip(await runFindings(enqueued.reviewRunId))).toEqual(strip(after));
+      // ... nor do replays of the task runs' results: still one review for the run.
+      for (const [i, run] of enqueued.runs.entries()) {
+        expect((await submit(run.jobId, accessToken, outputs[i]!)).body).toEqual({
+          status: "completed",
+        });
+      }
+      expect(postsTo(prNumber)).toBe(1);
 
       // A merged finding isn't open: the next review doesn't get it.
       const previous = await previousReviewState(db, { repositoryId, prNumber, headSha: head2 });
@@ -1161,8 +1252,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     });
 
     it("leaves every finding unmerged when the correlation fails for good", async () => {
-      const { enqueued, accessToken, correlationJob } = await correlatingRun();
-      const before = await runFindings(enqueued.reviewRunId);
+      const { prNumber, enqueued, accessToken, correlationJob } = await correlatingRun();
+      const before = await unposted(enqueued.reviewRunId);
       await startAs(correlationJob.id, accessToken);
       await failFinal(correlationJob.id, accessToken);
       expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
@@ -1170,15 +1261,19 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
         summary: null,
         error: "Correlation failed: boom",
       });
-      expect(await runFindings(enqueued.reviewRunId)).toEqual(before);
+      expect(await unposted(enqueued.reviewRunId)).toEqual(before);
+      // Posted unmerged: one review with both findings.
+      expect(postsTo(prNumber)).toBe(1);
+      const posted = postReview.mock.calls.find((call) => call[1] === prNumber)![2];
+      expect(posted.inlineComments).toHaveLength(2);
     });
 
     it("leaves every finding unmerged when the correlation's output doesn't match its schema", async () => {
-      const { enqueued, accessToken, correlationJob } = await correlatingRun();
-      const before = await runFindings(enqueued.reviewRunId);
+      const { prNumber, enqueued, accessToken, correlationJob } = await correlatingRun();
+      const before = await unposted(enqueued.reviewRunId);
       await startAs(correlationJob.id, accessToken);
       const invalid = {
-        findings: [{ sourceFindingIds: before.map((r) => r.finding.id), severity: "urgent" }],
+        findings: [{ sourceFindingIds: before.map((r) => r.rest.id), severity: "urgent" }],
         summary: "Merged",
       };
       expect(
@@ -1187,7 +1282,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       const run = await reviewRunRow(enqueued.reviewRunId);
       expect(run).toMatchObject({ status: "completed", summary: null });
       expect(run.error).toMatch(/^Correlation output is invalid/);
-      expect(await runFindings(enqueued.reviewRunId)).toEqual(before);
+      expect(await unposted(enqueued.reviewRunId)).toEqual(before);
+      expect(postsTo(prNumber)).toBe(1);
     });
 
     it("cancels the correlation of an older head on a newer push", async () => {
@@ -1197,6 +1293,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       expect(newer.canceledJobIds).toEqual([correlationJob.id]);
       expect(await jobRow(correlationJob.id)).toMatchObject({ status: "canceled" });
       expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "skipped" });
+      // A superseded run is never posted.
+      expect(postsTo(prNumber)).toBe(0);
     });
   });
 });

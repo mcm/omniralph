@@ -4,11 +4,11 @@
  * person's `@bot fix` / `@bot` request on it, become requests on the run's
  * lane whose PR/MR it is.
  *
- * - A review is acted on when its `review.run` job completes (no webhook, no
- *   polling): if the repository's `respondToReviews` is on, the run isn't
- *   stopped and the review wasn't seen yet, and it reviewed the PR/MR's
+ * - A review run is acted on once it completed and was posted (no webhook,
+ *   no polling): if the repository's `respondToReviews` is on, the run isn't
+ *   stopped and the review run wasn't seen yet, and it reviewed the PR/MR's
  *   current head, its open findings become one request. An older head's
- *   review is recorded as handled and skipped; one without open findings does
+ *   review run is recorded as handled and skipped; one without open findings does
  *   nothing; after `maxReviewRounds` the run leaves it for a person.
  * - Delivery is a reply's: into the running `ralph.request` job working in
  *   that lane (the heartbeat's live messages), else a pending request, run as
@@ -19,11 +19,11 @@ import {
   findLaneByPullRequest,
   getLane,
   getRepositoryWithConnection,
-  getReview,
+  getReviewRun,
   getRunningRunJob,
   insertMessage,
   listActiveRunJobIds,
-  listReviewFindings,
+  listReviewRunFindings,
   lockRun,
   updateLane,
   updateRun,
@@ -142,38 +142,39 @@ export async function advanceQuietly(
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
- * Acts on a completed Omniralph review of a ralph PR/MR (see the module
- * comment). Called from the `review.run` outcome handler, after the review
- * and its findings are saved and posted.
+ * Acts on a completed Omniralph review run of a ralph PR/MR (see the module
+ * comment), recording its ID in `lane.handledReviewIds`. Called once the
+ * review run is posted (`finishReviewRun`).
  */
-export async function respondToReview(deps: RalphDeps, reviewId: string): Promise<ReviewResponse> {
+export async function respondToReview(
+  deps: RalphDeps,
+  reviewRunId: string,
+): Promise<ReviewResponse> {
   const ignored = (reason: Extract<ReviewResponse, { status: "ignored" }>["reason"]) =>
     ({ status: "ignored", reason }) as const;
-  const review = await getReview(deps.db, reviewId);
-  if (!review || (review.status !== "completed" && review.status !== "budget_exhausted")) {
-    return ignored("not_completed");
-  }
-  const found = await findLaneByPullRequest(deps.db, review.repositoryId, review.prNumber);
+  const reviewRun = await getReviewRun(deps.db, reviewRunId);
+  if (!reviewRun || reviewRun.status !== "completed") return ignored("not_completed");
+  const found = await findLaneByPullRequest(deps.db, reviewRun.repositoryId, reviewRun.prNumber);
   if (!found) return ignored("not_ralph");
-  const target = await getRepositoryWithConnection(deps.db, review.repositoryId);
+  const target = await getRepositoryWithConnection(deps.db, reviewRun.repositoryId);
   if (!target || target.repository.disconnectedAt || !target.repository.ralphEnabled) {
     return ignored("repository_unavailable");
   }
   const settings = parseRalphSettings(target.repository.ralphSettings);
   if (!settings.respondToReviews) return ignored("opted_out");
   if (OVER.has(found.run.status)) return ignored("run_over");
-  if (found.lane.handledReviewIds.includes(review.id)) return ignored("handled");
+  if (found.lane.handledReviewIds.includes(reviewRun.id)) return ignored("handled");
 
   const { repository, connection } = target;
   const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
   const state = await deps
     .adapterFor(deps.db, connection)
-    .getChangeRequestState(repo, review.prNumber);
+    .getChangeRequestState(repo, reviewRun.prNumber);
   if (state.state !== "open") {
     await recordClosedPullRequest(deps, found.lane, state);
     return ignored("closed");
   }
-  const findings = (await listReviewFindings(deps.db, review.id))
+  const findings = (await listReviewRunFindings(deps.db, reviewRun.id))
     .filter((f) => f.status === "open")
     .sort((a, b) => a.path.localeCompare(b.path) || a.startLine - b.startLine);
   const term = changeRequestTerm(repository.provider) as ChangeRequestWord;
@@ -182,10 +183,10 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     const lane = await getLane(tx, found.lane.id);
     if (!lane || lane.prClosed) return ignored("not_ralph");
     if (OVER.has(run.status)) return ignored("run_over");
-    if (lane.handledReviewIds.includes(review.id)) return ignored("handled");
-    const handledReviewIds = [...lane.handledReviewIds, review.id];
-    // A review of an older commit is out of date: ralph has pushed since.
-    if (review.headSha !== state.headSha) {
+    if (lane.handledReviewIds.includes(reviewRun.id)) return ignored("handled");
+    const handledReviewIds = [...lane.handledReviewIds, reviewRun.id];
+    // A review run of an older commit is out of date: ralph has pushed since.
+    if (reviewRun.headSha !== state.headSha) {
       await updateLane(tx, lane.id, { handledReviewIds });
       return { status: "stale" } as const;
     }
@@ -210,7 +211,7 @@ export async function respondToReview(deps: RalphDeps, reviewId: string): Promis
     const added = await addLaneRequest(tx, run, lane, {
       text: buildReviewRequest({
         findings,
-        prNumber: review.prNumber,
+        prNumber: reviewRun.prNumber,
         prUrl: lane.prUrl ?? "",
         branch: lane.branch,
         term,
