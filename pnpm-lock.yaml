@@ -280,6 +280,10 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@omniralph/engine':
+        specifier: workspace:*
+        version: link:../engine
 
 packages:
 
