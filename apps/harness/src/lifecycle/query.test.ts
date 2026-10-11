@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +16,7 @@ import {
   getBuiltinAgent,
   getBuiltinTask,
   TaskDefinition,
+  TRUNCATION_MARKER,
   type AgentDefinitionInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
@@ -859,6 +860,126 @@ describe("runQueryTask", () => {
     });
     await expect(run(spec(overrides), fake)).rejects.toBe(reason);
     await expectTornDown();
+  });
+
+  describe("setup and teardown commands", () => {
+    const SETUP_TEMPLATE =
+      "Files:\n{{setup.files}}\nEnv:\n{{setup.env}}\n{{#setup.note}}Note:\n{{setup.note}}{{/setup.note}}";
+
+    it("renders each setup command's stdout as setup.<name>, fenced, run in the checkout without either token", async () => {
+      const { calls } = await run(
+        spec({
+          task: taskFixture({
+            promptTemplate: SETUP_TEMPLATE,
+            setupCommands: [
+              { name: "files", command: "ls; echo noise >&2", fence: "text" },
+              { name: "env", command: "env | grep -c OMNIRALPH_ || true" },
+            ],
+          }),
+        }),
+      );
+      expect(calls[0]?.prompt).toBe("Files:\n```text\nCLAUDE.md\nsrc\n```\nEnv:\n```\n0\n```\n");
+      await expectTornDown();
+    });
+
+    it("caps a setup command's output and marks the cut", async () => {
+      const { calls } = await run(
+        spec({
+          task: taskFixture({
+            promptTemplate: "{{setup.files}}",
+            setupCommands: [{ name: "files", command: "printf 'abcdefgh'", maxOutputChars: 3 }],
+          }),
+        }),
+      );
+      expect(calls[0]?.prompt).toBe(fence(`abc${TRUNCATION_MARKER}`));
+    });
+
+    it("fails the run on a failing setup command, still running teardown", async () => {
+      const log = path.join(root, "teardown.log");
+      const fake = answering();
+      await expect(
+        run(
+          spec({
+            task: taskFixture({
+              setupCommands: [{ name: "lint", command: "echo boom >&2; exit 3" }],
+              teardownCommands: [{ command: `echo torn >> '${log}'` }],
+            }),
+          }),
+          fake,
+        ),
+      ).rejects.toThrow("setup command lint failed: it exited with code 3: boom");
+      expect(fake.calls).toEqual([]);
+      expect(await readFile(log, "utf8")).toBe("torn\n");
+      await expectTornDown();
+    });
+
+    it("puts a failure note in an optional setup command's variable and carries on", async () => {
+      const { calls } = await run(
+        spec({
+          repository: null,
+          ref: null,
+          task: taskFixture({
+            promptTemplate: SETUP_TEMPLATE,
+            setupCommands: [
+              {
+                name: "note",
+                command: "echo partial; echo missing tool >&2; exit 127",
+                optional: true,
+              },
+              { name: "files", command: "ls" },
+              { name: "env", command: "sleep 5", timeoutMs: 100, optional: true },
+            ],
+          }),
+        }),
+      );
+      expect(calls[0]?.prompt).toBe(
+        [
+          "Files:",
+          "",
+          "Env:",
+          fence("(The setup command env failed: it timed out after 100ms)"),
+          "Note:",
+          fence("(The setup command note failed: it exited with code 127: missing tool)"),
+        ].join("\n"),
+      );
+      await expectTornDown();
+    });
+
+    it("runs teardown commands after the session, in the working directory, even when one fails", async () => {
+      const log = path.join(root, "teardown.log");
+      const fake = scriptedQuery(function* () {
+        void appendFile(log, "session\n");
+        yield resultMessage(ANSWER);
+      });
+      const { result } = await run(
+        spec({
+          task: taskFixture({
+            teardownCommands: [
+              { command: "exit 1" },
+              { command: `test -f CLAUDE.md && echo teardown >> '${log}'` },
+            ],
+          }),
+        }),
+        fake,
+      );
+      expect(result.outcome).toBe("answered");
+      expect(await readFile(log, "utf8")).toBe("session\nteardown\n");
+      await expectTornDown();
+    });
+
+    it("runs teardown commands when the session fails", async () => {
+      const log = path.join(root, "teardown.log");
+      await expect(
+        run(
+          spec({
+            task: taskFixture({ teardownCommands: [{ command: `echo torn >> '${log}'` }] }),
+          }),
+          answering([resultMessage("  ")]),
+        ),
+      ).rejects.toThrow(/empty/);
+      expect(await readFile(log, "utf8")).toBe("torn\n");
+      await expectTornDown();
+    });
   });
 
   it("fails a template that doesn't parse", async () => {

@@ -1,6 +1,7 @@
 import type * as Db from "@omniralph/db";
 import {
   QUERY_TASKS_MIN_HARNESS_VERSION,
+  SETUP_COMMANDS_MIN_HARNESS_VERSION,
   type JobToken,
   type RunSpecJobPayload,
 } from "@omniralph/shared";
@@ -273,5 +274,23 @@ describe("runSpecJobInput", () => {
   it("sets no minimum harness version for other task types", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "review" });
     expect(runSpecJobInput(task, payload).minHarnessVersion).toBeNull();
+  });
+
+  it("requires a harness that runs setup and teardown commands when the task has any", () => {
+    const setup = TaskDefinition.parse({
+      ...taskInput,
+      setupCommands: [{ name: "lint", command: "semgrep --json ." }],
+    });
+    expect(runSpecJobInput(setup, payload).minHarnessVersion).toBe(
+      SETUP_COMMANDS_MIN_HARNESS_VERSION,
+    );
+    const teardown = TaskDefinition.parse({
+      ...taskInput,
+      taskType: "review",
+      teardownCommands: [{ command: "rm -rf .cache" }],
+    });
+    expect(runSpecJobInput(teardown, payload).minHarnessVersion).toBe(
+      SETUP_COMMANDS_MIN_HARNESS_VERSION,
+    );
   });
 });

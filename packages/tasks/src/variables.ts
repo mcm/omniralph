@@ -5,6 +5,7 @@
  * Untrusted values (anything a person or the model outside the run wrote)
  * are fenced when rendered, with the variable's `fence` info string.
  */
+import type { SetupCommand } from "./definitions.js";
 import type { TaskType, TriggerKind } from "./kinds.js";
 
 export const VARIABLE_SOURCES = ["trigger", "taskType", "setup"] as const;
@@ -349,4 +350,41 @@ export function availableVariables(taskType: TaskType, triggers: readonly Trigge
         return false;
     }
   }).map((variable) => variable.name);
+}
+
+/**
+ * The catalog entries of a task's setup commands: `setup.<name>`, untrusted,
+ * fenced with the command's `fence` info string.
+ */
+export function setupVariables(
+  setupCommands: readonly Pick<SetupCommand, "name" | "fence" | "optional">[],
+): VariableDefinition[] {
+  return setupCommands.map((command) => ({
+    name: `setup.${command.name}`,
+    source: "setup",
+    trust: "untrusted",
+    ...(command.fence !== "" && { fence: command.fence }),
+    description: command.optional
+      ? `Output of the setup command \`${command.name}\` (a short failure note when it fails).`
+      : `Output of the setup command \`${command.name}\`.`,
+  }));
+}
+
+type TaskVariableSource = {
+  taskType: TaskType;
+  triggers: readonly TriggerKind[];
+  setupCommands: readonly Pick<SetupCommand, "name" | "fence" | "optional">[];
+};
+
+/** The catalog a task's prompt template renders with: `VARIABLES` plus its setup variables. */
+export function taskCatalog(task: Pick<TaskVariableSource, "setupCommands">): VariableDefinition[] {
+  return [...VARIABLES, ...setupVariables(task.setupCommands)];
+}
+
+/** Names of every variable a task can use: `availableVariables` plus its `setup.<name>` variables. */
+export function taskVariables(task: TaskVariableSource): string[] {
+  return [
+    ...availableVariables(task.taskType, task.triggers),
+    ...task.setupCommands.map((command) => `setup.${command.name}`),
+  ];
 }

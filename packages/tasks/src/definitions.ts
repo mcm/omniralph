@@ -92,6 +92,56 @@ export const TokenBudget = z
   .nullable();
 export type TokenBudget = z.infer<typeof TokenBudget>;
 
+/** Most setup (and teardown) commands a task may declare. */
+export const MAX_SETUP_COMMANDS = 20;
+/** Default and most time a setup or teardown command may take. */
+export const DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60_000;
+export const MAX_COMMAND_TIMEOUT_MS = 30 * 60_000;
+/** Default and most characters of a setup command's stdout kept for `{{setup.<name>}}`. */
+export const DEFAULT_SETUP_OUTPUT_CHARS = 20_000;
+export const MAX_SETUP_OUTPUT_CHARS = 200_000;
+
+const ShellCommand = z.string().trim().min(1).max(4000);
+const CommandTimeoutMs = z
+  .int()
+  .min(1)
+  .max(MAX_COMMAND_TIMEOUT_MS)
+  .default(DEFAULT_COMMAND_TIMEOUT_MS);
+
+/**
+ * A command run (with `bash -lc`) in the working directory before the
+ * session, without either job token in its environment. Its stdout, cut to
+ * `maxOutputChars`, becomes the untrusted variable `setup.<name>`. A failing
+ * command (non-zero exit, timeout) fails the run, unless it's `optional`:
+ * then `setup.<name>` holds a short failure note instead.
+ */
+export const SetupCommand = z.object({
+  /** The variable's name after `setup.` (letters, digits, `_` and `-`). */
+  name: z
+    .string()
+    .regex(/^[A-Za-z_][A-Za-z0-9_-]*$/, "Use letters, digits, _ and -, not starting with a digit")
+    .max(100),
+  command: ShellCommand,
+  timeoutMs: CommandTimeoutMs,
+  maxOutputChars: z.int().min(1).max(MAX_SETUP_OUTPUT_CHARS).default(DEFAULT_SETUP_OUTPUT_CHARS),
+  /** Info string of the fence around the output (e.g. `json`). */
+  fence: z
+    .string()
+    .regex(/^[A-Za-z0-9_+.-]*$/)
+    .max(50)
+    .default(""),
+  optional: z.boolean().default(false),
+});
+export type SetupCommand = z.infer<typeof SetupCommand>;
+export type SetupCommandInput = z.input<typeof SetupCommand>;
+
+/** A command run after finish, whatever happened; its failure is logged, never fatal. */
+export const TeardownCommand = z.object({
+  command: ShellCommand,
+  timeoutMs: CommandTimeoutMs,
+});
+export type TeardownCommand = z.infer<typeof TeardownCommand>;
+
 export const TaskDefinition = z
   .object({
     id: DefinitionId,
@@ -103,12 +153,10 @@ export const TaskDefinition = z
     promptTemplate: z.string().min(1),
     /** Task-specific system text (e.g. the output contract), appended after the agent's system prompt. */
     systemAppend: z.string().min(1).optional(),
-    /** Setup and teardown commands come in a later epic; empty for now. */
-    setupCommands: z.array(z.string()).max(0, "Setup commands are not supported yet").default([]),
-    teardownCommands: z
-      .array(z.string())
-      .max(0, "Teardown commands are not supported yet")
-      .default([]),
+    /** Run in the working directory, in order, after checkout and before the session. */
+    setupCommands: z.array(SetupCommand).max(MAX_SETUP_COMMANDS).default([]),
+    /** Run in the working directory, in order, after finish, whatever happened. */
+    teardownCommands: z.array(TeardownCommand).max(MAX_SETUP_COMMANDS).default([]),
     toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
     /** JSON schema the session's output must match; query tasks only. */
     outputSchema: z.record(z.string(), z.unknown()).optional(),
@@ -128,6 +176,17 @@ export const TaskDefinition = z
     maxTurns: z.int().min(1).optional(),
   })
   .superRefine((task, ctx) => {
+    const names = new Set<string>();
+    task.setupCommands.forEach((command, index) => {
+      if (names.has(command.name)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["setupCommands", index, "name"],
+          message: `Setup command name ${command.name} is used twice`,
+        });
+      }
+      names.add(command.name);
+    });
     if (task.outputSchema !== undefined && task.taskType !== "query") {
       ctx.addIssue({
         code: "custom",

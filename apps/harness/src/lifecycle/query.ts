@@ -9,9 +9,10 @@ import {
   type QueryRunResult,
   type RunSpec,
 } from "@omniralph/shared";
-import { renderTemplate, VARIABLES } from "@omniralph/tasks";
+import { renderTemplate, taskCatalog } from "@omniralph/tasks";
 import { z } from "zod";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
+import { withoutJobEnv } from "../job-env.js";
 import type { Logger } from "../logger.js";
 import {
   createSessionRunner,
@@ -25,6 +26,7 @@ import {
   offeredLinearTools,
   type OmniralphServerOptions,
 } from "../tools/omniralph-server.js";
+import { runSetupCommands, runTeardownCommands } from "./commands.js";
 import { existingReferences } from "./references.js";
 import { queryToolPolicy } from "./tool-policy.js";
 import {
@@ -128,10 +130,14 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    A ref that can't be fetched leaves an empty directory without file
  *    tools, or, with `requireCheckout`, finishes with `no_checkout` and no
  *    session.
- * 2. Render the task's prompt template over the trigger context and the
- *    query variables (`question`, `hunk`, `conventions`, `checkout`); values over the
- *    task's `variableLimits` are cut, and untrusted values are fenced, by
- *    `renderTemplate`.
+ *    The task's setup commands then run there, in order, without either job
+ *    token in their environment; each one's capped stdout becomes
+ *    `setup.<name>`. A failing one fails the run, unless it's `optional`
+ *    (see `runSetupCommands`).
+ * 2. Render the task's prompt template over the trigger context, the
+ *    query variables (`question`, `hunk`, `conventions`, `checkout`) and the
+ *    `setup` variables; values over the task's `variableLimits` are cut, and
+ *    untrusted values are fenced, by `renderTemplate`.
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
@@ -143,7 +149,8 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  * 4. Finish: a structured result is validated against the task's output
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
- * 5. Teardown: the worktree or temp directory is removed, whatever happened.
+ * 5. Teardown: the task's teardown commands run (their failures are only
+ *    logged), then the worktree or temp directory is removed, whatever happened.
  */
 export async function runQueryTask(
   spec: RunSpec,
@@ -163,18 +170,38 @@ export async function runQueryTask(
     durationMs: Date.now() - started,
   });
 
+  // Setup and teardown commands get neither job token, as the session's own shell doesn't get the lifecycle one.
+  const commandOptions = (workspace: Workspace) => ({
+    cwd: workspace.cwd,
+    env: withoutJobEnv(ctx.env()),
+    logger: log,
+  });
+
   const run = async (workspace: Workspace): Promise<QueryRunResult> => {
+    try {
+      return await prepared(workspace);
+    } finally {
+      await runTeardownCommands(spec.task.teardownCommands, commandOptions(workspace));
+    }
+  };
+
+  const prepared = async (workspace: Workspace): Promise<QueryRunResult> => {
     const context = spec.trigger.context;
+    const setup = await runSetupCommands(spec.task.setupCommands, {
+      ...commandOptions(workspace),
+      signal: ctx.signal,
+    });
     const variables = {
       question: questionVariable(context),
       hunk: await hunkVariable(ctx.repos, spec.repository, context, git),
       conventions: await conventionsVariable(workspace.checkout, ctx.repos.gitEnv(ctx.env())),
       checkout: workspace.checkout !== null,
+      setup,
     };
     const prompt = renderTemplate(
       spec.task.promptTemplate,
       { ...context, ...variables },
-      VARIABLES,
+      taskCatalog(spec.task),
       spec.task.variableLimits,
     );
     // `get_attachment` saves to the run's temp directory: the empty working directory, or one of its own next to a checkout.
