@@ -9,6 +9,7 @@ import {
   RalphCleanupPayload,
   RalphCleanupResult,
   ralphStashBranch,
+  ralphHiddenRef,
   ralphStashPrefix,
   RalphDescribePrPayload,
   RalphDescribePrResult,
@@ -100,6 +101,7 @@ describe("ralph jobs", () => {
       durationMs: 1,
     });
     expect(ralphStashPrefix("r")).toBe("omniralph ralph r ");
+    expect(ralphHiddenRef("r")).toBe("refs/omniralph/runs/r");
     expect(ralphStashBranch("ENG-1")).toBe("ralph/stash/eng-1");
   });
 

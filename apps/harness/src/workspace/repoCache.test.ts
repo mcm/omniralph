@@ -444,6 +444,134 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     });
   });
 
+  it("lets a branch worktree push its run's hidden ref only when the push names it", async () => {
+    const runA = "refs/omniralph/runs/run-a";
+    const runB = "refs/omniralph/runs/run-b";
+    await remote.commit({ "README.md": "base\n" });
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      await writeFile(path.join(wt.path, "story.txt"), "work\n");
+      git(wt.path, "add", "-A");
+      git(wt.path, "commit", "--quiet", "-m", "work");
+      const head = git(wt.path, "rev-parse", "HEAD");
+
+      // The lifecycle's push names the hidden ref: allowed, and the branch isn't pushed.
+      expect(await wt.pushHiddenRef(runA)).toBe(head);
+      expect(git(remote.bare, "rev-parse", runA)).toBe(head);
+      expect(() =>
+        git(remote.bare, "rev-parse", "--verify", "--quiet", "refs/heads/feat/TOOL-1"),
+      ).toThrow();
+
+      const push = (ref: string, env: NodeJS.ProcessEnv = {}) => {
+        try {
+          execFileSync("git", ["push", "--quiet", "--force", "origin", `HEAD:${ref}`], {
+            cwd: wt.path,
+            env: { ...ENV, ...env },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          return "";
+        } catch (error) {
+          return String((error as { stderr?: Buffer }).stderr ?? "");
+        }
+      };
+      // Another run's hidden ref, a hidden ref no push named, and other refs/omniralph refs: rejected.
+      expect(push(runB, { OMNIRALPH_PUSH_REF: runA })).toContain(
+        `omniralph: this worktree may only push feat/TOOL-1, not ${runB}`,
+      );
+      // (A push with nothing to update never runs the hook.)
+      git(wt.path, "commit", "--quiet", "--allow-empty", "-m", "more");
+      expect(push(runA)).toContain("omniralph: this worktree may only push feat/TOOL-1");
+      expect(git(remote.bare, "rev-parse", runA)).toBe(head);
+      expect(
+        push("refs/omniralph/other", { OMNIRALPH_PUSH_REF: "refs/omniralph/other" }),
+      ).toContain("omniralph: this worktree may only push feat/TOOL-1");
+      expect(push("main", { OMNIRALPH_PUSH_REF: runA })).toContain(
+        "omniralph: this worktree may only push feat/TOOL-1",
+      );
+      expect(git(remote.bare, "for-each-ref", "--format=%(refname)", "refs/omniralph")).toBe(runA);
+      // Named by the push itself: allowed.
+      expect(push(runB, { OMNIRALPH_PUSH_REF: runB })).toBe("");
+
+      await expect(wt.pushHiddenRef("refs/heads/feat/TOOL-1")).rejects.toThrow(
+        "invalid hidden ref",
+      );
+      await expect(wt.pushHiddenRef("refs/omniralph/runs/")).rejects.toThrow("invalid hidden ref");
+    });
+  });
+
+  it("starts a new worktree from the run's hidden ref, and fast-forwards a reused one to it", async () => {
+    const hiddenRef = "refs/omniralph/runs/run-a";
+    const base = await remote.commit({ "README.md": "base\n" });
+    // No hidden ref on origin yet: the usual start.
+    const pushed = await repos.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(base);
+      return commitAndPush(wt.path, { "pushed.txt": "on the branch\n" }, "feat/TOOL-1");
+    });
+
+    // Another harness keeps a commit on top of the branch on the hidden ref.
+    const other = new RepoCache({
+      workspaceRoot: path.join(root, "other"),
+      credentialHelper: "!true",
+      lockRetryMs: 20,
+    });
+    const hidden = await other.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(pushed);
+      await writeFile(path.join(wt.path, "hidden.txt"), "unpushed\n");
+      git(wt.path, "add", "-A");
+      git(wt.path, "commit", "--quiet", "-m", "hidden");
+      return wt.pushHiddenRef(hiddenRef);
+    });
+
+    // A third harness creates its worktree from the hidden ref (the branch is an ancestor of it).
+    const third = new RepoCache({
+      workspaceRoot: path.join(root, "third"),
+      credentialHelper: "!true",
+      lockRetryMs: 20,
+    });
+    await third.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      expect(wt.created).toBe(true);
+      expect(git(wt.path, "symbolic-ref", "--short", "HEAD")).toBe("feat/TOOL-1");
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(hidden);
+      expect(await readFile(path.join(wt.path, "hidden.txt"), "utf8")).toBe("unpushed\n");
+    });
+    // The first harness's reused worktree (an ancestor of the hidden ref) fast-forwards to it.
+    await repos.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      expect(wt.created).toBe(false);
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(hidden);
+    });
+    // Without the option, the hidden ref is ignored.
+    const fourth = new RepoCache({
+      workspaceRoot: path.join(root, "fourth"),
+      credentialHelper: "!true",
+      lockRetryMs: 20,
+    });
+    await fourth.withBranchWorktree(repo, feature, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(pushed);
+    });
+  });
+
+  it("starts a branch not pushed yet from its hidden ref, even when the base branch moved on", async () => {
+    const hiddenRef = "refs/omniralph/runs/run-a";
+    await remote.commit({ "README.md": "base\n" });
+    const hidden = await repos.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      await writeFile(path.join(wt.path, "hidden.txt"), "unpushed\n");
+      git(wt.path, "add", "-A");
+      git(wt.path, "commit", "--quiet", "-m", "hidden");
+      return wt.pushHiddenRef(hiddenRef);
+    });
+    await remote.commit({ "README.md": "main moved on\n" });
+    const other = new RepoCache({
+      workspaceRoot: path.join(root, "other"),
+      credentialHelper: "!true",
+      lockRetryMs: 20,
+    });
+    await other.withBranchWorktree(repo, { ...feature, hiddenRef }, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(hidden);
+    });
+    await expect(
+      repos.withBranchWorktree(repo, { ...feature, hiddenRef: "refs/heads/main" }, async () => {}),
+    ).rejects.toThrow("invalid hidden ref");
+  });
+
   it("creates the worktree from an existing remote branch pushed after the clone", async () => {
     await remote.commit({ "README.md": "base\n" });
     await repos.sync(repo, opts); // clone before the branch exists
