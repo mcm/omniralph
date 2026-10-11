@@ -1,13 +1,13 @@
-# ADR 0002: Agent and code-host authentication
+# ADR 0002: Harness and code-host authentication
 
-- **Status:** Accepted (GitHub App JWTs, US-004; agent identity and token lifecycle, US-017)
+- **Status:** Accepted (GitHub App JWTs, US-004; harness identity and token lifecycle, US-017; job token kinds, [ADR 0008](0008-agents-tasks-and-the-harness.md))
 - **Date:** 2026-10-04
 
 ## Context
 
 The control panel is the only integration point: it holds the GitHub App and
 GitLab credentials, performs every code-host write and brokers short-lived,
-scoped credentials to agents. Long-lived signing keys should not sit in
+scoped credentials to harnesses. Long-lived signing keys should not sit in
 environment variables where Vercel KMS can hold them instead.
 
 ## Decision: GitHub App JWTs
@@ -86,60 +86,77 @@ exercises the production code path.
 - Rotating the GitHub App key means importing the new key into a new KMS issuer
   (again with `--algorithm RS256`) and updating `GITHUB_APP_KMS_ISSUER_ID`.
 
-## Decision: agent identity and token lifecycle
+## Decision: harness identity and token lifecycle
 
-Agents only make outbound calls to the control panel and must not hold
-long-lived code-host or Vercel credentials. Their identity is:
+Harnesses (hosts running `omniralph-harness`; called "agents" until
+[ADR 0008](0008-agents-tasks-and-the-harness.md); this file keeps its old name)
+only make outbound calls to the control panel and must not hold long-lived
+code-host or Vercel credentials. Their identity is:
 
 - **Enrollment.** An admin creates a one-time enrollment token (256-bit
   random, valid 1 hour, single use, stored as a SHA-256 hash).
-  `POST /api/harness/enroll` consumes it, creates the agent and returns
-  `{ agentId, refreshToken }`.
+  `POST /api/harness/enroll` consumes it, creates the harness and returns
+  `{ harnessId, refreshToken }`.
 - **Refresh tokens.** Opaque 256-bit random values; only their SHA-256 hash is
-  stored (`agent_refresh_tokens`). The agent keeps its token in a 0600 file.
-  `POST /api/harness/token` marks the presented token used and returns a new one
-  in the same **family** plus an access token (rotation on every refresh).
+  stored (`harness_refresh_tokens`). The harness keeps its token in a 0600 file
+  (`~/.config/omniralph/harness.json`). `POST /api/harness/token` marks the
+  presented token used and returns a new one in the same **family** plus an
+  access token (rotation on every refresh).
 - **Reuse detection.** Presenting an already-used refresh token means two
   parties hold the chain (theft or a cloned host): the whole family **and the
-  agent** are revoked (`agents.revoked_at`), a `refresh_reuse` audit row is
-  written, and the agent has to re-enroll. The rotation runs in a transaction
+  harness** are revoked (`harnesses.revoked_at`), a `refresh_reuse` audit row is
+  written, and the harness has to re-enroll. The rotation runs in a transaction
   with the token row locked, so concurrent presentations resolve to one
   rotation and one reuse.
 - **Access and job tokens.** Short-lived (900s) **RS256** JWTs signed by
   **Vercel KMS** (`signJWT`, issuer `KMS_AGENT_ISSUER_ID`, one issuer per Vercel
-  environment), so no signing key ever sits in an env var. Access tokens:
-  `typ: "agent"`, `sub: agentId`, `aud: "omniralph-agent"`. Job tokens (issued
-  when a job starts): `typ: "job"`, `sub: jobId`, `agentId`, `scopes` (review:
-  `["credentials:read"]`; ralph adds `credentials:write`, `ralph:activity` and
-  `ralph:attachments`). Processes inside a job (the `git-credential` helper)
-  only see the job token. `LocalTokenSigner` (`jose`, `LOCAL_AGENT_SIGNING_KEY`
-  or an in-memory key) exists for local dev and tests and refuses to run with
-  `VERCEL_ENV=production`.
-- **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/harness-auth/verify.ts`)
+  environment), so no signing key ever sits in an env var. Both carry
+  `aud: "omniralph-harness"`; tokens with the audience from before the
+  rename are rejected. Access tokens: `typ: "harness"`, `sub: harnessId`. Job tokens
+  (issued when a job is claimed and renewed by the heartbeat): `typ: "job"`,
+  `sub: jobId`, `harnessId`, `scopes` and, for run-spec jobs, a `kind`:
+
+  | Token | Jobs | Held by | Scopes |
+  | -- | -- | -- | -- |
+  | `lifecycle` | run-spec jobs (with a `task_id`) | the harness's own git calls (syncing and checking out the repository) | `credentials:read`; `coding` runs add `credentials:write` |
+  | `session` | run-spec jobs | the Claude session: its env (`OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_TOKEN_FILE`), its git credential helper and the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
+  | no `kind` (legacy) | `review.run`, `repo.sync` and other system RPCs | everything in the job | `credentials:read` |
+  | no `kind` (legacy) | `ralph.*` (until the coding epic ports them) | everything in the job | `credentials:read`, `credentials:write`, `run:activity`, `run:attachments` |
+
+  The credential broker hands out a push credential only for
+  `credentials:write` on the `lifecycle` token of a `coding` run-spec job or the
+  single token of a legacy `ralph.*` job; a `session` token is read-only
+  whatever scopes it claims. Processes inside a job (the `git-credential`
+  helper) only see a job token, never the harness's tokens. `LocalTokenSigner`
+  (`jose`, `LOCAL_AGENT_SIGNING_KEY` or an in-memory key) exists for local dev
+  and tests and refuses to run with `VERCEL_ENV=production`.
+- **Verification.** `requireHarness`/`requireJob` (`apps/web/src/lib/harness-auth/verify.ts`)
   check the signature (RS256 only), `aud`, `typ` and `exp` with `jose` against
   the issuer's cached JWKS (`https://kms.vercel.com/<issuer>/jwks.json`), then
-  **check the database** that the agent isn't revoked (and, for job tokens,
-  that the job is `running` on that agent and the scope matches). Revocation
-  (`revokeAgent`) therefore takes effect on the next request, not when the
+  **check the database** that the harness isn't revoked (and, for job tokens,
+  that the job is `running` on that harness and the scope matches). Revocation
+  (`revokeHarness`) therefore takes effect on the next request, not when the
   token expires.
 - **No HS\* keys.** Tokens are never signed with a shared HMAC secret: a
   verifier holding the secret could mint tokens, and the secret would have to
   live in an env var. Only RS256 is accepted, so `alg` confusion attacks don't
   apply.
 - **Rate limits and audit.** Fixed windows in Postgres (`rate_limits`):
-  `/enroll` 10/min per IP; `/token` 30/min per agent and 60/min per IP; 20 failed
-  auth attempts from one IP within 10 minutes lock that IP out of the agent API
-  (429) for 10 minutes. `agent_audit` records enroll, token refresh, refresh
-  reuse, revoke, credential issuance, results and auth failures (sampled to one
-  per agent per minute).
+  `/enroll` 10/min per IP; `/token` 30/min per harness and 60/min per IP; 20
+  failed auth attempts from one IP within 10 minutes lock that IP out of the
+  harness API (429) for 10 minutes. `harness_audit` records enroll, token
+  refresh, refresh reuse, revoke, credential issuance, results and auth
+  failures (sampled to one per harness per minute).
 
 ### Consequences
 
 - A leaked access or job token is usable for at most 15 minutes and is cut off
-  immediately by revoking the agent; a leaked refresh token is detected the
+  immediately by revoking the harness; a leaked refresh token is detected the
   next time either holder refreshes.
-- Every authenticated agent request costs one indexed database lookup.
-- Each refresh costs one KMS signature; agents refresh about every 15 minutes.
-- An agent that crashes between the control panel rotating its token and
+- A Claude session can never push, even for coding runs: only the harness's
+  `lifecycle` token can, and the session never sees it.
+- Every authenticated harness request costs one indexed database lookup.
+- Each refresh costs one KMS signature; harnesses refresh about every 15 minutes.
+- A harness that crashes between the control panel rotating its token and
   persisting the new one will present the old token and be revoked; it must
-  re-enroll. The agent writes the new token atomically before using it.
+  re-enroll. The harness writes the new token atomically before using it.

@@ -196,9 +196,9 @@ ambiguous) and hands the request off with its `start_ralph_request` tool:
 
 - The repository must be one of the organization's repositories with ralph enabled (see
   [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
-  used); otherwise the bot lists the ones it can use. The session runs on an agent with the
-  `ralph` capability ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until one
-  is online.
+  used); otherwise the bot lists the ones it can use. The session runs on a harness that accepts
+  the `coding` task type ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until
+  one is online.
 - The bot posts **"Handing this to ralph in `owner/repo`…"** with the request's first sentence
   and a link to the run's page. The session gets the agent's summary of the request plus the
   quoted chat messages it's based on.
@@ -325,8 +325,8 @@ says so; ask it to delegate again, or delegate the issue in Linear.
 
 ## Code questions
 
-Ask about a connected repository's code and the bot gets an answer from an agent with a checkout
-of it:
+Ask about a connected repository's code and the bot gets an answer from a Claude session with a
+checkout of it:
 
 > @Omniralph in acme/api, where do we validate webhook signatures?
 
@@ -353,8 +353,10 @@ A code question is a run of the built-in query task `builtin:ask-about-code` (ag
 `builtin:code-explainer`, job type `chat.ask`, pool `short`); its `chat-thread` sink posts the
 answer in the thread. It runs in a read-only sandbox:
 
-- A fresh worktree of the default branch's head, on an agent host
-  ([deploy-harness.md](deploy-harness.md)). The control panel never reads code.
+- A fresh worktree of the default branch's head, on a harness host
+  ([deploy-harness.md](deploy-harness.md)), run through the fixed query lifecycle
+  ([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)): the prompt, tools and model come from
+  the task and agent definitions, sent with the job. The control panel never reads code.
 - The Claude session gets only **Read, Grep and Glob**, limited to the worktree: it can't write
   files, run commands or push. No project settings are loaded; the branch's `CLAUDE.md` is passed
   as quoted data, as in reviews.
@@ -367,8 +369,9 @@ answer in the thread. It runs in a read-only sandbox:
 ### Harness version
 
 A code question needs a harness that accepts **query** tasks on **version 0.9.0 or later** (the
-first release with the query task lifecycle); the job carries that as its minimum harness version,
-so older harnesses leave it queued. Before queueing, the control panel checks the organization's
+first release with the query task lifecycle); the job carries that in `jobs.min_harness_version`,
+so older harnesses leave it queued (the claim only gives a job to a harness whose reported version
+is at least the job's minimum). Before queueing, the control panel checks the organization's
 online harnesses (the version and task types they report in heartbeats); when none that would take
 the job can run it, nothing is queued and the bot says so: "no harness … is online", or that the
 online ones need to accept query tasks on 0.9.0 or later. Update or start a harness
@@ -465,6 +468,6 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The bot won't start a ralph request                 | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
 | The Linear card's buttons do nothing (Slack)        | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
 | "Only the person who asked…" on a card              | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
-| A code question says no capable agent is online     | An agent with the `review` capability on version 0.8.0 or later is online (and, if the repository pins reviews to agents, it's one of them).                                                                 |
+| A code question says no harness can take it         | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                                                  |
 | The bot says it couldn't fetch a Slack attachment   | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
-| A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and an agent with `ralph` is online; the run must start within an hour of the delegation.                                                      |
+| A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |

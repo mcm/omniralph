@@ -1,13 +1,13 @@
 # Linear (ralph)
 
-The `ralph` capability builds Linear issues: delegate an epic (or a single issue) to the Omniralph
-Linear app and the control panel runs it story by story on an agent, one `ralph.story` job per
+Ralph builds Linear issues: delegate an epic (or a single issue) to the Omniralph Linear app and
+the control panel runs it story by story on a harness, one `ralph.story` job per
 story, then opens a pull/merge request to the repository's default branch. See
 [ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated.
 
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
-Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
+Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Harnesses relay
 their activities through the control panel (`POST /api/harness/jobs/{id}/activities`), download
 [Linear attachments](#attachments) through it (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`)
 and never see a Linear token. Sessions of run-spec tasks with `toolSettings.linearRead` read Linear
@@ -25,8 +25,8 @@ Linear connection) and don't change anything in Linear; see
 [chat.md › Ralph from chat](chat.md#ralph-from-chat). Linear runs behave as described here, and
 the chat bot can also report on them and send them guidance.
 
-The `triage` capability uses the same app to rewrite rough issues as PRDs ralph can build: see
-[Triage](#triage).
+Triage (the built-in query task `builtin:triage`) uses the same app to rewrite rough issues as PRDs
+ralph can build: see [Triage](#triage).
 
 Coming from cyralph? [cutover-from-cyralph.md](cutover-from-cyralph.md) maps its `config.json` to
 the settings below and lists the steps to switch over.
@@ -37,7 +37,7 @@ Setting ralph up takes five steps:
 2. [Set the env vars](#2-set-the-env-vars) on the control panel.
 3. [Connect the workspace](#3-connect-from-settings--integrations) from **Settings › Integrations**.
 4. [Enable ralph and configure routing](#4-configure-routing) on a repository, and enable the
-   `ralph` capability on an agent ([deploy-harness.md](deploy-harness.md#ralph)).
+   `coding` task type on a harness ([deploy-harness.md](deploy-harness.md#ralph)).
 5. [Delegate an issue](#5-delegate-an-issue).
 
 The code host needs the write permissions described in [github-app.md](github-app.md) (Contents and
@@ -435,6 +435,12 @@ Linear issues, comments and documents with the read-only Linear tools (`linear_g
 serves for the run's organization. When the routed repository's default branch doesn't exist yet,
 it runs as if no repository were routed.
 
+Like every query task, triage has no code of its own on the harness: the control panel sends the
+task (`builtin:triage`, on the agent definition `builtin:planner`, model `opus`, no token budget)
+with the job, the harness runs it through the fixed query lifecycle
+([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)), and the `triage` sink validates the
+result and applies it to Linear.
+
 ### What it writes
 
 The issue's title and description are rewritten as a PRD following the `linear-prd` methodology
@@ -501,15 +507,17 @@ The same goes for `/ralph` switching a mention's run to the story loop (in a rep
 mention): the run stays in request mode until the questions are answered. Request-mode @mentions
 and epic runs that are already going aren't affected.
 
-## Agents and concurrency
+## Harnesses and concurrency
 
-Ralph jobs run on agents with the `ralph` capability ([deploy-harness.md](deploy-harness.md#ralph)).
-An agent's **Concurrency per capability** caps how many of its slots ralph may take; by default
-that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
-reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent.
+Ralph jobs are `coding` tasks in the `long` pool: they run on harnesses that accept the `coding`
+task type ([deploy-harness.md](deploy-harness.md#ralph)). A harness's `long` pool limit caps how
+many of its slots ralph may take; by default that's max concurrency − 1 (at least 1), so a harness
+with two or more slots keeps one free for reviews while stories run. All jobs of a run (every lane)
+go to the run's sticky harness.
 Triage jobs run in the `short` pool on harnesses that accept `query` tasks; like reviews, they may
-take every slot by default, so lower the pool's limit to keep slots free for other work. Agents under pm2 update themselves
-to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-harness.md#self-update-pm2)).
+take every slot by default, so lower the pool's limit to keep slots free for other work. Harnesses
+under pm2 update themselves to the version chosen on **Settings › Harnesses**
+([deploy-harness.md](deploy-harness.md#self-update-pm2)).
 
 ## Troubleshooting
 
@@ -521,8 +529,8 @@ to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-har
 - **Failed CI on a ralph PR/MR isn't picked up until the cron runs.** The GitHub App lacks
   **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
   events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).
-- **Worktrees of merged ralph PRs/MRs stay on the agent host.** The cleanup runs on the run's
-  sticky agent: if that agent is revoked or no longer has `ralph` enabled, nothing can reach its
+- **Worktrees of merged ralph PRs/MRs stay on the harness host.** The cleanup runs on the run's
+  sticky harness: if that harness is revoked or no longer accepts `coding`, nothing can reach its
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
@@ -541,5 +549,5 @@ to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-har
   removes the label again; the session it opened says why.
 - **"Triaging …" but nothing happens.** No harness accepts `query` tasks, or none runs version
   0.9.0 or later.
-- **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is
-  pinned to an agent that doesn't ([deploy-harness.md](deploy-harness.md#ralph)).
+- **No harness picks the job up.** No harness accepts the `coding` task type, or the repository is
+  pinned to a harness that doesn't ([deploy-harness.md](deploy-harness.md#ralph)).
