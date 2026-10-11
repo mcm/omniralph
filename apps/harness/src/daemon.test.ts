@@ -22,7 +22,6 @@ import {
 } from "./capabilities/index.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
-import { systemCapability } from "./capabilities/system.js";
 import { silentLogger } from "./logger.js";
 import type { RepoCache } from "./workspace/repoCache.js";
 import { SelfUpdater, readUpdateState } from "./update.js";
@@ -434,7 +433,7 @@ describe("AgentDaemon", () => {
   it("claims long jobs only once the long pool is sent, and runs them by job type", async () => {
     const id = randomUUID();
     const { api, state, claims, daemon } = setup({
-      capabilities: [systemCapability, capability(async () => ({})), ralphCapability],
+      capabilities: [capability(async () => ({})), ralphCapability],
       config: centralConfig({ poolLimits: { short: 1 } }),
     });
     claims.push(job(id, { type: "ralph.prepare", taskType: "coding", pool: "long" }));
@@ -722,7 +721,6 @@ describe("AgentDaemon", () => {
       fetched: false,
     }));
     const { api, claims, daemon } = setup({
-      capabilities: [systemCapability, capability(async () => ({}))],
       // No pools: system jobs need none.
       config: centralConfig({ poolLimits: {} }),
       repos: { sync } as unknown as RepoCache,
@@ -745,6 +743,25 @@ describe("AgentDaemon", () => {
     expect(options.env.OMNIRALPH_JOB_TOKEN).toBe(`job-token-${id}`);
     expect(api.submitResult).toHaveBeenCalledWith(id, {
       result: { repository: "gitlab/group/app", cloned: true, fetched: false },
+    });
+    await daemon.shutdown();
+  });
+
+  it("dispatches system jobs to the RPC registry before capabilities, and fails unknown RPCs", async () => {
+    const run = vi.fn(async () => ({ ok: true }));
+    const { api, claims, daemon } = setup({
+      // A capability claiming the RPC's job type is never asked.
+      capabilities: [{ ...capability(run), name: "legacy", jobTypes: ["repo.sync", "repo.other"] }],
+      config: centralConfig({ poolLimits: {} }),
+    });
+    const unknown = randomUUID();
+    claims.push(job(unknown, { type: "repo.other", taskType: "system", pool: null }));
+    void daemon.run();
+    await settle();
+    expect(run).not.toHaveBeenCalled();
+    expect(api.submitFailure).toHaveBeenCalledWith(unknown, {
+      retryable: false,
+      error: "unknown system RPC repo.other",
     });
     await daemon.shutdown();
   });

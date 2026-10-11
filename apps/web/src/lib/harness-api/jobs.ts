@@ -44,6 +44,7 @@ export interface JobScopeInput {
  * other job may only read its repository.
  */
 export function jobScopes(job: Pick<JobScopeInput, "type" | "taskType">): JobTokenScope[] {
+  if (job.taskType === "system") return ["credentials:read"];
   if (job.type.startsWith("ralph.")) {
     return ["credentials:read", "credentials:write", "run:activity", "run:attachments"];
   }
@@ -63,9 +64,12 @@ export function runTokenScopes(kind: RunTokenKind, taskType: JobTaskType): JobTo
   return taskType === "coding" ? ["credentials:read", "credentials:write"] : ["credentials:read"];
 }
 
-/** Whether a job runs from a run spec (has a `task_id`), so it gets lifecycle and session tokens. */
-export function isRunSpecJob(job: Pick<JobScopeInput, "taskId">): boolean {
-  return job.taskId !== null;
+/**
+ * Whether a job runs from a run spec (has a `task_id`), so it gets lifecycle
+ * and session tokens. System RPCs never do: they run no session.
+ */
+export function isRunSpecJob(job: Pick<JobScopeInput, "taskId" | "taskType">): boolean {
+  return job.taskId !== null && job.taskType !== "system";
 }
 
 /** A job's signed tokens: `jobToken` (lifecycle, or the legacy single token) and, for run-spec jobs, `sessionToken`. */
@@ -76,7 +80,8 @@ export interface SignedJobTokens {
 
 /**
  * Signs a job's tokens: a `lifecycle` and a `session` token for a run-spec job
- * (`runTokenScopes`), one token without a kind for a legacy job (`jobScopes`).
+ * (`runTokenScopes`), one token without a kind for a legacy job or a system
+ * RPC (`jobScopes`).
  */
 export async function signJobTokens(
   job: { id: string } & JobScopeInput,

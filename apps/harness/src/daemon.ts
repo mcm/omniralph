@@ -16,6 +16,7 @@ import {
   type JobOutput,
 } from "./capabilities/index.js";
 import { runQueryTask } from "./lifecycle/query.js";
+import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./rpc/index.js";
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
 import { SessionTokenFile } from "./session-token-file.js";
@@ -57,6 +58,8 @@ export interface DaemonOptions {
   tokens: { refresh(): Promise<string> };
   /** Runs legacy jobs (no run spec), by job type. */
   registry: CapabilityRegistry;
+  /** Runs jobs of task type `system`, by job type (default: `defaultSystemRpcs()`). */
+  rpcs?: SystemRpcRegistry;
   /** Runs claimed runs of task type `query` (default `runQueryTask`). */
   runQueryTask?: (spec: RunSpec, ctx: JobContext) => Promise<JobOutput>;
   logger: Logger;
@@ -129,6 +132,7 @@ export class AgentDaemon implements DrainableDaemon {
   private readonly heartbeatIntervalMs: number;
   private readonly shutdownGraceMs: number;
   private readonly reportRetryDelayMs: number;
+  private readonly rpcs: SystemRpcRegistry;
   private repoCache: RepoCache | undefined;
   /** `jobMessages` handled since the last heartbeat that got through: ID → job and whether it was injected. */
   private readonly pendingAcks = new Map<string, { jobId: string; delivered: boolean }>();
@@ -140,6 +144,7 @@ export class AgentDaemon implements DrainableDaemon {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_SECONDS * 1000;
     this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
     this.reportRetryDelayMs = options.reportRetryDelayMs ?? 2_000;
+    this.rpcs = options.rpcs ?? new SystemRpcRegistry(defaultSystemRpcs());
   }
 
   /** Starts heartbeating and claiming. Resolves with the exit code once the daemon stops. */
@@ -526,15 +531,19 @@ export class AgentDaemon implements DrainableDaemon {
       jobLog.info("not starting a job claimed during shutdown");
       return;
     }
-    const run = start.runSpec ? this.runSpecHandler(start.runSpec) : this.capabilityHandler(job);
+    // System RPCs first (by job type), then run specs (by task type), then legacy capabilities.
+    const system = job.taskType === "system";
+    const run = system
+      ? this.rpcHandler(job)
+      : start.runSpec
+        ? this.runSpecHandler(start.runSpec)
+        : this.capabilityHandler(job);
     if (!run) {
-      jobLog.error("unknown job type");
+      const error = system ? `unknown system RPC ${job.type}` : `unknown job type ${job.type}`;
+      jobLog.error(system ? "unknown system RPC" : "unknown job type");
       void this.track(
         this.report(job.id, jobLog, () =>
-          this.options.api.submitFailure(job.id, {
-            retryable: false,
-            error: `unknown job type ${job.type}`,
-          }),
+          this.options.api.submitFailure(job.id, { retryable: false, error }),
         ),
       );
       return;
@@ -543,9 +552,9 @@ export class AgentDaemon implements DrainableDaemon {
       pool: job.pool,
       controller: new AbortController(),
       jobToken: start.jobToken.token,
-      sessionToken: start.sessionToken?.token,
+      // A system RPC runs no session: it only ever gets the single job token.
+      ...(system ? {} : { sessionToken: start.sessionToken?.token, runSpec: start.runSpec }),
       sessionTokenFile: new SessionTokenFile(),
-      runSpec: start.runSpec,
     };
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
@@ -569,6 +578,12 @@ export class AgentDaemon implements DrainableDaemon {
       default:
         return () => Promise.reject(new Error(`unsupported task type ${spec.taskType}`));
     }
+  }
+
+  /** A system job's RPC (by job type), or undefined for an unknown RPC. */
+  private rpcHandler(job: JobPayload): JobHandler | undefined {
+    const rpc = this.rpcs.get(job.type);
+    return rpc && ((ctx) => rpc.run(job, systemRpcContext(ctx)));
   }
 
   /** A legacy job's capability code (by job type), or undefined for an unknown job type. */
@@ -693,6 +708,12 @@ export class AgentDaemon implements DrainableDaemon {
     }
     log.info({ jobId, status: outcome.status }, "job outcome recorded");
   }
+}
+
+/** The part of a job's context a system RPC gets: no session token, session env or run spec. */
+function systemRpcContext(ctx: JobContext): SystemRpcContext {
+  const { signal, jobToken, env, spawn, server, workspaceRoot, repos, logger } = ctx;
+  return { signal, jobToken, env, spawn, server, workspaceRoot, repos, logger };
 }
 
 function failureBody(error: unknown, abortReason: unknown): JobFailure {

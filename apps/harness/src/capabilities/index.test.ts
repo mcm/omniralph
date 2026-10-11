@@ -18,11 +18,11 @@ import { REVIEW_TOOL_POLICY } from "./review.js";
 import { TRIAGE_TOOL_POLICY, triageCapability } from "./triage/index.js";
 
 describe("capability registry", () => {
-  it("ships the system, review, ralph and triage capabilities", () => {
+  it("ships the review, ralph and triage capabilities, and no system capability", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
-    expect(registry.names()).toEqual(["system", "review", "ralph", "triage"]);
+    expect(registry.names()).toEqual(["review", "ralph", "triage"]);
     expect(registry.forJob({ type: "triage.run" })?.name).toBe("triage");
-    expect(registry.forJob({ type: "repo.sync" })?.name).toBe("system");
+    expect(registry.forJob({ type: "repo.sync" })).toBeUndefined();
     for (const type of ["review.run", "review.reply", "review.learn-rule", "chat.ask"]) {
       expect(registry.forJob({ type })?.name).toBe("review");
     }
@@ -33,10 +33,9 @@ describe("capability registry", () => {
   });
 
   it("dispatches by job type, so a type may belong to one capability only", () => {
-    const [system, review] = defaultCapabilities() as [Capability, Capability];
+    const [review, ralph] = defaultCapabilities() as [Capability, Capability];
     expect(
-      () =>
-        new CapabilityRegistry([review, { ...system, name: "other", jobTypes: ["review.run"] }]),
+      () => new CapabilityRegistry([review, { ...ralph, name: "other", jobTypes: ["review.run"] }]),
     ).toThrow(/job type 'review.run' registered twice/);
   });
 
@@ -104,7 +103,7 @@ describe("capability registry", () => {
   });
 
   it("rejects duplicate names", () => {
-    const [system] = defaultCapabilities() as [Capability];
-    expect(() => new CapabilityRegistry([system, system])).toThrow(/twice/);
+    const [review] = defaultCapabilities() as [Capability];
+    expect(() => new CapabilityRegistry([review, review])).toThrow(/twice/);
   });
 });

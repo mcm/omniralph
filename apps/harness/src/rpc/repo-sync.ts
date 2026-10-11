@@ -1,26 +1,12 @@
 import { REPO_SYNC_JOB_TYPE, RepoSyncPayload } from "@omniralph/shared";
-import type { Capability, ToolPolicy } from "./index.js";
-
-/** System jobs run no Claude session at all. */
-export const SYSTEM_TOOL_POLICY: ToolPolicy = {
-  tools: "allowed",
-  allowedTools: [],
-  disallowedTools: [],
-  fileScope: "worktree",
-  permissionMode: "dontAsk",
-  settingSources: [],
-  writable: false,
-};
+import type { SystemRpc } from "./index.js";
 
 /**
- * Built-in housekeeping, always enabled. `repo.sync` (targeted at the agent
- * when a repo is pinned to it) clones the repo into the cache, or
- * fetches it if it's already there, and runs nothing else.
+ * `repo.sync` (targeted at the harness when a repo is pinned to it) clones the
+ * repo into the cache, or fetches it if it's already there, and runs nothing else.
  */
-export const systemCapability: Capability = {
-  name: "system",
-  jobTypes: [REPO_SYNC_JOB_TYPE],
-  toolPolicy: SYSTEM_TOOL_POLICY,
+export const repoSyncRpc: SystemRpc = {
+  name: REPO_SYNC_JOB_TYPE,
   async run(job, ctx) {
     const payload = RepoSyncPayload.safeParse(job.payload);
     if (!payload.success) throw new Error("invalid repo.sync payload");

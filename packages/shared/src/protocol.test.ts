@@ -8,7 +8,9 @@ import {
   HeartbeatResponse,
   JobFailure,
   JobStartResponse,
+  isSystemRpc,
   legacyJobRouting,
+  SYSTEM_RPCS,
 } from "./protocol.js";
 
 const ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
@@ -55,6 +57,15 @@ describe("protocol", () => {
     }
     expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
     expect(() => routing("review.unknown")).toThrow(/Unknown legacy job type/);
+  });
+
+  it("lists the system RPCs, each routed as a system job", () => {
+    expect(SYSTEM_RPCS).toEqual(["repo.sync"]);
+    for (const name of SYSTEM_RPCS) {
+      expect(legacyJobRouting(name)).toEqual({ taskType: "system", pool: null });
+    }
+    expect(isSystemRpc("repo.sync")).toBe(true);
+    expect(isSystemRpc("review.run")).toBe(false);
   });
 
   it("leaves a slot free of long jobs by default on harnesses with two or more slots", () => {

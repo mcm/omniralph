@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { jobScopes, runTokenScopes } = await import("./jobs");
+const { isRunSpecJob, jobScopes, runTokenScopes } = await import("./jobs");
 
 describe("jobScopes", () => {
   it("lets legacy ralph jobs push, relay activities and download attachments", () => {
@@ -27,6 +27,15 @@ describe("jobScopes", () => {
     ] as const) {
       expect(jobScopes(job)).toEqual(["credentials:read"]);
     }
+  });
+});
+
+describe("isRunSpecJob", () => {
+  it("gives system RPCs a single token, never a session token", () => {
+    expect(isRunSpecJob({ taskId: "builtin:learn-rule", taskType: "query" })).toBe(true);
+    expect(isRunSpecJob({ taskId: null, taskType: "query" })).toBe(false);
+    expect(isRunSpecJob({ taskId: null, taskType: "system" })).toBe(false);
+    expect(isRunSpecJob({ taskId: "builtin:learn-rule", taskType: "system" })).toBe(false);
   });
 });
 

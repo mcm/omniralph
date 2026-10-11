@@ -31,6 +31,17 @@ export const MAX_LEASE_SECONDS = 3600;
 export const REPO_SYNC_JOB_TYPE = "repo.sync";
 
 /**
+ * The system RPCs a harness runs: fixed commands with no Claude session,
+ * dispatched by job type (`jobs.type`) as jobs of task type `system`.
+ */
+export const SYSTEM_RPCS = [REPO_SYNC_JOB_TYPE] as const;
+export type SystemRpcName = (typeof SYSTEM_RPCS)[number];
+
+export function isSystemRpc(name: string): name is SystemRpcName {
+  return (SYSTEM_RPCS as readonly string[]).includes(name);
+}
+
+/**
  * How a harness runs a job: `query`, `review` and `coding` run a Claude
  * session; `system` jobs are fixed commands (e.g. `repo.sync`) every harness
  * accepts.
