@@ -18,12 +18,12 @@ export const AgentConfig = z.object({
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
-export function defaultConfigPath(): string {
-  return path.join(homedir(), ".config", "omniralph", "harness.json");
+export function defaultConfigPath(home = homedir()): string {
+  return path.join(home, ".config", "omniralph", "harness.json");
 }
 
-export function defaultWorkspaceRoot(): string {
-  return path.join(homedir(), ".omniralph", "repos");
+export function defaultWorkspaceRoot(home = homedir()): string {
+  return path.join(home, ".omniralph", "repos");
 }
 
 export class ConfigError extends Error {

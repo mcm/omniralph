@@ -1,5 +1,5 @@
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,7 +116,7 @@ describe("omniralph-harness CLI", () => {
           "--config",
           configPath,
         ],
-        { io, fetch: server.fetch },
+        { io, fetch: server.fetch, homeDir: dir },
       );
       expect(code).toBe(0);
       expect(server.calls).toEqual([
@@ -134,7 +134,7 @@ describe("omniralph-harness CLI", () => {
         server: "https://omniralph.example",
         agentId: AGENT_ID,
         refreshToken: "refresh-0",
-        workspaceRoot: path.join(homedir(), ".omniralph", "repos"),
+        workspaceRoot: path.join(dir, ".omniralph", "repos"),
       } satisfies AgentConfig);
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
       expect(out.stdout).toContain(AGENT_ID);
@@ -158,11 +158,11 @@ describe("omniralph-harness CLI", () => {
           "--config",
           configPath,
         ],
-        { io: capture().io, fetch: server.fetch },
+        { io: capture().io, fetch: server.fetch, homeDir: dir },
       );
       expect(code).toBe(0);
       const config = JSON.parse(await readFile(configPath, "utf8")) as AgentConfig;
-      expect(config.workspaceRoot).toBe(path.join(homedir(), "cache"));
+      expect(config.workspaceRoot).toBe(path.join(dir, "cache"));
       expect(config.server).toBe("http://localhost:3000");
     });
 
@@ -201,12 +201,13 @@ describe("omniralph-harness CLI", () => {
     });
   });
 
+  // Every call passes a temp `homeDir` so the default never resolves to a real harness's config.
   describe("config path", () => {
     it("defaults to ~/.config/omniralph/harness.json", async () => {
       const { out, io } = capture();
-      expect(await main(["update"], { io, env: {} })).toBe(1);
+      expect(await main(["update"], { io, env: {}, homeDir: dir })).toBe(1);
       expect(out.stderr).toContain(
-        `${path.join(homedir(), ".config", "omniralph", "harness.json")} not found`,
+        `${path.join(dir, ".config", "omniralph", "harness.json")} not found`,
       );
       expect(USAGE).toContain("~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG");
     });
@@ -214,16 +215,19 @@ describe("omniralph-harness CLI", () => {
     it("reads OMNIRALPH_HARNESS_CONFIG, not the old agent variable", async () => {
       const { out, io } = capture();
       const env = { OMNIRALPH_HARNESS_CONFIG: configPath };
-      expect(await main(["update"], { io, env })).toBe(1);
+      expect(await main(["update"], { io, env, homeDir: dir })).toBe(1);
       expect(out.stderr).toContain(`${configPath} not found`);
 
       const legacy = capture();
       const legacyPath = path.join(dir, "legacy.json");
       // The pre-rename variable, spelled out so the old name stays out of greps for leftovers.
       const legacyVar = ["OMNIRALPH", "AGENT", "CONFIG"].join("_");
-      expect(await main(["update"], { io: legacy.io, env: { [legacyVar]: legacyPath } })).toBe(1);
+      const legacyEnv = { [legacyVar]: legacyPath };
+      expect(await main(["update"], { io: legacy.io, env: legacyEnv, homeDir: dir })).toBe(1);
       expect(legacy.out.stderr).not.toContain(legacyPath);
-      expect(legacy.out.stderr).toContain("harness.json not found");
+      expect(legacy.out.stderr).toContain(
+        `${path.join(dir, ".config", "omniralph", "harness.json")} not found`,
+      );
     });
   });
 

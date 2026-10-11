@@ -80,6 +80,8 @@ export interface MainDeps {
   now?: () => number;
   /** The running harness version (default: this package's). */
   version?: string;
+  /** Home directory for the default config path and `~` (default: `os.homedir()`). */
+  homeDir?: string;
 }
 
 const defaultDeps: MainDeps = {
@@ -123,7 +125,8 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
     io.stdout(USAGE);
     return command === undefined && !values.help ? 1 : 0;
   }
-  const configPath = values.config ?? deps.env.OMNIRALPH_HARNESS_CONFIG ?? defaultConfigPath();
+  const configPath =
+    values.config ?? deps.env.OMNIRALPH_HARNESS_CONFIG ?? defaultConfigPath(deps.homeDir);
 
   try {
     switch (command) {
@@ -153,10 +156,8 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
   }
 }
 
-function expandHome(dir: string): string {
-  return path.resolve(
-    dir === "~" || dir.startsWith("~/") ? path.join(homedir(), dir.slice(1)) : dir,
-  );
+function expandHome(dir: string, home = homedir()): string {
+  return path.resolve(dir === "~" || dir.startsWith("~/") ? path.join(home, dir.slice(1)) : dir);
 }
 
 async function runEnroll(
@@ -170,8 +171,8 @@ async function runEnroll(
   }
   const server = validateServerUrl(values.server);
   const workspaceRoot = values["workspace-root"]
-    ? expandHome(values["workspace-root"])
-    : defaultWorkspaceRoot();
+    ? expandHome(values["workspace-root"], deps.homeDir)
+    : defaultWorkspaceRoot(deps.homeDir);
   let enrolled;
   try {
     enrolled = await enroll(
