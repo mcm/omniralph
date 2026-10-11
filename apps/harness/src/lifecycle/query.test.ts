@@ -887,7 +887,7 @@ describe("runQueryTask", () => {
         spec({
           task: taskFixture({
             promptTemplate: "{{setup.files}}",
-            setupCommands: [{ name: "files", command: "printf 'abcdefgh'", maxOutputChars: 3 }],
+            setupCommands: [{ name: "files", command: "printf 'abcdefgh'", maxOutputBytes: 3 }],
           }),
         }),
       );
@@ -902,7 +902,7 @@ describe("runQueryTask", () => {
           spec({
             task: taskFixture({
               setupCommands: [{ name: "lint", command: "echo boom >&2; exit 3" }],
-              teardownCommands: [{ command: `echo torn >> '${log}'` }],
+              teardownCommands: [{ name: "log", command: `echo torn >> '${log}'` }],
             }),
           }),
           fake,
@@ -927,7 +927,7 @@ describe("runQueryTask", () => {
                 optional: true,
               },
               { name: "files", command: "ls" },
-              { name: "env", command: "sleep 5", timeoutMs: 100, optional: true },
+              { name: "env", command: "sleep 5", timeoutSeconds: 0.1, optional: true },
             ],
           }),
         }),
@@ -937,9 +937,9 @@ describe("runQueryTask", () => {
           "Files:",
           "",
           "Env:",
-          fence("(The setup command env failed: it timed out after 100ms)"),
+          fence("(The setup command env failed: it timed out after 100ms.)"),
           "Note:",
-          fence("(The setup command note failed: it exited with code 127: missing tool)"),
+          fence("(The setup command note failed: it exited with code 127.)"),
         ].join("\n"),
       );
       await expectTornDown();
@@ -955,8 +955,8 @@ describe("runQueryTask", () => {
         spec({
           task: taskFixture({
             teardownCommands: [
-              { command: "exit 1" },
-              { command: `test -f CLAUDE.md && echo teardown >> '${log}'` },
+              { name: "fail", command: "exit 1" },
+              { name: "log", command: `test -f CLAUDE.md && echo teardown >> '${log}'` },
             ],
           }),
         }),
@@ -972,7 +972,9 @@ describe("runQueryTask", () => {
       await expect(
         run(
           spec({
-            task: taskFixture({ teardownCommands: [{ command: `echo torn >> '${log}'` }] }),
+            task: taskFixture({
+              teardownCommands: [{ name: "log", command: `echo torn >> '${log}'` }],
+            }),
           }),
           answering([resultMessage("  ")]),
         ),

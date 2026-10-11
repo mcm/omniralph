@@ -26,7 +26,7 @@ export interface CommandOutcome {
   /** The tail of stderr. */
   stderr: string;
   timedOut: boolean;
-  /** Why the command couldn't start (e.g. no `bash`). */
+  /** Why the command couldn't start (e.g. a missing working directory). */
   spawnError?: string;
 }
 
@@ -41,14 +41,31 @@ export class SetupCommandError extends Error {
   }
 }
 
+/**
+ * A setup or teardown command's environment: `env` without any `OMNIRALPH_*`
+ * variable (either job token) or `GIT_CONFIG_*` override (how git commands
+ * get the job's credential helper).
+ */
+export function commandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name]) =>
+        !name.startsWith("OMNIRALPH_") &&
+        name !== "GIT_CONFIG_COUNT" &&
+        !name.startsWith("GIT_CONFIG_KEY_") &&
+        !name.startsWith("GIT_CONFIG_VALUE_"),
+    ),
+  );
+}
+
 function tail(text: string, max: number): string {
   const trimmed = text.trim();
   return trimmed.length > max ? `…${trimmed.slice(-max)}` : trimmed;
 }
 
 /**
- * Runs `command` with `bash -lc` in its own process group, keeping at most
- * `maxStdout` characters of stdout (the rest is drained, not buffered) and
+ * Runs `command` with `sh -c` in its own process group, keeping at most
+ * `maxStdoutBytes` bytes of stdout (the rest is drained, not buffered) and
  * the tail of stderr. After `timeoutMs`, or when `signal` aborts, the whole
  * group gets SIGTERM, then SIGKILL. Never rejects.
  */
@@ -58,34 +75,36 @@ export function runCommand(
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs: number;
-    maxStdout: number;
+    maxStdoutBytes: number;
     signal?: AbortSignal;
   },
 ): Promise<CommandOutcome> {
   return new Promise((resolve) => {
-    let stdout = "";
+    const stdoutChunks: Buffer[] = [];
+    let stdoutBytes = 0;
     let truncated = false;
     let stderr = "";
     let timedOut = false;
     let settled = false;
     let killTimer: NodeJS.Timeout | undefined;
 
-    const child = spawn("bash", ["-lc", command], {
+    const child = spawn("sh", ["-c", command], {
       cwd: options.cwd,
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
-    child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       if (truncated) return;
-      const room = options.maxStdout - stdout.length;
+      const room = options.maxStdoutBytes - stdoutBytes;
       if (chunk.length > room) {
-        stdout += chunk.slice(0, room);
+        stdoutChunks.push(chunk.subarray(0, room));
+        stdoutBytes += room;
         truncated = true;
       } else {
-        stdout += chunk;
+        stdoutChunks.push(chunk);
+        stdoutBytes += chunk.length;
       }
     });
     child.stderr.on("data", (chunk: string) => {
@@ -116,6 +135,9 @@ export function runCommand(
       settled = true;
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", stop);
+      let stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      // A cut in the middle of a multi-byte character decodes to U+FFFD.
+      if (truncated) stdout = stdout.replace(/\uFFFD$/, "");
       resolve({
         exitCode: outcome.exitCode,
         stdout,
@@ -134,21 +156,27 @@ export function runCommand(
   });
 }
 
-/** Why a command failed, in one line plus its stderr tail; null when it succeeded. */
+/** Why a command failed, in one line (e.g. its exit code); null when it succeeded. */
+export function failureReason(outcome: CommandOutcome, timeoutMs: number): string | null {
+  if (outcome.spawnError !== undefined) return `it couldn't start (${outcome.spawnError})`;
+  if (outcome.timedOut) {
+    return `it timed out after ${timeoutMs < 1000 ? `${timeoutMs}ms` : `${Math.round(timeoutMs / 1000)}s`}`;
+  }
+  if (outcome.exitCode === 0) return null;
+  if (outcome.exitCode === null) return "it was killed";
+  return `it exited with code ${outcome.exitCode}`;
+}
+
+/** `failureReason` plus the stderr tail; null when it succeeded. */
 export function failureDetail(outcome: CommandOutcome, timeoutMs: number): string | null {
-  let what: string;
-  if (outcome.spawnError !== undefined) what = `it couldn't start (${outcome.spawnError})`;
-  else if (outcome.timedOut) {
-    what = `it timed out after ${timeoutMs < 1000 ? `${timeoutMs}ms` : `${Math.round(timeoutMs / 1000)}s`}`;
-  } else if (outcome.exitCode === 0) return null;
-  else if (outcome.exitCode === null) what = "it was killed";
-  else what = `it exited with code ${outcome.exitCode}`;
-  return outcome.stderr ? `${what}: ${outcome.stderr}` : what;
+  const reason = failureReason(outcome, timeoutMs);
+  if (reason === null) return null;
+  return outcome.stderr ? `${reason}: ${outcome.stderr}` : reason;
 }
 
 /**
  * Runs a task's setup commands in order and returns the `setup` variables:
- * each command's stdout by name, cut to its `maxOutputChars` and marked when
+ * each command's stdout by name, cut to its `maxOutputBytes` and marked when
  * cut. A failing command throws `SetupCommandError` (the run fails), unless
  * it's `optional`: then its variable holds a short failure note and the next
  * command runs. An aborted run throws the abort reason.
@@ -161,11 +189,12 @@ export async function runSetupCommands(
   for (const command of commands) {
     options.signal.throwIfAborted();
     const started = Date.now();
+    const timeoutMs = command.timeoutSeconds * 1000;
     const outcome = await runCommand(command.command, {
       cwd: options.cwd,
-      env: options.env,
-      timeoutMs: command.timeoutMs,
-      maxStdout: command.maxOutputChars,
+      env: commandEnv(options.env),
+      timeoutMs,
+      maxStdoutBytes: command.maxOutputBytes,
       signal: options.signal,
     });
     options.signal.throwIfAborted();
@@ -174,42 +203,57 @@ export async function runSetupCommands(
       exitCode: outcome.exitCode,
       durationMs: Date.now() - started,
     };
-    const failure = failureDetail(outcome, command.timeoutMs);
-    if (failure === null) {
-      options.logger.info({ ...log, truncated: outcome.truncated }, "setup command finished");
+    const reason = failureReason(outcome, timeoutMs);
+    if (reason === null) {
+      options.logger.info(
+        { ...log, truncated: outcome.truncated, stderr: outcome.stderr },
+        "setup command finished",
+      );
       setup[command.name] = outcome.truncated
         ? `${outcome.stdout}${TRUNCATION_MARKER}`
         : outcome.stdout;
       continue;
     }
     if (!command.optional) {
-      options.logger.info(log, "setup command failed; failing the run");
-      throw new SetupCommandError(command.name, failure);
+      options.logger.info(
+        { ...log, stderr: outcome.stderr },
+        "setup command failed; failing the run",
+      );
+      throw new SetupCommandError(command.name, failureDetail(outcome, timeoutMs) ?? reason);
     }
-    options.logger.info(log, "optional setup command failed");
-    setup[command.name] = `(The setup command ${command.name} failed: ${failure})`;
+    options.logger.info({ ...log, stderr: outcome.stderr }, "optional setup command failed");
+    // One line; the stderr tail is only logged.
+    setup[command.name] = `(The setup command ${command.name} failed: ${reason}.)`;
   }
   return setup;
 }
 
 /**
  * Runs a task's teardown commands in order, each to the end or its timeout,
- * even after the run was aborted; a failure is logged and the next one runs.
+ * even after the run was aborted; their output and failures are logged and
+ * the next one runs.
  */
 export async function runTeardownCommands(
   commands: readonly TeardownCommand[],
   options: CommandOptions,
 ): Promise<void> {
-  for (const [index, command] of commands.entries()) {
+  for (const command of commands) {
     const started = Date.now();
+    const timeoutMs = command.timeoutSeconds * 1000;
     const outcome = await runCommand(command.command, {
       cwd: options.cwd,
-      env: options.env,
-      timeoutMs: command.timeoutMs,
-      maxStdout: 0,
+      env: commandEnv(options.env),
+      timeoutMs,
+      maxStdoutBytes: command.maxOutputBytes,
     });
-    const log = { index, exitCode: outcome.exitCode, durationMs: Date.now() - started };
-    const failure = failureDetail(outcome, command.timeoutMs);
+    const log = {
+      name: command.name,
+      exitCode: outcome.exitCode,
+      durationMs: Date.now() - started,
+      stdout: outcome.stdout,
+      stderr: outcome.stderr,
+    };
+    const failure = failureDetail(outcome, timeoutMs);
     if (failure === null) options.logger.info(log, "teardown command finished");
     else options.logger.warn({ ...log, failure }, "teardown command failed");
   }

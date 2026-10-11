@@ -164,17 +164,21 @@ run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses lea
 
 ### Setup and teardown commands
 
-Any task definition can declare `setupCommands` (each with a `name`, `command`, `timeoutMs`,
-`maxOutputChars`, a `fence` info string and `optional`) and `teardownCommands` (`command`,
-`timeoutMs`). This is how deterministic tools (Semgrep, a code graph) feed a session without
-harness code. Commands run with `bash -lc` in the working directory, in their own process group
-(killed whole on timeout), with the harness's environment minus every `OMNIRALPH_*` variable, so
-neither job token. Each setup command's stdout, cut to `maxOutputChars` and marked when cut,
-becomes the untrusted variable `setup.<name>` (`taskVariables`/`taskCatalog` in
-`@omniralph/tasks` add them to the template's available variables and the render catalog). A
-failing setup command (non-zero exit, timeout) fails the run, unless it's `optional`: then its
-variable holds a short failure note. Teardown commands always run after finish, even when setup or
-the session failed; their failures are logged only. Runs of tasks with any commands carry
+Any task definition can declare `setupCommands` (each with a `name`, `command`, `timeoutSeconds`,
+`maxOutputBytes`, a `fence` info string and `optional`) and `teardownCommands` (`name`, `command`,
+`timeoutSeconds`, `maxOutputBytes`). Names are lowercase (`^[a-z][a-z0-9_]*$`) and unique among a
+task's setup commands; timeouts default to 300 seconds (at most 1800) and output caps to 20,000
+bytes (at most 200,000). This is how deterministic tools (Semgrep, a code graph) feed a session
+without harness code. Commands run with `sh -c` in the working directory, in their own process
+group (killed whole on timeout), with the harness's environment minus every `OMNIRALPH_*`
+variable, so neither job token nor what the git credential helper needs. Each setup command's
+stdout, cut to `maxOutputBytes` and marked when cut, becomes the untrusted variable
+`setup.<name>`, fenced by the renderer (`taskVariables`/`taskCatalog` in `@omniralph/tasks` add
+them to the template's available variables and the render catalog); stderr is only logged. A
+failing setup command (non-zero exit, timeout) fails the run before any session starts, unless
+it's `optional`: then its variable holds a one-line failure note (e.g. the exit code). Teardown
+commands always run after finish, even when setup or the session failed or the run was aborted;
+their output and failures are logged only and never change the run's outcome. Runs of tasks with any commands carry
 `SETUP_COMMANDS_MIN_HARNESS_VERSION` as their `min_harness_version`.
 
 Setup commands run in both lifecycles (in a review, in the head's worktree before the diff is
@@ -182,8 +186,8 @@ read) and run whatever is on the harness's `PATH`; installing tools is a later e
 
 The daemon dispatches a claimed job by its task type: `system` jobs to the system RPC registry,
 jobs with a run spec to their task type's lifecycle (`runQueryTask`, `runReviewTask`), the rest to
-the legacy `ralph` capability. A job of an unknown type (e.g. a `review.run` job without a task)
-fails without retries.
+the legacy `ralph` capability. A job of an unknown type fails without retries; that includes a
+leftover legacy `review.run` job without a task (migration 0063 cancels the active ones).
 
 ### Run specs, resolved at claim time
 

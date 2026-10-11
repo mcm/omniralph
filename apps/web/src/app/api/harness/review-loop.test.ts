@@ -43,7 +43,7 @@ import { and, asc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
@@ -58,12 +58,20 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
     id: "builtin:security-review",
     name: "Security review",
   };
+  // Another correlation task a repository could choose.
+  const correlator = {
+    ...actual.getBuiltinTask("builtin:correlate-findings")!,
+    id: "builtin:other-correlator",
+    name: "Other correlator",
+  };
+  const injected = new Map([security, correlator].map((task) => [task.id, task]));
   return {
     ...actual,
-    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+    getBuiltinTask: (id: string) => injected.get(id) ?? actual.getBuiltinTask(id),
   };
 });
 const SECURITY_TASK_ID = "builtin:security-review";
+const OTHER_CORRELATOR_ID = "builtin:other-correlator";
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 const appKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
@@ -1292,6 +1300,57 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
         correlationJobId: null,
       });
       expect(await correlationJobs(enqueued.reviewRunId)).toHaveLength(0);
+    });
+
+    describe("with the repository's correlation task", () => {
+      async function setCorrelationTask(correlationTaskId: string) {
+        await db
+          .update(repositories)
+          .set({ correlationTaskId })
+          .where(eq(repositories.id, repositoryId));
+      }
+
+      afterEach(async () => {
+        await setCorrelationTask("builtin:correlate-findings");
+      });
+
+      async function twoCompletedRuns() {
+        const prNumber = ++prCounter;
+        await setReviewTasks(["builtin:review-pr", SECURITY_TASK_ID]);
+        const { accessToken } = await newAgent();
+        const enqueued = await enqueue(prNumber, head1);
+        if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+        for (const run of enqueued.runs) await complete(run.jobId, accessToken);
+        return { prNumber, enqueued };
+      }
+
+      it("runs the repository's correlation_task_id", async () => {
+        await setCorrelationTask(OTHER_CORRELATOR_ID);
+        const { prNumber, enqueued } = await twoCompletedRuns();
+        const [correlationJob] = await correlationJobs(enqueued.reviewRunId);
+        expect(correlationJob).toMatchObject({ taskId: OTHER_CORRELATOR_ID, taskType: "query" });
+        expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+          status: "correlating",
+          correlationJobId: correlationJob!.id,
+        });
+        expect(postsTo(prNumber)).toBe(0);
+      });
+
+      it("posts the findings unmerged when it isn't a correlation task", async () => {
+        await setCorrelationTask("builtin:review-pr");
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const { prNumber, enqueued } = await twoCompletedRuns();
+        warn.mockRestore();
+        expect(await correlationJobs(enqueued.reviewRunId)).toHaveLength(0);
+        expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+          status: "completed",
+          correlationJobId: null,
+          error: "Correlation skipped: builtin:review-pr is not a correlation task",
+        });
+        expect(postsTo(prNumber)).toBe(1);
+        const rows = await runFindings(enqueued.reviewRunId);
+        expect(rows.map((r) => r.finding.status)).toEqual(["open", "open"]);
+      });
     });
 
     it("merges the findings a canned correlation result names, once", async () => {

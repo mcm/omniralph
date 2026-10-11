@@ -30,7 +30,7 @@ import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
 import { ENV, exists, Remote } from "../test/git-remote.js";
 import { RepoCache, WORKTREES_DIR } from "../workspace/repoCache.js";
-import { runReviewTask } from "./review.js";
+import { reviewTaskProvider, runReviewTask } from "./review.js";
 
 /** A test review task's template: every review variable, plus a setup variable. */
 const TEMPLATE = `Review {{repository}} #{{pr.number}}
@@ -170,7 +170,10 @@ describe("runReviewTask", () => {
       systemAppend: "Report security issues only.",
       setupCommands: [{ name: "lint", command: "echo 'no lint errors'", fence: "text" }],
       teardownCommands: [
-        { command: `echo done >> ${JSON.stringify(path.join(root, "teardown.log"))}` },
+        {
+          name: "log",
+          command: `echo done >> ${JSON.stringify(path.join(root, "teardown.log"))}`,
+        },
       ],
       sink: "review",
       pool: "short",
@@ -505,5 +508,46 @@ ${diff}
       "the review run's trigger context is invalid",
     );
     expect(requests).toHaveLength(0);
+  });
+
+  describe("reviewTaskProvider", () => {
+    const silent = { info() {}, warn() {}, error() {} };
+    const options = (runSpec: RunSpecType) =>
+      reviewTaskProvider(runSpec, context(), silent).buildOptions(
+        { cwd: root, model: "claude-x", allowExploration: true },
+        new AbortController(),
+        7,
+        "SYS",
+      );
+
+    it("gives the session the session token only", () => {
+      const env = options(spec()).env!;
+      expect(env.OMNIRALPH_JOB_TOKEN).toBe("session-token");
+      expect(JSON.stringify(env)).not.toContain("lifecycle-token");
+    });
+
+    it("gives the agent's read-only tools, narrowed by the repository's tool settings", () => {
+      expect(options(spec()).tools).toEqual(["Read", "Grep", "Glob"]);
+      const narrowed = options(
+        spec({}, { tools: { allowedTools: [], disallowedTools: ["Grep"] } }),
+      );
+      expect(narrowed.disallowedTools).toContain("Grep");
+      expect(narrowed.disallowedTools).toContain("Bash");
+      const allowList = options(
+        spec({}, { tools: { allowedTools: ["Read"], disallowedTools: [] } }),
+      );
+      expect(allowList.tools).toEqual(["Read"]);
+    });
+
+    it("gives no tools when the agent has none (a profile without exploration)", () => {
+      const agent = AgentDefinition.parse({
+        id: "builtin:test-reviewer",
+        name: "Test reviewer",
+        systemPrompt: "You review code.",
+        tools: { builtin: [] },
+        taskTypes: ["review"],
+      });
+      expect(options(spec({}, { agent })).tools).toEqual([]);
+    });
   });
 });
