@@ -22,7 +22,7 @@ describe("capability registry", () => {
     expect(registry.names()).toEqual(["review", "ralph"]);
     expect(registry.forJob({ type: "repo.sync" })).toBeUndefined();
     expect(registry.forJob({ type: "review.run" })?.name).toBe("review");
-    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`, `builtin:ask-about-code`, `builtin:triage`), run by the query lifecycle.
+    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply-to-finding`, `builtin:ask-about-code`, `builtin:triage`), run by the query lifecycle.
     for (const type of ["review.learn-rule", "review.reply", "chat.ask", "triage.run"]) {
       expect(registry.forJob({ type })).toBeUndefined();
     }

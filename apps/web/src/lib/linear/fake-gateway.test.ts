@@ -117,7 +117,7 @@ describe("FakeLinearGateway teams and delegation", () => {
 
   it("rejects delegating an unknown issue", async () => {
     await expect(new FakeLinearGateway().delegateIssue("nope", "app-user")).rejects.toThrow(
-      "no issue nope",
+      "No issue nope",
     );
   });
 });
@@ -152,6 +152,6 @@ describe("FakeLinearGateway read tools", () => {
 
     expect(await linear.getDocument("doc-1")).toEqual(document);
     expect(await linear.getDocument("abc123")).toEqual(document);
-    await expect(linear.getDocument("nope")).rejects.toThrow(/no document/);
+    await expect(linear.getDocument("nope")).rejects.toThrow(/No document/);
   });
 });

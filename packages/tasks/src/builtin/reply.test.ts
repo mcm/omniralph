@@ -44,18 +44,18 @@ function context({ finding, hunk, question }: Fixture): Record<string, unknown> 
   };
 }
 
-const task = getBuiltinTask("builtin:reply")!;
+const task = getBuiltinTask("builtin:reply-to-finding")!;
 const agent = getBuiltinAgent("builtin:reviewer")!;
 
 function render(fixture: Fixture): string {
   return renderTemplate(task.promptTemplate, context(fixture), VARIABLES, task.variableLimits);
 }
 
-describe("builtin:reply", () => {
-  it("runs on builtin:reviewer as a query task with read-only file tools and no preset", () => {
+describe("builtin:reply-to-finding", () => {
+  it("runs on builtin:reviewer (query and review) as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      taskTypes: ["query"],
+      taskTypes: ["query", "review"],
       tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
       model: null,
     });

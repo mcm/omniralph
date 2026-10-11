@@ -5,7 +5,7 @@ import { runLinearIssue, serveRunLinearTool } from "@/lib/runs/linear";
 /**
  * `linear_search_issues`: issues of the run's organization's Linear workspace
  * matching `query` (full text), best match first, at most `first` (default
- * 10, at most 50). 400 `invalid_query` for a missing or too long query.
+ * 10, at most 25). 400 `invalid_query` for a missing or too long query.
  */
 export async function GET(req: Request, ctx: JobRouteContext): Promise<Response> {
   const params = new URL(req.url).searchParams;

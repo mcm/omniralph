@@ -31,7 +31,7 @@ function truncate(text: string, max: number): string {
 
 /**
  * The user message of a thread reply. Replies now run as the built-in task
- * `builtin:reply` (`@omniralph/tasks`); this builder is the reference its
+ * `builtin:reply-to-finding` (`@omniralph/tasks`); this builder is the reference its
  * template's rendered prompt is checked against (`reply-builtin.test.ts`).
  */
 export function buildReplyPrompt(input: {

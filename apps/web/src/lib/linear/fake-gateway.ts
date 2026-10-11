@@ -3,6 +3,7 @@
  * issues, blocks relations, comments, activities, plans and session URLs are
  * plain fields to arrange and assert on.
  */
+import { InvalidInputLinearError } from "@linear/sdk";
 import { isLinearRun, type LinearRun } from "@omniralph/db";
 import type {
   ActivityContent,
@@ -110,7 +111,8 @@ export class FakeLinearGateway implements LinearGateway {
     const issue =
       this.issues.get(idOrIdentifier) ??
       [...this.issues.values()].find((i) => i.identifier === idOrIdentifier);
-    if (!issue) throw new Error(`no issue ${idOrIdentifier}`);
+    // Linear answers an unknown ID with an InvalidInput error ("Entity not found").
+    if (!issue) throw new InvalidInputLinearError({ message: `no issue ${idOrIdentifier}` });
     return issue;
   }
 
@@ -153,7 +155,9 @@ export class FakeLinearGateway implements LinearGateway {
     const document =
       this.documents.get(idOrSlugId) ??
       [...this.documents.values()].find((d) => d.url.endsWith(`-${idOrSlugId}`));
-    if (!document) throw new Error(`no document ${idOrSlugId}`);
+    if (!document) {
+      throw new InvalidInputLinearError({ message: `no document ${idOrSlugId}` });
+    }
     return { ...document };
   }
   async getBlockers(issueId: string): Promise<Blocker[]> {

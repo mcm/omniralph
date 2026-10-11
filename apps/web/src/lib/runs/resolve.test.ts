@@ -45,7 +45,7 @@ const agentInput: AgentDefinitionInput = {
 };
 
 const taskInput: TaskDefinitionInput = {
-  id: "builtin:reply",
+  id: "builtin:reply-to-finding",
   name: "Reply",
   taskType: "query",
   agentId: "builtin:code-reader",
@@ -86,7 +86,7 @@ function job(overrides: Partial<Db.Job> = {}) {
     organizationId: ORG_ID,
     taskType: "query",
     pool: "short",
-    taskId: "builtin:reply",
+    taskId: "builtin:reply-to-finding",
     repositoryId: REPO_ID,
     payload,
     ...overrides,
@@ -110,7 +110,7 @@ describe("resolveRunSpec", () => {
       taskType: "query",
       pool: "short",
       agent: { id: "builtin:code-reader", tools: { builtin: ["Read", "Grep", "Glob"] } },
-      task: { id: "builtin:reply" },
+      task: { id: "builtin:reply-to-finding" },
       trigger: payload.trigger,
       repository: {
         provider: "github",
@@ -172,7 +172,7 @@ describe("resolveRunSpec", () => {
     });
 
     it("is what runTokenBudget computes, at least 1", () => {
-      const task = { id: "builtin:reply", tokenBudget: { profileFraction: 0.1 } };
+      const task = { id: "builtin:reply-to-finding", tokenBudget: { profileFraction: 0.1 } };
       expect(runTokenBudget(task, { maxTokensPerReview: 200_000 })).toBe(20_000);
       expect(runTokenBudget(task, { maxTokensPerReview: 5 })).toBe(1);
       expect(runTokenBudget({ id: "builtin:x", tokenBudget: null }, null)).toBeNull();
@@ -232,7 +232,7 @@ describe("resolveRunSpec", () => {
         definitions(),
       );
       await expect(result).rejects.toThrow(
-        new RunSpecError("Task builtin:reply can't be triggered by chat.request"),
+        new RunSpecError("Task builtin:reply-to-finding can't be triggered by chat.request"),
       );
     });
 
@@ -240,7 +240,7 @@ describe("resolveRunSpec", () => {
       const cases: [Partial<Db.Job>, ReturnType<typeof definitions>, string][] = [
         [{}, definitions({ agentId: "builtin:nobody" }), "Unknown agent builtin:nobody"],
         [{ payload: { question: "Why?" } }, definitions(), "Invalid run payload"],
-        [{ pool: "long" }, definitions(), "doesn't match task builtin:reply"],
+        [{ pool: "long" }, definitions(), "doesn't match task builtin:reply-to-finding"],
         [{}, definitions(), "Unknown repository"],
       ];
       for (const [overrides, defs, message] of cases) {
@@ -259,7 +259,7 @@ describe("runSpecJobInput", () => {
     expect(runSpecJobInput(task, payload)).toEqual({
       taskType: "query",
       pool: "short",
-      taskId: "builtin:reply",
+      taskId: "builtin:reply-to-finding",
       payload,
       repositoryId: REPO_ID,
     });

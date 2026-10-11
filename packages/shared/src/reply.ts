@@ -1,6 +1,6 @@
 /**
  * Thread replies: a question asked by mentioning the bot in a finding's
- * thread runs the built-in query task `builtin:reply` (job type
+ * thread runs the built-in query task `builtin:reply-to-finding` (job type
  * `review.reply`); the control panel's `finding-thread` sink posts the answer
  * in the thread.
  */

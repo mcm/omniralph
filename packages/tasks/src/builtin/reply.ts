@@ -19,7 +19,7 @@ export const REVIEWER_AGENT: AgentDefinitionInput = {
   systemPrompt: "You are Omniralph, an automated code reviewer.",
   systemPromptMode: "replace",
   tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
-  taskTypes: ["query"],
+  taskTypes: ["query", "review"],
 };
 
 const REPLY_SYSTEM_APPEND = `Someone replied to one of your review findings with a question or a comment.
@@ -56,7 +56,7 @@ Answer the question about the finding.
 `;
 
 export const REPLY_TASK: TaskDefinitionInput = {
-  id: "builtin:reply",
+  id: "builtin:reply-to-finding",
   name: "Reply in a finding thread",
   description: "Answers a question asked by mentioning the bot in a review finding's thread.",
   taskType: "query",

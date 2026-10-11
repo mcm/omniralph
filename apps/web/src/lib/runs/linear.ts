@@ -82,7 +82,7 @@ function failed(status: number, error: string, reason: string): Response {
  * (`linear:read`, so the session token), checks the job runs on the calling
  * harness and its task may use `tool` (`runLinearTools`, else 403
  * `linear_tool_not_allowed`), then answers `read`'s result as JSON, read with
- * the gateway of the job's organization. 503 `linear_not_connected` when the
+ * the gateway of the job's organization. 409 `linear_not_connected` when the
  * organization has no Linear workspace, 404 `linear_not_found` when Linear
  * rejects the ID, 502 `linear_failed` for any other Linear error.
  */
@@ -110,7 +110,7 @@ export async function serveRunLinearTool(
   } catch (error) {
     if (error instanceof LinearNotConnectedError) {
       return failed(
-        503,
+        409,
         "linear_not_connected",
         "the run's organization has no Linear workspace connected",
       );
