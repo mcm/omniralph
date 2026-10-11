@@ -7,7 +7,7 @@ import {
   collectAttachments,
   controlPanelFetcher,
   type AttachmentFetcher,
-} from "./attachments.js";
+} from "../../tools/attachments.js";
 
 const id = (n: number) => n.toString(16).padStart(32, "0");
 

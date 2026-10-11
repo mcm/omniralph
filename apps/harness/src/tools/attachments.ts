@@ -13,8 +13,8 @@ import {
   MAX_ATTACHMENT_DOWNLOADS_PER_JOB,
   type RalphAttachment,
 } from "@omniralph/shared";
-import type { FetchFn } from "../../api.js";
-import type { Logger } from "../../logger.js";
+import type { FetchFn } from "../api.js";
+import type { Logger } from "../logger.js";
 
 /** Directory (under `workspaceRoot`) holding the Linear attachments of every epic, one folder each. */
 export const ATTACHMENTS_DIR = ".attachments";

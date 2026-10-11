@@ -13,7 +13,7 @@ import {
   type JobPayload,
 } from "@omniralph/shared";
 import { RetryableJobError, type JobContext } from "../index.js";
-import { ActivityRelay } from "./activities.js";
+import { ActivityRelay } from "../../tools/activities.js";
 import { RALPH_DESCRIBE_PR_TOOL_POLICY } from "./policy.js";
 import { createSessionRunner } from "./session.js";
 import { DEFAULT_STORY_MODEL, sessionEnv, type StoryOptions } from "./story.js";

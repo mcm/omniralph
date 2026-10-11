@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   query as sdkQuery,
   type CanUseTool,
+  type McpServerConfig,
   type Options,
   type SDKMessage,
   type SDKUserMessage,
@@ -83,6 +84,12 @@ export interface SessionRequest {
   fallbackModel?: string;
   /** The repository's `allowedTools`/`disallowedTools`: they only narrow `policy`. */
   tools?: ToolRestrictions;
+  /**
+   * In-process MCP servers (e.g. `omniralph`, the harness tools), attached
+   * even when the policy loads no settings, with the rules allowing their
+   * tools (`mcp__<server>__<tool>`, on top of the policy's).
+   */
+  mcpServers?: { servers: Record<string, McpServerConfig>; allowedTools: readonly string[] };
   /** Directories outside `cwd` the session may use (e.g. the progress log's). */
   additionalDirectories?: string[];
   /** Environment of the Claude Code process. */
@@ -172,15 +179,27 @@ function resultUsage(message: Extract<SDKMessage, { type: "result" }>): TokenUsa
  * `allowExploration` (default true), narrowed by the repository's `tools`.
  */
 export function sessionPermissions(
-  request: Pick<SessionRequest, "policy" | "cwd" | "allowExploration" | "tools">,
+  request: Pick<
+    SessionRequest,
+    "policy" | "cwd" | "allowExploration" | "tools" | "additionalDirectories" | "mcpServers"
+  >,
 ): SessionPermissions {
-  return narrowPermissions(
+  const permissions = narrowPermissions(
     sdkPermissions(request.policy)({
       cwd: request.cwd,
       allowExploration: request.allowExploration !== false,
+      ...(request.additionalDirectories && {
+        additionalDirectories: request.additionalDirectories,
+      }),
     }),
     request.tools,
   );
+  if (!request.mcpServers) return permissions;
+  return {
+    ...permissions,
+    allowedTools: [...(permissions.allowedTools ?? []), ...request.mcpServers.allowedTools],
+    mcpServers: { ...permissions.mcpServers, ...request.mcpServers.servers },
+  };
 }
 
 /** The SDK options of a session; exported for tests. */

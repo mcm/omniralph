@@ -197,6 +197,22 @@ describe("sdkPermissions", () => {
   });
 });
 
+describe("sdkPermissions additional directories", () => {
+  it("lets worktree-scoped file tools into the additional directories too", async () => {
+    const extra = realpathSync(mkdtempSync(path.join(tmpdir(), "omniralph-policy-extra-")));
+    const permissions = sdkPermissions(REVIEW_TOOL_POLICY)({
+      cwd,
+      allowExploration: true,
+      additionalDirectories: [extra],
+    });
+    const options = permissions as Options;
+    expect(await guardDecision(options, path.join(cwd, "a.ts"))).toBeUndefined();
+    expect(await guardDecision(options, path.join(extra, "a.png"))).toBeUndefined();
+    expect(await guardDecision(options, path.join(tmpdir(), "elsewhere.txt"))).toBe("deny");
+    expect(await guardDecision(options, `${extra}/../escape.txt`)).toBe("deny");
+  });
+});
+
 describe("narrowPermissions", () => {
   const story = () => sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: true });
   const describePr = () =>
