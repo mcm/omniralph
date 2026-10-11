@@ -1,8 +1,8 @@
 # Deploying the control panel
 
 The control panel (`apps/web`) is a Next.js 16 app on Vercel. It's the single integration point:
-code hosts send webhooks to it, it owns job state in Postgres, where agents claim their jobs, signs
-agent tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
+code hosts send webhooks to it, it owns job state in Postgres, where harnesses claim their jobs, signs
+harness tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
 
 Prerequisites: a Vercel team with KMS available (beta), the Vercel CLI
 (`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, a Neon API key, and
@@ -83,15 +83,15 @@ still live.
 To migrate by hand (e.g. a local database): `DATABASE_URL=… pnpm --filter @omniralph/db migrate`.
 It prefers `DATABASE_URL_UNPOOLED` when that's set.
 
-## 4. KMS issuer for agent tokens (`KMS_AGENT_ISSUER_ID`)
+## 4. KMS issuer for harness tokens (`KMS_AGENT_ISSUER_ID`)
 
-Agent access tokens and job tokens are RS256 JWTs signed by Vercel KMS, so no signing key sits in an
+Harness access tokens and job tokens are RS256 JWTs signed by Vercel KMS, so no signing key sits in an
 env var. Create **one issuer per environment**: a preview deployment must not be able to mint tokens
 that production accepts.
 
 ```sh
 for env in production preview development; do
-  vercel kms create "omniralph-agents-$env" --algorithm RS256
+  vercel kms create "omniralph-harness-$env" --algorithm RS256
 done
 vercel kms list                                    # note each issuer ID
 vercel kms add-grant <productionIssuerId>  --project omniralph --environment production
@@ -124,7 +124,7 @@ PEM file. Do the same per environment if previews use their own GitHub App.
 ## 6. Job dispatch
 
 There's nothing to provision: the `jobs` table in Postgres is the job queue
-([ADR 0006](adr/0006-postgres-job-queue.md)). Agents claim jobs with `POST /api/harness/claim`, which
+([ADR 0006](adr/0006-postgres-job-queue.md)). Harnesses claim jobs with `POST /api/harness/claim`, which
 holds the request for up to 50s while there's nothing to claim (its `maxDuration` is 60s), and
 renew the leases of their running jobs with each heartbeat.
 
@@ -139,8 +139,8 @@ running jobs aren't lost.
 | Path | Schedule | Does |
 | -- | -- | -- |
 | `/api/cron/discord-gateway` | every 9 minutes | Holds the Discord Gateway connection for 10 minutes and forwards messages to the Discord webhook route; needs a Pro or Enterprise plan ([chat.md](chat.md#the-discord-gateway-cron)). Does nothing without the Discord env vars |
-| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no agent claimed them) |
-| `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
+| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them) |
+| `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old harness API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
 | `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |
 
@@ -170,7 +170,7 @@ workflow on `main` (**Actions › Deploy web › Run workflow**) or push again t
 
 The GitHub App, the sign-in OAuth apps and the Linear app configured above are shared by the whole
 deployment. Everything else is per **organization**: code-host connections, repositories,
-profiles, the Linear workspace, agents, jobs and ralph runs belong to one organization, and only
+profiles, the Linear workspace, harnesses, jobs and ralph runs belong to one organization, and only
 its members see them. Roles (`admin`, `member`) are per organization; nobody is an admin of the
 whole instance. See [ADR 0004](adr/0004-organizations.md).
 
@@ -184,7 +184,7 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
 3. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)), as an admin of the organization. Each GitHub installation and GitLab
    connection belongs to the organization that connected it.
-4. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
+4. **Harnesses › Enroll harness** and follow [deploy-harness.md](deploy-harness.md). Harnesses run only their
    organization's jobs.
 5. Optionally tune **Settings › Profiles** and each repository's **Settings** (profile, triggers,
    path excludes, instructions, pinning) and **Rules**.
@@ -202,13 +202,13 @@ summary comment links back to `/reviews/<id>`.
   `""` as host `base`), e.g. a sensitive variable read from `vercel pull`.
 - **Vercel also builds every push:** `apps/web/vercel.json`'s `git.deploymentEnabled: false` was
   removed, or the project's root directory isn't `apps/web`.
-- **Agents get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no
+- **Harnesses get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no
   grant for this project and environment.
 - **GitHub installation callback fails with KMS but works with the PEM:** the issuer is RS512.
   `vercel kms inspect` shows it; re-import with `--algorithm RS256` into a new issuer.
-- **Jobs stay queued:** no agent of the repository's organization is online with the capability
-  enabled (**Agents**; agents of other organizations never take its jobs), the repository is
-  pinned to an offline agent.
+- **Jobs stay queued:** no harness of the repository's organization is online with the capability
+  enabled (**Harnesses**; harnesses of other organizations never take its jobs), the repository is
+  pinned to an offline harness.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be
   connected to one organization. Disconnect a Linear workspace there first; remove a GitHub

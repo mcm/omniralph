@@ -34,7 +34,7 @@ import { attachmentName } from "../attachments";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
- * `read` tools: the organization's ralph runs, reviews, jobs, agents and
+ * `read` tools: the organization's ralph runs, reviews, jobs, harnesses and
  * repositories, as shown in the control panel. Every query takes the
  * context's organization (the connection's), never one from the model, and
  * every item carries its control-panel `url` so the agent can link it.
@@ -129,7 +129,7 @@ export const listRalphRunsTool = defineChatTool({
           stories: run.stories,
           branch: run.branch,
           pullRequest: run.pullRequest,
-          agent: run.agent?.name ?? null,
+          harness: run.agent?.name ?? null,
           error: run.error,
           updatedAt: run.updatedAt,
         };
@@ -182,7 +182,7 @@ export const getRalphRunTool = defineChatTool({
       status: run.status,
       error: run.error,
       repository: run.repository?.fullPath ?? null,
-      agent: run.agent?.name ?? null,
+      harness: run.agent?.name ?? null,
       branch: run.branch,
       pullRequest: run.pullRequest,
       lanes: run.lanes.map((lane) => ({
@@ -261,7 +261,7 @@ export const listReviewsTool = defineChatTool({
           trigger: review.trigger,
           status: review.status,
           profile: review.profileName,
-          agent: review.agent?.name ?? null,
+          harness: review.agent?.name ?? null,
           findingCounts: review.findingCounts,
           error: review.error,
           createdAt: review.createdAt,
@@ -311,7 +311,7 @@ export const getReviewTool = defineChatTool({
       error: review.error,
       profile: review.profileName,
       model: review.model,
-      agent: review.agent?.name ?? null,
+      harness: review.agent?.name ?? null,
       durationMs: review.durationMs,
       findingCount: review.findingCount,
       findings: findings.slice(0, CHAT_TOOL_RESULT_LIMIT),
@@ -328,7 +328,7 @@ export const getReviewTool = defineChatTool({
 
 export const listJobsTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's agent jobs, newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status and type (e.g. \`review.run\`, \`ralph.story\`, \`ralph.prepare\`, \`repo.sync\`).`,
+  description: `Lists the organization's harness jobs, newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status and type (e.g. \`review.run\`, \`ralph.story\`, \`ralph.prepare\`, \`repo.sync\`).`,
   inputSchema: z.object({
     status: z.enum(jobStatus.enumValues).nullish(),
     type: z.string().min(1).max(100).nullish(),
@@ -352,7 +352,7 @@ export const listJobsTool = defineChatTool({
           capability: job.capability,
           status: job.status,
           target: job.target,
-          agent: job.agent?.name ?? null,
+          harness: job.agent?.name ?? null,
           deliveryCount: job.deliveryCount,
           cancelRequested: job.cancelRequested,
           error: job.error && truncate(job.error, 500),
@@ -365,48 +365,53 @@ export const listJobsTool = defineChatTool({
   },
 });
 
-export const listAgentsTool = defineChatTool({
+export const listHarnessesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's agents (the hosts that run review and ralph jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, capabilities, last heartbeat and running jobs.`,
+  description: `Lists the organization's harnesses (the hosts that run review and ralph jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, capabilities, last heartbeat and running jobs.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
-    const [agents, desiredVersion] = await Promise.all([
+    const [harnesses, desiredVersion] = await Promise.all([
       listHarnessOverview(db, organizationId),
       getDesiredHarnessVersion(db, organizationId),
     ]);
-    const shown = agents.slice(0, CHAT_TOOL_RESULT_LIMIT);
+    const shown = harnesses.slice(0, CHAT_TOOL_RESULT_LIMIT);
     return {
-      agents: shown.map((overview) => {
-        const agent = harnessRow(overview, now, desiredVersion);
+      harnesses: shown.map((overview) => {
+        const harness = harnessRow(overview, now, desiredVersion);
         return {
-          id: agent.id,
-          url: `${appUrl}/agents/${agent.id}`,
-          name: agent.name,
-          status: agent.revoked ? "revoked" : agent.online ? "online" : "offline",
-          version: agent.version,
-          desiredVersion: agent.desiredVersion,
-          updateStatus: agent.updateStatus,
-          enabledCapabilities: agent.enabledCapabilities,
-          reportedCapabilities: agent.reportedCapabilities,
-          maxConcurrency: agent.maxConcurrency,
-          lastHeartbeatAt: agent.lastHeartbeatAt,
-          runningJobs: agent.runningJobs.map((job) => ({
+          id: harness.id,
+          url: `${appUrl}/harnesses/${harness.id}`,
+          name: harness.name,
+          status: harness.revoked ? "revoked" : harness.online ? "online" : "offline",
+          version: harness.version,
+          desiredVersion: harness.desiredVersion,
+          updateStatus: harness.updateStatus,
+          enabledCapabilities: harness.enabledCapabilities,
+          reportedCapabilities: harness.reportedCapabilities,
+          maxConcurrency: harness.maxConcurrency,
+          lastHeartbeatAt: harness.lastHeartbeatAt,
+          runningJobs: harness.runningJobs.map((job) => ({
             type: job.type,
             target: job.target?.label ?? null,
             url: `${appUrl}${jobHref(job.id)}`,
           })),
-          pinnedRepositories: agent.pinnedRepositories.map((r) => r.fullPath),
+          pinnedRepositories: harness.pinnedRepositories.map((r) => r.fullPath),
         };
       }),
-      ...listInfo(shown.length, agents.length, agents.length > shown.length, `${appUrl}/agents`),
+      ...listInfo(
+        shown.length,
+        harnesses.length,
+        harnesses.length > shown.length,
+        `${appUrl}/harnesses`,
+      ),
     };
   },
 });
 
 export const listRepositoriesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and ralph are enabled, the review profile, pinned agents and the latest review.`,
+  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and ralph are enabled, the review profile, pinned harnesses and the latest review.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const page = await listRepositoryOverviewPage(db, organizationId, {
@@ -435,7 +440,7 @@ export const listRepositoriesTool = defineChatTool({
   },
 });
 
-/** The message posted when a code question is handed to an agent. */
+/** The message posted when a code question is handed to a harness. */
 export function lookingIntoMessage(fullPath: string): string {
   return `Looking into \`${fullPath}\`…`;
 }
@@ -473,7 +478,7 @@ async function chatAskAttachments(
 export const askAboutCodeTool = defineChatTool({
   tier: "read",
   description:
-    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones). An agent answers it from a read-only checkout of the default branch; the answer is posted in this thread a little later, so the tool only posts that it is looking into it. A follow-up's context includes the thread's previous code question and its answer.",
+    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones). A harness answers it from a read-only checkout of the default branch; the answer is posted in this thread a little later, so the tool only posts that it is looking into it. A follow-up's context includes the thread's previous code question and its answer.",
   inputSchema: z.object({
     repository: z
       .string()
@@ -487,14 +492,14 @@ export const askAboutCodeTool = defineChatTool({
       .min(1)
       .max(MAX_CHAT_ASK_QUESTION_LENGTH)
       .describe(
-        "The self-contained question about the code, with every detail from the conversation the agent needs (it only sees the latest messages and the previous code question).",
+        "The self-contained question about the code, with every detail from the conversation the harness needs (it only sees the latest messages and the previous code question).",
       ),
     attachments: z
       .array(z.string().min(1).max(40))
       .max(MAX_CHAT_ASK_ATTACHMENTS)
       .optional()
       .describe(
-        "Refs of files attached in the thread (`[attachment <ref>: …]`) the question is about, e.g. a pasted log or a screenshot. The agent gets text files' content; it can't see images, so describe what a screenshot shows in the question.",
+        "Refs of files attached in the thread (`[attachment <ref>: …]`) the question is about, e.g. a pasted log or a screenshot. The harness gets text files' content; it can't see images, so describe what a screenshot shows in the question.",
       ),
   }),
   async execute(input, context: ChatToolContext) {
@@ -523,9 +528,9 @@ export const askAboutCodeTool = defineChatTool({
           error: "no_capable_agent",
           message:
             outcome.agents.length === 0
-              ? `No agent of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the agents on ${appUrl}/agents.`
-              : `None of the online agents that would take this question can answer code questions: that needs the review capability on agent version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can update the agents on ${appUrl}/agents.`,
-          agents: outcome.agents,
+              ? `No harness of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the harnesses on ${appUrl}/harnesses.`
+              : `None of the online harnesses that would take this question can answer code questions: that needs the review capability on harness version ${CHAT_ASK_MIN_AGENT_VERSION} or later. Nothing was queued. An admin can update the agents on ${appUrl}/agents.`,
+          harnesses: outcome.agents,
         };
       case "failed":
         return { error: "failed", message: outcome.error };
@@ -547,7 +552,7 @@ export const askAboutCodeTool = defineChatTool({
         return {
           status: "asked",
           message:
-            "The question was handed to an agent and the thread was told; the answer will be posted here. End your turn without repeating it.",
+            "The question was handed to a harness and the thread was told; the answer will be posted here. End your turn without repeating it.",
         };
       }
     }
@@ -560,7 +565,7 @@ export const readTools: ChatToolRegistry = {
   list_reviews: listReviewsTool,
   get_review: getReviewTool,
   list_jobs: listJobsTool,
-  list_agents: listAgentsTool,
+  list_harnesses: listHarnessesTool,
   list_repositories: listRepositoriesTool,
   ask_about_code: askAboutCodeTool,
 };

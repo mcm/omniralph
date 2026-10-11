@@ -42,18 +42,18 @@ export function TokenTheftAlert({ audit }: { audit: AuditRow[] }) {
       <IconAlertTriangle size={16} />
       <AlertTitle>Possible token theft</AlertTitle>
       <AlertDescription>
-        An already used refresh token for this agent was presented again on{" "}
+        An already used refresh token for this harness was presented again on{" "}
         {formatDateTime(reuse.createdAt)}
-        {reuse.ip ? ` from ${reuse.ip}` : ""}. Either the agent&apos;s token file was copied, or the
-        agent failed to save its rotated token. The agent was revoked automatically; check the host
-        before enrolling it again.
+        {reuse.ip ? ` from ${reuse.ip}` : ""}. Either the harness&apos;s token file was copied, or
+        the harness failed to save its rotated token. The harness was revoked automatically; check
+        the host before enrolling it again.
       </AlertDescription>
     </Alert>
   );
 }
 
-/** The agent's most recent audit events, newest first. */
-export function AgentAuditLog({ audit }: { audit: AuditRow[] }) {
+/** The harness's most recent audit events, newest first. */
+export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
   if (audit.length === 0) {
     return (
       <Empty

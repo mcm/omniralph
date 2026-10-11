@@ -234,7 +234,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_reviews",
       "get_review",
       "list_jobs",
-      "list_agents",
+      "list_harnesses",
       "list_repositories",
       "ask_about_code",
       "start_ralph_request",
@@ -359,6 +359,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
         type: "review.run",
         status: "queued",
         target: { label: "acme/api#7", url: "https://github.com/acme/api/pull/7" },
+        harness: null,
       }),
     ]);
     expect(list).toMatchObject({ shown: 1, more: false });
@@ -372,12 +373,12 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect((await call("list_jobs", { type: "ralph.story" }, acme.id)).jobs).toEqual([]);
   });
 
-  it("list_agents returns only the organization's agents", async () => {
-    const list = await call("list_agents", {}, acme.id);
-    expect(list.agents).toEqual([
+  it("list_harnesses returns only the organization's harnesses", async () => {
+    const list = await call("list_harnesses", {}, acme.id);
+    expect(list.harnesses).toEqual([
       expect.objectContaining({
         id: acme.harnessId,
-        url: `${APP_URL}/agents/${acme.harnessId}`,
+        url: `${APP_URL}/harnesses/${acme.harnessId}`,
         name: "acme-agent",
         status: "online",
         version: "1.2.3",

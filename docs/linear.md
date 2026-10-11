@@ -31,7 +31,7 @@ Setting ralph up takes five steps:
 2. [Set the env vars](#2-set-the-env-vars) on the control panel.
 3. [Connect the workspace](#3-connect-from-settings--integrations) from **Settings › Integrations**.
 4. [Enable ralph and configure routing](#4-configure-routing) on a repository, and enable the
-   `ralph` capability on an agent ([deploy-agent.md](deploy-agent.md#ralph)).
+   `ralph` capability on an agent ([deploy-harness.md](deploy-harness.md#ralph)).
 5. [Delegate an issue](#5-delegate-an-issue).
 
 The code host needs the write permissions described in [github-app.md](github-app.md) (Contents and
@@ -493,13 +493,13 @@ and epic runs that are already going aren't affected.
 
 ## Agents and concurrency
 
-Ralph jobs run on agents with the `ralph` capability ([deploy-agent.md](deploy-agent.md#ralph)).
+Ralph jobs run on agents with the `ralph` capability ([deploy-harness.md](deploy-harness.md#ralph)).
 An agent's **Concurrency per capability** caps how many of its slots ralph may take; by default
 that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
 reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent.
 Triage jobs run on agents with the `triage` capability; like reviews, they may take every slot by
 default, so lower its limit to keep slots free for other work. Agents under pm2 update themselves
-to the version chosen on **Settings › Agents** ([deploy-agent.md](deploy-agent.md#self-update-pm2)).
+to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-harness.md#self-update-pm2)).
 
 ## Troubleshooting
 
@@ -531,4 +531,4 @@ to the version chosen on **Settings › Agents** ([deploy-agent.md](deploy-agent
   removes the label again; the session it opened says why.
 - **"Triaging …" but nothing happens.** No agent has the `triage` capability enabled.
 - **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is
-  pinned to an agent that doesn't ([deploy-agent.md](deploy-agent.md#ralph)).
+  pinned to an agent that doesn't ([deploy-harness.md](deploy-harness.md#ralph)).

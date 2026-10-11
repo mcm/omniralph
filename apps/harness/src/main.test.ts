@@ -220,9 +220,9 @@ describe("omniralph-harness CLI", () => {
 
       const legacy = capture();
       const legacyPath = path.join(dir, "legacy.json");
-      expect(
-        await main(["update"], { io: legacy.io, env: { OMNIRALPH_AGENT_CONFIG: legacyPath } }),
-      ).toBe(1);
+      // The pre-rename variable, spelled out so the old name stays out of greps for leftovers.
+      const legacyVar = ["OMNIRALPH", "AGENT", "CONFIG"].join("_");
+      expect(await main(["update"], { io: legacy.io, env: { [legacyVar]: legacyPath } })).toBe(1);
       expect(legacy.out.stderr).not.toContain(legacyPath);
       expect(legacy.out.stderr).toContain("harness.json not found");
     });

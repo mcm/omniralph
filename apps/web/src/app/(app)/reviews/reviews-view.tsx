@@ -145,7 +145,7 @@ function ReviewTableRow({
           {review.agent ? (
             isAdmin ? (
               <Link
-                href={`/agents/${review.agent.id}`}
+                href={`/harnesses/${review.agent.id}`}
                 style={{ ...cellText, textDecoration: "none" }}
               >
                 {review.agent.name}

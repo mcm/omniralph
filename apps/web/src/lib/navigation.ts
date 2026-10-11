@@ -4,14 +4,14 @@ export type NavIcon =
   | "repositories"
   | "reviews"
   | "ralph"
-  | "agents"
+  | "harnesses"
   | "jobs"
   | "analytics"
   | "organization"
   | "profiles"
   | "integrations"
   | "chatAccounts"
-  | "agentSettings";
+  | "harnessSettings";
 
 export interface NavItem {
   href: string;
@@ -26,7 +26,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Sidebar navigation. Capability-agnostic: Agents and Jobs serve every capability. */
+/** Sidebar navigation. Capability-agnostic: Harnesses and Jobs serve every capability. */
 export const navGroups: NavGroup[] = [
   {
     label: "Navigation",
@@ -34,7 +34,7 @@ export const navGroups: NavGroup[] = [
       { href: "/repositories", label: "Repositories", icon: "repositories" },
       { href: "/reviews", label: "Reviews", icon: "reviews" },
       { href: "/ralph", label: "Ralph runs", icon: "ralph" },
-      { href: "/agents", label: "Agents", icon: "agents" },
+      { href: "/harnesses", label: "Harnesses", icon: "harnesses" },
       { href: "/jobs", label: "Jobs", icon: "jobs" },
       { href: "/analytics", label: "Analytics", icon: "analytics" },
     ],
@@ -51,9 +51,9 @@ export const navGroups: NavGroup[] = [
         adminOnly: true,
       },
       {
-        href: "/settings/agents",
-        label: "Agent settings",
-        icon: "agentSettings",
+        href: "/settings/harnesses",
+        label: "Harnesses",
+        icon: "harnessSettings",
         adminOnly: true,
       },
       { href: "/settings/chat-accounts", label: "Chat accounts", icon: "chatAccounts" },

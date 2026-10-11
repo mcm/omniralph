@@ -4,22 +4,22 @@ import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { AgentsView } from "./agents-view";
+import { HarnessesView } from "./harnesses-view";
 
-export const metadata: Metadata = { title: "Agents · Omniralph" };
+export const metadata: Metadata = { title: "Harnesses · Omniralph" };
 
-export default async function AgentsPage() {
+export default async function HarnessesPage() {
   const user = await requirePageUser();
   const now = new Date();
   const db = getDb();
-  const [agents, organizationVersion] = await Promise.all([
+  const [harnesses, organizationVersion] = await Promise.all([
     listHarnessOverview(db, user.organization.id),
     organizationHarnessVersion(db, user.organization.id),
   ]);
   return (
-    <AgentsView
-      agents={agents.map((agent) =>
-        harnessRow(agent, now, organizationVersion.version, organizationVersion.tracksLatest),
+    <HarnessesView
+      harnesses={harnesses.map((harness) =>
+        harnessRow(harness, now, organizationVersion.version, organizationVersion.tracksLatest),
       )}
       now={now.getTime()}
     />

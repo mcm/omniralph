@@ -121,7 +121,7 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
         {job.agent ? (
           isAdmin ? (
             <Link
-              href={`/agents/${job.agent.id}`}
+              href={`/harnesses/${job.agent.id}`}
               style={{ ...cellText, color: "var(--text-primary)", textDecoration: "none" }}
             >
               {job.agent.name}
@@ -158,7 +158,7 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
                   <AlertDialogTitle>Cancel this {job.type} job?</AlertDialogTitle>
                   <AlertDialogDescription>
                     {job.status === "queued"
-                      ? "It won't run: agents skip it when its message arrives."
+                      ? "It won't run: harnesses skip it when its message arrives."
                       : "Its agent stops it after its next heartbeat (within about 20 seconds)."}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -251,7 +251,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Deliveries</TableHead>
-                    <TableHead>Agent</TableHead>
+                    <TableHead>Harness</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Finished</TableHead>
                     {isAdmin && <TableHead aria-label="Actions" />}

@@ -33,9 +33,9 @@ vi.mock("@omniralph/db", () => ({
     checkedAt: new Date(Date.now() - 1000),
   }),
 }));
-vi.mock("./agent-settings-view", () => ({ AgentSettingsView: () => null }));
+vi.mock("./harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
-const { default: AgentSettingsPage } = await import("./page");
+const { default: HarnessSettingsPage } = await import("./page");
 
 const user = (role: Role) => ({
   id: `${role}-1`,
@@ -46,17 +46,17 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Agents page", () => {
+describe("Settings › Harnesses page", () => {
   it("is for admins only", async () => {
     state.user = null;
-    await expect(AgentSettingsPage()).rejects.toThrow();
+    await expect(HarnessSettingsPage()).rejects.toThrow();
     state.user = user("member");
-    await expect(AgentSettingsPage()).rejects.toThrow();
+    await expect(HarnessSettingsPage()).rejects.toThrow();
   });
 
   it("shows the organization's version", async () => {
     state.user = user("admin");
-    expect((await AgentSettingsPage()).props).toEqual({
+    expect((await HarnessSettingsPage()).props).toEqual({
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
       latest: null,
@@ -67,7 +67,7 @@ describe("Settings › Agents page", () => {
   it("shows the version read from npm when the organization tracks latest", async () => {
     state.user = user("admin");
     state.desired = "latest";
-    expect((await AgentSettingsPage()).props).toMatchObject({
+    expect((await HarnessSettingsPage()).props).toMatchObject({
       desiredVersion: "latest",
       latest: { version: "1.5.0", error: null, checkedAt: expect.any(String) },
     });

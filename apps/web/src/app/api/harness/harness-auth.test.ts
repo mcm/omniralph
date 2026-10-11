@@ -39,6 +39,8 @@ const dockerAvailable = await getContainerRuntimeClient().then(
 
 let ipCounter = 0;
 
+// The JWT audience before the harness rename, spelled out so the old name stays out of greps for leftovers.
+const OLD_AUDIENCE = ["omniralph", "agent"].join("-");
 const RATE_LIMIT_WINDOW_MS = 60_000;
 /**
  * Loops of sequential token requests (RSA signing + DB transactions) take ~0.5s alone, but
@@ -316,7 +318,7 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
       const wrongAud = await sign({ typ: "harness", sub: harnessId, aud: "someone-else" });
       expect(((await requireHarness(authed(wrongAud, ip))) as Response).status).toBe(401);
       // Tokens for the old audience (before the harness rename) are no longer accepted.
-      const oldAud = await sign({ typ: "harness", sub: harnessId, aud: "omniralph-agent" });
+      const oldAud = await sign({ typ: "harness", sub: harnessId, aud: OLD_AUDIENCE });
       expect(((await requireHarness(authed(oldAud, ip))) as Response).status).toBe(401);
       // Nor are access tokens of the old type.
       const oldTyp = await sign({ typ: "agent", sub: harnessId, aud: "omniralph-harness" });

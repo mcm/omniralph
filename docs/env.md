@@ -17,7 +17,7 @@ put them in `apps/web/.env.local`.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agents** reads (to track `latest`) the public `@omniralph/harness` package without a token. |
+| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Harnesses** reads (to track `latest`) the public `@omniralph/harness` package without a token. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database
@@ -126,14 +126,14 @@ rate-limited per organization (60 per 10 minutes) and per chat user (10 per minu
 | `AI_GATEWAY_API_KEY` | off Vercel, for the chat assistant | — | AI Gateway API key (Vercel dashboard › **AI Gateway › API keys**). |
 | `CHAT_AGENT_MODEL` | no | `anthropic/claude-haiku-5.5` | AI Gateway model id the chat assistant uses. |
 
-### Agent tokens
+### Harness tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs agent access and job tokens (RS256, 15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
-| `LOCAL_AGENT_SIGNING_KEY` | no | an in-memory key | Local dev/tests only, used when `KMS_AGENT_ISSUER_ID` is unset: an RSA private key PEM. With the in-memory key, tokens die on restart and agents refresh. Refused when `VERCEL_ENV=production`. |
+| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs harness access and job tokens (RS256, 15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
+| `LOCAL_AGENT_SIGNING_KEY` | no | an in-memory key | Local dev/tests only, used when `KMS_AGENT_ISSUER_ID` is unset: an RSA private key PEM. With the in-memory key, tokens die on restart and harnesses refresh. Refused when `VERCEL_ENV=production`. |
 
 ### Job dispatch and cron
 
@@ -153,11 +153,11 @@ which needs no variable either.
 
 ## Harness host (`omniralph-harness`)
 
-Set these in the agent's environment (the systemd unit, or the shell that starts tmux or pm2), never
-on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
-config file, and everything else comes from the control panel, including the organization the agent
+Set these in the harness's environment (the systemd unit, or the shell that starts tmux or pm2), never
+on Vercel. The harness's own settings (server, harness ID, refresh token, `workspaceRoot`) live in its
+config file, and everything else comes from the control panel, including the organization the harness
 was enrolled into (sent with each heartbeat; there's no variable for it). See
-[deploy-agent.md](deploy-agent.md).
+[deploy-harness.md](deploy-harness.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
@@ -166,13 +166,13 @@ was enrolled into (sent with each heartbeat; there's no variable for it). See
 | `ANTHROPIC_API_KEY` | no | — (the host's `claude` login) | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |
 
-The agent sets `OMNIRALPH_JOB_TOKEN` and `OMNIRALPH_JOB_ID` itself for processes inside a job (the
+The harness sets `OMNIRALPH_JOB_TOKEN` and `OMNIRALPH_JOB_ID` itself for processes inside a job (the
 `git-credential` helper). Don't set them. Ralph's Claude sessions, quality gates, setup and
-preparation commands get the agent's environment without any `OMNIRALPH_*` variable, so they can't
-fetch credentials; whatever else the agent's environment holds, they can read.
+preparation commands get the harness's environment without any `OMNIRALPH_*` variable, so they can't
+fetch credentials; whatever else the harness's environment holds, they can read.
 
-Ralph needs no extra agent variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
-[deploy-agent.md](deploy-agent.md#ralph)). Self-update under pm2 needs none either: it detects pm2 by
+Ralph needs no extra harness variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
+[deploy-harness.md](deploy-harness.md#ralph)). Self-update under pm2 needs none either: it detects pm2 by
 the `pm_id` variable pm2 sets, and installs the public package without npm auth.
 
 cyralph's variables (`LINEAR_ACCESS_TOKEN`, `CYRALPH_*`, …) and their equivalents are listed in

@@ -5,7 +5,7 @@ control panel and runs them with the Claude Agent SDK. It needs Node 22 and git 
 
 This README covers installing and releasing the package. To set up a host (the harness's user, the
 Claude login, pm2, tmux or systemd), see
-[docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
+[docs/deploy-harness.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-harness.md).
 
 ## Install
 
@@ -20,7 +20,7 @@ omniralph-harness --version
 
 ## Enroll
 
-As an admin, open **Agents › Enroll agent** in the control panel and run the command it shows on
+As an admin, open **Harnesses › Enroll harness** in the control panel and run the command it shows on
 the host, as the harness's user:
 
 ```sh
@@ -37,7 +37,7 @@ omniralph-harness start --healthz-port 9310
 ```
 
 To run it as a service, see the systemd, tmux and pm2 sections in
-[docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
+[docs/deploy-harness.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-harness.md).
 
 ## Upgrade
 
@@ -49,7 +49,7 @@ omniralph-harness --version
 ```
 
 Start it again. Upgrading keeps the config and the repo cache. The version shows on the harness's
-row on the **Agents** page after its next heartbeat.
+row on the **Harnesses** page after its next heartbeat.
 
 ### From 0.8.0 or earlier (the agent package)
 

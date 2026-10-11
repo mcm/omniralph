@@ -104,7 +104,7 @@ function post(path: string, body: unknown, accessToken?: string): Request {
 
 const HEARTBEAT = { version: "0.2.0", capabilities: ["review"], runningJobIds: [], freeSlots: 1 };
 
-describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () => {
+describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let orgId: string;
@@ -180,7 +180,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
   }
 
   /** Enrolls through the UI flow and exchanges the refresh token for an access token. */
-  async function enrolledAgent(name = "") {
+  async function enrolledHarness(name = "") {
     const { token: enrollmentToken } = await newEnrollment(name);
     const enrolled = (await (await redeem(enrollmentToken)).json()) as {
       harnessId: string;
@@ -209,7 +209,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       const result = await newEnrollment("Build box");
       expect(result.token).toMatch(/^ore_[\w-]{43}$/);
       expect(result.command).toBe(
-        `omniralph-agent enroll --server https://omniralph.example.com --token ${result.token}`,
+        `omniralph-harness enroll --server https://omniralph.example.com --token ${result.token}`,
       );
       const expiresIn = new Date(result.expiresAt).getTime() - Date.now();
       expect(expiresIn).toBeGreaterThan(59 * 60_000);
@@ -218,9 +218,9 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       const res = await redeem(result.token);
       expect(res.status).toBe(200);
       const { harnessId } = (await res.json()) as { harnessId: string };
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent!.name).toBe("Build box");
-      expect(agent!.enrolledBy).toBe(adminId);
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness!.name).toBe("Build box");
+      expect(harness!.enrolledBy).toBe(adminId);
     });
 
     it("accepts the token only once", async () => {
@@ -243,8 +243,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
   });
 
   describe("central configuration", () => {
-    it("reaches the agent in its next heartbeat response", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+    it("reaches the harness in its next heartbeat response", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(before).toMatchObject({
         maxConcurrency: 1,
@@ -264,7 +264,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(after).toMatchObject({
         maxConcurrency: 4,
-        // Legacy constants: agents claim jobs instead of polling queue topics.
+        // Legacy constants: harnesses claim jobs instead of polling queue topics.
         pollIntervalSeconds: 5,
         enabledCapabilities: [],
         pinnedRepoIds: [repoA],
@@ -276,8 +276,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
-    it("enabling ralph reaches the agent's enabled capabilities", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+    it("enabling ralph reaches the harness's enabled capabilities", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(before.enabledCapabilities).toEqual(["review"]);
 
@@ -293,7 +293,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     });
 
     it("sends the effective per-capability limits and stores the edited ones", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+      const { harnessId, accessToken } = await enrolledHarness();
       const initial = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(initial.capabilityLimits).toEqual({ review: 1 });
 
@@ -341,8 +341,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     });
 
     it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
-      const other = await enrolledAgent();
+      const { harnessId, accessToken } = await enrolledHarness();
+      const other = await enrolledHarness();
       const desired = async (token: string) =>
         ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
       expect(await desired(accessToken)).toBeNull();
@@ -360,7 +360,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await desired(accessToken)).toBe("1.5.0");
       expect(await desired(other.accessToken)).toBe("1.4.0");
 
-      // The agent reports where it is; the Agents pages show it.
+      // The harness reports where it is; the Harnesses pages show it.
       const update = {
         state: "draining",
         version: "1.5.0",
@@ -388,7 +388,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         failedVersions: ["1.3.0"],
       });
 
-      // Cleared override: the global version again. Older agents report nothing.
+      // Cleared override: the global version again. Older harnesses report nothing.
       expect(await setHarnessDesiredVersion(harnessId, "")).toEqual({ ok: true });
       expect(await desired(accessToken)).toBe("1.4.0");
       const legacy = (await getHarnessOverview(db, orgId, harnessId))!;
@@ -404,7 +404,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     });
 
     it("tracking latest sends npm's latest, which Update now refreshes", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+      const { harnessId, accessToken } = await enrolledHarness();
       const supported = { ...HEARTBEAT, selfUpdate: "supported" };
       const respond = async () =>
         (await (await sendHeartbeat(accessToken, supported)).json()) as HeartbeatResponse;
@@ -419,7 +419,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       // A new release is picked up once the stored read is old; until then heartbeats agree.
       state.latest = "2.1.0";
       expect((await respond()).desiredVersion).toBe("2.0.0");
-      // Update now reads npm at once and records it, so heartbeats don't send the agent back.
+      // Update now reads npm at once and records it, so heartbeats don't send the harness back.
       expect(await requestHarnessUpdate(harnessId)).toEqual({ ok: true, version: "2.1.0" });
       expect(await respond()).toMatchObject({
         desiredVersion: "2.1.0",
@@ -434,13 +434,13 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       await setDesiredHarnessVersion(db, orgId, null, adminId);
     });
 
-    it("Update now sends an update request until the agent reports it handled", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+    it("Update now sends an update request until the harness reports it handled", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
       const respond = async (body: object = HEARTBEAT) =>
         (await (await sendHeartbeat(accessToken, body)).json()) as HeartbeatResponse;
       const supported = { ...HEARTBEAT, selfUpdate: "supported" };
 
-      // Older agents and agents outside pm2 can't update themselves.
+      // Older harnesses and harnesses outside pm2 can't update themselves.
       await respond();
       expect(await requestHarnessUpdate(harnessId)).toEqual({
         ok: false,
@@ -458,7 +458,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         updateStatus: "updating",
       });
 
-      // The desired version, even one that failed on the agent.
+      // The desired version, even one that failed on the harness.
       expect(await setHarnessDesiredVersion(harnessId, "1.5.0")).toEqual({ ok: true });
       await respond({ ...supported, failedVersions: ["1.5.0"] });
       expect(await requestHarnessUpdate(harnessId)).toEqual({ ok: true, version: "1.5.0" });
@@ -490,8 +490,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       });
     });
 
-    it("pinning enqueues a repo.sync job targeting the agent", async () => {
-      const { harnessId } = await enrolledAgent();
+    it("pinning enqueues a repo.sync job targeting the harness", async () => {
+      const { harnessId } = await enrolledHarness();
       expect(await pinRepository(harnessId, repoB)).toEqual({ ok: true });
       const targeted = await db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
       expect(targeted).toHaveLength(1);
@@ -504,7 +504,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
     });
 
     it("rejects invalid values, unknown capabilities and non-admins", async () => {
-      const { harnessId } = await enrolledAgent();
+      const { harnessId } = await enrolledHarness();
       const valid = { maxConcurrency: 2, enabledCapabilities: ["review"] };
       const invalid: Parameters<typeof updateHarnessConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
@@ -523,14 +523,14 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await updateHarnessConfig(harnessId, valid)).toMatchObject({ ok: false });
       expect(await pinRepository(harnessId, repoA)).toMatchObject({ ok: false });
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent!.maxConcurrency).toBe(1);
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness!.maxConcurrency).toBe(1);
     });
   });
 
   describe("revoke", () => {
     it("rejects unexpired tokens, requeues running jobs and removes pins", async () => {
-      const { harnessId, accessToken, refreshToken } = await enrolledAgent();
+      const { harnessId, accessToken, refreshToken } = await enrolledHarness();
       await pinRepository(harnessId, repoA);
       expect((await sendHeartbeat(accessToken)).status).toBe(200);
 
@@ -604,19 +604,19 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
         .from(harnessRefreshTokens)
         .where(eq(harnessRefreshTokens.harnessId, harnessId));
       expect(tokens.every((t) => t.revokedAt !== null)).toBe(true);
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent!.revokedAt).not.toBeNull();
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness!.revokedAt).not.toBeNull();
 
-      // Running jobs fail as retryable: back to queued for another agent to pick up.
+      // Running jobs fail as retryable: back to queued for another harness to pick up.
       expect(await jobRow(running!.id)).toMatchObject({
         status: "queued",
         harnessId: null,
-        error: "Agent revoked",
+        error: "Harness revoked",
       });
       expect(await jobRow(lastDelivery!.id)).toMatchObject({ status: "failed" });
       expect(await jobRow(canceling!.id)).toMatchObject({ status: "canceled" });
 
-      // Jobs only it could claim are redispatched (to any agent now) or skipped.
+      // Jobs only it could claim are redispatched (to any harness now) or skipped.
       expect(await jobRow(queuedForIt!.id)).toMatchObject({
         status: "queued",
         targetHarnessId: null,
@@ -636,7 +636,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       });
       expect(audit!.ip).toBe("192.0.2.1");
 
-      // A revoked agent can't be configured or pinned.
+      // A revoked harness can't be configured or pinned.
       expect(
         await updateHarnessConfig(harnessId, {
           maxConcurrency: 2,
@@ -646,20 +646,20 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await pinRepository(harnessId, repoB)).toMatchObject({ ok: false });
     });
 
-    it("is admin-only and reports unknown agents", async () => {
-      const { harnessId } = await enrolledAgent();
+    it("is admin-only and reports unknown harnesses", async () => {
+      const { harnessId } = await enrolledHarness();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await revokeHarness(harnessId)).toMatchObject({ ok: false });
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent!.revokedAt).toBeNull();
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness!.revokedAt).toBeNull();
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       expect(await revokeHarness(randomUUID())).toMatchObject({ ok: false });
     });
   });
 
   describe("delete", () => {
-    it("revokes an active agent, then hides it from the agent list", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+    it("revokes an active harness, then hides it from the harness list", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
       await pinRepository(harnessId, repoA);
       const [running] = await db
         .insert(jobs)
@@ -676,9 +676,9 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await deleteHarness(harnessId)).toEqual({ ok: true });
 
       expect((await sendHeartbeat(accessToken)).status).toBe(401);
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent!.revokedAt).not.toBeNull();
-      expect(agent!.deletedAt).not.toBeNull();
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness!.revokedAt).not.toBeNull();
+      expect(harness!.deletedAt).not.toBeNull();
       expect(await jobRow(running!.id)).toMatchObject({ status: "queued", harnessId: null });
       expect(
         await db.select().from(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId)),
@@ -693,8 +693,8 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await deleteHarness(harnessId)).toMatchObject({ ok: false });
     });
 
-    it("deletes an already revoked agent without revoking it again", async () => {
-      const { harnessId } = await enrolledAgent();
+    it("deletes an already revoked harness without revoking it again", async () => {
+      const { harnessId } = await enrolledHarness();
       expect(await revokeHarness(harnessId)).toEqual({ ok: true });
       const [before] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       expect(await deleteHarness(harnessId)).toEqual({ ok: true });
@@ -704,12 +704,12 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
       expect(await listHarnessAudit(db, { harnessId, event: "revoke" })).toHaveLength(1);
     });
 
-    it("is admin-only and reports unknown agents", async () => {
-      const { harnessId } = await enrolledAgent();
+    it("is admin-only and reports unknown harnesses", async () => {
+      const { harnessId } = await enrolledHarness();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await deleteHarness(harnessId)).toMatchObject({ ok: false });
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(agent).toMatchObject({ revokedAt: null, deletedAt: null });
+      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(harness).toMatchObject({ revokedAt: null, deletedAt: null });
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       expect(await deleteHarness(randomUUID())).toMatchObject({ ok: false });
     });
@@ -717,7 +717,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
 
   describe("audit log", () => {
     it("lists the 50 most recent events, newest first", async () => {
-      const { harnessId } = await enrolledAgent();
+      const { harnessId } = await enrolledHarness();
       for (let i = 0; i < 60; i++) {
         await writeHarnessAudit(db, { harnessId, event: "credential_issued", detail: { i } });
       }
@@ -732,7 +732,7 @@ describe.skipIf(!dockerAvailable)("agents and jobs pages: server actions", () =>
 
   describe("cancel job", () => {
     it("cancels queued jobs at once and running ones via the next heartbeat", async () => {
-      const { harnessId, accessToken } = await enrolledAgent();
+      const { harnessId, accessToken } = await enrolledHarness();
       const [queued, running, done] = await db
         .insert(jobs)
         .values([

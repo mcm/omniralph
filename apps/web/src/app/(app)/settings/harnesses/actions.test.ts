@@ -73,7 +73,7 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Agents actions", () => {
+describe("Settings › Harnesses actions", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.organizationId = null;

@@ -27,7 +27,7 @@ export async function cancelJob(jobId: string): Promise<ActionResult> {
       if (job) await jobOutcomeHandler(job)?.onCanceled?.(db, job);
     }
     revalidatePath("/jobs");
-    revalidatePath("/agents");
+    revalidatePath("/harnesses");
     if (result === "cancel_requested") {
       return {
         ok: true,

@@ -1,5 +1,5 @@
-// Two organizations, each with an agent and a repository: an admin of one never sees or
-// changes the other's agents, gets a 404 on their URLs, and only sets their own agent version.
+// Two organizations, each with a harness and a repository: an admin of one never sees or
+// changes the other's harnesses, gets a 404 on their URLs, and only sets their own harness version.
 import {
   harnesses,
   closeDb,
@@ -65,16 +65,16 @@ vi.mock("@/lib/dispatch", () => ({
   }),
 }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./agents-view", () => ({ AgentsView: () => null }));
-vi.mock("./[id]/agent-detail-view", () => ({ AgentDetailView: () => null }));
-vi.mock("../settings/agents/agent-settings-view", () => ({ AgentSettingsView: () => null }));
+vi.mock("./harnesses-view", () => ({ HarnessesView: () => null }));
+vi.mock("./[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
+vi.mock("../settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
-const { default: AgentsPage } = await import("./page");
-const { default: AgentPage } = await import("./[id]/page");
-const { default: AgentSettingsPage } = await import("../settings/agents/page");
+const { default: HarnessesPage } = await import("./page");
+const { default: HarnessPage } = await import("./[id]/page");
+const { default: HarnessSettingsPage } = await import("../settings/harnesses/page");
 const {
   createEnrollment,
   deleteHarness,
@@ -84,7 +84,7 @@ const {
   unpinRepository,
   updateHarnessConfig,
 } = await import("./actions");
-const { setGlobalHarnessVersion } = await import("../settings/agents/actions");
+const { setGlobalHarnessVersion } = await import("../settings/harnesses/actions");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -101,7 +101,7 @@ interface Tenant {
 /** Next.js `notFound()` throws an error whose digest marks a 404. */
 const notFound = { digest: expect.stringContaining("404") };
 
-describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
+describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let a: Tenant;
@@ -115,7 +115,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
     const org = await createOrganization(db, { name, createdBy: user!.id });
     const enrollment = await createHarnessEnrollment(db, {
       organizationId: org.id,
-      name: `${name}-agent`,
+      name: `${name}-harness`,
     });
     const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: enrollment.token,
@@ -156,13 +156,13 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
-  it("lists only the active organization's agents and 404s on the other's", async () => {
+  it("lists only the active organization's harnesses and 404s on the other's", async () => {
     state.userId = a.userId;
-    const listed = (await AgentsPage()).props.agents as { id: string }[];
+    const listed = (await HarnessesPage()).props.harnesses as { id: string }[];
     expect(listed.map((r) => r.id)).toEqual([a.harnessId]);
-    const detail = await AgentPage(params(a.harnessId));
-    expect((detail.props.agent as { id: string }).id).toBe(a.harnessId);
-    await expect(AgentPage(params(b.harnessId))).rejects.toMatchObject(notFound);
+    const detail = await HarnessPage(params(a.harnessId));
+    expect((detail.props.harness as { id: string }).id).toBe(a.harnessId);
+    await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
   });
 
   it("creates enrollments in the active organization", async () => {
@@ -179,14 +179,14 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
     expect(row!.organizationId).toBe(b.orgId);
   });
 
-  it("refuses every agent action on the other organization's agent", async () => {
+  it("refuses every harness action on the other organization's harness", async () => {
     state.userId = a.userId;
     const config = { maxConcurrency: 4, enabledCapabilities: ["review"] };
     expect(await updateHarnessConfig(b.harnessId, config)).toMatchObject({ ok: false });
     expect(await setHarnessDesiredVersion(b.harnessId, "9.9.9")).toMatchObject({ ok: false });
     expect(await revokeHarness(b.harnessId)).toMatchObject({ ok: false });
     expect(await deleteHarness(b.harnessId)).toMatchObject({ ok: false });
-    // Neither the other's agent with our repository nor our agent with the other's repository.
+    // Neither the other's harness with our repository nor our harness with the other's repository.
     expect(await pinRepository(b.harnessId, a.repoId)).toMatchObject({ ok: false });
     expect(await pinRepository(a.harnessId, b.repoId)).toMatchObject({ ok: false });
     expect(await unpinRepository(b.harnessId, b.repoId)).toMatchObject({ ok: false });
@@ -195,22 +195,22 @@ describe.skipIf(!dockerAvailable)("organization isolation of agents", () => {
     expect(other).toMatchObject({ maxConcurrency: 1, desiredVersion: null, revokedAt: null });
     expect(other.pinnedRepositories).toEqual([]);
 
-    // Its own agent and repository still work.
+    // Its own harness and repository still work.
     expect(await updateHarnessConfig(a.harnessId, config)).toEqual({ ok: true });
     expect(await pinRepository(a.harnessId, a.repoId)).toEqual({ ok: true });
   });
 
-  it("keeps the desired agent version per organization", async () => {
+  it("keeps the desired harness version per organization", async () => {
     state.userId = a.userId;
     expect(await setGlobalHarnessVersion("1.4.0")).toEqual({ ok: true });
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
     expect(await getDesiredHarnessVersion(db, b.orgId)).toBeNull();
-    expect((await AgentSettingsPage()).props.desiredVersion).toBe("1.4.0");
-    const listed = (await AgentsPage()).props.agents as { desiredVersion: string | null }[];
+    expect((await HarnessSettingsPage()).props.desiredVersion).toBe("1.4.0");
+    const listed = (await HarnessesPage()).props.harnesses as { desiredVersion: string | null }[];
     expect(listed.map((r) => r.desiredVersion)).toEqual(["1.4.0"]);
 
     state.userId = b.userId;
-    expect((await AgentSettingsPage()).props.desiredVersion).toBeNull();
+    expect((await HarnessSettingsPage()).props.desiredVersion).toBeNull();
     await setDesiredHarnessVersion(db, b.orgId, "2.0.0", b.userId);
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
   });
