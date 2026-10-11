@@ -25,6 +25,11 @@
       "types": "./dist/learnRule.d.ts",
       "default": "./dist/learnRule.js"
     },
+    "./reply": {
+      "@omniralph/source": "./src/reply.ts",
+      "types": "./dist/reply.d.ts",
+      "default": "./dist/reply.js"
+    },
     "./rules": {
       "@omniralph/source": "./src/ruleDedupe.ts",
       "types": "./dist/ruleDedupe.d.ts",

@@ -11,13 +11,14 @@ import {
   type TaskDefinitionInput,
 } from "./definitions.js";
 import { LEARN_RULE_TASK, RULE_WRITER_AGENT } from "./builtin/learn-rule.js";
+import { REPLY_TASK, REVIEWER_AGENT } from "./builtin/reply.js";
 import { isBuiltinId } from "./ids.js";
 import { validateTemplate } from "./template.js";
 import { availableVariables } from "./variables.js";
 
-const AGENT_INPUTS: readonly AgentDefinitionInput[] = [RULE_WRITER_AGENT];
+const AGENT_INPUTS: readonly AgentDefinitionInput[] = [RULE_WRITER_AGENT, REVIEWER_AGENT];
 
-const TASK_INPUTS: readonly TaskDefinitionInput[] = [LEARN_RULE_TASK];
+const TASK_INPUTS: readonly TaskDefinitionInput[] = [LEARN_RULE_TASK, REPLY_TASK];
 
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = AGENT_INPUTS.map((agent) =>
   AgentDefinition.parse(agent),

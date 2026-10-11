@@ -26,9 +26,10 @@ import {
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
+  MAX_REPLY_ANSWER_LENGTH,
   ReviewJobPayload,
-  ReviewReplyJobPayload,
-  type ReviewReplyJobResult,
+  RunSpecJobPayload,
+  type QueryRunResult,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
@@ -138,7 +139,20 @@ process.env.APP_URL = "https://omniralph.example.com";
 const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { onReviewJobStarted } = await import("@/lib/review/jobs");
-const { onReplyJobCompleted, onReplyJobFailed, parseReplyResult } = await import("./reply");
+const { jobHooks } = await import("@/lib/sinks");
+
+/** The thread-reply sink's hooks for a `review.reply` job. */
+function replyHooks(job: Job) {
+  const hooks = jobHooks(job);
+  if (!hooks?.onCompleted || !hooks.onFailed || !hooks.isValidResult)
+    throw new Error("review.reply jobs have the finding-thread sink's hooks");
+  return hooks as Required<Pick<typeof hooks, "onCompleted" | "onFailed" | "isValidResult">>;
+}
+
+/** A `review.reply` job's trigger context. */
+function replyContext(job: Job): Record<string, unknown> {
+  return RunSpecJobPayload.parse(job.payload).trigger.context;
+}
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -495,19 +509,41 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         status: "queued",
         targetHarnessId: null,
       });
-      const payload = ReviewReplyJobPayload.parse(created[0]!.payload);
+      expect(created[0]).toMatchObject({
+        taskType: "query",
+        pool: "short",
+        taskId: "builtin:reply",
+        // Once per asking comment.
+        dedupeKey: expect.stringMatching(new RegExp(`^review\\.reply:${repoId}:\\d+$`)),
+      });
+      const payload = RunSpecJobPayload.parse(created[0]!.payload);
       expect(payload).toMatchObject({
-        findingId: finding.id,
-        reviewId: review.id,
-        prNumber: number,
-        baseSha: SHA(1),
-        headSha: SHA(2),
-        // 10% of the Standard profile's 200,000-token budget.
-        maxTokens: 20_000,
-        question: "Is this really reachable, @omniralph?",
-        askedBy: "maintainer",
-        threadCommentId: commentId,
-        finding: { path: "src/app.ts", startLine: 3, endLine: 4, title: "Missing null check" },
+        trigger: {
+          kind: "finding.mention",
+          context: {
+            repository: "acme/app",
+            pr: { number },
+            review: { id: review.id },
+            finding: {
+              id: finding.id,
+              path: "src/app.ts",
+              file: '"src/app.ts"',
+              startLine: 3,
+              endLine: 4,
+              location: "lines 3-4",
+              title: "Missing null check",
+              baseSha: SHA(1),
+              headSha: SHA(2),
+            },
+            question: "Is this really reachable, @omniralph?",
+            askedBy: "maintainer",
+            threadCommentId: commentId,
+            // 10% of the Standard profile's 200,000-token budget.
+            budgetTokens: 20_000,
+          },
+        },
+        repositoryId: repoId,
+        ref: SHA(2),
       });
       // The answer is the reply; nothing is posted yet.
       expect(state.scm.calls.replyToComment).toHaveLength(0);
@@ -534,23 +570,29 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const { number, commentId } = await reviewedPr();
       await threadComment(number, commentId, "@omniralph why?", "dev");
       const [job] = (await replyJobs()).filter(
-        (j) => (j.payload as { threadCommentId: string }).threadCommentId === commentId,
+        (j) => replyContext(j).threadCommentId === commentId,
       );
-      const result: ReviewReplyJobResult = {
-        answer: "It is, see [this](https://evil.example/x). cc @someone and @dev",
+      const hooks = replyHooks(job!);
+      const result: QueryRunResult = {
         outcome: "answered",
+        answer: "It is, see [this](https://evil.example/x). cc @someone and @dev",
+        structured: null,
+        references: [],
         usage: { inputTokens: 5000, outputTokens: 200 },
         durationMs: 900,
       };
-      expect(parseReplyResult(result)).toEqual(result);
-      expect(parseReplyResult({ ...result, answer: null })).toBeNull();
+      expect(hooks.isValidResult(result)).toBe(true);
+      expect(hooks.isValidResult({ ...result, answer: null })).toBe(false);
+      expect(hooks.isValidResult({ ...result, answer: null, structured: { rule: null } })).toBe(
+        false,
+      );
       const [completed] = await db
         .update(jobs)
         .set({ status: "completed", result })
         .where(eq(jobs.id, job!.id))
         .returning();
-      expect(await onReplyJobCompleted(db, completed!)).toBe(true);
-      expect(await onReplyJobCompleted(db, completed!)).toBe(false);
+      expect(await hooks.onCompleted(db, completed!)).toBe(true);
+      expect(await hooks.onCompleted(db, completed!)).toBe(false);
       expect(state.scm.calls.replyToComment).toHaveLength(1);
       const { body } = state.scm.calls.replyToComment[0]!;
       expect(state.scm.calls.replyToComment[0]!.commentId).toBe(commentId);
@@ -563,10 +605,10 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       // A failed reply posts an apology (once).
       await threadComment(number, commentId, "@omniralph and this?", "dev");
       const [second] = (await replyJobs()).filter(
-        (j) => (j.payload as { question: string }).question === "@omniralph and this?",
+        (j) => replyContext(j).question === "@omniralph and this?",
       );
-      expect(await onReplyJobFailed(db, second!)).toBe(true);
-      expect(await onReplyJobFailed(db, (await getJob(db, second!.id))!)).toBe(false);
+      expect(await hooks.onFailed(db, second!, "boom")).toBe(true);
+      expect(await hooks.onFailed(db, (await getJob(db, second!.id))!, "boom")).toBe(false);
       expect(state.scm.calls.replyToComment[1]!.body).toContain("Sorry, I couldn't answer");
     });
 
@@ -574,23 +616,53 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const { number, commentId } = await reviewedPr();
       await threadComment(number, commentId, "@omniralph explain", "dev");
       const [job] = (await replyJobs()).filter(
-        (j) => (j.payload as { threadCommentId: string }).threadCommentId === commentId,
+        (j) => replyContext(j).threadCommentId === commentId,
       );
       const [completed] = await db
         .update(jobs)
         .set({
           status: "completed",
           result: {
-            answer: null,
             outcome: "budget_exhausted",
+            answer: null,
+            structured: null,
+            references: [],
             usage: { inputTokens: 20_000, outputTokens: 0 },
             durationMs: 5,
-          },
+          } satisfies QueryRunResult,
         })
         .where(eq(jobs.id, job!.id))
         .returning();
-      await onReplyJobCompleted(db, completed!);
+      await replyHooks(completed!).onCompleted(db, completed!);
       expect(state.scm.calls.replyToComment[0]!.body).toContain("reply budget (20,000 tokens)");
+    });
+
+    it("caps a long answer at the thread reply length", async () => {
+      const { number, commentId } = await reviewedPr();
+      await threadComment(number, commentId, "@omniralph explain at length", "dev");
+      const [job] = (await replyJobs()).filter(
+        (j) => replyContext(j).threadCommentId === commentId,
+      );
+      const [completed] = await db
+        .update(jobs)
+        .set({
+          status: "completed",
+          result: {
+            outcome: "answered",
+            answer: `  ${"word ".repeat(2000)}`,
+            structured: null,
+            references: [],
+            usage: { inputTokens: 5000, outputTokens: 3000 },
+            durationMs: 5,
+          } satisfies QueryRunResult,
+        })
+        .where(eq(jobs.id, job!.id))
+        .returning();
+      await replyHooks(completed!).onCompleted(db, completed!);
+      const answer = state.scm.calls.replyToComment[0]!.body.split("\n\n_Omniralph · ")[0]!;
+      expect(answer.length).toBeLessThanOrEqual(MAX_REPLY_ANSWER_LENGTH);
+      expect(answer).toMatch(/^word word/);
+      expect(answer).toMatch(/_…truncated_$/);
     });
   });
 
@@ -695,7 +767,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const replies = await db.select().from(jobs).where(eq(jobs.type, "review.reply"));
       expect(
         replies.some(
-          (j) => (j.payload as { threadCommentId: string }).threadCommentId === commentId,
+          (j) => j.taskId === "builtin:reply" && replyContext(j).threadCommentId === commentId,
         ),
       ).toBe(true);
       await conversationComment(number, "@omniralph review");

@@ -461,6 +461,86 @@ describe("runQueryTask", () => {
     });
   });
 
+  describe("builtin:reply", () => {
+    let headSha: string;
+
+    beforeEach(async () => {
+      headSha = await remote.commit(
+        { "src/list.ts": "export function last(xs: number[]) {\n  return xs[xs.length - 1];\n}\n" },
+        "feature",
+      );
+    });
+
+    /** A run of `builtin:reply` as `enqueueReply` stores it: ref = the review's head. */
+    function replySpec(head: string): RunSpecType {
+      const task = getBuiltinTask("builtin:reply")!;
+      return spec({
+        agent: getBuiltinAgent(task.agentId)!,
+        task,
+        ref: head,
+        tokenBudget: 20_000,
+        trigger: {
+          kind: "finding.mention",
+          context: {
+            repository: "acme/app",
+            pr: { number: 7 },
+            review: { id: randomUUID() },
+            finding: {
+              id: randomUUID(),
+              path: "src/list.ts",
+              file: '"src/list.ts"',
+              location: "line 2",
+              startLine: 2,
+              endLine: 2,
+              severity: "high",
+              category: "correctness",
+              title: "Off by one",
+              body: "Reads past the end.",
+              baseSha: mainSha,
+              headSha: head,
+            },
+            question: "Are you sure? Callers check the length.",
+            askedBy: "octocat",
+            threadCommentId: "555",
+            budgetTokens: 20_000,
+          },
+        },
+      });
+    }
+
+    it("answers in a worktree at the review's head with Read/Grep/Glob, from the finding's hunk", async () => {
+      const task = getBuiltinTask("builtin:reply")!;
+      const agent = getBuiltinAgent(task.agentId)!;
+      const { result, calls } = await run(replySpec(headSha));
+      expect(QueryRunResult.parse(result)).toMatchObject({
+        outcome: "answered",
+        answer: ANSWER,
+        structured: null,
+      });
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([".git", "CLAUDE.md", "src"]);
+      expect(call?.options.tools).toEqual(["Read", "Grep", "Glob"]);
+      expect(call?.options).toMatchObject({ maxTurns: 10, permissionMode: "dontAsk" });
+      expect(call?.options.systemPrompt).toBe([agent.systemPrompt, task.systemAppend].join("\n\n"));
+      expect(call?.options.mcpServers).toEqual({});
+      expect(call?.options.outputFormat).toBeUndefined();
+      expect(call?.prompt).toContain('File: "src/list.ts"\nLocation: line 2\n');
+      expect(call?.prompt).toContain("+  return xs[xs.length - 1];");
+      expect(call?.prompt).toContain("```\nAre you sure? Callers check the length.\n```");
+      await expectTornDown();
+    });
+
+    it("answers without the hunk and without tools in an empty directory when the commits are gone", async () => {
+      const { result, calls } = await run(replySpec("f".repeat(40)));
+      expect(result).toMatchObject({ outcome: "answered", answer: ANSWER, references: [] });
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([]);
+      expect(call?.options.tools).toEqual([]);
+      expect(call?.prompt).toContain("# Diff hunk (quoted data)\n\n(not available)\n");
+      await expectTornDown();
+    });
+  });
+
   describe("system prompt", () => {
     it("replaces the preset with the agent's prompt and the task's systemAppend", async () => {
       const { calls } = await run(

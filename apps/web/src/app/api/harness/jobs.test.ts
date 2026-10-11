@@ -51,7 +51,12 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
     taskTypes: ["query"],
     tools: { builtin: ["Read", "Grep"] },
   });
-  const defined = ["builtin:learn-rule", "builtin:reply"].map((id) =>
+  const defined = (
+    [
+      ["builtin:learn-rule", "learned-rule"],
+      ["builtin:reply", "finding-thread"],
+    ] as const
+  ).map(([id, sink]) =>
     tasks.TaskDefinition.parse({
       id,
       name: id,
@@ -59,7 +64,7 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
       agentId: agent.id,
       triggers: ["finding.dismissed", "finding.mention"],
       promptTemplate: "{{finding.title}}",
-      sink: "learned-rule",
+      sink,
       pool: "short",
       tokenBudget: { tokens: 5000 },
     }),
@@ -1068,7 +1073,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       });
     });
 
-    it("validates a review.reply result and posts the answer in the thread once", async () => {
+    it("validates a builtin:reply result and posts the answer in the thread once", async () => {
       const { accessToken } = await newAgent();
       const sha = (n: number) => n.toString(16).padStart(40, "0");
       const review = await createReview(db, {
@@ -1101,34 +1106,38 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         type: "review.reply",
         taskType: "query",
         pool: "short",
+        taskId: "builtin:reply",
         repositoryId,
         dedupeKey: `review.reply:${repositoryId}:778`,
         payload: {
-          findingId: finding!.id,
-          reviewId: review.id,
+          trigger: {
+            kind: "finding.mention",
+            context: {
+              repository: "acme/app",
+              pr: { number: 11 },
+              review: { id: review.id },
+              finding: {
+                id: finding!.id,
+                path: "src/a.ts",
+                file: '"src/a.ts"',
+                startLine: 1,
+                endLine: 1,
+                location: "line 1",
+                severity: "low",
+                category: "correctness",
+                title: "Unused value",
+                body: "Never read.",
+                baseSha: sha(1),
+                headSha: sha(2),
+              },
+              question: "@omniralph is it really unused?",
+              askedBy: "octocat",
+              threadCommentId: "777",
+              budgetTokens: 20_000,
+            },
+          },
           repositoryId,
-          repository: {
-            provider: "github",
-            fullPath: "acme/app",
-            cloneUrl: "https://github.com/acme/app.git",
-          },
-          prNumber: 11,
-          baseSha: sha(1),
-          headSha: sha(2),
-          model: null,
-          maxTokens: 20_000,
-          finding: {
-            path: "src/a.ts",
-            startLine: 1,
-            endLine: 1,
-            severity: "low",
-            category: "correctness",
-            title: "Unused value",
-            body: "Never read.",
-          },
-          question: "@omniralph is it really unused?",
-          askedBy: "octocat",
-          threadCommentId: "777",
+          ref: sha(2),
         },
       });
       await startAs(job.id, accessToken);
@@ -1136,13 +1145,18 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         result(agentRequest(`jobs/${job.id}/result`, accessToken, { body }), ctx(job.id));
 
       const valid = {
-        answer: "Yes, nothing reads it after line 1.",
         outcome: "answered",
+        answer: "Yes, nothing reads it after line 1.",
+        structured: null,
+        references: [],
         usage: { inputTokens: 4000, outputTokens: 50 },
         durationMs: 900,
       };
       expect((await submit({ result: { ...valid, answer: null } })).status).toBe(400);
-      expect((await submit({ result: { ...valid, answer: "x".repeat(4001) } })).status).toBe(400);
+      // The finding-thread sink takes a Markdown answer, not structured output.
+      expect(
+        (await submit({ result: { ...valid, answer: null, structured: { rule: null } } })).status,
+      ).toBe(400);
       state.replies.length = 0;
       expect((await submit({ result: valid })).status).toBe(200);
       // The harness's replay after a timeout posts nothing new.
