@@ -326,7 +326,7 @@ describe("RepoCache", { timeout: 30_000 }, () => {
 
   it("gives other git commands an environment with only the agent's credential helper", async () => {
     const first = await remote.commit({ "README.md": "one\n" });
-    const repos = cache({ credentialHelper: "!omniralph-agent git-credential" });
+    const repos = cache({ credentialHelper: "!omniralph-harness git-credential" });
     const env = repos.gitEnv({ ...ENV, GIT_ASKPASS: "/usr/bin/askpass", OMNIRALPH_JOB_TOKEN: "t" });
     expect(env.GIT_ASKPASS).toBeUndefined();
     expect(env.GIT_TERMINAL_PROMPT).toBe("0");
@@ -340,7 +340,7 @@ describe("RepoCache", { timeout: 30_000 }, () => {
       expect(run("config", "--get-all", "credential.helper").split("\n")).toEqual([
         "!host-helper",
         "",
-        "!omniralph-agent git-credential",
+        "!omniralph-harness git-credential",
         "",
       ]);
       expect(run("config", "--get", "core.askPass")).toBe("\n");

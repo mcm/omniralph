@@ -19,7 +19,7 @@ export const AgentConfig = z.object({
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
 export function defaultConfigPath(): string {
-  return path.join(homedir(), ".config", "omniralph", "agent.json");
+  return path.join(homedir(), ".config", "omniralph", "harness.json");
 }
 
 export function defaultWorkspaceRoot(): string {
@@ -64,7 +64,7 @@ export async function readConfig(file: string): Promise<AgentConfig> {
     mode = (await stat(file)).mode;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new ConfigError(`${file} not found; run 'omniralph-agent enroll' first`);
+      throw new ConfigError(`${file} not found; run 'omniralph-harness enroll' first`);
     }
     throw error;
   }

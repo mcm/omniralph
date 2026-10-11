@@ -1,14 +1,14 @@
 /**
  * Self-update under pm2: when the heartbeat's `desiredVersion` differs from
  * the running one, the agent drains (no new jobs, running ones get up to 2h),
- * runs `npm i -g @omniralph/agent@<version>`, records the
+ * runs `npm i -g @omniralph/harness@<version>`, records the
  * update in `update-state.json` next to its config and exits; pm2 starts the
  * new version. A version that keeps dying on start (more than 3 starts before
  * staying up for 60s) is rolled back to the previous one and never tried
  * again. Hosts not under pm2 report `unsupported` and never install anything.
  *
  * An update can also be asked for: by an admin's "Update now" (the heartbeat's
- * `updateRequest`) or by `omniralph-agent update` on the host (an
+ * `updateRequest`) or by `omniralph-harness update` on the host (an
  * `update-request.json` next to the config). The agent then updates at once,
  * to the requested version, else the desired one, else the latest on npm, and
  * retries it even if it failed before.
@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
-  AGENT_PACKAGE,
+  HARNESS_PACKAGE,
   AgentVersion,
   type AgentUpdateReport,
   type AgentUpdateRequest,
@@ -76,7 +76,7 @@ export function updateStatePath(configPath: string): string {
   return path.join(path.dirname(configPath), UPDATE_STATE_FILE);
 }
 
-/** `update-request.json` in the agent config's directory (written by `omniralph-agent update`). */
+/** `update-request.json` in the agent config's directory (written by `omniralph-harness update`). */
 export function updateRequestPath(configPath: string): string {
   return path.join(path.dirname(configPath), UPDATE_REQUEST_FILE);
 }
@@ -150,19 +150,19 @@ export interface Installer {
   latest?(): Promise<string>;
 }
 
-/** `npm i -g @omniralph/agent@<version>` (a public package: no npm auth needed). */
+/** `npm i -g @omniralph/harness@<version>` (a public package: no npm auth needed). */
 export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
   return {
     latest: () =>
       new Promise((resolve, reject) => {
         execFile(
           "npm",
-          ["view", AGENT_PACKAGE, "version"],
+          ["view", HARNESS_PACKAGE, "version"],
           { env, timeout: 60_000 },
           (error, stdout, stderr) => {
             if (!error) return resolve(String(stdout).trim());
             const tail = String(stderr).trim().split("\n").slice(-5).join("\n");
-            reject(new Error(`npm view ${AGENT_PACKAGE} version failed: ${tail || error.message}`));
+            reject(new Error(`npm view ${HARNESS_PACKAGE} version failed: ${tail || error.message}`));
           },
         );
       }),
@@ -170,13 +170,13 @@ export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
       new Promise((resolve, reject) => {
         execFile(
           "npm",
-          ["i", "-g", `${AGENT_PACKAGE}@${version}`],
+          ["i", "-g", `${HARNESS_PACKAGE}@${version}`],
           { env, timeout: INSTALL_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
           (error, _stdout, stderr) => {
             if (!error) return resolve();
             const tail = String(stderr).trim().split("\n").slice(-5).join("\n");
             reject(
-              new Error(`npm i -g ${AGENT_PACKAGE}@${version} failed: ${tail || error.message}`),
+              new Error(`npm i -g ${HARNESS_PACKAGE}@${version} failed: ${tail || error.message}`),
             );
           },
         );
@@ -347,7 +347,7 @@ export class SelfUpdater {
     const log = this.options.logger;
     if (fromPanel) this.state.handledRequestId = fromPanel.id;
     else await rm(this.options.requestPath!, { force: true });
-    const source = fromPanel ? "the control panel" : "omniralph-agent update";
+    const source = fromPanel ? "the control panel" : "omniralph-harness update";
 
     if (!this.options.underPm2) {
       this.state.lastError = `An update was requested (${source}), but this agent isn't running under pm2, so it can't update itself`;

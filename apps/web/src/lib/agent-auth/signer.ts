@@ -6,7 +6,7 @@ import {
   type KeyObject,
 } from "node:crypto";
 import {
-  AGENT_TOKEN_AUDIENCE,
+  HARNESS_TOKEN_AUDIENCE,
   AGENT_TOKEN_TTL_SECONDS,
   type JobTokenScope,
 } from "@omniralph/shared";
@@ -26,18 +26,18 @@ export interface JobTokenInput {
  * `docs/adr/0002-agent-auth.md`.
  */
 export interface TokenSigner {
-  /** `{ typ: "agent", sub: agentId, aud: "omniralph-agent" }` */
+  /** `{ typ: "agent", sub: agentId, aud: "omniralph-harness" }` */
   signAccessToken(agentId: string): Promise<string>;
-  /** `{ typ: "job", sub: jobId, agentId, scopes, aud: "omniralph-agent" }` */
+  /** `{ typ: "job", sub: jobId, agentId, scopes, aud: "omniralph-harness" }` */
   signJobToken(input: JobTokenInput): Promise<string>;
 }
 
 function accessClaims(agentId: string) {
-  return { typ: "agent", sub: agentId, aud: AGENT_TOKEN_AUDIENCE };
+  return { typ: "agent", sub: agentId, aud: HARNESS_TOKEN_AUDIENCE };
 }
 
 function jobClaims({ jobId, agentId, scopes }: JobTokenInput) {
-  return { typ: "job", sub: jobId, agentId, scopes, aud: AGENT_TOKEN_AUDIENCE };
+  return { typ: "job", sub: jobId, agentId, scopes, aud: HARNESS_TOKEN_AUDIENCE };
 }
 
 /**

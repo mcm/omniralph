@@ -1,6 +1,6 @@
 import "server-only";
 import { getAgentAuthState, isJobRunningOnAgent, type Database } from "@omniralph/db";
-import { AGENT_TOKEN_AUDIENCE, JobTokenScope } from "@omniralph/shared";
+import { HARNESS_TOKEN_AUDIENCE, JobTokenScope } from "@omniralph/shared";
 import { jwtVerify, type JWTPayload } from "jose";
 import { getDb } from "@/lib/db";
 import { authLockoutRemaining, tooManyRequests } from "@/lib/rate-limit";
@@ -48,7 +48,7 @@ function bearerToken(req: Request): string | null {
 async function verifyToken(token: string, typ: TokenType): Promise<JWTPayload> {
   const options = {
     algorithms: ["RS256"],
-    audience: AGENT_TOKEN_AUDIENCE,
+    audience: HARNESS_TOKEN_AUDIENCE,
     requiredClaims: ["exp", "sub"],
   };
   const verification = getVerificationKey();

@@ -20,7 +20,7 @@ describe("job subprocess environment", () => {
       HOME: "/home/agent",
       OMNIRALPH_REFRESH_TOKEN: "refresh-secret",
       OMNIRALPH_ACCESS_TOKEN: "access-secret",
-      OMNIRALPH_AGENT_CONFIG: "/home/agent/.config/omniralph/agent.json",
+      OMNIRALPH_HARNESS_CONFIG: "/home/agent/.config/omniralph/harness.json",
     });
     expect(env).toEqual({
       PATH: "/usr/bin",

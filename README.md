@@ -79,8 +79,8 @@ details.
    │                            └───────────────▲────────────────┘        └──────────────┘
    │                                            │ outbound HTTPS only
    │                            ┌───────────────┴────────────────┐
-   └──git clone/fetch ───────── │ Agent hosts (apps/agent)       │
-      (read-only, brokered)     │ omniralph-agent on Coder       │
+   └──git clone/fetch ───────── │ Harness hosts (apps/harness)   │
+      (read-only, brokered)     │ omniralph-harness on Coder     │
                                 │ repo cache, Claude Agent SDK   │
                                 └────────────────────────────────┘
 ```
@@ -109,7 +109,7 @@ details.
   connection's organization; `action`-tier tools (for later features) require a linked member.
   See [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md).
 - **Agents make only outbound connections.** Each agent belongs to the organization it was
-  enrolled in and only runs that organization's jobs. `omniralph-agent` runs on Coder instances, has no
+  enrolled in and only runs that organization's jobs. `omniralph-harness` runs on Coder instances, has no
   inbound port and a minimal local config (server, agent ID, rotating refresh token, workspace
   root). Concurrency (also per capability, so ralph never takes every slot), capabilities, pins,
   cancellations, the desired agent version (pm2 agents update themselves and roll back a broken
@@ -146,14 +146,17 @@ details.
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
    **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
-4. **Run an agent** on a Coder workspace as the workspace user, logged in with `claude`, enrolled
+4. **Run a harness** on a Coder workspace as the workspace user, logged in with `claude`, enrolled
    from **Agents › Enroll agent** and run under pm2, tmux or systemd
    → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
 
    ```bash
-   omniralph-agent enroll --server https://omniralph.example.com --token <enrollment-token>
-   omniralph-agent start --healthz-port 9310
+   omniralph-harness enroll --server https://omniralph.example.com --token <enrollment-token>
+   omniralph-harness start --healthz-port 9310
    ```
+
+   `enroll` writes the harness config to `~/.config/omniralph/harness.json` (`--config` or
+   `OMNIRALPH_HARNESS_CONFIG` choose another path). The package is `@omniralph/harness` on npm.
 
 5. **Open a PR/MR** in a connected repository. The review shows up under **Jobs** and **Reviews**,
    and the bot posts inline findings plus a summary linking to the review. Comment
@@ -177,7 +180,7 @@ details.
    excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
    shows tokens per review by profile, dismissal rates per repo and jobs per agent over 7/30/90 days,
    plus ralph's tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
-   Agents**, and trigger an update with **Update now** on an agent's page or `omniralph-agent update`
+   Agents**, and trigger an update with **Update now** on an agent's page or `omniralph-harness update`
    on its host.
 
 ## Documentation
@@ -203,16 +206,16 @@ details.
 
 ## Layout
 
-| Path              | Package             | Purpose                                                      |
-| ----------------- | ------------------- | ------------------------------------------------------------ |
-| `apps/web`        | `@omniralph/web`    | Control panel UI, agent API, job claims, webhooks            |
-| `apps/agent`      | `@omniralph/agent`  | Agent daemon (`bin: omniralph-agent`)                        |
-| `packages/engine` | `@omniralph/engine` | Review core: diff parsing, budgets, prompts, Claude provider |
-| `packages/scm`    | `@omniralph/scm`    | SCM adapter interface + GitHub and GitLab implementations    |
-| `packages/db`     | `@omniralph/db`     | Drizzle schema, migrations, typed queries                    |
-| `packages/ralph`  | `@omniralph/ralph`  | Ralph loop logic: PRD parsing, story selection, prompts      |
-| `packages/shared` | `@omniralph/shared` | zod schemas and shared types                                 |
-| `evals`           |                     | Review eval corpus and baseline (`pnpm eval`)                |
+| Path              | Package              | Purpose                                                      |
+| ----------------- | -------------------- | ------------------------------------------------------------ |
+| `apps/web`        | `@omniralph/web`     | Control panel UI, agent API, job claims, webhooks            |
+| `apps/harness`    | `@omniralph/harness` | Harness host daemon (`bin: omniralph-harness`)               |
+| `packages/engine` | `@omniralph/engine`  | Review core: diff parsing, budgets, prompts, Claude provider |
+| `packages/scm`    | `@omniralph/scm`     | SCM adapter interface + GitHub and GitLab implementations    |
+| `packages/db`     | `@omniralph/db`      | Drizzle schema, migrations, typed queries                    |
+| `packages/ralph`  | `@omniralph/ralph`   | Ralph loop logic: PRD parsing, story selection, prompts      |
+| `packages/shared` | `@omniralph/shared`  | zod schemas and shared types                                 |
+| `evals`           |                      | Review eval corpus and baseline (`pnpm eval`)                |
 
 ## Development
 

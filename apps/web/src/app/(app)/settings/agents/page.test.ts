@@ -60,7 +60,7 @@ describe("Settings › Agents page", () => {
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
       latest: null,
-      packageName: "@omniralph/agent",
+      packageName: "@omniralph/harness",
     });
   });
 

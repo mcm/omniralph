@@ -49,7 +49,7 @@ vi.mock("@omniralph/db", () => ({
 
 const { setGlobalAgentVersion, trackLatestAgentVersion } = await import("./actions");
 
-const REGISTRY = "https://registry.npmjs.org/@omniralph%2fagent";
+const REGISTRY = "https://registry.npmjs.org/@omniralph%2fharness";
 const requests: { authorization: string | null; accept: string | null }[] = [];
 let registry: () => Response = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
 const server = setupServer(
@@ -139,7 +139,7 @@ describe("Settings › Agents actions", () => {
     registry = () => HttpResponse.json({ error: "Not found" }, { status: 404 });
     expect(await trackLatestAgentVersion()).toEqual({
       ok: false,
-      error: expect.stringContaining("doesn't know @omniralph/agent"),
+      error: expect.stringContaining("doesn't know @omniralph/harness"),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });
     expect(await trackLatestAgentVersion()).toEqual({

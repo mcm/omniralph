@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** `aud` of agent access and job tokens. */
-export const AGENT_TOKEN_AUDIENCE = "omniralph-agent";
+export const HARNESS_TOKEN_AUDIENCE = "omniralph-harness";
 
 /** Lifetime of access and job tokens, in seconds. */
 export const AGENT_TOKEN_TTL_SECONDS = 900;

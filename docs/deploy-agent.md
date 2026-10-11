@@ -85,12 +85,12 @@ Node), skip the `prefix` line.
 
 To upgrade by hand: stop the agent, run `npm install -g @omniralph/agent@latest`,
 then start it again. Agents run under pm2 can update themselves instead (see
-[Self-update](#self-update-pm2)). See [apps/agent/README.md](../apps/agent/README.md) for the release procedure.
+[Self-update](#self-update-pm2)). See [apps/harness/README.md](../apps/harness/README.md) for the release procedure.
 
 Up to 0.3.0 the package was `@iamthemcmaster/omniralph-agent`. Hosts on 0.3.0 or earlier can't
 self-update to `@omniralph/agent`: upgrade them by hand once
 (`npm uninstall -g @iamthemcmaster/omniralph-agent && npm install -g @omniralph/agent@latest`, then
-restart the agent). See [apps/agent/README.md](../apps/agent/README.md#from-030-or-earlier-iamthemcmasteromniralph-agent).
+restart the agent). See [apps/harness/README.md](../apps/harness/README.md#upgrade).
 
 ## 3. Log the agent's user in to Claude
 

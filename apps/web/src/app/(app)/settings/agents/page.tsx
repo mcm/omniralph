@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { DESIRED_AGENT_VERSION_KEY, getAppSetting } from "@omniralph/db";
-import { AGENT_PACKAGE } from "@omniralph/shared";
+import { HARNESS_PACKAGE } from "@omniralph/shared";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -28,7 +28,7 @@ export default async function AgentSettingsPage() {
             }
           : null
       }
-      packageName={AGENT_PACKAGE}
+      packageName={HARNESS_PACKAGE}
     />
   );
 }

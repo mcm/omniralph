@@ -40,7 +40,7 @@ describe("config file", () => {
   let file: string;
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "omniralph-config-"));
-    file = path.join(dir, "nested", "agent.json");
+    file = path.join(dir, "nested", "harness.json");
   });
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -60,7 +60,7 @@ describe("config file", () => {
     await writeConfig(file, { ...CONFIG, refreshToken: "next" });
     expect((await stat(file)).ino).not.toBe(before);
     expect((await readConfig(file)).refreshToken).toBe("next");
-    expect(await readdir(path.dirname(file))).toEqual(["agent.json"]);
+    expect(await readdir(path.dirname(file))).toEqual(["harness.json"]);
   });
 
   it("keeps the old file intact when writing fails", async () => {
@@ -74,7 +74,7 @@ describe("config file", () => {
     });
     await expect(writeConfig(file, huge)).rejects.toThrow("disk full");
     expect(await readConfig(file)).toEqual(CONFIG);
-    expect(await readdir(path.dirname(file))).toEqual(["agent.json"]);
+    expect(await readdir(path.dirname(file))).toEqual(["harness.json"]);
   });
 
   it.each([0o640, 0o604, 0o644, 0o660])("refuses a config file with mode %o", async (mode) => {

@@ -35,7 +35,7 @@ import { AGENT_VERSION } from "./version.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
 
-export const USAGE = `Usage: omniralph-agent <command> [options]
+export const USAGE = `Usage: omniralph-harness <command> [options]
 
 Commands:
   enroll          Enroll this host with the control panel
@@ -52,7 +52,7 @@ Commands:
                   OMNIRALPH_JOB_TOKEN, set by the agent for in-job processes)
 
 Options:
-  --config <file> Agent config (default: ~/.config/omniralph/agent.json, or $OMNIRALPH_AGENT_CONFIG)
+  --config <file> Agent config (default: ~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG)
   -h, --help      Show this help
   -v, --version   Print the agent version
 `;
@@ -110,7 +110,7 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   } catch (error) {
-    io.stderr(`omniralph-agent: ${(error as Error).message}\n\n${USAGE}`);
+    io.stderr(`omniralph-harness: ${(error as Error).message}\n\n${USAGE}`);
     return 1;
   }
   const { values, positionals } = parsed;
@@ -123,7 +123,7 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
     io.stdout(USAGE);
     return command === undefined && !values.help ? 1 : 0;
   }
-  const configPath = values.config ?? deps.env.OMNIRALPH_AGENT_CONFIG ?? defaultConfigPath();
+  const configPath = values.config ?? deps.env.OMNIRALPH_HARNESS_CONFIG ?? defaultConfigPath();
 
   try {
     switch (command) {
@@ -141,12 +141,12 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
           deps.fetch,
         );
       default:
-        io.stderr(`omniralph-agent: unknown command '${command}'\n\n${USAGE}`);
+        io.stderr(`omniralph-harness: unknown command '${command}'\n\n${USAGE}`);
         return 1;
     }
   } catch (error) {
     if (error instanceof ConfigError || error instanceof ApiError) {
-      io.stderr(`omniralph-agent: ${error.message}\n`);
+      io.stderr(`omniralph-harness: ${error.message}\n`);
       return 1;
     }
     throw error;
@@ -165,7 +165,7 @@ async function runEnroll(
   deps: MainDeps,
 ): Promise<number> {
   if (!values.server || !values.token) {
-    deps.io.stderr(`omniralph-agent: enroll needs --server and --token\n`);
+    deps.io.stderr(`omniralph-harness: enroll needs --server and --token\n`);
     return 1;
   }
   const server = validateServerUrl(values.server);
@@ -187,7 +187,7 @@ async function runEnroll(
     );
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
-      deps.io.stderr(`omniralph-agent: the enrollment token is invalid, expired or already used\n`);
+      deps.io.stderr(`omniralph-harness: the enrollment token is invalid, expired or already used\n`);
       return 1;
     }
     throw error;
@@ -199,7 +199,7 @@ async function runEnroll(
     workspaceRoot,
   });
   deps.io.stdout(
-    `Enrolled as agent ${enrolled.agentId}.\nConfig written to ${configPath}.\nRun 'omniralph-agent start' to start the agent.\n`,
+    `Enrolled as agent ${enrolled.agentId}.\nConfig written to ${configPath}.\nRun 'omniralph-harness start' to start the agent.\n`,
   );
   return 0;
 }
@@ -227,7 +227,7 @@ async function runStart(
   if (values["healthz-port"] !== undefined) {
     healthzPort = Number(values["healthz-port"]);
     if (!Number.isInteger(healthzPort) || healthzPort < 1 || healthzPort > 65535) {
-      deps.io.stderr(`omniralph-agent: invalid --healthz-port\n`);
+      deps.io.stderr(`omniralph-harness: invalid --healthz-port\n`);
       return 1;
     }
   }
@@ -268,7 +268,7 @@ async function runStart(
     await tokens.start();
   } catch (error) {
     if (error instanceof ReenrollmentRequiredError) {
-      deps.io.stderr(`omniralph-agent: ${error.message}; run 'omniralph-agent enroll' again\n`);
+      deps.io.stderr(`omniralph-harness: ${error.message}; run 'omniralph-harness enroll' again\n`);
       return 1;
     }
     // Transient (network, 5xx, 429): the token manager keeps retrying.
@@ -317,7 +317,7 @@ async function runStart(
   tokens.stop();
   health?.close();
   if (fatal) {
-    deps.io.stderr(`omniralph-agent: ${fatal.message}; run 'omniralph-agent enroll' again\n`);
+    deps.io.stderr(`omniralph-harness: ${fatal.message}; run 'omniralph-harness enroll' again\n`);
   }
   logger.info({ exitCode: code }, "agent stopped");
   return code;

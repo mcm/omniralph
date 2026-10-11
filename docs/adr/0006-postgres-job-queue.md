@@ -95,7 +95,7 @@ soon as it claims a job. Otherwise it claims again every 2s until `waitSeconds` 
 hangs up, then answers 204. Route `maxDuration` is 60. Each attempt re-reads the agent, so a
 revoked agent gets 401 and capability changes apply mid-wait.
 
-The agent (`apps/agent/src/daemon.ts`, `claimLoop`) keeps one claim in flight while it has a free
+The agent (`apps/harness/src/daemon.ts`, `claimLoop`) keeps one claim in flight while it has a free
 slot. It starts a claimed job and claims again at once. When nothing is claimable (no free slot, or
 every capability at its limit) it waits until a job ends or the configuration changes. A change to
 the claimable set (heartbeat config, job end, drain, SIGTERM) aborts the in-flight claim and starts
