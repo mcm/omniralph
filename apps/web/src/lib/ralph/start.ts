@@ -414,7 +414,12 @@ async function addStartInstruction(
   start: StartOptions,
 ): Promise<void> {
   if (!start.instruction?.text) return;
-  await addInstruction(tx, run, { ...start.instruction, wantsLoop: false }, applyGuidance);
+  await addInstruction(
+    tx,
+    run,
+    { ...start.instruction, wantsLoop: false, trigger: "linear.mention" },
+    applyGuidance,
+  );
 }
 
 /** Handles `AgentSessionEvent.created` (after the acknowledgement was posted). */
@@ -483,11 +488,16 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
         text &&
         !wantsLoop &&
         !ship &&
-        (await deliverToRunningJob(tx, run, text, author ?? undefined))
+        (await deliverToRunningJob(tx, run, text, author ?? undefined, "linear.mention"))
       ) {
         return { live: true };
       }
-      await addInstruction(tx, run, { text, author, wantsLoop, ship }, applyGuidance);
+      await addInstruction(
+        tx,
+        run,
+        { text, author, wantsLoop, ship, trigger: "linear.mention" },
+        applyGuidance,
+      );
       return { live: false };
     });
     if (handed) {

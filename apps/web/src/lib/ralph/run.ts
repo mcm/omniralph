@@ -56,6 +56,14 @@ import {
   RALPH_STORY_JOB_TYPE,
   legacyJobRouting,
 } from "@omniralph/shared";
+import {
+  MAX_ITERATIONS_PER_RUN,
+  ralphJobInput,
+  requestTaskFor,
+  requestTrigger,
+  storyLimits,
+  storyTaskFor,
+} from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -117,8 +125,7 @@ export interface RalphDeps {
   chat?: ChatSource;
 }
 
-/** Story jobs a run may enqueue in total (cyralph's `maxIterationsPerRun`). */
-export const MAX_ITERATIONS_PER_RUN = 50;
+export { MAX_ITERATIONS_PER_RUN };
 
 /** At most one queued or running job per run (also enforced by the jobs' dedupe key). */
 export function runDedupeKey(runId: string): string {
@@ -317,8 +324,12 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
       : undefined;
     const next = focused ?? selectNextStory(stories);
     if (next) {
-      if (run.iterations >= MAX_ITERATIONS_PER_RUN) {
-        return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: true });
+      const main = run.repositoryId
+        ? await getRepositoryWithConnection(deps.db, run.repositoryId)
+        : null;
+      const cap = storyLimits(main?.repository).maxIterationsPerRun;
+      if (run.iterations >= cap) {
+        return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: cap });
       }
       const row = rows.find((r) => r.linearIssueId === (next.issueId ?? next.key));
       if (row) return enqueueStory(deps, tx, run, { epic, stories, story: next, row });
@@ -337,7 +348,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     }
     return publishLanes(deps, tx, run, { epic, stories, rows });
   }
-  return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: false });
+  return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: null });
 }
 
 /** A chat run's branch: `omniralph/chat-<id>`. */
@@ -433,6 +444,18 @@ async function laneRepository(
   return { ...found, lane };
 }
 
+/** Why a run on the `tasks` path can't enqueue its story or request run. */
+function notACodingTask(
+  taskId: string,
+  repository: Pick<Repository, "fullPath">,
+  what: "stories" | "requests",
+): string {
+  return (
+    `\`${repository.fullPath}\` runs its ${what} with \`${taskId}\`, which isn't a coding task ` +
+    "that takes them, so I stopped. Choose another task under **Repository › Settings › Ralph**."
+  );
+}
+
 /** A lane's repository while it may run ralph jobs (the main lane's by default); else the run fails. */
 async function usableRepository(
   deps: RalphDeps,
@@ -449,7 +472,10 @@ async function usableRepository(
  * settings and quality gates): its sub-issue moves to started and a
  * `ralph.story` job goes to the run's sticky agent (the agent that started
  * its first job, whichever lane it worked in), else to the lane repository's
- * pinned agent, else to any ralph agent of its organization.
+ * pinned agent, else to any ralph agent of its organization. On the lane
+ * repository's `tasks` coding path the job is a coding run of its story task
+ * (trigger `linear.delegated`, the same payload as its context); attempts are
+ * capped by that task.
  */
 async function enqueueStory(
   deps: RalphDeps,
@@ -478,11 +504,18 @@ async function enqueueStory(
     row,
     attachments: payloadAttachments(attachments, story.key),
   });
+  const taskId = storyTaskFor(found.repository);
+  const routed = ralphJobInput(
+    RALPH_STORY_JOB_TYPE,
+    found.repository,
+    { taskId, trigger: "linear.delegated" },
+    payload,
+  );
+  if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, found.repository, "stories"));
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
     type: RALPH_STORY_JOB_TYPE,
-    ...legacyJobRouting(RALPH_STORY_JOB_TYPE),
-    payload,
+    ...routed,
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
@@ -510,7 +543,7 @@ async function enqueueStory(
   await publishPlan(conversationFor(run, deps), await listStories(tx, run.id));
   await postActivity(conversationFor(run, deps), {
     type: "thought",
-    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${MAX_ATTEMPTS_PER_STORY})`,
+    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${storyLimits(found.repository).maxAttemptsPerStory})`,
   });
   return { action: "enqueued", run: updated, story: running, jobId: job.id };
 }
@@ -681,7 +714,9 @@ async function enqueuePreparation(
  * job in the lane's branch worktree, on the run's sticky agent. It resumes
  * the lane's last request conversation only when it goes to the agent that
  * holds it. Its outcome is applied by `applyRequestJob`. Request jobs don't
- * count towards the iteration cap.
+ * count towards the iteration cap. On the repository's `tasks` coding path
+ * the job is a coding run of `requestTaskFor` (triggered by the oldest
+ * request's origin, the same payload as its context).
  */
 async function enqueueRequest(
   deps: RalphDeps,
@@ -701,21 +736,29 @@ async function enqueueRequest(
   const attachments = isLinearRun(run)
     ? await gatherRunAttachments(deps.linear, tx, run, input.epic)
     : [];
+  const payload = buildRequestPayload({
+    run,
+    lane,
+    repository,
+    connection,
+    epic: input.epic,
+    stories: input.stories,
+    requests: input.requests,
+    resumeSessionId: resume,
+    attachments: payloadAttachments(attachments),
+  });
+  const taskId = requestTaskFor(run, repository);
+  const routed = ralphJobInput(
+    RALPH_REQUEST_JOB_TYPE,
+    repository,
+    { taskId, trigger: requestTrigger(input.requests) },
+    payload,
+  );
+  if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, repository, "requests"));
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
     type: RALPH_REQUEST_JOB_TYPE,
-    ...legacyJobRouting(RALPH_REQUEST_JOB_TYPE),
-    payload: buildRequestPayload({
-      run,
-      lane,
-      repository,
-      connection,
-      epic: input.epic,
-      stories: input.stories,
-      requests: input.requests,
-      resumeSessionId: resume,
-      attachments: payloadAttachments(attachments),
-    }),
+    ...routed,
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
@@ -835,7 +878,8 @@ async function wait(
     stories: Story[];
     rows: RalphStory[];
     rootBlockers: WaitingIssue[];
-    hitCap: boolean;
+    /** The iteration cap the run reached, else null. */
+    hitCap: number | null;
   },
 ): Promise<AdvanceResult> {
   const { epic, stories, rows, rootBlockers, hitCap } = input;
@@ -886,7 +930,7 @@ async function wait(
       `**${epic.identifier}** is blocked on ${bold(rootBlockers)}. ${automatic(rootBlockers)}`,
       startAnyway,
     ].join("\n\n");
-  } else if (!hitCap && stuck.length === 0 && all.length > 0) {
+  } else if (hitCap === null && stuck.length === 0 && all.length > 0) {
     body = [
       `${done}/${stories.length} stories are done; the rest are waiting on ${bold(all)}. ${automatic(all)}`,
       startAnyway,
@@ -896,9 +940,9 @@ async function wait(
     const lines = [
       `Paused with ${done}/${stories.length} stories complete on \`${await mainBranch(tx, run)}\`.`,
     ];
-    if (hitCap) {
+    if (hitCap !== null) {
       lines.push(
-        `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts). Reply \`/continue\` to reset it and keep going; anything after \`/continue\` is added as guidance. Or say \`stop\`.`,
+        `I reached the per-run iteration cap (${hitCap} story attempts). Reply \`/continue\` to reset it and keep going; anything after \`/continue\` is added as guidance. Or say \`stop\`.`,
       );
     }
     for (const s of stuck) {
@@ -923,7 +967,7 @@ async function wait(
         `I'll also resume on my own when ${all.map((w) => w.identifier).join(", ")} is done.`,
       );
     }
-    if (!hitCap) {
+    if (hitCap === null) {
       lines.push(
         "Reply with guidance (it will be added to every story prompt) and I'll retry, or say `stop`.",
       );

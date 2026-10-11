@@ -120,6 +120,19 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 /** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
 export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
+/**
+ * Where a request came from (the request run's trigger kind, one of
+ * `REQUEST_TRIGGERS` in `@omniralph/tasks`).
+ */
+export const ralphMessageTrigger = pgEnum("ralph_message_trigger", [
+  "linear.mention",
+  "chat.request",
+  "pr.review-findings",
+  "pr.ci-failed",
+  "pr.fix-command",
+]);
+/** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
+export const repositoryCodingPath = pgEnum("repository_coding_path", ["legacy", "tasks"]);
 /** What started a triage run: an `@omniralph /triage` mention, or the `ralph:triage` label. */
 export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
 /** A Linear issue draft posted from chat: `creating` while its **Create** click runs. */
@@ -796,6 +809,12 @@ export const repositories = pgTable(
       .$type<RalphSettings>()
       .notNull()
       .default(DEFAULT_RALPH_SETTINGS),
+    /** Whether ralph runs enqueue the legacy `ralph.story`/`ralph.request` jobs or coding tasks. */
+    codingPath: repositoryCodingPath("coding_path").notNull().default("legacy"),
+    /** The coding task a story attempt runs on the `tasks` path. */
+    storyTaskId: text("story_task_id").notNull().default("builtin:implement-story"),
+    /** The coding task a lane's requests run on the `tasks` path. */
+    requestTaskId: text("request_task_id").notNull().default("builtin:handle-request"),
     /** GitLab project webhook ID created on connect (deleted on disconnect). */
     webhookId: text("webhook_id"),
     /**
@@ -1734,6 +1753,8 @@ export const ralphMessages = pgTable(
     text: text("text").notNull(),
     /** `/ship`: the request job that takes it commits, pushes and opens the PR/MR. */
     ship: boolean("ship").notNull().default(false),
+    /** Where the message came from (a request run's trigger kind); null for older messages. */
+    trigger: ralphMessageTrigger("trigger"),
     /** Who wrote it in Linear, when known. */
     author: text("author"),
     createdAt: createdAt(),

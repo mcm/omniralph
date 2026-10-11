@@ -163,6 +163,12 @@ export const MAX_TOOL_RULES = 100;
 export const MAX_FIX_ROUNDS = 20;
 export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
 /** Whether request mode may rebase and `--force-with-lease` (`historyRewrite`). */
+/**
+ * How a repository's ralph runs work (`repositories.coding_path`): the legacy
+ * `ralph.story`/`ralph.request` jobs, or coding runs of its story and request tasks.
+ */
+export const RALPH_CODING_PATHS = ["legacy", "tasks"] as const;
+export type RalphCodingPath = (typeof RALPH_CODING_PATHS)[number];
 export const RALPH_HISTORY_REWRITE_POLICIES = ["when-asked", "never"] as const;
 export type RalphHistoryRewrite = (typeof RALPH_HISTORY_REWRITE_POLICIES)[number];
 /** Linear state types `epicCompletedState` may name instead of a state name. */
@@ -324,6 +330,8 @@ export const RalphSettingsInput = z.object({
   ),
   linearProjectNames: routingValues(RoutingName, "project names"),
   linearLabels: routingValues(RoutingName, "labels"),
+  /** Legacy `ralph.*` jobs, or coding tasks (`repositories.coding_path`). */
+  codingPath: z.enum(RALPH_CODING_PATHS, { error: "Choose a path." }),
 
   // Verification
   verifyCommands: RalphSettings.shape.verifyCommands.unwrap(),
@@ -395,7 +403,7 @@ export function ralphSettingsFormValues(
   settings: RalphSettings,
 ): Omit<
   RalphSettingsInput,
-  "ralphEnabled" | "linearTeamKeys" | "linearProjectNames" | "linearLabels"
+  "ralphEnabled" | "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "codingPath"
 > {
   return {
     verifyCommands: [...settings.verifyCommands],

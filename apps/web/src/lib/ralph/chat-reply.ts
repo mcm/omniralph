@@ -115,19 +115,26 @@ export async function sendToChatRun(
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (FINISHED_RUN_STATUSES.has(current.status)) return null;
     if (ship === null) {
-      const live = await queueLiveReply(tx, current, withFiles(text), input.author ?? undefined);
+      const live = await queueLiveReply(
+        tx,
+        current,
+        withFiles(text),
+        input.author ?? undefined,
+        "chat.request",
+      );
       if (live) return { status: "live" as const, run: current };
     }
     const added = await addInstruction(
       tx,
       current,
       ship === null
-        ? { text: withFiles(text), author: input.author, wantsLoop: false }
+        ? { text: withFiles(text), author: input.author, wantsLoop: false, trigger: "chat.request" }
         : {
             text: withFiles(ship || SHIP_REQUEST_TEXT),
             author: input.author,
             wantsLoop: false,
             ship: true,
+            trigger: "chat.request",
           },
       applyGuidance,
     );
@@ -178,7 +185,7 @@ export async function sendGuidance(
     const added = await addInstruction(
       tx,
       current,
-      { text, author, wantsLoop: false },
+      { text, author, wantsLoop: false, trigger: "chat.request" },
       applyGuidance,
     );
     const busy = (await listActiveRunJobIds(tx, current.id)).length > 0;

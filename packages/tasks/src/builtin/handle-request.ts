@@ -162,7 +162,7 @@ export const HANDLE_REQUEST_TASK: TaskDefinitionInput = {
   promptTemplate: REQUEST_TEMPLATE,
   toolSettings: { shell: true, linearRead: false, network: true },
   // Handed back to the ralph run, which posts the summary and makes the PR change.
-  sink: "run-result",
+  sink: "ralph-run",
   pool: "long",
   // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
   model: "opus",

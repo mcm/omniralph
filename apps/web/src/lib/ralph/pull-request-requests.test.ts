@@ -610,7 +610,9 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
       "Omniralph reviewed the pull request with 1 finding. I'll work through it as soon as the current step finishes.",
     );
     // A story agent never gets it: it waits for the loop to end.
-    expect(await listMessages(db, run.id)).toMatchObject([{ kind: "request", jobId: null }]);
+    expect(await listMessages(db, run.id)).toMatchObject([
+      { kind: "request", jobId: null, trigger: "pr.review-findings" },
+    ]);
     await finish(story, storyResult({ commitSha: sha(2) }));
     const request = await start(run.id);
     expect(request.type).toBe("ralph.request");

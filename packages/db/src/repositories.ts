@@ -20,6 +20,8 @@ type EncryptionKey = string | Buffer | undefined;
 export type ScmProvider = (typeof scmConnections.$inferSelect)["provider"];
 export type ScmConnection = typeof scmConnections.$inferSelect;
 export type Repository = typeof repositories.$inferSelect;
+/** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
+export type RepositoryCodingPath = Repository["codingPath"];
 
 export interface ScmConnectionInput {
   organizationId: string;

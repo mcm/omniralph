@@ -8,6 +8,7 @@ import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
+import { ralphRunSink } from "./ralph-run";
 import { reviewSink } from "./review";
 import { runResultSink } from "./run-result";
 import { stickyCommentSink } from "./sticky-comment";
@@ -74,6 +75,7 @@ const SINKS = new Map<SinkKind, Sink>(
     registered(reviewSink),
     registered(runResultSink),
     registered(stickyCommentSink),
+    registered(ralphRunSink),
   ].map((sink) => [sink.kind, sink]),
 );
 

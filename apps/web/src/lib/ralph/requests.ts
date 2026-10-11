@@ -31,6 +31,7 @@ import {
   type Job,
   type RalphLane,
   type RalphMessage,
+  type RalphMessageTrigger,
   type RalphRun,
   type RalphTransaction,
 } from "@omniralph/db";
@@ -41,6 +42,7 @@ import {
   type RalphPullRequestAction,
 } from "@omniralph/shared";
 import { notifyRunThread } from "./chat-notify";
+import { ralphJobPayload } from "./coding";
 import { conversationFor } from "./conversation";
 import { settleFindingThreads } from "./finding-threads";
 import { errorMessage, quietly, tail } from "./notify";
@@ -77,7 +79,14 @@ const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 export async function addInstruction(
   tx: RalphTransaction,
   run: RalphRun,
-  input: { text: string; author?: string | null; wantsLoop: boolean; ship?: boolean },
+  input: {
+    text: string;
+    author?: string | null;
+    wantsLoop: boolean;
+    ship?: boolean;
+    /** Where it came from: a Linear reply or mention, or chat. */
+    trigger: RalphMessageTrigger;
+  },
   applyGuidance: (tx: RalphTransaction, run: RalphRun, text: string) => Promise<void>,
 ): Promise<{ run: RalphRun; switched: boolean }> {
   let current = run;
@@ -110,6 +119,7 @@ export async function addInstruction(
       text: input.text,
       author: input.author ?? null,
       ...(input.ship && { ship: true }),
+      trigger: input.trigger,
     });
   }
   return { run: current, switched };
@@ -220,7 +230,7 @@ export async function applyRequestJob(
   const job = await getJob(deps.db, run.requestJobId);
   if (job && ACTIVE_JOB_STATUSES.has(job.status)) return { busy: true };
   await updateRun(tx, run.id, { requestJobId: null });
-  const payload = job ? RalphRequestPayload.safeParse(job.payload) : null;
+  const payload = job ? RalphRequestPayload.safeParse(ralphJobPayload(job)) : null;
   // Stopped: the requests stay pending, for the run's next request job.
   if (!job || !payload?.success || job.status === "canceled" || job.status === "skipped") {
     return { busy: false };

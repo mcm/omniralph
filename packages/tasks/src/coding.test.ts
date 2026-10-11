@@ -14,7 +14,7 @@ const story: TaskDefinitionInput = {
   agentId: "builtin:engineer",
   triggers: ["linear.delegated"],
   promptTemplate: "{{story.title}}\n{{epic.prd}}",
-  sink: "run-result",
+  sink: "ralph-run",
   pool: "long",
 };
 

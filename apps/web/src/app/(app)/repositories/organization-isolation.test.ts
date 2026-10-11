@@ -252,6 +252,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         linearTeamKeys: [],
         linearProjectNames: [],
         linearLabels: [],
+        codingPath: "legacy",
         ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
       }),
     ).toEqual(refused);

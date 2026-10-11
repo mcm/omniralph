@@ -69,7 +69,8 @@ export async function updateRepositorySettings(
 
 /**
  * Saves a repository's Ralph section: whether Linear delegations may build in
- * it, which Linear issues route to it, and how its runs work (cyralph's
+ * it, which Linear issues route to it, whether its runs use the legacy jobs or
+ * coding tasks (`coding_path`), and how its runs work (cyralph's
  * per-repository settings). The next job and decision of every run pick it up.
  */
 export async function updateRalphSettings(
@@ -85,7 +86,8 @@ export async function updateRalphSettings(
         fieldErrors: fieldErrors(parsed.error),
       };
     }
-    const { ralphEnabled, linearTeamKeys, linearProjectNames, linearLabels } = parsed.data;
+    const { ralphEnabled, linearTeamKeys, linearProjectNames, linearLabels, codingPath } =
+      parsed.data;
     const db = getDb();
     if (!(await getRepository(db, repositoryId, admin.organization.id))) {
       return { ok: false, error: "That repository isn't connected." };
@@ -96,6 +98,7 @@ export async function updateRalphSettings(
       linearProjectNames,
       linearLabels,
       ralphSettings: ralphSettingsFromInput(parsed.data),
+      codingPath,
     });
     if (!saved) return { ok: false, error: "That repository isn't connected." };
     revalidatePath(`/repositories/${repositoryId}/settings`);

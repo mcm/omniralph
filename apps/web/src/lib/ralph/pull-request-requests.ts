@@ -28,12 +28,14 @@ import {
   updateLane,
   updateRun,
   type RalphLane,
+  type RalphMessageTrigger,
   type RalphRun,
   type RalphTransaction,
   getActiveRunOfSameOrigin,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
@@ -84,7 +86,7 @@ export async function addLaneRequest(
   tx: RalphTransaction,
   run: RalphRun,
   lane: RalphLane,
-  input: { text: string; author: string | null; what: string },
+  input: { text: string; author: string | null; what: string; trigger: RalphMessageTrigger },
 ): Promise<{ delivery: PullRequestRequestDelivery; run: RalphRun; note: string } | null> {
   let current = run;
   if (current.status === "completed" || current.status === "stopped") {
@@ -102,6 +104,7 @@ export async function addLaneRequest(
       kind: "request",
       text: input.text,
       author: input.author,
+      trigger: input.trigger,
     });
     return {
       delivery: "live",
@@ -115,6 +118,7 @@ export async function addLaneRequest(
     kind: "request",
     text: input.text,
     author: input.author,
+    trigger: input.trigger,
   });
   if ((await listActiveRunJobIds(tx, current.id)).length > 0) {
     return {
@@ -195,7 +199,7 @@ export async function respondToReview(
       return { status: "no_findings" } as const;
     }
     const rounds = lane.reviewRounds;
-    if (rounds >= settings.maxReviewRounds) {
+    if (rounds >= roundLimits(run, repository).maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });
       const busy = (await listActiveRunJobIds(tx, run.id)).length > 0;
       await postActivity(
@@ -218,6 +222,7 @@ export async function respondToReview(
       }),
       author: null,
       what: `Omniralph reviewed the ${term} with ${plural(findings.length, "finding")}`,
+      trigger: "pr.review-findings",
     });
     if (!added) return ignored("run_over");
     await updateLane(tx, lane.id, { handledReviewIds, reviewRounds: rounds + 1 });
@@ -267,6 +272,7 @@ export async function addPullRequestCommentRequest(
       text: input.text,
       author: input.author,
       what: `@${input.author} asked for changes on the ${input.term}`,
+      trigger: "pr.fix-command",
     });
     if (!added) return { status: "run_over", run } as const;
     await postActivity(

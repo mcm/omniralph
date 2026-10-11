@@ -281,6 +281,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
     expect(await reconcileCi(deps())).toEqual({ checked: 1, failed: 0 });
     let texts = await requestTexts(run.id);
     expect(texts).toHaveLength(1);
+    expect((await listPendingRequests(db, run.id)).map((m) => m.trigger)).toEqual(["pr.ci-failed"]);
     expect(texts[0]).toContain(
       `The GitHub Actions checks for pull request #1 (${prUrl}) failed on \`head1\``,
     );

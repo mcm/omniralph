@@ -59,6 +59,7 @@ export const SINK_KINDS = [
   "review",
   "sticky-comment",
   "run-result",
+  "ralph-run",
 ] as const;
 export type SinkKind = (typeof SINK_KINDS)[number];
 

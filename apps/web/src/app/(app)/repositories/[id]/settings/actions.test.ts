@@ -98,6 +98,7 @@ const baseRalph: RalphSettingsInput = {
   linearTeamKeys: [],
   linearProjectNames: [],
   linearLabels: [],
+  codingPath: "legacy",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
@@ -514,6 +515,31 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       },
       profileId: "standard",
     });
+  });
+
+  it("saves the coding path, which defaults to the legacy jobs", async () => {
+    expect(await getRepository(db, repoId)).toMatchObject({
+      codingPath: "legacy",
+      storyTaskId: "builtin:implement-story",
+      requestTaskId: "builtin:handle-request",
+    });
+    expect(await updateRalphSettings(repoId, { ...baseRalph, codingPath: "tasks" })).toEqual({
+      ok: true,
+    });
+    expect((await getRepository(db, repoId))!.codingPath).toBe("tasks");
+    // Saving the review settings leaves it alone.
+    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.codingPath).toBe("tasks");
+
+    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+    expect((await getRepository(db, repoId))!.codingPath).toBe("legacy");
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        codingPath: "jobs",
+      } as unknown as RalphSettingsInput),
+    ).toMatchObject({ ok: false, fieldErrors: { codingPath: "Choose a path." } });
+    expect((await getRepository(db, repoId))!.codingPath).toBe("legacy");
   });
 
   it("saves every cyralph setting, storing empty text and lists as none", async () => {
