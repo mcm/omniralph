@@ -1,5 +1,5 @@
 import type { RepositoryLink } from "@omniralph/db";
-import { ReviewJobPayload } from "@omniralph/shared";
+import { ReviewJobPayload, RunSpecJobPayload } from "@omniralph/shared";
 import { changeRequestWebUrl, repositoryWebUrl } from "@/lib/repositories/web-url";
 
 /** A harness counts as online while its last heartbeat is younger than this. */
@@ -36,7 +36,12 @@ export function jobTarget(job: {
 }): JobTarget | null {
   const repo = job.repository;
   if (!repo) return null;
-  const prNumber = ReviewJobPayload.shape.prNumber.safeParse(job.payload.prNumber);
+  // A legacy review job's `prNumber`, or a run's PR trigger context (`pr.number`).
+  const run = RunSpecJobPayload.safeParse(job.payload);
+  const pr = run.success ? (run.data.trigger.context.pr as { number?: unknown } | undefined) : null;
+  const prNumber = ReviewJobPayload.shape.prNumber.safeParse(
+    run.success ? pr?.number : job.payload.prNumber,
+  );
   if (prNumber.success) {
     const sigil = repo.provider === "gitlab" ? "!" : "#";
     return {

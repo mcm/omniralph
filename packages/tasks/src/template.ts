@@ -3,8 +3,9 @@
  * use variables (`{{name}}`, dotted names, `{{.}}` for the current section
  * item), sections (`{{#name}}…{{/name}}`), inverted sections
  * (`{{^name}}…{{/name}}`) and comments (`{{! … }}`). Partials, triple
- * mustache, `{{& x}}`, delimiter changes and lambdas don't exist. Nothing is
- * HTML-escaped.
+ * mustache, `{{& x}}`, delimiter changes and lambdas don't exist; a `{{`
+ * right after a backslash is literal text instead (`\{{` renders `{{`, as in
+ * Handlebars). Nothing is HTML-escaped.
  *
  * Untrusted values are fenced by the renderer itself, using the variable
  * catalog, so a template can neither forget to fence user input nor opt out.
@@ -125,6 +126,11 @@ export function parseTemplate(template: string): ParseResult {
     if (start === -1) {
       pushText(template.slice(offset));
       break;
+    }
+    if (start > offset && template[start - 1] === "\\") {
+      pushText(`${template.slice(offset, start - 1)}{{`);
+      offset = start + 2;
+      continue;
     }
     const tag = scanTag(template, start);
     if (!("sigil" in tag)) return { ok: false, error: tag };

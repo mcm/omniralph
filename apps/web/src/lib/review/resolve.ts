@@ -16,7 +16,11 @@ import { closeFindingThreads } from "./threads";
  */
 export async function resolveFixedFindings(
   db: Database,
-  input: { reviewId: string; payload: ReviewJobPayload; result: ReviewJobResult },
+  input: {
+    reviewId: string;
+    payload: Pick<ReviewJobPayload, "headSha" | "previousReview">;
+    result: ReviewJobResult;
+  },
 ): Promise<FindingRow[]> {
   const { payload, result } = input;
   const given = payload.previousReview?.openFindings ?? [];

@@ -151,18 +151,23 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n[… truncated]`;
 }
 
+/** The enabled rules' texts as the prompt numbers them: custom rules first, then learned ones, each on one line. */
+export function ruleTexts(config: Pick<ReviewConfig, "rules">): string[] {
+  const rules = (config.rules ?? []).filter((r) => r.enabled && r.text.trim());
+  return [
+    ...rules.filter((r) => r.kind === "custom"),
+    ...rules.filter((r) => r.kind === "learned"),
+  ].map((r) => r.text.trim().replace(/\s*\n\s*/g, " "));
+}
+
 function repoRulesSection(config: ReviewConfig): string | undefined {
   const parts: string[] = [];
   const instructions = config.customInstructions?.trim();
   if (instructions) parts.push(`## Custom instructions\n\n${instructions}`);
 
-  const rules = (config.rules ?? []).filter((r) => r.enabled && r.text.trim());
-  const ordered = [
-    ...rules.filter((r) => r.kind === "custom"),
-    ...rules.filter((r) => r.kind === "learned"),
-  ];
-  if (ordered.length > 0) {
-    const list = ordered.map((r, i) => `${i + 1}. ${r.text.trim().replace(/\s*\n\s*/g, " ")}`);
+  const rules = ruleTexts(config);
+  if (rules.length > 0) {
+    const list = rules.map((text, i) => `${i + 1}. ${text}`);
     parts.push(
       `## Rules\n\nFollow these rules from the repository's maintainers:\n\n${list.join("\n")}`,
     );

@@ -384,9 +384,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       cwd: request.cwd,
       model: request.model,
       signal: request.signal,
-      ...(request.systemAppend?.trim() && {
-        systemPrompt: `${REVIEW_SYSTEM_PROMPT}\n\n${request.systemAppend.trim()}`,
-      }),
+      ...(request.systemPrompt?.trim() && { systemPrompt: request.systemPrompt }),
     };
     const first = await this.run(target, request.prompt, usage, budget, {
       allowExploration: request.allowExploration,

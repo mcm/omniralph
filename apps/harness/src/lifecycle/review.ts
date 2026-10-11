@@ -3,6 +3,7 @@ import {
   capFindings,
   ClaudeAgentProvider,
   emptyReviewSessions,
+  EXPLORATION_TOOLS,
   filterToDiff,
   finishReview,
   prepareReview,
@@ -55,8 +56,12 @@ export function reviewTaskProvider(
   });
 }
 
-/** The agent's system prompt and the task's `systemAppend`, appended after the review output contract. */
-function reviewSystemAppend(spec: Pick<RunSpec, "agent" | "task">): string {
+/**
+ * A review session's system prompt: the agent's system prompt and the task's
+ * `systemAppend` (for `builtin:review-pr`, the review output contract
+ * `REVIEW_SYSTEM_PROMPT`). Review sessions never use the Claude Code preset.
+ */
+export function reviewSystemPrompt(spec: Pick<RunSpec, "agent" | "task">): string {
   return [spec.agent.systemPrompt, spec.task.systemAppend ?? ""]
     .map((part) => part.trim())
     .filter((part) => part !== "")
@@ -83,13 +88,20 @@ function capSummary(summaries: readonly string[]): string | undefined {
  *    it, plans the review with the repository's path excludes and reads
  *    `CLAUDE.md` from the base commit, which become the task-type variables
  *    `diff`, `plan`, `risk`, `conventions` and `previousFindings`.
+ *    The run spec's `maxFiles` (the review profile's, resolved at claim
+ *    time) caps the plan. With the profile's depth (`depth`), the rubric for
+ *    the diff's languages from the agent's reference docs (`rubric`) and the
+ *    repository's rules (`repositoryRules`), a template has what
+ *    `buildPrompt` assembles.
  * 2. Render the task's prompt template over the trigger context, those
  *    variables and the `setup` variables.
  * 3. One session (`planReview` plans one task): `ClaudeAgentProvider.review`
- *    with the review output contract (findings, the re-check answers and an
+ *    with the agent's system prompt and the task's `systemAppend` (which
+ *    holds the output contract: findings, the re-check answers and an
  *    optional `summary`) and one repair turn, the run's model (else the
- *    profile's) and the profile's token budget, capped by the run's.
- *    Nothing is left to review: no session.
+ *    profile's) and the profile's token budget, capped by the run's. The
+ *    session explores the checkout only when the profile allows it and the
+ *    run's agent kept an exploration tool. Nothing is left to review: no session.
  * 4. Finish: the findings are filtered to the diff, made self-contained and
  *    deduplicated against the open previous findings, the fixed-vote rule
  *    picks the fixed ones, and the most severe `MAX_REVIEW_FINDINGS` are
@@ -139,14 +151,26 @@ export async function runReviewTask(
       cwd,
       baseSha,
       headSha,
-      reviewConfig,
+      // The plan covers at most the run's `maxFiles` (its review profile's).
+      reviewConfig: {
+        ...reviewConfig,
+        profile: {
+          ...reviewConfig.profile,
+          maxFiles: spec.maxFiles ?? reviewConfig.profile.maxFiles,
+        },
+      },
       changeRequest,
       previousReview: previousReview ?? undefined,
       gitEnv: ctx.repos.gitEnv(ctx.env()),
     };
     const openFindings = previousReview?.openFindings ?? [];
     const context = await prepareReview(input, log);
-    const variables = reviewVariables(context, { baseSha, previousFindings: openFindings });
+    const variables = reviewVariables(context, {
+      baseSha,
+      config: reviewConfig,
+      referenceDocs: spec.agent.referenceDocs,
+      previousFindings: openFindings,
+    });
     const prompt = renderTemplate(
       spec.task.promptTemplate,
       { ...spec.trigger.context, ...variables, setup },
@@ -160,14 +184,16 @@ export async function runReviewTask(
     if (task && task.files.length > 0) {
       const provider = (options.provider ?? reviewTaskProvider)(spec, ctx, log);
       const budget = Math.min(task.budget, spec.tokenBudget ?? Infinity);
-      const systemAppend = reviewSystemAppend(spec);
+      const systemPrompt = reviewSystemPrompt(spec);
       const result = await provider.review({
         task: { ...task, budget },
         prompt,
         cwd,
         model: spec.model ?? profile.model ?? undefined,
-        allowExploration: profile.allowRepoExploration,
-        ...(systemAppend && { systemAppend }),
+        allowExploration:
+          profile.allowRepoExploration &&
+          EXPLORATION_TOOLS.some((tool) => spec.agent.tools.builtin.includes(tool)),
+        ...(systemPrompt && { systemPrompt }),
         signal: ctx.signal,
       });
       addTaskResult(sessions, result, openFindings.length);

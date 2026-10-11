@@ -1,8 +1,10 @@
 import type * as Db from "@omniralph/db";
 import {
   QUERY_TASKS_MIN_HARNESS_VERSION,
+  REVIEW_TASKS_MIN_HARNESS_VERSION,
   SETUP_COMMANDS_MIN_HARNESS_VERSION,
   type JobToken,
+  type ReviewProfileConfig,
   type RunSpecJobPayload,
 } from "@omniralph/shared";
 import {
@@ -31,7 +33,8 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
     state.profile && id === REPO_ID ? { profile: state.profile, rules: [] } : null,
 }));
 
-const { RunSpecError, narrowTools, resolveRunSpec, runTokenBudget } = await import("./resolve");
+const { BUILTIN_DEFINITIONS, RunSpecError, narrowTools, resolveRunSpec, runTokenBudget } =
+  await import("./resolve");
 const { runSpecJobInput } = await import("./job");
 
 const ORG_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
@@ -258,6 +261,115 @@ describe("resolveRunSpec", () => {
   });
 });
 
+describe("resolveRunSpec for builtin:review-pr", () => {
+  const PROFILES: Record<"quick" | "deep", ReviewProfileConfig> = {
+    quick: {
+      id: "quick",
+      name: "Quick",
+      model: "claude-haiku-5-5",
+      maxTokensPerReview: 60_000,
+      maxFiles: 15,
+      allowRepoExploration: false,
+    },
+    deep: {
+      id: "deep",
+      name: "Deep",
+      model: "claude-opus-5-5",
+      maxTokensPerReview: 600_000,
+      maxFiles: 100,
+      allowRepoExploration: true,
+    },
+  };
+
+  function reviewJob(profile: ReviewProfileConfig) {
+    return job({
+      taskType: "review",
+      taskId: "builtin:review-pr",
+      payload: {
+        trigger: {
+          kind: "pr.updated",
+          context: {
+            reviewConfig: { profile, customInstructions: null, rules: [], pathExcludes: [] },
+          },
+        },
+        repositoryId: REPO_ID,
+        ref: "c".repeat(40),
+      },
+    });
+  }
+
+  it("narrows a quick review to the diff: its model, budget and max files, no exploration tools", async () => {
+    const spec = await resolveRunSpec(db, reviewJob(PROFILES.quick), tokens, BUILTIN_DEFINITIONS);
+    expect(spec).toMatchObject({
+      taskType: "review",
+      pool: "short",
+      task: { id: "builtin:review-pr", sink: "review" },
+      agent: { id: "builtin:reviewer" },
+      model: "claude-haiku-5-5",
+      tokenBudget: 60_000,
+      maxFiles: 15,
+    });
+    expect(spec.agent.tools.builtin).toEqual([]);
+  });
+
+  it("keeps the exploration tools of a deep review, with its model, budget and max files", async () => {
+    const spec = await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, BUILTIN_DEFINITIONS);
+    expect(spec).toMatchObject({ model: "claude-opus-5-5", tokenBudget: 600_000, maxFiles: 100 });
+    expect(spec.agent.tools.builtin).toEqual(["Read", "Grep", "Glob"]);
+  });
+
+  it("still applies the repository's tool settings", async () => {
+    state.repository = repository({ disallowedTools: ["Glob"] });
+    const spec = await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, BUILTIN_DEFINITIONS);
+    expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
+  });
+
+  it("falls back to the task's then the agent's model, and caps the budget by the task's", async () => {
+    const review = getReviewDefinitions({ model: "sonnet", tokenBudget: { tokens: 50_000 } });
+    const noModel = { ...PROFILES.deep, model: null };
+    expect(await resolveRunSpec(db, reviewJob(noModel), tokens, review)).toMatchObject({
+      model: "sonnet",
+      tokenBudget: 50_000,
+    });
+    const fraction = getReviewDefinitions(
+      { tokenBudget: { profileFraction: 0.5 } },
+      { model: "haiku" },
+    );
+    expect(await resolveRunSpec(db, reviewJob(noModel), tokens, fraction)).toMatchObject({
+      model: "haiku",
+      tokenBudget: 300_000,
+    });
+  });
+
+  it("fails a review run without a review configuration", async () => {
+    const result = resolveRunSpec(
+      db,
+      job({
+        taskType: "review",
+        taskId: "builtin:review-pr",
+        payload: { trigger: { kind: "pr.updated", context: {} }, repositoryId: REPO_ID },
+      }),
+      tokens,
+      BUILTIN_DEFINITIONS,
+    );
+    await expect(result).rejects.toThrow(RunSpecError);
+  });
+
+  function getReviewDefinitions(
+    task: Partial<TaskDefinitionInput>,
+    agent: Partial<AgentDefinitionInput> = {},
+  ) {
+    const builtinTask = BUILTIN_DEFINITIONS.getTask("builtin:review-pr")!;
+    const builtinAgent = BUILTIN_DEFINITIONS.getAgent("builtin:reviewer")!;
+    const t = TaskDefinition.parse({ ...builtinTask, ...task });
+    const a = AgentDefinition.parse({ ...builtinAgent, ...agent });
+    return {
+      getTask: (id: string) => (id === t.id ? t : null),
+      getAgent: (id: string) => (id === a.id ? a : null),
+    };
+  }
+});
+
 describe("runSpecJobInput", () => {
   it("routes the job by its task and stores the run payload", () => {
     const task = TaskDefinition.parse(taskInput);
@@ -271,8 +383,13 @@ describe("runSpecJobInput", () => {
     });
   });
 
-  it("sets no minimum harness version for other task types", () => {
+  it("requires a harness with the review lifecycle for review tasks", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "review" });
+    expect(runSpecJobInput(task, payload).minHarnessVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
+  });
+
+  it("sets no minimum harness version for coding tasks", () => {
+    const task = TaskDefinition.parse({ ...taskInput, taskType: "coding", pool: "long" });
     expect(runSpecJobInput(task, payload).minHarnessVersion).toBeNull();
   });
 

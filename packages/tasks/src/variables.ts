@@ -321,7 +321,53 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description:
       "The repository's `CLAUDE.md`: the checkout's for a query, the base commit's for a review (may be empty).",
   },
-  // Review: the diff under review, its plan and risk pre-pass, and the open findings to re-check.
+  // Review: the profile's depth, the rubric and the repository's rules (the stable prompt prefix),
+  // then the diff under review, its plan and risk pre-pass, and the open findings to re-check.
+  {
+    name: "depth",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "How thoroughly to review, from the review profile (e.g. `Quick review: look only at the diff. …`).",
+  },
+  {
+    name: "rubric",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "The agent's rubric reference docs for the diff's languages: `rubric/universal.md`, then `rubric/languages/<language>.md` per language (null without any).",
+  },
+  {
+    name: "repositoryRules",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "The repository's custom instructions and enabled rules, written or approved by its admins (null when it has neither).",
+  },
+  {
+    name: "repositoryRules.instructions",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "The repository's custom instructions, trimmed (null when none).",
+  },
+  {
+    name: "repositoryRules.rules.items.number",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "1-based number of an enabled rule: custom rules first, then learned ones.",
+  },
+  {
+    name: "repositoryRules.rules.items.text",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "Text of an enabled rule, on one line.",
+  },
   {
     name: "diff",
     source: "taskType",
@@ -390,7 +436,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
         "id",
         "Id of an open finding (its position in the list), for the `previousFindings` answer.",
       ],
-      ["path", "File of an open finding."],
+      ["path", "File of an open finding (backticks removed)."],
       ["lines", "`N` or `N-M`: its lines in the version reviewed then."],
       ["category", "Its category."],
     ] as const

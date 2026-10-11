@@ -19,8 +19,12 @@ export interface ReviewRequest {
   model?: string;
   /** Whether the reviewer may read files beyond the diff (`Read`/`Grep`/`Glob`). */
   allowExploration: boolean;
-  /** System text appended after `REVIEW_SYSTEM_PROMPT` (the output contract), e.g. a review agent's. */
-  systemAppend?: string;
+  /**
+   * The session's system prompt instead of `REVIEW_SYSTEM_PROMPT` (repair turn
+   * included), e.g. a review task's agent prompt and output contract. It must
+   * ask for the same JSON answer.
+   */
+  systemPrompt?: string;
   signal?: AbortSignal;
 }
 

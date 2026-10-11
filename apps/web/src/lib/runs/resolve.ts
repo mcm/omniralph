@@ -6,6 +6,7 @@ import {
   type Job,
 } from "@omniralph/db";
 import {
+  ReviewTaskContext,
   RunSpecJobPayload,
   parseRalphSettings,
   ruleTool,
@@ -13,6 +14,7 @@ import {
   type JobToken,
   type RunSpec,
   type RunToolRestrictions,
+  type ReviewProfileConfig,
 } from "@omniralph/shared";
 import {
   getBuiltinAgent,
@@ -51,7 +53,9 @@ export const BUILTIN_DEFINITIONS: DefinitionSource = {
  * the task allows), the repository with its tool settings, the model (task →
  * repository profile → agent), the token budget (a `profileFraction` of the
  * repository profile's budget) and the job's `tokens`. The agent's tools are
- * narrowed by the repository's tool settings, never widened. Throws
+ * narrowed by the repository's tool settings, never widened. A review run's
+ * review profile (from its trigger context: the repository's, or the one a
+ * mention asked for) narrows it further (`narrowByReviewProfile`). Throws
  * `RunSpecError` for a job that can never be resolved.
  */
 export async function resolveRunSpec(
@@ -98,7 +102,7 @@ export async function resolveRunSpec(
     profile = settings.profile;
   }
 
-  return {
+  const spec: RunSpec = {
     jobId: job.id,
     taskType: task.taskType,
     pool: task.pool,
@@ -116,6 +120,50 @@ export async function resolveRunSpec(
     fallbackModel: agent.fallbackModel,
     tokenBudget: runTokenBudget(task, profile),
     tokens,
+  };
+  if (task.taskType !== "review") return spec;
+  const reviewConfig = ReviewTaskContext.shape.reviewConfig.safeParse(
+    payload.trigger.context.reviewConfig,
+  );
+  if (!reviewConfig.success) {
+    throw new RunSpecError(`Review run of task ${task.id} has no valid review configuration`);
+  }
+  return narrowByReviewProfile(spec, reviewConfig.data.profile);
+}
+
+/** Read-only file tools a review uses to read beyond the diff (the engine's `EXPLORATION_TOOLS`). */
+const EXPLORATION_TOOLS: readonly string[] = ["Read", "Grep", "Glob"];
+
+/**
+ * A review run as its review profile narrows it: the profile's `model`, when
+ * it sets one, over the task's and the agent's; the profile's
+ * `maxTokensPerReview` as the budget, capped by the task's own budget when it
+ * has one; the profile's `maxFiles`; and without `allowRepoExploration`, no
+ * exploration tools (the review sees only the diff).
+ */
+export function narrowByReviewProfile(
+  spec: RunSpec,
+  profile: Pick<
+    ReviewProfileConfig,
+    "model" | "maxTokensPerReview" | "maxFiles" | "allowRepoExploration"
+  >,
+): RunSpec {
+  const taskBudget = runTokenBudget(spec.task, profile);
+  const builtin = spec.agent.tools.builtin;
+  return {
+    ...spec,
+    agent: {
+      ...spec.agent,
+      tools: {
+        ...spec.agent.tools,
+        builtin: profile.allowRepoExploration
+          ? builtin
+          : builtin.filter((tool) => !EXPLORATION_TOOLS.includes(tool)),
+      },
+    },
+    model: profile.model ?? spec.task.model ?? spec.agent.model,
+    tokenBudget: Math.min(profile.maxTokensPerReview, taskBudget ?? Infinity),
+    maxFiles: profile.maxFiles,
   };
 }
 

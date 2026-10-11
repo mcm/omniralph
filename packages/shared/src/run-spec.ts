@@ -27,6 +27,13 @@ export const QUERY_TASKS_MIN_HARNESS_VERSION = "0.9.0";
  */
 export const SETUP_COMMANDS_MIN_HARNESS_VERSION = "0.10.0";
 
+/**
+ * The first harness release that runs review tasks (`builtin:review-pr`)
+ * through the review lifecycle; review runs carry it as their
+ * `min_harness_version`.
+ */
+export const REVIEW_TASKS_MIN_HARNESS_VERSION = "0.10.0";
+
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
   kind: TriggerKindSchema,
@@ -68,11 +75,17 @@ export const RunSpec = z.object({
   requireCheckout: z.boolean(),
   /** The repository's tool settings, applied on top of the agent's tools (they never widen them). */
   tools: RunToolRestrictions,
-  /** The task's model, else the repository profile's, else the agent's; null for the Claude Code default. */
+  /**
+   * The task's model, else the repository profile's, else the agent's (for a
+   * review run: its review profile's, else the task's, else the agent's);
+   * null for the Claude Code default.
+   */
   model: z.string().min(1).nullable(),
   fallbackModel: z.string().min(1).nullable(),
   /** Token cap of the run; null for none. */
   tokenBudget: z.int().min(1).nullable(),
+  /** Most files a review run covers (its review profile's `maxFiles`); null or absent for other runs. */
+  maxFiles: z.int().min(1).nullable().optional(),
   tokens: z.object({ lifecycle: JobToken, session: JobToken }),
 });
 export type RunSpec = z.infer<typeof RunSpec>;

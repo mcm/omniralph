@@ -21,7 +21,8 @@ import {
 import { runReview, type ReviewProvider } from "@omniralph/engine";
 import { GitHubAdapter } from "@omniralph/scm";
 import {
-  ReviewJobPayload,
+  reviewTriggerContext,
+  REVIEW_TASKS_MIN_HARNESS_VERSION,
   type Finding,
   type JobOutcomeResponse,
   type JobStartResponse,
@@ -263,7 +264,11 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   async function newAgent() {
     const [agent] = await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "coder-1" })
+      .values({
+        organizationId: orgId,
+        name: "coder-1",
+        reportedVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+      })
       .returning();
     return { harnessId: agent!.id, accessToken: await getTokenSigner().signAccessToken(agent!.id) };
   }
@@ -338,9 +343,9 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     return { status: res.status, body: (await res.json()) as JobOutcomeResponse };
   }
 
-  /** What the harness's review capability does in the worktree, with the provider mocked. */
+  /** What the harness's review task type does in the worktree, with the provider mocked. */
   async function agentRun(payload: unknown): Promise<ReviewJobResult> {
-    const job = ReviewJobPayload.parse(payload);
+    const job = reviewTriggerContext(payload);
     const review = await runReview(
       {
         cwd: repo.dir,
@@ -380,19 +385,31 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
     const { jobId, reviewId } = enqueued;
 
-    // The job carries the resolved config and no credentials.
+    // The job runs builtin:review-pr and carries the resolved config and no credentials.
     const job = await jobRow(jobId);
-    expect(job).toMatchObject({ organizationId: orgId, status: "queued", targetHarnessId: null });
-    const payload = ReviewJobPayload.parse(job.payload);
+    expect(job).toMatchObject({
+      organizationId: orgId,
+      status: "queued",
+      targetHarnessId: null,
+      type: "review.run",
+      taskType: "review",
+      pool: "short",
+      taskId: "builtin:review-pr",
+      repositoryId,
+      minHarnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+    });
+    expect(job.payload).toMatchObject({
+      trigger: { kind: "pr.updated" },
+      repositoryId,
+      ref: head1,
+    });
+    const payload = reviewTriggerContext(job.payload);
     expect(payload).toMatchObject({
       reviewId,
       repositoryId,
-      repository: {
-        provider: "github",
-        fullPath: "acme/app",
-        cloneUrl: "https://github.com/acme/app.git",
-      },
+      repository: "acme/app",
       prNumber,
+      pr: { number: prNumber, title: "Add login logging", body: "Please review" },
       baseSha: base,
       headSha: head1,
       reviewConfig: {
@@ -412,7 +429,21 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     // Harness start → run.
     const { harnessId, accessToken } = await newAgent();
     const started = await startAs(jobId, accessToken);
-    expect(started).toMatchObject({ action: "run", job: { id: jobId, payload: job.payload } });
+    expect(started).toMatchObject({
+      action: "run",
+      job: { id: jobId, payload: job.payload },
+      runSpec: {
+        taskType: "review",
+        task: { id: "builtin:review-pr", sink: "review" },
+        agent: { id: "builtin:reviewer" },
+        trigger: job.payload.trigger,
+        repository: { provider: "github", fullPath: "acme/app" },
+        // Narrowed by the review profile at claim time.
+        model: payload.reviewConfig.profile.model,
+        tokenBudget: payload.reviewConfig.profile.maxTokensPerReview,
+        maxFiles: payload.reviewConfig.profile.maxFiles,
+      },
+    });
     expect(await reviewRow(reviewId)).toMatchObject({ status: "running", harnessId });
 
     // Harness runs the review and reports the result.
@@ -486,7 +517,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     // The next push is reviewed incrementally, deduped against the open finding.
     const next = await enqueue(prNumber, head2);
     if (next.status !== "enqueued") throw new Error(next.status);
-    const nextPayload = ReviewJobPayload.parse((await jobRow(next.jobId)).payload);
+    const nextPayload = reviewTriggerContext((await jobRow(next.jobId)).payload);
     expect(nextPayload.previousReview).toEqual({
       headSha: head1,
       openFindings: [
@@ -499,7 +530,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       ],
     });
     await startAs(next.jobId, accessToken);
-    const nextOutput = await agentRun(nextPayload);
+    const nextOutput = await agentRun((await jobRow(next.jobId)).payload);
     expect(nextOutput.scope).toEqual({ mode: "incremental", fromSha: head1, headSha: head2 });
     expect(nextOutput.findings.map((f) => f.path)).toEqual(["src/other.ts"]);
     expect((await submit(next.jobId, accessToken, nextOutput)).body).toEqual({
@@ -568,7 +599,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
     // Files the partial review never reached must still be reviewed: full diff, deduped.
     const next = await enqueue(prNumber, head2);
     if (next.status !== "enqueued") throw new Error(next.status);
-    const payload = ReviewJobPayload.parse((await jobRow(next.jobId)).payload);
+    const payload = reviewTriggerContext((await jobRow(next.jobId)).payload);
     expect(payload.previousReview).toEqual({
       headSha: null,
       openFindings: [
@@ -581,7 +612,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       ],
     });
     await startAs(next.jobId, accessToken);
-    const output = await agentRun(payload);
+    const output = await agentRun((await jobRow(next.jobId)).payload);
     expect(output.scope).toEqual({ mode: "full", baseSha: base, headSha: head2 });
     // The fake provider re-reports src/app.ts (first file of the full diff): suppressed.
     expect(output.findings).toEqual([]);

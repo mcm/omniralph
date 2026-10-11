@@ -188,15 +188,14 @@ describe("ClaudeAgentProvider", () => {
     expect(options.systemPrompt).toBe(REVIEW_SYSTEM_PROMPT);
   });
 
-  it("appends a review agent's system text after the output contract, repair included", async () => {
+  it("uses a review task's system prompt instead of the default, repair included", async () => {
     const fake = fakeQuery([result("not json")], [result(answer([]))]);
+    const systemPrompt = `You review code.\n\n${REVIEW_SYSTEM_PROMPT}`;
     await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
-      request({ systemAppend: "  Focus on security.\n" }),
+      request({ systemPrompt }),
     );
     expect(fake.calls).toHaveLength(2);
-    for (const call of fake.calls) {
-      expect(call.options.systemPrompt).toBe(`${REVIEW_SYSTEM_PROMPT}\n\nFocus on security.`);
-    }
+    for (const call of fake.calls) expect(call.options.systemPrompt).toBe(systemPrompt);
   });
 
   it("allows only Read, Grep and Glob with exploration, guarded to the worktree", async () => {

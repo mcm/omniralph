@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { Finding, FindingCategory } from "./finding.js";
 import { JobRepository } from "./protocol.js";
+import { RunSpecJobPayload } from "./run-spec.js";
 
 export const REVIEW_JOB_TYPE = "review.run";
 
@@ -166,6 +167,29 @@ export const ReviewTaskContext = ReviewJobPayload.pick({
   previousReview: true,
 });
 export type ReviewTaskContext = z.infer<typeof ReviewTaskContext>;
+
+/**
+ * The trigger context `enqueueReview` stores for a run of a `review` task
+ * (`builtin:review-pr`): the `ReviewJobPayload` fields (the review row, the
+ * commits, the PR text, the review configuration, the mode and the earlier
+ * reviews), with `repository` as the template's `owner/repo`, plus `pr`, the
+ * PR as the prompt template quotes it (title and description trimmed; a blank
+ * description is null).
+ */
+export const ReviewTriggerContext = ReviewJobPayload.omit({ repository: true }).extend({
+  repository: z.string().min(1).max(500),
+  pr: z.object({
+    number: z.int().min(1),
+    title: z.string().max(1000),
+    body: z.string().max(100_000).nullable(),
+  }),
+});
+export type ReviewTriggerContext = z.infer<typeof ReviewTriggerContext>;
+
+/** The `ReviewTriggerContext` of a review task's stored job payload (a `RunSpecJobPayload`); throws if it has none. */
+export function reviewTriggerContext(payload: unknown): ReviewTriggerContext {
+  return ReviewTriggerContext.parse(RunSpecJobPayload.parse(payload).trigger.context);
+}
 
 /** Longest `summary` a review task's result carries. */
 export const MAX_REVIEW_SUMMARY_LENGTH = 20_000;

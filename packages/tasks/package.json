@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate:rubric": "node scripts/generate-rubric.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

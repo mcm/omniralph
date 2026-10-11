@@ -10,20 +10,41 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import { ReviewJobPayload, ReviewJobResult } from "@omniralph/shared";
+import { ReviewJobPayload, ReviewJobResult, reviewTriggerContext } from "@omniralph/shared";
 import { onReviewForRalph } from "@/lib/ralph/jobs";
 import { postFailureNote, postReview } from "./post";
 import { resolveFixedFindings } from "./resolve";
 import { supersedeEarlierFindings } from "./supersede";
 
 /**
- * The review side of the job lifecycle: the agent API routes call these
- * hooks for `review.run` jobs so that the `reviews` row follows its job, the
- * result is persisted and posted, and final failures get a note on the PR/MR.
+ * The review side of the job lifecycle: the `review` sink (for
+ * `builtin:review-pr` runs) and, for `review.run` jobs enqueued before the
+ * port, the legacy outcome handler call these hooks so that the `reviews`
+ * row follows its job, the result is persisted and posted, and final
+ * failures get a note on the PR/MR.
  */
 
-function reviewPayload(job: Job): ReviewJobPayload {
-  return ReviewJobPayload.parse(job.payload);
+/**
+ * What the hooks read from a review job: its legacy `ReviewJobPayload` or the
+ * `ReviewTriggerContext` of its run, which has the same fields.
+ */
+export type ReviewJobState = Pick<
+  ReviewJobPayload,
+  | "reviewId"
+  | "repositoryId"
+  | "prNumber"
+  | "headSha"
+  | "changeRequest"
+  | "reviewConfig"
+  | "mode"
+  | "previousReview"
+>;
+
+/** A review job's state: its run's trigger context, or its legacy `review.run` payload. */
+export function reviewJobState(job: Pick<Job, "payload" | "taskId">): ReviewJobState {
+  return job.taskId === null
+    ? ReviewJobPayload.parse(job.payload)
+    : reviewTriggerContext(job.payload);
 }
 
 /**
@@ -32,28 +53,28 @@ function reviewPayload(job: Job): ReviewJobPayload {
  * otherwise (and always for an explicit `@bot review` or Re-run) the review is marked
  * `running` on the agent.
  */
-export async function onReviewJobStarted(
+async function onReviewStarted(
   db: Database,
-  job: Job,
+  job: Pick<Job, "id">,
+  state: ReviewJobState,
   harnessId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
-  const payload = reviewPayload(job);
-  const review = await getReview(db, payload.reviewId);
+  const review = await getReview(db, state.reviewId);
   const completed =
     (review?.trigger ?? "webhook") === "webhook" &&
     (await findCompletedReview(db, {
-      repositoryId: payload.repositoryId,
-      prNumber: payload.prNumber,
-      headSha: payload.headSha,
-      exceptReviewId: payload.reviewId,
+      repositoryId: state.repositoryId,
+      prNumber: state.prNumber,
+      headSha: state.headSha,
+      exceptReviewId: state.reviewId,
     }));
   if (completed) {
-    const reason = `Head ${payload.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
+    const reason = `Head ${state.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
     await skipJob(db, job.id, { reason });
-    await finishReview(db, payload.reviewId, { status: "skipped", error: reason });
+    await finishReview(db, state.reviewId, { status: "skipped", error: reason });
     return { skip: true, reason: "already_reviewed" };
   }
-  await markReviewRunning(db, payload.reviewId, harnessId);
+  await markReviewRunning(db, state.reviewId, harnessId);
   return { skip: false };
 }
 
@@ -72,10 +93,12 @@ export function parseReviewResult(result: unknown): ReviewJobResult | null {
  * Safe to call again for a replayed result; that also retries a post that
  * failed before.
  */
-export async function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
-  const payload = reviewPayload(job);
-  const result = ReviewJobResult.parse(job.result);
-  await saveReviewOutcome(db, payload.reviewId, {
+async function onReviewCompleted(
+  db: Database,
+  state: ReviewJobState,
+  result: ReviewJobResult,
+): Promise<void> {
+  await saveReviewOutcome(db, state.reviewId, {
     status: result.stopReason === "budget_exhausted" ? "budget_exhausted" : "completed",
     tokensIn: result.usage.inputTokens,
     tokensOut: result.usage.outputTokens,
@@ -93,29 +116,59 @@ export async function onReviewJobCompleted(db: Database, job: Job): Promise<void
       confidence: f.confidence,
     })),
   });
-  await postReview(db, { reviewId: payload.reviewId, payload, result });
-  if (payload.mode === "fresh") await supersedeEarlierFindings(db, payload.reviewId);
-  await resolveFixedFindings(db, { reviewId: payload.reviewId, payload, result });
+  await postReview(db, { reviewId: state.reviewId, payload: state, result });
+  if (state.mode === "fresh") await supersedeEarlierFindings(db, state.reviewId);
+  await resolveFixedFindings(db, { reviewId: state.reviewId, payload: state, result });
   // A ralph PR/MR: the open findings may go back to its run as a request.
-  await onReviewForRalph(db, payload.reviewId);
+  await onReviewForRalph(db, state.reviewId);
 }
 
 /** A review job that ended `canceled` (e.g. superseded by a newer push). */
-export async function onReviewJobCanceled(db: Database, job: Job): Promise<void> {
-  await finishReview(db, reviewPayload(job).reviewId, { status: "skipped", error: "Canceled" });
+async function onReviewCanceled(db: Database, state: ReviewJobState): Promise<void> {
+  await finishReview(db, state.reviewId, { status: "skipped", error: "Canceled" });
 }
 
 /** A retryable failure: the review waits for the job's redelivery. */
-export async function onReviewJobRetry(db: Database, job: Job, error: string | null) {
-  await markReviewQueued(db, reviewPayload(job).reviewId, error);
+async function onReviewRetry(db: Database, state: ReviewJobState, error: string | null) {
+  await markReviewQueued(db, state.reviewId, error);
 }
 
 /**
  * A final failure: the review becomes `failed` with the error and a short
  * failure note is posted on the PR/MR (once).
  */
-export async function onReviewJobFailed(db: Database, job: Job, error: string): Promise<void> {
-  const payload = reviewPayload(job);
-  await finishReview(db, payload.reviewId, { status: "failed", error });
-  await postFailureNote(db, { reviewId: payload.reviewId, payload, error });
+async function onReviewFailed(db: Database, state: ReviewJobState, error: string): Promise<void> {
+  await finishReview(db, state.reviewId, { status: "failed", error });
+  await postFailureNote(db, { reviewId: state.reviewId, payload: state, error });
+}
+
+// The hooks by job: the `review` sink's and the legacy `review.run` outcome handler's.
+
+export function onReviewJobStarted(db: Database, job: Job, harnessId: string) {
+  return onReviewStarted(db, job, reviewJobState(job), harnessId);
+}
+
+export function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
+  return applyReviewResult(db, job, ReviewJobResult.parse(job.result));
+}
+
+/** `onReviewJobCompleted` with the job's result already parsed. */
+export function applyReviewResult(
+  db: Database,
+  job: Pick<Job, "payload" | "taskId">,
+  result: ReviewJobResult,
+): Promise<void> {
+  return onReviewCompleted(db, reviewJobState(job), result);
+}
+
+export function onReviewJobCanceled(db: Database, job: Job): Promise<void> {
+  return onReviewCanceled(db, reviewJobState(job));
+}
+
+export function onReviewJobRetry(db: Database, job: Job, error: string | null) {
+  return onReviewRetry(db, reviewJobState(job), error);
+}
+
+export function onReviewJobFailed(db: Database, job: Job, error: string): Promise<void> {
+  return onReviewFailed(db, reviewJobState(job), error);
 }

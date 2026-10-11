@@ -16,11 +16,13 @@ import {
   MAX_OPEN_FINDING_BODY_CHARS,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
+  ReviewTriggerContext,
+  RunSpecJobPayload,
   type ReviewMode,
-  legacyJobRouting,
 } from "@omniralph/shared";
+import { getBuiltinTask, type TriggerKind } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { jobRepository } from "@/lib/scm/adapters";
+import { runSpecJobInput } from "@/lib/runs/job";
 
 export interface EnqueueReviewInput {
   repositoryId: string;
@@ -59,6 +61,31 @@ export type EnqueueReviewResult =
   | { status: "repository_unavailable" }
   | { status: "profile_not_found" };
 
+/** The review task every PR review runs (choosing tasks per repository comes later). */
+export const REVIEW_TASK_ID = "builtin:review-pr";
+
+/** The task trigger of each way a review is requested. */
+const TRIGGER_KINDS: Record<Review["trigger"], TriggerKind> = {
+  webhook: "pr.updated",
+  mention: "pr.mention",
+  manual: "review.rerun",
+};
+
+/**
+ * The review row a PR review job is for: in its trigger context (a
+ * `builtin:review-pr` run) or, for a job enqueued before the port, its
+ * legacy `review.run` payload; null for neither.
+ */
+export function reviewIdOfJob(payload: unknown): string | null {
+  const run = RunSpecJobPayload.safeParse(payload);
+  const reviewId = ReviewJobPayload.shape.reviewId.safeParse(
+    run.success
+      ? run.data.trigger.context.reviewId
+      : (payload as { reviewId?: unknown } | null)?.reviewId,
+  );
+  return reviewId.success ? reviewId.data : null;
+}
+
 /** Dedupe key prefix of a PR's review jobs; the full key adds the head SHA. */
 export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): string {
   return `${REVIEW_JOB_TYPE}:${repositoryId}:${prNumber}:`;
@@ -67,11 +94,15 @@ export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): stri
 /**
  * Enqueues a review of a PR/MR head: cancels the PR's queued or running review
  * jobs for older head SHAs, creates the `queued` review and dispatches a
- * `review.run` job carrying the review config resolved now (profile, rules,
- * instructions, excludes) and the previous review's head SHA (none for a
- * `full` review) and open findings (neither for a `fresh` one). The payload holds
- * no credentials. A second call for the same head while its job is active
- * returns that job (`duplicate`).
+ * `review.run` job that runs the review task `builtin:review-pr` (routed by
+ * the task: task type `review`, pool `short`). Its trigger (`pr.updated`,
+ * `pr.mention` or `review.rerun`) carries the review config resolved now
+ * (profile, rules, instructions, excludes), the PR text, the mode and the
+ * previous review's head SHA (none for a `full` review) and open findings
+ * (neither for a `fresh` one) as a `ReviewTriggerContext`; the job is claimed
+ * as a run spec and its result applied by the `review` sink. The payload
+ * holds no credentials. A second call for the same head while its job is
+ * active returns that job (`duplicate`).
  */
 export async function enqueueReview(
   db: Database,
@@ -96,9 +127,9 @@ export async function enqueueReview(
     if (job.dedupeKey === `${prefix}${input.headSha}`) continue;
     await dispatcher.cancel(job.id);
     canceledJobIds.push(job.id);
-    const reviewId = ReviewJobPayload.shape.reviewId.safeParse(job.payload.reviewId);
-    if (reviewId.success) {
-      await finishReview(db, reviewId.data, {
+    const reviewId = reviewIdOfJob(job.payload);
+    if (reviewId) {
+      await finishReview(db, reviewId, {
         status: "skipped",
         error: `Superseded by a newer push (${input.headSha.slice(0, 12)})`,
       });
@@ -118,11 +149,16 @@ export async function enqueueReview(
     model: profile.model,
     budget: profile.maxTokensPerReview,
   });
-  const payload = ReviewJobPayload.parse({
+  const context = ReviewTriggerContext.parse({
     reviewId: review.id,
     repositoryId: input.repositoryId,
-    repository: jobRepository(found.repository, found.connection),
+    repository: found.repository.fullPath,
     prNumber: input.prNumber,
+    pr: {
+      number: input.prNumber,
+      title: input.title.trim(),
+      body: input.description?.trim() || null,
+    },
     baseSha: input.baseSha,
     headSha: input.headSha,
     changeRequest: {
@@ -160,26 +196,31 @@ export async function enqueueReview(
           : [];
       }),
     },
-  } satisfies ReviewJobPayload);
+  } satisfies ReviewTriggerContext);
+  const task = getBuiltinTask(REVIEW_TASK_ID);
+  if (!task) throw new Error(`Unknown review task ${REVIEW_TASK_ID}`);
 
   try {
     const { job, created } = await dispatcher.createAndPublish({
       organizationId: found.repository.organizationId,
       type: REVIEW_JOB_TYPE,
-      ...legacyJobRouting(REVIEW_JOB_TYPE),
-      payload,
-      repositoryId: input.repositoryId,
+      ...runSpecJobInput(task, {
+        trigger: { kind: TRIGGER_KINDS[input.trigger], context },
+        repositoryId: input.repositoryId,
+        ref: input.headSha,
+      }),
       dedupeKey: `${prefix}${input.headSha}`,
     });
     if (created) return { status: "enqueued", reviewId: review.id, jobId: job.id, canceledJobIds };
     await deleteReview(db, review.id);
-    const existing = ReviewJobPayload.shape.reviewId.parse(job.payload.reviewId);
+    const existing = reviewIdOfJob(job.payload);
+    if (!existing) throw new Error(`Review job ${job.id} has no review`);
     return { status: "duplicate", reviewId: existing, jobId: job.id, canceledJobIds };
   } catch (error) {
     // A job that was inserted anyway keeps its review; otherwise the review has no job
     // and is removed.
     const active = await listActiveJobsByDedupePrefix(db, `${prefix}${input.headSha}`);
-    if (!active.some((job) => job.payload.reviewId === review.id)) {
+    if (!active.some((job) => reviewIdOfJob(job.payload) === review.id)) {
       await deleteReview(db, review.id);
     }
     throw error;

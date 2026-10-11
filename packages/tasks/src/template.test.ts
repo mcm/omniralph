@@ -157,6 +157,13 @@ describe("renderTemplate", () => {
     ).toBe(`a<b>&"c'#7`);
   });
 
+  it("renders a backslash-escaped {{ as literal text", () => {
+    expect(render("`$\\{{ env.X }}` {{pr.number}} \\{{#x}}", { pr: { number: 3 } })).toBe(
+      "`${{ env.X }}` 3 {{#x}}",
+    );
+    expect(validateTemplate("\\{{ }} \\{{{", [])).toEqual([]);
+  });
+
   it("accepts dotted keys in the context", () => {
     expect(render("{{pr.number}}", { "pr.number": 3 })).toBe("3");
   });

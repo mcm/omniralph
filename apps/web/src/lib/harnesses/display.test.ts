@@ -60,6 +60,20 @@ describe("jobTarget", () => {
     });
     expect(jobTarget({ payload: { prNumber: 1 }, repository: null })).toBeNull();
   });
+
+  it("links runs of PR tasks to the PR in their trigger context", () => {
+    const run = (context: Record<string, unknown>) => ({
+      trigger: { kind: "pr.updated", context },
+    });
+    expect(jobTarget({ payload: run({ pr: { number: 12 } }), repository: github })).toEqual({
+      label: "acme/web#12",
+      url: "https://github.com/acme/web/pull/12",
+    });
+    expect(jobTarget({ payload: run({}), repository: github })).toEqual({
+      label: "acme/web",
+      url: "https://github.com/acme/web",
+    });
+  });
 });
 
 describe("auditDetailSummary", () => {

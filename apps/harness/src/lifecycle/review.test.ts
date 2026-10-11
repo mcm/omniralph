@@ -3,7 +3,13 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ReviewProvider, ReviewRequest, TaskReviewResult } from "@omniralph/engine";
+import {
+  REPLY_SYSTEM_PROMPT,
+  REVIEW_SYSTEM_PROMPT,
+  type ReviewProvider,
+  type ReviewRequest,
+  type TaskReviewResult,
+} from "@omniralph/engine";
 import {
   ReviewTaskResult,
   RunSpec,
@@ -12,7 +18,13 @@ import {
   type ReviewTaskContext,
   type RunSpec as RunSpecType,
 } from "@omniralph/shared";
-import { AgentDefinition, TaskDefinition, type TaskDefinitionInput } from "@omniralph/tasks";
+import {
+  AgentDefinition,
+  getBuiltinAgent,
+  getBuiltinTask,
+  TaskDefinition,
+  type TaskDefinitionInput,
+} from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
@@ -255,7 +267,7 @@ describe("runReviewTask", () => {
     // The profile's budget, capped by the run's.
     expect(request!.task.budget).toBe(40_000);
     expect(request!.task.files.map((f) => f.path)).toEqual(["CLAUDE.md", "src/list.ts"]);
-    expect(request!.systemAppend).toBe("You review code.\n\nReport security issues only.");
+    expect(request!.systemPrompt).toBe("You review code.\n\nReport security issues only.");
 
     const diff = request!.task.files.map((f) => f.patch.replace(/\n$/, "")).join("\n");
     expect(request!.prompt).toBe(`Review acme/app #1
@@ -417,6 +429,69 @@ ${diff}
     expect(failed).toBeInstanceOf(Error);
     expect(failed).not.toBeInstanceOf(RetryableJobError);
     expect(failed).toMatchObject({ message: "boom" });
+  });
+
+  describe("builtin:review-pr", () => {
+    const builtin = () => ({
+      agent: getBuiltinAgent("builtin:reviewer")!,
+      task: getBuiltinTask("builtin:review-pr")!,
+    });
+
+    it("runs with the agent's prompt and REVIEW_SYSTEM_PROMPT, none of the reply task's system text", async () => {
+      const { provider, requests } = fakeProvider();
+      await runReviewTask(spec({}, builtin()), context(), { provider: () => provider });
+      const system = requests[0]!.systemPrompt!;
+      expect(system).toBe(
+        `You are Omniralph, an automated code reviewer.\n\n${REVIEW_SYSTEM_PROMPT}`,
+      );
+      expect(system.endsWith(REVIEW_SYSTEM_PROMPT)).toBe(true);
+      const replyText = REPLY_SYSTEM_PROMPT.slice(builtin().agent.systemPrompt.length).trim();
+      for (const line of replyText.split("\n").filter(Boolean)) expect(system).not.toContain(line);
+    });
+
+    it("renders today's review prompt: depth, the rubric of the diff's languages, rules and the diff", async () => {
+      const { provider, requests } = fakeProvider();
+      const runSpec = spec(
+        {
+          reviewConfig: {
+            profile: PROFILE,
+            customInstructions: "Be strict.",
+            rules: [{ kind: "custom", text: "No raw SQL.", enabled: true }],
+            pathExcludes: [],
+          },
+        },
+        builtin(),
+      );
+      await runReviewTask(runSpec, context(), { provider: () => provider });
+      const prompt = requests[0]!.prompt;
+      expect(prompt.startsWith("# Code review\n")).toBe(true);
+      expect(prompt).toContain("# Review depth\n\nStandard review: review every changed line");
+      expect(prompt).toContain("# Review rubric — all languages");
+      expect(prompt).toContain("# TypeScript / JavaScript");
+      expect(prompt).not.toContain("# Python");
+      expect(prompt).toContain(
+        "# Repository rules\n\n## Custom instructions\n\nBe strict.\n\n## Rules\n\nFollow these rules from the repository's maintainers:\n\n1. No raw SQL.",
+      );
+      expect(prompt).toContain("Title:\n```\nFix last()\n```\n\nDescription:\n(none)");
+      expect(prompt).toContain("The diff covers the whole change.\n\n```diff\n");
+    });
+
+    it("plans at most the run's maxFiles and doesn't explore without the agent's exploration tools", async () => {
+      const { provider, requests } = fakeProvider();
+      const { agent, task: reviewTask } = builtin();
+      const runSpec = spec(
+        {},
+        {
+          task: reviewTask,
+          agent: { ...agent, tools: { ...agent.tools, builtin: [] } },
+          maxFiles: 1,
+        },
+      );
+      const output = await runReviewTask(runSpec, context(), { provider: () => provider });
+      expect(requests[0]!.task.files).toHaveLength(1);
+      expect(requests[0]!.allowExploration).toBe(false);
+      expect(output.skipped).toEqual([expect.objectContaining({ reason: "max_files" })]);
+    });
   });
 
   it("rejects a trigger context without the review's inputs", async () => {

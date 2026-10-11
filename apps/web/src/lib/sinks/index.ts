@@ -8,6 +8,7 @@ import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
+import { reviewSink } from "./review";
 import { triageSink } from "./triage";
 
 /**
@@ -20,13 +21,23 @@ import { triageSink } from "./triage";
 /** A query run's result as a sink sees it: `structured` parsed with the sink's `outputSchema`. */
 export type SinkResult<Output> = Omit<QueryRunResult, "structured"> & { structured: Output | null };
 
-export interface Sink<Output = unknown> {
+/**
+ * A sink for query runs applies a `SinkResult<Output>`; a sink for another
+ * task type (`review`) parses its own run result (`parseResult`) and applies a
+ * `Result`.
+ */
+export interface Sink<Output = unknown, Result = SinkResult<Output>> {
   kind: SinkKind;
   /**
    * The structured part (`structured`) of a `QueryRunResult` the sink accepts
    * from an answered run; null for a sink that takes the Markdown `answer`.
    */
   outputSchema: z.ZodType<Output> | null;
+  /**
+   * Parses a run result that isn't a `QueryRunResult` (a review task's); null
+   * when the sink rejects it. Replaces `parseSinkResult` for the sink.
+   */
+  parseResult?(result: unknown): Result | null;
   /**
    * After a delivery started. `skip` ends the claim without running it (the
    * hook has already recorded why); the claim then moves on to the next job.
@@ -37,15 +48,17 @@ export interface Sink<Output = unknown> {
     harnessId: string,
   ): Promise<{ skip: false } | { skip: true; reason: JobSkipReason }>;
   /** Applies a completed run's result. Called again for a replayed result, so it must be idempotent. */
-  apply(db: Database, job: Job, result: SinkResult<Output>): Promise<unknown>;
+  apply(db: Database, job: Job, result: Result): Promise<unknown>;
   /** The run failed for good; `error` is null when the harness reported none. */
   onFailed?(db: Database, job: Job, error: string | null): Promise<unknown>;
+  /** A retryable failure: the run waits for a redelivery. */
+  onRetry?(db: Database, job: Job, error: string | null): Promise<unknown>;
   /** The run was canceled before it finished (by a person, a revocation or a claim). */
   onCanceled?(db: Database, job: Job): Promise<unknown>;
 }
 
-/** Erases a sink's output type for the registry (`parseSinkResult` checks it at runtime). */
-function registered<Output>(sink: Sink<Output>): Sink {
+/** Erases a sink's output type for the registry (`sinkResult` checks it at runtime). */
+function registered<Output, Result>(sink: Sink<Output, Result>): Sink {
   return sink as unknown as Sink;
 }
 
@@ -55,6 +68,7 @@ const SINKS = new Map<SinkKind, Sink>(
     registered(findingThreadSink),
     registered(chatThreadSink),
     registered(triageSink),
+    registered(reviewSink),
   ].map((sink) => [sink.kind, sink]),
 );
 
@@ -95,18 +109,24 @@ export function taskSink(
 /** The lifecycle hooks the job routes call: an outcome handler without its payload schema. */
 export type JobHooks = Omit<JobOutcomeHandler, "payload">;
 
-/** A sink as lifecycle hooks: results are validated with `parseSinkResult` and applied on completion. */
+/** A run's result as `sink` accepts it (its `parseResult`, else `parseSinkResult`); null when it rejects it. */
+function sinkResult(sink: Sink, result: unknown): unknown {
+  return sink.parseResult ? sink.parseResult(result) : parseSinkResult(sink, result);
+}
+
+/** A sink as lifecycle hooks: results are validated with `sinkResult` and applied on completion. */
 function sinkHooks(sink: Sink): JobHooks {
   return {
     ...(sink.onStarted && { onStarted: sink.onStarted.bind(sink) }),
-    isValidResult: (result) => parseSinkResult(sink, result) !== null,
+    isValidResult: (result) => sinkResult(sink, result) !== null,
     async onCompleted(db, job) {
-      const result = parseSinkResult(sink, job.result);
-      if (!result)
+      const result = sinkResult(sink, job.result);
+      if (result === null)
         throw new Error(`Job ${job.id} completed with a result its ${sink.kind} sink rejects`);
-      return sink.apply(db, job, result);
+      return sink.apply(db, job, result as SinkResult<unknown>);
     },
     ...(sink.onFailed && { onFailed: sink.onFailed.bind(sink) }),
+    ...(sink.onRetry && { onRetry: sink.onRetry.bind(sink) }),
     ...(sink.onCanceled && { onCanceled: sink.onCanceled.bind(sink) }),
   };
 }

@@ -6,21 +6,8 @@
  * runs without the hunk and without file tools. The `finding-thread` sink
  * posts the answer in the thread.
  */
-import type { AgentDefinitionInput, TaskDefinitionInput } from "../definitions.js";
-
-/**
- * The code reviewer persona. Minimal for now: the review epic adds the
- * rubric (and the `review` task type).
- */
-export const REVIEWER_AGENT: AgentDefinitionInput = {
-  id: "builtin:reviewer",
-  name: "Reviewer",
-  description: "Omniralph's code reviewer. Reads the checkout (Read, Grep, Glob); never writes.",
-  systemPrompt: "You are Omniralph, an automated code reviewer.",
-  systemPromptMode: "replace",
-  tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
-  taskTypes: ["query", "review"],
-};
+import type { TaskDefinitionInput } from "../definitions.js";
+import { REVIEWER_AGENT } from "./reviewer.js";
 
 const REPLY_SYSTEM_APPEND = `Someone replied to one of your review findings with a question or a comment.
 
