@@ -5,7 +5,9 @@
  * The prompt is ralph's request prompt (`buildRequestPrompt` in
  * `@omniralph/ralph`) for both sources, both history-rewrite policies and
  * `/ship`, closed by the request-specific rules of ralph's request system
- * prompt (`requestSystemAppend`). A request run need not have an epic: the
+ * prompt (`requestSystemAppend`). Unlike today's request session, it can't
+ * push: it publishes the branch through the `ship` harness tool (the push
+ * instructions say so). A request run need not have an epic: the
  * PRD, the story list and its status only render in optional sections.
  */
 import type { TaskDefinitionInput } from "../definitions.js";
@@ -22,11 +24,11 @@ You are shipping the work on a branch for {{#fromChat}}a chat thread{{/fromChat}
 {{/ship}}
 {{^ship}}
 You are responding to a request in {{#fromChat}}a chat thread about a repository{{/fromChat}}{{^fromChat}}a Linear agent session{{/fromChat}}.
-- Do what the request asks. You may use git (commit, push) when the request calls for it.
+- Do what the request asks. You may commit when the request calls for it; push only through the \`ship\` tool.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
-- Only push \`{{branch}}\`, the branch you are on. Never push to, or force-push, the base branch or any other branch.
+- Only ship \`{{branch}}\`, the branch you are on. Never push to, or force-push, the base branch or any other branch.
 {{#historyRewriteAllowed}}
-- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on \`{{branch}}\` and push with \`git push --force-with-lease\`. That is allowed here.
+- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on \`{{branch}}\` and ship it with \`forceWithLease: true\`. That is allowed here.
 {{/historyRewriteAllowed}}
 {{^historyRewriteAllowed}}
 - Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.
@@ -37,15 +39,15 @@ You are responding to a request in {{#fromChat}}a chat thread about a repository
 
 /** "How to handle it" of an ordinary request (`requestInstructions`). */
 const REQUEST_INSTRUCTIONS = `- This is a direct request, not a story. Do what it asks, and nothing beyond it.
-- You may commit, and push \`{{branch}}\` to \`origin\` (\`git push -u origin {{branch}}\`), when the request calls for it. Never push to \`{{baseBranch}}\` or any other branch.
+- You may commit, and publish \`{{branch}}\` to \`origin\`, when the request calls for it. Don't run \`git push\` (your git credentials are read-only): call the \`ship\` tool, which commits what is left in the worktree with the \`message\` you give, pushes \`{{branch}}\` and tells you what it did. It never pushes \`{{baseBranch}}\` or any other branch.
 {{#historyRewriteAllowed}}
-- History rewrites are allowed on \`{{branch}}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/{{baseBranch}}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin {{branch}}\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.
+- History rewrites are allowed on \`{{branch}}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/{{baseBranch}}\`, resolve conflicts, run the quality gates, then call \`ship\` with \`forceWithLease: true\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.
 {{/historyRewriteAllowed}}
 {{^historyRewriteAllowed}}
 - History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`{{baseBranch}}\` into \`{{branch}}\` instead.
 {{/historyRewriteAllowed}}
 {{#remoteUrl}}
-- For the {{prTerm}}, don't run \`gh\` or \`glab\`. Push \`{{branch}}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`{{baseBranch}}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}Linear{{/fromChat}}: what it does and why, notable changes, and any breaking changes or judgement calls.{{^fromChat}} Don't list the user stories.{{/fromChat}}
+- For the {{prTerm}}, don't run \`gh\` or \`glab\`. Ship \`{{branch}}\` first, then ask for it with \`pullRequest\`, on the \`ship\` call or in your structured result: \`open\` opens it into \`{{baseBranch}}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}Linear{{/fromChat}}: what it does and why, notable changes, and any breaking changes or judgement calls.{{^fromChat}} Don't list the user stories.{{/fromChat}}
 {{/remoteUrl}}
 {{^remoteUrl}}
 - There is no \`origin\` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.

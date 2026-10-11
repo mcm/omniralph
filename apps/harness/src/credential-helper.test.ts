@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
@@ -10,6 +10,7 @@ import type { FetchFn } from "./api.js";
 import { parseCredentialRequest } from "./credential-helper.js";
 import { jobProcessEnv } from "./job-env.js";
 import { main } from "./main.js";
+import { basicAuth, startGitHttpServer, type GitHttpServer } from "./test/git-http.js";
 import { credentialConfigArgs, defaultCredentialHelper, gitEnv } from "./workspace/git.js";
 
 // Always in the future: git (≥ 2.41) ignores passwords whose password_expiry_utc has passed.
@@ -240,7 +241,7 @@ describe("pushing from a ralph job's worktree with the brokered credential", () 
   const WRITE_TOKEN = "ghs_contents_write";
   let dir: string;
   let origin: string;
-  let gitServer: Server;
+  let gitServer: GitHttpServer;
   let gitUrl: string;
   let broker: Server;
   let brokerUrl: string;
@@ -252,57 +253,12 @@ describe("pushing from a ralph job's worktree with the brokered credential", () 
     origin = path.join(dir, "origin.git");
     await git(["init", "--bare", "--initial-branch=main", origin], dir);
 
-    // A smart-HTTP git server (`git http-backend`) that only accepts the
-    // brokered write token, standing in for the code host.
-    gitServer = createServer((req, res) => {
-      const authorization = req.headers.authorization;
-      gitAuth.push(authorization);
-      const expected = `Basic ${Buffer.from(`x-access-token:${WRITE_TOKEN}`).toString("base64")}`;
-      if (authorization !== expected) {
-        res.writeHead(401, { "www-authenticate": 'Basic realm="git"' });
-        res.end();
-        return;
-      }
-      const url = new URL(req.url ?? "/", "http://git");
-      const child = spawn("git", ["http-backend"], {
-        env: {
-          PATH: process.env.PATH,
-          GIT_PROJECT_ROOT: dir,
-          GIT_HTTP_EXPORT_ALL: "1",
-          REMOTE_USER: "x-access-token",
-          REQUEST_METHOD: req.method,
-          PATH_INFO: url.pathname,
-          QUERY_STRING: url.search.slice(1),
-          CONTENT_TYPE: req.headers["content-type"] ?? "",
-          ...(req.headers["content-encoding"] && {
-            HTTP_CONTENT_ENCODING: req.headers["content-encoding"],
-          }),
-        },
-      });
-      req.pipe(child.stdin);
-      let head = Buffer.alloc(0);
-      let headersSent = false;
-      child.stdout.on("data", (chunk: Buffer) => {
-        if (headersSent) return void res.write(chunk);
-        head = Buffer.concat([head, chunk]);
-        const end = head.indexOf("\r\n\r\n");
-        if (end < 0) return;
-        let status = 200;
-        for (const line of head.subarray(0, end).toString("utf8").split("\r\n")) {
-          const colon = line.indexOf(":");
-          const name = line.slice(0, colon).trim();
-          const value = line.slice(colon + 1).trim();
-          if (name.toLowerCase() === "status") status = Number.parseInt(value, 10);
-          else res.setHeader(name, value);
-        }
-        res.writeHead(status);
-        headersSent = true;
-        res.write(head.subarray(end + 4));
-      });
-      child.on("close", () => res.end());
+    // A smart-HTTP git server that only accepts the brokered write token, standing in for the code host.
+    gitServer = await startGitHttpServer(dir, (request) => {
+      gitAuth.push(request.authorization);
+      return request.authorization === basicAuth("x-access-token", WRITE_TOKEN);
     });
-    await new Promise<void>((resolve) => gitServer.listen(0, "127.0.0.1", resolve));
-    gitUrl = `http://127.0.0.1:${(gitServer.address() as AddressInfo).port}/origin.git`;
+    gitUrl = `${gitServer.url}/origin.git`;
 
     // The control panel's credential broker, as it answers a ralph job's token.
     broker = createServer((req, res) => {
@@ -315,7 +271,7 @@ describe("pushing from a ralph job's worktree with the brokered credential", () 
   });
 
   afterAll(async () => {
-    gitServer.close();
+    await gitServer.close();
     broker.close();
     await rm(dir, { recursive: true, force: true });
   });

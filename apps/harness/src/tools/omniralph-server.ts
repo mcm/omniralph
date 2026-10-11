@@ -9,6 +9,7 @@ import {
 import { attachmentFileName } from "@omniralph/ralph";
 import {
   DEFAULT_LINEAR_SEARCH_RESULTS,
+  RALPH_PULL_REQUEST_ACTIONS,
   LinearEntityId,
   MAX_LINEAR_COMMENTS,
   MAX_LINEAR_SEARCH_QUERY,
@@ -28,6 +29,7 @@ import {
 } from "@omniralph/tasks";
 import { z } from "zod";
 import { getJson, type FetchFn } from "../api.js";
+import type { ShipOutcome, ShipRequest } from "../lifecycle/request-attempt.js";
 import type { Logger } from "../logger.js";
 import { ActivityRelay } from "./activities.js";
 import { controlPanelFetcher } from "./attachments.js";
@@ -36,11 +38,12 @@ import { PermissionRelay } from "./permissions.js";
 /** The name of the in-process MCP server serving the harness tools. */
 export const OMNIRALPH_SERVER = "omniralph";
 
-/** The harness tools this harness serves (`ship` comes with coding runs). */
+/** The harness tools this harness serves (`ship` only with a `ship` handler: request coding runs). */
 export const SERVED_HARNESS_TOOLS: readonly HarnessTool[] = [
   "post_activity",
   "ask_permission",
   "get_attachment",
+  "ship",
 ];
 
 /** The name a session's permission rules use for a harness or Linear tool. */
@@ -63,6 +66,11 @@ export interface OmniralphServerOptions {
   linearTools?: readonly LinearTool[];
   /** The run's task type: caps `tools` (`ship` is for coding runs only). */
   taskType: TaskType;
+  /**
+   * Commits and pushes the run's branch with the lifecycle's git access (a
+   * request coding run's `prepared.ship`): `ship` is only offered with it.
+   */
+  ship?: (request: ShipRequest) => Promise<ShipOutcome>;
   /** The run's temp directory: `get_attachment` saves under its `attachments/`. */
   tmpDir: string;
   /** The run's signal: an open `ask_permission` is denied when it fires. */
@@ -94,14 +102,20 @@ const failure = (what: string, error: unknown): ToolResult => ({
   isError: true,
 });
 
-/** The harness tools of the agent's list that the task type allows and this harness serves. */
+/**
+ * The harness tools of the agent's list that the task type allows and this
+ * harness serves; `ship` only when the run can ship (`canShip`: a request
+ * coding run, never a story run).
+ */
 export function offeredHarnessTools(
   tools: readonly HarnessTool[],
   taskType: TaskType,
+  canShip = false,
 ): HarnessTool[] {
   const allowed = HARNESS_TOOLS_BY_TASK_TYPE[taskType];
   return [...new Set(tools)].filter(
-    (name) => allowed.includes(name) && SERVED_HARNESS_TOOLS.includes(name),
+    (name) =>
+      allowed.includes(name) && SERVED_HARNESS_TOOLS.includes(name) && (name !== "ship" || canShip),
   );
 }
 
@@ -126,7 +140,7 @@ export function omniralphTools(options: OmniralphServerOptions): SdkMcpToolDefin
     logger: options.logger,
     ...(options.fetch && { fetch: options.fetch }),
   };
-  const offered = offeredHarnessTools(options.tools, options.taskType);
+  const offered = offeredHarnessTools(options.tools, options.taskType, options.ship !== undefined);
   const definitions: SdkMcpToolDefinition[] = [];
 
   if (offered.includes("post_activity")) {
@@ -200,6 +214,48 @@ export function omniralphTools(options: OmniralphServerOptions): SdkMcpToolDefin
             return text(file);
           } catch (error) {
             return failure("downloading the attachment", error);
+          }
+        },
+      ) as unknown as SdkMcpToolDefinition,
+    );
+  }
+
+  if (offered.includes("ship") && options.ship) {
+    const shipBranch = options.ship;
+    definitions.push(
+      tool(
+        "ship",
+        "Publishes your work on the run's branch (you can't `git push` yourself: your git credentials are read-only). Commits everything left in the worktree (`git add -A`) with `message`, when there is anything, then pushes the branch to `origin`. Pass `forceWithLease: true` only after a history rewrite the request asked for (refused where history rewrites are disabled). `pullRequest` asks for a pull/merge request change (`open`, `update` or `ready`, with a title and description), made after the run. Returns `{ commitSha, pushed, error }`; when the push fails the commit is undone and your changes stay in the worktree.",
+        {
+          message: z
+            .string()
+            .trim()
+            .min(1)
+            .max(20_000)
+            .optional()
+            .describe("The commit message: a one-line subject, a blank line, then a short body"),
+          pullRequest: z
+            .object({
+              action: z.enum(RALPH_PULL_REQUEST_ACTIONS),
+              title: z.string().trim().min(1).max(500).optional(),
+              body: z.string().trim().min(1).max(60_000).optional(),
+            })
+            .optional(),
+          forceWithLease: z.boolean().optional(),
+        },
+        async (args) => {
+          try {
+            const outcome = await shipBranch({
+              ...(args.message && { message: args.message }),
+              ...(args.pullRequest && { pullRequest: args.pullRequest }),
+              ...(args.forceWithLease && { forceWithLease: true }),
+            });
+            return {
+              ...text(JSON.stringify(outcome, null, 2)),
+              ...(outcome.error && { isError: true }),
+            };
+          } catch (error) {
+            return failure("shipping", error);
           }
         },
       ) as unknown as SdkMcpToolDefinition,

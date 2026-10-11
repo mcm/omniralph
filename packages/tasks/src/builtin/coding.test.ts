@@ -94,14 +94,57 @@ function fenceRequest(ctx: RequestPromptContext): RequestPromptContext {
   };
 }
 
-/** Today's request prompt with fenced values: requests are fenced instead of quoted with `> `. */
+/**
+ * Today's push wording in request prompts and rules, and what coding runs
+ * say instead: the session can't push, it calls the `ship` harness tool.
+ */
+function shipToolWording(ctx: RequestPromptContext): [string, string][] {
+  const { branch, baseBranch } = ctx;
+  return [
+    [
+      "- Do what the request asks. You may use git (commit, push) when the request calls for it.",
+      "- Do what the request asks. You may commit when the request calls for it; push only through the `ship` tool.",
+    ],
+    [
+      "- Only push the epic branch you are on.",
+      `- Only ship \`${branch}\`, the branch you are on.`,
+    ],
+    [
+      "do it on the epic branch and push with `git push --force-with-lease`.",
+      `do it on \`${branch}\` and ship it with \`forceWithLease: true\`.`,
+    ],
+    [
+      `- You may commit, and push \`${branch}\` to \`origin\` (\`git push -u origin ${branch}\`), when the request calls for it. Never push to \`${baseBranch}\` or any other branch.`,
+      `- You may commit, and publish \`${branch}\` to \`origin\`, when the request calls for it. Don't run \`git push\` (your git credentials are read-only): call the \`ship\` tool, which commits what is left in the worktree with the \`message\` you give, pushes \`${branch}\` and tells you what it did. It never pushes \`${baseBranch}\` or any other branch.`,
+    ],
+    [
+      `then \`git push --force-with-lease origin ${branch}\`.`,
+      "then call `ship` with `forceWithLease: true`.",
+    ],
+    [
+      `Push \`${branch}\` first, then set \`pullRequest\` in your structured result:`,
+      `Ship \`${branch}\` first, then ask for it with \`pullRequest\`, on the \`ship\` call or in your structured result:`,
+    ],
+  ];
+}
+
+/** `text` with today's push wording replaced by the `ship` tool's (`/ship` keeps its own). */
+function withShipTool(text: string, ctx: RequestPromptContext): string {
+  if (ctx.ship) return text;
+  return shipToolWording(ctx).reduce((out, [today, coding]) => out.replace(today, coding), text);
+}
+
+/**
+ * Today's request prompt with fenced values (requests are fenced instead of
+ * quoted with `> `) and the `ship` tool instead of `git push`.
+ */
 function expectedRequestPrompt(ctx: RequestPromptContext): string {
   let prompt = buildRequestPrompt(fenceRequest(ctx));
   for (const r of ctx.requests) {
     const block = fenced("requests", r.trim());
     prompt = prompt.replace(`> ${block.replace(/\n/g, "\n> ")}`, block);
   }
-  return `${prompt}\n\n${render(REQUEST_RULES, requestTemplateContext(ctx))}`;
+  return `${withShipTool(prompt, ctx)}\n\n${render(REQUEST_RULES, requestTemplateContext(ctx))}`;
 }
 
 function fenceDescribe(ctx: DescribePrPromptContext): DescribePrPromptContext {
@@ -227,7 +270,10 @@ describe("builtin:handle-request", () => {
     const rules = (ctx: RequestPromptContext) =>
       render(REQUEST_RULES, requestTemplateContext(ctx)).split("\n");
     for (const ctx of Object.values(REQUEST_FIXTURES)) {
-      const today = requestSystemAppend(ctx.historyRewrite, ctx.source, { ship: !!ctx.ship })
+      const today = withShipTool(
+        requestSystemAppend(ctx.historyRewrite, ctx.source, { ship: !!ctx.ship }),
+        ctx,
+      )
         .split("\n")
         // The identity is in the engineer's system prompt; the epic branch is named instead.
         .slice(1)
@@ -241,9 +287,18 @@ describe("builtin:handle-request", () => {
       REQUEST_RULES,
       requestTemplateContext(REQUEST_FIXTURES["linear-request"]!),
     );
-    expect(linear).toContain("- Only push `eng-10-widget-exports`, the branch you are on.");
-    expect(linear).toContain("do it on `eng-10-widget-exports` and push with");
+    expect(linear).toContain("- Only ship `eng-10-widget-exports`, the branch you are on.");
+    expect(linear).toContain("do it on `eng-10-widget-exports` and ship it with");
     expect(linear).toContain("end your turn with `waiting: true`");
+  });
+
+  it("tells the session to push through the `ship` tool, never `git push`", () => {
+    for (const ctx of Object.values(REQUEST_FIXTURES)) {
+      const prompt = render(requestTask.promptTemplate, requestTemplateContext(ctx));
+      expect(prompt).not.toMatch(/git push (-u|--force-with-lease)/);
+      if (!ctx.ship) expect(prompt).toContain("call the `ship` tool");
+    }
+    expect(engineer.tools.harness).toContain("ship");
   });
 
   it("puts the PRD, story list and story status in optional sections", () => {

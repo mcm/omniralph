@@ -124,6 +124,86 @@ describe("omniralph server", () => {
     });
   });
 
+  describe("ship", () => {
+    const outcome = { commitSha: "a".repeat(40), pushed: true, error: null };
+
+    it("is offered on coding runs that can ship only (never query, review or story runs)", () => {
+      const fetch = fakeFetch(() => json({})).fn;
+      const tools = ["ship", "post_activity"] as HarnessTool[];
+      const listed = (taskType: TaskType, ship?: OmniralphServerOptions["ship"]) =>
+        createOmniralphServer({ ...options(fetch, tools, taskType), ...(ship && { ship }) })
+          ?.allowedTools;
+      const handler = async () => outcome;
+      expect(listed("coding", handler)).toEqual([
+        "mcp__omniralph__post_activity",
+        "mcp__omniralph__ship",
+      ]);
+      // A story run has no `ship` handler.
+      expect(listed("coding")).toEqual(["mcp__omniralph__post_activity"]);
+      for (const taskType of ["query", "review"] as const) {
+        expect(listed(taskType, handler)).toEqual(["mcp__omniralph__post_activity"]);
+      }
+      // Not without the agent listing it.
+      expect(
+        createOmniralphServer({ ...options(fetch, ["post_activity"], "coding"), ship: handler })
+          ?.allowedTools,
+      ).toEqual(["mcp__omniralph__post_activity"]);
+    });
+
+    function shipTool(handler: NonNullable<OmniralphServerOptions["ship"]>) {
+      const definition = omniralphTools({
+        ...options(fakeFetch(() => json({})).fn, ["ship"], "coding"),
+        ship: handler,
+      }).find((t) => t.name === "ship");
+      if (!definition) throw new Error("ship isn't offered");
+      return definition;
+    }
+
+    it("hands the message, PR action and lease to the harness and returns its outcome", async () => {
+      const asked: unknown[] = [];
+      const result = await shipTool(async (request) => {
+        asked.push(request);
+        return outcome;
+      }).handler(
+        {
+          message: "Fix it",
+          pullRequest: { action: "open", title: "Fix it", body: "Fixes it." },
+          forceWithLease: true,
+        } as never,
+        undefined,
+      );
+      expect(asked).toEqual([
+        {
+          message: "Fix it",
+          pullRequest: { action: "open", title: "Fix it", body: "Fixes it." },
+          forceWithLease: true,
+        },
+      ]);
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(resultText(result))).toEqual(outcome);
+
+      const bare = await shipTool(async (request) => {
+        asked.push(request);
+        return outcome;
+      }).handler({ forceWithLease: false } as never, undefined);
+      expect(asked[1]).toEqual({});
+      expect(bare.isError).toBeUndefined();
+    });
+
+    it("returns a failed ship as a tool error with its outcome", async () => {
+      const failed = { commitSha: null, pushed: false, error: "pushing the branch failed" };
+      const result = await shipTool(async () => failed).handler({} as never, undefined);
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(resultText(result))).toEqual(failed);
+
+      const thrown = await shipTool(async () => {
+        throw new Error("boom");
+      }).handler({} as never, undefined);
+      expect(thrown.isError).toBe(true);
+      expect(resultText(thrown)).toBe("shipping failed: boom");
+    });
+  });
+
   describe("post_activity", () => {
     it("posts the activity with the session token", async () => {
       const fake = fakeFetch(() => json({ ok: true }));
