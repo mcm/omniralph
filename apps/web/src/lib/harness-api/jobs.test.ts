@@ -1,12 +1,13 @@
+import { JOB_TASK_TYPES } from "@omniralph/shared";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { jobScopes } = await import("./jobs");
+const { jobScopes, runTokenScopes } = await import("./jobs");
 
 describe("jobScopes", () => {
   it("lets legacy ralph jobs push, relay activities and download attachments", () => {
-    const ralph = ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"];
+    const ralph = ["credentials:read", "credentials:write", "run:activity", "run:attachments"];
     expect(jobScopes({ type: "ralph.story", taskType: "coding" })).toEqual(ralph);
     expect(jobScopes({ type: "ralph.cleanup", taskType: "coding" })).toEqual(ralph);
     // Routed to the short pool as a query task, but still a ralph job.
@@ -25,6 +26,35 @@ describe("jobScopes", () => {
       { type: "task.run", taskType: "coding" },
     ] as const) {
       expect(jobScopes(job)).toEqual(["credentials:read"]);
+    }
+  });
+});
+
+describe("runTokenScopes", () => {
+  it("gives session tokens the session scopes for every task type", () => {
+    for (const taskType of JOB_TASK_TYPES) {
+      expect(runTokenScopes("session", taskType)).toEqual([
+        "credentials:read",
+        "run:activity",
+        "run:attachments",
+        "linear:read",
+      ]);
+    }
+  });
+
+  it("never gives a session token credentials:write", () => {
+    for (const taskType of JOB_TASK_TYPES) {
+      expect(runTokenScopes("session", taskType)).not.toContain("credentials:write");
+    }
+  });
+
+  it("lets only coding lifecycle tokens push", () => {
+    expect(runTokenScopes("lifecycle", "coding")).toEqual([
+      "credentials:read",
+      "credentials:write",
+    ]);
+    for (const taskType of JOB_TASK_TYPES.filter((t) => t !== "coding")) {
+      expect(runTokenScopes("lifecycle", taskType)).toEqual(["credentials:read"]);
     }
   });
 });

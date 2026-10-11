@@ -22,8 +22,8 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 const RALPH_SCOPES: JobTokenScope[] = [
   "credentials:read",
   "credentials:write",
-  "ralph:activity",
-  "ralph:attachments",
+  "run:activity",
+  "run:attachments",
 ];
 
 vi.mock("server-only", () => ({}));
@@ -172,12 +172,12 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
     expect(state.linear.downloads).toEqual([UPLOAD]);
   });
 
-  it("requires a running job's own token with ralph:attachments", async () => {
+  it("requires a running job's own token with run:attachments", async () => {
     const jobId = await newJob();
     expect((await downloadRequest(jobId, ID, undefined)).status).toBe(401);
     const access = await getTokenSigner().signAccessToken(harnessId);
     expect((await downloadRequest(jobId, ID, access)).status).toBe(401);
-    const noScope = await token(jobId, ["credentials:read", "ralph:activity"]);
+    const noScope = await token(jobId, ["credentials:read", "run:activity"]);
     expect((await downloadRequest(jobId, ID, noScope)).status).toBe(401);
     const done = await newJob([ID], { status: "completed" });
     expect((await downloadRequest(done, ID, await token(done))).status).toBe(401);
@@ -205,7 +205,7 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
       taskType: "review",
       pool: "short",
     });
-    const forged = await token(review, ["credentials:read", "ralph:attachments"]);
+    const forged = await token(review, ["credentials:read", "run:attachments"]);
     const reviewRes = await downloadRequest(review, ID, forged);
     expect(reviewRes.status).toBe(403);
     expect(await reviewRes.json()).toEqual({ error: "not_a_ralph_job" });

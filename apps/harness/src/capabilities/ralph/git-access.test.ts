@@ -4,12 +4,17 @@ import { RepoCache } from "../../workspace/repoCache.js";
 import { sessionGitAccess } from "./git-access.js";
 
 describe("sessionGitAccess", () => {
-  it("keeps the token file current with the job's refreshed token, then removes it", async () => {
+  it("keeps the token file current with the session's refreshed token, then removes it", async () => {
     let token = "token-1";
     const access = await sessionGitAccess(
       {
-        env: () => ({ PATH: "/usr/bin", OMNIRALPH_JOB_TOKEN: token, OMNIRALPH_JOB_ID: "job-1" }),
-        jobToken: () => token,
+        env: () => ({
+          PATH: "/usr/bin",
+          OMNIRALPH_JOB_TOKEN: "lifecycle",
+          OMNIRALPH_JOB_ID: "job-1",
+        }),
+        jobToken: () => "lifecycle",
+        sessionToken: () => token,
         server: "https://omniralph.example.com",
         repos: new RepoCache({ workspaceRoot: "/nonexistent", credentialHelper: "!helper" }),
       },

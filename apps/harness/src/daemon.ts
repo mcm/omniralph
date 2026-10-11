@@ -15,8 +15,9 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
-import { jobProcessEnv, spawnJobProcess } from "./job-env.js";
+import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
+import { SessionTokenFile } from "./session-token-file.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
@@ -67,7 +68,12 @@ interface RunningJob {
   /** The pool whose slot the job takes; null for `system` jobs (they take a slot, but no pool's). */
   pool: string | null;
   controller: AbortController;
+  /** The lifecycle token of a run-spec job (the harness's own), or a legacy job's single token. */
   jobToken: string;
+  /** A run-spec job's session token, the only token its Claude session gets; unset for legacy jobs. */
+  sessionToken?: string;
+  /** `OMNIRALPH_JOB_TOKEN_FILE` of `sessionEnv()`, holding the session token. */
+  sessionTokenFile: SessionTokenFile;
   /** Delivers a `jobMessages` message into the job's live session, while it has one. */
   injector?: (text: string) => boolean;
 }
@@ -332,9 +338,20 @@ export class AgentDaemon implements DrainableDaemon {
         job.controller.abort(new JobCanceled());
       }
     }
-    for (const { jobId, token } of config.jobTokens) {
+    for (const { jobId, token, kind } of config.jobTokens) {
       const job = this.running.get(jobId);
-      if (job) job.jobToken = token;
+      if (!job) continue;
+      if (kind === "session") {
+        // Only a run-spec job has a session token to replace.
+        if (job.sessionToken !== undefined) {
+          job.sessionToken = token;
+          job.sessionTokenFile.update(token);
+        }
+      } else {
+        job.jobToken = token;
+        // A legacy job's session uses its single token.
+        if (job.sessionToken === undefined) job.sessionTokenFile.update(token);
+      }
     }
     this.deliverMessages(config.jobMessages);
     this.refreshClaim();
@@ -517,6 +534,8 @@ export class AgentDaemon implements DrainableDaemon {
       pool: job.pool,
       controller: new AbortController(),
       jobToken: start.jobToken.token,
+      sessionToken: start.sessionToken?.token,
+      sessionTokenFile: new SessionTokenFile(),
     };
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
@@ -545,6 +564,7 @@ export class AgentDaemon implements DrainableDaemon {
       failure = error ?? new Error("job failed");
     } finally {
       this.running.delete(job.id);
+      running.sessionTokenFile.close();
       this.refreshClaim();
     }
     if ([...this.pendingAcks.values()].some((ack) => ack.jobId === job.id)) {
@@ -573,10 +593,20 @@ export class AgentDaemon implements DrainableDaemon {
   private jobContext(job: JobPayload, running: RunningJob, logger: Logger): JobContext {
     const { server, workspaceRoot } = this.options;
     const identity = () => ({ jobId: job.id, jobToken: running.jobToken, server });
+    // A legacy job has one token, which its session uses too.
+    const sessionToken = () => running.sessionToken ?? running.jobToken;
     return {
       signal: running.controller.signal,
       jobToken: () => running.jobToken,
+      sessionToken,
       env: (extra) => jobProcessEnv(identity(), process.env, extra),
+      sessionEnv: (extra) => {
+        const token = sessionToken();
+        return {
+          ...jobProcessEnv({ jobId: job.id, jobToken: token, server }, process.env, extra),
+          [JOB_TOKEN_FILE_ENV]: running.sessionTokenFile.path(token),
+        };
+      },
       spawn: (command, args, options) => spawnJobProcess(identity(), command, args, options),
       server,
       workspaceRoot,

@@ -16,12 +16,12 @@ function forbidden(error: string): Response {
  * Asks the run's Linear agent session to approve a tool call of a running
  * ralph job's session (the repository's Claude Code settings `ask` about it;
  * see `lib/ralph/permissions.ts`). Needs the job's own token with
- * `ralph:activity`; the body is a `RalphPermissionRequest`. The harness then
+ * `run:activity`; the body is a `RalphPermissionRequest`. The harness then
  * polls `GET …/permissions/{requestId}`. 410 when the run is over (the harness
  * denies the call); 502 when Linear fails.
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
-  const principal = await requireJob(req, "ralph:activity");
+  const principal = await requireJob(req, "run:activity");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
   if (!jobId) return notFound();

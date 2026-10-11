@@ -34,7 +34,7 @@ export type AttachmentFetcher = (id: string) => Promise<DownloadResult>;
 export interface ControlPanelFetcherOptions {
   server: string;
   jobId: string;
-  /** The job's current token (`ralph:attachments` scope). */
+  /** The job's current token (`run:attachments` scope). */
   jobToken: () => string;
   fetch?: FetchFn;
   signal?: AbortSignal;

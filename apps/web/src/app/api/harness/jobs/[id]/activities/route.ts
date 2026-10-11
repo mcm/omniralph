@@ -15,12 +15,12 @@ function forbidden(error: string): Response {
  * Relays a session activity of a running ralph job (Claude's text as a
  * thought, a tool call as an ephemeral action) to its run's Linear agent
  * session, so harnesses never hold Linear credentials. Needs the job's own token
- * with `ralph:activity` (only ralph jobs get it) and a `ralph.*` job; the body
+ * with `run:activity` (only ralph jobs get it) and a `ralph.*` job; the body
  * is a `RalphActivity`. An activity of a finished run is accepted and dropped.
  * 502 when Linear fails (the harness logs it and carries on).
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
-  const principal = await requireJob(req, "ralph:activity");
+  const principal = await requireJob(req, "run:activity");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
   if (!jobId) return notFound();

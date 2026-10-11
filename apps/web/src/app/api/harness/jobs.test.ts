@@ -28,6 +28,7 @@ import {
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq, inArray } from "drizzle-orm";
+import { decodeJwt } from "jose";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -220,6 +221,18 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         .set({ targetHarnessId: before.targetHarnessId })
         .where(eq(jobs.id, jobId));
     }
+  }
+
+  /** The `requireJob` principal of a job token (it must carry `credentials:read`). */
+  async function jobPrincipal(token: string) {
+    const principal = await requireJob(
+      new Request("http://localhost/api/harness/credentials", {
+        headers: { authorization: `Bearer ${token}`, "x-real-ip": newIp() },
+      }),
+      "credentials:read",
+    );
+    if (principal instanceof Response) throw new Error(`requireJob: ${principal.status}`);
+    return principal;
   }
 
   async function failAs(jobId: string, accessToken: string, body: unknown) {
@@ -472,6 +485,44 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       });
       expect((await jobRow(jobId)).leaseExpiresAt).toBeInstanceOf(Date);
       expect(outcomes).toEqual([`started:${jobId}:${agent.harnessId}`]);
+    });
+
+    it("gives a legacy job one token without a kind", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job();
+      const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
+      if (body.action !== "run") throw new Error("expected run");
+      expect(body.jobToken).toMatchObject({ jobId, kind: "legacy" });
+      expect(body.sessionToken).toBeUndefined();
+      expect(decodeJwt(body.jobToken.token).kind).toBeUndefined();
+      expect(await jobPrincipal(body.jobToken.token)).toMatchObject({
+        jobId,
+        kind: "legacy",
+        scopes: ["credentials:read"],
+      });
+    });
+
+    it("gives a run-spec job a lifecycle and a session token", async () => {
+      const { agent, job } = await claimOrg();
+      const jobId = await job("claim.run", { taskId: "builtin:learn-rule" });
+      const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
+      if (body.action !== "run") throw new Error("expected run");
+      expect(body.job.taskId).toBe("builtin:learn-rule");
+      expect(body.jobToken).toMatchObject({ jobId, expiresIn: 900, kind: "lifecycle" });
+      expect(body.sessionToken).toMatchObject({ jobId, expiresIn: 900, kind: "session" });
+      expect(body.sessionToken!.token).not.toBe(body.jobToken.token);
+      expect(await jobPrincipal(body.jobToken.token)).toMatchObject({
+        jobId,
+        harnessId: agent.harnessId,
+        kind: "lifecycle",
+        scopes: ["credentials:read"],
+      });
+      expect(await jobPrincipal(body.sessionToken!.token)).toMatchObject({
+        jobId,
+        harnessId: agent.harnessId,
+        kind: "session",
+        scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+      });
     });
 
     it("returns 204 with nothing to claim after waitSeconds: 0", async () => {
@@ -1049,6 +1100,41 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       await db.delete(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId));
     });
 
+    it("refreshes both tokens of a run-spec job, by kind", async () => {
+      const { harnessId, accessToken } = await newAgent();
+      const legacy = await newJob();
+      await startAs(legacy, accessToken);
+      const runSpec = await newJob();
+      await db.update(jobs).set({ taskId: "builtin:reply" }).where(eq(jobs.id, runSpec));
+      await startAs(runSpec, accessToken);
+
+      const res = await heartbeat(
+        agentRequest("heartbeat", accessToken, {
+          body: { version: "0.2.0", runningJobIds: [legacy, runSpec], freeSlots: 0 },
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as HeartbeatResponse;
+      const tokens = body.jobTokens.map((t) => [t.jobId, t.kind]);
+      expect(tokens).toHaveLength(3);
+      expect(tokens).toEqual(
+        expect.arrayContaining([
+          [legacy, "legacy"],
+          [runSpec, "lifecycle"],
+          [runSpec, "session"],
+        ]),
+      );
+      for (const token of body.jobTokens) {
+        expect(await jobPrincipal(token.token)).toMatchObject({
+          jobId: token.jobId,
+          harnessId,
+          kind: token.kind,
+        });
+      }
+      const session = body.jobTokens.find((t) => t.kind === "session")!;
+      expect((await jobPrincipal(session.token)).scopes).not.toContain("credentials:write");
+    });
+
     it("sends undelivered messages for the harness's running ralph jobs and applies its acknowledgements", async () => {
       const { harnessId, accessToken } = await newAgent({ acceptedTaskTypes: ["coding"] });
       const [run] = await db
@@ -1272,7 +1358,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const token = await getTokenSigner().signJobToken({
         jobId,
         harnessId: foreign.harnessId,
-        scopes: ["credentials:read", "credentials:write", "ralph:activity", "ralph:attachments"],
+        scopes: ["credentials:read", "credentials:write", "run:activity", "run:attachments"],
       });
       const jobRequest = (path: string, method = "POST", body?: unknown) =>
         new Request(`http://localhost/api/harness/${path}`, {

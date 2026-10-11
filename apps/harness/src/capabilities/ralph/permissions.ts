@@ -17,7 +17,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export interface PermissionRelayOptions {
   server: string;
   jobId: string;
-  /** The job's current token (`ralph:activity` scope). */
+  /** The job's current token (`run:activity` scope). */
   jobToken: () => string;
   logger: Logger;
   fetch?: FetchFn;

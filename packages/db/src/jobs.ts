@@ -598,13 +598,14 @@ export async function classifyHarnessRunningJobs(
   db: Database,
   harnessId: string,
   jobIds: readonly string[],
-): Promise<{ keep: Pick<Job, "id" | "type" | "taskType">[]; cancel: string[] }> {
+): Promise<{ keep: Pick<Job, "id" | "type" | "taskType" | "taskId">[]; cancel: string[] }> {
   if (jobIds.length === 0) return { keep: [], cancel: [] };
   const rows = await db
     .select({
       id: jobs.id,
       type: jobs.type,
       taskType: jobs.taskType,
+      taskId: jobs.taskId,
       status: jobs.status,
       harnessId: jobs.harnessId,
       cancelRequested: jobs.cancelRequested,
@@ -613,12 +614,12 @@ export async function classifyHarnessRunningJobs(
     .where(inArray(jobs.id, [...jobIds]))
     .orderBy(desc(jobs.createdAt));
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const keep: Pick<Job, "id" | "type" | "taskType">[] = [];
+  const keep: Pick<Job, "id" | "type" | "taskType" | "taskId">[] = [];
   const cancel: string[] = [];
   for (const id of new Set(jobIds)) {
     const row = byId.get(id);
     if (row && row.status === "running" && row.harnessId === harnessId && !row.cancelRequested) {
-      keep.push({ id, type: row.type, taskType: row.taskType });
+      keep.push({ id, type: row.type, taskType: row.taskType, taskId: row.taskId });
     } else {
       cancel.push(id);
     }

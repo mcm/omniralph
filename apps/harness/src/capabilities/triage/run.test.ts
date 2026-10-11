@@ -119,7 +119,9 @@ describe("triage.run", { timeout: 60_000 }, () => {
     return {
       signal: controller.signal,
       jobToken: () => "job-token",
+      sessionToken: () => "job-token",
       env: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "job-token", ...extra }),
+      sessionEnv: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "job-token", ...extra }),
       spawn: () => {
         throw new Error("triage.run must not spawn processes through the context");
       },

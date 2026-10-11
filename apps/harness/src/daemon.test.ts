@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
@@ -59,10 +59,19 @@ function job(id: string, overrides: Partial<JobPayload> = {}): JobPayload {
 }
 
 function runResponse(j: JobPayload): JobStartResponse {
+  if (j.taskId !== null) {
+    // A run-spec job: a lifecycle and a session token.
+    return {
+      action: "run",
+      job: j,
+      jobToken: { jobId: j.id, token: `lifecycle-${j.id}`, expiresIn: 900, kind: "lifecycle" },
+      sessionToken: { jobId: j.id, token: `session-${j.id}`, expiresIn: 900, kind: "session" },
+    };
+  }
   return {
     action: "run",
     job: j,
-    jobToken: { jobId: j.id, token: `job-token-${j.id}`, expiresIn: 900 },
+    jobToken: { jobId: j.id, token: `job-token-${j.id}`, expiresIn: 900, kind: "legacy" },
   };
 }
 
@@ -702,10 +711,92 @@ describe("AgentDaemon", () => {
     void daemon.run();
     await settle();
     expect(ctx?.jobToken()).toBe(`job-token-${id}`);
-    state.config = centralConfig({ jobTokens: [{ jobId: id, token: "fresh", expiresIn: 900 }] });
+    state.config = centralConfig({
+      jobTokens: [{ jobId: id, token: "fresh", expiresIn: 900, kind: "legacy" }],
+    });
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ctx?.jobToken()).toBe("fresh");
     expect(ctx?.env().OMNIRALPH_JOB_TOKEN).toBe("fresh");
+    // A legacy job's session uses its single token.
+    expect(ctx?.sessionToken()).toBe("fresh");
+    expect(ctx?.sessionEnv().OMNIRALPH_JOB_TOKEN).toBe("fresh");
+    gate.resolve();
+    await settle();
+    await daemon.shutdown();
+  });
+
+  it("keeps a run-spec job's lifecycle token out of its session env", async () => {
+    const id = randomUUID();
+    const gate = deferred();
+    let ctx: JobContext | undefined;
+    const { state, claims, daemon } = setup({
+      run: async (_j, c) => {
+        ctx = c;
+        await gate.promise;
+        return {};
+      },
+    });
+    // Dispatched by type until the query lifecycle lands; the task ID makes it a run-spec job.
+    claims.push(job(id, { taskType: "query", taskId: "builtin:learn-rule" }));
+    void daemon.run();
+    await settle();
+
+    const sessionEnvLeaks = async (lifecycle: string) => {
+      const env = ctx!.sessionEnv({ EXTRA: "1" });
+      const file = await readFile(env.OMNIRALPH_JOB_TOKEN_FILE!, "utf8");
+      return Object.values(env).some((v) => v?.includes(lifecycle)) || file.includes(lifecycle);
+    };
+    expect(ctx?.jobToken()).toBe(`lifecycle-${id}`);
+    expect(ctx?.env().OMNIRALPH_JOB_TOKEN).toBe(`lifecycle-${id}`);
+    expect(ctx?.sessionToken()).toBe(`session-${id}`);
+    const env = ctx!.sessionEnv();
+    expect(env.OMNIRALPH_JOB_TOKEN).toBe(`session-${id}`);
+    const tokenFile = env.OMNIRALPH_JOB_TOKEN_FILE!;
+    expect(await readFile(tokenFile, "utf8")).toBe(`session-${id}`);
+    expect(await sessionEnvLeaks(`lifecycle-${id}`)).toBe(false);
+
+    // Heartbeats refresh both tokens by kind; the session env follows the session token only.
+    state.config = centralConfig({
+      jobTokens: [
+        { jobId: id, token: "lifecycle-fresh", expiresIn: 900, kind: "lifecycle" },
+        { jobId: id, token: "session-fresh", expiresIn: 900, kind: "session" },
+      ],
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(ctx?.jobToken()).toBe("lifecycle-fresh");
+    expect(ctx?.env().OMNIRALPH_JOB_TOKEN).toBe("lifecycle-fresh");
+    expect(ctx?.sessionToken()).toBe("session-fresh");
+    expect(await readFile(tokenFile, "utf8")).toBe("session-fresh");
+    expect(ctx?.sessionEnv().OMNIRALPH_JOB_TOKEN).toBe("session-fresh");
+    expect(await sessionEnvLeaks("lifecycle-fresh")).toBe(false);
+
+    gate.resolve();
+    await settle();
+    // The session token file goes with the job.
+    await expect(readFile(tokenFile, "utf8")).rejects.toThrow();
+    await daemon.shutdown();
+  });
+
+  it("ignores a session token refresh for a legacy job", async () => {
+    const id = randomUUID();
+    const gate = deferred();
+    let ctx: JobContext | undefined;
+    const { state, claims, daemon } = setup({
+      run: async (_j, c) => {
+        ctx = c;
+        await gate.promise;
+        return {};
+      },
+    });
+    claims.push(job(id));
+    void daemon.run();
+    await settle();
+    state.config = centralConfig({
+      jobTokens: [{ jobId: id, token: "session-fresh", expiresIn: 900, kind: "session" }],
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(ctx?.jobToken()).toBe(`job-token-${id}`);
+    expect(ctx?.sessionToken()).toBe(`job-token-${id}`);
     gate.resolve();
     await settle();
     await daemon.shutdown();

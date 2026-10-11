@@ -16,7 +16,7 @@ import {
 } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
-import { signJobToken } from "@/lib/harness-api/jobs";
+import { signJobTokens } from "@/lib/harness-api/jobs";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
@@ -62,7 +62,10 @@ export async function POST(req: Request): Promise<Response> {
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.
   await renewJobLeases(db, harnessId, keepIds);
-  const jobTokens = await Promise.all(running.keep.map((job) => signJobToken(job, harnessId)));
+  // Both tokens of a run-spec job are refreshed; a legacy job's single token too.
+  const jobTokens = (
+    await Promise.all(running.keep.map((job) => signJobTokens(job, harnessId)))
+  ).flatMap(({ jobToken, sessionToken }) => (sessionToken ? [jobToken, sessionToken] : [jobToken]));
   let jobMessages: JobMessageDelivery[] = [];
   try {
     jobMessages = await exchangeJobMessages(

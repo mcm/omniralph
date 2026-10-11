@@ -4,6 +4,7 @@
  * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import { z } from "zod";
+import { JobTokenKind } from "./harness-protocol.js";
 
 /** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
 export const JOB_RETENTION_SECONDS = 24 * 60 * 60;
@@ -207,6 +208,8 @@ export const JobToken = z.object({
   token: z.string(),
   /** Seconds until `token` expires. */
   expiresIn: z.number(),
+  /** `lifecycle`/`session` for run-spec jobs; `legacy` for a legacy job's single token. */
+  kind: JobTokenKind.default("legacy"),
 });
 export type JobToken = z.infer<typeof JobToken>;
 
@@ -252,7 +255,7 @@ export const HeartbeatResponse = z.object({
   queueRegion: z.string().optional(),
   /** Running jobs the agent must stop (canceled, or no longer its job). */
   cancelJobIds: z.array(z.uuid()),
-  /** New job tokens for the agent's still-running jobs. */
+  /** New job tokens for the harness's still-running jobs: both of a run-spec job (by `kind`), the single token of a legacy job. */
   jobTokens: z.array(JobToken),
   /** Undelivered messages for the agent's running jobs, oldest first. */
   jobMessages: z.array(JobMessageDelivery).default([]),
@@ -306,8 +309,15 @@ export const JobStartResponse = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("run"),
     job: JobPayload,
-    /** Token for in-job processes (e.g. the `git-credential` helper); refreshed via heartbeat. */
+    /**
+     * The job's token, refreshed via heartbeat. For run-spec jobs (with a
+     * `taskId`) the `lifecycle` token, kept by the harness for its own calls;
+     * for legacy jobs the single token in-job processes (e.g. the
+     * `git-credential` helper) use.
+     */
     jobToken: JobToken,
+    /** Run-spec jobs only: the `session` token, the only one the Claude session gets. */
+    sessionToken: JobToken.optional(),
   }),
   z.object({
     action: z.literal("skip"),

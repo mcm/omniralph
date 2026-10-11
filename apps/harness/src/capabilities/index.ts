@@ -47,10 +47,28 @@ export interface ToolPolicy {
 export interface JobContext {
   /** Aborted when the job is canceled centrally (`cancelJobIds`) or the agent shuts down. */
   signal: AbortSignal;
-  /** The job's current token (refreshed by heartbeats); only for in-job processes. */
+  /**
+   * The job's current token (refreshed by heartbeats): a run-spec job's
+   * `lifecycle` token, kept for the harness's own calls (e.g. fetching
+   * credentials), or a legacy job's single token.
+   */
   jobToken(): string;
-  /** Environment for subprocesses: the job token in `OMNIRALPH_JOB_TOKEN`, never the agent's tokens. */
+  /**
+   * The token the job's Claude session gets: a run-spec job's `session`
+   * token (never `credentials:write`); a legacy job's single token.
+   */
+  sessionToken(): string;
+  /**
+   * Environment for the harness's own subprocesses (e.g. git fetches): `jobToken()`
+   * in `OMNIRALPH_JOB_TOKEN`, never the harness's tokens.
+   */
   env(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+  /**
+   * Environment for the Claude session and the processes it runs (incl. its
+   * git credential helper): `sessionToken()` in `OMNIRALPH_JOB_TOKEN`, never the
+   * lifecycle token. A session's `OMNIRALPH_JOB_TOKEN_FILE` must hold `sessionToken()` too.
+   */
+  sessionEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
   /** Spawns a subprocess with `env()`. */
   spawn(command: string, args: readonly string[], options?: SpawnOptions): ChildProcess;
   server: string;

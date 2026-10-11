@@ -45,12 +45,12 @@ function capped(body: ReadableStream<Uint8Array>, max: number): ReadableStream<U
  * Streams a file uploaded to Linear (a screenshot, mockup or document of the
  * run) to the ralph job that lists it in its payload, fetched with the
  * control panel's Linear token, which harnesses never hold. Needs the job's own
- * token with `ralph:attachments`. HTML (a sign-in page instead of the file)
+ * token with `run:attachments`. HTML (a sign-in page instead of the file)
  * and files over 25 MB are rejected; a failed download answers
  * `{ error: "download_failed", reason }`.
  */
 export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Response> {
-  const principal = await requireJob(req, "ralph:attachments");
+  const principal = await requireJob(req, "run:attachments");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
   if (!jobId) return notFound();
