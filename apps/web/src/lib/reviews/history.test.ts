@@ -129,6 +129,8 @@ describe("view mapping", () => {
     const detail: ReviewDetail = {
       review: {
         id: "r2",
+        reviewRunId: null,
+        taskId: "builtin:review-pr",
         repositoryId: "repo",
         prNumber: 3,
         prTitle: null,

@@ -4,18 +4,26 @@ import type { ChangeRequestState } from "@omniralph/scm";
 import type { RerunReviewInput } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
-import { enqueueReview } from "./enqueue";
+import { enqueueReview, type ReviewTaskRun } from "./enqueue";
 
 export type RerunReviewResult =
-  | { status: "enqueued" | "duplicate"; reviewId: string; jobId: string; headSha: string }
-  | { status: "not_found" | "repository_unavailable" | "profile_not_found" }
+  | {
+      status: "enqueued" | "duplicate";
+      reviewRunId: string;
+      runs: ReviewTaskRun[];
+      /** The review run's review of the re-run review's task (else its first) and its job. */
+      reviewId: string;
+      jobId: string;
+      headSha: string;
+    }
+  | { status: "not_found" | "repository_unavailable" | "profile_not_found" | "no_review_tasks" }
   | { status: "not_open"; state: Exclude<ChangeRequestState, "open"> }
   | { status: "scm_error"; error: string };
 
 /**
  * Re-runs a review from the control panel (Re-run button): looks up the PR's
- * **current** head on the code host and enqueues a `manual` review of it
- * through `enqueueReview`. Incremental reviews the whole diff for new issues
+ * **current** head on the code host and enqueues a `manual` review run of
+ * it (every review task of the repository) through `enqueueReview`. Incremental reviews the whole diff for new issues
  * (mode `full`, like `@bot review`: open findings are still dropped as
  * duplicates); Fresh reviews it from scratch (mode `fresh`). A closed or
  * merged PR gets no job; an active review of the same head is returned as
@@ -68,13 +76,17 @@ export async function rerunReview(
   });
   switch (result.status) {
     case "enqueued":
-    case "duplicate":
+    case "duplicate": {
+      const same = result.runs.find((run) => run.taskId === review.taskId);
       return {
         status: result.status,
-        reviewId: result.reviewId,
-        jobId: result.jobId,
+        reviewRunId: result.reviewRunId,
+        runs: result.runs,
+        reviewId: same?.reviewId ?? result.reviewId,
+        jobId: same?.jobId ?? result.jobId,
         headSha: cr.headSha,
       };
+    }
     default:
       return { status: result.status };
   }

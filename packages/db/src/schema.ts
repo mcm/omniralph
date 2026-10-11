@@ -52,6 +52,14 @@ export const reviewStatus = pgEnum("review_status", [
   "budget_exhausted",
   "skipped",
 ]);
+export const reviewRunStatus = pgEnum("review_run_status", [
+  "queued",
+  "running",
+  "correlating",
+  "completed",
+  "failed",
+  "skipped",
+]);
 export const findingSeverity = pgEnum("finding_severity", [
   "critical",
   "high",
@@ -761,6 +769,13 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
+    /** The review tasks (`builtin:<name>` or UUIDs) each PR event fans out to, in order. */
+    reviewTaskIds: text("review_task_ids")
+      .array()
+      .notNull()
+      .default(sql`'{builtin:review-pr}'::text[]`),
+    /** The query task that merges the results of a review run's tasks. */
+    correlationTaskId: text("correlation_task_id").notNull().default("builtin:correlate-findings"),
     /** Linear delegations may build in this repository (ralph). */
     ralphEnabled: boolean("ralph_enabled").notNull().default(false),
     /** Linear routing: team keys (e.g. `ENG`), project names and labels routed here. */
@@ -1015,10 +1030,48 @@ export interface SkippedFile {
   reason: string;
 }
 
+/**
+ * One PR event's review: fans out to one review (and job) per enabled review
+ * task of the repository, all of the same head.
+ */
+export const reviewRuns = pgTable(
+  "review_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number").notNull(),
+    headSha: text("head_sha").notNull(),
+    baseSha: text("base_sha").notNull(),
+    trigger: reviewTrigger("trigger").notNull(),
+    mode: text("mode").$type<"incremental" | "full" | "fresh">().notNull(),
+    /** Profile ID (in the repository's organization) the run's reviews use. */
+    profileId: text("profile_id"),
+    status: reviewRunStatus("status").notNull().default("queued"),
+    /** The job of the correlation query task that merges the reviews' results. */
+    correlationJobId: uuid("correlation_job_id").references((): AnyPgColumn => jobs.id, {
+      onDelete: "set null",
+    }),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("review_runs_repository_pr_idx").on(t.repositoryId, t.prNumber)],
+);
+
 export const reviews = pgTable(
   "reviews",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** The review run the review is one task of; null for reviews from before review runs. */
+    reviewRunId: uuid("review_run_id").references(() => reviewRuns.id, { onDelete: "cascade" }),
+    /** The review task (`builtin:review-pr` or a UUID) the review ran. */
+    taskId: text("task_id"),
     repositoryId: uuid("repository_id")
       .notNull()
       .references(() => repositories.id, { onDelete: "cascade" }),

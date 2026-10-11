@@ -1,14 +1,19 @@
 import "server-only";
 import {
   createReview,
-  deleteReview,
+  createReviewRun,
+  deleteReviewRun,
   finishReview,
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
+  getReview,
   getReviewProfile,
   listActiveJobsByDedupePrefix,
+  listReviewRunReviews,
   previousReviewState,
+  skipReviewRuns,
   type Database,
+  type Job,
   type Review,
 } from "@omniralph/db";
 import {
@@ -20,7 +25,7 @@ import {
   RunSpecJobPayload,
   type ReviewMode,
 } from "@omniralph/shared";
-import { getBuiltinTask, type TriggerKind } from "@omniralph/tasks";
+import { getBuiltinTask, type TaskDefinition, type TriggerKind } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { runSpecJobInput } from "@/lib/runs/job";
 
@@ -50,19 +55,29 @@ export interface EnqueueReviewInput {
   profileId?: string | null;
 }
 
+/** One task run of a review run: the review task, its review and its job. */
+export interface ReviewTaskRun {
+  taskId: string;
+  reviewId: string;
+  jobId: string;
+}
+
 export type EnqueueReviewResult =
   | {
       status: "enqueued" | "duplicate";
+      reviewRunId: string;
+      /** The review run's task runs, in the repository's task order. */
+      runs: ReviewTaskRun[];
+      /** The first task run's review and job (e.g. for a link to the review). */
       reviewId: string;
       jobId: string;
       /** Jobs of older head SHAs of the PR that were canceled. */
       canceledJobIds: string[];
     }
   | { status: "repository_unavailable" }
-  | { status: "profile_not_found" };
-
-/** The review task every PR review runs (choosing tasks per repository comes later). */
-export const REVIEW_TASK_ID = "builtin:review-pr";
+  | { status: "profile_not_found" }
+  /** None of the repository's review tasks is a review task taking this trigger. */
+  | { status: "no_review_tasks" };
 
 /** The task trigger of each way a review is requested. */
 const TRIGGER_KINDS: Record<Review["trigger"], TriggerKind> = {
@@ -86,23 +101,66 @@ export function reviewIdOfJob(payload: unknown): string | null {
   return reviewId.success ? reviewId.data : null;
 }
 
-/** Dedupe key prefix of a PR's review jobs; the full key adds the head SHA. */
+/**
+ * Dedupe key prefix of a PR's review jobs; the full key adds the head SHA and
+ * the review task ID (`review.run:<repositoryId>:<pr>:<headSha>:<taskId>`).
+ */
 export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): string {
   return `${REVIEW_JOB_TYPE}:${repositoryId}:${prNumber}:`;
 }
 
+/** Dedupe key of the job of review task `taskId` of a PR head. */
+export function reviewJobKey(
+  repositoryId: string,
+  prNumber: number,
+  headSha: string,
+  taskId: string,
+): string {
+  return `${reviewJobKeyPrefix(repositoryId, prNumber)}${headSha}:${taskId}`;
+}
+
 /**
- * Enqueues a review of a PR/MR head: cancels the PR's queued or running review
- * jobs for older head SHAs, creates the `queued` review and dispatches a
- * `review.run` job that runs the review task `builtin:review-pr` (routed by
- * the task: task type `review`, pool `short`). Its trigger (`pr.updated`,
+ * The review tasks a review run of `trigger` fans out to: each of
+ * `taskIds` (deduplicated, in order) that is a review task accepting the
+ * trigger. Unknown and non-review task IDs are skipped with a warning.
+ */
+export function reviewTasksFor(
+  taskIds: readonly string[],
+  trigger: Review["trigger"],
+  context: { repositoryId: string },
+): TaskDefinition[] {
+  const tasks: TaskDefinition[] = [];
+  for (const id of new Set(taskIds)) {
+    const task = getBuiltinTask(id);
+    if (!task || task.taskType !== "review") {
+      console.warn(
+        task
+          ? "skipping a review task that isn't a review task"
+          : "skipping an unknown review task",
+        { repositoryId: context.repositoryId, taskId: id },
+      );
+      continue;
+    }
+    if (task.triggers.includes(TRIGGER_KINDS[trigger])) tasks.push(task);
+  }
+  return tasks;
+}
+
+/**
+ * Enqueues a review run of a PR/MR head: cancels the PR's queued or running
+ * review jobs for older head SHAs (all tasks; their reviews and review runs
+ * become `skipped`), then creates the `queued` review run and, for each of
+ * the repository's review tasks taking this trigger (`reviewTasksFor`), a
+ * `queued` review and a `review.run` job running that task (routed by the
+ * task: task type `review`, its pool). Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
  * (profile, rules, instructions, excludes), the PR text, the mode and the
  * previous review's head SHA (none for a `full` review) and open findings
- * (neither for a `fresh` one) as a `ReviewTriggerContext`; the job is claimed
- * as a run spec and its result applied by the `review` sink. The payload
- * holds no credentials. A second call for the same head while its job is
- * active returns that job (`duplicate`).
+ * (neither for a `fresh` one), read once for the whole run, as a
+ * `ReviewTriggerContext`; the job is claimed as a run spec and its result
+ * applied by the `review` sink. The payload holds no credentials. A second
+ * call for the same head while its jobs are active returns that review run
+ * (`duplicate`) and creates nothing.
  */
 export async function enqueueReview(
   db: Database,
@@ -114,45 +172,63 @@ export async function enqueueReview(
   if (!found || !settings || !found.repository.enabled || found.repository.disconnectedAt) {
     return { status: "repository_unavailable" };
   }
+  const { repository } = found;
 
   // Only a profile of the repository's organization.
   const profile = input.profileId
-    ? await getReviewProfile(db, found.repository.organizationId, input.profileId)
+    ? await getReviewProfile(db, repository.organizationId, input.profileId)
     : settings.profile;
   if (!profile) return { status: "profile_not_found" };
 
+  const tasks = reviewTasksFor(repository.reviewTaskIds, input.trigger, {
+    repositoryId: repository.id,
+  });
+  if (tasks.length === 0) return { status: "no_review_tasks" };
+
   const prefix = reviewJobKeyPrefix(input.repositoryId, input.prNumber);
+  const headKey = `${prefix}${input.headSha}:`;
+  const active = await listActiveJobsByDedupePrefix(db, prefix);
+
+  // The same head's review run is still active: return it.
+  const sameHead = active.filter((job) => job.dedupeKey?.startsWith(headKey));
+  const existing = await activeReviewRun(db, sameHead);
+  if (existing) return { status: "duplicate", ...existing, canceledJobIds: [] };
+
   const canceledJobIds: string[] = [];
-  for (const job of await listActiveJobsByDedupePrefix(db, prefix)) {
-    if (job.dedupeKey === `${prefix}${input.headSha}`) continue;
+  const superseded = `Superseded by a newer push (${input.headSha.slice(0, 12)})`;
+  const older = active.filter(
+    (job) => job.dedupeKey !== `${prefix}${input.headSha}` && !sameHead.includes(job),
+  );
+  const olderRunIds = new Set<string>();
+  for (const job of older) {
+    const reviewId = reviewIdOfJob(job.payload);
+    const review = reviewId ? await getReview(db, reviewId) : null;
+    if (review?.reviewRunId) olderRunIds.add(review.reviewRunId);
+  }
+  // The runs first, so that their canceled reviews don't fail them.
+  await skipReviewRuns(db, [...olderRunIds], superseded);
+  for (const job of older) {
     await dispatcher.cancel(job.id);
     canceledJobIds.push(job.id);
     const reviewId = reviewIdOfJob(job.payload);
-    if (reviewId) {
-      await finishReview(db, reviewId, {
-        status: "skipped",
-        error: `Superseded by a newer push (${input.headSha.slice(0, 12)})`,
-      });
-    }
+    if (reviewId) await finishReview(db, reviewId, { status: "skipped", error: superseded });
   }
 
   const mode = input.mode ?? "incremental";
   const previous = mode === "fresh" ? null : await previousReviewState(db, input);
-  const review = await createReview(db, {
+  const reviewRun = await createReviewRun(db, {
+    organizationId: repository.organizationId,
     repositoryId: input.repositoryId,
     prNumber: input.prNumber,
-    prTitle: input.title,
     headSha: input.headSha,
     baseSha: input.baseSha,
     trigger: input.trigger,
+    mode,
     profileId: profile.id,
-    model: profile.model,
-    budget: profile.maxTokensPerReview,
   });
-  const context = ReviewTriggerContext.parse({
-    reviewId: review.id,
+  const context = {
     repositoryId: input.repositoryId,
-    repository: found.repository.fullPath,
+    repository: repository.fullPath,
     prNumber: input.prNumber,
     pr: {
       number: input.prNumber,
@@ -196,33 +272,103 @@ export async function enqueueReview(
           : [];
       }),
     },
-  } satisfies ReviewTriggerContext);
-  const task = getBuiltinTask(REVIEW_TASK_ID);
-  if (!task) throw new Error(`Unknown review task ${REVIEW_TASK_ID}`);
+  } satisfies Omit<ReviewTriggerContext, "reviewId">;
 
+  const runs: ReviewTaskRun[] = [];
   try {
-    const { job, created } = await dispatcher.createAndPublish({
-      organizationId: found.repository.organizationId,
-      type: REVIEW_JOB_TYPE,
-      ...runSpecJobInput(task, {
-        trigger: { kind: TRIGGER_KINDS[input.trigger], context },
+    for (const task of tasks) {
+      const review = await createReview(db, {
+        reviewRunId: reviewRun.id,
+        taskId: task.id,
         repositoryId: input.repositoryId,
-        ref: input.headSha,
-      }),
-      dedupeKey: `${prefix}${input.headSha}`,
-    });
-    if (created) return { status: "enqueued", reviewId: review.id, jobId: job.id, canceledJobIds };
-    await deleteReview(db, review.id);
-    const existing = reviewIdOfJob(job.payload);
-    if (!existing) throw new Error(`Review job ${job.id} has no review`);
-    return { status: "duplicate", reviewId: existing, jobId: job.id, canceledJobIds };
-  } catch (error) {
-    // A job that was inserted anyway keeps its review; otherwise the review has no job
-    // and is removed.
-    const active = await listActiveJobsByDedupePrefix(db, `${prefix}${input.headSha}`);
-    if (!active.some((job) => reviewIdOfJob(job.payload) === review.id)) {
-      await deleteReview(db, review.id);
+        prNumber: input.prNumber,
+        prTitle: input.title,
+        headSha: input.headSha,
+        baseSha: input.baseSha,
+        trigger: input.trigger,
+        profileId: profile.id,
+        model: profile.model,
+        budget: profile.maxTokensPerReview,
+      });
+      const { job, created } = await dispatcher.createAndPublish({
+        organizationId: repository.organizationId,
+        type: REVIEW_JOB_TYPE,
+        ...runSpecJobInput(task, {
+          trigger: {
+            kind: TRIGGER_KINDS[input.trigger],
+            context: ReviewTriggerContext.parse({ ...context, reviewId: review.id }),
+          },
+          repositoryId: input.repositoryId,
+          ref: input.headSha,
+        }),
+        dedupeKey: reviewJobKey(input.repositoryId, input.prNumber, input.headSha, task.id),
+      });
+      if (!created) {
+        // A concurrent enqueue of the same head got there first.
+        throw new DuplicateReviewRun(job);
+      }
+      runs.push({ taskId: task.id, reviewId: review.id, jobId: job.id });
     }
-    throw error;
+  } catch (error) {
+    // Nothing of this review run is left: its jobs (also one inserted before
+    // the error) are canceled, then the run and its reviews deleted.
+    const reviewIds = new Set(
+      (await listReviewRunReviews(db, reviewRun.id)).map((review) => review.id),
+    );
+    for (const job of await listActiveJobsByDedupePrefix(db, headKey)) {
+      const reviewId = reviewIdOfJob(job.payload);
+      if (reviewId && reviewIds.has(reviewId)) await dispatcher.cancel(job.id);
+    }
+    await deleteReviewRun(db, reviewRun.id);
+    if (!(error instanceof DuplicateReviewRun)) throw error;
+    const duplicate = await activeReviewRun(db, [error.job]);
+    if (!duplicate) throw new Error(`Review job ${error.job.id} has no review run`);
+    return { status: "duplicate", ...duplicate, canceledJobIds };
   }
+  return {
+    status: "enqueued",
+    reviewRunId: reviewRun.id,
+    runs,
+    reviewId: runs[0]!.reviewId,
+    jobId: runs[0]!.jobId,
+    canceledJobIds,
+  };
+}
+
+/** A job of the same head was already active when a review run of the head was enqueued. */
+class DuplicateReviewRun extends Error {
+  constructor(readonly job: Job) {
+    super(`Review job ${job.id} of the same head is active`);
+  }
+}
+
+/**
+ * The review run of the first of `jobs` that has one, with its task runs
+ * whose jobs are still active; null when none has a review run.
+ */
+async function activeReviewRun(
+  db: Database,
+  jobs: readonly Job[],
+): Promise<{
+  reviewRunId: string;
+  runs: ReviewTaskRun[];
+  reviewId: string;
+  jobId: string;
+} | null> {
+  for (const job of jobs) {
+    const reviewId = reviewIdOfJob(job.payload);
+    const review = reviewId ? await getReview(db, reviewId) : null;
+    if (!review?.reviewRunId) continue;
+    const reviewRunId = review.reviewRunId;
+    const runReviews = await listReviewRunReviews(db, reviewRunId);
+    const prefix = reviewJobKeyPrefix(review.repositoryId, review.prNumber);
+    const runJobs = await listActiveJobsByDedupePrefix(db, `${prefix}${review.headSha}:`);
+    const runs = runReviews.flatMap((r) => {
+      const runJob = runJobs.find((j) => reviewIdOfJob(j.payload) === r.id);
+      return runJob && r.taskId ? [{ taskId: r.taskId, reviewId: r.id, jobId: runJob.id }] : [];
+    });
+    const first = runs[0] ?? { reviewId: review.id, jobId: job.id };
+    return { reviewRunId, runs, reviewId: first.reviewId, jobId: first.jobId };
+  }
+  return null;
 }

@@ -23,7 +23,7 @@ import {
 import type { ChatSource } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { scmAdapterFor } from "@/lib/scm/adapters";
-import { enqueueReview } from "@/lib/review/enqueue";
+import { enqueueReview, type EnqueueReviewResult } from "@/lib/review/enqueue";
 import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { dismissFindingWithFeedback } from "@/lib/reviews/feedback";
@@ -50,7 +50,14 @@ export interface BotCommandContext {
 
 export type BotCommandOutcome =
   | { status: "refused" }
-  | { status: "review_enqueued" | "review_duplicate"; reviewId: string; jobId: string }
+  | {
+      status: "review_enqueued" | "review_duplicate";
+      reviewRunId: string;
+      /** The review run's first review and job. */
+      reviewId: string;
+      jobId: string;
+      jobIds: string[];
+    }
   | { status: "review_unavailable" }
   | { status: "dismissed"; findingId: string }
   | { status: "dismiss_conflict"; findingId: string }
@@ -243,18 +250,21 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
           await respond(
             `On it, @${author}: a ${kind} ${profile}review of ${head} is queued. I'll post the results here when it's done.`,
           );
-          return { status: "review_enqueued", reviewId: result.reviewId, jobId: result.jobId };
+          return { status: "review_enqueued", ...reviewRunOf(result) };
         }
         case "duplicate":
           await respond(`A review of ${head} is already queued or running, @${author}.`);
-          return { status: "review_duplicate", reviewId: result.reviewId, jobId: result.jobId };
+          return { status: "review_duplicate", ...reviewRunOf(result) };
         case "repository_unavailable":
         case "profile_not_found":
+        case "no_review_tasks":
           await respond(
             `Sorry @${author}, I can't review this right now: ${
               result.status === "profile_not_found"
                 ? "that review profile doesn't exist."
-                : "reviews are disabled for this repository."
+                : result.status === "no_review_tasks"
+                  ? "none of this repository's review tasks reviews on request."
+                  : "reviews are disabled for this repository."
             }`,
           );
           return { status: "review_unavailable" };
@@ -328,4 +338,14 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       return { status: "help" };
   }
   throw new Error("unreachable");
+}
+
+/** What a mention's result reports of an enqueued (or already active) review run. */
+function reviewRunOf(result: Extract<EnqueueReviewResult, { status: "enqueued" | "duplicate" }>) {
+  return {
+    reviewRunId: result.reviewRunId,
+    reviewId: result.reviewId,
+    jobId: result.jobId,
+    jobIds: result.runs.map((run) => run.jobId),
+  };
 }
