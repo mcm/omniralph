@@ -26,15 +26,20 @@ export type SaveRepositorySettingsResult =
   | { status: "unknown_agents"; harnessIds: string[] }
   | { status: "unknown_review_tasks"; taskIds: string[] };
 
+/** Whether a task can be one of a repository's review tasks: a `review` task run on pushes. */
+function isReviewTaskChoice(task: TaskDefinition | null | undefined): boolean {
+  return task?.taskType === "review" && task.triggers.includes("pr.updated");
+}
+
 /** The review tasks a repository can choose to run on its PRs/MRs: the built-in ones. */
 export function reviewTaskChoices(): TaskDefinition[] {
-  return BUILTIN_TASKS.filter((task) => task.taskType === "review");
+  return BUILTIN_TASKS.filter(isReviewTaskChoice);
 }
 
 /**
  * Saves a repository's review settings (a repository of the organization; its profile
  * must be one of the organization's too, and its review tasks built-in tasks of the
- * `review` type) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through the Agents
+ * `review` type that run on `pr.updated`) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through the Agents
  * page's `pinRepository`, which enqueues a `repo.sync` job for that agent.
  * The next review job enqueued for the repository picks the settings up.
  */
@@ -51,9 +56,7 @@ export async function saveRepositorySettings(
   }
   const profiles = await listReviewProfiles(db, organizationId);
   if (!profiles.some((p) => p.id === input.profileId)) return { status: "unknown_profile" };
-  const unknownTasks = input.reviewTaskIds.filter(
-    (id) => getBuiltinTask(id)?.taskType !== "review",
-  );
+  const unknownTasks = input.reviewTaskIds.filter((id) => !isReviewTaskChoice(getBuiltinTask(id)));
   if (unknownTasks.length > 0) return { status: "unknown_review_tasks", taskIds: unknownTasks };
 
   const wanted = [...new Set(input.pinnedHarnessIds)];

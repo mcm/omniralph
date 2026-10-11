@@ -404,7 +404,7 @@ describe("runSpecJobInput", () => {
     const teardown = TaskDefinition.parse({
       ...taskInput,
       taskType: "review",
-      teardownCommands: [{ command: "rm -rf .cache" }],
+      teardownCommands: [{ name: "clean", command: "rm -rf .cache" }],
     });
     expect(runSpecJobInput(teardown, payload).minHarnessVersion).toBe(
       SETUP_COMMANDS_MIN_HARNESS_VERSION,

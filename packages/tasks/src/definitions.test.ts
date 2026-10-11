@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentDefinition,
-  DEFAULT_COMMAND_TIMEOUT_MS,
-  DEFAULT_SETUP_OUTPUT_CHARS,
+  DEFAULT_COMMAND_OUTPUT_BYTES,
+  DEFAULT_COMMAND_TIMEOUT_SECONDS,
+  MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_TIMEOUT_SECONDS,
   TaskDefinition,
   validateAgentForTask,
   type AgentDefinitionInput,
@@ -169,30 +171,35 @@ describe("TaskDefinition", () => {
       ...task,
       setupCommands: [
         { name: "semgrep", command: "semgrep --json .", fence: "json", optional: true },
-        { name: "code_graph", command: "graph build", timeoutMs: 60_000, maxOutputChars: 500 },
+        { name: "code_graph", command: "graph build", timeoutSeconds: 60, maxOutputBytes: 500 },
       ],
-      teardownCommands: [{ command: "rm -rf .graph" }],
+      teardownCommands: [{ name: "clean", command: "rm -rf .graph" }],
     });
     expect(parsed.setupCommands).toEqual([
       {
         name: "semgrep",
         command: "semgrep --json .",
-        timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS,
-        maxOutputChars: DEFAULT_SETUP_OUTPUT_CHARS,
+        timeoutSeconds: DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        maxOutputBytes: DEFAULT_COMMAND_OUTPUT_BYTES,
         fence: "json",
         optional: true,
       },
       {
         name: "code_graph",
         command: "graph build",
-        timeoutMs: 60_000,
-        maxOutputChars: 500,
+        timeoutSeconds: 60,
+        maxOutputBytes: 500,
         fence: "",
         optional: false,
       },
     ]);
     expect(parsed.teardownCommands).toEqual([
-      { command: "rm -rf .graph", timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS },
+      {
+        name: "clean",
+        command: "rm -rf .graph",
+        timeoutSeconds: DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        maxOutputBytes: DEFAULT_COMMAND_OUTPUT_BYTES,
+      },
     ]);
   });
 
@@ -206,9 +213,19 @@ describe("TaskDefinition", () => {
       );
     expect(setup({ name: "1st" })).toEqual(["setupCommands.0.name"]);
     expect(setup({ name: "a.b" })).toEqual(["setupCommands.0.name"]);
+    expect(setup({ name: "Semgrep" })).toEqual(["setupCommands.0.name"]);
+    expect(setup({ name: "code-graph" })).toEqual(["setupCommands.0.name"]);
+    expect(setup({ name: "_x" })).toEqual(["setupCommands.0.name"]);
     expect(setup({ command: " " })).toEqual(["setupCommands.0.command"]);
-    expect(setup({ timeoutMs: 0 })).toEqual(["setupCommands.0.timeoutMs"]);
-    expect(setup({ maxOutputChars: 10_000_000 })).toEqual(["setupCommands.0.maxOutputChars"]);
+    expect(setup({ timeoutSeconds: 0 })).toEqual(["setupCommands.0.timeoutSeconds"]);
+    expect(setup({ timeoutSeconds: MAX_COMMAND_TIMEOUT_SECONDS + 1 })).toEqual([
+      "setupCommands.0.timeoutSeconds",
+    ]);
+    expect(setup({ maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES + 1 })).toEqual([
+      "setupCommands.0.maxOutputBytes",
+    ]);
+    expect(setup({ maxOutputBytes: 1.5 })).toEqual(["setupCommands.0.maxOutputBytes"]);
+    expect(setup({ optional: "yes" })).toEqual(["setupCommands.0.optional"]);
     expect(setup({ fence: "a b" })).toEqual(["setupCommands.0.fence"]);
     expect(issues(TaskDefinition.safeParse({ ...task, setupCommands: ["pnpm i"] }))).toEqual([
       "setupCommands.0",
@@ -225,8 +242,17 @@ describe("TaskDefinition", () => {
       ),
     ).toEqual(["setupCommands.1.name"]);
     expect(issues(TaskDefinition.safeParse({ ...task, teardownCommands: [{}] }))).toEqual([
+      "teardownCommands.0.name",
       "teardownCommands.0.command",
     ]);
+    expect(
+      issues(
+        TaskDefinition.safeParse({
+          ...task,
+          teardownCommands: [{ name: "clean", command: "true", timeoutSeconds: 100_000 }],
+        }),
+      ),
+    ).toEqual(["teardownCommands.0.timeoutSeconds"]);
   });
 
   it("rejects bad tool settings and limits", () => {

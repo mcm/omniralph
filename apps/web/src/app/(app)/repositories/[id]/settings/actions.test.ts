@@ -39,9 +39,17 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
     id: "builtin:security-review",
     name: "Security review",
   };
+  // A review task that only runs when asked, never on a push.
+  const onRequest = {
+    ...actual.getBuiltinTask("builtin:review-pr")!,
+    id: "builtin:on-request-review",
+    name: "On-request review",
+    triggers: ["pr.mention", "review.rerun"],
+  };
+  const injected = new Map([security, onRequest].map((task) => [task.id, task]));
   return {
     ...actual,
-    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+    getBuiltinTask: (id: string) => injected.get(id) ?? actual.getBuiltinTask(id),
   };
 });
 const SECURITY_TASK_ID = "builtin:security-review";
@@ -309,12 +317,13 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
   });
 
-  it("rejects no, duplicate, unknown and non-review tasks without saving anything", async () => {
+  it("rejects no, duplicate, unknown, non-review and push-less tasks without saving anything", async () => {
     const invalid: [string[], string][] = [
       [[], "Choose at least one review task."],
       [["builtin:review-pr", "builtin:review-pr"], "Choose each review task once."],
       [["builtin:review-pr", "builtin:nope"], "Some selected review tasks don't exist."],
       [["builtin:reply-to-finding"], "Some selected review tasks don't exist."],
+      [["builtin:on-request-review"], "Some selected review tasks don't exist."],
     ];
     for (const [reviewTaskIds, message] of invalid) {
       expect(
@@ -357,10 +366,17 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     });
     state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
     expect(
-      await updateRepositorySettings(repoId, { ...baseSettings, profileId: "deep" }),
+      await updateRepositorySettings(repoId, {
+        ...baseSettings,
+        profileId: "deep",
+        reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+      }),
     ).toMatchObject({ ok: false });
     expect(await updateReviewProfile("standard", standardProfile)).toMatchObject({ ok: false });
-    expect((await getRepository(db, repoId))!.profileId).toBe("standard");
+    expect(await getRepository(db, repoId)).toMatchObject({
+      profileId: "standard",
+      reviewTaskIds: ["builtin:review-pr"],
+    });
   });
 
   it("edits a profile and rejects a token cap below 5,000", async () => {

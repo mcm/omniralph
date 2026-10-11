@@ -94,36 +94,42 @@ export type TokenBudget = z.infer<typeof TokenBudget>;
 
 /** Most setup (and teardown) commands a task may declare. */
 export const MAX_SETUP_COMMANDS = 20;
-/** Default and most time a setup or teardown command may take. */
-export const DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60_000;
-export const MAX_COMMAND_TIMEOUT_MS = 30 * 60_000;
-/** Default and most characters of a setup command's stdout kept for `{{setup.<name>}}`. */
-export const DEFAULT_SETUP_OUTPUT_CHARS = 20_000;
-export const MAX_SETUP_OUTPUT_CHARS = 200_000;
+/** Default and most seconds a setup or teardown command may take. */
+export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 5 * 60;
+export const MAX_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+/** Default and most bytes of a command's stdout kept (for `{{setup.<name>}}` or the log). */
+export const DEFAULT_COMMAND_OUTPUT_BYTES = 20_000;
+export const MAX_COMMAND_OUTPUT_BYTES = 200_000;
 
 const ShellCommand = z.string().trim().min(1).max(4000);
-const CommandTimeoutMs = z
+const CommandName = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, digits and _, starting with a letter")
+  .max(100);
+const CommandTimeoutSeconds = z
+  .number()
+  .gt(0)
+  .max(MAX_COMMAND_TIMEOUT_SECONDS)
+  .default(DEFAULT_COMMAND_TIMEOUT_SECONDS);
+const CommandOutputBytes = z
   .int()
   .min(1)
-  .max(MAX_COMMAND_TIMEOUT_MS)
-  .default(DEFAULT_COMMAND_TIMEOUT_MS);
+  .max(MAX_COMMAND_OUTPUT_BYTES)
+  .default(DEFAULT_COMMAND_OUTPUT_BYTES);
 
 /**
- * A command run (with `bash -lc`) in the working directory before the
- * session, without either job token in its environment. Its stdout, cut to
- * `maxOutputChars`, becomes the untrusted variable `setup.<name>`. A failing
+ * A command run (with `sh -c`) in the working directory before the session,
+ * without either job token in its environment. Its stdout, cut to
+ * `maxOutputBytes`, becomes the untrusted variable `setup.<name>`. A failing
  * command (non-zero exit, timeout) fails the run, unless it's `optional`:
  * then `setup.<name>` holds a short failure note instead.
  */
 export const SetupCommand = z.object({
-  /** The variable's name after `setup.` (letters, digits, `_` and `-`). */
-  name: z
-    .string()
-    .regex(/^[A-Za-z_][A-Za-z0-9_-]*$/, "Use letters, digits, _ and -, not starting with a digit")
-    .max(100),
+  /** The variable's name after `setup.`. */
+  name: CommandName,
   command: ShellCommand,
-  timeoutMs: CommandTimeoutMs,
-  maxOutputChars: z.int().min(1).max(MAX_SETUP_OUTPUT_CHARS).default(DEFAULT_SETUP_OUTPUT_CHARS),
+  timeoutSeconds: CommandTimeoutSeconds,
+  maxOutputBytes: CommandOutputBytes,
   /** Info string of the fence around the output (e.g. `json`). */
   fence: z
     .string()
@@ -135,10 +141,15 @@ export const SetupCommand = z.object({
 export type SetupCommand = z.infer<typeof SetupCommand>;
 export type SetupCommandInput = z.input<typeof SetupCommand>;
 
-/** A command run after finish, whatever happened; its failure is logged, never fatal. */
+/**
+ * A command run after finish, whatever happened; its failure is logged, never
+ * fatal. Its stdout, cut to `maxOutputBytes`, is logged.
+ */
 export const TeardownCommand = z.object({
+  name: CommandName,
   command: ShellCommand,
-  timeoutMs: CommandTimeoutMs,
+  timeoutSeconds: CommandTimeoutSeconds,
+  maxOutputBytes: CommandOutputBytes,
 });
 export type TeardownCommand = z.infer<typeof TeardownCommand>;
 
