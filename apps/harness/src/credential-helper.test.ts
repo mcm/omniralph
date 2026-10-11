@@ -210,7 +210,7 @@ describe("git with the agent's credential helper", () => {
         ...process.env,
         GIT_CONFIG_GLOBAL: globalConfig,
         GIT_CONFIG_NOSYSTEM: "1",
-        OMNIRALPH_AGENT_CONFIG: "x",
+        OMNIRALPH_HARNESS_CONFIG: "x",
       },
     );
 

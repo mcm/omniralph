@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { decodeJwt, exportJWK, jwtVerify, SignJWT } from "jose";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
+import { HARNESS_TOKEN_AUDIENCE } from "@omniralph/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -33,7 +34,7 @@ describe("LocalTokenSigner", () => {
     expect(payload).toEqual({
       typ: "agent",
       sub: AGENT_ID,
-      aud: "omniralph-agent",
+      aud: "omniralph-harness",
       iat: now / 1000,
       exp: now / 1000 + 900,
     });
@@ -52,9 +53,25 @@ describe("LocalTokenSigner", () => {
       sub: JOB_ID,
       agentId: AGENT_ID,
       scopes: ["credentials:read"],
-      aud: "omniralph-agent",
+      aud: "omniralph-harness",
     });
     expect(payload.exp! - payload.iat!).toBe(900);
+  });
+
+  it("signs for the omniralph-harness audience and the old omniralph-agent one is rejected", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const signer = new LocalTokenSigner({ privateKey, env: {} });
+    expect(HARNESS_TOKEN_AUDIENCE).toBe("omniralph-harness");
+    const token = await signer.signAccessToken(AGENT_ID);
+    expect(decodeJwt(token).aud).toBe("omniralph-harness");
+    // The verifier's audience check (verify.ts passes the same constant).
+    const options = { algorithms: ["RS256"], audience: HARNESS_TOKEN_AUDIENCE };
+    await expect(jwtVerify(token, signer.publicKey, options)).resolves.toBeTruthy();
+    const old = await new SignJWT({ typ: "agent", sub: AGENT_ID, aud: "omniralph-agent" })
+      .setProtectedHeader({ alg: "RS256" })
+      .setExpirationTime("15m")
+      .sign(privateKey);
+    await expect(jwtVerify(old, signer.publicKey, options)).rejects.toThrow(/aud/);
   });
 
   it("loads LOCAL_AGENT_SIGNING_KEY PEMs, including literal \\n", async () => {
@@ -100,7 +117,7 @@ describe("KmsTokenSigner", () => {
       [
         {
           issuerId: "iss_agents",
-          claims: { typ: "agent", sub: AGENT_ID, aud: "omniralph-agent" },
+          claims: { typ: "agent", sub: AGENT_ID, aud: "omniralph-harness" },
           ttl: 900,
         },
       ],
@@ -112,7 +129,7 @@ describe("KmsTokenSigner", () => {
             sub: JOB_ID,
             agentId: AGENT_ID,
             scopes: ["credentials:read"],
-            aud: "omniralph-agent",
+            aud: "omniralph-harness",
           },
           ttl: 900,
         },
@@ -140,7 +157,7 @@ describe("getTokenSigner", () => {
     const verification = getVerificationKey(env);
     expect(verification.kind).toBe("jwks");
     if (verification.kind !== "jwks") return;
-    const token = await new SignJWT({ typ: "agent", sub: AGENT_ID, aud: "omniralph-agent" })
+    const token = await new SignJWT({ typ: "agent", sub: AGENT_ID, aud: "omniralph-harness" })
       .setProtectedHeader({ alg: "RS256", kid: "k1" })
       .setExpirationTime("15m")
       .sign(privateKey);

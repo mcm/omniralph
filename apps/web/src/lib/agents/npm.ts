@@ -1,8 +1,8 @@
 import "server-only";
-import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
+import { HARNESS_PACKAGE, AgentVersion } from "@omniralph/shared";
 
 /** The agent package's registry document (`@` kept, `/` escaped, as npm does). */
-export const AGENT_REGISTRY_URL = `https://registry.npmjs.org/${AGENT_PACKAGE.replace("/", "%2f")}`;
+export const AGENT_REGISTRY_URL = `https://registry.npmjs.org/${HARNESS_PACKAGE.replace("/", "%2f")}`;
 
 export class NpmRegistryError extends Error {
   override name = "NpmRegistryError";
@@ -29,7 +29,7 @@ export async function latestAgentVersion(
     );
   }
   if (response.status === 404) {
-    throw new NpmRegistryError(`the npm registry doesn't know ${AGENT_PACKAGE} (404)`);
+    throw new NpmRegistryError(`the npm registry doesn't know ${HARNESS_PACKAGE} (404)`);
   }
   if (!response.ok) throw new NpmRegistryError(`the npm registry answered ${response.status}`);
   const body = (await response.json().catch(() => null)) as {

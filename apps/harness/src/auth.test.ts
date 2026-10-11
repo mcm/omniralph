@@ -169,8 +169,8 @@ describe("TokenManager with the config file", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("writes each rotated refresh token to agent.json atomically with mode 0600", async () => {
-    const file = path.join(dir, "agent.json");
+  it("writes each rotated refresh token to harness.json atomically with mode 0600", async () => {
+    const file = path.join(dir, "harness.json");
     await writeConfig(file, CONFIG);
     const tokens = new TokenManager({
       config: CONFIG,
@@ -186,6 +186,6 @@ describe("TokenManager with the config file", () => {
       refreshToken: "refresh-2",
     });
     expect((await stat(file)).mode & 0o777).toBe(0o600);
-    expect(await readdir(dir)).toEqual(["agent.json"]);
+    expect(await readdir(dir)).toEqual(["harness.json"]);
   });
 });

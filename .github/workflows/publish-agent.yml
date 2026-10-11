@@ -1,6 +1,6 @@
 name: Publish agent
 
-# Publishes @omniralph/agent through npm trusted publishing (OIDC).
+# Publishes @omniralph/harness through npm trusted publishing (OIDC).
 # The trusted publisher on npmjs.com is registered against this filename: don't rename it.
 on:
   push:
@@ -35,9 +35,9 @@ jobs:
       - name: Check the tag matches the package version
         run: |
           tag_version="${GITHUB_REF_NAME#agent-v}"
-          package_version="$(node -p 'require("./apps/agent/package.json").version')"
+          package_version="$(node -p 'require("./apps/harness/package.json").version')"
           if [ "$tag_version" != "$package_version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME doesn't match apps/agent/package.json version $package_version"
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match apps/harness/package.json version $package_version"
             exit 1
           fi
 
@@ -46,10 +46,10 @@ jobs:
       # the published package, and CI already covers them on main. This also skips the web
       # app's private @iamthemcmaster/ui dependency, so no npm token is needed to install.
       - name: Install
-        run: pnpm install --frozen-lockfile --filter='@omniralph/agent...' --filter=omniralph
+        run: pnpm install --frozen-lockfile --filter='@omniralph/harness...' --filter=omniralph
 
       - name: Typecheck, lint and test
-        run: pnpm turbo run typecheck lint test --filter='@omniralph/agent...'
+        run: pnpm turbo run typecheck lint test --filter='@omniralph/harness...'
 
       # Builds (tsup, bundling the workspace packages from source), packs and smoke-tests the
       # package, keeping the tested tarball for the publish step.

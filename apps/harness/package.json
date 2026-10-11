@@ -1,18 +1,18 @@
 {
-  "name": "@omniralph/agent",
+  "name": "@omniralph/harness",
   "version": "0.8.0",
-  "description": "Omniralph agent host daemon",
+  "description": "Omniralph harness host daemon",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mcm/omniralph.git",
-    "directory": "apps/agent"
+    "directory": "apps/harness"
   },
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "omniralph-agent": "dist/cli.js"
+    "omniralph-harness": "dist/cli.js"
   },
   "files": [
     "dist"

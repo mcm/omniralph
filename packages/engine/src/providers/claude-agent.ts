@@ -332,7 +332,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       env: {
         ...process.env,
         ...this.options.env,
-        CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-agent",
+        CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-harness",
       },
       ...(this.options.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }

@@ -2,10 +2,11 @@ import { access, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { silentLogger } from "./logger.js";
 import {
   SelfUpdater,
+  npmInstaller,
   readUpdateState,
   runningUnderPm2,
   updateRequestPath,
@@ -16,6 +17,9 @@ import {
   type Installer,
   type UpdateStateFile,
 } from "./update.js";
+
+const childProcess = vi.hoisted(() => ({ execFile: vi.fn() }));
+vi.mock("node:child_process", () => childProcess);
 
 function config(desiredVersion: string | null): HeartbeatResponse {
   return {
@@ -75,8 +79,8 @@ describe("SelfUpdater", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "omniralph-update-"));
-    statePath = updateStatePath(path.join(dir, "agent.json"));
-    requestPath = updateRequestPath(path.join(dir, "agent.json"));
+    statePath = updateStatePath(path.join(dir, "harness.json"));
+    requestPath = updateRequestPath(path.join(dir, "harness.json"));
   });
 
   afterEach(async () => {
@@ -106,7 +110,7 @@ describe("SelfUpdater", () => {
   const readState = async () => JSON.parse(await readFile(statePath, "utf8")) as UpdateStateFile;
 
   it("keeps the update state next to the agent config", () => {
-    expect(updateStatePath("/home/a/.config/omniralph/agent.json")).toBe(
+    expect(updateStatePath("/home/a/.config/omniralph/harness.json")).toBe(
       "/home/a/.config/omniralph/update-state.json",
     );
   });
@@ -410,7 +414,7 @@ describe("SelfUpdater", () => {
       expect(installs).toEqual(["1.1.0"]);
     });
 
-    it("updates when `omniralph-agent update` asks: to the desired version, else the latest on npm", async () => {
+    it("updates when `omniralph-harness update` asks: to the desired version, else the latest on npm", async () => {
       const { installs, installer } = fakeInstaller([], "1.3.0");
       const { calls, daemon } = fakeDaemon();
       const u = updater({ installer });
@@ -479,5 +483,23 @@ describe("SelfUpdater", () => {
       expect(calls).toEqual(["drain", "exit"]);
       expect(installs).toEqual(["1.1.0"]);
     });
+  });
+});
+
+describe("npmInstaller", () => {
+  afterEach(() => childProcess.execFile.mockReset());
+
+  it("installs and looks up @omniralph/harness", async () => {
+    childProcess.execFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: (...a: unknown[]) => void) =>
+        callback(null, "1.2.3\n", ""),
+    );
+    const installer = npmInstaller({});
+    await installer.install("1.2.3");
+    expect(await installer.latest!()).toBe("1.2.3");
+    expect(childProcess.execFile.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      ["npm", ["i", "-g", "@omniralph/harness@1.2.3"]],
+      ["npm", ["view", "@omniralph/harness", "version"]],
+    ]);
   });
 });

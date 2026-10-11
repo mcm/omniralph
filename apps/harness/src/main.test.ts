@@ -62,13 +62,13 @@ const HEARTBEAT: HeartbeatResponse = {
   updateRequest: null,
 };
 
-describe("omniralph-agent CLI", () => {
+describe("omniralph-harness CLI", () => {
   let dir: string;
   let configPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "omniralph-cli-"));
-    configPath = path.join(dir, "omniralph", "agent.json");
+    configPath = path.join(dir, "omniralph", "harness.json");
   });
 
   afterEach(async () => {
@@ -196,7 +196,33 @@ describe("omniralph-agent CLI", () => {
     it("needs an enrolled agent", async () => {
       const { out, io } = capture();
       expect(await main(["update", "--config", configPath], { io })).toBe(1);
-      expect(out.stderr).toContain("run 'omniralph-agent enroll' first");
+      expect(out.stderr).toContain("run 'omniralph-harness enroll' first");
+    });
+  });
+
+  describe("config path", () => {
+    it("defaults to ~/.config/omniralph/harness.json", async () => {
+      const { out, io } = capture();
+      expect(await main(["update"], { io, env: {} })).toBe(1);
+      expect(out.stderr).toContain(
+        `${path.join(homedir(), ".config", "omniralph", "harness.json")} not found`,
+      );
+      expect(USAGE).toContain("~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG");
+    });
+
+    it("reads OMNIRALPH_HARNESS_CONFIG, not the old agent variable", async () => {
+      const { out, io } = capture();
+      const env = { OMNIRALPH_HARNESS_CONFIG: configPath };
+      expect(await main(["update"], { io, env })).toBe(1);
+      expect(out.stderr).toContain(`${configPath} not found`);
+
+      const legacy = capture();
+      const legacyPath = path.join(dir, "legacy.json");
+      expect(
+        await main(["update"], { io: legacy.io, env: { OMNIRALPH_AGENT_CONFIG: legacyPath } }),
+      ).toBe(1);
+      expect(legacy.out.stderr).not.toContain(legacyPath);
+      expect(legacy.out.stderr).toContain("harness.json not found");
     });
   });
 
@@ -332,7 +358,7 @@ describe("omniralph-agent CLI", () => {
       });
     });
 
-    it("acts on 'omniralph-agent update': retries a failed desired version", async () => {
+    it("acts on 'omniralph-harness update': retries a failed desired version", async () => {
       await writeConfig(configPath, config);
       const statePath = path.join(path.dirname(configPath), "update-state.json");
       await writeFile(statePath, JSON.stringify({ failed: ["9.9.9"] }));

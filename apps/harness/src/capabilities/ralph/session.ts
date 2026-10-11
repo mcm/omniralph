@@ -165,7 +165,7 @@ export function sessionOptions(
       : {}),
     persistSession: request.persistSession === true,
     ...(request.resume && { resume: request.resume }),
-    env: { ...request.env, CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-agent" },
+    env: { ...request.env, CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-harness" },
     ...(canUseTool && { canUseTool }),
   };
 }

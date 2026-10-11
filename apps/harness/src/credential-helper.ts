@@ -40,7 +40,7 @@ function safeValue(value: string): boolean {
 }
 
 /**
- * `omniralph-agent git-credential <operation>`: a git credential helper
+ * `omniralph-harness git-credential <operation>`: a git credential helper
  * (https://git-scm.com/docs/gitcredentials). Only `get` does anything: it
  * fetches a short-lived, read-only credential for the job's repository from
  * `POST /api/agent/credentials`, authenticated with the job token in
@@ -64,7 +64,7 @@ export async function runGitCredential(
       jobToken = (await readFile(tokenFile, "utf8")).trim();
     } catch (error) {
       io.stderr(
-        `omniralph-agent git-credential: can't read ${JOB_TOKEN_FILE_ENV}: ${String(error)}\n`,
+        `omniralph-harness git-credential: can't read ${JOB_TOKEN_FILE_ENV}: ${String(error)}\n`,
       );
       return 1;
     }
@@ -72,7 +72,7 @@ export async function runGitCredential(
   const serverEnv = env[SERVER_ENV];
   if (!jobToken || !serverEnv) {
     io.stderr(
-      `omniralph-agent git-credential: ${JOB_TOKEN_ENV} (or ${JOB_TOKEN_FILE_ENV}) and ${SERVER_ENV} must be set (only jobs get credentials)\n`,
+      `omniralph-harness git-credential: ${JOB_TOKEN_ENV} (or ${JOB_TOKEN_FILE_ENV}) and ${SERVER_ENV} must be set (only jobs get credentials)\n`,
     );
     return 1;
   }
@@ -80,7 +80,7 @@ export async function runGitCredential(
   try {
     server = validateServerUrl(serverEnv);
   } catch (error) {
-    io.stderr(`omniralph-agent git-credential: ${(error as Error).message}\n`);
+    io.stderr(`omniralph-harness git-credential: ${(error as Error).message}\n`);
     return 1;
   }
 
@@ -95,7 +95,7 @@ export async function runGitCredential(
     );
   } catch (error) {
     const message = error instanceof ApiError ? error.message : String(error);
-    io.stderr(`omniralph-agent git-credential: ${message}\n`);
+    io.stderr(`omniralph-harness git-credential: ${message}\n`);
     return 1;
   }
 
@@ -109,12 +109,12 @@ export async function runGitCredential(
   ) {
     // E.g. a submodule on another host: never hand it the job repository's token.
     io.stderr(
-      `omniralph-agent git-credential: no credential for ${protocol ?? "?"}://${host ?? "?"}\n`,
+      `omniralph-harness git-credential: no credential for ${protocol ?? "?"}://${host ?? "?"}\n`,
     );
     return 0;
   }
   if (!safeValue(credential.username) || !safeValue(credential.password)) {
-    io.stderr("omniralph-agent git-credential: the control panel returned an invalid credential\n");
+    io.stderr("omniralph-harness git-credential: the control panel returned an invalid credential\n");
     return 1;
   }
   const expiry = Math.floor(new Date(credential.expiresAt).getTime() / 1000);

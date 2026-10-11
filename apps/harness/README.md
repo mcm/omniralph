@@ -1,9 +1,9 @@
-# @omniralph/agent
+# @omniralph/harness
 
-`omniralph-agent` is the Omniralph agent host daemon. It pulls review jobs from an Omniralph
+`omniralph-harness` is the Omniralph harness: the host daemon. It pulls review jobs from an Omniralph
 control panel and runs them with the Claude Agent SDK. It needs Node 22 and git ≥ 2.40.
 
-This README covers installing and releasing the package. To set up a host (the agent's user, the
+This README covers installing and releasing the package. To set up a host (the harness's user, the
 Claude login, pm2, tmux or systemd), see
 [docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
@@ -14,25 +14,26 @@ without root, point npm's prefix at your home:
 
 ```sh
 npm config set prefix ~/.local     # binaries go to ~/.local/bin; put it on PATH
-npm install -g @omniralph/agent
-omniralph-agent --version
+npm install -g @omniralph/harness
+omniralph-harness --version
 ```
 
 ## Enroll
 
 As an admin, open **Agents › Enroll agent** in the control panel and run the command it shows on
-the host, as the agent's user:
+the host, as the harness's user:
 
 ```sh
-omniralph-agent enroll --server https://omniralph.example.com --token <enrollment-token>
+omniralph-harness enroll --server https://omniralph.example.com --token <enrollment-token>
 ```
 
-This writes `~/.config/omniralph/agent.json`. Run `omniralph-agent --help` to see all the options.
+This writes `~/.config/omniralph/harness.json` (`--config` or `OMNIRALPH_HARNESS_CONFIG` choose
+another path). Run `omniralph-harness --help` to see all the options.
 
 ## Start
 
 ```sh
-omniralph-agent start --healthz-port 9310
+omniralph-harness start --healthz-port 9310
 ```
 
 To run it as a service, see the systemd, tmux and pm2 sections in
@@ -40,37 +41,37 @@ To run it as a service, see the systemd, tmux and pm2 sections in
 
 ## Upgrade
 
-Stop the agent, then:
+Stop the harness, then:
 
 ```sh
-npm install -g @omniralph/agent@latest
-omniralph-agent --version
+npm install -g @omniralph/harness@latest
+omniralph-harness --version
 ```
 
-Start it again. Upgrading keeps the config and the repo cache. The version shows on the agent's
+Start it again. Upgrading keeps the config and the repo cache. The version shows on the harness's
 row on the **Agents** page after its next heartbeat.
 
-### From 0.3.0 or earlier (`@iamthemcmaster/omniralph-agent`)
+### From 0.8.0 or earlier (the agent package)
 
-Up to 0.3.0 the package was `@iamthemcmaster/omniralph-agent`; from 0.3.1 it's `@omniralph/agent`.
-Agents on 0.3.0 or earlier can't self-update across the rename (they'd install the old package
-name), so upgrade them by hand once. Both packages install the `omniralph-agent` binary, so remove
-the old one first.
+Up to 0.8.0 the harness was published under the old "agent" package and binary names; from 0.9.0
+it's `@omniralph/harness` with the `omniralph-harness` binary and the config file
+`~/.config/omniralph/harness.json`. Hosts on 0.8.0 or earlier can't self-update across the rename,
+so reinstall them by hand once, as the harness's user:
 
-```sh
-npm uninstall -g @iamthemcmaster/omniralph-agent
-npm install -g @omniralph/agent@latest
-omniralph-agent --version
-```
+1. Stop the old daemon and uninstall its global package (`npm ls -g --depth=0` lists it).
+2. `npm install -g @omniralph/harness@latest`.
+3. Move the config: `mv ~/.config/omniralph/agent.json ~/.config/omniralph/harness.json` (if you
+   set the old config env var, set `OMNIRALPH_HARNESS_CONFIG` instead), or enroll again.
+4. Start `omniralph-harness start` under pm2, tmux or systemd as before.
 
-Under pm2, run `pm2 restart omniralph-agent` afterwards. Self-update works again from 0.3.1 on.
+Self-update works again from then on.
 
 ## Releasing
 
 GitHub Actions (`.github/workflows/publish-agent.yml`) publishes releases through npm trusted
 publishing. No npm publish token is stored anywhere.
 
-1. Bump `version` in `apps/agent/package.json` and merge the change to `main`.
+1. Bump `version` in `apps/harness/package.json` and merge the change to `main`.
 2. Tag that commit `agent-v<version>` and push the tag:
 
    ```sh

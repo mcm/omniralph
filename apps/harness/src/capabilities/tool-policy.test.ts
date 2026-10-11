@@ -58,7 +58,7 @@ function todaysReviewOptions(allowExploration: boolean): Options {
     hooks: allowExploration
       ? { PreToolUse: [{ matcher: "Read|Grep|Glob", hooks: [expect.any(Function)] }] }
       : {},
-    env: expect.objectContaining({ CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-agent" }),
+    env: expect.objectContaining({ CLAUDE_AGENT_SDK_CLIENT_APP: "omniralph-harness" }),
   };
 }
 

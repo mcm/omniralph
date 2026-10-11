@@ -309,10 +309,13 @@ describe.skipIf(!dockerAvailable)("agent auth", () => {
           .sign(privateKey);
       const wrongAud = await sign({ typ: "agent", sub: agentId, aud: "someone-else" });
       expect(((await requireAgent(authed(wrongAud, ip))) as Response).status).toBe(401);
-      const noTyp = await sign({ sub: agentId, aud: "omniralph-agent" });
+      // Tokens for the old audience (before the harness rename) are no longer accepted.
+      const oldAud = await sign({ typ: "agent", sub: agentId, aud: "omniralph-agent" });
+      expect(((await requireAgent(authed(oldAud, ip))) as Response).status).toBe(401);
+      const noTyp = await sign({ sub: agentId, aud: "omniralph-harness" });
       expect(((await requireAgent(authed(noTyp, ip))) as Response).status).toBe(401);
       // Sanity check: the same construction with the right claims passes.
-      const ok = await sign({ typ: "agent", sub: agentId, aud: "omniralph-agent" });
+      const ok = await sign({ typ: "agent", sub: agentId, aud: "omniralph-harness" });
       expect(await requireAgent(authed(ok, ip))).toEqual({ agentId });
 
       // An agent token isn't a job token either.

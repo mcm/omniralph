@@ -1,6 +1,6 @@
 # Environment variables
 
-Every variable the control panel (`apps/web`) and the agent (`apps/agent`) read, with what it does
+Every variable the control panel (`apps/web`) and the harness (`apps/harness`) read, with what it does
 and its default. [`.env.example`](../.env.example) lists the same variables with copy-paste
 examples. `apps/web/src/env-docs.test.ts` fails if the two lists drift apart, or if the code reads a
 variable that's documented in neither.
@@ -17,7 +17,7 @@ put them in `apps/web/.env.local`.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agents** reads (to track `latest`) the public `@omniralph/agent` package without a token. |
+| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agents** reads (to track `latest`) the public `@omniralph/harness` package without a token. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database
@@ -151,7 +151,7 @@ chat assistant uses the AI Gateway through OIDC). Vercel sets them; don't set th
 KMS calls authenticate with the deployment's Vercel OIDC token,
 which needs no variable either.
 
-## Agent host (`omniralph-agent`)
+## Harness host (`omniralph-harness`)
 
 Set these in the agent's environment (the systemd unit, or the shell that starts tmux or pm2), never
 on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
@@ -161,7 +161,7 @@ was enrolled into (sent with each heartbeat; there's no variable for it). See
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `OMNIRALPH_AGENT_CONFIG` | no | `~/.config/omniralph/agent.json` | Path of the agent config file (written by `enroll`, mode 0600). `--config` overrides it. |
+| `OMNIRALPH_HARNESS_CONFIG` | no | `~/.config/omniralph/harness.json` | Path of the harness config file (written by `enroll`, mode 0600). `--config` overrides it. |
 | `OMNIRALPH_LOG_LEVEL` | no | `info` | pino log level: `trace`, `debug`, `info`, `warn`, `error`. |
 | `ANTHROPIC_API_KEY` | no | — (the host's `claude` login) | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |

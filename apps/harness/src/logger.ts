@@ -4,7 +4,7 @@ export type { Logger };
 
 /** JSON logs to stderr (stdout stays free for CLI output such as `git-credential`). */
 export function createLogger(level = process.env.OMNIRALPH_LOG_LEVEL ?? "info"): Logger {
-  return pino({ name: "omniralph-agent", level }, pino.destination(2));
+  return pino({ name: "omniralph-harness", level }, pino.destination(2));
 }
 
 /** A logger that drops everything (tests). */
