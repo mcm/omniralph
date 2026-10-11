@@ -72,6 +72,7 @@ export const findingStatus = pgEnum("finding_status", [
   "dismissed",
   "resolved",
   "superseded",
+  "merged",
 ]);
 export const feedbackSource = pgEnum("feedback_source", ["ui", "scm"]);
 export const feedbackReason = pgEnum("feedback_reason", [
@@ -1057,6 +1058,8 @@ export const reviewRuns = pgTable(
     correlationJobId: uuid("correlation_job_id").references((): AnyPgColumn => jobs.id, {
       onDelete: "set null",
     }),
+    /** The combined summary the correlation wrote; null without a correlation. */
+    summary: text("summary"),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1095,6 +1098,8 @@ export const reviews = pgTable(
     skippedFiles: jsonb("skipped_files").$type<SkippedFile[]>().notNull().default([]),
     /** SCM ID of the summary comment, so it is posted at most once per review. */
     summaryCommentId: text("summary_comment_id"),
+    /** The task run's own summary (input to the review run's correlation); null without one. */
+    summary: text("summary"),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1129,6 +1134,12 @@ export const findings = pgTable(
       (): AnyPgColumn => findings.id,
       { onDelete: "set null" },
     ),
+    /** The review tasks that reported the finding (its review's task, plus those merged into it). */
+    sourceTaskIds: text("source_task_ids").array().notNull().default([]),
+    /** The finding of the same review run this one was merged into (`merged`). */
+    mergedIntoFindingId: uuid("merged_into_finding_id").references((): AnyPgColumn => findings.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

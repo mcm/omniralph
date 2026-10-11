@@ -9,6 +9,7 @@ import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
 import { reviewSink } from "./review";
+import { runResultSink } from "./run-result";
 import { triageSink } from "./triage";
 
 /**
@@ -34,8 +35,9 @@ export interface Sink<Output = unknown, Result = SinkResult<Output>> {
    */
   outputSchema: z.ZodType<Output> | null;
   /**
-   * Parses a run result that isn't a `QueryRunResult` (a review task's); null
-   * when the sink rejects it. Replaces `parseSinkResult` for the sink.
+   * Parses a run result that isn't a `QueryRunResult` (a review task's), or
+   * one the sink checks itself (`run-result`); null when the sink rejects it.
+   * Replaces `parseSinkResult` for the sink.
    */
   parseResult?(result: unknown): Result | null;
   /**
@@ -69,6 +71,7 @@ const SINKS = new Map<SinkKind, Sink>(
     registered(chatThreadSink),
     registered(triageSink),
     registered(reviewSink),
+    registered(runResultSink),
   ].map((sink) => [sink.kind, sink]),
 );
 

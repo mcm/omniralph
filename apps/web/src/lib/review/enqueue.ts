@@ -9,6 +9,7 @@ import {
   getReview,
   getReviewProfile,
   listActiveJobsByDedupePrefix,
+  listActiveReviewRuns,
   listReviewRunReviews,
   previousReviewState,
   skipReviewRuns,
@@ -149,7 +150,8 @@ export function reviewTasksFor(
 /**
  * Enqueues a review run of a PR/MR head: cancels the PR's queued or running
  * review jobs for older head SHAs (all tasks; their reviews and review runs
- * become `skipped`), then creates the `queued` review run and, for each of
+ * become `skipped`, and the correlation job of a correlating one is
+ * canceled), then creates the `queued` review run and, for each of
  * the repository's review tasks taking this trigger (`reviewTasksFor`), a
  * `queued` review and a `review.run` job running that task (routed by the
  * task: task type `review`, its pool). Each job's trigger (`pr.updated`,
@@ -205,8 +207,20 @@ export async function enqueueReview(
     const review = reviewId ? await getReview(db, reviewId) : null;
     if (review?.reviewRunId) olderRunIds.add(review.reviewRunId);
   }
+  // Older runs without active review jobs, e.g. correlating: their correlation job is canceled too.
+  const olderRuns = await listActiveReviewRuns(db, {
+    repositoryId: input.repositoryId,
+    prNumber: input.prNumber,
+    exceptHeadSha: input.headSha,
+  });
+  for (const run of olderRuns) olderRunIds.add(run.id);
   // The runs first, so that their canceled reviews don't fail them.
   await skipReviewRuns(db, [...olderRunIds], superseded);
+  for (const run of olderRuns) {
+    if (run.status !== "correlating" || !run.correlationJobId) continue;
+    await dispatcher.cancel(run.correlationJobId);
+    canceledJobIds.push(run.correlationJobId);
+  }
   for (const job of older) {
     await dispatcher.cancel(job.id);
     canceledJobIds.push(job.id);

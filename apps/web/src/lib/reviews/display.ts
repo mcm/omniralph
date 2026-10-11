@@ -94,7 +94,7 @@ export interface FindingView {
   body: string;
   suggestion: string | null;
   confidence: number;
-  status: "open" | "dismissed" | "resolved" | "superseded";
+  status: "open" | "dismissed" | "resolved" | "superseded" | "merged";
   /** The fresh review's finding that superseded this one. */
   supersededBy: { reviewId: string; findingId: string } | null;
   /** Dismissals from the control panel and `@bot dismiss`, oldest first. */

@@ -15,6 +15,7 @@ import {
 } from "@omniralph/db";
 import { ReviewJobPayload, ReviewJobResult, reviewTriggerContext } from "@omniralph/shared";
 import { onReviewForRalph } from "@/lib/ralph/jobs";
+import { startCorrelation } from "./correlate";
 import { postFailureNote, postReview } from "./post";
 import { resolveFixedFindings } from "./resolve";
 import { supersedeEarlierFindings } from "./supersede";
@@ -52,10 +53,13 @@ export function reviewJobState(job: Pick<Job, "payload" | "taskId">): ReviewJobS
     : reviewTriggerContext(job.payload);
 }
 
-/** Ends the review run of review `reviewId` if that was its last active review. */
+/**
+ * Moves the review run of review `reviewId` on (correlation or its end) if
+ * that was its last active review.
+ */
 async function settleReviewRunOf(db: Database, reviewId: string): Promise<void> {
   const review = await getReview(db, reviewId);
-  if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId);
+  if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId, startCorrelation);
 }
 
 /**
@@ -85,7 +89,7 @@ async function onReviewStarted(
     const reason = `Head ${state.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
     await skipJob(db, job.id, { reason });
     await finishReview(db, state.reviewId, { status: "skipped", error: reason });
-    if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId);
+    if (review?.reviewRunId) await settleReviewRun(db, review.reviewRunId, startCorrelation);
     return { skip: true, reason: "already_reviewed" };
   }
   await markReviewRunning(db, state.reviewId, harnessId);
@@ -111,7 +115,7 @@ export function parseReviewResult(result: unknown): ReviewJobResult | null {
 async function onReviewCompleted(
   db: Database,
   state: ReviewJobState,
-  result: ReviewJobResult,
+  result: ReviewJobResult & { summary?: string },
 ): Promise<void> {
   await saveReviewOutcome(db, state.reviewId, {
     status: result.stopReason === "budget_exhausted" ? "budget_exhausted" : "completed",
@@ -119,6 +123,7 @@ async function onReviewCompleted(
     tokensOut: result.usage.outputTokens,
     durationMs: result.durationMs,
     skippedFiles: result.skipped,
+    summary: result.summary ?? null,
     findings: result.findings.map((f) => ({
       path: f.path,
       startLine: f.startLine,
@@ -174,7 +179,7 @@ export function onReviewJobCompleted(db: Database, job: Job): Promise<void> {
 export function applyReviewResult(
   db: Database,
   job: Pick<Job, "payload" | "taskId">,
-  result: ReviewJobResult,
+  result: ReviewJobResult & { summary?: string },
 ): Promise<void> {
   return onReviewCompleted(db, reviewJobState(job), result);
 }
