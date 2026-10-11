@@ -9,6 +9,7 @@ import {
   HARNESS_TOKEN_AUDIENCE,
   HARNESS_TOKEN_TTL_SECONDS,
   type JobTokenScope,
+  type RunTokenKind,
 } from "@omniralph/shared";
 import { signJWT, type SignJWTOptions, type SignJWTResult } from "@vercel/kms";
 import { createRemoteJWKSet, SignJWT, type JWTVerifyGetKey } from "jose";
@@ -19,6 +20,8 @@ export interface JobTokenInput {
   jobId: string;
   harnessId: string;
   scopes: JobTokenScope[];
+  /** A run-spec job's `lifecycle` or `session` token; omitted for a legacy job's single token. */
+  kind?: RunTokenKind;
 }
 
 /**
@@ -28,7 +31,7 @@ export interface JobTokenInput {
 export interface TokenSigner {
   /** `{ typ: "harness", sub: harnessId, aud: "omniralph-harness" }` */
   signAccessToken(harnessId: string): Promise<string>;
-  /** `{ typ: "job", sub: jobId, harnessId, scopes, aud: "omniralph-harness" }` */
+  /** `{ typ: "job", sub: jobId, harnessId, scopes, kind?, aud: "omniralph-harness" }` */
   signJobToken(input: JobTokenInput): Promise<string>;
 }
 
@@ -36,8 +39,15 @@ function accessClaims(harnessId: string) {
   return { typ: "harness", sub: harnessId, aud: HARNESS_TOKEN_AUDIENCE };
 }
 
-function jobClaims({ jobId, harnessId, scopes }: JobTokenInput) {
-  return { typ: "job", sub: jobId, harnessId, scopes, aud: HARNESS_TOKEN_AUDIENCE };
+function jobClaims({ jobId, harnessId, scopes, kind }: JobTokenInput) {
+  return {
+    typ: "job",
+    sub: jobId,
+    harnessId,
+    scopes,
+    ...(kind ? { kind } : {}),
+    aud: HARNESS_TOKEN_AUDIENCE,
+  };
 }
 
 /**

@@ -24,15 +24,20 @@ export interface GitAccess {
  */
 export async function jobGitAccess(
   ctx: Pick<JobContext, "env" | "jobToken" | "server">,
-  options: { refreshMs?: number } = {},
+  options: {
+    refreshMs?: number;
+    /** The token the file follows (default `ctx.jobToken`). */
+    token?: () => string;
+  } = {},
 ): Promise<GitAccess> {
+  const currentToken = options.token ?? (() => ctx.jobToken());
   const dir = await mkdtemp(path.join(tmpdir(), "omniralph-job-token-"));
   const file = path.join(dir, "token");
-  let written = ctx.jobToken();
+  let written = currentToken();
   await writeFile(file, written, { mode: 0o600 });
   let pending: Promise<void> = Promise.resolve();
   const timer = setInterval(() => {
-    const token = ctx.jobToken();
+    const token = currentToken();
     if (token === written) return;
     written = token;
     // Write-then-rename so a helper reading mid-refresh never sees a truncated file.
@@ -64,12 +69,13 @@ export async function jobGitAccess(
  * `ralph.request` session; story sessions leave pushing to the job): like
  * `jobGitAccess`, with only the agent's `git-credential` helper and no
  * askpass or prompts, so pushes late in a long session still authenticate;
- * `OMNIRALPH_JOB_TOKEN` itself stays out of the session.
+ * `OMNIRALPH_JOB_TOKEN` itself stays out of the session. The file holds
+ * `ctx.sessionToken()`, never a run-spec job's lifecycle token.
  */
 export async function sessionGitAccess(
-  ctx: Pick<JobContext, "env" | "jobToken" | "server" | "repos">,
+  ctx: Pick<JobContext, "env" | "jobToken" | "sessionToken" | "server" | "repos">,
   options: { refreshMs?: number } = {},
 ): Promise<GitAccess> {
-  const access = await jobGitAccess(ctx, options);
+  const access = await jobGitAccess(ctx, { ...options, token: () => ctx.sessionToken() });
   return { ...access, env: ctx.repos.gitEnv(access.env) };
 }

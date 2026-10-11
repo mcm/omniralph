@@ -1,6 +1,11 @@
 import "server-only";
 import { getHarnessAuthState, isJobRunningOnHarness, type Database } from "@omniralph/db";
-import { HARNESS_TOKEN_AUDIENCE, JobTokenScope } from "@omniralph/shared";
+import {
+  HARNESS_TOKEN_AUDIENCE,
+  JobTokenScope,
+  RunTokenKind,
+  type JobTokenKind,
+} from "@omniralph/shared";
 import { jwtVerify, type JWTPayload } from "jose";
 import { getDb } from "@/lib/db";
 import { authLockoutRemaining, tooManyRequests } from "@/lib/rate-limit";
@@ -15,6 +20,8 @@ export interface JobPrincipal {
   jobId: string;
   harnessId: string;
   scopes: JobTokenScope[];
+  /** The token's `kind` claim; `legacy` when it has none (a legacy job's single token). */
+  kind: JobTokenKind;
 }
 
 type TokenType = "harness" | "job";
@@ -65,6 +72,14 @@ async function verifyToken(token: string, typ: TokenType): Promise<JWTPayload> {
   }
   if (payload.typ !== typ) throw new AuthError("wrong_typ", null, true);
   return payload;
+}
+
+/** A job token's kind: no `kind` claim is a legacy single token; an unknown one is rejected. */
+function jobTokenKind(value: unknown): JobTokenKind {
+  if (value === undefined) return "legacy";
+  const kind = RunTokenKind.safeParse(value);
+  if (!kind.success) throw new AuthError("invalid_claims", null, true);
+  return kind.data;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -147,11 +162,12 @@ export async function requireJob(
     const scopes = Array.isArray(payload.scopes)
       ? payload.scopes.filter((s): s is JobTokenScope => JobTokenScope.safeParse(s).success)
       : [];
+    const kind = jobTokenKind(payload.kind);
     await checkHarness(db, harnessId);
     if (!scopes.includes(scope)) throw new AuthError("scope_mismatch", harnessId);
     if (!(await isJobRunningOnHarness(db, jobId, harnessId))) {
       throw new AuthError("job_not_running", harnessId);
     }
-    return { jobId, harnessId, scopes };
+    return { jobId, harnessId, scopes, kind };
   });
 }

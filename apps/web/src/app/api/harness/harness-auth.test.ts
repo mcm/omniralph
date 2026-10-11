@@ -375,7 +375,34 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
         jobId,
         harnessId,
         scopes: ["credentials:read"],
+        // No kind claim: a legacy single token.
+        kind: "legacy",
       });
+    });
+
+    it("returns a run token's kind and rejects an unknown kind", async () => {
+      const { harnessId } = await enrollNew();
+      const jobId = await runningJob(harnessId);
+      for (const kind of ["lifecycle", "session"] as const) {
+        const token = await getTokenSigner().signJobToken({
+          jobId,
+          harnessId,
+          scopes: ["credentials:read"],
+          kind,
+        });
+        expect(await requireJob(authed(token, newIp()), "credentials:read")).toMatchObject({
+          jobId,
+          kind,
+        });
+      }
+      const forged = await getTokenSigner().signJobToken({
+        jobId,
+        harnessId,
+        scopes: ["credentials:read"],
+        kind: "admin" as never,
+      });
+      const res = await requireJob(authed(forged, newIp()), "credentials:read");
+      expect((res as Response).status).toBe(401);
     });
 
     it("rejects the token once the job is no longer running", async () => {

@@ -17,7 +17,9 @@ import {
 import {
   type CloneCredentialResponse,
   type JobStartResponse,
+  JOB_TOKEN_SCOPES,
   type JobTokenScope,
+  type RunTokenKind,
 } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
@@ -208,8 +210,9 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
     jobId: string,
     harnessId: string,
     scopes: JobTokenScope[] = ["credentials:read"],
+    kind?: RunTokenKind,
   ) {
-    return getTokenSigner().signJobToken({ jobId, harnessId, scopes });
+    return getTokenSigner().signJobToken({ jobId, harnessId, scopes, kind });
   }
 
   async function issued(harnessId: string) {
@@ -265,8 +268,8 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
       const RALPH_SCOPES: JobTokenScope[] = [
         "credentials:read",
         "credentials:write",
-        "ralph:activity",
-        "ralph:attachments",
+        "run:activity",
+        "run:attachments",
       ];
       const ralphJob = {
         type: "ralph.story",
@@ -381,6 +384,72 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           expect(JSON.stringify(body)).not.toMatch(/write/);
         }
         expect((await issued(harnessId)).map((e) => e.detail.access)).toEqual(["read", "read"]);
+      });
+
+      describe("run-spec jobs", () => {
+        const WRITE: JobTokenScope[] = ["credentials:read", "credentials:write"];
+        const codingTask = {
+          type: "task.run",
+          taskType: "coding",
+          pool: "long",
+          taskId: "builtin:story",
+        } as const;
+
+        async function passwordFor(
+          job: Partial<typeof jobs.$inferInsert>,
+          scopes: JobTokenScope[],
+          kind?: RunTokenKind,
+        ) {
+          const harnessId = await newAgent();
+          const jobId = await newJob({
+            ...job,
+            status: "running",
+            harnessId,
+            repositoryId: githubRepoId,
+          });
+          const res = await credentials(
+            credentialRequest(await jobToken(jobId, harnessId, scopes, kind), { access: "write" }),
+          );
+          expect(res.status).toBe(200);
+          return ((await res.json()) as CloneCredentialResponse).password;
+        }
+
+        it("gives a coding run-spec job's lifecycle token a write credential", async () => {
+          expect(await passwordFor(codingTask, WRITE, "lifecycle")).toBe("ghs_contents_write");
+        });
+
+        it("always gives a session token a read-only credential, even with a forged credentials:write from a coding job", async () => {
+          const forged: JobTokenScope[] = [...JOB_TOKEN_SCOPES];
+          expect(await passwordFor(codingTask, forged, "session")).toBe("ghs_contents_read");
+          for (const taskType of ["query", "review"] as const) {
+            expect(
+              await passwordFor({ ...codingTask, taskType, pool: "short" }, forged, "session"),
+            ).toBe("ghs_contents_read");
+          }
+          // Even a legacy ralph job never pushes with a session token.
+          expect(await passwordFor({ ...ralphJob, taskId: null }, forged, "session")).toBe(
+            "ghs_contents_read",
+          );
+        });
+
+        it("keeps lifecycle tokens of non-coding run-spec jobs read-only", async () => {
+          for (const taskType of ["query", "review"] as const) {
+            expect(
+              await passwordFor({ ...codingTask, taskType, pool: "short" }, WRITE, "lifecycle"),
+            ).toBe("ghs_contents_read");
+          }
+        });
+
+        it("doesn't let a lifecycle token of a legacy ralph job, or a kind-less token of a run-spec job, push", async () => {
+          expect(await passwordFor(ralphJob, WRITE, "lifecycle")).toBe("ghs_contents_read");
+          expect(await passwordFor(codingTask, WRITE)).toBe("ghs_contents_read");
+        });
+
+        it("issues a write credential only with credentials:write", async () => {
+          expect(await passwordFor(codingTask, ["credentials:read"], "lifecycle")).toBe(
+            "ghs_contents_read",
+          );
+        });
       });
 
       it("answers 403 scm_permission_missing when the GitHub installation lacks Contents: Read and write", async () => {

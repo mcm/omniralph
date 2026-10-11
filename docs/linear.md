@@ -355,7 +355,7 @@ links) reach the agent, as in cyralph:
 - **Scope.** A file referenced by a story (or its comments) only goes to that story's job; files of
   the epic and the thread go to every story. A `ralph.request` job gets all of them.
 - **Download.** Job payloads list them by ID (`{ id, title, sources }`). The agent downloads each
-  through the control panel with its job token (scope `ralph:attachments`, only for attachments in
+  through the control panel with its job token (scope `run:attachments`, only for attachments in
   that job's payload); the control panel fetches it from Linear with its own token and streams it
   back. HTML pages (a sign-in page instead of the file) and files over 25 MB are rejected.
 - **Cache.** The agent keeps them in `<workspaceRoot>/.attachments/<EPIC>/` (indexed in

@@ -2,12 +2,33 @@ import { getJobForHarness, getRepositoryWithConnection, writeHarnessAudit } from
 import { CloneCredentialPermissionError, type CloneCredential } from "@omniralph/scm";
 import type { CloneCredentialResponse } from "@omniralph/shared";
 import { clientIp } from "@/lib/harness-auth/request";
-import { requireJob } from "@/lib/harness-auth/verify";
+import { requireJob, type JobPrincipal } from "@/lib/harness-auth/verify";
 import { getDb } from "@/lib/db";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 
 function forbidden(error: string, message?: string): Response {
   return Response.json(message ? { error, message } : { error }, { status: 403 });
+}
+
+/**
+ * Whether a job token may get a push credential: it must carry
+ * `credentials:write` and be either the `lifecycle` token of a `coding`
+ * run-spec job or the single token of a legacy `ralph.*` job. A `session`
+ * token is always read-only, whatever scopes it claims.
+ */
+function canPush(
+  principal: Pick<JobPrincipal, "scopes" | "kind">,
+  job: { type: string; taskType: string; taskId: string | null },
+): boolean {
+  if (!principal.scopes.includes("credentials:write")) return false;
+  switch (principal.kind) {
+    case "lifecycle":
+      return job.taskId !== null && job.taskType === "coding";
+    case "legacy":
+      return job.taskId === null && job.type.startsWith("ralph.");
+    case "session":
+      return false;
+  }
 }
 
 /**
@@ -17,7 +38,7 @@ function forbidden(error: string, message?: string): Response {
  * harness (else 401); jobs of another organization than the harness's, or
  * without a usable repository (in the job's organization), get 403. The credential
  * is read-only unless the job token has `credentials:write` *and* the job row
- * is a `ralph` job; then it can push. When the code host hasn't granted the
+ * may push (`canPush`); then it can push. When the code host hasn't granted the
  * connection that access (e.g. the GitHub App installation lacks Contents:
  * Read and write), 403 `scm_permission_missing` with a `message` saying what
  * to change. The request body is ignored. Every issuance is audited as
@@ -35,10 +56,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!found || found.repository.disconnectedAt) return forbidden("repository_unavailable");
   const { repository, connection } = found;
 
-  const access =
-    principal.scopes.includes("credentials:write") && job.type.startsWith("ralph.")
-      ? "write"
-      : "read";
+  const access = canPush(principal, job) ? "write" : "read";
   const adapter = scmAdapterFor(db, connection);
   const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
   let credential: CloneCredential;

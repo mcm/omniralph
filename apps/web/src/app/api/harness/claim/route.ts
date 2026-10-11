@@ -1,13 +1,8 @@
 import { claimJob, getHarness, type Database, type SettledJob } from "@omniralph/db";
-import {
-  ClaimRequest,
-  MAX_JOB_DELIVERIES,
-  type JobStartResponse,
-  type JobToken,
-} from "@omniralph/shared";
+import { ClaimRequest, MAX_JOB_DELIVERIES, type JobStartResponse } from "@omniralph/shared";
 import { badRequest, readJson, unauthorized } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
-import { signJobToken } from "@/lib/harness-api/jobs";
+import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
@@ -23,7 +18,8 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
  * Hands the harness its next job: claims one of its organization's jobs of a
  * task type the harness accepts, in a pool it asked for (or a `system` job),
  * whose minimum harness version it meets (`claimJob`) and returns it
- * with a job token, in `JobStartResponse`'s `run` shape. With nothing to claim
+ * with its tokens (`signJobTokens`: a lifecycle and a session token for a
+ * run-spec job, one token for a legacy job), in `JobStartResponse`'s `run` shape. With nothing to claim
  * it looks again every `CLAIM_RETRY_MS` until `waitSeconds` passes (204) or
  * the harness hangs up. The job type's outcome handler hears about the start
  * (`onStarted`, whose `skip` moves the claim on to the next job) and about
@@ -62,7 +58,7 @@ async function claimNext(
   pools: readonly string[],
 ): Promise<ClaimRun | null> {
   for (;;) {
-    let jobToken: JobToken | undefined;
+    let tokens: SignedJobTokens | undefined;
     const { claim, settled } = await claimJob(db, {
       harnessId: agent.id,
       organizationId: agent.organizationId,
@@ -72,11 +68,11 @@ async function claimNext(
       maxDeliveries: MAX_JOB_DELIVERIES,
       // Sign while claiming: if signing (KMS) fails, the claim rolls back and no delivery is used up.
       beforeClaim: async (job) => {
-        jobToken = await signJobToken(job, agent.id);
+        tokens = await signJobTokens(job, agent.id);
       },
     });
     for (const job of settled) await onSettled(db, job);
-    if (!claim || !jobToken) return null;
+    if (!claim || !tokens) return null;
 
     const handler = jobOutcomeHandler(claim.job);
     if (handler?.onStarted) {
@@ -87,7 +83,7 @@ async function claimNext(
     return {
       action: "run",
       job: { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },
-      jobToken,
+      ...tokens,
     };
   }
 }

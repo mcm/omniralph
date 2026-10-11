@@ -61,7 +61,7 @@ export function activityFor(event: SessionEvent): RalphActivity | undefined {
 export interface ActivityRelayOptions {
   server: string;
   jobId: string;
-  /** The job's current token (`ralph:activity` scope). */
+  /** The job's current token (`run:activity` scope). */
   jobToken: () => string;
   logger: Logger;
   fetch?: FetchFn;

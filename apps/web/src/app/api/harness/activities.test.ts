@@ -22,8 +22,8 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 const RALPH_SCOPES: JobTokenScope[] = [
   "credentials:read",
   "credentials:write",
-  "ralph:activity",
-  "ralph:attachments",
+  "run:activity",
+  "run:attachments",
 ];
 
 vi.mock("server-only", () => ({}));
@@ -194,7 +194,7 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     expect(state.linear.activities).toEqual([]);
   });
 
-  it("requires a valid job token with ralph:activity for a running job", async () => {
+  it("requires a valid job token with run:activity for a running job", async () => {
     const run = await newRun();
     const jobId = await newJob({ ralphRunId: run.id });
     expect((await activityRequest(jobId, undefined, THOUGHT)).status).toBe(401);
@@ -217,7 +217,7 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     expect(state.linear.activities).toEqual([]);
   });
 
-  it("rejects review jobs, even with a forged ralph:activity scope", async () => {
+  it("rejects review jobs, even with a forged run:activity scope", async () => {
     const reviewJob = await newJob({
       type: "review.run",
       taskType: "review",
@@ -226,7 +226,7 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     // A review job token never carries the scope.
     const reviewToken = await token(reviewJob, ["credentials:read"]);
     expect((await activityRequest(reviewJob, reviewToken, THOUGHT)).status).toBe(401);
-    const forged = await token(reviewJob, ["credentials:read", "ralph:activity"]);
+    const forged = await token(reviewJob, ["credentials:read", "run:activity"]);
     const res = await activityRequest(reviewJob, forged, THOUGHT);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "not_a_ralph_job" });

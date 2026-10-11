@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The calling job's ralph job and the request ID, or the error response. */
 async function resolve(req: Request, ctx: PermissionRouteContext) {
-  const principal = await requireJob(req, "ralph:activity");
+  const principal = await requireJob(req, "run:activity");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
   const { requestId } = await ctx.params;

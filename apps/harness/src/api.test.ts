@@ -36,7 +36,11 @@ describe("HttpControlPanelApi.claim", () => {
       jobToken: { jobId: id, token: "job-token", expiresIn: 900 },
     };
     const { api, fetchFn } = apiWith(() => Response.json(start));
-    expect(await api.claim({ pools: ["short"] })).toEqual(start);
+    // A token without a kind is a legacy job's single token.
+    expect(await api.claim({ pools: ["short"] })).toEqual({
+      ...start,
+      jobToken: { ...start.jobToken, kind: "legacy" },
+    });
     const [url, init] = fetchFn.mock.calls[0]!;
     expect(url).toBe(`${SERVER}/api/harness/claim`);
     expect(JSON.parse(String(init?.body))).toEqual({ pools: ["short"] });
