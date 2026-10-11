@@ -181,6 +181,8 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
         branch: payload.branch,
         baseBranch: payload.baseBranch,
         ...(payload.settings.setupCommand && { setupCommand: payload.settings.setupCommand }),
+        // A run pushing only at the end keeps its story commits on its hidden ref meanwhile.
+        ...(payload.hiddenRef && { hiddenRef: payload.hiddenRef }),
         env: args.gitEnv,
         signal: ctx.signal,
       },

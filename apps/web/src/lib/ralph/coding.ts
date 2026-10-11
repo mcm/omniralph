@@ -18,13 +18,20 @@ import {
   RalphDescribePrPayload,
   RalphDescribePrResult,
   RalphDescribePrTriggerContext,
+  RalphPushResult,
   RunSpecJobPayload,
   legacyJobRouting,
   parseRalphSettings,
+  type RalphPushPayload,
   type RalphRequestPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
-import { CODING_DEFAULTS, type TaskDefinition, type TriggerKind } from "@omniralph/tasks";
+import {
+  CODING_DEFAULTS,
+  type PushTiming,
+  type TaskDefinition,
+  type TriggerKind,
+} from "@omniralph/tasks";
 import { runSpecJobInput } from "@/lib/runs/job";
 import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
 
@@ -135,6 +142,38 @@ export function roundLimits(
   };
 }
 
+/**
+ * When a repository's runs push their story commits: on the `tasks` path its
+ * story task's `pushTiming` (`end` keeps them on the run's hidden ref until
+ * the lane is published), otherwise after each story.
+ */
+export function pushTimingFor(
+  repository: Pick<Repository, "codingPath" | "storyTaskId">,
+  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
+): PushTiming {
+  if (!usesCodingTasks(repository)) return "per-story";
+  return codingTask(storyTaskFor(repository), definitions)?.pushTiming ?? "per-story";
+}
+
+/**
+ * Whether a repository's lanes get a draft PR/MR as soon as a story is pushed
+ * (`openEarlyPullRequest`) rather than when the lane is published: on the
+ * `tasks` path its story task's `draftPullRequest` when set; unset, or on the
+ * legacy path, the repository's `openPullRequestEarly`. A story task that
+ * pushes only at the end never opens one early (there's no branch to open it
+ * for until then).
+ */
+export function opensPullRequestEarly(
+  repository: Pick<Repository, "codingPath" | "storyTaskId"> & { ralphSettings: unknown },
+  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
+): boolean {
+  const early = parseRalphSettings(repository.ralphSettings).openPullRequestEarly;
+  if (!usesCodingTasks(repository)) return early;
+  const task = codingTask(storyTaskFor(repository), definitions);
+  if (task?.pushTiming === "end") return false;
+  return task?.draftPullRequest ? task.draftPullRequest === "early" : early;
+}
+
 /** The routing and payload of a story or request job, spread into `createAndPublish`'s input. */
 export type RalphJobInput =
   | ReturnType<typeof runSpecJobInput>
@@ -159,6 +198,31 @@ export function ralphJobInput(
     trigger: { kind: coding.trigger, context: payload },
     repositoryId: payload.repositoryId,
   });
+}
+
+/**
+ * The routing and payload of a lane's push run (`ralph.push`), a coding run
+ * of the repository's story task with no session (trigger `linear.delegated`,
+ * `payload` as its context); null when the story task isn't a coding task
+ * taking that trigger.
+ */
+export function pushJobInput(
+  repository: Pick<Repository, "storyTaskId">,
+  payload: RalphPushPayload,
+  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
+): ReturnType<typeof runSpecJobInput> | null {
+  const task = codingTask(storyTaskFor(repository), definitions);
+  if (!task || !task.triggers.includes("linear.delegated")) return null;
+  return runSpecJobInput(task, {
+    trigger: { kind: "linear.delegated", context: payload },
+    repositoryId: payload.repositoryId,
+  });
+}
+
+/** What a completed push run pushed; null for an invalid result. */
+export function pushResult(job: Pick<Job, "result">): RalphPushResult | null {
+  const parsed = RalphPushResult.safeParse(job.result);
+  return parsed.success ? parsed.data : null;
 }
 
 /**

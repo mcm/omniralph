@@ -428,6 +428,26 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     });
   });
 
+  it("starts from the run's hidden ref when the story task pushes only at the end, and ships on top of it", async () => {
+    const hiddenRef = `refs/omniralph/runs/${runId}`;
+    const story = await remote.commit({ "story.txt": "from a story\n" }, "story-work");
+    remote.hideBranch("story-work", hiddenRef);
+    expect(remoteHead()).toBeNull();
+    let seen: string | null = null;
+    const { query } = fakeQuery(async function* (call) {
+      seen = await readFile(path.join(call.options.cwd!, "story.txt"), "utf8");
+      await writeFile(path.join(call.options.cwd!, "button.txt"), "renamed\n");
+      await ship(call, { message: "Rename the button" });
+      yield result({ summary: "Renamed and pushed." });
+    });
+    const out = await run(spec(payload({ hiddenRef })), query);
+
+    expect(seen).toBe("from a story\n");
+    const head = remoteHead();
+    expect(out).toMatchObject({ commitSha: head, pushed: true });
+    expect(git(remote.bare, "rev-parse", `${head}^`)).toBe(story);
+  });
+
   it("ships without a PR action, and lets the structured result's PR change win", async () => {
     const { query } = fakeQuery(async function* (call) {
       await writeFile(path.join(call.options.cwd!, "a.txt"), "a\n");

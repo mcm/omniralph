@@ -2,8 +2,10 @@ import { requestTemplateContext, storyTemplateContext } from "@omniralph/ralph";
 import {
   MAX_ATTEMPTS_PER_STORY,
   ralphHiddenRef,
+  RalphPushPayload,
   RalphRequestPayload,
   RalphStoryPayload,
+  type RalphPushResult,
   type RalphRequestResult,
   type RalphStoryResult,
   type RunSpec,
@@ -112,19 +114,62 @@ export function requestRunPrompt(
 
 /**
  * Runs a `coding` task through the fixed coding lifecycle: a story run
- * (`runStoryRun`) or a request run (`runRequestRun`), told apart by the
- * trigger context (`RalphStoryPayload` or `RalphRequestPayload`).
+ * (`runStoryRun`), a request run (`runRequestRun`) or a push run
+ * (`runPushRun`), told apart by the trigger context (`RalphStoryPayload`,
+ * `RalphRequestPayload` or `RalphPushPayload`).
  */
 export async function runCodingTask(
   spec: RunSpec,
   ctx: JobContext,
   options: CodingTaskOptions = {},
-): Promise<RalphStoryResult | RalphRequestResult> {
+): Promise<RalphStoryResult | RalphRequestResult | RalphPushResult> {
   const story = RalphStoryPayload.safeParse(spec.trigger.context);
   if (story.success) return runStoryRun(spec, story.data, ctx, options);
   const request = RalphRequestPayload.safeParse(spec.trigger.context);
   if (request.success) return runRequestRun(spec, request.data, ctx, options);
-  throw new Error("the coding run's trigger context is neither a story nor a request");
+  const push = RalphPushPayload.safeParse(spec.trigger.context);
+  if (push.success) return runPushRun(push.data, ctx, options);
+  throw new Error("the coding run's trigger context is neither a story, a request nor a push");
+}
+
+/**
+ * A push run (its trigger context parses as `RalphPushPayload`): a coding run
+ * with no session that pushes a lane's branch once, before its PR/MR is
+ * described, for a story task that pushes only at the end (`pushTiming:
+ * end`). The lifecycle prepares the lane's branch worktree as a story run
+ * does (the repository's setup command when it creates it, the `pre-push`
+ * guard), starting from or fast-forwarding to the run's hidden ref when
+ * `origin` has it, then pushes the branch with `-u` with the lifecycle token.
+ * Uncommitted changes are left alone. The result is a `RalphPushResult`.
+ */
+export async function runPushRun(
+  payload: RalphPushPayload,
+  ctx: JobContext,
+  options: Pick<CodingTaskOptions, "tokenRefreshMs"> = {},
+): Promise<RalphPushResult> {
+  const started = Date.now();
+  const git = await jobGitAccess(ctx, { refreshMs: options.tokenRefreshMs });
+  try {
+    return await ctx.repos.withBranchWorktree(
+      payload.repository,
+      {
+        branch: payload.branch,
+        baseBranch: payload.baseBranch,
+        ...(payload.settings.setupCommand && { setupCommand: payload.settings.setupCommand }),
+        hiddenRef: payload.hiddenRef,
+        env: git.env,
+        signal: ctx.signal,
+      },
+      async (worktree) => {
+        await worktree.git(["push", "--quiet", "-u", "origin", payload.branch]);
+        const sha = (await worktree.git(["rev-parse", "HEAD"])).trim();
+        ctx.logger.info({ branch: payload.branch, sha }, "pushed the branch");
+        return { pushed: { branch: payload.branch, sha }, durationMs: Date.now() - started };
+      },
+    );
+  } finally {
+    await git.close();
+  }
 }
 
 /**

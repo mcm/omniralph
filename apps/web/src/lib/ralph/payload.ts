@@ -24,6 +24,7 @@ import {
   parseRalphSettings,
   RalphDescribePrPayload,
   RalphPreparePayload,
+  RalphPushPayload,
   RalphRequestPayload,
   RalphStoryPayload,
   type RalphAttachment,
@@ -192,6 +193,33 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
   });
 }
 
+export interface PushPayloadInput {
+  run: Pick<RalphRun, "id">;
+  /** The lane whose branch is pushed (and its base branch). */
+  lane: Pick<RalphLane, "branch" | "baseBranch">;
+  repository: Repository;
+  connection: ScmConnection;
+  /** The run's hidden ref (`ralphHiddenRef`), holding the story commits. */
+  hiddenRef: string;
+}
+
+/**
+ * The trigger context of a lane's push run: the lane's branch, to push with
+ * the story commits kept on the run's hidden ref.
+ */
+export function buildPushPayload(input: PushPayloadInput): RalphPushPayload {
+  const { run, lane, repository, connection } = input;
+  return RalphPushPayload.parse({
+    runId: run.id,
+    repositoryId: repository.id,
+    repository: jobRepository(repository, connection),
+    branch: lane.branch,
+    baseBranch: lane.baseBranch,
+    settings: jobSettings(repository),
+    hiddenRef: input.hiddenRef,
+  });
+}
+
 export interface PreparePayloadInput {
   run: RalphRun;
   /** The lane the job works in (its branch and base branch). */
@@ -240,6 +268,8 @@ export interface RequestPayloadInput {
   resumeSessionId: string | null;
   /** Every Linear attachment of the run (`payloadAttachments`). */
   attachments?: readonly RalphAttachment[];
+  /** The run's hidden ref, when the lane's story commits may only be there (`pushTiming: end`). */
+  hiddenRef?: string;
 }
 
 /**
@@ -275,5 +305,6 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     resumeSessionId: input.resumeSessionId,
     attachments: input.attachments ?? [],
     ship: requests.some((r) => r.ship === true),
+    ...(input.hiddenRef && { hiddenRef: input.hiddenRef }),
   });
 }

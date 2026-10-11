@@ -1636,12 +1636,16 @@ export interface RalphLaneCleanup {
 }
 
 /**
- * Where a lane is in the run's finish (cyralph's `publishLane`): its
- * `ralph.describe-pr` job is writing the PR/MR, the PR/MR was opened or
- * updated, or that failed (collected into the run's error once every lane is
- * through). Null: not published since its last story.
+ * Where a lane is in the run's finish (cyralph's `publishLane`): with a story
+ * task that pushes only at the end, its `ralph.push` run is pushing the
+ * branch, then it was pushed; its `ralph.describe-pr` job is writing the
+ * PR/MR, the PR/MR was opened or updated, or a step failed (collected into
+ * the run's error once every lane is through). Null: not published since its
+ * last story.
  */
 export type RalphLanePublish =
+  | { status: "pushing"; jobId: string }
+  | { status: "pushed"; /** The branch head pushed. */ sha: string }
   | { status: "describing"; jobId: string }
   | { status: "published"; /** Opened now, rather than an open one updated. */ created: boolean }
   | { status: "failed"; problem: string };

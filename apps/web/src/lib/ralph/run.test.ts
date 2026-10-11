@@ -41,8 +41,11 @@ import {
 import {
   MAX_JOB_DELIVERIES,
   QUERY_TASKS_MIN_HARNESS_VERSION,
+  RalphPushPayload,
   RalphRequestPayload,
+  ralphHiddenRef,
   type RalphDescribePrPayload,
+  type RalphPushResult,
   RalphStoryPayload,
   type RalphDescribePrResult,
   type RalphRequestResult,
@@ -65,7 +68,8 @@ import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
 import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
 import { fitTitle } from "@omniralph/ralph";
-import { CODING_DEFAULTS } from "@omniralph/tasks";
+import { CODING_DEFAULTS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import { BUILTIN_DEFINITIONS } from "@/lib/runs/resolve";
 import { advanceRun, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -987,6 +991,254 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       });
       expect(scm.changeRequests.map((c) => c.title)).toEqual(["Add gadgets"]);
     });
+  });
+
+  describe("push and draft PR timing on the tasks path", () => {
+    const setEarly = (openPullRequestEarly: boolean) =>
+      updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: {
+          ...DEFAULT_RALPH_SETTINGS,
+          setupCommand: "pnpm install",
+          openPullRequestEarly,
+        },
+      });
+
+    beforeEach(async () => {
+      await db.update(repositories).set({ codingPath: "tasks" });
+    });
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await db.update(repositories).set({ codingPath: "legacy" });
+      await setEarly(false);
+    });
+
+    /** `builtin:implement-story` with `settings` (the built-in definitions are read through `getTask`). */
+    function storyTaskWith(settings: Partial<TaskDefinition>): void {
+      const builtin = getBuiltinTask("builtin:implement-story")!;
+      vi.spyOn(BUILTIN_DEFINITIONS, "getTask").mockImplementation((id) =>
+        id === builtin.id ? { ...builtin, ...settings } : getBuiltinTask(id),
+      );
+    }
+
+    /**
+     * Plays the agent's part for the run's queued push run: the branch pushed
+     * at `sha`, or a failure. Returns its trigger context.
+     */
+    async function push(
+      runId: string,
+      outcome: { sha: string } | { jobError: string },
+    ): Promise<RalphPushPayload> {
+      const job = await activeJob(runId);
+      expect(job).toMatchObject({
+        type: "ralph.push",
+        taskType: "coding",
+        pool: "long",
+        taskId: "builtin:implement-story",
+      });
+      const payload = RalphPushPayload.parse(ralphJobPayload(job));
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentA,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      expect(await onRalphJobStarted(db, job, agentA)).toEqual({ skip: false });
+      if ("jobError" in outcome) {
+        await failJob(db, {
+          jobId: job.id,
+          harnessId: agentA,
+          retryable: false,
+          error: outcome.jobError,
+          maxDeliveries: MAX_JOB_DELIVERIES,
+        });
+      } else {
+        const result: RalphPushResult = {
+          pushed: { branch: payload.branch, sha: outcome.sha },
+          durationMs: 10,
+        };
+        expect(taskSink(job)?.parseResult?.(result)).toEqual(result);
+        await completeJob(db, { jobId: job.id, harnessId: agentA, result });
+      }
+      expectRalphHooks(job);
+      await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+      return payload;
+    }
+
+    /** Story results of a run pushing only at the end: the commit is on the hidden ref. */
+    const onHiddenRef = (runId: string, commit: string) => ({
+      commitSha: commit,
+      hiddenRef: { ref: ralphHiddenRef(runId), sha: commit },
+    });
+
+    it("pushes the branch once, after the last story and before describing, and opens no early draft", async () => {
+      storyTaskWith({ pushTiming: "end" });
+      // The repository asks for early drafts, but there is no branch until the end.
+      await setEarly(true);
+      const epic = linear.add({
+        identifier: "ENG-170",
+        title: "Widgets",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/widgets`,
+      });
+      linear.add({ identifier: "ENG-171", title: "First", parentId: epic.id, priority: 1 });
+      linear.add({ identifier: "ENG-172", title: "Second", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+
+      await work(run.id, onHiddenRef(run.id, sha(171)));
+      expect((await activeJob(run.id)).type).toBe("ralph.story");
+      expect(scm.changeRequests).toEqual([]);
+      await work(run.id, onHiddenRef(run.id, sha(172)));
+
+      // Every story is done: a push run with no session, on the sticky agent, before the describe job.
+      const pushJob = await activeJob(run.id);
+      expect(pushJob).toMatchObject({
+        targetHarnessId: agentA,
+        ralphRunId: run.id,
+        repositoryId: repoId,
+        dedupeKey: runDedupeKey(run.id),
+      });
+      expect(pushJob.payload).toMatchObject({
+        trigger: { kind: "linear.delegated", context: { hiddenRef: ralphHiddenRef(run.id) } },
+      });
+      expect((await getRun(db, run.id))?.prJobId).toBe(pushJob.id);
+      expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({
+        status: "pushing",
+        jobId: pushJob.id,
+      });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+        "All 2 stories are done. Pushing `feat/widgets`.",
+      );
+      const pushed = await push(run.id, { sha: sha(172) });
+      expect(pushed).toMatchObject({
+        runId: run.id,
+        repositoryId: repoId,
+        repository: { fullPath: "acme/api" },
+        branch: "feat/widgets",
+        baseBranch: "develop",
+        settings: { setupCommand: "pnpm install" },
+        hiddenRef: ralphHiddenRef(run.id),
+      });
+
+      const describeJob = await activeJob(run.id);
+      expect(describeJob).toMatchObject({
+        type: "ralph.describe-pr",
+        taskId: "builtin:describe-pr",
+        targetHarnessId: agentA,
+      });
+      expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({
+        status: "describing",
+        jobId: describeJob.id,
+      });
+      expect(scm.calls).not.toContain("createChangeRequest");
+      await describePr(run.id, { title: "Add widgets", body: "Adds widgets." });
+      expect(scm.changeRequests).toEqual([
+        expect.objectContaining({
+          sourceBranch: "feat/widgets",
+          title: "Add widgets",
+          draft: false,
+        }),
+      ]);
+      expect(await withPullRequest(run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 1,
+        prJobId: null,
+      });
+      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
+    });
+
+    it("waits when the push fails, and a reply retries it", async () => {
+      storyTaskWith({ pushTiming: "end" });
+      const epic = linear.add({
+        identifier: "ENG-175",
+        title: "Sprockets",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/sprockets`,
+      });
+      linear.add({ identifier: "ENG-176", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      await work(run.id, onHiddenRef(run.id, sha(176)));
+      await push(run.id, { jobError: "the remote rejected the push: protected branch" });
+
+      expect(await withPullRequest(run.id)).toMatchObject({
+        status: "waiting",
+        prJobId: null,
+        prNumber: null,
+      });
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+        "Every story is done, but I couldn't push `feat/sprockets`: the remote rejected the push: protected branch.",
+      );
+      expect(await activeJobs(run.id)).toEqual([]);
+
+      await handleLinearEvent(
+        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "retry" },
+        { db, organizationId: orgId, workspaceId: "org-1" },
+        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      );
+      await push(run.id, { sha: sha(176) });
+      await describePr(run.id);
+      expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
+    });
+
+    it("starts request runs from the run's hidden ref when pushing only at the end", async () => {
+      const mention = async (identifier: string) => {
+        const epic = linear.add({ identifier, title: "Epic" });
+        sessionSeq += 1;
+        const sessionId = `session-${sessionSeq}`;
+        await startRun(
+          {
+            kind: "session_created",
+            sessionId,
+            issueId: epic.id,
+            commentBody: "@omniralph rename the badge",
+            creatorName: "Steve",
+          },
+          deps(),
+        );
+        const run = (await getRunBySession(db, sessionId))!;
+        const job = await activeJob(run.id);
+        expect(job.type).toBe("ralph.request");
+        return { run, payload: RalphRequestPayload.parse(ralphJobPayload(job)) };
+      };
+      const perStory = await mention("ENG-180");
+      expect(perStory.payload.hiddenRef).toBeUndefined();
+      storyTaskWith({ pushTiming: "end" });
+      const atTheEnd = await mention("ENG-181");
+      expect(atTheEnd.payload.hiddenRef).toBe(ralphHiddenRef(atTheEnd.run.id));
+    });
+
+    it.each([
+      { draftPullRequest: "early", openPullRequestEarly: false, draft: true },
+      { draftPullRequest: "end", openPullRequestEarly: true, draft: false },
+      { draftPullRequest: undefined, openPullRequestEarly: true, draft: true },
+    ] as const)(
+      "with draftPullRequest $draftPullRequest and openPullRequestEarly $openPullRequestEarly, opens an early draft: $draft",
+      async ({ draftPullRequest, openPullRequestEarly, draft }) => {
+        if (draftPullRequest) storyTaskWith({ draftPullRequest });
+        await setEarly(openPullRequestEarly);
+        const n = 190 + (draftPullRequest === "early" ? 0 : draftPullRequest === "end" ? 3 : 6);
+        const epic = linear.add({ identifier: `ENG-${n}`, title: "Gizmos" });
+        linear.add({ identifier: `ENG-${n + 1}`, title: "First", parentId: epic.id, priority: 1 });
+        linear.add({ identifier: `ENG-${n + 2}`, title: "Second", parentId: epic.id, priority: 2 });
+        const run = await delegate(epic.id);
+
+        await work(run.id, { commitSha: sha(n) });
+        expect((await activeJob(run.id)).type).toBe("ralph.story");
+        expect(scm.changeRequests).toEqual(
+          draft ? [expect.objectContaining({ number: 1, draft: true })] : [],
+        );
+        await work(run.id, { commitSha: sha(n + 1) });
+        // Pushed after each story: no push run, the describe job comes next.
+        await describePr(run.id);
+        expect(scm.changeRequests).toEqual([expect.objectContaining({ number: 1, draft: false })]);
+        expect(await withPullRequest(run.id)).toMatchObject({ status: "completed" });
+      },
+    );
   });
 
   it("goes back to the organization's ralph agents when the sticky agent was revoked before the next job", async () => {

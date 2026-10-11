@@ -7,9 +7,11 @@
  * a time, that writes its title and body; its outcome (applied by
  * `advanceRun` under the run's row lock) opens the lane's PR/MR as a draft or
  * updates the open one and marks it ready. Once every lane is through, the run
- * completes, or waits on a reply when one of them failed. With
- * `openPullRequestEarly`, a lane's draft with a templated body is opened as
- * soon as its first story is pushed.
+ * completes, or waits on a reply when one of them failed. With a story task
+ * that pushes only at the end, a `ralph.push` run pushes the lane's branch
+ * first. With `openPullRequestEarly` (or the story task's `draftPullRequest:
+ * early`), a lane's draft with a templated body is opened as soon as its
+ * first story is pushed.
  */
 import {
   getJob,
@@ -29,10 +31,10 @@ import {
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
-import { epicCompletedTarget, parseRalphSettings } from "@omniralph/shared";
+import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
-import { describePrPayload, describePrText } from "./coding";
+import { describePrPayload, describePrText, opensPullRequestEarly, pushResult } from "./coding";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -212,8 +214,9 @@ export async function sessionLinkLabel(
 }
 
 /**
- * `openPullRequestEarly` (per lane, with its repository's setting): once a
- * story of a lane is pushed, opens a draft PR/MR with a templated body (or
+ * `openPullRequestEarly` (per lane, with its repository's setting, or on the
+ * `tasks` path its story task's `draftPullRequest`: `opensPullRequestEarly`):
+ * once a story of a lane is pushed, opens a draft PR/MR with a templated body (or
  * adopts the one open for the branch, as it is). Lanes without the setting,
  * with a PR/MR already or without a pushed story, and runs with every story
  * done (the describe jobs open them then) are left alone. A failure is
@@ -245,7 +248,7 @@ async function openEarlyLanePullRequest(
 ): Promise<void> {
   const { lane } = input;
   const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
-  if (!found || !parseRalphSettings(found.repository.ralphSettings).openPullRequestEarly) return;
+  if (!found || !opensPullRequestEarly(found.repository)) return;
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
   const where = input.main ? "" : ` in \`${found.repository.fullPath}\``;
@@ -336,8 +339,19 @@ export async function applyPullRequestJob(
   const job = await getJob(deps.db, run.prJobId);
   if (job && ACTIVE_JOB_STATUSES.has(job.status)) return { busy: true };
 
-  const payload = job && describePrPayload(job);
   const lanes = await listLanes(tx, run.id);
+  const pushing =
+    lanes.find((l) => l.publish?.status === "pushing" && l.publish.jobId === run.prJobId) ??
+    (job?.type === RALPH_PUSH_JOB_TYPE
+      ? lanes.find((l) => l.repositoryId === job.repositoryId)
+      : undefined);
+  if (pushing) {
+    await updateRun(tx, run.id, { prJobId: null });
+    await applyPushJob(tx, pushing, job);
+    return { busy: false };
+  }
+
+  const payload = job && describePrPayload(job);
   const lane =
     lanes.find((l) => l.publish?.status === "describing" && l.publish.jobId === run.prJobId) ??
     (payload ? lanes.find((l) => l.repositoryId === payload.repositoryId) : null) ??
@@ -390,6 +404,27 @@ export async function applyPullRequestJob(
   );
   await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
   return { busy: false };
+}
+
+/**
+ * The outcome of a lane's `ralph.push` run: the lane is `pushed` (and is
+ * described next), or its push failed, a problem of the lane like a failed
+ * describe job (a reply retries it).
+ */
+async function applyPushJob(tx: RalphTransaction, lane: RalphLane, job: Job | null): Promise<void> {
+  const completed = job?.status === "completed";
+  const pushed = completed ? pushResult(job) : null;
+  if (pushed) {
+    await updateLane(tx, lane.id, { publish: { status: "pushed", sha: pushed.pushed.sha } });
+    return;
+  }
+  const why = completed ? "the agent sent an invalid result" : jobFailure(job);
+  await updateLane(tx, lane.id, {
+    publish: {
+      status: "failed",
+      problem: `I couldn't push \`${lane.branch}\`: ${tail(why, 3000)}.`,
+    },
+  });
 }
 
 /** A published lane, for the final response and the problem elicitation. */
