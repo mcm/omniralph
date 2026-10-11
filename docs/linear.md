@@ -10,7 +10,13 @@ The control panel is the only thing that talks to Linear. It holds the app's tok
 Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
 their activities through the control panel (`POST /api/harness/jobs/{id}/activities`), download
 [Linear attachments](#attachments) through it (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`)
-and never see a Linear token.
+and never see a Linear token. Sessions of run-spec tasks with `toolSettings.linearRead` read Linear
+the same way: the `linear_get_issue`, `linear_list_comments`, `linear_search_issues` and
+`linear_get_document` tools of the harness's `omniralph` MCP server call
+`GET /api/harness/runs/{id}/linear/…` (`issues?query=`, `issues/{issueId}`,
+`issues/{issueId}/comments`, `documents/{documentId}`) with the run's session token (scope
+`linear:read`); the control panel reads the run's organization's workspace, only for the tools the
+task's agent lists. They are read-only: every Linear write goes through a sink.
 
 Runs can also start from a Slack or Discord thread: a linked member asks the chat bot and it hands
 the request to a request-mode run in a ralph-enabled repository, whose progress, answers and PR/MR

@@ -40,6 +40,19 @@ export interface IssueComment {
   createdAt?: string;
 }
 
+/** A Linear document (e.g. a PRD or design doc). */
+export interface LinearDocument {
+  id: string;
+  title: string;
+  /** Markdown. */
+  content: string;
+  url: string;
+  updatedAt: string;
+  projectName?: string;
+  /** The issue the document belongs to, if any. */
+  issueIdentifier?: string;
+}
+
 export interface Blocker {
   id: string;
   identifier: string;
@@ -149,6 +162,10 @@ export interface LinearGateway {
   getChildren(issueId: string): Promise<IssueSummary[]>;
   /** Comments on an issue, oldest first. */
   getComments(issueId: string): Promise<IssueComment[]>;
+  /** Issues matching a full-text search (title, description), best match first. */
+  searchIssues(query: string, options?: { first?: number }): Promise<IssueSummary[]>;
+  /** A document by ID or slug ID. */
+  getDocument(idOrSlugId: string): Promise<LinearDocument>;
   /** Issues that block the given issue ("X blocks this"). */
   getBlockers(issueId: string): Promise<Blocker[]>;
   /** The team's workflow states by position (cached per team for the gateway's lifetime). */
@@ -193,8 +210,8 @@ export interface LinearGateway {
 
 const PAGE_SIZE = 100;
 
-const ISSUE_FIELDS = /* GraphQL */ `
-  fragment IssueFields on Issue {
+/** The fields of an issue (`summarize`), selected on `Issue` and on `IssueSearchResult`. */
+const ISSUE_SELECTION = /* GraphQL */ `
     id
     identifier
     title
@@ -230,6 +247,11 @@ const ISSUE_FIELDS = /* GraphQL */ `
     project {
       name
     }
+  `;
+
+const ISSUE_FIELDS = /* GraphQL */ `
+  fragment IssueFields on Issue {
+    ${ISSUE_SELECTION}
   }
 `;
 
@@ -469,6 +491,66 @@ export class SdkLinearGateway implements LinearGateway {
     return nodes
       .map((c) => ({ body: c.body, author: c.user?.name ?? undefined, createdAt: c.createdAt }))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async searchIssues(query: string, options: { first?: number } = {}): Promise<IssueSummary[]> {
+    const data = await this.request<{ searchIssues: { nodes: IssueNode[] } }>(
+      /* GraphQL */ `
+        query SearchIssues($term: String!, $first: Int!) {
+          searchIssues(term: $term, first: $first) {
+            nodes {
+              ...IssueSearchFields
+            }
+          }
+        }
+        fragment IssueSearchFields on IssueSearchResult {
+          ${ISSUE_SELECTION}
+        }
+      `,
+      { term: query, first: options.first ?? 10 },
+    );
+    return data.searchIssues.nodes.map(summarize);
+  }
+
+  async getDocument(idOrSlugId: string): Promise<LinearDocument> {
+    type DocumentNode = {
+      id: string;
+      title: string;
+      content?: string | null;
+      url: string;
+      updatedAt: string;
+      project?: { name: string } | null;
+      issue?: { identifier: string } | null;
+    };
+    const { document } = await this.request<{ document: DocumentNode }>(
+      /* GraphQL */ `
+        query Document($id: String!) {
+          document(id: $id) {
+            id
+            title
+            content
+            url
+            updatedAt
+            project {
+              name
+            }
+            issue {
+              identifier
+            }
+          }
+        }
+      `,
+      { id: idOrSlugId },
+    );
+    return {
+      id: document.id,
+      title: document.title,
+      content: document.content ?? "",
+      url: document.url,
+      updatedAt: document.updatedAt,
+      ...(document.project && { projectName: document.project.name }),
+      ...(document.issue && { issueIdentifier: document.issue.identifier }),
+    };
   }
 
   async getBlockers(issueId: string): Promise<Blocker[]> {

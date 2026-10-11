@@ -12,3 +12,4 @@ export * from "./triage-job.js";
 export * from "./chat-ask.js";
 export * from "./run-spec.js";
 export * from "./run-result.js";
+export * from "./run-linear.js";

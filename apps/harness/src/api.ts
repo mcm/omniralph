@@ -60,6 +60,32 @@ export async function postJson<S extends z.ZodType>(
     redirect: "error",
     signal: abortSignal(options),
   });
+  return readResponse(res, "POST", url, schema);
+}
+
+/** GETs JSON from the control panel and validates the response body. */
+export async function getJson<S extends z.ZodType>(
+  fetchFn: FetchFn,
+  url: string,
+  schema: S,
+  accessToken?: string,
+  options: PostOptions = {},
+): Promise<z.infer<S>> {
+  const res = await fetchFn(url, {
+    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+    redirect: "error",
+    signal: abortSignal(options),
+  });
+  return readResponse(res, "GET", url, schema);
+}
+
+/** The validated body of a control panel response; `ApiError` for an error status or invalid body. */
+async function readResponse<S extends z.ZodType>(
+  res: Response,
+  method: string,
+  url: string,
+  schema: S,
+): Promise<z.infer<S>> {
   const text = await res.text();
   let json: unknown;
   try {
@@ -82,13 +108,17 @@ export async function postJson<S extends z.ZodType>(
     throw new ApiError(
       res.status,
       code,
-      `POST ${path} failed with ${res.status}${code ? ` (${code})` : ""}${detail ? `: ${detail}` : ""}`,
+      `${method} ${path} failed with ${res.status}${code ? ` (${code})` : ""}${detail ? `: ${detail}` : ""}`,
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
     );
   }
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    throw new ApiError(res.status, "invalid_response", `POST ${path} returned an invalid body`);
+    throw new ApiError(
+      res.status,
+      "invalid_response",
+      `${method} ${path} returned an invalid body`,
+    );
   }
   return parsed.data;
 }

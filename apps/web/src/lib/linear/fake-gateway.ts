@@ -12,6 +12,7 @@ import type {
   IssueComment,
   IssueLabel,
   IssueSummary,
+  LinearDocument,
   LinearGateway,
   PlanStep,
   Team,
@@ -72,6 +73,10 @@ export class FakeLinearGateway implements LinearGateway {
   uploaded: Array<{ filename: string; contentType: string; size: number; assetUrl: string }> = [];
   /** Every `downloadUpload` URL, in order. */
   downloads: string[] = [];
+  /** Documents `getDocument` finds, by ID. */
+  documents = new Map<string, LinearDocument>();
+  /** Every `searchIssues` call, in order. */
+  searches: Array<{ query: string; first?: number }> = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
   failures = new Map<string, Error>();
 
@@ -130,6 +135,26 @@ export class FakeLinearGateway implements LinearGateway {
   async getComments(issueId: string): Promise<IssueComment[]> {
     this.fail("getComments");
     return (this.commentsByIssue.get(issueId) ?? []).map((c) => ({ ...c }));
+  }
+  /** Issues whose identifier, title or description contains the query (ignoring case). */
+  async searchIssues(query: string, options: { first?: number } = {}): Promise<IssueSummary[]> {
+    this.fail("searchIssues");
+    this.searches.push({ query, ...(options.first !== undefined && { first: options.first }) });
+    const term = query.toLowerCase();
+    return [...this.issues.values()]
+      .filter((i) =>
+        [i.identifier, i.title, i.description].some((text) => text.toLowerCase().includes(term)),
+      )
+      .slice(0, options.first ?? 10)
+      .map((i) => ({ ...i }));
+  }
+  async getDocument(idOrSlugId: string): Promise<LinearDocument> {
+    this.fail("getDocument");
+    const document =
+      this.documents.get(idOrSlugId) ??
+      [...this.documents.values()].find((d) => d.url.endsWith(`-${idOrSlugId}`));
+    if (!document) throw new Error(`no document ${idOrSlugId}`);
+    return { ...document };
   }
   async getBlockers(issueId: string): Promise<Blocker[]> {
     return (this.blocks.get(issueId) ?? []).map((id) => {
