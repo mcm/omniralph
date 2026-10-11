@@ -3,11 +3,14 @@ import {
   HarnessVersion,
   harnessVersionAtLeast,
   defaultCapabilityLimit,
+  defaultPoolLimit,
   effectiveCapabilityLimits,
+  effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
   JobFailure,
   JobStartResponse,
+  legacyJobRouting,
 } from "./protocol.js";
 
 const ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
@@ -55,26 +58,49 @@ describe("protocol", () => {
     expect(effectiveCapabilityLimits(["ralph"], { ralph: 0, review: 1 }, 3)).toEqual({ ralph: 1 });
   });
 
-  it("defaults the heartbeat's capability limits for older control panels", () => {
-    const response = HeartbeatResponse.parse({
-      maxConcurrency: 1,
-      pollIntervalSeconds: 5,
-      enabledCapabilities: [],
-      pinnedRepoIds: [],
-      organizationId: ID,
-      topics: [],
-      queueRegion: "iad1",
-      cancelJobIds: [],
-      jobTokens: [],
+  it("routes every legacy job type to its task type and pool", () => {
+    const routing = (type: string) => legacyJobRouting(type);
+    expect(routing("review.run")).toEqual({ taskType: "review", pool: "short" });
+    for (const type of [
+      "review.reply",
+      "review.learn-rule",
+      "chat.ask",
+      "triage.run",
+      "ralph.describe-pr",
+    ]) {
+      expect(routing(type)).toEqual({ taskType: "query", pool: "short" });
+    }
+    for (const type of ["ralph.story", "ralph.request", "ralph.prepare", "ralph.cleanup"]) {
+      expect(routing(type)).toEqual({ taskType: "coding", pool: "long" });
+    }
+    expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
+    expect(() => routing("review.unknown")).toThrow(/Unknown legacy job type/);
+  });
+
+  it("leaves a slot free of long jobs by default on harnesses with two or more slots", () => {
+    expect(defaultPoolLimit("long", 1)).toBe(1);
+    expect(defaultPoolLimit("long", 2)).toBe(1);
+    expect(defaultPoolLimit("long", 4)).toBe(3);
+    expect(defaultPoolLimit("short", 4)).toBe(4);
+    expect(defaultPoolLimit("gpu", 4)).toBe(4);
+  });
+
+  it("clamps stored pool limits to 1…maxConcurrency", () => {
+    expect(effectivePoolLimits({}, 1)).toEqual({ short: 1, long: 1 });
+    expect(effectivePoolLimits({}, 3)).toEqual({ short: 3, long: 2 });
+    expect(effectivePoolLimits({ long: 3, short: 9 }, 3)).toEqual({ short: 3, long: 3 });
+    expect(effectivePoolLimits({ long: 0, gpu: 1 }, 3, ["long", "gpu"])).toEqual({
+      long: 1,
+      gpu: 1,
     });
-    expect(response.capabilityLimits).toEqual({});
   });
 
   it("requires the agent's organization in the heartbeat response", () => {
     const response = {
       maxConcurrency: 1,
       pollIntervalSeconds: 5,
-      enabledCapabilities: [],
+      acceptedTaskTypes: [],
+      poolLimits: {},
       pinnedRepoIds: [],
       topics: [],
       queueRegion: "iad1",
@@ -109,7 +135,8 @@ describe("self-update protocol", () => {
     const response = HeartbeatResponse.parse({
       maxConcurrency: 1,
       pollIntervalSeconds: 5,
-      enabledCapabilities: [],
+      acceptedTaskTypes: [],
+      poolLimits: {},
       pinnedRepoIds: [],
       organizationId: ID,
       topics: [],

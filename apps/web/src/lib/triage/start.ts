@@ -25,6 +25,7 @@ import {
   type TriageBlocker,
   type TriageOutcome,
   type TriageRepository,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
@@ -276,6 +277,7 @@ export async function enqueueTriage(
       organizationId: deps.organizationId,
       capability: TRIAGE_CAPABILITY,
       type: TRIAGE_RUN_JOB_TYPE,
+      ...legacyJobRouting(TRIAGE_RUN_JOB_TYPE),
       payload,
       repositoryId: repository?.payload.repositoryId ?? null,
       dedupeKey: `triage:${run.id}`,

@@ -24,6 +24,7 @@ import {
   chatAskTokenCap,
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import { isHarnessOnline } from "@/lib/harnesses/display";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -251,6 +252,7 @@ export async function enqueueChatAsk(
     organizationId: input.organizationId,
     capability: CHAT_ASK_CAPABILITY,
     type: CHAT_ASK_JOB_TYPE,
+    ...legacyJobRouting(CHAT_ASK_JOB_TYPE),
     payload,
     repositoryId: repository.id,
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),

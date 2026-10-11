@@ -15,6 +15,7 @@ import {
   replyTokenCap,
   ReviewReplyJobPayload,
   ReviewReplyJobResult,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { reviewUrl } from "@/lib/review/post";
@@ -81,6 +82,7 @@ export async function enqueueReply(
     organizationId: found.repository.organizationId,
     capability: REVIEW_REPLY_CAPABILITY,
     type: REVIEW_REPLY_JOB_TYPE,
+    ...legacyJobRouting(REVIEW_REPLY_JOB_TYPE),
     payload,
     repositoryId: review.repositoryId,
     dedupeKey: `${REVIEW_REPLY_JOB_TYPE}:${review.repositoryId}:${input.commentId}`,

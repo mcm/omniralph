@@ -166,8 +166,9 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     const started = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

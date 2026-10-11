@@ -49,8 +49,8 @@ const holdClaim: Route = (_body, init) =>
 const HEARTBEAT: HeartbeatResponse = {
   maxConcurrency: 1,
   pollIntervalSeconds: 5,
-  enabledCapabilities: ["review"],
-  capabilityLimits: { review: 1 },
+  acceptedTaskTypes: ["query", "review"],
+  poolLimits: { short: 1, long: 1 },
   pinnedRepoIds: [],
   organizationId: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f",
   topics: [],
@@ -294,7 +294,7 @@ describe("omniralph-harness CLI", () => {
         {
           path: "/api/harness/claim",
           authorization: "Bearer access-1",
-          body: { capabilities: ["system", "review"] },
+          body: { pools: ["short", "long"] },
         },
       ]);
       expect(JSON.parse(await readFile(configPath, "utf8")).refreshToken).toBe("refresh-1");

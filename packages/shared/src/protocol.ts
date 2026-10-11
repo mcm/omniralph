@@ -87,6 +87,122 @@ export function effectiveCapabilityLimits(
   );
 }
 
+/**
+ * How a harness runs a job: `query`, `review` and `coding` run a Claude
+ * session; `system` jobs are fixed commands (e.g. `repo.sync`) every harness
+ * accepts.
+ */
+export const JOB_TASK_TYPES = ["query", "review", "coding", "system"] as const;
+export const JobTaskType = z.enum(JOB_TASK_TYPES);
+export type JobTaskType = z.infer<typeof JobTaskType>;
+
+export function isJobTaskType(value: string): value is JobTaskType {
+  return (JOB_TASK_TYPES as readonly string[]).includes(value);
+}
+
+/** The pools seeded for every organization: `short` (query, review) and `long` (coding). */
+export const DEFAULT_POOLS = ["short", "long"] as const;
+
+const poolName = z.string().min(1).max(64);
+
+/** How a legacy job type is routed: its task type and pool (null for `system`). */
+export interface JobRouting {
+  taskType: JobTaskType;
+  pool: string | null;
+}
+
+const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
+  "review.run": { taskType: "review", pool: "short" },
+  "review.reply": { taskType: "query", pool: "short" },
+  "review.learn-rule": { taskType: "query", pool: "short" },
+  "chat.ask": { taskType: "query", pool: "short" },
+  "triage.run": { taskType: "query", pool: "short" },
+  "ralph.describe-pr": { taskType: "query", pool: "short" },
+  "ralph.story": { taskType: "coding", pool: "long" },
+  "ralph.request": { taskType: "coding", pool: "long" },
+  "ralph.prepare": { taskType: "coding", pool: "long" },
+  "ralph.cleanup": { taskType: "coding", pool: "long" },
+  [REPO_SYNC_JOB_TYPE]: { taskType: "system", pool: null },
+};
+
+/**
+ * The task type and pool of a legacy job type (one of today's hard-coded job
+ * types). Throws for any other type.
+ */
+export function legacyJobRouting(type: string): JobRouting {
+  const routing = LEGACY_JOB_ROUTING[type];
+  if (!routing) throw new Error(`Unknown legacy job type ${type}`);
+  return { ...routing };
+}
+
+const CAPABILITY_TASK_TYPES: Record<string, readonly JobTaskType[]> = {
+  review: ["query", "review"],
+  ralph: ["coding"],
+  triage: ["query"],
+};
+const CAPABILITY_POOLS: Record<string, string> = {
+  review: "short",
+  triage: "short",
+  ralph: "long",
+};
+
+/**
+ * The task types a harness accepts and its pool limits, from its legacy
+ * capability settings (`review` → `query`, `review`; `ralph` → `coding`;
+ * `triage` → `query`; `review`/`triage` limits → `short`, taking the smaller,
+ * `ralph` → `long`). Matches the backfill of migration 0056.
+ */
+export function legacyHarnessRouting(
+  enabledCapabilities: readonly string[],
+  capabilityLimits: Partial<Record<string, number>>,
+): { acceptedTaskTypes: JobTaskType[]; poolLimits: PoolLimits } {
+  const accepted = new Set(enabledCapabilities.flatMap((c) => CAPABILITY_TASK_TYPES[c] ?? []));
+  const poolLimits: PoolLimits = {};
+  for (const [capability, limit] of Object.entries(capabilityLimits)) {
+    const pool = CAPABILITY_POOLS[capability];
+    if (pool === undefined || limit === undefined) continue;
+    poolLimits[pool] = Math.min(poolLimits[pool] ?? limit, limit);
+  }
+  return { acceptedTaskTypes: JOB_TASK_TYPES.filter((t) => accepted.has(t)), poolLimits };
+}
+
+/**
+ * Per-pool caps on concurrent jobs (`harnesses.pool_limits`), each within
+ * `maxConcurrency`. Unset pools use `defaultPoolLimit`.
+ */
+export const PoolLimits = z.record(poolName, z.int().min(1).max(1000));
+export type PoolLimits = z.infer<typeof PoolLimits>;
+
+/**
+ * A pool's limit when none is set: `long` jobs (hours-long stories) leave one
+ * slot free for other work on harnesses with two or more slots; other pools
+ * may use every slot.
+ */
+export function defaultPoolLimit(pool: string, maxConcurrency: number): number {
+  return pool === "long" ? Math.max(1, maxConcurrency - 1) : maxConcurrency;
+}
+
+/** A pool's effective limit: the stored one (or the default), clamped to 1…`maxConcurrency`. */
+export function effectivePoolLimit(
+  pool: string,
+  limits: Partial<Record<string, number>>,
+  maxConcurrency: number,
+): number {
+  const limit = limits[pool] ?? defaultPoolLimit(pool, maxConcurrency);
+  return Math.max(1, Math.min(maxConcurrency, limit));
+}
+
+/** The effective limit of each pool in `pools` (default: `short` and `long`). */
+export function effectivePoolLimits(
+  limits: Partial<Record<string, number>>,
+  maxConcurrency: number,
+  pools: readonly string[] = DEFAULT_POOLS,
+): PoolLimits {
+  return Object.fromEntries(
+    pools.map((name) => [name, effectivePoolLimit(name, limits, maxConcurrency)]),
+  );
+}
+
 /** The npm package agents run and update themselves to. */
 export const HARNESS_PACKAGE = "@omniralph/harness";
 
@@ -210,12 +326,13 @@ export const HeartbeatResponse = z.object({
    * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
    */
   pollIntervalSeconds: z.int().min(1).optional(),
-  enabledCapabilities: z.array(capabilityName),
+  /** Task types the harness may claim jobs of (`system` is always accepted). */
+  acceptedTaskTypes: z.array(JobTaskType),
   /**
-   * Effective per-capability concurrency limits of the enabled capabilities.
-   * The agent only receives a capability's jobs while it runs fewer than this.
+   * Effective per-pool concurrency limits of the organization's pools. The
+   * harness only claims a pool's jobs while it runs fewer than this.
    */
-  capabilityLimits: CapabilityLimits.default({}),
+  poolLimits: PoolLimits,
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
   pinnedRepoIds: z.array(z.uuid()),
   /** The agent's organization: it only claims that organization's jobs. */
@@ -248,6 +365,11 @@ export const JobPayload = z.object({
   id: z.uuid(),
   capability: z.string(),
   type: z.string(),
+  taskType: JobTaskType,
+  /** Null for `system` jobs. */
+  pool: poolName.nullable(),
+  /** The task definition the job runs; null for legacy jobs. */
+  taskId: z.string().nullable(),
   repositoryId: z.uuid().nullable(),
   payload: z.record(z.string(), z.unknown()),
   /** 1 on the first delivery. */
@@ -296,8 +418,11 @@ export const MAX_CLAIM_WAIT_SECONDS = 50;
  * shape (200), or 204 once `waitSeconds` passed with nothing to claim.
  */
 export const ClaimRequest = z.object({
-  /** Capabilities the agent has a free slot for; only enabled ones are claimed. */
-  capabilities: z.array(capabilityName).max(32),
+  /**
+   * Pools the harness has a free slot in: only their jobs (of task types the
+   * harness accepts) and `system` jobs are claimed.
+   */
+  pools: z.array(poolName).max(32),
   waitSeconds: z.int().min(0).max(MAX_CLAIM_WAIT_SECONDS).default(MAX_CLAIM_WAIT_SECONDS),
 });
 export type ClaimRequest = z.input<typeof ClaimRequest>;

@@ -172,6 +172,8 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
       organizationId: orgId,
       capability: "review",
       type: "review.run",
+      taskType: "review" as const,
+      pool: "short",
       harnessId,
       repositoryId,
       status,

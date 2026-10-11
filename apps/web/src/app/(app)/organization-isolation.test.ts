@@ -312,6 +312,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       organizationId: org.id,
       capability: "review",
       type: "review.run",
+      taskType: "review",
+      pool: "short",
       payload: { note: `${name} job` },
       repositoryId: repo.id,
     });
@@ -319,8 +321,9 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       await claimJob(db, {
         harnessId,
         organizationId: org.id,
-        capabilities: ["review"],
-        enabledCapabilities: ["review"],
+        acceptedTaskTypes: ["query", "review"],
+        pools: ["short"],
+        harnessVersion: null,
         maxDeliveries: 5,
       }),
     ).toMatchObject({
@@ -330,6 +333,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       organizationId: org.id,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       payload: { note: `${name} ralph job` },
       repositoryId: repo.id,
       ralphRunId: run.id,

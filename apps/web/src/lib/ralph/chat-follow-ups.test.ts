@@ -253,8 +253,9 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     const started = await claimJob(db, {
       organizationId: orgId,
       harnessId,
-      capabilities: ["ralph"],
-      enabledCapabilities: ["ralph"],
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

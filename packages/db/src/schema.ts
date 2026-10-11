@@ -851,6 +851,16 @@ export const harnesses = pgTable(
       .$type<Partial<Record<string, number>>>()
       .notNull()
       .default({}),
+    /** Task types the harness runs (`system` is always accepted); trust, not concurrency. */
+    acceptedTaskTypes: text("accepted_task_types")
+      .array()
+      .notNull()
+      .default(sql`'{query,review}'::text[]`),
+    /**
+     * Per-pool caps on concurrent jobs (e.g. `{ "long": 1 }`), within
+     * `maxConcurrency`. Unset pools use the protocol's default limit.
+     */
+    poolLimits: jsonb("pool_limits").$type<Partial<Record<string, number>>>().notNull().default({}),
     /** Overrides the organization's desired harness version (`app_settings` `harness.desiredVersion`). */
     desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
@@ -881,6 +891,23 @@ export const harnesses = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("harnesses_organization_id_idx").on(t.organizationId)],
+);
+
+/**
+ * Named concurrency pools of an organization (`short` and `long` are seeded):
+ * each job takes a slot of its pool, and harnesses limit their jobs per pool.
+ */
+export const pools = pgTable(
+  "pools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("pools_organization_name_uq").on(t.organizationId, t.name)],
 );
 
 export const harnessEnrollments = pgTable("harness_enrollments", {
@@ -1112,6 +1139,9 @@ export const rules = pgTable(
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
+/** How a harness runs a job (`JOB_TASK_TYPES` in `@omniralph/shared`). */
+export type JobTaskType = "query" | "review" | "coding" | "system";
+
 export const jobs = pgTable(
   "jobs",
   {
@@ -1124,6 +1154,17 @@ export const jobs = pgTable(
     capability: text("capability").notNull(),
     /** Job type within the capability, e.g. `review.run` or `repo.sync`. */
     type: text("type").notNull(),
+    /**
+     * How the harness runs the job: `query`, `review`, `coding` or `system` (a
+     * fixed command, no session). Only harnesses accepting it claim the job.
+     */
+    taskType: text("task_type").$type<JobTaskType>().notNull(),
+    /** The pool whose slots the job takes (e.g. `short`); null for `system` jobs. */
+    pool: text("pool"),
+    /** The task definition the job runs (`builtin:<name>` or a UUID); null for legacy jobs. */
+    taskId: text("task_id"),
+    /** Only harnesses reporting at least this version (semver) claim the job. */
+    minHarnessVersion: text("min_harness_version"),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     status: jobStatus("status").notNull().default("queued"),
     repositoryId: uuid("repository_id").references(() => repositories.id, {
@@ -1167,11 +1208,13 @@ export const jobs = pgTable(
     index("jobs_organization_created_at_idx").on(t.organizationId, t.createdAt),
     // The claim query: queued jobs that are available, and running jobs whose lease lapsed.
     index("jobs_claim_queued_idx")
-      .on(t.organizationId, t.status, t.availableAt)
+      .on(t.organizationId, t.taskType, t.status, t.availableAt)
       .where(sql`status = 'queued'`),
     index("jobs_claim_lease_idx")
-      .on(t.organizationId, t.leaseExpiresAt)
+      .on(t.organizationId, t.taskType, t.leaseExpiresAt)
       .where(sql`status = 'running'`),
+    check("jobs_task_type_valid", sql`${t.taskType} in ('query', 'review', 'coding', 'system')`),
+    check("jobs_pool_system_only_null", sql`(${t.taskType} = 'system') = (${t.pool} is null)`),
   ],
 );
 

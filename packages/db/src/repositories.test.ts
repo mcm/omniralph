@@ -328,6 +328,8 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
         organizationId: orgId,
         capability: "review",
         type: "review.run",
+        taskType: "review",
+        pool: "short",
         repositoryId: repo.id,
       })
       .returning();

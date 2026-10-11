@@ -273,7 +273,13 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         repositoryId: githubRepoId,
       });
       const [job] = await prJobs(githubRepoId, number);
-      expect(job).toMatchObject({ id: body.jobId, capability: "review", type: "review.run" });
+      expect(job).toMatchObject({
+        id: body.jobId,
+        capability: "review",
+        type: "review.run",
+        taskType: "review",
+        pool: "short",
+      });
       const payload = ReviewJobPayload.parse(job!.payload);
       expect(payload).toMatchObject({
         reviewId: body.reviewId,

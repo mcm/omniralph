@@ -1,13 +1,16 @@
 import {
   classifyHarnessRunningJobs,
   listHarnessPinnedRepositoryIds,
+  listPoolNames,
   recordHarnessHeartbeat,
   renewJobLeases,
 } from "@omniralph/db";
 import {
+  DEFAULT_POOLS,
   Heartbeat,
   LEGACY_POLL_INTERVAL_SECONDS,
-  effectiveCapabilityLimits,
+  effectivePoolLimits,
+  isJobTaskType,
   type HeartbeatResponse,
   type JobMessageDelivery,
 } from "@omniralph/shared";
@@ -49,8 +52,9 @@ export async function POST(req: Request): Promise<Response> {
     handledUpdateRequestId: body.data.handledUpdateRequestId,
   });
   if (!agent) return badRequest("unknown_agent");
-  const [pinnedRepoIds, running, organizationVersion] = await Promise.all([
+  const [pinnedRepoIds, poolNames, running, organizationVersion] = await Promise.all([
     listHarnessPinnedRepositoryIds(db, harnessId),
+    listPoolNames(db, agent.organizationId),
     classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
     agent.desiredVersion
       ? null
@@ -80,12 +84,11 @@ export async function POST(req: Request): Promise<Response> {
     maxConcurrency: agent.maxConcurrency,
     // Legacy fields: old harnesses require them; `topics: []` stops their polling.
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
-    enabledCapabilities: agent.enabledCapabilities,
-    capabilityLimits: effectiveCapabilityLimits(
-      agent.enabledCapabilities,
-      agent.capabilityLimits,
-      agent.maxConcurrency,
-    ),
+    acceptedTaskTypes: agent.acceptedTaskTypes.filter(isJobTaskType),
+    // `short` and `long` always exist (seeded per organization).
+    poolLimits: effectivePoolLimits(agent.poolLimits, agent.maxConcurrency, [
+      ...new Set([...DEFAULT_POOLS, ...poolNames]),
+    ]),
     pinnedRepoIds,
     organizationId: agent.organizationId,
     topics: [],

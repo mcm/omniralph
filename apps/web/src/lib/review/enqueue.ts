@@ -18,6 +18,7 @@ import {
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
   type ReviewMode,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -167,6 +168,7 @@ export async function enqueueReview(
       organizationId: found.repository.organizationId,
       capability: REVIEW_CAPABILITY,
       type: REVIEW_JOB_TYPE,
+      ...legacyJobRouting(REVIEW_JOB_TYPE),
       payload,
       repositoryId: input.repositoryId,
       dedupeKey: `${prefix}${input.headSha}`,

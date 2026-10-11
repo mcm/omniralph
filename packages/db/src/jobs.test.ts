@@ -41,6 +41,8 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
       organizationId: orgA,
       capability: "review",
       type: "review.run",
+      taskType: "review",
+      pool: "short",
       ...input,
     });
     await db
@@ -53,13 +55,19 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
   const claim = (
     harnessId: string,
     now: Date,
-    options: { organizationId?: string; capabilities?: string[]; enabled?: string[] } = {},
+    options: {
+      organizationId?: string;
+      acceptedTaskTypes?: string[];
+      pools?: string[];
+      harnessVersion?: string | null;
+    } = {},
   ) =>
     claimJob(db, {
       harnessId,
       organizationId: options.organizationId ?? orgA,
-      capabilities: options.capabilities ?? ["review", "ralph"],
-      enabledCapabilities: options.enabled ?? ["review", "ralph"],
+      acceptedTaskTypes: options.acceptedTaskTypes ?? ["query", "review", "coding"],
+      pools: options.pools ?? ["short", "long"],
+      harnessVersion: options.harnessVersion === undefined ? "1.0.0" : options.harnessVersion,
       maxDeliveries: 3,
       now,
     });
@@ -134,12 +142,54 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(a);
   });
 
-  it("only claims capabilities both asked for and enabled", async () => {
-    const ralph = await enqueue({ capability: "ralph", type: "ralph.story" });
-    expect((await claim(agentA, at(1), { capabilities: ["review"] })).claim).toBeNull();
-    expect((await claim(agentA, at(1), { enabled: ["review"] })).claim).toBeNull();
-    expect((await claim(agentA, at(1), { capabilities: [], enabled: [] })).claim).toBeNull();
-    expect((await claim(agentA, at(1))).claim?.job.id).toBe(ralph);
+  it("only claims task types the harness accepts", async () => {
+    const coding = await enqueue({
+      capability: "ralph",
+      type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
+    });
+    expect(
+      (await claim(agentA, at(1), { acceptedTaskTypes: ["query", "review"] })).claim,
+    ).toBeNull();
+    expect((await claim(agentA, at(1), { acceptedTaskTypes: [] })).claim).toBeNull();
+    expect((await claim(agentA, at(1), { acceptedTaskTypes: ["coding"] })).claim?.job.id).toBe(
+      coding,
+    );
+  });
+
+  it("only claims jobs of the pools asked for", async () => {
+    const long = await enqueue({ taskType: "coding", pool: "long", createdAt: at(-20) });
+    const short = await enqueue({ taskType: "query", pool: "short", createdAt: at(-10) });
+    expect((await claim(agentA, at(1), { pools: [] })).claim).toBeNull();
+    expect((await claim(agentA, at(1), { pools: ["short"] })).claim?.job.id).toBe(short);
+    expect((await claim(agentA, at(1), { pools: ["short"] })).claim).toBeNull();
+    expect((await claim(agentA, at(1), { pools: ["long"] })).claim?.job.id).toBe(long);
+  });
+
+  it("always claims system jobs, whatever the task types and pools", async () => {
+    const sync = await enqueue({
+      capability: "system",
+      type: "repo.sync",
+      taskType: "system",
+      pool: null,
+    });
+    expect((await claim(agentA, at(1), { acceptedTaskTypes: [], pools: [] })).claim?.job.id).toBe(
+      sync,
+    );
+  });
+
+  it("only claims jobs whose minimum harness version the harness meets", async () => {
+    const newer = await enqueue({ minHarnessVersion: "1.10.0", createdAt: at(-30) });
+    const older = await enqueue({ minHarnessVersion: "1.2.0", createdAt: at(-20) });
+    const any = await enqueue({ createdAt: at(-10) });
+    expect((await claim(agentA, at(1), { harnessVersion: null })).claim?.job.id).toBe(any);
+    expect((await claim(agentA, at(1), { harnessVersion: "1.9.0" })).claim?.job.id).toBe(older);
+    expect((await claim(agentA, at(1), { harnessVersion: "1.9.0" })).claim).toBeNull();
+    // Semver, not string order; a prerelease of the minimum counts.
+    expect((await claim(agentA, at(1), { harnessVersion: "1.10.0-beta.1" })).claim?.job.id).toBe(
+      newer,
+    );
   });
 
   it("doesn't claim a job before it is available", async () => {
@@ -245,7 +295,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect(await renewJobLeases(db, agentA, [], at(100))).toEqual([]);
 
     // The renewed job isn't taken over; the other one is.
-    const result = await claim(agentA2, at(150), { capabilities: ["review"] });
+    const result = await claim(agentA2, at(150), { pools: ["short"] });
     expect(result.claim?.job.id).toBe(theirs);
   });
 

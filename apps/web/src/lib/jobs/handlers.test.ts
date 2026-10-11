@@ -65,6 +65,8 @@ function job(overrides: Partial<Job>): Job {
     id: "00000000-0000-4000-8000-000000000009",
     capability: "review",
     type: "review.run",
+    taskType: "review",
+    pool: "short",
     payload: reviewPayload,
     ...overrides,
   } as Job;
@@ -83,7 +85,11 @@ describe("job outcome handlers", () => {
     expect(jobOutcomeHandler(job({ capability: "ralph" }))).toBeUndefined();
     expect(jobOutcomeHandler(job({ type: "review.other" }))).toBeUndefined();
     expect(jobOutcomeHandler(job({ payload: { reviewId: "x" } }))).toBeUndefined();
-    expect(jobOutcomeHandler(job({ capability: "system", type: "repo.sync" }))).toBeUndefined();
+    expect(
+      jobOutcomeHandler(
+        job({ capability: "system", type: "repo.sync", taskType: "system", pool: null }),
+      ),
+    ).toBeUndefined();
   });
 
   it("validates results and keeps the review failure default", async () => {
@@ -101,6 +107,8 @@ describe("job outcome handlers", () => {
     const triage = job({
       capability: "triage",
       type: "triage.run",
+      taskType: "query",
+      pool: "short",
       payload: {
         triageRunId: "00000000-0000-4000-8000-000000000003",
         issue: {

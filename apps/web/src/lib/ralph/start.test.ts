@@ -773,6 +773,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       organizationId: orgId,
       capability: "ralph",
       type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
       ralphRunId: previous.id,
     });
 

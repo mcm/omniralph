@@ -156,7 +156,12 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     const run = await getTriageRunBySession(db, "session-1");
     expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
     const job = (await getJob(db, run!.currentJobId!))!;
-    expect(job).toMatchObject({ capability: "triage", type: "triage.run" });
+    expect(job).toMatchObject({
+      capability: "triage",
+      type: "triage.run",
+      taskType: "query",
+      pool: "short",
+    });
     expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
     expect(linear.bodies("session-1", "thought")[0]).toContain(`Triaging **${issue.identifier}**`);
     // The label stays while triage runs.

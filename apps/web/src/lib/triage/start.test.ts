@@ -177,6 +177,8 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     expect(job).toMatchObject({
       capability: "triage",
       type: "triage.run",
+      taskType: "query",
+      pool: "short",
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",

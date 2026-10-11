@@ -7,7 +7,7 @@ import {
 } from "@omniralph/shared";
 import { badRequest, readJson, unauthorized } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
-import { runnableCapabilities, signJobToken } from "@/lib/harness-api/jobs";
+import { signJobToken } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { jobOutcomeHandler } from "@/lib/jobs/handlers";
 
@@ -20,8 +20,9 @@ const CLAIM_RETRY_MS = 2_000;
 type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
 
 /**
- * Hands the harness its next job: claims one of its organization's jobs whose
- * capability the harness asked for and has enabled (`claimJob`) and returns it
+ * Hands the harness its next job: claims one of its organization's jobs of a
+ * task type the harness accepts, in a pool it asked for (or a `system` job),
+ * whose minimum harness version it meets (`claimJob`) and returns it
  * with a job token, in `JobStartResponse`'s `run` shape. With nothing to claim
  * it looks again every `CLAIM_RETRY_MS` until `waitSeconds` passes (204) or
  * the harness hangs up. The job type's outcome handler hears about the start
@@ -41,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
     // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
     const agent = await getHarness(db, harnessId);
     if (!agent || agent.revokedAt) return unauthorized();
-    const run = await claimNext(db, agent, body.data.capabilities);
+    const run = await claimNext(db, agent, body.data.pools);
     if (run) return Response.json(run satisfies ClaimRun);
     const left = deadline - Date.now();
     if (left <= 0 || !(await wait(Math.min(CLAIM_RETRY_MS, left), req.signal))) break;
@@ -52,16 +53,22 @@ export async function POST(req: Request): Promise<Response> {
 /** Claims jobs until one is to run (its `onStarted` doesn't skip it) or none is left. */
 async function claimNext(
   db: Database,
-  agent: { id: string; organizationId: string; enabledCapabilities: string[] },
-  capabilities: readonly string[],
+  agent: {
+    id: string;
+    organizationId: string;
+    acceptedTaskTypes: string[];
+    reportedVersion: string | null;
+  },
+  pools: readonly string[],
 ): Promise<ClaimRun | null> {
   for (;;) {
     let jobToken: JobToken | undefined;
     const { claim, settled } = await claimJob(db, {
       harnessId: agent.id,
       organizationId: agent.organizationId,
-      capabilities,
-      enabledCapabilities: runnableCapabilities(agent.enabledCapabilities),
+      acceptedTaskTypes: agent.acceptedTaskTypes,
+      pools,
+      harnessVersion: agent.reportedVersion,
       maxDeliveries: MAX_JOB_DELIVERIES,
       // Sign while claiming: if signing (KMS) fails, the claim rolls back and no delivery is used up.
       beforeClaim: async (job) => {
@@ -76,10 +83,11 @@ async function claimNext(
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
     }
-    const { id, capability, type, repositoryId, payload, deliveryCount } = claim.job;
+    const { id, capability, type, taskType, pool, taskId, repositoryId, payload, deliveryCount } =
+      claim.job;
     return {
       action: "run",
-      job: { id, capability, type, repositoryId, payload, deliveryCount },
+      job: { id, capability, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },
       jobToken,
     };
   }

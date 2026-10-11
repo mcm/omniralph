@@ -36,11 +36,6 @@ export function jobScopes(capability: string): JobTokenScope[] {
   return isCapability(capability) ? CAPABILITY_JOB_SCOPES[capability] : [];
 }
 
-/** Capabilities a harness may run: its enabled ones plus the built-in `system` capability. */
-export function runnableCapabilities(enabledCapabilities: readonly string[]): string[] {
-  return [...enabledCapabilities, SYSTEM_CAPABILITY];
-}
-
 /** Signs a job token carrying the capability's scopes. */
 export async function signJobToken(
   job: { id: string; capability: string },

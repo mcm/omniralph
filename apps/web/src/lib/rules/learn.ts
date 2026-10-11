@@ -18,6 +18,7 @@ import {
   LEARN_RULE_TOKEN_CAP,
   LearnRuleJobPayload,
   LearnRuleJobResult,
+  legacyJobRouting,
 } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -71,6 +72,7 @@ export async function enqueueLearnRule(
     organizationId: found.repository.organizationId,
     capability: LEARN_RULE_CAPABILITY,
     type: LEARN_RULE_JOB_TYPE,
+    ...legacyJobRouting(LEARN_RULE_JOB_TYPE),
     payload,
     repositoryId: review.repositoryId,
     dedupeKey: `${LEARN_RULE_JOB_TYPE}:${feedback.id}`,
