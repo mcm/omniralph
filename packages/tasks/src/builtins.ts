@@ -16,6 +16,7 @@ import { LEARN_RULE_TASK, RULE_WRITER_AGENT } from "./builtin/learn-rule.js";
 import { REPLY_TASK } from "./builtin/reply.js";
 import { REVIEW_PR_TASK } from "./builtin/review-pr.js";
 import { REVIEWER_AGENT } from "./builtin/reviewer.js";
+import { SUMMARIZE_PR_TASK } from "./builtin/summarize-pr.js";
 import { PLANNER_AGENT, TRIAGE_TASK } from "./builtin/triage.js";
 import { isBuiltinId } from "./ids.js";
 import { validateTemplate } from "./template.js";
@@ -33,6 +34,7 @@ const TASK_INPUTS: readonly TaskDefinitionInput[] = [
   LEARN_RULE_TASK,
   REPLY_TASK,
   REVIEW_PR_TASK,
+  SUMMARIZE_PR_TASK,
   ASK_ABOUT_CODE_TASK,
   TRIAGE_TASK,
   CORRELATE_FINDINGS_TASK,

@@ -295,6 +295,30 @@ export class GitHubAdapter implements ScmAdapter {
     return { id: String(data.id) };
   }
 
+  async upsertComment(
+    repo: RepoRef,
+    number: number,
+    body: string,
+    commentId: string | null,
+  ): Promise<{ id: string }> {
+    if (commentId !== null) {
+      const { owner, repo: name } = splitRepoPath(repo);
+      const octokit = await this.client(repo);
+      try {
+        const { data } = await octokit.issues.updateComment({
+          owner,
+          repo: name,
+          comment_id: Number(commentId),
+          body: capLength(body, MAX_BODY_LENGTH),
+        });
+        return { id: String(data.id) };
+      } catch (error) {
+        if (!hasStatus(error, 404)) throw error;
+      }
+    }
+    return this.postComment(repo, number, body);
+  }
+
   async replyToComment(
     repo: RepoRef,
     number: number,

@@ -1086,6 +1086,11 @@ export const reviews = pgTable(
     reviewRunId: uuid("review_run_id").references(() => reviewRuns.id, { onDelete: "cascade" }),
     /** The review task (`builtin:review-pr` or a UUID) the review ran. */
     taskId: text("task_id"),
+    /**
+     * The task posts its summary to a sticky comment (sink `sticky-comment`)
+     * and no findings: it is left out of its run's correlation and posted review.
+     */
+    summaryOnly: boolean("summary_only").notNull().default(false),
     repositoryId: uuid("repository_id")
       .notNull()
       .references(() => repositories.id, { onDelete: "cascade" }),
@@ -1122,6 +1127,30 @@ export const reviews = pgTable(
   (t) => [
     index("reviews_repository_pr_idx").on(t.repositoryId, t.prNumber),
     index("reviews_repository_created_at_idx").on(t.repositoryId, t.createdAt),
+  ],
+);
+
+/**
+ * The sticky comment a summary-only review task keeps on a PR/MR, edited in
+ * place by every later run of the task.
+ */
+export const stickyComments = pgTable(
+  "sticky_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number").notNull(),
+    taskId: text("task_id").notNull(),
+    /** SCM ID of the comment; null until it was first posted. */
+    commentId: text("comment_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("sticky_comments_repository_pr_task_uq").on(t.repositoryId, t.prNumber, t.taskId),
   ],
 );
 

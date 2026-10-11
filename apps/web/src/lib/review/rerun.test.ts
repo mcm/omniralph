@@ -93,6 +93,9 @@ function fakeAdapter() {
     async postComment() {
       throw new Error("not used");
     },
+    async upsertComment() {
+      throw new Error("not used");
+    },
     async replyToComment(_repo, number, commentId, body) {
       calls.replyToComment.push({ number, commentId, body });
       return { id: `r${calls.replyToComment.length}` };

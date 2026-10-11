@@ -1,5 +1,5 @@
 import type { Database, Job } from "@omniralph/db";
-import { getBuiltinTask, TaskDefinition, type TaskDefinitionInput } from "@omniralph/tasks";
+import { getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -13,6 +13,7 @@ const { chatThreadSink } = await import("./chat-thread");
 const { triageSink } = await import("./triage");
 const { reviewSink } = await import("./review");
 const { runResultSink } = await import("./run-result");
+const { stickyCommentSink } = await import("./sticky-comment");
 
 const legacyCompleted = vi.fn();
 registerJobOutcomeHandler("sinks.legacy", {
@@ -20,19 +21,6 @@ registerJobOutcomeHandler("sinks.legacy", {
   isValidResult: () => true,
   onCompleted: legacyCompleted,
 });
-
-function task(id: string, sink: TaskDefinitionInput["sink"]) {
-  return TaskDefinition.parse({
-    id,
-    name: id,
-    taskType: "query",
-    agentId: "builtin:rule-writer",
-    triggers: ["finding.dismissed"],
-    promptTemplate: "{{finding.title}}",
-    sink,
-    pool: "short",
-  });
-}
 
 const DEFINITIONS = {
   getTask: (id: string) =>
@@ -42,7 +30,7 @@ const DEFINITIONS = {
       "builtin:ask-about-code": getBuiltinTask("builtin:ask-about-code"),
       "builtin:triage": getBuiltinTask("builtin:triage"),
       "builtin:review-pr": getBuiltinTask("builtin:review-pr"),
-      "test:sticky": task("builtin:test-sticky", "sticky-comment"),
+      "builtin:summarize-pr": getBuiltinTask("builtin:summarize-pr"),
     })[id] ?? null,
   getAgent: () => null,
 };
@@ -57,14 +45,14 @@ const answered = (structured: unknown, answer: string | null = null) => ({
 });
 
 describe("sinkFor", () => {
-  it("finds the implemented sinks by kind, and nothing for sinks not implemented yet", () => {
+  it("finds every sink by kind", () => {
     expect(sinkFor("learned-rule")).toBe(learnedRuleSink);
     expect(sinkFor("finding-thread")).toBe(findingThreadSink);
     expect(sinkFor("chat-thread")).toBe(chatThreadSink);
     expect(sinkFor("triage")).toBe(triageSink);
     expect(sinkFor("review")).toBe(reviewSink);
     expect(sinkFor("run-result")).toBe(runResultSink);
-    expect(sinkFor("sticky-comment")).toBeUndefined();
+    expect(sinkFor("sticky-comment")).toBe(stickyCommentSink);
   });
 });
 
@@ -75,7 +63,7 @@ describe("taskSink", () => {
     expect(taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
     expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
     expect(taskSink({ taskId: "builtin:review-pr" }, DEFINITIONS)).toBe(reviewSink);
-    expect(taskSink({ taskId: "test:sticky" }, DEFINITIONS)).toBeUndefined();
+    expect(taskSink({ taskId: "builtin:summarize-pr" }, DEFINITIONS)).toBe(stickyCommentSink);
     expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
   });

@@ -65,7 +65,7 @@ async function settleAndFinishReviewRun(db: Database, reviewRunId: string): Prom
 }
 
 /** `settleAndFinishReviewRun` for the review run of review `reviewId`, if any. */
-async function settleReviewRunOf(db: Database, reviewId: string): Promise<void> {
+export async function settleReviewRunOf(db: Database, reviewId: string): Promise<void> {
   const review = await getReview(db, reviewId);
   if (review?.reviewRunId) await settleAndFinishReviewRun(db, review.reviewRunId);
 }
@@ -126,6 +126,27 @@ async function onReviewCompleted(
   state: ReviewJobState,
   result: ReviewJobResult & { summary?: string },
 ): Promise<void> {
+  await saveReviewResult(db, state, result);
+  const review = await getReview(db, state.reviewId);
+  if (review?.reviewRunId) {
+    await settleAndFinishReviewRun(db, review.reviewRunId);
+    return;
+  }
+  await postReview(db, { reviewId: state.reviewId, payload: state, result });
+  if (state.mode === "fresh") await supersedeEarlierFindings(db, { reviewId: state.reviewId });
+  await resolveFixedFindings(db, { reviewId: state.reviewId });
+}
+
+/**
+ * Persists a review task run's result on its review (once; a replay is a
+ * no-op): outcome, usage, summary, scope, the earlier open findings it found
+ * fixed and its findings.
+ */
+export async function saveReviewResult(
+  db: Database,
+  state: ReviewJobState,
+  result: ReviewJobResult & { summary?: string },
+): Promise<void> {
   await saveReviewOutcome(db, state.reviewId, {
     status: result.stopReason === "budget_exhausted" ? "budget_exhausted" : "completed",
     tokensIn: result.usage.inputTokens,
@@ -147,14 +168,6 @@ async function onReviewCompleted(
       confidence: f.confidence,
     })),
   });
-  const review = await getReview(db, state.reviewId);
-  if (review?.reviewRunId) {
-    await settleAndFinishReviewRun(db, review.reviewRunId);
-    return;
-  }
-  await postReview(db, { reviewId: state.reviewId, payload: state, result });
-  if (state.mode === "fresh") await supersedeEarlierFindings(db, { reviewId: state.reviewId });
-  await resolveFixedFindings(db, { reviewId: state.reviewId });
 }
 
 /**

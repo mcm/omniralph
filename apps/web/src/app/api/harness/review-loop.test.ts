@@ -18,6 +18,7 @@ import {
   reviews,
   rules,
   runMigrations,
+  stickyComments,
   upsertScmConnection,
   type Database,
   organizations,
@@ -168,6 +169,10 @@ const github = {
   /** Current PR state the GitHub mock serves. */
   pr: { baseSha: "", headSha: "", files: [] as { filename: string; patch: string }[] },
   reviews: [] as { id: number; body: Record<string, unknown> }[],
+  /** Issue (PR conversation) comments by ID. */
+  comments: new Map<number, { issue: number; body: string }>(),
+  /** Comment requests, in order: `create` (POST) or `edit` (PATCH). */
+  commentRequests: [] as { kind: "create" | "edit"; id: number }[],
 };
 const server = setupServer(
   http.post("https://api.github.com/app/installations/4242/access_tokens", () =>
@@ -188,6 +193,21 @@ const server = setupServer(
   http.post(`${GITHUB}/pulls/:number/reviews`, async ({ request }) => {
     const id = 9000 + github.reviews.length;
     github.reviews.push({ id, body: (await request.json()) as Record<string, unknown> });
+    return HttpResponse.json({ id });
+  }),
+  http.post(`${GITHUB}/issues/:number/comments`, async ({ params, request }) => {
+    const id = 7000 + github.comments.size;
+    const { body } = (await request.json()) as { body: string };
+    github.comments.set(id, { issue: Number(params.number), body });
+    github.commentRequests.push({ kind: "create", id });
+    return HttpResponse.json({ id }, { status: 201 });
+  }),
+  http.patch(`${GITHUB}/issues/comments/:id`, async ({ params, request }) => {
+    const id = Number(params.id);
+    const comment = github.comments.get(id);
+    if (!comment) return HttpResponse.json({ message: "Not Found" }, { status: 404 });
+    comment.body = ((await request.json()) as { body: string }).body;
+    github.commentRequests.push({ kind: "edit", id });
     return HttpResponse.json({ id });
   }),
   http.get(`${GITHUB}/pulls/:number/reviews/:id/comments`, ({ params }) => {
@@ -277,6 +297,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
 
   beforeEach(async () => {
     github.reviews.length = 0;
+    github.comments.clear();
+    github.commentRequests.length = 0;
     postReview.mockClear();
     await setReviewTasks(["builtin:review-pr"]);
   });
@@ -993,6 +1015,144 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       expect(postReview).toHaveBeenCalledTimes(1);
       const note = github.reviews[0]!.body as { body: string };
       expect(note.body).toContain("Review a pull request: boom; Security review: boom");
+    });
+  });
+  describe("sticky comments", () => {
+    const SUMMARY_TASK_ID = "builtin:summarize-pr";
+
+    /** Starts and completes a task's job with the review output plus `summary` (findings included). */
+    async function completeWith(jobId: string, accessToken: string, summary: string) {
+      const started = await startAs(jobId, accessToken);
+      if (started?.action !== "run") throw new Error("expected run");
+      const output = { ...(await agentRun(started.job.payload)), summary };
+      expect((await submit(jobId, accessToken, output)).body).toEqual({ status: "completed" });
+      return output;
+    }
+
+    async function stickyRows(prNumber: number) {
+      return db
+        .select()
+        .from(stickyComments)
+        .where(
+          and(eq(stickyComments.repositoryId, repositoryId), eq(stickyComments.prNumber, prNumber)),
+        );
+    }
+
+    function postsTo(prNumber: number): number {
+      return postReview.mock.calls.filter((call) => call[1] === prNumber).length;
+    }
+
+    it("posts one review per head and keeps one summary comment, edited in place on the next push", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks(["builtin:review-pr", SUMMARY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      // First push: the summary task finishes first; the review still waits for builtin:review-pr.
+      const first = await enqueue(prNumber, head1);
+      if (first.status !== "enqueued") throw new Error(first.status);
+      expect(first.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", SUMMARY_TASK_ID]);
+      const [review1, summary1] = first.runs;
+      expect(await reviewRow(summary1!.reviewId)).toMatchObject({ summaryOnly: true });
+      expect(await reviewRow(review1!.reviewId)).toMatchObject({ summaryOnly: false });
+      await completeWith(summary1!.jobId, accessToken, "Adds **login** logging. <img src=x>");
+      // Its findings are dropped (and logged); its summary is on the PR in one comment.
+      expect(warn).toHaveBeenCalledWith(
+        "dropping the findings of a summary-only review task",
+        expect.objectContaining({ reviewId: summary1!.reviewId, findings: 1 }),
+      );
+      expect(
+        await db.select().from(findings).where(eq(findings.reviewId, summary1!.reviewId)),
+      ).toHaveLength(0);
+      expect(await reviewRow(summary1!.reviewId)).toMatchObject({ status: "completed" });
+      expect(github.commentRequests).toEqual([{ kind: "create", id: 7000 }]);
+      const comment = github.comments.get(7000)!;
+      expect(comment.issue).toBe(prNumber);
+      expect(comment.body).toMatch(/^## Summarize a pull request\n\nAdds \*\*login\*\* logging\./);
+      expect(comment.body).not.toContain("<img");
+      expect(comment.body).toContain(`Updated for \`${head1.slice(0, 12)}\``);
+      expect(await stickyRows(prNumber)).toEqual([
+        expect.objectContaining({ taskId: SUMMARY_TASK_ID, commentId: "7000" }),
+      ]);
+      expect(await reviewRunRow(first.reviewRunId)).toMatchObject({ status: "running" });
+      expect(postsTo(prNumber)).toBe(0);
+
+      await complete(review1!.jobId, accessToken);
+      // One review, without correlation, of builtin:review-pr's findings only.
+      expect(await reviewRunRow(first.reviewRunId)).toMatchObject({
+        status: "completed",
+        correlationJobId: null,
+      });
+      expect(postsTo(prNumber)).toBe(1);
+      const posted1 = github.reviews.at(-1)!.body as { body: string; comments: { body: string }[] };
+      expect(posted1.comments).toHaveLength(1);
+      expect(posted1.comments[0]!.body).toContain("· Review a pull request_");
+      expect(posted1.body).not.toContain("Summarize a pull request");
+      expect(posted1.body).not.toContain("CAUTION");
+
+      // Second push: builtin:review-pr finishes first and posts without waiting for the summary.
+      const second = await enqueue(prNumber, head2);
+      if (second.status !== "enqueued") throw new Error(second.status);
+      const [review2, summary2] = second.runs;
+      await complete(review2!.jobId, accessToken);
+      expect(await reviewRunRow(second.reviewRunId)).toMatchObject({ status: "completed" });
+      expect(postsTo(prNumber)).toBe(2);
+      const summaryOutput = await completeWith(summary2!.jobId, accessToken, "Adds another file.");
+      expect(postsTo(prNumber)).toBe(2);
+      // The same comment is edited in place.
+      expect(github.commentRequests).toEqual([
+        { kind: "create", id: 7000 },
+        { kind: "edit", id: 7000 },
+      ]);
+      expect(github.comments.size).toBe(1);
+      expect(github.comments.get(7000)!.body).toContain("Adds another file.");
+      expect(github.comments.get(7000)!.body).toContain(`Updated for \`${head2.slice(0, 12)}\``);
+
+      // A replayed result edits the same comment again and creates none.
+      expect((await submit(summary2!.jobId, accessToken, summaryOutput)).body).toEqual({
+        status: "completed",
+      });
+      expect(github.commentRequests.filter((r) => r.kind === "create")).toHaveLength(1);
+      expect(await stickyRows(prNumber)).toHaveLength(1);
+      expect(postsTo(prNumber)).toBe(2);
+      warn.mockRestore();
+    });
+
+    it("posts a new comment when the stored one was deleted", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks([SUMMARY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const first = await enqueue(prNumber, head1);
+      if (first.status !== "enqueued") throw new Error(first.status);
+      await completeWith(first.jobId, accessToken, "First.");
+      github.comments.clear();
+
+      const second = await enqueue(prNumber, head2);
+      if (second.status !== "enqueued") throw new Error(second.status);
+      await completeWith(second.jobId, accessToken, "Second.");
+      warn.mockRestore();
+      expect(github.commentRequests.map((r) => r.kind)).toEqual(["create", "create"]);
+      const [row] = await stickyRows(prNumber);
+      expect(row!.commentId).toBe(String(github.commentRequests[1]!.id));
+    });
+
+    it("posts no review for a review run of only summary-only tasks", async () => {
+      const prNumber = ++prCounter;
+      await setReviewTasks([SUMMARY_TASK_ID]);
+      const { accessToken } = await newAgent();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      await completeWith(enqueued.jobId, accessToken, "Adds login logging.");
+      warn.mockRestore();
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({
+        status: "completed",
+        correlationJobId: null,
+        summaryCommentId: null,
+      });
+      expect(postsTo(prNumber)).toBe(0);
+      expect(github.commentRequests).toHaveLength(1);
     });
   });
   describe("correlation", () => {

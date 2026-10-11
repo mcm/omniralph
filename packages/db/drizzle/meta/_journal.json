@@ -435,6 +435,13 @@
       "when": 1791740983201,
       "tag": "0061_review_run_posting",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1791742045901,
+      "tag": "0062_sticky_comments",
+      "breakpoints": true
     }
   ]
 }
