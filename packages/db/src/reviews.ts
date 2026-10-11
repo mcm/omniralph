@@ -17,6 +17,7 @@ import {
   reviewRuns,
   reviews,
   rules,
+  stickyComments,
   type ReviewScope,
   type SkippedFile,
 } from "./schema.js";
@@ -28,6 +29,7 @@ export type ReviewStatus = Review["status"];
 export type FindingRow = typeof findings.$inferSelect;
 export type ReviewProfile = typeof reviewProfiles.$inferSelect;
 export type Rule = typeof rules.$inferSelect;
+export type StickyComment = typeof stickyComments.$inferSelect;
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -139,7 +141,7 @@ export type StartCorrelation = (
 
 /**
  * Once every review of a `queued`/`running` review run without a correlation
- * job has ended, moves the run on. With two or more finished reviews
+ * job has ended (summary-only ones aside, see `settlingReviews`), moves the run on. With two or more finished reviews
  * (`completed`/`budget_exhausted`) and a `correlate` callback, it starts the
  * correlation (`correlate` inserts its job) and becomes `correlating` with
  * `correlation_job_id` set (or `completed` with the error when it can't);
@@ -162,11 +164,12 @@ export async function settleReviewRun(
       .for("update");
     if (!run || (run.status !== "queued" && run.status !== "running")) return null;
     if (run.correlationJobId !== null) return null;
-    const runReviews = await tx
+    const allReviews = await tx
       .select()
       .from(reviews)
       .where(eq(reviews.reviewRunId, reviewRunId))
       .orderBy(asc(reviews.createdAt), asc(reviews.id));
+    const runReviews = settlingReviews(allReviews);
     if (runReviews.some((r) => ACTIVE_REVIEW_STATUSES.includes(r.status))) return null;
     const finished = runReviews.filter((r) => FINISHED_REVIEW_STATUSES.includes(r.status));
 
@@ -219,6 +222,19 @@ export async function settleReviewRun(
       .where(eq(reviewRuns.id, reviewRunId));
     return status;
   });
+}
+
+/**
+ * The reviews of a review run its status follows (`settleReviewRun`): all
+ * but the summary-only ones, which post on their own and neither hold up nor
+ * join its correlation and posted review; all of them when every task is
+ * summary-only (the run then ends with them, but posts no review).
+ */
+export function settlingReviews<R extends Pick<Review, "summaryOnly">>(
+  runReviews: readonly R[],
+): R[] {
+  const posted = runReviews.filter((r) => !r.summaryOnly);
+  return posted.length > 0 ? posted : [...runReviews];
 }
 
 /** The parts of one correlated finding `applyCorrelation` stores. */
@@ -394,6 +410,8 @@ export interface NewReviewInput {
   reviewRunId?: string | null;
   /** The review task the review runs. */
   taskId?: string | null;
+  /** The task is summary-only (sink `sticky-comment`). */
+  summaryOnly?: boolean;
 }
 
 export async function createReview(db: Database, input: NewReviewInput): Promise<Review> {
@@ -771,6 +789,66 @@ export async function postReviewRunOnce(
       await tx.update(findings).set({ scmCommentId: commentId }).where(eq(findings.id, findingId));
     }
     return { posted: true };
+  });
+}
+
+/** Which sticky comment: one per PR/MR and summary-only review task. */
+export interface StickyCommentKey {
+  repositoryId: string;
+  prNumber: number;
+  taskId: string;
+}
+
+export async function getStickyComment(
+  db: Database,
+  key: StickyCommentKey,
+): Promise<StickyComment | null> {
+  const [row] = await db
+    .select()
+    .from(stickyComments)
+    .where(
+      and(
+        eq(stickyComments.repositoryId, key.repositoryId),
+        eq(stickyComments.prNumber, key.prNumber),
+        eq(stickyComments.taskId, key.taskId),
+      ),
+    );
+  return row ?? null;
+}
+
+/**
+ * Writes a sticky comment: runs `write` with its stored comment ID (null
+ * before it was first posted) while holding a row lock on its
+ * `sticky_comments` row (created when missing), then stores the ID `write`
+ * returns. Concurrent writers take turns, so the PR/MR keeps one comment.
+ */
+export async function writeStickyComment(
+  db: Database,
+  key: StickyCommentKey,
+  write: (commentId: string | null) => Promise<{ id: string }>,
+): Promise<StickyComment> {
+  return db.transaction(async (tx: Transaction) => {
+    await tx.insert(stickyComments).values(key).onConflictDoNothing();
+    const [row] = await tx
+      .select()
+      .from(stickyComments)
+      .where(
+        and(
+          eq(stickyComments.repositoryId, key.repositoryId),
+          eq(stickyComments.prNumber, key.prNumber),
+          eq(stickyComments.taskId, key.taskId),
+        ),
+      )
+      .for("update");
+    if (!row) throw new Error("sticky comment row not found");
+    const { id } = await write(row.commentId);
+    if (id === row.commentId) return row;
+    const [updated] = await tx
+      .update(stickyComments)
+      .set({ commentId: id })
+      .where(eq(stickyComments.id, row.id))
+      .returning();
+    return updated ?? row;
   });
 }
 

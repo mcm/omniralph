@@ -159,6 +159,12 @@ export interface ScmAdapter {
   postReview(repo: RepoRef, number: number, review: ReviewSubmission): Promise<PostedReview>;
   /** Posts a top-level comment on the PR/MR conversation; returns its ID. */
   postComment(repo: RepoRef, number: number, body: string): Promise<{ id: string }>;
+  /**
+   * Edits the top-level PR/MR comment `commentId` in place, or posts a new one
+   * when `commentId` is null or the comment no longer exists; returns the ID
+   * of the comment now holding `body`.
+   */
+  upsertComment(repo: RepoRef, number: number, body: string, commentId: string | null): Promise<{ id: string }>;
   /** Replies in the thread of an inline comment; returns the new comment ID. */
   replyToComment(repo: RepoRef, number: number, commentId: string, body: string): Promise<{ id: string }>;
   /** Resolves the thread containing an inline comment. */

@@ -238,6 +238,26 @@ export class GitLabAdapter implements ScmAdapter {
     return { id: String(note.id) };
   }
 
+  /** Edits the MR note `commentId`, or adds a new one when it's null or gone. */
+  async upsertComment(
+    repo: RepoRef,
+    number: number,
+    body: string,
+    commentId: string | null,
+  ): Promise<{ id: string }> {
+    if (commentId !== null) {
+      try {
+        const note = await this.api.MergeRequestNotes.edit(projectId(repo), number, Number(commentId), {
+          body: capLength(body, MAX_NOTE_LENGTH),
+        });
+        return { id: String(note.id) };
+      } catch (error) {
+        if (statusOf(error) !== 404) throw error;
+      }
+    }
+    return this.postComment(repo, number, body);
+  }
+
   /** Adds a note to the discussion (`commentId` = discussion ID or note ID). */
   async replyToComment(
     repo: RepoRef,

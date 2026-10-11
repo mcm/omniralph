@@ -133,6 +133,7 @@ describe("view mapping", () => {
         id: "r2",
         reviewRunId: null,
         taskId: "builtin:review-pr",
+        summaryOnly: false,
         repositoryId: "repo",
         prNumber: 3,
         prTitle: null,

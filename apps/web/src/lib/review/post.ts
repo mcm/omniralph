@@ -44,7 +44,8 @@ export function reviewUrl(reviewId: string): string {
 /** What posting reads from a review job's payload or trigger context. */
 export type ReviewPostInput = Pick<ReviewJobPayload, "changeRequest" | "reviewConfig">;
 
-async function repositoryTarget(
+/** Where and how to post for a review: the SCM adapter, repository, bot handle and sanitize context. */
+export async function repositoryTarget(
   db: Database,
   review: Pick<Review, "repositoryId">,
   author: string | null,
@@ -259,10 +260,12 @@ function reviewRunUrl(reviews: readonly Review[]): string | null {
  * summary of the correlation summary (sanitized, when there is one), the
  * names of the task runs that failed and `renderSummary`'s stats over the
  * finished task runs. A `failed` run (every task run failed) gets one short
- * failure note. Other runs post nothing.
+ * failure note. Other runs post nothing. Summary-only task runs (which post
+ * to a sticky comment) are left out; a run of only those posts nothing.
  */
 export async function postReviewRun(db: Database, reviewRunId: string): Promise<boolean> {
-  const { posted } = await postReviewRunOnce(db, reviewRunId, async (run, reviews, rows) => {
+  const { posted } = await postReviewRunOnce(db, reviewRunId, async (run, runReviews, rows) => {
+    const reviews = runReviews.filter((r) => !r.summaryOnly);
     const url = reviewRunUrl(reviews);
     if (!url) return null;
     if (run.status === "failed") return postRunFailureNote(db, run, reviews, url);

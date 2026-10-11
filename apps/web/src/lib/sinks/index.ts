@@ -10,6 +10,7 @@ import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
 import { reviewSink } from "./review";
 import { runResultSink } from "./run-result";
+import { stickyCommentSink } from "./sticky-comment";
 import { triageSink } from "./triage";
 
 /**
@@ -72,6 +73,7 @@ const SINKS = new Map<SinkKind, Sink>(
     registered(triageSink),
     registered(reviewSink),
     registered(runResultSink),
+    registered(stickyCommentSink),
   ].map((sink) => [sink.kind, sink]),
 );
 

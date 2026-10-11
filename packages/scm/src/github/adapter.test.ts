@@ -470,6 +470,57 @@ describe("replyToComment and resolveThread", () => {
     expect(posted).toEqual({ body: "Hello" });
   });
 
+  it("edits a comment in place", async () => {
+    let edited: unknown;
+    server.use(
+      http.patch(`${API}/repos/acme/widgets/issues/comments/555`, async ({ request }) => {
+        edited = await request.json();
+        return HttpResponse.json({ id: 555 });
+      }),
+    );
+    await expect(makeAdapter().upsertComment(REPO, 7, "Updated", "555")).resolves.toEqual({
+      id: "555",
+    });
+    expect(edited).toEqual({ body: "Updated" });
+  });
+
+  it.each([
+    ["no comment ID", null],
+    ["a deleted comment", "555"],
+  ])("creates a comment for %s", async (_name, commentId) => {
+    let posted: unknown;
+    server.use(
+      http.patch(`${API}/repos/acme/widgets/issues/comments/555`, () =>
+        HttpResponse.json({ message: "Not Found" }, { status: 404 }),
+      ),
+      http.post(`${API}/repos/acme/widgets/issues/7/comments`, async ({ request }) => {
+        posted = await request.json();
+        return HttpResponse.json({ id: 4322 }, { status: 201 });
+      }),
+    );
+    await expect(makeAdapter().upsertComment(REPO, 7, "Fresh", commentId)).resolves.toEqual({
+      id: "4322",
+    });
+    expect(posted).toEqual({ body: "Fresh" });
+  });
+
+  it("doesn't create a comment when editing fails otherwise", async () => {
+    let created = false;
+    server.use(
+      http.patch(`${API}/repos/acme/widgets/issues/comments/555`, () =>
+        HttpResponse.json({ message: "Forbidden" }, { status: 403 }),
+      ),
+      http.post(`${API}/repos/acme/widgets/issues/7/comments`, () => {
+        created = true;
+        return HttpResponse.json({ id: 1 }, { status: 201 });
+      }),
+    );
+    await expect(makeAdapter().upsertComment(REPO, 7, "Body", "555")).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(created).toBe(false);
+  });
+
   it("replies in the comment's thread", async () => {
     let replied: unknown;
     server.use(

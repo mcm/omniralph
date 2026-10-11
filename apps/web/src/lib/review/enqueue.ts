@@ -121,6 +121,14 @@ export function reviewJobKey(
 }
 
 /**
+ * A review task that only writes a summary: its sink is `sticky-comment`, so
+ * its review is left out of the run's correlation and posted review.
+ */
+export function isSummaryOnlyTask(task: Pick<TaskDefinition, "sink">): boolean {
+  return task.sink === "sticky-comment";
+}
+
+/**
  * The review tasks a review run of `trigger` fans out to: each of
  * `taskIds` (deduplicated, in order) that is a review task accepting the
  * trigger. Unknown and non-review task IDs are skipped with a warning.
@@ -296,6 +304,7 @@ export async function enqueueReview(
       const review = await createReview(db, {
         reviewRunId: reviewRun.id,
         taskId: task.id,
+        summaryOnly: isSummaryOnlyTask(task),
         repositoryId: input.repositoryId,
         prNumber: input.prNumber,
         prTitle: input.title,

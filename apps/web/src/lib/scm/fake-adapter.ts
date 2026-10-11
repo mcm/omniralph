@@ -46,6 +46,18 @@ export class FakeScmAdapter {
 
   /** Replies made with `replyToComment`, in order. */
   readonly replies: { fullPath: string; number: number; commentId: string; body: string }[] = [];
+  /** `upsertComment` calls, in order (`commentId` as passed in; `id` as returned). */
+  readonly upserts: {
+    fullPath: string;
+    number: number;
+    commentId: string | null;
+    id: string;
+    body: string;
+  }[] = [];
+  /** Top-level comments by ID, as last written by `upsertComment`. */
+  readonly comments = new Map<string, { fullPath: string; number: number; body: string }>();
+  private commentCount = 0;
+
   /** Comment IDs whose threads `resolveThread` resolved, in order. */
   readonly resolvedThreads: string[] = [];
 
@@ -166,6 +178,23 @@ export class FakeScmAdapter {
     this.call("replyToComment");
     this.replies.push({ fullPath: repo.fullPath, number, commentId, body });
     return { id: `reply-${this.replies.length}` };
+  }
+
+  async upsertComment(
+    repo: RepoRef,
+    number: number,
+    body: string,
+    commentId: string | null,
+  ): Promise<{ id: string }> {
+    this.call("upsertComment");
+    let id = commentId;
+    if (id === null || !this.comments.has(id)) {
+      this.commentCount += 1;
+      id = `comment-${this.commentCount}`;
+    }
+    this.comments.set(id, { fullPath: repo.fullPath, number, body });
+    this.upserts.push({ fullPath: repo.fullPath, number, commentId, id, body });
+    return { id };
   }
 
   async resolveThread(_repo: RepoRef, _number: number, commentId: string): Promise<void> {

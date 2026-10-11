@@ -349,6 +349,34 @@ describe("threads", () => {
     expect((await posts(`/merge_requests/7/notes`))[0]?.body).toEqual({ body: "Hello" });
   });
 
+  it("edits an MR note in place", async () => {
+    server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ id: 55 })));
+    await expect(makeAdapter().upsertComment(REPO, 7, "Updated", "55")).resolves.toEqual({ id: "55" });
+    await Promise.all(pendingBodies);
+    const put = requests.find((r) => r.method === "PUT");
+    expect(put?.url).toBe(`${MR}/notes/55`);
+    expect(put?.body).toEqual({ body: "Updated" });
+    expect(await posts("/merge_requests/7/notes")).toHaveLength(0);
+  });
+
+  it.each([
+    ["no note ID", null],
+    ["a deleted note", "55"],
+  ])("adds an MR note for %s", async (_name, commentId) => {
+    server.use(
+      http.put(`${MR}/notes/55`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })),
+      http.post(`${MR}/notes`, () => HttpResponse.json({ id: 79 }, { status: 201 })),
+    );
+    await expect(makeAdapter().upsertComment(REPO, 7, "Fresh", commentId)).resolves.toEqual({ id: "79" });
+    expect((await posts("/merge_requests/7/notes"))[0]?.body).toEqual({ body: "Fresh" });
+  });
+
+  it("doesn't add a note when editing fails otherwise", async () => {
+    server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })));
+    await expect(makeAdapter().upsertComment(REPO, 7, "Body", "55")).rejects.toThrow();
+    expect(await posts("/merge_requests/7/notes")).toHaveLength(0);
+  });
+
   it("replies in the discussion", async () => {
     server.use(
       http.post(`${MR}/discussions/${DISCUSSION}/notes`, () => HttpResponse.json({ id: 77 }, { status: 201 })),

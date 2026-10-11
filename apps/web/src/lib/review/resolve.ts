@@ -21,7 +21,8 @@ import { closeFindingThreads } from "./threads";
  * review and is resolved. A finding not every task run confirmed fixed stays
  * open, whatever the scope: not raising it again is no verdict. One a new
  * finding of the run matches (`sameIssue`) also stays open. Findings of the
- * same review run never resolve each other. Safe to call again.
+ * same review run never resolve each other. Summary-only task runs have no
+ * say. Safe to call again.
  */
 export async function resolveFixedFindings(
   db: Database,
@@ -30,7 +31,7 @@ export async function resolveFixedFindings(
   const targetReviews =
     "reviewId" in target
       ? [await getReview(db, target.reviewId)].filter((r) => r !== null)
-      : await listReviewRunReviews(db, target.reviewRunId);
+      : (await listReviewRunReviews(db, target.reviewRunId)).filter((r) => !r.summaryOnly);
   const finished = targetReviews.filter(
     (r) => r.status === "completed" || r.status === "budget_exhausted",
   );
