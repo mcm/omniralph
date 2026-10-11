@@ -153,6 +153,55 @@ export const TeardownCommand = z.object({
 });
 export type TeardownCommand = z.infer<typeof TeardownCommand>;
 
+/** Attempts a story gets before it is marked exhausted (`MAX_ATTEMPTS_PER_STORY` in `@omniralph/shared`). */
+export const DEFAULT_MAX_ATTEMPTS_PER_STORY = 3;
+/** Story attempts a run makes before it stops and asks (`MAX_ITERATIONS_PER_RUN` of the control panel). */
+export const DEFAULT_MAX_ITERATIONS_PER_RUN = 50;
+/** Most review or CI fix rounds (`MAX_FIX_ROUNDS` in `@omniralph/shared`; a test there checks they agree). */
+export const CODING_MAX_FIX_ROUNDS = 20;
+
+/** When a coding run pushes its branch: after each story, or once when every story is done. */
+export const PUSH_TIMINGS = ["per-story", "end"] as const;
+export type PushTiming = (typeof PUSH_TIMINGS)[number];
+/** When a coding run opens its draft PR: after the first story, or when every story is done. */
+export const DRAFT_PULL_REQUEST_TIMINGS = ["early", "end"] as const;
+export type DraftPullRequestTiming = (typeof DRAFT_PULL_REQUEST_TIMINGS)[number];
+
+/** The query task that writes a coding run's PR description by default. */
+export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
+
+const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
+
+/** Settings only coding tasks have; parsing a coding task fills their defaults (see `CODING_DEFAULTS`). */
+const CODING_FIELDS = {
+  maxAttemptsPerStory: z.int().min(1).max(20).optional(),
+  maxIterationsPerRun: z.int().min(1).max(1000).optional(),
+  /** Caps the repository's `ralph_settings.maxReviewRounds`. */
+  maxReviewRounds: FixRounds.optional(),
+  /** Caps the repository's `ralph_settings.maxFixRounds`. */
+  maxFixRounds: FixRounds.optional(),
+  pushTiming: z.enum(PUSH_TIMINGS).optional(),
+  /** Unset follows the repository's `ralph_settings.openPullRequestEarly`. */
+  draftPullRequest: z.enum(DRAFT_PULL_REQUEST_TIMINGS).optional(),
+  /** Query task (accepting `run.invoked`) that writes the PR title and description. */
+  prDescriptionTaskId: DefinitionId.optional(),
+};
+const CODING_FIELD_NAMES = Object.keys(CODING_FIELDS) as (keyof typeof CODING_FIELDS)[];
+
+/** What a coding task's unset coding-only fields become. */
+export const CODING_DEFAULTS = {
+  maxAttemptsPerStory: DEFAULT_MAX_ATTEMPTS_PER_STORY,
+  maxIterationsPerRun: DEFAULT_MAX_ITERATIONS_PER_RUN,
+  maxReviewRounds: CODING_MAX_FIX_ROUNDS,
+  maxFixRounds: CODING_MAX_FIX_ROUNDS,
+  pushTiming: "per-story",
+  prDescriptionTaskId: DEFAULT_PR_DESCRIPTION_TASK_ID,
+} as const satisfies Partial<Record<keyof typeof CODING_FIELDS, unknown>>;
+
+function dropUndefined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
+}
+
 export const TaskDefinition = z
   .object({
     id: DefinitionId,
@@ -172,8 +221,7 @@ export const TaskDefinition = z
     /** JSON schema the session's output must match; query tasks only. */
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     sink: SinkKindSchema,
-    /** Task that writes the PR description; coding tasks only. */
-    describePrTaskId: DefinitionId.optional(),
+    ...CODING_FIELDS,
     pool: PoolNameSchema,
     /** Overrides the agent's model. */
     model: Model.optional(),
@@ -205,14 +253,21 @@ export const TaskDefinition = z
         message: "outputSchema is only allowed on query tasks",
       });
     }
-    if (task.describePrTaskId !== undefined && task.taskType !== "coding") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["describePrTaskId"],
-        message: "describePrTaskId is only allowed on coding tasks",
-      });
+    if (task.taskType !== "coding") {
+      for (const field of CODING_FIELD_NAMES) {
+        if (task[field] === undefined) continue;
+        ctx.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} is only allowed on coding tasks`,
+        });
+      }
     }
-  });
+  })
+  // Coding tasks get the defaults of their coding-only fields (`draftPullRequest` stays unset).
+  .transform((task) =>
+    task.taskType === "coding" ? { ...CODING_DEFAULTS, ...dropUndefined(task) } : task,
+  );
 export type TaskDefinition = z.infer<typeof TaskDefinition>;
 export type TaskDefinitionInput = z.input<typeof TaskDefinition>;
 

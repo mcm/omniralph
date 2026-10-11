@@ -122,14 +122,84 @@ describe("availableVariables", () => {
   });
 
   it("leaves out other task types' variables", () => {
-    expect(availableVariables("coding", ["linear.delegated"])).toEqual([
-      "issue.identifier",
-      "issue.url",
-      "issue.stateType",
-      "issue.creator.name",
-      "issue.title",
-      "issue.description",
+    const names = availableVariables("coding", ["linear.delegated"]);
+    expect(names).toEqual(expect.arrayContaining(["issue.identifier", "epic.prd", "progress"]));
+    for (const name of ["question", "hunk", "conventions", "diff", "checkout"]) {
+      expect(names).not.toContain(name);
+    }
+  });
+
+  it("gives coding tasks their task-type variables, and story and request runs their trigger variables", () => {
+    for (const name of ["progress", "stashes", "feedback", "attempt"]) {
+      expect(findVariable(name)).toMatchObject({ source: "taskType", taskTypes: ["coding"] });
+    }
+    const story = availableVariables("coding", ["linear.delegated"]);
+    expect(story).toEqual(
+      expect.arrayContaining([
+        "epic.title",
+        "epic.prd",
+        "stories.items.current",
+        "story.id",
+        "story.description",
+        "story.acceptanceCriteria.items",
+        "guidance.items",
+        "followUps",
+      ]),
+    );
+    expect(story).not.toContain("requests");
+    const request = availableVariables("coding", [
+      "linear.mention",
+      "chat.request",
+      "pr.review-findings",
+      "pr.ci-failed",
+      "pr.fix-command",
     ]);
+    expect(request).toEqual(
+      expect.arrayContaining([
+        "requests",
+        "fromChat",
+        "ship",
+        "prUrl",
+        "epic.prd",
+        "stories.total",
+      ]),
+    );
+    expect(request.filter((name) => name === "story" || name.startsWith("story."))).toEqual([]);
+    expect(availableVariables("query", ["run.invoked"])).toEqual(
+      expect.arrayContaining([
+        "branch",
+        "baseBranch",
+        "epic.prd",
+        "stories.items.commit",
+        "progressLog",
+      ]),
+    );
+  });
+
+  it("marks issue text, the PRD, requests, guidance, progress and feedback untrusted", () => {
+    for (const name of [
+      "epic.prd",
+      "story.description",
+      "story.acceptanceCriteria.items",
+      "story.notes",
+      "requests",
+      "guidance.items",
+      "progress",
+      "codebasePatterns",
+      "recentProgress",
+      "progressLog",
+      "feedback",
+    ]) {
+      expect(findVariable(name)?.trust, name).toBe("untrusted");
+    }
+    for (const name of [
+      "epic.title",
+      "story.title",
+      "stories.items.title",
+      "stashes.items.label",
+    ]) {
+      expect(findVariable(name)?.trust, name).toBe("trusted");
+    }
   });
 
   it("gives triage the Linear issue's comments, sub-issues, blockers, reply and previous triage", () => {

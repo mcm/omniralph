@@ -216,10 +216,10 @@ You can't ask anyone during the session. Answer what you can from the issue, com
 ### 9. Summary (\`summary\`)
 A few lines for the Linear session: the outcome, the size and why, the structure (single issue, epic with N stories, or which sub-issues were reformatted), and how many open questions remain.`;
 
-/** A list as a triage template takes it: `{ items }`, or null when empty (so a heading renders once). */
+/** A list as a prompt template takes it: `{ items }`, or null when empty (so a heading renders once). */
 export type TemplateList<T> = { items: T[] } | null;
 
-function templateList<T>(items: readonly T[] | undefined): TemplateList<T> {
+export function templateList<T>(items: readonly T[] | undefined): TemplateList<T> {
   return items && items.length > 0 ? { items: [...items] } : null;
 }
 

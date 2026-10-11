@@ -6,7 +6,7 @@
  * are fenced when rendered, with the variable's `fence` info string.
  */
 import type { SetupCommand } from "./definitions.js";
-import type { TaskType, TriggerKind } from "./kinds.js";
+import { REQUEST_TRIGGERS, STORY_TRIGGERS, type TaskType, type TriggerKind } from "./kinds.js";
 
 export const VARIABLE_SOURCES = ["trigger", "taskType", "setup"] as const;
 export type VariableSource = (typeof VARIABLE_SOURCES)[number];
@@ -47,6 +47,10 @@ const FINDING_TRIGGERS = [
   "finding.mention",
   "finding.dismissed",
 ] as const satisfies readonly TriggerKind[];
+/** Triggers of coding tasks: story runs and request runs. */
+const CODING_TRIGGERS = [...STORY_TRIGGERS, ...REQUEST_TRIGGERS] as const;
+/** Coding triggers, and the `run.invoked` of a query task a coding run invokes (`builtin:describe-pr`). */
+const CODING_RUN_TRIGGERS = [...CODING_TRIGGERS, "run.invoked"] as const;
 const LINEAR_TRIGGERS = [
   "linear.delegated",
   "linear.triage",
@@ -65,8 +69,9 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "branch",
     source: "trigger",
     trust: "trusted",
-    triggers: ["chat.request", "linear.triage"],
-    description: "Branch checked out in the working directory (the default branch).",
+    triggers: ["linear.triage", ...CODING_RUN_TRIGGERS],
+    description:
+      "Branch checked out in the working directory: the default branch for a query, the run's branch for a coding run (and the PR description it invokes).",
   },
   {
     name: "pr.number",
@@ -329,6 +334,232 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description:
       "The task's findings as a JSON array (`id`, `path`, `startLine`, `endLine`, `severity`, `category`, `confidence`, `title`, `body`, `suggestion`); null without any.",
   },
+  // Coding runs (story and request runs) and the PR description they invoke. Titles and
+  // identifiers are put on one line and render as is; issue text, the PRD, requests, guidance,
+  // progress and feedback are fenced.
+  ...(
+    [
+      [
+        "epic.identifier",
+        CODING_RUN_TRIGGERS,
+        "Linear identifier of the epic (or single issue), e.g. `ENG-123`.",
+      ],
+      [
+        "epic.title",
+        CODING_RUN_TRIGGERS,
+        "Title of the epic, on one line (a chat request's first line).",
+      ],
+      ["epic.url", CODING_TRIGGERS, "URL of the epic in Linear (null without one)."],
+      [
+        "epic.single",
+        CODING_TRIGGERS,
+        "True when the run works a single issue rather than an epic with stories.",
+      ],
+      [
+        "baseBranch",
+        CODING_RUN_TRIGGERS,
+        "The repository's default branch: the run's branch starts from it and the PR targets it.",
+      ],
+      ["prTerm", CODING_RUN_TRIGGERS, "`pull request` (GitHub) or `merge request` (GitLab)."],
+      ["prTermCapitalized", CODING_TRIGGERS, "`Pull request` or `Merge request`."],
+      [
+        "qualityGates.items",
+        CODING_RUN_TRIGGERS,
+        "A quality gate (shell command): the PRD's gates not run by the orchestrator for a story, every gate otherwise.",
+      ],
+      [
+        "qualityGates.inline",
+        CODING_RUN_TRIGGERS,
+        "The quality gates in backticks, comma-separated (`qualityGates` is null without any).",
+      ],
+      ["stories.items.identifier", CODING_RUN_TRIGGERS, "ID of a story of the epic, in order."],
+      ["stories.items.title", CODING_RUN_TRIGGERS, "Title of the story, on one line."],
+      ["stories.completed", CODING_TRIGGERS, "How many stories are completed or cancelled."],
+      ["stories.total", CODING_TRIGGERS, "How many stories the epic has."],
+      [
+        "stories.items.mark",
+        CODING_TRIGGERS,
+        "Status of the story: `[x]` completed, `[-]` cancelled, `[~]` in progress, `[ ]` open.",
+      ],
+      ["stories.items.manual", CODING_TRIGGERS, "True for a step only a person can do."],
+      [
+        "stories.items.repository",
+        CODING_TRIGGERS,
+        "Repository the story is worked in, when it isn't the epic's main one (else null).",
+      ],
+      [
+        "stories.items.dependsOn",
+        CODING_TRIGGERS,
+        "The stories or issues it waits for, comma-separated (null for none).",
+      ],
+      ["stories.items.current", STORY_TRIGGERS, "True for the story the run works on."],
+      [
+        "stories.items.commit",
+        ["run.invoked"],
+        "First 10 characters of the story's commit (null without one).",
+      ],
+      ["story.id", STORY_TRIGGERS, "ID of the story the run works on (its Linear identifier)."],
+      ["story.identifier", STORY_TRIGGERS, "Linear identifier of the story (null without one)."],
+      ["story.url", STORY_TRIGGERS, "URL of the story in Linear (null without one)."],
+      ["story.title", STORY_TRIGGERS, "Title of the story, on one line."],
+      [
+        "story.repository",
+        STORY_TRIGGERS,
+        "Repository the story is worked in, when it isn't the epic's main one (else null).",
+      ],
+      [
+        "followUps",
+        STORY_TRIGGERS,
+        "True when the orchestrator files follow-up work as new stories of the epic (not for a single issue).",
+      ],
+      [
+        "fromChat",
+        REQUEST_TRIGGERS,
+        "True when the requests come from a chat thread, false for a Linear agent session.",
+      ],
+      [
+        "ship",
+        REQUEST_TRIGGERS,
+        "True for `/ship`: the session prepares one commit, which the orchestrator makes and pushes.",
+      ],
+      ["prUrl", REQUEST_TRIGGERS, "URL of the branch's open PR (null when none is open)."],
+    ] as const
+  ).map(([name, triggers, description]): VariableDefinition => ({
+    name,
+    source: "trigger",
+    trust: "trusted",
+    triggers,
+    description,
+  })),
+  {
+    name: "epic.prd",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: CODING_RUN_TRIGGERS,
+    description:
+      "The epic's PRD (its description); null for a single issue or a blank one. Cut to 6,000 characters for a request or a PR description.",
+  },
+  {
+    name: "story.description",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: STORY_TRIGGERS,
+    description: "Description of the story, without its acceptance criteria (null when blank).",
+  },
+  {
+    name: "story.acceptanceCriteria.items",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: STORY_TRIGGERS,
+    description:
+      "An acceptance criterion of the story (`story.acceptanceCriteria` is null without any).",
+  },
+  {
+    name: "story.notes",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: STORY_TRIGGERS,
+    description: "Notes on the story (null without any).",
+  },
+  {
+    name: "guidance.items",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: STORY_TRIGGERS,
+    description:
+      "A reply from the team in the agent session, oldest first (`guidance` is null without any).",
+  },
+  {
+    name: "requests",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: REQUEST_TRIGGERS,
+    description: "The requests the run handles, trimmed, oldest first.",
+  },
+  {
+    name: "progressLog",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: ["run.invoked"],
+    description: "The end (12,000 characters) of the coding run's progress log (null when blank).",
+  },
+  {
+    name: "progress",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "markdown",
+    taskTypes: ["coding"],
+    description: "The run's progress log so far: learnings of earlier sessions (null when empty).",
+  },
+  {
+    name: "codebasePatterns",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "markdown",
+    taskTypes: ["coding"],
+    description: "The `## Codebase Patterns` section of the progress log (null without one).",
+  },
+  {
+    name: "recentProgress",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "markdown",
+    taskTypes: ["coding"],
+    description: "The latest five entries of the progress log (null without any).",
+  },
+  {
+    name: "feedback",
+    source: "taskType",
+    trust: "untrusted",
+    taskTypes: ["coding"],
+    description:
+      "Why the previous attempt at the story didn't complete, e.g. failed gate output (null on the first attempt).",
+  },
+  ...(
+    [
+      ["attempt", "Which attempt at the story this is (1 on the first)."],
+      ["maxAttempts", "Attempts a story gets (the task's `maxAttemptsPerStory`)."],
+      [
+        "stashes",
+        "Stash entries of earlier sessions offered to this one (`{ items }`, null when none): a story's earlier attempts, or for `/ship` earlier request sessions, newest first.",
+      ],
+      ["stashes.items.sha", "SHA of a stash entry."],
+      ["stashes.items.label", "The message it was stashed with."],
+      ["stashes.items.date", "When it was stashed (ISO 8601)."],
+      [
+        "progressFile",
+        "Path of the file the session appends its learnings to (a copy of the progress log).",
+      ],
+      ["today", "Today's date, `YYYY-MM-DD`."],
+      [
+        "attachments",
+        "Markdown list of the Linear attachments the session can open, with their paths (null without any).",
+      ],
+      [
+        "appendInstruction",
+        "Extra instructions from the repository's settings (null without any).",
+      ],
+      [
+        "verifyCommands.items",
+        "A command the orchestrator runs itself after the session (`verifyCommands` is null without any).",
+      ],
+      ["remoteUrl", "URL of the worktree's `origin` remote (null without one)."],
+      [
+        "historyRewriteAllowed",
+        "True when an explicit request may rewrite the branch's history (the repository's `historyRewrite` is `when-asked`).",
+      ],
+    ] as const
+  ).map(([name, description]): VariableDefinition => ({
+    name,
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["coding"],
+    description,
+  })),
   {
     name: "question",
     source: "taskType",
