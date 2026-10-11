@@ -166,8 +166,10 @@ was enrolled into (sent with each heartbeat; there's no variable for it). See
 | `ANTHROPIC_API_KEY` | no | — (the host's `claude` login) | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |
 
-The harness sets `OMNIRALPH_JOB_TOKEN` and `OMNIRALPH_JOB_ID` itself for processes inside a job (the
-`git-credential` helper). Don't set them. Ralph's Claude sessions, quality gates, setup and
+The harness sets `OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_ID`, `OMNIRALPH_SERVER` and, for Claude
+sessions, `OMNIRALPH_JOB_TOKEN_FILE` itself for processes inside a job (the `git-credential`
+helper). Don't set them. A query task's session gets the run's `session` token there, which can
+never push; see [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#lifecycle-and-session-tokens). Ralph's Claude sessions, quality gates, setup and
 preparation commands get the harness's environment without any `OMNIRALPH_*` variable, so they can't
 fetch credentials; whatever else the harness's environment holds, they can read.
 

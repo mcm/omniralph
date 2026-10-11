@@ -1,6 +1,6 @@
 # Cutover from cyralph
 
-Omniralph's `ralph` capability does everything cyralph does in production: delegated epics built
+Omniralph's ralph does everything cyralph does in production: delegated epics built
 story by story, @mention requests, live replies, multi-repository epics, Linear attachments,
 `cyralph-prepare` blocks, `wip` commits, review and CI follow-up on its PRs/MRs, cleanup after the
 merge and self-update. This guide moves every Linear team, project and label from cyralph to

@@ -379,6 +379,13 @@ harness with two or more slots always keeps one free for reviews while hours-lon
 Lowering a limit cancels nothing: the harness just takes no new jobs of that pool until it is
 under the new limit.
 
+Accepted task types and pool limits replace the former capabilities (`review`, `ralph`, `triage`)
+and their concurrency caps. Query tasks (replies, code questions, learned rules, triage) are
+only claimed by harnesses on 0.9.0 or later (the jobs' `min_harness_version`); older harnesses leave
+them queued. The control panel sends each query job's prompt, tools and model with the job (its run
+spec), so changing a task needs no harness release. See
+[ADR 0008](adr/0008-agents-tasks-and-the-harness.md) for task types, pools and run specs.
+
 Pinning a repository to a harness routes its jobs to that harness only and makes the harness pre-clone it
 (`repo.sync`). The **Harnesses** page shows each harness's last heartbeat, version, running jobs and its
 audit log (enrollment, token refreshes, credential issuance, revocation).
@@ -400,15 +407,16 @@ Linear attachments through the control panel and cache them in `<workspaceRoot>/
 
 New harnesses only run query and review tasks. To let a harness run ralph jobs, open **Harnesses ›
 <harness>**, tick `coding` under **Accepted task types** and save; it applies with the next heartbeat
-(no restart). The harness then also claims its organization's `ralph` jobs (see
+(no restart). The harness then also claims its organization's `ralph` jobs (`coding` task type,
+`long` pool; see
 [ADR 0004](adr/0004-organizations.md#job-isolation)).
 
 - A run sticks to the harness that started it: all its later jobs are targeted at that harness, so keep
-  `ralph` enabled on it until its runs finish. If you disable `ralph` on it or revoke it, the run's
-  next job goes to any ralph-enabled harness, which recreates the branch worktree from the pushed
+  `coding` accepted on it until its runs finish. If you untick `coding` on it or revoke it, the run's
+  next job goes to any harness that accepts `coding`, which recreates the branch worktree from the pushed
   branch.
 - A repository pinned to harnesses (**Repository › Settings › Harness pinning**) starts its runs on a pinned
-  harness, so at least one of them needs `ralph` enabled, or the run's jobs are never picked up.
+  harness, so at least one of them needs to accept `coding`, or the run's jobs are never picked up.
 - Ralph sessions are long and write code: give ralph harnesses their own host (or keep **Max
   concurrency** at 1) if you also develop on it.
 
@@ -569,7 +577,7 @@ the newly enrolled one) picks them up.
 - **Ralph stories fail every attempt on a quality gate** with `command not found` or similar: the
   gate's toolchain isn't installed for the harness's user or isn't on the unit's `PATH`
   ([Host prerequisites](#host-prerequisites)).
-- **Ralph jobs stay queued**: no harness has `ralph` enabled, or the run's sticky (or pinned) harness is
+- **Ralph jobs stay queued**: no harness accepts the `coding` task type, or the run's sticky (or pinned) harness is
   offline. Check **Jobs** for the job's status.
 - **Reviews fail with a Claude login message**: log in again as the harness's user
   ([claude-auth.md](claude-auth.md)).

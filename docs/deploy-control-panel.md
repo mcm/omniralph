@@ -206,8 +206,8 @@ summary comment links back to `/reviews/<id>`.
   grant for this project and environment.
 - **GitHub installation callback fails with KMS but works with the PEM:** the issuer is RS512.
   `vercel kms inspect` shows it; re-import with `--algorithm RS256` into a new issuer.
-- **Jobs stay queued:** no harness of the repository's organization is online with the capability
-  enabled (**Harnesses**; harnesses of other organizations never take its jobs), the repository is
+- **Jobs stay queued:** no harness of the repository's organization is online that accepts the
+  job's task type at the job's minimum version (**Harnesses**; harnesses of other organizations never take its jobs), the repository is
   pinned to an offline harness.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be

@@ -3,6 +3,15 @@
 - **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update)); amended by TOOL-181 (see the [addendum](#addendum-run-origin-and-the-conversation-channel))
 - **Date:** 2026-10-06
 
+> **Superseded in part by [ADR 0008](0008-agents-tasks-and-the-harness.md):** job-token scopes.
+> Run-spec jobs get a `lifecycle` and a `session` token (see ADR 0008 and
+> [ADR 0002](0002-agent-auth.md)); the `ralph:activity` and `ralph:attachments` scopes below are now
+> `run:activity` and `run:attachments`, and the activity, permission and attachment routes accept
+> any running job whose token has them, not only ralph jobs. `ralph.*` jobs keep one token with
+> `credentials:read`, `credentials:write`, `run:activity` and `run:attachments` until a later epic
+> ports them to `coding` tasks. They run on harnesses that accept the `coding` task type, in the
+> `long` pool, instead of on the `ralph` capability.
+
 ## Context
 
 cyralph runs the "ralph loop" as a standalone webhook server: it takes a delegated Linear epic,

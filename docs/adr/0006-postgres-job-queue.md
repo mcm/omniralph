@@ -3,6 +3,14 @@
 - **Status:** Accepted (TOOL-254). Supersedes [ADR 0001](0001-job-dispatch.md).
 - **Date:** 2026-10-10
 
+> **Superseded in part by [ADR 0008](0008-agents-tasks-and-the-harness.md):** capabilities. Jobs
+> no longer have a `capability`; the claim selects by task type (in the harness's
+> `accepted_task_types`), pool (in the claim request's `pools`) and `min_harness_version`, and
+> per-pool limits (`harnesses.pool_limits`) replace per-capability limits and
+> `enabledCapabilities`. `ClaimRequest` is `{ pools, waitSeconds? }`. Agents are now called
+> harnesses (`target_harness_id`, `/api/harness/*`). The queue, leases, retries and long-poll below
+> are unchanged.
+
 ## Context
 
 [ADR 0001](0001-job-dispatch.md) kept job state in Postgres and delivered jobs through Vercel
