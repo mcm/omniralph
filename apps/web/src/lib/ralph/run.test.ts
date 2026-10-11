@@ -40,8 +40,9 @@ import {
 } from "@omniralph/db";
 import {
   MAX_JOB_DELIVERIES,
-  RalphDescribePrPayload,
+  QUERY_TASKS_MIN_HARNESS_VERSION,
   RalphRequestPayload,
+  type RalphDescribePrPayload,
   RalphStoryPayload,
   type RalphDescribePrResult,
   type RalphRequestResult,
@@ -57,14 +58,15 @@ import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { taskSink } from "@/lib/sinks";
-import { ralphJobPayload } from "./coding";
+import { describePrPayload, ralphJobPayload } from "./coding";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
 import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
+import { fitTitle } from "@omniralph/ralph";
 import { CODING_DEFAULTS } from "@omniralph/tasks";
-import { advanceRun, MAX_ITERATIONS_PER_RUN } from "./run";
+import { advanceRun, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -304,13 +306,22 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     ...overrides,
   });
 
+  type DescribeOutcome =
+    | Partial<RalphDescribePrResult>
+    | { jobError: string }
+    /** A completed run whose result isn't a title and body. */
+    | { invalid: true };
+
   /**
-   * Plays the agent's part for the run's queued `ralph.describe-pr` job (a
-   * description, or a failure). Returns the payload.
+   * Plays the agent's part for the run's queued describe job (a description,
+   * an invalid result or a failure): a `ralph.describe-pr` job, or on the
+   * `tasks` path a query run whose `run-result` sink hands it to the ralph
+   * run (its `onStarted`, then the ralph hooks). Returns the
+   * `ralph.describe-pr` payload (a query run's is in its trigger context).
    */
   async function describePr(
     runId: string,
-    outcome: Partial<RalphDescribePrResult> | { jobError: string } = {},
+    outcome: DescribeOutcome = {},
     harnessId = agentA,
   ): Promise<RalphDescribePrPayload> {
     const job = await activeJob(runId);
@@ -320,11 +331,16 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      // A query run needs a harness that runs query tasks.
+      harnessVersion: "99.0.0",
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
+    const sink = taskSink(job);
+    if (job.taskId !== null) expect(sink?.kind).toBe("run-result");
+    expect(await (sink?.onStarted ?? onRalphJobStarted)(db, job, harnessId)).toEqual({
+      skip: false,
+    });
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
@@ -334,10 +350,26 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      await completeJob(db, { jobId: job.id, harnessId, result: description(outcome) });
+      const { title, body, usage } = description("invalid" in outcome ? {} : outcome);
+      const text = "invalid" in outcome ? { summary: body } : { title, body };
+      const result =
+        job.taskId === null
+          ? { ...text, usage }
+          : {
+              outcome: "answered",
+              answer: null,
+              structured: text,
+              references: [],
+              usage,
+              durationMs: 1000,
+            };
+      if (job.taskId !== null) expect(sink?.parseResult?.(result)).not.toBeNull();
+      await completeJob(db, { jobId: job.id, harnessId, result });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    return RalphDescribePrPayload.parse(job.payload);
+    const payload = describePrPayload(job);
+    expect(payload).not.toBeNull();
+    return payload!;
   }
 
   /** The run with its main lane's PR/MR (where v2a kept them on the run). */
@@ -488,7 +520,38 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         pool: "short",
         targetHarnessId: agentA,
         ralphRunId: run.id,
+        dedupeKey: runDedupeKey(run.id),
+        taskId: path === "tasks" ? "builtin:describe-pr" : null,
+        minHarnessVersion: path === "tasks" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
       });
+      if (path === "tasks") {
+        // A query run of the story task's `prDescriptionTaskId` in a checkout of the branch, with
+        // today's payload and the values its template renders.
+        expect(describeJob.payload).toMatchObject({
+          trigger: {
+            kind: "run.invoked",
+            context: {
+              invoker: { kind: "ralph-run", id: run.id },
+              payload: describePrPayload(describeJob),
+              branch: "feat/epic",
+              baseBranch: "develop",
+              prTerm: "pull request",
+              epic: { identifier: "ENG-1", title: "Epic" },
+              stories: {
+                items: [
+                  { identifier: "ENG-2", title: "Alpha", commit: sha(3).slice(0, 10) },
+                  { identifier: "ENG-3", title: "Beta", commit: sha(2).slice(0, 10) },
+                  { identifier: "ENG-4", title: "Gamma", commit: sha(1).slice(0, 10) },
+                ],
+              },
+              qualityGates: { items: ["pnpm test", "pnpm lint"] },
+            },
+          },
+          repositoryId: repoId,
+          ref: "feat/epic",
+          requireCheckout: true,
+        });
+      }
       const describePayload = await describePr(run.id);
       expect(describePayload).toMatchObject({
         runId: run.id,
@@ -838,6 +901,91 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         status: "failed",
         error: expect.stringContaining("`builtin:describe-pr`, which isn't a coding task"),
       });
+    });
+
+    /** A one-story epic whose story is done: the run is describing its PR. */
+    async function describingRun(n: number): Promise<LinearRun> {
+      const epic = linear.add({
+        identifier: `ENG-${n}`,
+        title: "Gadgets",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/gadgets-${n}`,
+      });
+      linear.add({ identifier: `ENG-${n + 1}`, title: "Add gadgets", parentId: epic.id });
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(n) });
+      const job = await activeJob(run.id);
+      expect(job).toMatchObject({
+        type: "ralph.describe-pr",
+        taskId: path === "tasks" ? "builtin:describe-pr" : null,
+      });
+      expect((await getRun(db, run.id))?.prJobId).toBe(job.id);
+      expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({
+        status: "describing",
+        jobId: job.id,
+      });
+      return run;
+    }
+
+    const replyTo = (run: LinearRun, body: string) =>
+      handleLinearEvent(
+        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { db, organizationId: orgId, workspaceId: "org-1" },
+        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      );
+
+    it("opens the PR with the describe run's title and body, the title fitted", async () => {
+      const run = await describingRun(150);
+      const long =
+        "Add gadgets with configurable widgets, sprockets and a settings page for all of them";
+      // A legacy job's title arrives fitted by the harness; a query run's is fitted by the control panel.
+      await describePr(run.id, {
+        title: path === "tasks" ? long : fitTitle(long),
+        body: "Adds gadgets.",
+      });
+      expect(fitTitle(long)).toBe(
+        "Add gadgets with configurable widgets, sprockets and a settings page…",
+      );
+      expect(scm.changeRequests).toEqual([
+        expect.objectContaining({
+          sourceBranch: "feat/gadgets-150",
+          title: fitTitle(long),
+          body: expect.stringMatching(/^Adds gadgets\.\n\n---\nLinear: /) as string,
+          draft: false,
+        }),
+      ]);
+      expect(await withPullRequest(run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 1,
+        prJobId: null,
+      });
+    });
+
+    it("waits when the describe run fails or sends no title and body, and a reply retries the PR step", async () => {
+      const run = await describingRun(160);
+      await describePr(run.id, { jobError: "the session ran out of turns" });
+      const failed = (await withPullRequest(run.id))!;
+      expect(failed).toMatchObject({ status: "waiting", prJobId: null, prNumber: null });
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+        "Every story is done, but I couldn't open the pull request: writing its description failed: the session ran out of turns.",
+      );
+      expect(await activeJobs(run.id)).toEqual([]);
+
+      await replyTo(run, "retry");
+      await describePr(run.id, { invalid: true });
+      expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+        "Every story is done, but I couldn't open the pull request: writing its description failed: the agent sent an invalid result.",
+      );
+      expect(scm.changeRequests).toEqual([]);
+
+      await replyTo(run, "retry again");
+      await describePr(run.id, { title: "Add gadgets", body: "Adds gadgets." });
+      expect(await withPullRequest(run.id)).toMatchObject({
+        status: "completed",
+        prNumber: 1,
+        error: null,
+      });
+      expect(scm.changeRequests.map((c) => c.title)).toEqual(["Add gadgets"]);
     });
   });
 

@@ -273,16 +273,16 @@ picks a run-spec job's sink or a legacy job's handler. The claim, result and fai
 expiry cron and cancellation all go through it. A result the sink doesn't accept is rejected
 with 400 before the job completes.
 
-| Kind             | Applies                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| `learned-rule`   | Stores the learned rule (skips duplicates and changed feedback)                                  |
-| `finding-thread` | Posts the reply in the finding's PR/MR thread                                                    |
-| `chat-thread`    | Posts the code answer (with file links) in the chat thread                                       |
-| `triage`         | Applies the triage output to the Linear issue (re-checks locked issues before and after the run) |
-| `review`         | Saves a review task run's findings and summary on its review, then settles its review run        |
-| `sticky-comment` | Posts a summary-only review task's summary to its sticky comment on the PR/MR (findings dropped) |
-| `run-result`     | Hands a query task's result back to the run that invoked it (a review run's correlation)         |
-| `ralph-run`      | Hands a coding run's story or request result to its ralph run (the `ralph.*` outcome hooks)      |
+| Kind             | Applies                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `learned-rule`   | Stores the learned rule (skips duplicates and changed feedback)                                                           |
+| `finding-thread` | Posts the reply in the finding's PR/MR thread                                                                             |
+| `chat-thread`    | Posts the code answer (with file links) in the chat thread                                                                |
+| `triage`         | Applies the triage output to the Linear issue (re-checks locked issues before and after the run)                          |
+| `review`         | Saves a review task run's findings and summary on its review, then settles its review run                                 |
+| `sticky-comment` | Posts a summary-only review task's summary to its sticky comment on the PR/MR (findings dropped)                          |
+| `run-result`     | Hands a query task's result back to the run that invoked it (a review run's correlation, a ralph run's PR/MR description) |
+| `ralph-run`      | Hands a coding run's story or request result to its ralph run (the `ralph.*` outcome hooks)                               |
 
 Sinks stay idempotent: results can be replayed, and comments go through `postJobCommentOnce`.
 Every model output is sanitized (`sanitizeCapped`) before it's posted. Sinks other than query

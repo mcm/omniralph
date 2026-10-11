@@ -12,6 +12,7 @@
  *   and carries out the answers to the questions about its leftovers.
  */
 import { z } from "zod";
+import { RalphRunInvoker } from "./correlation.js";
 import { JobRepository } from "./protocol.js";
 import { CommitSha } from "./review-job.js";
 import { RALPH_HISTORY_REWRITE_POLICIES } from "./settings.js";
@@ -219,6 +220,18 @@ export const RalphDescribePrPayload = RalphJobBase.extend({
   qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
 });
 export type RalphDescribePrPayload = z.infer<typeof RalphDescribePrPayload>;
+
+/**
+ * The `run.invoked` trigger context of a coding run's PR/MR description (a
+ * query run of its story task's `prDescriptionTaskId`): the invoking ralph
+ * run, the `ralph.describe-pr` payload as `payload`, and the values the
+ * task's template renders (`describePrTemplateContext` in `@omniralph/ralph`).
+ */
+export const RalphDescribePrTriggerContext = z.looseObject({
+  invoker: RalphRunInvoker,
+  payload: RalphDescribePrPayload,
+});
+export type RalphDescribePrTriggerContext = z.infer<typeof RalphDescribePrTriggerContext>;
 
 /** Longest PR/MR title a `ralph.describe-pr` job returns. */
 export const MAX_PULL_REQUEST_TITLE_LENGTH = 72;
