@@ -188,28 +188,67 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
     expect(state.linear.downloads).toEqual([]);
   });
 
-  it("only serves attachments listed in the job's payload, to ralph jobs", async () => {
+  it("only serves attachments listed for the ralph run", async () => {
     const jobId = await newJob([ID]);
     // Known to the run, but not in this job's payload.
     const res = await downloadRequest(jobId, OTHER, await token(jobId));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "attachment_not_in_job" });
+    expect(res.status).toBe(404);
     expect((await downloadRequest(jobId, "not-an-id", await token(jobId))).status).toBe(404);
     // Listed, but unknown to the run.
     const unknown = "c".repeat(32);
     const listedOnly = await newJob([unknown]);
     expect((await downloadRequest(listedOnly, unknown, await token(listedOnly))).status).toBe(404);
-    // A review job, even with a forged scope.
+    expect(state.linear.downloads).toEqual([]);
+  });
+
+  /** A running query job whose trigger context lists `attachments`, and its session token. */
+  async function newQueryJob(attachments: unknown) {
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: orgId,
+        type: "chat.ask",
+        taskType: "query",
+        pool: "short",
+        taskId: "builtin:chat-ask",
+        status: "running",
+        harnessId,
+        payload: { trigger: { kind: "chat.request", context: { question: "Why?", attachments } } },
+      })
+      .returning();
+    const session = await getTokenSigner().signJobToken({
+      jobId: job!.id,
+      harnessId,
+      kind: "session",
+      scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+    });
+    return { jobId: job!.id, session };
+  }
+
+  it("serves a query run the attachments in its trigger context, and nothing else", async () => {
+    const { jobId, session } = await newQueryJob([{ id: ID, url: UPLOAD, title: "shot.png" }]);
+    const res = await downloadRequest(jobId, ID, session);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("PNGDATA");
+    expect(state.linear.downloads).toEqual([UPLOAD]);
+
+    // Not listed in the trigger context.
+    expect((await downloadRequest(jobId, OTHER, session)).status).toBe(404);
+    // A trigger context without attachments, or with malformed ones.
+    const none = await newQueryJob(undefined);
+    expect((await downloadRequest(none.jobId, ID, none.session)).status).toBe(404);
+    const malformed = await newQueryJob([{ id: ID }]);
+    expect((await downloadRequest(malformed.jobId, ID, malformed.session)).status).toBe(404);
+    // A legacy (non-ralph) job lists none.
     const review = await newJob([ID], {
       type: "review.run",
       taskType: "review",
       pool: "short",
+      ralphRunId: null,
     });
     const forged = await token(review, ["credentials:read", "run:attachments"]);
-    const reviewRes = await downloadRequest(review, ID, forged);
-    expect(reviewRes.status).toBe(403);
-    expect(await reviewRes.json()).toEqual({ error: "not_a_ralph_job" });
-    expect(state.linear.downloads).toEqual([]);
+    expect((await downloadRequest(review, ID, forged)).status).toBe(404);
+    expect(state.linear.downloads).toEqual([UPLOAD]);
   });
 
   it("rejects error statuses, HTML pages and files over 25 MB", async () => {

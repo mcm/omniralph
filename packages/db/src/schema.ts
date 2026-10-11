@@ -1203,6 +1203,67 @@ export const jobs = pgTable(
   ],
 );
 
+/** What a run's session reported: Claude's text (`thought`) or a tool call (`action`). */
+export type RunActivityType = "thought" | "action";
+
+/** Activities a run's session reported (`POST /api/harness/jobs/{id}/activities`), oldest first. */
+export const runActivities = pgTable(
+  "run_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    type: text("type").$type<RunActivityType>().notNull(),
+    /** A thought's text, or an action's name (e.g. the tool). */
+    body: text("body").notNull(),
+    /** An action's parameter (e.g. the command); null for thoughts. */
+    parameter: text("parameter"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("run_activities_job_id_created_at_idx").on(t.jobId, t.createdAt),
+    check("run_activities_type_valid", sql`${t.type} in ('thought', 'action')`),
+  ],
+);
+
+/** How a permission request was answered; null while pending. */
+export type RunPermissionAnswer = "allowed" | "denied" | "expired";
+
+/**
+ * Tool calls a run's session asked a person to approve
+ * (`POST /api/harness/jobs/{id}/permissions`), one row per request.
+ */
+export const runPermissionRequests = pgTable(
+  "run_permission_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    /** Chosen by the harness; it reads the answer back with it. */
+    requestId: text("request_id").notNull(),
+    tool: text("tool").notNull(),
+    detail: text("detail").notNull().default(""),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When the harness stops waiting and denies the call. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    answer: text("answer").$type<RunPermissionAnswer>(),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    answeredBy: text("answered_by"),
+  },
+  (t) => [
+    uniqueIndex("run_permission_requests_job_request_uq").on(t.jobId, t.requestId),
+    check(
+      "run_permission_requests_answer_valid",
+      sql`${t.answer} is null or ${t.answer} in ('allowed', 'denied', 'expired')`,
+    ),
+  ],
+);
+
 // ── Ralph runs ───────────────────────────────────────────────────────────────
 
 /** A Linear issue a run refers to (a story, or an external blocker). */

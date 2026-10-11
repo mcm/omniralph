@@ -12,11 +12,6 @@ export function activityContent(activity: RalphActivity): ActivityContent {
     : { type: "action", action: activity.body, parameter: activity.parameter ?? "" };
 }
 
-/** Whether a job may relay activities: only ralph jobs do. */
-export function isRalphJob(job: Pick<Job, "type">): boolean {
-  return job.type.startsWith("ralph.");
-}
-
 export type RelayOutcome =
   | { forwarded: true }
   /** No run, or the run is over (e.g. stopped): the activity is dropped. */

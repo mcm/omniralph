@@ -1,11 +1,10 @@
-import { getJobForHarness, getRun } from "@omniralph/db";
+import { getJobForHarness } from "@omniralph/db";
 import { MAX_ATTACHMENT_BYTES, RalphAttachmentId } from "@omniralph/shared";
-import { z } from "zod";
 import { requireJob } from "@/lib/harness-auth/verify";
 import { jobIdParam, notFound } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
-import { isRalphJob } from "@/lib/ralph/activities";
+import { runAttachment } from "@/lib/runs/attachments";
 
 interface AttachmentRouteContext {
   params: Promise<{ id: string; attachmentId: string }>;
@@ -19,11 +18,6 @@ function forbidden(error: string): Response {
 function failed(status: number, reason: string): Response {
   return Response.json({ error: "download_failed", reason }, { status });
 }
-
-/** The attachment IDs a job's payload lists. */
-const PayloadAttachments = z.object({
-  attachments: z.array(z.object({ id: z.string() })).default([]),
-});
 
 const TOO_LARGE = `larger than ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB`;
 
@@ -43,9 +37,10 @@ function capped(body: ReadableStream<Uint8Array>, max: number): ReadableStream<U
 
 /**
  * Streams a file uploaded to Linear (a screenshot, mockup or document of the
- * run) to the ralph job that lists it in its payload, fetched with the
- * control panel's Linear token, which harnesses never hold. Needs the job's own
- * token with `run:attachments`. HTML (a sign-in page instead of the file)
+ * run) to a running job whose run lists it (`runAttachment`: a ralph run's
+ * attachments, or `attachments` in the run's trigger context; 404 otherwise),
+ * fetched with the control panel's Linear token, which harnesses never hold.
+ * Needs the job's own token (session or legacy) with `run:attachments`. HTML (a sign-in page instead of the file)
  * and files over 25 MB are rejected; a failed download answers
  * `{ error: "download_failed", reason }`.
  */
@@ -60,19 +55,13 @@ export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Re
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  if (!isRalphJob(job) || !job.ralphRunId) return forbidden("not_a_ralph_job");
-  const listed = PayloadAttachments.safeParse(job.payload);
-  if (!listed.success || !listed.data.attachments.some((a) => a.id === attachmentId.data)) {
-    return forbidden("attachment_not_in_job");
-  }
-  const run = await getRun(db, job.ralphRunId);
-  const link = run?.attachments[attachmentId.data];
-  if (!run || !link) return notFound();
+  const attachment = await runAttachment(db, job, attachmentId.data);
+  if (!attachment) return notFound();
 
   let download;
   try {
-    const linear = await getLinearGateway({ db, organizationId: run.organizationId });
-    download = await linear.downloadUpload(link.url, req.signal);
+    const linear = await getLinearGateway({ db, organizationId: attachment.organizationId });
+    download = await linear.downloadUpload(attachment.url, req.signal);
   } catch (error) {
     if (error instanceof LinearNotConnectedError) {
       return failed(503, "the run's organization has no Linear workspace connected");

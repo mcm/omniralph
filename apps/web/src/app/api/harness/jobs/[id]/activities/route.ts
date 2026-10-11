@@ -1,23 +1,24 @@
-import { getJobForHarness } from "@omniralph/db";
+import { getJobForHarness, insertRunActivity } from "@omniralph/db";
 import { RalphActivity } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireJob } from "@/lib/harness-auth/verify";
 import { jobIdParam, notFound, type JobRouteContext } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { getLinearGateway } from "@/lib/linear/client";
-import { isRalphJob, relayActivity } from "@/lib/ralph/activities";
+import { relayActivity } from "@/lib/ralph/activities";
 
 function forbidden(error: string): Response {
   return Response.json({ error }, { status: 403 });
 }
 
 /**
- * Relays a session activity of a running ralph job (Claude's text as a
- * thought, a tool call as an ephemeral action) to its run's Linear agent
- * session, so harnesses never hold Linear credentials. Needs the job's own token
- * with `run:activity` (only ralph jobs get it) and a `ralph.*` job; the body
- * is a `RalphActivity`. An activity of a finished run is accepted and dropped.
- * 502 when Linear fails (the harness logs it and carries on).
+ * Stores a session activity of a running job (Claude's text as a thought, a
+ * tool call as an action) in `run_activities`. A ralph job's activity is also
+ * relayed to its run's conversation (Linear agent session or chat thread), so
+ * harnesses never hold Linear credentials; an activity of a finished ralph
+ * run is stored but not relayed. Needs the job's own token (session or
+ * legacy) with `run:activity`; the body is a `RalphActivity`. 502 when Linear
+ * fails, after the activity is stored (the harness logs it and carries on).
  */
 export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireJob(req, "run:activity");
@@ -28,9 +29,16 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  if (!isRalphJob(job)) return forbidden("not_a_ralph_job");
   const activity = RalphActivity.safeParse(await readJson(req));
   if (!activity.success) return badRequest();
+  await insertRunActivity(db, {
+    jobId: job.id,
+    organizationId: job.organizationId,
+    type: activity.data.type,
+    body: activity.data.body,
+    parameter: activity.data.parameter,
+  });
+  if (!job.ralphRunId) return Response.json({ forwarded: false });
 
   try {
     const outcome = await relayActivity(

@@ -6,6 +6,7 @@ import {
   createDb,
   createRun,
   jobs,
+  listRunActivities,
   runMigrations,
   updateRun,
   upsertScmConnection,
@@ -154,7 +155,16 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     return getTokenSigner().signJobToken({ jobId, harnessId, scopes });
   }
 
-  it("forwards thoughts and ephemeral actions, in order, to the run's agent session", async () => {
+  /** The stored activities of a job, as `{ type, body, parameter }`. */
+  async function stored(jobId: string) {
+    return (await listRunActivities(db, jobId)).map(({ type, body, parameter }) => ({
+      type,
+      body,
+      parameter,
+    }));
+  }
+
+  it("stores and forwards thoughts and ephemeral actions, in order, to the run's agent session", async () => {
     const run = await newRun();
     const jobId = await newJob({ ralphRunId: run.id });
     const jobToken = await token(jobId);
@@ -182,6 +192,49 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
         options: { ephemeral: true },
       },
     ]);
+    expect(await stored(jobId)).toEqual([
+      { type: "thought", body: "Reading the PRD.", parameter: null },
+      { type: "action", body: "Bash", parameter: "pnpm test" },
+    ]);
+    expect((await listRunActivities(db, jobId))[0]!.organizationId).toBe(orgId);
+  });
+
+  it("stores a query run's activities without relaying them", async () => {
+    const jobId = await newJob({
+      type: "chat.ask",
+      taskType: "query",
+      pool: "short",
+      taskId: "builtin:chat-ask",
+    });
+    const session = await getTokenSigner().signJobToken({
+      jobId,
+      harnessId,
+      kind: "session",
+      scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+    });
+    const res = await activityRequest(jobId, session, THOUGHT);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ forwarded: false });
+    const action = await activityRequest(jobId, session, {
+      type: "action",
+      body: "Grep",
+      parameter: "TODO",
+    });
+    expect(action.status).toBe(200);
+    expect(await stored(jobId)).toEqual([
+      { type: "thought", body: "Reading the PRD.", parameter: null },
+      { type: "action", body: "Grep", parameter: "TODO" },
+    ]);
+    expect(state.linear.activities).toEqual([]);
+
+    // A session token without the scope.
+    const noScope = await getTokenSigner().signJobToken({
+      jobId,
+      harnessId,
+      kind: "session",
+      scopes: ["credentials:read"],
+    });
+    expect((await activityRequest(jobId, noScope, THOUGHT)).status).toBe(401);
   });
 
   it("drops activities of a finished run", async () => {
@@ -192,6 +245,9 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ forwarded: false });
     expect(state.linear.activities).toEqual([]);
+    expect(await stored(jobId)).toEqual([
+      { type: "thought", body: "Reading the PRD.", parameter: null },
+    ]);
   });
 
   it("requires a valid job token with run:activity for a running job", async () => {
@@ -217,23 +273,15 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     expect(state.linear.activities).toEqual([]);
   });
 
-  it("rejects review jobs, even with a forged run:activity scope", async () => {
+  it("needs the scope, which review jobs don't get", async () => {
     const reviewJob = await newJob({
       type: "review.run",
       taskType: "review",
       pool: "short",
     });
-    // A review job token never carries the scope.
     const reviewToken = await token(reviewJob, ["credentials:read"]);
     expect((await activityRequest(reviewJob, reviewToken, THOUGHT)).status).toBe(401);
-    const forged = await token(reviewJob, ["credentials:read", "run:activity"]);
-    const res = await activityRequest(reviewJob, forged, THOUGHT);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "not_a_ralph_job" });
-    // A non-ralph job type with the ralph scopes.
-    const odd = await newJob({ type: "review.run" });
-    expect((await activityRequest(odd, await token(odd), THOUGHT)).status).toBe(403);
-    expect(state.linear.activities).toEqual([]);
+    expect(await stored(reviewJob)).toEqual([]);
   });
 
   it("validates the body against RalphActivity", async () => {
@@ -249,6 +297,7 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
       expect((await activityRequest(jobId, jobToken, body)).status).toBe(400);
     }
     expect(state.linear.activities).toEqual([]);
+    expect(await stored(jobId)).toEqual([]);
   });
 
   it("answers 502 when Linear fails", async () => {
@@ -259,6 +308,10 @@ describe.skipIf(!dockerAvailable)("POST /api/harness/jobs/{id}/activities", () =
     const res = await activityRequest(jobId, await token(jobId), THOUGHT);
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "linear_unavailable" });
+    // Stored all the same.
+    expect(await stored(jobId)).toEqual([
+      { type: "thought", body: "Reading the PRD.", parameter: null },
+    ]);
     error.mockRestore();
   });
 });

@@ -470,3 +470,15 @@ export {
   type TriageRunStatus,
   type TriageRunTrigger,
 } from "./triage.js";
+export {
+  answerRunPermissionRequest,
+  createRunPermissionRequest,
+  getRunPermissionRequest,
+  insertRunActivity,
+  listRunActivities,
+  type AnswerRunPermissionRequestInput,
+  type NewRunActivityInput,
+  type NewRunPermissionRequestInput,
+  type RunActivity,
+  type RunPermissionRequest,
+} from "./runs.js";
