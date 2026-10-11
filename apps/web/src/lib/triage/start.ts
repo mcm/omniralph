@@ -20,7 +20,6 @@ import {
 import { parseInstruction, triageTemplateContext } from "@omniralph/ralph";
 import {
   LINEAR_STATE_TYPES,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
   TRIAGE_RUN_JOB_TYPE,
   type TriageBlocker,
   type TriageOutcome,
@@ -295,7 +294,6 @@ export async function enqueueTriage(
           ref: repository.payload.defaultBranch,
         }),
       }),
-      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       dedupeKey: `triage:${run.id}`,
     });
     jobId = job.id;

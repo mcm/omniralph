@@ -1,5 +1,9 @@
 import type * as Db from "@omniralph/db";
-import type { JobToken, RunSpecJobPayload } from "@omniralph/shared";
+import {
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  type JobToken,
+  type RunSpecJobPayload,
+} from "@omniralph/shared";
 import {
   AgentDefinition,
   TaskDefinition,
@@ -262,6 +266,12 @@ describe("runSpecJobInput", () => {
       taskId: "builtin:reply-to-finding",
       payload,
       repositoryId: REPO_ID,
+      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
     });
+  });
+
+  it("sets no minimum harness version for other task types", () => {
+    const task = TaskDefinition.parse({ ...taskInput, taskType: "review" });
+    expect(runSpecJobInput(task, payload).minHarnessVersion).toBeNull();
   });
 });
