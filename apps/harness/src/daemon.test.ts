@@ -223,6 +223,7 @@ function setup(options: {
   run?: Capability["run"];
   runQueryTask?: DaemonOptions["runQueryTask"];
   runReviewTask?: DaemonOptions["runReviewTask"];
+  runCodingTask?: DaemonOptions["runCodingTask"];
   capabilities?: Capability[];
   config?: HeartbeatResponse;
   repos?: RepoCache;
@@ -246,6 +247,8 @@ function setup(options: {
       options.runQueryTask ?? (() => Promise.reject(new Error("this test runs no query tasks"))),
     runReviewTask:
       options.runReviewTask ?? (() => Promise.reject(new Error("this test runs no review tasks"))),
+    runCodingTask:
+      options.runCodingTask ?? (() => Promise.reject(new Error("this test runs no coding tasks"))),
     logger: silentLogger(),
     reportRetryDelayMs: 10,
     updater: options.updater,
@@ -910,19 +913,17 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("fails a run of a task type it has no lifecycle for", async () => {
+  it("runs a coding run through the coding lifecycle, not the legacy capability", async () => {
     const id = randomUUID();
     const capabilityRun = vi.fn(async () => ({}));
-    const runQueryTask = vi.fn(async () => ({}));
-    const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
-    claims.push(job(id, { taskType: "coding", taskId: "builtin:test-task" }));
+    const runCodingTask = vi.fn(async (spec: RunSpec) => ({ coding: spec.jobId }));
+    const { api, claims, daemon } = setup({ run: capabilityRun, runCodingTask });
+    claims.push(job(id, { type: "ralph.story", taskType: "coding", taskId: "builtin:test-task" }));
     void daemon.run();
     await settle();
-    expect(api.submitFailure).toHaveBeenCalledWith(id, {
-      retryable: false,
-      error: "unsupported task type coding",
-    });
-    expect(runQueryTask).not.toHaveBeenCalled();
+    expect(runCodingTask).toHaveBeenCalledTimes(1);
+    expect(runCodingTask.mock.calls[0]?.[0]).toMatchObject({ jobId: id, taskType: "coding" });
+    expect(api.submitResult).toHaveBeenCalledWith(id, { result: { coding: id } });
     expect(capabilityRun).not.toHaveBeenCalled();
     await daemon.shutdown();
   });
