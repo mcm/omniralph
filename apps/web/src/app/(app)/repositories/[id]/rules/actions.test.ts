@@ -21,7 +21,12 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import { ReviewJobPayload, RunSpecJobPayload, type QueryRunResult } from "@omniralph/shared";
+import {
+  QUERY_TASKS_MIN_HARNESS_VERSION,
+  ReviewJobPayload,
+  RunSpecJobPayload,
+  type QueryRunResult,
+} from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -220,6 +225,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
         taskType: "query",
         pool: "short",
         taskId: "builtin:learn-rule",
+        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         repositoryId: repoId,
         status: "queued",
         targetHarnessId: null,

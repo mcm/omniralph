@@ -1,4 +1,4 @@
-import { RunSpecJobPayload } from "@omniralph/shared";
+import { QUERY_TASKS_MIN_HARNESS_VERSION, RunSpecJobPayload } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 
 /**
@@ -6,6 +6,7 @@ import type { TaskDefinition } from "@omniralph/tasks";
  * `insertJob`/`createAndPublish` input next to `organizationId`, `type` and
  * `dedupeKey`): the task's type and pool, its ID in `task_id` and the stored
  * `RunSpecJobPayload`, which `resolveRunSpec` turns into a run spec at claim time.
+ * Query tasks need a harness with the query lifecycle (`QUERY_TASKS_MIN_HARNESS_VERSION`).
  */
 export function runSpecJobInput(
   task: Pick<TaskDefinition, "id" | "taskType" | "pool">,
@@ -16,6 +17,7 @@ export function runSpecJobInput(
   taskId: string;
   payload: RunSpecJobPayload;
   repositoryId: string | null;
+  minHarnessVersion: string | null;
 } {
   const parsed = RunSpecJobPayload.parse(payload);
   return {
@@ -24,5 +26,6 @@ export function runSpecJobInput(
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
+    minHarnessVersion: task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
   };
 }

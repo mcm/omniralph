@@ -27,6 +27,7 @@ import {
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
   MAX_REPLY_ANSWER_LENGTH,
+  QUERY_TASKS_MIN_HARNESS_VERSION,
   ReviewJobPayload,
   RunSpecJobPayload,
   type QueryRunResult,
@@ -513,6 +514,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         taskType: "query",
         pool: "short",
         taskId: "builtin:reply-to-finding",
+        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         // Once per asking comment.
         dedupeKey: expect.stringMatching(new RegExp(`^review\\.reply:${repoId}:\\d+$`)),
       });

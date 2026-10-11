@@ -227,7 +227,6 @@ export async function enqueueChatAsk(
       ref: defaultBranch,
       requireCheckout: true,
     }),
-    minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
