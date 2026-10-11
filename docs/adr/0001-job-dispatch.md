@@ -4,7 +4,9 @@
   2026-10-10): agents now claim jobs from the `jobs` table and Vercel Queues is
   gone. Originally accepted (US-009) and verified live against the `omniralph`
   Vercel project on 2026-10-04 (TOOL-45): see [Spike](#spike). The rest of this
-  record describes the design as it was.
+  record describes the design as it was: capabilities are gone, and a review is
+  now a review run of one `review.task` job per review task instead of one
+  `review.run` job ([ADR 0008](0008-agents-tasks-and-the-harness.md#review-runs)).
 - **Date:** 2026-10-04
 
 ## Context

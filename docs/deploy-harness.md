@@ -381,10 +381,14 @@ under the new limit.
 
 Accepted task types and pool limits replace the former capabilities (`review`, `ralph`, `triage`)
 and their concurrency caps. Query tasks (replies, code questions, learned rules, triage) are
-only claimed by harnesses on 0.9.0 or later (the jobs' `min_harness_version`); older harnesses leave
-them queued. The control panel sends each query job's prompt, tools and model with the job (its run
-spec), so changing a task needs no harness release. See
-[ADR 0008](adr/0008-agents-tasks-and-the-harness.md) for task types, pools and run specs.
+only claimed by harnesses on 0.9.0 or later, and reviews (`review.task` jobs, one per review task
+the repository enables) and tasks with setup commands only by harnesses on 0.10.0 or later (the
+jobs' `min_harness_version`); older harnesses leave them queued. The control panel sends each job's
+prompt, tools and model with the job (its run spec), so changing a task needs no harness release.
+A task's setup and teardown commands (e.g. Semgrep feeding a review) run on the host, in the job's
+worktree, with whatever is on the harness's `PATH` and without the job tokens. See
+[ADR 0008](adr/0008-agents-tasks-and-the-harness.md) for task types, pools, run specs and review
+runs.
 
 Pinning a repository to a harness routes its jobs to that harness only and makes the harness pre-clone it
 (`repo.sync`). The **Harnesses** page shows each harness's last heartbeat, version, running jobs and its
@@ -579,5 +583,8 @@ the newly enrolled one) picks them up.
   ([Host prerequisites](#host-prerequisites)).
 - **Ralph jobs stay queued**: no harness accepts the `coding` task type, or the run's sticky (or pinned) harness is
   offline. Check **Jobs** for the job's status.
+- **Reviews stay queued**: no online harness accepts the `review` task type on version 0.10.0 or
+  later (or, if the repository pins jobs to harnesses, none of the pinned ones). Update the harness
+  ([self-update](#self-update-pm2) or `omniralph-harness update`).
 - **Reviews fail with a Claude login message**: log in again as the harness's user
   ([claude-auth.md](claude-auth.md)).

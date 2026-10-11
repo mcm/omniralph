@@ -1,7 +1,8 @@
 # @omniralph/harness
 
-`omniralph-harness` is the Omniralph harness: the host daemon. It pulls review jobs from an Omniralph
-control panel and runs them with the Claude Agent SDK. It needs Node 22 and git ≥ 2.40.
+`omniralph-harness` is the Omniralph harness: the host daemon. It pulls jobs (reviews, queries,
+ralph stories) from an Omniralph control panel and runs them with the Claude Agent SDK. It needs
+Node 22 and git ≥ 2.40.
 
 This README covers installing and releasing the package. To set up a host (the harness's user, the
 Claude login, pm2, tmux or systemd), see

@@ -291,12 +291,13 @@ epic as context. The mention's text (without a leading `@name`) is the request.
 
 Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop):
 
-- **Its own reviews.** When an Omniralph review (`review.run`) of a run's PR/MR completes against
-  the PR/MR's current head, its open findings (not dismissed) become one request on that lane:
+- **Its own reviews.** When an Omniralph review run of a run's PR/MR completes against the PR/MR's
+  current head, the open findings of all its review tasks (not dismissed, and not merged into
+  another finding by correlation) become one request on that lane:
   each finding's `path:line`, severity, title, body (up to 1,500 characters) and suggested
   change, at most 25 of them. The agent fixes the ones that are right, runs the quality gates,
-  commits and pushes the branch, and never replies to or resolves the threads. Each review is
-  acted on at most once; a review of an older head is recorded and skipped, and one without open
+  commits and pushes the branch, and never replies to or resolves the threads. Each review run is
+  acted on at most once; a review run of an older head is recorded and skipped, and one without open
   findings does nothing. After **Max review rounds** (`maxReviewRounds`, default 3) the session
   says "Omniralph reviewed `<url>` again. I've already worked through N of its reviews on this
   pull request, so I'm leaving this one for a person." Turn it off with **Fix review findings**

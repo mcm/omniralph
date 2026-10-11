@@ -2,7 +2,9 @@
 
 - **Status:** Accepted (TOOL-302, the first of six epics). Supersedes the capability parts of
   [ADR 0006](0006-postgres-job-queue.md) and the job-token scopes of
-  [ADR 0003](0003-ralph-orchestration.md).
+  [ADR 0003](0003-ralph-orchestration.md). Amended by TOOL-303 (the second epic): the `review`
+  task type, review runs, setup and teardown commands and the `review`, `sticky-comment` and
+  `run-result` sinks.
 - **Date:** 2026-10-11
 
 ## Context
@@ -60,7 +62,7 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
 - **Validation.** `validateAgentForTask` rejects an agent that doesn't list the task's type, or
   wants harness tools the type doesn't allow. `builtinProblems` checks every built-in (templates,
   variables, limits, agent fit); a test keeps it empty.
-- **Built-ins of this epic** (all `query` tasks in the `short` pool):
+- **Built-ins of TOOL-302** (all `query` tasks in the `short` pool):
 
   | Task                       | Agent                                                       | Trigger             | Sink             | Notes                                                             |
   | -------------------------- | ----------------------------------------------------------- | ------------------- | ---------------- | ----------------------------------------------------------------- |
@@ -73,6 +75,21 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
   whose names stay as job types and dedupe-key prefixes. Their prompts render byte for byte as the
   old prompt builders did: snapshot tests in `packages/tasks` and equality tests in
   `packages/engine` (and against `@omniralph/ralph`'s `buildTriagePrompt`) prove it.
+
+- **Built-ins of TOOL-303** (all in the `short` pool; see [Review runs](#review-runs)):
+
+  | Task                         | Type     | Agent                                                       | Triggers                                   | Sink             | Notes                                                                                    |
+  | ---------------------------- | -------- | ----------------------------------------------------------- | ------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------- |
+  | `builtin:review-pr`          | `review` | `builtin:reviewer` (Read, Grep, Glob; the rubric as docs)   | `pr.updated`, `pr.mention`, `review.rerun` | `review`         | Today's review; the default review task of every repository                              |
+  | `builtin:summarize-pr`       | `review` | `builtin:reviewer`                                          | `pr.updated`, `pr.mention`, `review.rerun` | `sticky-comment` | A PR/MR summary, no findings; off unless a repository picks it                           |
+  | `builtin:correlate-findings` | `query`  | `builtin:correlator` (no tools, replaces the preset prompt) | `run.invoked`                              | `run-result`     | 50 % of the profile budget, no checkout; fixed output schema (merged findings + summary) |
+
+  `builtin:review-pr` replaces the `review.run` job type. Its template renders byte for byte as
+  the engine's `buildPrompt` did and its `systemAppend` is `REVIEW_SYSTEM_PROMPT`
+  (`packages/engine/src/reviewPr-builtin.test.ts` checks both over 11 profile and input cases);
+  the rubric moved into `builtin:reviewer`'s reference docs (`builtin/rubric.ts`, generated from
+  `packages/engine/src/rubric` by `pnpm --filter @omniralph/tasks generate:rubric`). Templates
+  that need a literal `{{` (e.g. GitHub Actions' `${{ }}`) write `\{{`.
 
 ### Templates
 
@@ -90,12 +107,12 @@ over-long values (with `[… truncated]`) before fencing.
 
 ### Task types and the query lifecycle
 
-| Task type | What the harness does                            | Pool    | Status                                                     |
-| --------- | ------------------------------------------------ | ------- | ---------------------------------------------------------- |
-| `query`   | One read-only session; its output goes to a sink | `short` | Built here                                                 |
-| `review`  | A review run                                     | `short` | `review.run` still runs through its legacy capability code |
-| `coding`  | A session that changes code and ships it         | `long`  | `ralph.*` still run through their legacy capability code   |
-| `system`  | A system RPC, no session                         | none    | `repo.sync`                                                |
+| Task type | What the harness does                            | Pool    | Status                                                   |
+| --------- | ------------------------------------------------ | ------- | -------------------------------------------------------- |
+| `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                        |
+| `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                        |
+| `coding`  | A session that changes code and ships it         | `long`  | `ralph.*` still run through their legacy capability code |
+| `system`  | A system RPC, no session                         | none    | `repo.sync`                                              |
 
 `runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
 code:
@@ -115,6 +132,36 @@ code:
 5. **Teardown.** The task's teardown commands run, then the worktree or temp directory is removed,
    whatever happened.
 
+### The review lifecycle
+
+`runReviewTask` (`apps/harness/src/lifecycle/review.ts`) runs every review task the same way, with
+the review inputs (base and head SHAs, change request, review config, previous review) in the
+trigger context (`ReviewTaskContext`):
+
+1. **Prepare.** The repository is synced at the base and head (and, best effort, the previously
+   reviewed head), a disposable worktree of the head checked out, and the task's setup commands
+   run there. The engine's `prepareReview` then resolves the scope (full or incremental), diffs and
+   parses it, plans it deterministically (`planReview`: path excludes, `riskScan`, the run's
+   `maxFiles`) and reads the base branch's `CLAUDE.md`. With nothing left to review there's no
+   session.
+2. **Render** the template over the trigger context plus the review variables (`reviewVariables`:
+   `diff`, `plan`, `risk`, `conventions`, `depth`, `rubric`, `repositoryRules`,
+   `previousFindings`) and the `setup` variables. The diff, conventions and previous findings are
+   untrusted and fenced.
+3. **One session** (`provider.review`): the agent's system prompt plus the task's `systemAppend`
+   replace the engine's review system prompt (including in its one repair turn for unparseable
+   output); tools as a query session's, and the file tools only when the profile allows repository
+   exploration; the `session` token only.
+4. **Finish.** The output (`{ findings, summary? }`) is filtered to the diff (`filterToDiff`),
+   made self-contained, deduplicated against the previous review's open findings and turned into
+   fixed votes (`finishReview`), then capped (`capFindings`). A rate limit is a retryable failure.
+5. **Teardown** as in the query lifecycle.
+
+The review profile still narrows each review run at claim time (`narrowByReviewProfile` in
+`resolveRunSpec`): the profile's model wins over the task's and the agent's, the token budget is
+the smaller of the profile's maximum and the task's, and `maxFiles` comes from the profile. Review
+run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
+
 ### Setup and teardown commands
 
 Any task definition can declare `setupCommands` (each with a `name`, `command`, `timeoutMs`,
@@ -130,9 +177,13 @@ variable holds a short failure note. Teardown commands always run after finish, 
 the session failed; their failures are logged only. Runs of tasks with any commands carry
 `SETUP_COMMANDS_MIN_HARNESS_VERSION` as their `min_harness_version`.
 
+Setup commands run in both lifecycles (in a review, in the head's worktree before the diff is
+read) and run whatever is on the harness's `PATH`; installing tools is a later epic.
+
 The daemon dispatches a claimed job by its task type: `system` jobs to the system RPC registry,
-jobs with a run spec to their task type's lifecycle, the rest to the legacy capabilities
-(`review`, `ralph`).
+jobs with a run spec to their task type's lifecycle (`runQueryTask`, `runReviewTask`), the rest to
+the legacy `ralph` capability. A job of an unknown type (e.g. a `review.run` job without a task)
+fails without retries.
 
 ### Run specs, resolved at claim time
 
@@ -155,9 +206,10 @@ started, and the harness needs no database or definition store. A job whose spec
 
 `jobs` gained `task_type` (`query | review | coding | system`), `pool`, `task_id` and
 `min_harness_version`, and lost `capability` (migrations `0056_task_types_and_pools.sql`,
-`0057_drop_capabilities.sql`). Legacy job types map with `legacyJobRouting`: `review.run` →
-review/short, `ralph.*` → coding/long (`ralph.describe-pr` → query/short), `repo.sync` →
-system/no pool.
+`0057_drop_capabilities.sql`). Legacy job types map with `legacyJobRouting`: `ralph.*` →
+coding/long (`ralph.describe-pr` → query/short), `repo.sync` → system/no pool. (`review.run` was
+review/short until TOOL-303 ported it; migration `0063_drop_legacy_review_jobs.sql` canceled
+active legacy `review.run` jobs and renamed run-spec ones `review.task`.)
 
 - **Trust:** `harnesses.accepted_task_types` (default `query`, `review`) says which task types a
   host may run. `system` jobs are always accepted. This replaces the per-harness capability toggles.
@@ -183,10 +235,10 @@ A run-spec job gets two job tokens (both `typ: "job"`, 900 s, renewed by the hea
 
 The credential broker decides push access by token kind and task type: only a `coding` run's
 `lifecycle` token (or, until the coding epic, a legacy `ralph.*` job's single token) gets a write
-credential. Legacy jobs keep one token without a kind: `review.run` and system RPCs
-`credentials:read`, `ralph.*` also `credentials:write`, `run:activity` and `run:attachments` (renamed
-from their ralph-only names). [ADR 0002](0002-agent-auth.md) has the token
-format and verification.
+credential. Legacy jobs keep one token without a kind: system RPCs `credentials:read`, `ralph.*`
+also `credentials:write`, `run:activity` and `run:attachments` (renamed from their ralph-only
+names). Review runs are run-spec jobs, so their sessions hold only a `session` token.
+[ADR 0002](0002-agent-auth.md) has the token format and verification.
 
 ### Harness tools: the `omniralph` MCP server
 
@@ -222,10 +274,68 @@ with 400 before the job completes.
 | `finding-thread` | Posts the reply in the finding's PR/MR thread                                                    |
 | `chat-thread`    | Posts the code answer (with file links) in the chat thread                                       |
 | `triage`         | Applies the triage output to the Linear issue (re-checks locked issues before and after the run) |
+| `review`         | Saves a review task run's findings and summary on its review, then settles its review run        |
+| `sticky-comment` | Posts a summary-only review task's summary to its sticky comment on the PR/MR (findings dropped) |
+| `run-result`     | Hands a query task's result back to the run that invoked it (a review run's correlation)         |
 
 Sinks stay idempotent: results can be replayed, and comments go through `postJobCommentOnce`.
-Every model output is sanitized (`sanitizeCapped`) before it's posted. The kinds `review`,
-`sticky-comment` and `run-result` exist in the vocabulary for later epics but have no sink yet.
+Every model output is sanitized (`sanitizeCapped`) before it's posted. Sinks other than query
+sinks parse their own results (`parseResult`); `run-result` accepts any query result and records a
+schema mismatch as the run's failure instead of rejecting it, and `review` and `sticky-comment`
+share the review job hooks (`apps/web/src/lib/review/jobs.ts`), including `onRetry`.
+
+### Review runs
+
+One PR/MR event (opened, pushed, `@bot review [fresh] [quick|standard|deep]`, **Re-run**) starts
+one **review run** (`review_runs`: organization, repository, PR/MR, head SHA, trigger, mode,
+profile, status, correlation job, summary). `enqueueReview` (`apps/web/src/lib/review/enqueue.ts`)
+creates one review (`reviews.review_run_id`, `reviews.task_id`) and one `review.task` job per
+review task the repository enables, all from the same `previousReviewState`, so they run in
+parallel on any harnesses that accept `review` tasks.
+
+- **Choosing tasks.** `repositories.review_task_ids` (default `{builtin:review-pr}`, 1 to 20,
+  chosen under **Repository › Settings › Review tasks**, run in that order) lists the review tasks;
+  one whose triggers don't include the event's kind is skipped, and with none left nothing is
+  enqueued (`no_review_tasks`). `repositories.correlation_task_id` (default
+  `builtin:correlate-findings`) isn't editable yet. Review triggers (`onOpen`, `onPush`, drafts),
+  the profile and its depth apply to the whole run.
+- **Dedupe and supersede.** Each task's job key is
+  `review.run:<repositoryId>:<pr>:<headSha>:<taskId>`. An event for a head that already has active
+  jobs is a `duplicate` of that run. A newer head skips the older head's active runs and cancels
+  all their jobs, including a correlation job, before it creates its own.
+- **Settling.** Every task run's end (completed, failed, canceled, or skipped as already reviewed)
+  calls `settleReviewRun`, which takes a row lock on the run, so exactly one caller acts once no
+  review is active: with two or more finished task runs it enqueues the correlation job in the same
+  transaction (status `correlating`); with one it completes the run directly; with none it fails
+  it when a task run failed or was canceled, else skips it. Summary-only reviews neither hold a run
+  up nor join correlation.
+- **Correlation.** The correlation task is a query task invoked by the run (trigger `run.invoked`,
+  `RunInvoker { kind: "review-run", id }`) over every finished task run's findings and summary. Its
+  output (`CorrelationOutput`: findings with `sourceFindingIds`, `sourceTaskIds`, severity,
+  confidence, title, body and suggestion, plus a summary) has a fixed schema because posting
+  consumes it. `applyCorrelation` updates the earliest source finding of each group with the merged
+  fields and the union of task IDs (`findings.source_task_ids`) and marks the others `merged`
+  (`findings.merged_into_finding_id`); IDs outside the run are ignored, findings it leaves out stay
+  as they were, and a replay changes nothing. If correlation fails (or returns invalid output), the
+  run completes and its findings post unmerged.
+- **Posting.** Anything that may end a run calls `finishReviewRun`
+  (`apps/web/src/lib/review/run.ts`), which posts a `completed` run once (`postReviewRunOnce`, under
+  the run's row lock): an inline comment per open finding of its finished task runs, each naming the
+  task(s) that reported it, and one summary comment combining the correlation summary, the names of
+  the tasks that failed and the deterministic `renderSummary` stats over all task runs. A `failed`
+  run gets one failure note. A fresh run then supersedes earlier open findings it raised again,
+  earlier open findings are resolved only when every finished task run found them fixed and none
+  raised them again, and a ralph PR/MR's open findings go to its run once per review run. The run's
+  findings never supersede each other. Calling it again (a replayed result) is safe and retries a
+  failed post.
+- **Sticky comments.** A summary-only review task (sink `sticky-comment`) posts its summary to one
+  comment per PR/MR and task (`sticky_comments`), edited in place on later pushes through
+  `ScmAdapter.upsertComment` (GitHub issue comment, GitLab MR note), and recreated when someone
+  deleted it. Its findings are dropped (and logged); a superseded run's summary isn't posted. A run
+  of only summary-only tasks posts no review.
+
+So adding a review task (a security reviewer, say) is a definitions-only change: a `review` task in
+`packages/tasks`, picked per repository.
 
 ### System RPCs
 
@@ -236,12 +346,14 @@ every other job. Self-update stays on the heartbeat.
 
 ### What later epics add
 
-This epic built the plumbing and the query task type. Not built here:
+TOOL-302 built the plumbing and the query task type, TOOL-303 the review task type and review
+runs. Not built yet:
 
-- the `review` lifecycle and the port of `review.run` (with the `review` and `sticky-comment`
-  sinks);
-- the `coding` lifecycle and the port of `ralph.*`, including the `ship` harness tool, the
-  `run-result` sink, `describePrTaskId` and the end of legacy single tokens;
+- the `coding` lifecycle and the port of `ralph.*`, including the `ship` harness tool,
+  `describePrTaskId` (a `run-result` use) and the end of legacy single tokens;
+- planned reviews: a review task fanning out internally by diff group or check type
+  ([TOOL-33](https://linear.app/thefrakinship/issue/TOOL-33/plan-based-code-reviews)), on top of
+  review runs;
 - installables and the `worktree.*` and `install` system RPCs;
 - user-defined (UUID) agent and task definitions and the UI to create and edit them, and a chat
   tool to run tasks.
@@ -257,6 +369,13 @@ This epic built the plumbing and the query task type. Not built here:
 - **A full template language (Handlebars, Liquid).** Logic in templates makes them hard to
   validate and lets a template skip fencing. Logic-less Mustache plus a catalog makes fencing the
   renderer's job.
+- **One session per review run with every task's rubric.** Cheaper, but tasks couldn't have their
+  own agent, model, budget or setup commands, and one task's failure would fail the whole review.
+  Separate task runs plus a correlation step keep tasks independent; a failed task is named in the
+  summary instead.
+- **Deterministic correlation** (merging findings by path and overlapping lines). Misses the same
+  issue reported at different lines and wrongly merges different issues on one line; a query task
+  sees the findings' text. Its failure only costs the merge, never the review.
 - **One token per run.** The session runs model-controlled tools and must never push or act as
   the harness; a separate `session` token makes that a property of the token, not of the code
   path.
@@ -272,12 +391,17 @@ This epic built the plumbing and the query task type. Not built here:
    the claim's `order by` and eligibility.
 4. **Untrusted text reaches a session outside the template** (e.g. through a tool result). The
    fencing only covers rendered prompts; tool output needs its own handling.
+5. **Review runs need more than one merge step** (e.g. planned reviews whose parts must be merged
+   before correlation, or a correlation that needs the code). Correlation is a single query task
+   without a checkout and with a fixed output schema; changing either changes posting.
 
 ## Consequences
 
-- Adding or changing a query task is a change to definitions in `packages/tasks`, with no harness
-  code. The harness's `capabilities/` no longer has `chat-ask.ts`, `reply.ts`, `learn-rule.ts` or
-  `triage/`.
+- Adding or changing a query or review task is a change to definitions in `packages/tasks`, with
+  no harness code. The harness's `capabilities/` no longer has `chat-ask.ts`, `reply.ts`,
+  `learn-rule.ts`, `triage/` or `review.ts`; only `ralph` is left.
+- A PR/MR with several review tasks costs a session per task plus one correlation session per
+  head, and its review waits for the slowest task. Reviews need harnesses on 0.10.0 or later.
 - Trust, concurrency and persona are configured separately: **Harnesses › <harness>** sets
   accepted task types and pool limits, and the task definition sets the agent and pool.
 - The claim route does more work (resolving and signing two tokens per run-spec job).
