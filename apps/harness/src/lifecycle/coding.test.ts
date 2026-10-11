@@ -23,6 +23,10 @@ import { PUSH_GUARD_HOOK, RepoCache } from "../workspace/repoCache.js";
 import { runCodingTask, storyRunPrompt, type CodingTaskOptions } from "./coding.js";
 import { promptEpic, stashPrefix } from "./story-attempt.js";
 
+/** A coding run of a story task: its result is a story's. */
+const runStoryCoding = (...args: Parameters<typeof runCodingTask>) =>
+  runCodingTask(...args) as Promise<RalphStoryResult>;
+
 interface Call {
   prompt: string;
   options: Options;
@@ -253,7 +257,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       payload({ settings: { ...payload().settings, setupCommand: `touch '${root}/setup-ran'` } }),
     );
     const now = new Date("2026-10-11T12:00:00Z");
-    const out = await runCodingTask(run, context(), options(query, { now: () => now }));
+    const out = await runStoryCoding(run, context(), options(query, { now: () => now }));
 
     expect(RalphStoryResult.safeParse(out).success).toBe(true);
     expect(out).toMatchObject({
@@ -343,7 +347,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
       yield result({ status: "complete", summary: "Built it.", followUps: [] });
     });
-    const out = await runCodingTask(spec(), context(), options(query));
+    const out = await runStoryCoding(spec(), context(), options(query));
     expect(out.status).toBe("complete");
     const env = calls[0]!.options.env!;
     expect(env.OMNIRALPH_JOB_TOKEN).toBe("session-token");
@@ -369,7 +373,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
       yield result({ status: "complete", summary: "Built it.", followUps: [] });
     });
-    const out = await runCodingTask(spec(), context(), options(query));
+    const out = await runStoryCoding(spec(), context(), options(query));
     expect(out.status).toBe("complete");
     expect(await readFile(seen, "utf8")).toBe("env=none\nfile=lifecycle-token\n");
   });
@@ -379,7 +383,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "broken\n");
       yield result({ status: "complete", summary: "Built it.", followUps: [] });
     });
-    const out = await runCodingTask(
+    const out = await runStoryCoding(
       spec(payload({ qualityGates: ["true", "echo 'type error in feature.txt'; exit 3"] })),
       context(),
       options(query),
@@ -408,7 +412,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         followUps: [{ title: "Get a sandbox key", description: "We need one.", manual: true }],
       });
     });
-    const out = await runCodingTask(spec(), context(), options(query));
+    const out = await runStoryCoding(spec(), context(), options(query));
     expect(RalphStoryResult.safeParse(out).success).toBe(true);
     expect(out.status).toBe("blocked");
     const pushed = git(remote.bare, "rev-parse", `refs/heads/${branch}`);
@@ -432,7 +436,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       yield result({ status: "complete", summary: "Built it.", followUps: [] });
     });
     const before = git(remote.bare, "rev-parse", "refs/heads/main");
-    const out = await runCodingTask(spec(), context(), options(query));
+    const out = await runStoryCoding(spec(), context(), options(query));
     expect(out.status).toBe("failed");
     expect(out.commitSha).toBeUndefined();
     expect(out.feedback).toContain("pushing it failed, so the commit was undone");
@@ -449,7 +453,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "from attempt 1\n");
       yield result({ status: "incomplete", summary: "Ran out of time.", followUps: [] });
     });
-    const firstOut = await runCodingTask(spec(), context(), options(first.query));
+    const firstOut = await runStoryCoding(spec(), context(), options(first.query));
     expect(firstOut.status).toBe("incomplete");
     const [offered] = storyStashes()[0]!.split(" ");
 
@@ -462,7 +466,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         followUps: [],
       });
     });
-    const out = await runCodingTask(
+    const out = await runStoryCoding(
       spec(payload({ attempt: 2, lastFeedback: firstOut.feedback })),
       context(),
       options(second.query),
@@ -478,13 +482,13 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(storyStashes()).toEqual([]);
   });
 
-  it("rejects a run whose trigger context isn't a story", async () => {
+  it("rejects a run whose trigger context is neither a story nor a request", async () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ status: "complete", summary: "x", followUps: [] });
     });
     const run = { ...spec(), trigger: { kind: "linear.delegated" as const, context: {} } };
     await expect(runCodingTask(run, context(), options(query))).rejects.toThrow(
-      "the coding run's trigger context is not a story",
+      "the coding run's trigger context is neither a story nor a request",
     );
     expect(calls).toEqual([]);
   });
