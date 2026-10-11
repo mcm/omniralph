@@ -113,7 +113,7 @@ over-long values (with `[… truncated]`) before fencing.
 | `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                        |
 | `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                        |
 | `coding`  | A session that changes code and ships it         | `long`  | `ralph.*` still run through their legacy capability code |
-| `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`                             |
+| `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`, `worktree.cleanup`         |
 
 `runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
 code:
@@ -240,9 +240,10 @@ A run-spec job gets two job tokens (both `typ: "job"`, 900 s, renewed by the hea
 
 The credential broker decides push access by token kind and task type: only a `coding` run's
 `lifecycle` token (or, until the coding epic, a legacy `ralph.*` job's single token) gets a write
-credential. Legacy jobs keep one token without a kind: system RPCs `credentials:read`, `ralph.*`
-also `credentials:write`, `run:activity` and `run:attachments` (renamed from their ralph-only
-names). Review runs are run-spec jobs, so their sessions hold only a `session` token.
+credential. A system RPC gets a single `lifecycle` token (it runs no session): `credentials:read`,
+plus `credentials:write` for `worktree.cleanup` only, the one system RPC the broker gives a write
+credential. Legacy jobs keep one token without a kind: `ralph.*` `credentials:read`,
+`credentials:write`, `run:activity` and `run:attachments` (renamed from their ralph-only names). Review runs are run-spec jobs, so their sessions hold only a `session` token.
 [ADR 0002](0002-agent-auth.md) has the token format and verification.
 
 ### Harness tools: the `omniralph` MCP server
@@ -345,14 +346,19 @@ So adding a review task (a security reviewer, say) is a definitions-only change:
 
 ### System RPCs
 
-`repo.sync` and `worktree.exec` are system RPCs (`apps/harness/src/rpc/`, `SYSTEM_RPCS` in
-`@omniralph/shared`): fixed commands with no Claude session, no run spec and no session token,
-targeted at one harness, with a single `credentials:read` token. They use the same claim, lease,
+`repo.sync`, `worktree.exec` and `worktree.cleanup` are system RPCs (`apps/harness/src/rpc/`,
+`SYSTEM_RPCS` in `@omniralph/shared`): fixed commands with no Claude session, no run spec and no
+session token, targeted at one harness, with a single `lifecycle` token (`credentials:read`). They use the same claim, lease,
 result and fail plumbing as every other job. `worktree.exec` runs a manual story's approved
 `cyralph-prepare` commands in the lane's branch worktree on the run's sticky harness (on both
 coding paths, replacing `ralph.prepare`): nothing runs if the commands' hash or the branch HEAD
 changed since the approval, then `bash -lc` one at a time, stopping at the first failure, without
-the job token (no git credential). Self-update stays on the heartbeat.
+the job token (no git credential). `worktree.cleanup` (replacing `ralph.cleanup`, same payload,
+result and actions) cleans up a merged lane on the run's sticky harness: `cleanup` stashes the
+worktree's changes, removes it and deletes the local branch unless it has unmerged commits;
+`stashes` pushes leftover stashes to `ralph/stash/<epic>` or drops them; `branch` pushes a kept
+branch or deletes it. Its token is the only system RPC token with `credentials:write`, for those
+pushes; nothing in it deletes a remote branch. Self-update stays on the heartbeat.
 
 ### What later epics add
 

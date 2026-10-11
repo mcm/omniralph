@@ -1618,7 +1618,7 @@ export type RalphCleanupQuestion =
 export interface RalphLaneCleanup {
   /**
    * `pending`: waits until none of the run's jobs is active; `running`: its
-   * `ralph.cleanup` job runs; `done`: the worktree is gone (questions may be
+   * `worktree.cleanup` RPC (or legacy `ralph.cleanup` job) runs; `done`: the worktree is gone (questions may be
    * open); `failed`: the job failed (the reconcile cron tries again).
    */
   status: "pending" | "running" | "done" | "failed";
@@ -1626,7 +1626,7 @@ export interface RalphLaneCleanup {
   at: string;
   /** The merged PR/MR head. */
   mergedSha: string;
-  /** The `ralph.cleanup` job doing the cleanup or carrying out an answer, until its outcome is applied. */
+  /** The cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) doing the cleanup or carrying out an answer, until its outcome is applied. */
   jobId?: string;
   /** The answer that job carries out (`expired`: the branch question timed out). */
   answer?: { kind: "stashes" | "branch"; option: string; expired?: boolean };

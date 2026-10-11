@@ -328,7 +328,7 @@ export const getReviewTool = defineChatTool({
 
 export const listJobsTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's harness jobs, newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status and type (e.g. \`review.task\`, \`ralph.story\`, \`worktree.exec\`, \`repo.sync\`).`,
+  description: `Lists the organization's harness jobs, newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status and type (e.g. \`review.task\`, \`ralph.story\`, \`worktree.exec\`, \`worktree.cleanup\`, \`repo.sync\`).`,
   inputSchema: z.object({
     status: z.enum(jobStatus.enumValues).nullish(),
     type: z.string().min(1).max(100).nullish(),

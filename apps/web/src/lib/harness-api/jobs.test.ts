@@ -22,11 +22,25 @@ describe("jobScopes", () => {
       { type: "chat.ask", taskType: "query" },
       { type: "triage.run", taskType: "query" },
       { type: "repo.sync", taskType: "system" },
+      { type: "worktree.exec", taskType: "system" },
       // A coding task that isn't a legacy ralph job gets no write access here.
       { type: "task.run", taskType: "coding" },
     ] as const) {
       expect(jobScopes(job)).toEqual(["credentials:read"]);
     }
+  });
+});
+
+describe("jobScopes of system RPCs", () => {
+  it("lets only worktree.cleanup push", () => {
+    expect(jobScopes({ type: "worktree.cleanup", taskType: "system" })).toEqual([
+      "credentials:read",
+      "credentials:write",
+    ]);
+    // The type alone isn't enough: a non-system job of that type gets read access only.
+    expect(jobScopes({ type: "worktree.cleanup", taskType: "query" })).toEqual([
+      "credentials:read",
+    ]);
   });
 });
 

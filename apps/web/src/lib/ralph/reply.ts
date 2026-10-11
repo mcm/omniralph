@@ -7,7 +7,7 @@
  *     call (`permissions.ts`): the agent reads the answer.
  * 1a. An answer to an open question about a merged PR/MR's leftovers
  *     (`cleanup.ts`: stash entries, a branch with unmerged commits), in any
- *     run status: a `ralph.cleanup` job carries it out.
+ *     run status: a `worktree.cleanup` RPC carries it out.
  * 1b. While the run asks which repository to use, the answer to that
  *     (`repository-selection.ts`); an unmatched reply asks again.
  * 2. An answer to the open preparation question ("Run it", "I'll do it myself", "Not yet").

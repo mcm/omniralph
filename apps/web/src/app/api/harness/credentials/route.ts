@@ -1,6 +1,6 @@
 import { getJobForHarness, getRepositoryWithConnection, writeHarnessAudit } from "@omniralph/db";
 import { CloneCredentialPermissionError, type CloneCredential } from "@omniralph/scm";
-import type { CloneCredentialResponse } from "@omniralph/shared";
+import { WORKTREE_CLEANUP_JOB_TYPE, type CloneCredentialResponse } from "@omniralph/shared";
 import { clientIp } from "@/lib/harness-auth/request";
 import { requireJob, type JobPrincipal } from "@/lib/harness-auth/verify";
 import { getDb } from "@/lib/db";
@@ -12,9 +12,10 @@ function forbidden(error: string, message?: string): Response {
 
 /**
  * Whether a job token may get a push credential: it must carry
- * `credentials:write` and be either the `lifecycle` token of a `coding`
- * run-spec job or the single token of a legacy `ralph.*` job. A `session`
- * token is always read-only, whatever scopes it claims.
+ * `credentials:write` and be the `lifecycle` token of a `coding` run-spec job
+ * or of a `worktree.cleanup` system RPC, or the single token of a legacy
+ * `ralph.*` job. A `session` token is always read-only, whatever scopes it
+ * claims, and so is every other system RPC's token.
  */
 function canPush(
   principal: Pick<JobPrincipal, "scopes" | "kind">,
@@ -23,6 +24,7 @@ function canPush(
   if (!principal.scopes.includes("credentials:write")) return false;
   switch (principal.kind) {
     case "lifecycle":
+      if (job.taskType === "system") return job.type === WORKTREE_CLEANUP_JOB_TYPE;
       return job.taskId !== null && job.taskType === "coding";
     case "legacy":
       return job.taskId === null && job.type.startsWith("ralph.");

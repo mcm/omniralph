@@ -11,7 +11,9 @@
  * - `ralph.request`: one Claude session doing what a request from the Linear
  *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  * - `ralph.cleanup`: removes a merged lane's branch worktree and local branch,
- *   and carries out the answers to the questions about its leftovers.
+ *   and carries out the answers to the questions about its leftovers
+ *   (legacy: the control panel now runs it as the `worktree.cleanup` system
+ *   RPC, with the same payload and result).
  */
 import { z } from "zod";
 import { RalphRunInvoker } from "./correlation.js";
@@ -511,6 +513,13 @@ export const RalphCleanupResult = z.object({
   durationMs: z.int().min(0),
 });
 export type RalphCleanupResult = z.infer<typeof RalphCleanupResult>;
+
+/** Payload of a `worktree.cleanup` system RPC: the same as a `ralph.cleanup` job's. */
+export const WorktreeCleanupPayload = RalphCleanupPayload;
+export type WorktreeCleanupPayload = RalphCleanupPayload;
+/** Result of a `worktree.cleanup` system RPC: the same as a `ralph.cleanup` job's. */
+export const WorktreeCleanupResult = RalphCleanupResult;
+export type WorktreeCleanupResult = RalphCleanupResult;
 
 /**
  * An agent-session activity relayed by an agent (`POST /api/harness/jobs/{id}/activities`):

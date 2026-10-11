@@ -22,7 +22,9 @@ import {
   legacyJobRouting,
   RalphRequestPayload,
   RalphStoryPayload,
+  RepoSyncPayload,
   type RunTokenKind,
+  WorktreeCleanupPayload,
   WorktreeExecPayload,
 } from "@omniralph/shared";
 import { preparationHash } from "@omniralph/ralph";
@@ -612,10 +614,38 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           });
         });
 
-        it("gives a worktree.exec system RPC's single token read", async () => {
+        it("gives a worktree.cleanup system RPC's lifecycle token write", async () => {
+          const runId = randomUUID();
+          const laneId = randomUUID();
+          const { harnessId, started } = await claimEnqueued({
+            type: "worktree.cleanup",
+            ...legacyJobRouting("worktree.cleanup"),
+            payload: WorktreeCleanupPayload.parse({
+              ...jobBase(runId),
+              epic: { identifier: "TOOL-32" },
+              action: { kind: "branch", push: true },
+            }),
+            repositoryId: githubRepoId,
+            dedupeKey: `ralph-cleanup:${laneId}`,
+          });
+          expect(started.job).toMatchObject({
+            type: "worktree.cleanup",
+            taskType: "system",
+            taskId: null,
+          });
+          expect(started.sessionToken).toBeUndefined();
+          expect(started.jobToken.kind).toBe("lifecycle");
+          expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
+            password: "ghs_contents_write",
+            access: "write",
+            tokenKind: "lifecycle",
+          });
+        });
+
+        it("gives the lifecycle tokens of the other system RPCs read", async () => {
           const runId = randomUUID();
           const commands = ["terraform init"];
-          const { harnessId, started } = await claimEnqueued({
+          const exec = await claimEnqueued({
             type: "worktree.exec",
             ...legacyJobRouting("worktree.exec"),
             payload: WorktreeExecPayload.parse({
@@ -628,17 +658,32 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
             repositoryId: githubRepoId,
             dedupeKey: `ralph-run:${runId}`,
           });
-          expect(started.job).toMatchObject({
-            type: "worktree.exec",
-            taskType: "system",
-            taskId: null,
+          const sync = await claimEnqueued({
+            type: "repo.sync",
+            ...legacyJobRouting("repo.sync"),
+            payload: RepoSyncPayload.parse({ repository: jobBase(runId).repository }),
+            repositoryId: githubRepoId,
           });
-          expect(started.sessionToken).toBeUndefined();
-          expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
-            password: "ghs_contents_read",
-            access: "read",
-            tokenKind: "legacy",
-          });
+          for (const { harnessId, started } of [exec, sync]) {
+            expect(started.job).toMatchObject({ taskType: "system", taskId: null });
+            expect(started.sessionToken).toBeUndefined();
+            expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
+              password: "ghs_contents_read",
+              access: "read",
+              tokenKind: "lifecycle",
+            });
+            // Even a token claiming credentials:write gets read: only worktree.cleanup may push.
+            const forged = await getTokenSigner().signJobToken({
+              jobId: started.job.id,
+              harnessId,
+              scopes: ["credentials:read", "credentials:write"],
+              kind: "lifecycle",
+            });
+            expect(await issuedFor(forged, harnessId)).toMatchObject({ access: "read" });
+          }
+          for (const { body } of tokenRequests) {
+            expect(JSON.stringify(body)).not.toMatch(/write/);
+          }
         });
 
         it("gives the lifecycle and session tokens of query and review runs read", async () => {

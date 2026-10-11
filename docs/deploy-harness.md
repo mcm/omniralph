@@ -403,7 +403,8 @@ runs five ralph job types: `ralph.story` (a Claude session, the quality gates, c
 manual story's approved preparation commands; now enqueued as the `worktree.exec` system RPC
 instead, with the same guards), `ralph.request` (one Claude session for an
 @mention, a reply, review findings or a failed CI run, on the run's branch) and `ralph.cleanup`
-(removes a merged PR/MR's worktree and local branch, no session). Running `ralph.story` and
+(removes a merged PR/MR's worktree and local branch, no session; now enqueued as the
+`worktree.cleanup` system RPC instead). Running `ralph.story` and
 `ralph.request` sessions also take Linear replies live: the heartbeat response carries them
 (`jobMessages`) and the harness acknowledges them in its next heartbeat. Jobs download the run's
 Linear attachments through the control panel and cache them in `<workspaceRoot>/.attachments/`.
@@ -476,7 +477,7 @@ to the next attempt.
 Every branch worktree gets a `pre-push` hook that rejects pushes to any branch but its own (a
 guardrail against mistakes, not a security boundary).
 
-After the run's PR/MR merges, a `ralph.cleanup` job on the run's harness removes the branch worktree
+After the run's PR/MR merges, a `worktree.cleanup` system RPC on the run's harness removes the branch worktree
 and deletes the local branch (keeping a branch with unmerged commits until someone answers in
 Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). Worktrees of PRs/MRs
 closed without merging, of repositories with **Clean up after the merge** off, and of a harness that

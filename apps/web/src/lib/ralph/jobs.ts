@@ -85,8 +85,9 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
 }
 
 /**
- * A `ralph.cleanup` job completed, failed for good or was canceled: its
- * outcome is applied (`onCleanupJobFinished`). Errors are logged.
+ * A cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) completed,
+ * failed for good or was canceled: its outcome is applied
+ * (`onCleanupJobFinished`). Errors are logged.
  */
 export async function onRalphCleanupJobFinished(
   db: Database,

@@ -1,6 +1,7 @@
 import type { JobPayload, SystemRpcName } from "@omniralph/shared";
 import type { JobContext, JobOutput } from "../capabilities/index.js";
 import { repoSyncRpc } from "./repo-sync.js";
+import { worktreeCleanupRpc } from "./worktree-cleanup.js";
 import { worktreeExecRpc } from "./worktree-exec.js";
 
 /**
@@ -42,5 +43,5 @@ export class SystemRpcRegistry {
 
 /** The system RPCs this build of the harness ships. */
 export function defaultSystemRpcs(): SystemRpc[] {
-  return [repoSyncRpc, worktreeExecRpc];
+  return [repoSyncRpc, worktreeExecRpc, worktreeCleanupRpc];
 }

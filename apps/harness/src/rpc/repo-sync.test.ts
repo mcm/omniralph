@@ -78,7 +78,7 @@ describe("repo.sync", { timeout: 30_000 }, () => {
 
   it("is in the registry", () => {
     const registry = new SystemRpcRegistry(defaultSystemRpcs());
-    expect(registry.names()).toEqual(["repo.sync", "worktree.exec"]);
+    expect(registry.names()).toEqual(["repo.sync", "worktree.exec", "worktree.cleanup"]);
     expect(registry.get("repo.sync")).toBe(repoSyncRpc);
     expect(registry.get("repo.other")).toBeUndefined();
     expect(() => new SystemRpcRegistry([repoSyncRpc, repoSyncRpc])).toThrow(/twice/);

@@ -14,11 +14,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { silentLogger } from "../../logger.js";
 import { ENV, exists, git, Remote } from "../../test/git-remote.js";
 import { RepoCache } from "../../workspace/repoCache.js";
+import { SystemRpcRegistry, defaultSystemRpcs } from "../../rpc/index.js";
 import type { JobContext } from "../index.js";
 import { createRalphCapability } from "./index.js";
 
-/** Ported from cyralph's "cleanup after a merge" (`test/engine.test.ts`), for the agent's side. */
-describe("ralph.cleanup", { timeout: 60_000 }, () => {
+/**
+ * Ported from cyralph's "cleanup after a merge" (`test/engine.test.ts`), for
+ * the harness's side: run as the `worktree.cleanup` system RPC the control
+ * panel enqueues, and as a legacy `ralph.cleanup` job queued before it did.
+ */
+describe.each(["worktree.cleanup", "ralph.cleanup"] as const)("%s", { timeout: 60_000 }, (type) => {
   let root: string;
   let remote: Remote;
   let repo: JobRepository;
@@ -54,7 +59,7 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
       env: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "job-token", ...extra }),
       sessionEnv: (extra) => ({ ...ENV, OMNIRALPH_JOB_TOKEN: "job-token", ...extra }),
       spawn: () => {
-        throw new Error("ralph.cleanup must not spawn processes through the context");
+        throw new Error(`${type} must not spawn processes through the context`);
       },
       server: "https://omniralph.example.com",
       workspaceRoot: path.join(root, "workspace"),
@@ -87,9 +92,10 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
     };
     return {
       id: randomUUID(),
-      type: "ralph.cleanup",
-      taskType: "coding",
-      pool: "long",
+      type,
+      ...(type === "ralph.cleanup"
+        ? { taskType: "coding" as const, pool: "long" as const }
+        : { taskType: "system" as const, pool: null }),
       taskId: null,
       repositoryId: payload.repositoryId,
       payload,
@@ -98,7 +104,11 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
   }
 
   const run = async (j: JobPayload) =>
-    RalphCleanupResult.parse(await createRalphCapability().run(j, context()));
+    RalphCleanupResult.parse(
+      type === "ralph.cleanup"
+        ? await createRalphCapability().run(j, context())
+        : await new SystemRpcRegistry(defaultSystemRpcs()).get(type)!.run(j, context()),
+    );
   const worktree = () => repos.branchWorktreePath(repo, branch);
   const bareDir = () => repos.repoDir(repo);
   const branchExists = (b = branch) => git(bareDir(), "branch", "--list", b) !== "";
@@ -278,5 +288,29 @@ describe("ralph.cleanup", { timeout: 60_000 }, () => {
     expect(git(remote.bare, "rev-parse", branch)).not.toBe(tip);
     // Already gone is what was asked for.
     expect(await run(job({ kind: "branch", push: false }))).toMatchObject({ error: null });
+  });
+
+  it("never deletes the branch on the remote, whatever the action", async () => {
+    const head = await mergedEpic();
+    await writeFile(path.join(worktree(), "more.txt"), "more\n");
+    git(worktree(), "add", ".");
+    git(worktree(), "commit", "--quiet", "-m", "after merge");
+    const tip = git(worktree(), "rev-parse", "HEAD");
+    await writeFile(path.join(worktree(), "notes.txt"), "wip\n");
+    const onRemote = () => git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`);
+
+    const cleaned = await cleanup(head);
+    expect(cleaned).toMatchObject({ error: null, removedWorktree: true, unmerged: 1 });
+    expect(onRemote()).toBe(head);
+    const shas = cleaned.stashes.map((e) => e.sha);
+    expect(shas).toHaveLength(1);
+    expect(await run(job({ kind: "stashes", push: true, shas }))).toMatchObject({ handled: 1 });
+    expect(onRemote()).toBe(head);
+    expect(await run(job({ kind: "branch", push: true }))).toMatchObject({ error: null });
+    expect(onRemote()).toBe(tip);
+    expect(await run(job({ kind: "branch", push: false }))).toMatchObject({ error: null });
+    expect(await run(job({ kind: "stashes", push: false, shas }))).toMatchObject({ error: null });
+    expect(await cleanup(head)).toMatchObject({ error: null });
+    expect(onRemote()).toBe(tip);
   });
 });

@@ -6,7 +6,9 @@
  * - Triggers: the PR/MR's merge webhook, the Linear issue moving to completed,
  *   any follow-up check that finds it merged (`recordClosedPullRequest`), and
  *   the reconcile cron (`reconcileCleanup`) as the fallback.
- * - The work runs as a `ralph.cleanup` job on the run's sticky agent, which
+ * - The work runs as a `worktree.cleanup` system RPC on the run's sticky
+ *   harness (on both coding paths; a legacy `ralph.cleanup` job queued before
+ *   that is still applied), which
  *   holds the lane's branch worktree, once none of the run's jobs is active
  *   (until then the lane's cleanup is `pending`). It stashes uncommitted
  *   changes, removes the worktree, and deletes the local branch unless it has
@@ -16,7 +18,7 @@
  *   origin" / "Drop") and a kept branch ("Push to origin" / "Delete").
  * - The questions are stored on the lane (they survive restarts); a reply
  *   that answers one (`answerCleanup`, matched as cyralph does) runs another
- *   `ralph.cleanup` job doing it. Without an answer within
+ *   `worktree.cleanup` RPC doing it. Without an answer within
  *   `unmergedBranchTimeoutMinutes`, the cron deletes the kept branch.
  */
 import {
@@ -59,9 +61,9 @@ import {
 import type { ChangeRequestStatus } from "@omniralph/scm";
 import {
   parseRalphSettings,
-  RALPH_CLEANUP_JOB_TYPE,
-  RalphCleanupPayload,
-  RalphCleanupResult,
+  WORKTREE_CLEANUP_JOB_TYPE,
+  WorktreeCleanupPayload,
+  WorktreeCleanupResult,
   ralphStashBranch,
   type RalphCleanupAction,
   legacyJobRouting,
@@ -76,7 +78,7 @@ import { advanceRun, FINISHED_RUN_STATUSES, stickyHarnessId, type RalphDeps } fr
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
-/** At most one `ralph.cleanup` job per lane at a time. */
+/** At most one cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) per lane at a time. */
 export function cleanupDedupeKey(laneId: string): string {
   return `ralph-cleanup:${laneId}`;
 }
@@ -113,7 +115,8 @@ async function notify(deps: Pick<RalphDeps, "linear">, run: RalphRun, body: stri
 }
 
 /**
- * Enqueues a `ralph.cleanup` job for the lane on the run's sticky agent.
+ * Enqueues a `worktree.cleanup` system RPC for the lane on the run's sticky
+ * harness (its token is the only system RPC token that may push).
  * Null when that's impossible: the repository is gone or the agent can't
  * take ralph jobs anymore (`why`).
  */
@@ -130,7 +133,7 @@ async function enqueueCleanupJob(
   const harnessId = await stickyHarnessId(deps.db, run);
   if (!harnessId) return { why: "the agent that holds the branch can't take ralph jobs anymore" };
   const { repository, connection } = found;
-  const payload = RalphCleanupPayload.parse({
+  const payload = WorktreeCleanupPayload.parse({
     runId: run.id,
     repositoryId: repository.id,
     repository: jobRepository(repository, connection),
@@ -142,8 +145,8 @@ async function enqueueCleanupJob(
   });
   const { job } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
-    type: RALPH_CLEANUP_JOB_TYPE,
-    ...legacyJobRouting(RALPH_CLEANUP_JOB_TYPE),
+    type: WORKTREE_CLEANUP_JOB_TYPE,
+    ...legacyJobRouting(WORKTREE_CLEANUP_JOB_TYPE),
     payload,
     repositoryId: repository.id,
     ralphRunId: run.id,
@@ -302,13 +305,16 @@ async function checkMergedAgain(deps: RalphDeps, lane: RalphLane): Promise<Clean
   return state.state === "merged" ? startCleanup(deps, lane.id, state.headSha) : null;
 }
 
-/** The lane a `ralph.cleanup` job works on, with its run. */
+/**
+ * The lane a cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`:
+ * same payload and result) works on, with its run.
+ */
 async function jobLane(
   tx: RalphTransaction,
   run: RalphRun,
   job: Job,
-): Promise<{ lane: RalphLane; payload: RalphCleanupPayload } | null> {
-  const payload = RalphCleanupPayload.safeParse(job.payload);
+): Promise<{ lane: RalphLane; payload: WorktreeCleanupPayload } | null> {
+  const payload = WorktreeCleanupPayload.safeParse(job.payload);
   if (!payload.success) return null;
   const lane = await getLaneByRepository(tx, run.id, payload.data.repositoryId);
   if (!lane?.cleanup || lane.cleanup.jobId !== job.id) return null;
@@ -324,7 +330,7 @@ function withQuestion(
 }
 
 /**
- * Applies the outcome of a lane's `ralph.cleanup` job once it finished (from
+ * Applies the outcome of a lane's cleanup job once it finished (from
  * its outcome hooks, and the reconcile cron for one that was missed): says
  * what was cleaned up and asks about leftovers, or what an answer did. A
  * failed cleanup is tried again by the cron; a failed answer can be given
@@ -338,7 +344,7 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
     if (!found) return false;
     const { lane, payload } = found;
     const cleanup = lane.cleanup!;
-    const parsed = job.status === "completed" ? RalphCleanupResult.safeParse(job.result) : null;
+    const parsed = job.status === "completed" ? WorktreeCleanupResult.safeParse(job.result) : null;
     const error = !parsed
       ? jobFailure(job)
       : !parsed.success
@@ -489,7 +495,7 @@ async function ask(
 }
 
 /**
- * A `ralph.cleanup` job finished (completed, failed for good or canceled):
+ * A cleanup job finished (completed, failed for good or canceled):
  * its outcome is applied, cleanups of the run's other lanes that waited for
  * it start, and an unfinished run moves on. Errors are logged; the reconcile
  * cron catches up.
@@ -532,7 +538,7 @@ export type CleanupAnswer =
  * A reply in the run's session that answers one of its lanes' open cleanup
  * questions (`matchCleanupAnswer`: the option, `1`/`2` when only one is open,
  * or a short reply with a unique first word; newest question first) runs a
- * `ralph.cleanup` job doing it. Null: the reply isn't an answer.
+ * `worktree.cleanup` RPC doing it. Null: the reply isn't an answer.
  */
 export async function answerCleanup(
   deps: RalphDeps,
@@ -586,7 +592,7 @@ export async function answerCleanup(
 
 /**
  * Deletes kept branches whose question got no answer within
- * `unmergedBranchTimeoutMinutes` (a `ralph.cleanup` job; the outcome says
+ * `unmergedBranchTimeoutMinutes` (a `worktree.cleanup` RPC; the outcome says
  * "Nobody answered within …"). Leftover stashes have no timeout.
  */
 async function expireBranchQuestion(deps: RalphDeps, lane: RalphLane, at: Date): Promise<boolean> {
