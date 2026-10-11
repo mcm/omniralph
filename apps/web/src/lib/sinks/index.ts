@@ -8,6 +8,7 @@ import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
+import { triageSink } from "./triage";
 
 /**
  * Sinks: control-panel code, keyed by kind, that applies a run's output (a
@@ -39,6 +40,8 @@ export interface Sink<Output = unknown> {
   apply(db: Database, job: Job, result: SinkResult<Output>): Promise<unknown>;
   /** The run failed for good; `error` is null when the harness reported none. */
   onFailed?(db: Database, job: Job, error: string | null): Promise<unknown>;
+  /** The run was canceled before it finished (by a person, a revocation or a claim). */
+  onCanceled?(db: Database, job: Job): Promise<unknown>;
 }
 
 /** Erases a sink's output type for the registry (`parseSinkResult` checks it at runtime). */
@@ -47,9 +50,12 @@ function registered<Output>(sink: Sink<Output>): Sink {
 }
 
 const SINKS = new Map<SinkKind, Sink>(
-  [registered(learnedRuleSink), registered(findingThreadSink), registered(chatThreadSink)].map(
-    (sink) => [sink.kind, sink],
-  ),
+  [
+    registered(learnedRuleSink),
+    registered(findingThreadSink),
+    registered(chatThreadSink),
+    registered(triageSink),
+  ].map((sink) => [sink.kind, sink]),
 );
 
 /** The sink of `kind`, or undefined while none is implemented. */
@@ -101,6 +107,7 @@ function sinkHooks(sink: Sink): JobHooks {
       return sink.apply(db, job, result);
     },
     ...(sink.onFailed && { onFailed: sink.onFailed.bind(sink) }),
+    ...(sink.onCanceled && { onCanceled: sink.onCanceled.bind(sink) }),
   };
 }
 

@@ -28,11 +28,11 @@ describe("VARIABLES", () => {
     expect(findVariable("nope")).toBeUndefined();
   });
 
-  it("gives query tasks question, hunk and conventions", () => {
+  it("gives query tasks question, hunk, conventions and checkout", () => {
     const query = VARIABLES.filter(
       (variable) => variable.source === "taskType" && variable.taskTypes.includes("query"),
     ).map((variable) => variable.name);
-    expect(query).toEqual(["question", "hunk", "conventions"]);
+    expect(query).toEqual(["question", "hunk", "conventions", "checkout"]);
   });
 });
 
@@ -66,12 +66,38 @@ describe("availableVariables", () => {
   it("leaves out other task types' variables", () => {
     expect(availableVariables("coding", ["linear.delegated"])).toEqual([
       "issue.identifier",
+      "issue.url",
+      "issue.stateType",
+      "issue.creator.name",
       "issue.title",
       "issue.description",
     ]);
   });
 
+  it("gives triage the Linear issue's comments, sub-issues, blockers, reply and previous triage", () => {
+    const names = availableVariables("query", ["linear.triage"]);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "repository",
+        "branch",
+        "checkout",
+        "comments.items.body",
+        "children.items.priority",
+        "blockers.items.blocks",
+        "reply",
+        "previousResult.openQuestions.items.text",
+      ]),
+    );
+    expect(availableVariables("query", ["linear.delegated"])).not.toContain("reply");
+    expect(findVariable("issue.title")).toMatchObject({ trust: "untrusted", quote: "issue-title" });
+  });
+
   it("has no trigger variables without triggers", () => {
-    expect(availableVariables("query", [])).toEqual(["question", "hunk", "conventions"]);
+    expect(availableVariables("query", [])).toEqual([
+      "question",
+      "hunk",
+      "conventions",
+      "checkout",
+    ]);
   });
 });

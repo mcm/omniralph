@@ -4,8 +4,9 @@
  * (without touching Linear) when the issue or one of its sub-issues is in
  * progress or done, routes it to a repository the way ralph does (none is
  * fine: triage then runs without a checkout), records a `triage_runs` row and
- * enqueues a `triage.run` job any of the organization's agents may claim. The job's
- * outcome is applied to Linear when it finishes.
+ * enqueues a run of the built-in query task `builtin:triage` (job type
+ * `triage.run`) any of the organization's harnesses may claim. Its `triage`
+ * sink (`lib/sinks/triage.ts`) applies the outcome to Linear when it finishes.
  */
 import {
   createTriageRun,
@@ -16,23 +17,25 @@ import {
   setTriageRunStatus,
   type TriageRun,
 } from "@omniralph/db";
-import { parseInstruction } from "@omniralph/ralph";
+import { parseInstruction, triageTemplateContext } from "@omniralph/ralph";
 import {
   LINEAR_STATE_TYPES,
+  QUERY_TASKS_MIN_HARNESS_VERSION,
   TRIAGE_RUN_JOB_TYPE,
-  TriageRunPayload,
   type TriageBlocker,
   type TriageOutcome,
   type TriageRepository,
-  legacyJobRouting,
 } from "@omniralph/shared";
+import { getBuiltinTask } from "@omniralph/tasks";
 import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { describeRoute, routeIssue } from "@/lib/ralph/routing";
 import type { RalphDeps } from "@/lib/ralph/run";
+import { runSpecJobInput } from "@/lib/runs/job";
 import { jobRepository } from "@/lib/scm/adapters";
+import type { TriageRunContext } from "./apply";
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
 
@@ -55,7 +58,9 @@ export type StartTriageOutcome =
 /** Issue states triage never changes anything in. */
 const LOCKED_STATE_TYPES = new Set(["started", "completed"]);
 
-/** Limits of `TriageRunPayload` (longer text is cut, longer lists keep their newest entries). */
+export const TRIAGE_TASK_ID = "builtin:triage";
+
+/** Limits of the trigger context (longer text is cut, longer lists keep their newest entries). */
 const MAX_TITLE = 1000;
 const MAX_DOCUMENT = 200_000;
 const MAX_COMMENT = 20_000;
@@ -228,7 +233,7 @@ export async function prepareTriage(
 }
 
 /**
- * Enqueues the run's next `triage.run` job over `context` (with the session's
+ * Enqueues the run's next `triage.run` job (a `builtin:triage` run) over `context` (with the session's
  * reply and the run's previous triage, if any), records it as the run's
  * current job and posts the "Triaging …" thought. An enqueue failure ends the
  * run `failed`.
@@ -243,41 +248,54 @@ export async function enqueueTriage(
   const { issue, children, repository } = context;
   const sessionId = run.linearAgentSessionId;
   const reply = options.reply?.trim();
-  const payload = TriageRunPayload.parse({
+  const task = getBuiltinTask(TRIAGE_TASK_ID);
+  if (!task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
+  const trigger = {
     triageRunId: run.id,
-    issue: {
-      id: issue.id,
-      identifier: issue.identifier,
-      title: cut(issue.title, MAX_TITLE),
-      description: cut(issue.description, MAX_DOCUMENT),
-      stateType: stateType(issue.stateType),
-      creator: issue.creator ? { id: issue.creator.id, name: cut(issue.creator.name, 200) } : null,
-      url: issue.url || null,
-    },
-    comments: comments(context.comments),
-    children: children.slice(0, MAX_ITEMS).map((c) => ({
-      id: c.id,
-      identifier: c.identifier,
-      title: cut(c.title, MAX_TITLE),
-      description: cut(c.description, MAX_DOCUMENT),
-      stateType: stateType(c.stateType),
-      priority: c.priority,
-    })),
-    blockers: context.blockers,
-    repository: repository?.payload ?? null,
-    // The newest part of a long reply is kept.
-    reply: reply ? (reply.length > MAX_COMMENT ? reply.slice(-MAX_COMMENT) : reply) : null,
-    previousResult: options.previousResult ?? null,
-  });
+    ...triageTemplateContext({
+      issue: {
+        identifier: issue.identifier,
+        title: cut(issue.title, MAX_TITLE),
+        description: cut(issue.description, MAX_DOCUMENT),
+        stateType: stateType(issue.stateType),
+        creator: issue.creator ? { name: cut(issue.creator.name, 200) } : null,
+        url: issue.url || null,
+      },
+      comments: comments(context.comments),
+      children: children.slice(0, MAX_ITEMS).map((c) => ({
+        id: c.id,
+        identifier: c.identifier,
+        title: cut(c.title, MAX_TITLE),
+        description: cut(c.description, MAX_DOCUMENT),
+        stateType: stateType(c.stateType),
+        priority: c.priority,
+      })),
+      blockers: context.blockers,
+      repository: repository && {
+        repository: { fullPath: repository.payload.repository.fullPath },
+        defaultBranch: repository.payload.defaultBranch,
+      },
+      // The newest part of a long reply is kept.
+      reply: reply ? (reply.length > MAX_COMMENT ? reply.slice(-MAX_COMMENT) : reply) : null,
+      previousResult: options.previousResult ?? null,
+    }),
+  } satisfies TriageRunContext & Record<string, unknown>;
 
   let jobId: string;
   try {
     const { job } = await deps.dispatcher.createAndPublish({
       organizationId: deps.organizationId,
       type: TRIAGE_RUN_JOB_TYPE,
-      ...legacyJobRouting(TRIAGE_RUN_JOB_TYPE),
-      payload,
-      repositoryId: repository?.payload.repositoryId ?? null,
+      ...runSpecJobInput(task, {
+        trigger: { kind: "linear.triage", context: trigger },
+        // Without a routed repository the run has no checkout; a default branch that doesn't
+        // exist yet (an empty repository) runs without one too.
+        ...(repository && {
+          repositoryId: repository.payload.repositoryId,
+          ref: repository.payload.defaultBranch,
+        }),
+      }),
+      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       dedupeKey: `triage:${run.id}`,
     });
     jobId = job.id;

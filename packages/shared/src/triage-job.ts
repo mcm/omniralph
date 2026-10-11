@@ -1,11 +1,12 @@
 /**
  * Triage: turning a Linear issue into a PRD ralph can build,
  * unattended. The control panel loads the issue and applies the result to
- * Linear (agents hold no Linear token); agents run its job:
+ * Linear (harnesses hold no Linear token); harnesses run its job:
  *
- * - `triage.run`: one read-only Claude session over the issue (and, when one is
- *   routed, a checkout of the repository's default branch) that returns the
- *   rewritten issue, its size and its open questions.
+ * - `triage.run`: a run of the built-in query task `builtin:triage`, one
+ *   read-only Claude session over the issue (and, when one is routed, a
+ *   checkout of the repository's default branch) that returns the rewritten
+ *   issue, its size and its open questions.
  */
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
@@ -38,47 +39,6 @@ export type TriageSize = (typeof TRIAGE_SIZES)[number];
 const LinearId = z.string().min(1).max(64);
 /** Linear identifier, e.g. `TOOL-83`. */
 const LinearIdentifier = z.string().min(1).max(64);
-
-/** A Linear user, as named in the prompt. */
-const TriageUser = z.object({
-  id: LinearId,
-  name: z.string().min(1).max(200),
-});
-
-/** The issue being triaged (untrusted text; quoted into the prompt). */
-export const TriageIssue = z.object({
-  id: LinearId,
-  identifier: LinearIdentifier,
-  title: z.string().max(1000),
-  description: z.string().max(MAX_DOCUMENT_LENGTH),
-  stateType: LinearStateType,
-  /** Who created it; null when Linear doesn't say (e.g. an integration). */
-  creator: TriageUser.nullable(),
-  url: z.url().nullable().default(null),
-});
-export type TriageIssue = z.infer<typeof TriageIssue>;
-
-/** A comment on the issue, oldest first. */
-export const TriageComment = z.object({
-  /** Null for a comment by an integration or a deleted user. */
-  author: z.string().min(1).max(200).nullable(),
-  body: z.string().max(MAX_TEXT_LENGTH),
-  /** When it was posted (ISO 8601). */
-  createdAt: z.string().max(64),
-});
-export type TriageComment = z.infer<typeof TriageComment>;
-
-/** A sub-issue of the issue, in sub-issue order. */
-export const TriageChild = z.object({
-  id: LinearId,
-  identifier: LinearIdentifier,
-  title: z.string().max(1000),
-  description: z.string().max(MAX_DOCUMENT_LENGTH),
-  stateType: LinearStateType,
-  /** Linear priority: 0 No priority, 1 Urgent … 4 Low. */
-  priority: z.int().min(0).max(4),
-});
-export type TriageChild = z.infer<typeof TriageChild>;
 
 /** An issue blocking the issue (or one of its sub-issues). */
 export const TriageBlocker = z.object({
@@ -146,24 +106,10 @@ export const TriageOutcome = z.object({
 });
 export type TriageOutcome = z.infer<typeof TriageOutcome>;
 
-/** Payload of a `triage.run` job. */
-export const TriageRunPayload = z.object({
-  /** The `triage_runs` row. */
-  triageRunId: z.uuid(),
-  issue: TriageIssue,
-  comments: z.array(TriageComment).max(500).default([]),
-  children: z.array(TriageChild).max(500).default([]),
-  blockers: z.array(TriageBlocker).max(500).default([]),
-  /** The routed repository; null runs without a checkout. */
-  repository: TriageRepository.nullable().default(null),
-  /** A reply from the agent session (e.g. answers to open questions); null on the first run. */
-  reply: z.string().max(MAX_TEXT_LENGTH).nullable().default(null),
-  /** What the session's previous triage decided, when this run follows a reply. */
-  previousResult: TriageOutcome.nullable().default(null),
-});
-export type TriageRunPayload = z.infer<typeof TriageRunPayload>;
-
-/** Result of a `triage.run` job (`/api/harness/jobs/{id}/result`). */
+/**
+ * What a `triage.run` job produced, as a triage run keeps it (`triage_runs.last_result`):
+ * the `triage` sink builds it from the run's `QueryRunResult` and its validated output.
+ */
 export const TriageRunResult = z
   .object({
     /** For the Linear session: what triage decided, or why it couldn't (`error`). */

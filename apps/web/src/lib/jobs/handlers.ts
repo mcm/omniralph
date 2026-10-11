@@ -18,9 +18,6 @@ import {
   RalphStoryResult,
   REVIEW_JOB_TYPE,
   ReviewJobPayload,
-  TRIAGE_RUN_JOB_TYPE,
-  TriageRunPayload,
-  TriageRunResult,
   type JobSkipReason,
 } from "@omniralph/shared";
 import type { z } from "zod";
@@ -33,11 +30,6 @@ import {
   parseReviewResult,
 } from "@/lib/review/jobs";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "@/lib/ralph/jobs";
-import {
-  onTriageJobCompleted,
-  onTriageJobFinishedWithoutResult,
-  onTriageJobStarted,
-} from "@/lib/triage/apply";
 
 /**
  * Per-job-type hooks into the generic job lifecycle (`/claim`, `/result`,
@@ -143,15 +135,4 @@ registerJobOutcomeHandler(RALPH_CLEANUP_JOB_TYPE, {
   onCompleted: (db, job) => onRalphCleanupJobFinished(db, job),
   onFailed: (db, job) => onRalphCleanupJobFinished(db, job),
   onCanceled: (db, job) => onRalphCleanupJobFinished(db, job),
-});
-
-// A well-formed result is accepted even when `validateTriageOutput` rejects it:
-// `onCompleted` then fails the job and the run, and tells the Linear session why.
-registerJobOutcomeHandler(TRIAGE_RUN_JOB_TYPE, {
-  payload: TriageRunPayload,
-  onStarted: (db, job) => onTriageJobStarted(db, job),
-  isValidResult: (result) => TriageRunResult.safeParse(result).success,
-  onCompleted: (db, job) => onTriageJobCompleted(db, job),
-  onFailed: (db, job, error) => onTriageJobFinishedWithoutResult(db, job, "failed", error),
-  onCanceled: (db, job) => onTriageJobFinishedWithoutResult(db, job, "stopped", null),
 });

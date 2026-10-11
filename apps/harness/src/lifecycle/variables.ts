@@ -11,6 +11,8 @@ export interface QueryVariables {
   hunk: string | null;
   /** The checkout's `CLAUDE.md`. */
   conventions: string | null;
+  /** Whether the working directory holds a checkout of the run's ref. */
+  checkout: boolean;
 }
 
 const Sha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);

@@ -10,6 +10,7 @@ const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { learnedRuleSink } = await import("./learned-rule");
 const { findingThreadSink } = await import("./finding-thread");
 const { chatThreadSink } = await import("./chat-thread");
+const { triageSink } = await import("./triage");
 
 const legacyCompleted = vi.fn();
 registerJobOutcomeHandler("sinks.legacy", {
@@ -37,7 +38,8 @@ const DEFINITIONS = {
       "builtin:learn-rule": getBuiltinTask("builtin:learn-rule"),
       "builtin:reply": getBuiltinTask("builtin:reply"),
       "builtin:ask-about-code": getBuiltinTask("builtin:ask-about-code"),
-      "builtin:triage": task("builtin:triage", "triage"),
+      "builtin:triage": getBuiltinTask("builtin:triage"),
+      "test:result": task("builtin:test-result", "run-result"),
     })[id] ?? null,
   getAgent: () => null,
 };
@@ -56,7 +58,8 @@ describe("sinkFor", () => {
     expect(sinkFor("learned-rule")).toBe(learnedRuleSink);
     expect(sinkFor("finding-thread")).toBe(findingThreadSink);
     expect(sinkFor("chat-thread")).toBe(chatThreadSink);
-    expect(sinkFor("triage")).toBeUndefined();
+    expect(sinkFor("triage")).toBe(triageSink);
+    expect(sinkFor("run-result")).toBeUndefined();
   });
 });
 
@@ -65,7 +68,8 @@ describe("taskSink", () => {
     expect(taskSink({ taskId: "builtin:learn-rule" }, DEFINITIONS)).toBe(learnedRuleSink);
     expect(taskSink({ taskId: "builtin:reply" }, DEFINITIONS)).toBe(findingThreadSink);
     expect(taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
-    expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBeUndefined();
+    expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
+    expect(taskSink({ taskId: "test:result" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
     expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
   });

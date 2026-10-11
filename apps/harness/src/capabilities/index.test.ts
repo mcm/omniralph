@@ -15,17 +15,15 @@ import {
   ralphCapability,
 } from "./ralph/index.js";
 import { REVIEW_TOOL_POLICY } from "./review.js";
-import { TRIAGE_TOOL_POLICY, triageCapability } from "./triage/index.js";
 
 describe("capability registry", () => {
-  it("ships the review, ralph and triage capabilities, and no system capability", () => {
+  it("ships the review and ralph capabilities, and no system or triage capability", () => {
     const registry = new CapabilityRegistry(defaultCapabilities());
-    expect(registry.names()).toEqual(["review", "ralph", "triage"]);
-    expect(registry.forJob({ type: "triage.run" })?.name).toBe("triage");
+    expect(registry.names()).toEqual(["review", "ralph"]);
     expect(registry.forJob({ type: "repo.sync" })).toBeUndefined();
     expect(registry.forJob({ type: "review.run" })?.name).toBe("review");
-    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`, `builtin:ask-about-code`), run by the query lifecycle.
-    for (const type of ["review.learn-rule", "review.reply", "chat.ask"]) {
+    // Built-in query tasks now (`builtin:learn-rule`, `builtin:reply`, `builtin:ask-about-code`, `builtin:triage`), run by the query lifecycle.
+    for (const type of ["review.learn-rule", "review.reply", "chat.ask", "triage.run"]) {
       expect(registry.forJob({ type })).toBeUndefined();
     }
     expect(registry.forJob({ type: "review.other" })).toBeUndefined();
@@ -49,22 +47,6 @@ describe("capability registry", () => {
     expect(REVIEW_TOOL_POLICY.permissionMode).not.toBe("bypassPermissions");
     expect(REVIEW_TOOL_POLICY.settingSources).toEqual([]);
     expect(REVIEW_TOOL_POLICY.writable).toBe(false);
-  });
-
-  it("keeps triage sessions read-only", () => {
-    expect(toolPolicyFor(triageCapability, "triage.run")).toBe(TRIAGE_TOOL_POLICY);
-    expect(TRIAGE_TOOL_POLICY).toMatchObject({
-      tools: "allowed",
-      fileScope: "worktree",
-      permissionMode: "dontAsk",
-      settingSources: [],
-      writable: false,
-    });
-    expect([...TRIAGE_TOOL_POLICY.allowedTools].sort()).toEqual(["Glob", "Grep", "Read"]);
-    expect(TRIAGE_TOOL_POLICY.readOnlyCommands).toBeUndefined();
-    for (const tool of ["Bash", "Write", "Edit", "MultiEdit", "WebFetch", "WebSearch"]) {
-      expect(TRIAGE_TOOL_POLICY.disallowedTools).toContain(tool);
-    }
   });
 
   it("lets ralph story sessions write, and keeps describe-pr sessions read-only", () => {

@@ -19,6 +19,7 @@ import {
   type AgentDefinitionInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
+import { TRIAGE_SYSTEM_APPEND, triageTemplateContext } from "@omniralph/ralph";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
@@ -599,6 +600,128 @@ describe("runQueryTask", () => {
       });
       expect(calls).toEqual([]);
       await expectTornDown();
+    });
+  });
+
+  describe("builtin:triage", () => {
+    const task = getBuiltinTask("builtin:triage")!;
+    const agent = getBuiltinAgent(task.agentId)!;
+    const TRIAGE = {
+      outcome: "prd",
+      title: "Fix last()",
+      description: "## Introduction\n\nFix it.\n\n## Quality Gates\n\n- `pnpm test` - Tests",
+      size: "S",
+      openQuestions: [],
+      stories: [],
+      subIssueUpdates: [],
+      summary: "Single issue.",
+    };
+
+    /** A run of `builtin:triage` as `enqueueTriage` stores it: ref = the routed repository's default branch. */
+    function triageSpec(routed: { branch: string } | null): RunSpecType {
+      return spec({
+        agent,
+        task,
+        repository: routed ? repository : null,
+        ref: routed?.branch ?? null,
+        requireCheckout: false,
+        model: task.model ?? null,
+        tokenBudget: null,
+        trigger: {
+          kind: "linear.triage",
+          context: {
+            triageRunId: randomUUID(),
+            ...triageTemplateContext({
+              issue: {
+                identifier: "ENG-1",
+                title: "last() is broken",
+                description: "It returns undefined.",
+                stateType: "backlog",
+              },
+              repository: routed
+                ? { repository: { fullPath: "acme/app" }, defaultBranch: routed.branch }
+                : null,
+            }),
+          },
+        },
+      });
+    }
+
+    const triaging = () => answering([resultMessage("{}", { structured: TRIAGE })]);
+    const linearRules = (options: { allowedTools?: string[] } | undefined) =>
+      (options?.allowedTools ?? []).filter((rule) => rule.startsWith("mcp__"));
+
+    it("reads a worktree of the default branch with Read/Grep/Glob and the Linear tools only", async () => {
+      const { result, calls } = await run(triageSpec({ branch: "main" }), triaging());
+      expect(QueryRunResult.parse(result)).toMatchObject({
+        outcome: "answered",
+        answer: null,
+        structured: TRIAGE,
+      });
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([".git", "CLAUDE.md", "src"]);
+      expect(call?.options.tools).toEqual(["Read", "Grep", "Glob"]);
+      for (const tool of ["Bash", "Write", "Edit", "WebFetch", "WebSearch"]) {
+        expect(call?.options.disallowedTools).toContain(tool);
+        expect(call?.options.allowedTools).not.toContain(tool);
+      }
+      expect(call?.options).toMatchObject({
+        model: "opus",
+        permissionMode: "dontAsk",
+        settingSources: [],
+        strictMcpConfig: true,
+        outputFormat: { type: "json_schema", schema: task.outputSchema },
+      });
+      expect(Object.keys(call?.options.mcpServers ?? {})).toEqual(["omniralph"]);
+      expect(linearRules(call?.options)).toEqual([
+        "mcp__omniralph__linear_get_issue",
+        "mcp__omniralph__linear_list_comments",
+        "mcp__omniralph__linear_search_issues",
+        "mcp__omniralph__linear_get_document",
+      ]);
+      expect(call?.options.systemPrompt).toEqual({
+        type: "preset",
+        preset: "claude_code",
+        append: TRIAGE_SYSTEM_APPEND,
+      });
+      expect(call?.prompt).toMatch(/^Triage the Linear issue ENG-1 into a PRD/);
+      expect(call?.prompt).toContain("<issue-title>\nlast() is broken\n</issue-title>");
+      expect(call?.prompt).toContain(
+        "The issue routes to `acme/app`, checked out read-only at its default branch `main`",
+      );
+      await expectTornDown();
+    });
+
+    it("says there's no repository when the default branch doesn't exist", async () => {
+      const { result, calls } = await run(triageSpec({ branch: "gone" }), triaging());
+      expect(QueryRunResult.parse(result)).toMatchObject({ outcome: "answered" });
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([]);
+      expect(call?.options.tools).toEqual([]);
+      expect(linearRules(call?.options)).toHaveLength(4);
+      expect(call?.prompt).toContain(
+        "No repository is routed to this issue, so there is no checkout",
+      );
+      expect(call?.prompt).not.toContain("The issue routes to");
+      await expectTornDown();
+    });
+
+    it("runs in an empty directory when no repository is routed", async () => {
+      const { calls } = await run(triageSpec(null), triaging());
+      const [call] = calls;
+      expect(call?.cwdFiles).toEqual([]);
+      expect(call?.prompt).toContain("No repository is routed to this issue");
+      expect(call?.options).toMatchObject({ settingSources: [], strictMcpConfig: true });
+      await expectTornDown();
+    });
+
+    it("fails a structured result that doesn't match the triage schema", async () => {
+      await expect(
+        run(
+          triageSpec(null),
+          answering([resultMessage("{}", { structured: { ...TRIAGE, size: "XXL" } })]),
+        ),
+      ).rejects.toThrow(/doesn't match the task's output schema/);
     });
   });
 

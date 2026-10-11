@@ -385,17 +385,17 @@ and story outcomes per day and in total (first attempt, after retries, blocked, 
 
 ## Triage
 
-The `triage` capability turns a rough Linear issue into something ralph can build, without a
-person in the loop: it does what the `/linear-prd triage` skill does interactively. It reads the
+Triage (the built-in query task `builtin:triage`, job type `triage.run`) turns a rough Linear
+issue into something ralph can build, without a person in the loop: it does what the `/linear-prd triage` skill does interactively. It reads the
 issue (and, read-only, the repository it routes to), rewrites it as a PRD in the format ralph
 executes, splits large work into sub-issues and lists whatever it couldn't decide as open
 questions. It never writes code, branches, commits or PRs/MRs.
 
 **Setup** (once, on top of steps 1–3 above):
 
-- Enable the `triage` capability on an agent under **Agents › <agent>** (**Enabled
-  capabilities**; it applies with the next heartbeat). Triage jobs (`triage.run`) wait in the
-  queue until an agent has it.
+- Let a harness accept `query` tasks under **Harnesses › <harness>** (it applies with the next
+  heartbeat). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until a harness
+  that accepts them, at version 0.9.0 or later, claims them.
 - For the label trigger, create a label named `ralph:triage` in the Linear workspace (a
   workspace label, or one on each team that should use it). The app's **Issues** webhook events
   (step 1) deliver the label changes.
@@ -427,9 +427,13 @@ alone and adds an open question asking which repository the issue belongs in; it
 "Which repository?" question ralph does.
 
 The session is read-only, like a review: only `Read`, `Grep` and `Glob` inside the checkout, no
-shell, no writes, no network, no project settings or hooks, and no Linear token (the agent returns
-a typed result; the control panel makes every change in Linear). It sees the issue, its comments,
-its sub-issues (with their states and priorities) and blockers.
+shell, no writes, no network, no project settings or hooks, and no Linear token (the harness
+returns a typed result; the control panel makes every change in Linear). It sees the issue, its
+comments, its sub-issues (with their states and priorities) and blockers, and can read related
+Linear issues, comments and documents with the read-only Linear tools (`linear_get_issue`,
+`linear_list_comments`, `linear_search_issues`, `linear_get_document`), which the control panel
+serves for the run's organization. When the routed repository's default branch doesn't exist yet,
+it runs as if no repository were routed.
 
 ### What it writes
 
@@ -503,8 +507,8 @@ Ralph jobs run on agents with the `ralph` capability ([deploy-harness.md](deploy
 An agent's **Concurrency per capability** caps how many of its slots ralph may take; by default
 that's max concurrency − 1 (at least 1), so an agent with two or more slots keeps one free for
 reviews while stories run. All jobs of a run (every lane) go to the run's sticky agent.
-Triage jobs run on agents with the `triage` capability; like reviews, they may take every slot by
-default, so lower its limit to keep slots free for other work. Agents under pm2 update themselves
+Triage jobs run in the `short` pool on harnesses that accept `query` tasks; like reviews, they may
+take every slot by default, so lower the pool's limit to keep slots free for other work. Agents under pm2 update themselves
 to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-harness.md#self-update-pm2)).
 
 ## Troubleshooting
@@ -535,6 +539,7 @@ to the version chosen on **Settings › Agents** ([deploy-harness.md](deploy-har
 - **Triage never starts from the label.** The `ralph:triage` label doesn't exist in the workspace
   (or under another name), or **Issues** webhook events are disabled. A triage that can't start
   removes the label again; the session it opened says why.
-- **"Triaging …" but nothing happens.** No agent has the `triage` capability enabled.
+- **"Triaging …" but nothing happens.** No harness accepts `query` tasks, or none runs version
+  0.9.0 or later.
 - **No agent picks the job up.** No agent has the `ralph` capability enabled, or the repository is
   pinned to an agent that doesn't ([deploy-harness.md](deploy-harness.md#ralph)).

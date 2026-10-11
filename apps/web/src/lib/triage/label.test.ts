@@ -16,7 +16,7 @@ import {
   type Job,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
-import type { TriageRunResult } from "@omniralph/shared";
+import type { QueryRunResult } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -50,10 +50,11 @@ const PRD = [
   "- [ ] It works",
 ].join("\n");
 
-const RESULT: TriageRunResult = {
-  summary: "Wrote the PRD.",
-  error: null,
-  outcome: {
+/** A `builtin:triage` run's result: the triage is its structured output. */
+const RESULT: QueryRunResult = {
+  outcome: "answered",
+  answer: null,
+  structured: {
     outcome: "prd",
     size: "S",
     title: "Rotate keys",
@@ -61,7 +62,9 @@ const RESULT: TriageRunResult = {
     openQuestions: [],
     stories: [],
     subIssueUpdates: [],
+    summary: "Wrote the PRD.",
   },
+  references: [],
   usage: { inputTokens: 1, outputTokens: 1 },
   durationMs: 10,
 };
@@ -263,7 +266,8 @@ describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label",
     const { issue, labelId } = await labeledIssue();
     await startLabelTriage(labelEvent(issue, labelId), deps());
     const run = (await getTriageRunBySession(db, "session-1"))!;
-    const invalid = { ...RESULT, error: "session failed", outcome: null };
+    // An XL PRD without stories doesn't validate.
+    const invalid = { ...RESULT, structured: { ...(RESULT.structured as object), size: "XL" } };
 
     await onTriageJobCompleted(db, await complete(run.currentJobId!, invalid), { db, linear });
 
