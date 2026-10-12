@@ -83,6 +83,7 @@ export async function askPermission(
   });
   if (!asked) return { status: "no_run" };
   if (asked.post) {
+    const timeoutMinutes = Math.max(1, Math.round(request.timeoutSeconds / 60));
     await postActivity(
       conversation(deps, asked.run),
       {
@@ -91,12 +92,25 @@ export async function askPermission(
           tool: request.tool,
           detail: request.detail,
           reason: request.reason,
-          timeoutMinutes: Math.max(1, Math.round(request.timeoutSeconds / 60)),
+          timeoutMinutes,
         }),
       },
       {
         signal: "select",
         signalMetadata: { options: PERMISSION_OPTIONS.map((value) => ({ value })) },
+        event: {
+          kind: "permission_request",
+          key: `permission:${requestId}`,
+          details: {
+            requestId,
+            tool: request.tool,
+            detail: request.detail,
+            reason: request.reason ?? null,
+            timeoutSeconds: request.timeoutSeconds,
+            timeoutMinutes,
+            options: [...PERMISSION_OPTIONS],
+          },
+        },
       },
     );
   }
@@ -147,7 +161,7 @@ export async function expirePermission(
   await postActivity(
     conversation(deps, expired.run),
     { type: "thought", body: `Nobody answered in time, so I didn't use **${expired.tool}**.` },
-    { notice: true },
+    { notice: true, event: { key: `permission:${requestId}:expired` } },
   );
 }
 

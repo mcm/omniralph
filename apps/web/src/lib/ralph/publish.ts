@@ -35,7 +35,7 @@ import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@o
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
 import { describePrPayload, describePrText, opensPullRequestEarly, pushResult } from "./coding";
-import { conversationFor } from "./conversation";
+import { conversationFor, runCompletedEvent } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
 import { sanitizePullRequestText, type PullRequestText } from "./pull-request";
@@ -513,12 +513,16 @@ export async function finishPublishing(
       requestOutput: null,
       error: null,
     })) ?? run;
-  await postActivity(conversationFor(run, deps), {
-    type: "response",
-    body: requestOutput
-      ? withPullRequestLinks(requestOutput, published)
-      : finalResponse(completed, input.epic, input.rows, published),
-  });
+  await postActivity(
+    conversationFor(run, deps),
+    {
+      type: "response",
+      body: requestOutput
+        ? withPullRequestLinks(requestOutput, published)
+        : finalResponse(completed, input.epic, input.rows, published),
+    },
+    { event: runCompletedEvent(run) },
+  );
   await notifyRunThread(deps, run, { kind: "completed", lanes: published });
   await moveCompletedEpic(deps, run);
   return completed;

@@ -7,6 +7,8 @@ import {
   createDb,
   ensureChatThread,
   insertJob,
+  listRunEvents,
+  mapThreadRun,
   organizations,
   runMigrations,
   saveChatConnection,
@@ -135,8 +137,12 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
     }))!;
   }
 
-  /** A finished `builtin:ask-about-code` run for the thread, as `enqueueChatAsk` stores it. */
-  async function askJob(threadId: string, result: QueryRunResult | null): Promise<Job> {
+  /** A finished `builtin:ask-about-code` run for the thread, as `enqueueChatAsk` stores (and maps) it. */
+  async function askJob(
+    threadId: string,
+    result: QueryRunResult | null,
+    { mapped = true } = {},
+  ): Promise<Job> {
     const payload: RunSpecJobPayload = {
       trigger: {
         kind: "chat.request",
@@ -163,6 +169,9 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
       payload,
       repositoryId,
     });
+    if (mapped) {
+      await mapThreadRun(db, { organizationId: orgId, chatThreadId: threadId, jobId: job.id });
+    }
     return { ...job, result, status: result ? "completed" : "failed" };
   }
 
@@ -202,32 +211,44 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
       .where(eq(chatMessages.threadId, threadId))
       .orderBy(asc(chatMessages.createdAt));
 
-  it("posts the sanitized answer with links to the cited files, once, and records it", async () => {
+  const events = (threadId: string) => listRunEvents(db, orgId, threadId);
+
+  /** Nothing was posted in the thread, nor added to its history. */
+  async function expectNothingPosted(adapter: Adapter, threadId: string) {
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+    expect(adapter.editMessage).not.toHaveBeenCalled();
+    expect(await recorded(threadId)).toEqual([]);
+  }
+
+  it("records the sanitized answer with links to the cited files as one response event, posting nothing", async () => {
     const thread = await slackThread();
     const job = await askJob(thread.id, answered);
-    const { adapter, tokens } = slackAdapter();
+    const { adapter } = slackAdapter();
 
     expect(await applyChatAnswer(db, job, sinkResult(answered), channel(adapter))).toBe(true);
-    // A replayed result doesn't post again.
+    // A replayed result records no second event.
     expect(await applyChatAnswer(db, job, sinkResult(answered), channel(adapter))).toBe(false);
 
-    expect(adapter.postMessage).toHaveBeenCalledOnce();
-    const [threadId, message] = vi.mocked(adapter.postMessage).mock.calls[0]!;
-    expect(threadId).toBe(SLACK_THREAD);
-    const markdown = (message as { markdown: string }).markdown;
-    expect(markdown).toContain("`last()` reads one past the end in `src/list.ts:2`.");
+    await expectNothingPosted(adapter, thread.id);
+    const recordedEvents = await events(thread.id);
+    expect(recordedEvents).toHaveLength(1);
+    const [event] = recordedEvents;
+    expect(event).toMatchObject({
+      kind: "response",
+      idempotencyKey: `chat-run-event:job:${job.id}:response`,
+      processedAt: null,
+      attempts: 0,
+      body: { outcome: "answered", repository: "acme/app" },
+    });
+    const text = (event!.body as { text: string }).text;
+    expect(text).toContain("`last()` reads one past the end in `src/list.ts:2`.");
     // Links outside the control panel and the repository's code host aren't clickable; HTML is dropped.
-    expect(markdown).toContain("See the docs (`https://evil.example.com/x`)");
-    expect(markdown).not.toContain("<img");
-    expect(markdown).toContain(
+    expect(text).toContain("See the docs (`https://evil.example.com/x`)");
+    expect(text).not.toContain("<img");
+    expect(text).toContain(
       "Files: [`src/list.ts:2`](<https://github.com/acme/app/blob/main/src/list.ts#L2>), " +
         "[`src/util.ts:4-9`](<https://github.com/acme/app/blob/main/src/util.ts#L4-L9>)",
     );
-    expect(tokens).toEqual([`xoxb-${threads}@T${threads}`]);
-
-    const messages = await recorded(thread.id);
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ role: "assistant", content: markdown, ralphRunId: null });
   });
 
   it("explains an answer without a result", async () => {
@@ -249,14 +270,19 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
         channel(adapter),
       );
     }
-    const posted = vi
-      .mocked(adapter.postMessage)
-      .mock.calls.map(([, message]) => (message as { markdown: string }).markdown);
-    expect(posted).toEqual([
-      "Sorry, I couldn't finish an answer about `acme/app` within the token budget for code questions (12,000 tokens). Try a narrower question.",
-      "Sorry, I couldn't answer: `acme/app` has no `main` branch to read.",
+    await expectNothingPosted(adapter, thread.id);
+    expect((await events(thread.id)).map((e) => [e.kind, e.body.outcome, e.body.text])).toEqual([
+      [
+        "response",
+        "budget_exhausted",
+        "Sorry, I couldn't finish an answer about `acme/app` within the token budget for code questions (12,000 tokens). Try a narrower question.",
+      ],
+      [
+        "response",
+        "no_checkout",
+        "Sorry, I couldn't answer: `acme/app` has no `main` branch to read.",
+      ],
     ]);
-    expect(await recorded(thread.id)).toHaveLength(2);
   });
 
   it("caps a long answer as today's code questions did", async () => {
@@ -264,24 +290,40 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
     const { adapter } = slackAdapter();
     const long = { ...answered, answer: "x".repeat(10_000), references: [] };
     await applyChatAnswer(db, await askJob(thread.id, long), sinkResult(long), channel(adapter));
-    const [[, message]] = vi.mocked(adapter.postMessage).mock.calls as [
-      [string, { markdown: string }],
-    ];
-    expect(message.markdown.length).toBe(4000);
-    expect(message.markdown).toMatch(/_…truncated_$/);
+    const [event] = await events(thread.id);
+    const text = (event!.body as { text: string }).text;
+    expect(text.length).toBe(4000);
+    expect(text).toMatch(/_…truncated_$/);
   });
 
-  it("apologizes once when the job failed", async () => {
+  it("records one failure event when the job failed", async () => {
     const thread = await slackThread();
     const job = await askJob(thread.id, null);
     const { adapter } = slackAdapter();
-    expect(await onChatAnswerFailed(db, job, channel(adapter))).toBe(true);
-    expect(await onChatAnswerFailed(db, job, channel(adapter))).toBe(false);
-    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(SLACK_THREAD, {
-      markdown:
-        "Sorry, I couldn't answer that question about `acme/app`; the job failed. Try asking again later.",
-    });
-    expect(await recorded(thread.id)).toHaveLength(1);
+    expect(await onChatAnswerFailed(db, job, channel(adapter), "harness lost")).toBe(true);
+    expect(await onChatAnswerFailed(db, job, channel(adapter), "harness lost")).toBe(false);
+    await expectNothingPosted(adapter, thread.id);
+    expect((await events(thread.id)).map((e) => [e.kind, e.idempotencyKey, e.body])).toEqual([
+      [
+        "failure",
+        `chat-run-event:job:${job.id}:failure`,
+        {
+          repository: "acme/app",
+          error: "harness lost",
+          text: "Sorry, I couldn't answer that question about `acme/app`; the job failed. Try asking again later.",
+        },
+      ],
+    ]);
+  });
+
+  it("records nothing (logged) for a job that isn't mapped to the thread", async () => {
+    const thread = await slackThread();
+    const job = await askJob(thread.id, answered, { mapped: false });
+    const { adapter } = slackAdapter();
+    expect(await applyChatAnswer(db, job, sinkResult(answered), channel(adapter))).toBe(false);
+    await expectNothingPosted(adapter, thread.id);
+    expect(await events(thread.id)).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("isn't mapped to thread"));
   });
 
   it("skips (logged) when the thread's platform has no adapter", async () => {
@@ -297,5 +339,6 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
       expect.stringContaining("the thread or its chat connection is gone"),
     );
     expect(await recorded(thread.id)).toHaveLength(0);
+    expect(await events(thread.id)).toEqual([]);
   });
 });

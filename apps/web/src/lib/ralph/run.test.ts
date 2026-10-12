@@ -4,6 +4,7 @@ import {
   harnessRepoPins,
   chatLinearDelegations,
   chatMessages,
+  chatRunEvents,
   createChatLinearDelegation,
   ensureChatThread,
   saveChatConnection,
@@ -2720,6 +2721,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         .where(eq(chatMessages.ralphRunId, run.id));
       expect(recorded).toHaveLength(3);
       expect(recorded.every((m) => m.threadId === threadId && m.role === "assistant")).toBe(true);
+      // Its notices are posted, not recorded as run events for the responder.
+      expect(await db.select().from(chatRunEvents)).toEqual([]);
       // The Linear session still has everything.
       expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Finished **ENG-140**",
