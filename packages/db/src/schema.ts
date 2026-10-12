@@ -546,6 +546,39 @@ export const chatThreads = pgTable(
   ],
 );
 
+/**
+ * A channel's choice of the tasks "ask about code" and "start work" run from
+ * chat, overriding the organization's (`chat.tasks` in `app_settings`); a null
+ * column keeps the organization's choice.
+ */
+export const chatChannelTaskSettings = pgTable(
+  "chat_channel_task_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => chatConnections.id, { onDelete: "cascade" }),
+    /** The channel the bot sees (`chat_threads.channel_id`). */
+    channelId: text("channel_id").notNull(),
+    /** A query task's definition ID. */
+    askAboutCodeTaskId: text("ask_about_code_task_id"),
+    /** A coding task's definition ID. */
+    startWorkTaskId: text("start_work_task_id"),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("chat_channel_task_settings_connection_id_channel_id_uq").on(
+      t.connectionId,
+      t.channelId,
+    ),
+    index("chat_channel_task_settings_organization_id_idx").on(t.organizationId),
+  ],
+);
+
 /** A message of a chat thread's conversation history. */
 /**
  * A file attached to a chat message: its metadata only, never the bytes (they

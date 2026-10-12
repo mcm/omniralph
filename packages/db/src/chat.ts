@@ -8,6 +8,7 @@ import { and, asc, desc, eq, gt, lte, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
+  chatChannelTaskSettings,
   chatConnections,
   chatIdentities,
   chatIdentityOptOuts,
@@ -262,6 +263,123 @@ export async function deleteChatConnectionByExternalId(
     .where(and(eq(chatConnections.platform, platform), eq(chatConnections.externalId, externalId)))
     .returning();
   return row ? toChatConnection(row) : null;
+}
+
+// ── Channel task settings ────────────────────────────────────────────────────
+
+export type ChatChannelTaskSetting = typeof chatChannelTaskSettings.$inferSelect;
+
+export interface UpsertChatChannelTaskSettingInput {
+  organizationId: string;
+  connectionId: string;
+  channelId: string;
+  /** Null keeps the organization's "ask about code" task. */
+  askAboutCodeTaskId: string | null;
+  /** Null keeps the organization's "start work" task. */
+  startWorkTaskId: string | null;
+  updatedBy: string | null;
+}
+
+/**
+ * An organization's channel task overrides, by connection then channel; only
+ * `connectionId`'s when given.
+ */
+export async function listChatChannelTaskSettings(
+  db: Database,
+  organizationId: string,
+  connectionId?: string,
+): Promise<ChatChannelTaskSetting[]> {
+  return db
+    .select()
+    .from(chatChannelTaskSettings)
+    .where(
+      and(
+        eq(chatChannelTaskSettings.organizationId, organizationId),
+        connectionId === undefined
+          ? undefined
+          : eq(chatChannelTaskSettings.connectionId, connectionId),
+      ),
+    )
+    .orderBy(asc(chatChannelTaskSettings.connectionId), asc(chatChannelTaskSettings.channelId));
+}
+
+/** An organization's task overrides of one channel of a connection, or null. */
+export async function getChatChannelTaskSetting(
+  db: Database,
+  organizationId: string,
+  connectionId: string,
+  channelId: string,
+): Promise<ChatChannelTaskSetting | null> {
+  const [row] = await db
+    .select()
+    .from(chatChannelTaskSettings)
+    .where(
+      and(
+        eq(chatChannelTaskSettings.organizationId, organizationId),
+        eq(chatChannelTaskSettings.connectionId, connectionId),
+        eq(chatChannelTaskSettings.channelId, channelId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Creates or replaces a channel's task overrides. Null when the connection
+ * isn't one of the organization's.
+ */
+export async function upsertChatChannelTaskSetting(
+  db: Database,
+  input: UpsertChatChannelTaskSettingInput,
+): Promise<ChatChannelTaskSetting | null> {
+  return db.transaction(async (tx) => {
+    const [connection] = await tx
+      .select({ id: chatConnections.id })
+      .from(chatConnections)
+      .where(
+        and(
+          eq(chatConnections.organizationId, input.organizationId),
+          eq(chatConnections.id, input.connectionId),
+        ),
+      )
+      .for("share");
+    if (!connection) return null;
+    const [row] = await tx
+      .insert(chatChannelTaskSettings)
+      .values(input)
+      .onConflictDoUpdate({
+        target: [chatChannelTaskSettings.connectionId, chatChannelTaskSettings.channelId],
+        set: {
+          askAboutCodeTaskId: input.askAboutCodeTaskId,
+          startWorkTaskId: input.startWorkTaskId,
+          updatedBy: input.updatedBy,
+          updatedAt: new Date(),
+        },
+        setWhere: eq(chatChannelTaskSettings.organizationId, input.organizationId),
+      })
+      .returning();
+    return row ?? null;
+  });
+}
+
+/** Removes a channel's task overrides; false when the organization has none for it. */
+export async function deleteChatChannelTaskSetting(
+  db: Database,
+  organizationId: string,
+  connectionId: string,
+  channelId: string,
+): Promise<boolean> {
+  const removed = await db
+    .delete(chatChannelTaskSettings)
+    .where(
+      and(
+        eq(chatChannelTaskSettings.organizationId, organizationId),
+        eq(chatChannelTaskSettings.connectionId, connectionId),
+        eq(chatChannelTaskSettings.channelId, channelId),
+      ),
+    )
+    .returning({ id: chatChannelTaskSettings.id });
+  return removed.length > 0;
 }
 
 // ── Identities ───────────────────────────────────────────────────────────────

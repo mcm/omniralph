@@ -110,3 +110,49 @@ export async function setLatestHarnessVersionCheck(
 ): Promise<void> {
   await setAppSetting(db, organizationId, LATEST_HARNESS_VERSION_KEY, check, null);
 }
+
+/**
+ * The tasks chat's "ask about code" (a query task) and "start work" (a coding
+ * task) run for the organization, unless a channel overrides them
+ * (`chat_channel_task_settings`). Absent: `DEFAULT_CHAT_TASKS`.
+ */
+export const CHAT_TASKS_KEY = "chat.tasks";
+
+export interface ChatTasks {
+  /** The definition ID of the query task "ask about code" runs. */
+  askAboutCode: string;
+  /** The definition ID of the coding task "start work" runs. */
+  startWork: string;
+}
+
+/** The built-in tasks chat runs when the organization hasn't chosen any. */
+export const DEFAULT_CHAT_TASKS: ChatTasks = {
+  askAboutCode: "builtin:ask-about-code",
+  startWork: "builtin:handle-request",
+};
+
+/** The organization's chat tasks; a field not set (or not a string) is the built-in default. */
+export async function getChatTaskDefaults(
+  db: Database,
+  organizationId: string,
+): Promise<ChatTasks> {
+  const setting = await getAppSetting(db, organizationId, CHAT_TASKS_KEY);
+  const value = (
+    typeof setting?.value === "object" && setting.value !== null ? setting.value : {}
+  ) as { askAboutCode?: unknown; startWork?: unknown };
+  return {
+    askAboutCode:
+      typeof value.askAboutCode === "string" ? value.askAboutCode : DEFAULT_CHAT_TASKS.askAboutCode,
+    startWork: typeof value.startWork === "string" ? value.startWork : DEFAULT_CHAT_TASKS.startWork,
+  };
+}
+
+/** Sets (or, with null, clears back to the built-in defaults) the organization's chat tasks. */
+export async function setChatTaskDefaults(
+  db: Database,
+  organizationId: string,
+  tasks: ChatTasks | null,
+  updatedBy: string | null,
+): Promise<void> {
+  await setAppSetting(db, organizationId, CHAT_TASKS_KEY, tasks, updatedBy);
+}

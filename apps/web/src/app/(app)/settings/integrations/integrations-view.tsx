@@ -29,6 +29,7 @@ import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import type { ActionResult } from "@/lib/action-result";
 import { disconnectDiscord, disconnectLinear, disconnectSlack } from "./actions";
+import { ChatTasksCard, type ChatTasksSettings } from "./chat-tasks-card";
 
 export type IntegrationNotice =
   | "connected"
@@ -207,6 +208,7 @@ export function IntegrationsView({
   discord,
   discordConfigured,
   discordNotice,
+  chatTasks,
 }: {
   linear: LinearConnection | null;
   linearConfigured: boolean;
@@ -217,6 +219,7 @@ export function IntegrationsView({
   discord: DiscordServer[];
   discordConfigured: boolean;
   discordNotice: IntegrationNotice | null;
+  chatTasks: ChatTasksSettings;
 }) {
   const { pending, run } = useAction();
 
@@ -386,6 +389,8 @@ export function IntegrationsView({
           pending={pending}
           run={run}
         />
+
+        <ChatTasksCard {...chatTasks} />
       </main>
     </>
   );

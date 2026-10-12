@@ -1,11 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { ChatTasksSettings } from "./chat-tasks-card";
 import { type DiscordServer, IntegrationsView, type SlackWorkspace } from "./integrations-view";
 
 vi.mock("./actions", () => ({
   disconnectLinear: vi.fn(),
   disconnectSlack: vi.fn(),
   disconnectDiscord: vi.fn(),
+  saveChatTaskDefaults: vi.fn(),
+  saveChatChannelTasks: vi.fn(),
+  removeChatChannelTasks: vi.fn(),
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
@@ -25,6 +29,15 @@ const SERVER: DiscordServer = {
   connectedAt: "2026-10-03T00:00:00.000Z",
 };
 
+let chatTasks: ChatTasksSettings = {
+  defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+  choices: {
+    askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code" }],
+    startWork: [{ id: "builtin:handle-request", name: "Handle a request" }],
+  },
+  connections: [],
+};
+
 function render(
   slack: SlackWorkspace[],
   slackConfigured: boolean,
@@ -42,6 +55,7 @@ function render(
       discord={discord}
       discordConfigured={discordConfigured}
       discordNotice={null}
+      chatTasks={chatTasks}
     />,
   );
 }
@@ -49,8 +63,11 @@ function render(
 /** The markup of the Slack card (from its title to the Discord card). */
 const slackSection = (html: string) =>
   html.slice(html.indexOf(">Slack<"), html.indexOf(">Discord<"));
-/** The markup of the Discord card (from its title to the end of the page). */
-const discordSection = (html: string) => html.slice(html.indexOf(">Discord<"));
+/** The markup of the Discord card (from its title to the chat tasks card). */
+const discordSection = (html: string) =>
+  html.slice(html.indexOf(">Discord<"), html.indexOf(">Chat tasks<"));
+/** The markup of the chat tasks card (to the end of the page). */
+const chatTasksSection = (html: string) => html.slice(html.indexOf(">Chat tasks<"));
 
 describe("IntegrationsView › Slack", () => {
   it("lists connected workspaces with their installer, a Disconnect button and Connect", () => {
@@ -91,5 +108,40 @@ describe("IntegrationsView › Discord", () => {
     expect(slackSection(render([WORKSPACE], true, [], false))).toContain(
       'href="/api/integrations/slack/connect"',
     );
+  });
+});
+
+describe("IntegrationsView › Chat tasks", () => {
+  it("shows the organization's tasks and each connection's channel overrides", () => {
+    chatTasks = {
+      ...chatTasks,
+      defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:gone" },
+      connections: [
+        {
+          id: "conn-1",
+          name: "Acme Slack",
+          platform: "slack",
+          channels: [
+            {
+              channelId: "slack:C0SECURITY",
+              channel: "C0SECURITY",
+              askAboutCode: null,
+              startWork: "builtin:handle-request",
+            },
+          ],
+        },
+        { id: "conn-2", name: "Acme Discord", platform: "discord", channels: [] },
+      ],
+    };
+    const html = chatTasksSection(render([], true));
+    expect(html).toContain("Ask about code");
+    expect(html).toContain("Handle a request");
+    // A chosen task that's no longer a choice stays listed.
+    expect(html).toContain("builtin:gone (unavailable)");
+    expect(html).toContain("C0SECURITY");
+    expect(html).toContain("Remove");
+    expect(html).toContain("Slack channel ID");
+    expect(html).toContain("Discord channel ID");
+    expect(html).toContain("No channel runs different tasks.");
   });
 });
