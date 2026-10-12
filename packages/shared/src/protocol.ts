@@ -494,12 +494,21 @@ export const InstallPayload = z.object({
 });
 export type InstallPayload = z.infer<typeof InstallPayload>;
 
-/** Result of an `install` job: the installed installable's name and version. */
+/**
+ * Result of an `install` job: the installed installable's name and version,
+ * and what its manifest provides.
+ */
 export const InstallResult = z.object({
   name: z.string(),
   version: z.string(),
   /** False when that version was installed already. */
   changed: z.boolean(),
+  /** Its command names. */
+  commands: z.array(z.string()).default([]),
+  /** Its MCP server names. */
+  mcpServers: z.array(z.string()).default([]),
+  /** How many skills it has. */
+  skills: z.int().min(0).default(0),
 });
 export type InstallResult = z.infer<typeof InstallResult>;
 

@@ -7,6 +7,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { Logger } from "./logger.js";
 import {
   InstallablePackageName,
   parseInstallablePackage,
@@ -32,13 +33,30 @@ export const CACHE_DIR_ENV = "OMNIRALPH_CACHE_DIR";
 /** Env var naming an installable's cache directory for the run's PR (PR triggers only). */
 export const PR_CACHE_DIR_ENV = "OMNIRALPH_PR_CACHE_DIR";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The path segments of an installable's cache: its package name (a scope is
+ * a nested directory) and the repository ID; throws unless both are valid,
+ * so neither can point a cache outside its tree.
+ */
+function cacheSegments(name: string, repositoryId: string): string[] {
+  if (!InstallablePackageName.safeParse(name).success) {
+    throw new Error(`invalid installable name for a cache directory: ${name}`);
+  }
+  if (!UUID_PATTERN.test(repositoryId)) {
+    throw new Error(`invalid repository ID for a cache directory: ${repositoryId}`);
+  }
+  return [...name.split("/"), repositoryId];
+}
+
 /**
  * An installable's cache for a repository: `<dataDir>/cache/<name>/<repository id>`.
  * The installable owns its contents (and keying, e.g. by commit); it only
  * ever holds data derived from the repository's trusted branches.
  */
 export function installableCacheDir(dataDir: string, name: string, repositoryId: string): string {
-  return path.join(dataDir, "cache", ...name.split("/"), repositoryId);
+  return path.join(dataDir, "cache", ...cacheSegments(name, repositoryId));
 }
 
 /**
@@ -53,7 +71,10 @@ export function installablePrCacheDir(
   repositoryId: string,
   prNumber: number,
 ): string {
-  return path.join(dataDir, "pr-cache", ...name.split("/"), repositoryId, String(prNumber));
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
+    throw new Error(`invalid PR number for a cache directory: ${prNumber}`);
+  }
+  return path.join(dataDir, "pr-cache", ...cacheSegments(name, repositoryId), String(prNumber));
 }
 
 /**
@@ -128,9 +149,13 @@ export const MAX_REPORTED_INSTALLABLES = 100;
 /**
  * The installables installed in `<dataDir>/installables`, sorted by name: the
  * prefix's own dependencies (not their dependencies) whose installed
- * package.json is a valid installable. Empty when nothing was installed yet.
+ * package.json is a valid installable (others are skipped, with a warning on
+ * `log`). Empty when nothing was installed yet.
  */
-export async function listInstalledInstallables(dataDir: string): Promise<InstalledInstallable[]> {
+export async function listInstalledInstallables(
+  dataDir: string,
+  log?: Pick<Logger, "warn">,
+): Promise<InstalledInstallable[]> {
   const prefix = installablesPrefix(dataDir);
   let dependencies: unknown;
   try {
@@ -145,7 +170,13 @@ export async function listInstalledInstallables(dataDir: string): Promise<Instal
   for (const name of Object.keys(dependencies).sort()) {
     if (!InstallablePackageName.safeParse(name).success) continue;
     const parsed = await readInstalledPackage(prefix, name);
-    if (!parsed?.ok || parsed.installable.name !== name) continue;
+    if (!parsed?.ok || parsed.installable.name !== name) {
+      log?.warn(
+        { installable: name, problem: parsed?.ok === false ? parsed.error.message : undefined },
+        "skipping an installed package that isn't a valid installable",
+      );
+      continue;
+    }
     installed.push({ name, version: parsed.installable.version });
     if (installed.length === MAX_REPORTED_INSTALLABLES) break;
   }
@@ -193,14 +224,17 @@ export function runNpm(
 /**
  * `npm install --prefix <prefix> <name>@<version>` with the harness's own
  * environment (never a job's: no job token reaches npm or install scripts).
+ * `spec` maps a name and version to what npm installs (tests map it to a
+ * packed tarball).
  */
 export function npmInstallableInstaller(
   env: NodeJS.ProcessEnv = process.env,
+  spec: (name: string, version: string) => string = (name, version) => `${name}@${version}`,
 ): InstallableInstaller {
   return {
     // `--` so nothing in the spec is ever read as an option.
     install: (name, version, prefix, options) =>
-      runNpm(["install", "--save-exact", "--", `${name}@${version}`], prefix, { ...options, env }),
+      runNpm(["install", "--save-exact", "--", spec(name, version)], prefix, { ...options, env }),
     uninstall: (name, prefix, options) =>
       runNpm(["uninstall", "--", name], prefix, { ...options, env }),
   };

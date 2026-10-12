@@ -12,7 +12,7 @@ import {
   unpinRepositoryFromHarness,
   updateHarnessConfig as updateHarnessConfigRow,
 } from "@omniralph/db";
-import { HarnessVersion, HostToolPath, InstallPayload } from "@omniralph/shared";
+import { HarnessVersion, HostToolPath } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -293,16 +293,16 @@ export async function installInstallable(
   return runAdminAction(async (admin) => {
     const name = input.name.trim();
     const version = input.version?.trim() || undefined;
-    const parsed = InstallPayload.safeParse({ name, version });
-    if (!parsed.success) {
-      const field = parsed.error.issues[0]?.path[0] === "version" ? "version" : "package name";
-      return { ok: false, error: `That isn't a valid ${field}.` };
-    }
     const enqueued = await enqueueInstall(getDb(), getDispatcher(), {
       organizationId: admin.organization.id,
       harnessId,
-      ...parsed.data,
+      name,
+      ...(version !== undefined && { version }),
     });
+    if (enqueued.result === "invalid") {
+      const field = enqueued.field === "version" ? "version" : "package name";
+      return { ok: false, error: `That isn't a valid ${field}.` };
+    }
     if (enqueued.result === "unknown_harness") {
       return { ok: false, error: "That harness doesn't exist or was revoked." };
     }

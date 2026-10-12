@@ -1,6 +1,7 @@
 // The `jobs` table as a queue: claiming, leases and delayed retries.
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
+import type { ReportedHostTool } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
@@ -10,10 +11,12 @@ import {
   failJob,
   getJob,
   insertJob,
+  recordHarnessHeartbeat,
   renewJobLeases,
   setQueuedJobTarget,
   type NewJobInput,
 } from "./jobs.js";
+import { createHostTool, recordHarnessHostTools, setHarnessHostToolPath } from "./host-tools.js";
 import { runMigrations } from "./migrate.js";
 import { harnessHostTools, harnesses, hostTools, jobs, organizations } from "./schema.js";
 
@@ -261,6 +264,66 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
       expect((await getJob(db, needsMissing))?.status).toBe("queued");
       expect((await getJob(db, needsOther))?.status).toBe("queued");
     } finally {
+      await db.delete(hostTools);
+    }
+  });
+
+  it("follows each heartbeat's report of installables and host tools", async () => {
+    const opengrep = await createHostTool(db, orgA, { name: "opengrep" });
+    if (!opengrep.ok) throw new Error("setup");
+    const fixture = { name: "@omniralph/fixture", version: "1.0.0" };
+    const found = { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/og" };
+    const heartbeat = async (
+      harnessId: string,
+      installables: { name: string; version: string }[],
+      tools: ReportedHostTool[],
+    ) => {
+      await recordHarnessHeartbeat(db, harnessId, { version: "1.0.0", installables });
+      await recordHarnessHostTools(db, orgA, harnessId, tools);
+    };
+    const requiringBoth = (seconds: number) =>
+      enqueue({
+        requiredInstallables: [fixture.name],
+        requiredHostTools: ["opengrep"],
+        createdAt: at(seconds),
+      });
+    try {
+      await heartbeat(agentA, [fixture], [found]);
+      await heartbeat(agentA2, [], []);
+      const needsBoth = await requiringBoth(-30);
+      const anyForB = await enqueue({ createdAt: at(-20) });
+      // Only A has both: B gets just the job that needs nothing.
+      expect((await claim(agentA2, at(1))).claim?.job.id).toBe(anyForB);
+      expect((await claim(agentA2, at(1))).claim).toBeNull();
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(needsBoth);
+      const anyForA = await enqueue({ createdAt: at(-10) });
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(anyForA);
+
+      const next = await requiringBoth(-5);
+      // The host tool left out of the report, then reported as not found.
+      await heartbeat(agentA, [fixture], []);
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      await heartbeat(agentA, [fixture], [{ ...found, discoveredPath: null }]);
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      // The installable left out.
+      await heartbeat(agentA, [], [found]);
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      await heartbeat(agentA, [fixture], [found]);
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(next);
+
+      // A configured path the harness doesn't find: the discovered one is no fallback.
+      const last = await requiringBoth(-1);
+      await setHarnessHostToolPath(db, orgA, agentA, opengrep.hostTool.id, "/opt/missing");
+      await heartbeat(
+        agentA,
+        [fixture],
+        [{ ...found, configuredPath: "/opt/missing", configuredPathExists: false }],
+      );
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      expect((await claim(agentA2, at(1))).claim).toBeNull();
+      expect((await getJob(db, last))?.status).toBe("queued");
+    } finally {
+      await db.update(harnesses).set({ reportedInstallables: [] }).where(eq(harnesses.id, agentA));
       await db.delete(hostTools);
     }
   });

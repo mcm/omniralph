@@ -98,6 +98,11 @@ export interface JobContext {
   hostToolPath?(name: string): string | null;
   /** The harness's data directory (its installables prefix); unset: no installable is available. */
   dataDir?: string;
+  /**
+   * Whether the local config's `blockedExecPaths` cover `path`, checked again
+   * right before a run uses a host tool or installable. Unset: nothing is blocked.
+   */
+  execPathBlocked?(path: string): Promise<boolean>;
 }
 
 /** The capability's output, sent to `/api/harness/jobs/{id}/result`. */

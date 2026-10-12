@@ -79,6 +79,8 @@ const {
 } = await import("./actions");
 const { addHostTool, removeHostTool } = await import("../settings/harnesses/actions");
 const { harnessRow } = await import("@/lib/harnesses/rows");
+const { enqueueInstall } = await import("@/lib/harnesses/installables");
+const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { cancelJob } = await import("../jobs/actions");
 const { POST: enroll } = await import("@/app/api/harness/enroll/route");
 const { POST: token } = await import("@/app/api/harness/token/route");
@@ -652,6 +654,22 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         }),
       ]);
 
+      // A heartbeat reporting no host tools: none is usable, configured paths stay.
+      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: [] })).status).toBe(200);
+      expect(
+        (await listHarnessHostTools(db, orgId, harnessId)).filter((tool) =>
+          tool.name.startsWith("hb-"),
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          configuredPath: "/opt/c/bin/c",
+          configuredPathExists: null,
+          discoveredPath: null,
+          effectivePath: null,
+        }),
+        expect.objectContaining({ discoveredPath: null, effectivePath: null }),
+      ]);
+
       const tooMany = Array.from({ length: 101 }, (_, i) => ({
         name: `t${i}`,
         configuredPathExists: null,
@@ -696,6 +714,72 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         none.every((j) => j.targetHarnessId !== harnessId && j.targetHarnessId !== fresh.harnessId),
       ).toBe(true);
+    });
+
+    it("enqueueInstall targets the harness, dedupes per package and version, and validates", async () => {
+      const dispatcher = new PostgresDispatcher({ db });
+      const { harnessId } = await enrolledHarness();
+      const enqueue = (input: { harnessId?: string; name: string; version?: string }) =>
+        enqueueInstall(db, dispatcher, { organizationId: orgId, harnessId, ...input });
+      const installJobs = () => db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
+
+      const pinned = await enqueue({ name: "@omniralph/fixture", version: "1.2.0" });
+      const latest = await enqueue({ name: "@omniralph/fixture" });
+      expect(pinned).toMatchObject({ result: "enqueued", created: true });
+      expect(latest).toMatchObject({ result: "enqueued", created: true });
+      expect(await enqueue({ name: "@omniralph/fixture" })).toEqual({
+        ...latest,
+        created: false,
+      });
+      expect(
+        (await installJobs()).map(({ type, taskType, targetHarnessId, dedupeKey }) => ({
+          type,
+          taskType,
+          targetHarnessId,
+          dedupeKey,
+        })),
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            type: "install",
+            taskType: "system",
+            targetHarnessId: harnessId,
+            dedupeKey: `install:${harnessId}:@omniralph/fixture@1.2.0`,
+          },
+          {
+            type: "install",
+            taskType: "system",
+            targetHarnessId: harnessId,
+            dedupeKey: `install:${harnessId}:@omniralph/fixture@latest`,
+          },
+        ]),
+      );
+
+      for (const name of ["-x", "../evil", "@omniralph/x@1.0.0", ""]) {
+        expect(await enqueue({ name })).toEqual({ result: "invalid", field: "name" });
+      }
+      expect(await enqueue({ name: "@omniralph/x", version: "^1.0.0" })).toEqual({
+        result: "invalid",
+        field: "version",
+      });
+
+      const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
+      const [foreign] = await db
+        .insert(harnesses)
+        .values({ organizationId: otherOrg!.id, name: "foreign" })
+        .returning();
+      const revoked = await enrolledHarness();
+      await revokeHarness(revoked.harnessId);
+      for (const id of [randomUUID(), revoked.harnessId, foreign!.id]) {
+        expect(await enqueue({ harnessId: id, name: "@omniralph/x" })).toEqual({
+          result: "unknown_harness",
+        });
+      }
+      expect(await installJobs()).toHaveLength(2);
+      const stray = await db.select().from(jobs).where(eq(jobs.type, "install"));
+      expect(
+        stray.some((job) => [revoked.harnessId, foreign!.id].includes(job.targetHarnessId ?? "")),
+      ).toBe(false);
     });
   });
 

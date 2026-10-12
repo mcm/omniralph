@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessConfig } from "../config.js";
 import {
   installablePackageDir,
+  listInstalledInstallables,
+  npmInstallableInstaller,
   readInstalledPackage,
-  runNpm,
   type InstallableInstaller,
 } from "../installables.js";
 import { silentLogger } from "../logger.js";
@@ -23,6 +24,9 @@ const CONFIG: HarnessConfig = {
   workspaceRoot: "/tmp/unused",
 };
 const FIXTURE = fileURLToPath(new URL("../test/fixtures/installables/hello", import.meta.url));
+const FIXTURE_1_1 = fileURLToPath(
+  new URL("../test/fixtures/installables/hello-1.1.0", import.meta.url),
+);
 
 function installJob(payload: JobPayload["payload"]): JobPayload {
   return {
@@ -112,6 +116,9 @@ describe("install", () => {
       name: "@omniralph/hello",
       version: "1.0.0",
       changed: true,
+      commands: ["hello"],
+      mcpServers: [],
+      skills: 0,
     });
     expect(installer.install).toHaveBeenCalledWith("@omniralph/hello", "latest", prefix, {
       signal: expect.any(AbortSignal),
@@ -124,10 +131,10 @@ describe("install", () => {
 
     expect(
       await rpc.run(installJob({ name: "@omniralph/hello", version: "1.1.0" }), context()),
-    ).toEqual({ name: "@omniralph/hello", version: "1.1.0", changed: true });
+    ).toMatchObject({ name: "@omniralph/hello", version: "1.1.0", changed: true });
     expect(
       await rpc.run(installJob({ name: "@omniralph/hello", version: "1.1.0" }), context()),
-    ).toEqual({ name: "@omniralph/hello", version: "1.1.0", changed: false });
+    ).toMatchObject({ name: "@omniralph/hello", version: "1.1.0", changed: false });
   });
 
   it("refuses a package the local allowlist doesn't allow, before npm runs", async () => {
@@ -244,35 +251,85 @@ describe("install", () => {
     expect(most).toBe(1);
   });
 
-  // Runs real npm, offline: the package comes from a local tarball.
-  it("installs a packed installable with npm into the prefix", { timeout: 120_000 }, async () => {
+  /** Packs a fixture installable with `npm pack` into `<root>/pack`; returns the tarball. */
+  async function pack(fixture: string): Promise<string> {
     const packDir = path.join(root, "pack");
-    await mkdir(packDir);
-    const tarballName = execFileSync("npm", ["pack", FIXTURE, "--pack-destination", packDir], {
+    await mkdir(packDir, { recursive: true });
+    const tarballName = execFileSync("npm", ["pack", fixture, "--pack-destination", packDir], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     })
       .trim()
       .split("\n")
       .pop()!;
-    const tarball = path.join(packDir, tarballName);
-    // The real npm installer's commands, with the registry spec swapped for the tarball.
-    const installer: InstallableInstaller = {
-      install: (_name, _version, into, options) =>
-        runNpm(["install", "--save-exact", "--offline", "--", tarball], into, options),
-      uninstall: (name, from, options) => runNpm(["uninstall", "--", name], from, options),
-    };
-    const rpc = installRpc({ config: CONFIG, prefix, installer });
+    return path.join(packDir, tarballName);
+  }
 
-    expect(await rpc.run(installJob({ name: "@omniralph/hello" }), context())).toEqual({
-      name: "@omniralph/hello",
-      version: "1.0.0",
-      changed: true,
-    });
-    const bin = path.join(installablePackageDir(prefix, "@omniralph/hello"), "bin", "hello.js");
-    expect(execFileSync(bin, { encoding: "utf8" })).toBe("hello from an installable\n");
-    expect(JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8"))).toMatchObject({
-      dependencies: { "@omniralph/hello": expect.any(String) },
-    });
+  // No network: npm's registry is an address nothing listens on.
+  const NO_REGISTRY_ENV = { ...process.env, npm_config_registry: "http://127.0.0.1:9/" };
+
+  // Runs real npm without network: the packages come from local tarballs.
+  it(
+    "installs and updates a packed installable with npm into the prefix",
+    { timeout: 180_000 },
+    async () => {
+      const tarballs: Record<string, string> = {
+        "@omniralph/hello@1.0.0": await pack(FIXTURE),
+        "@omniralph/hello@1.1.0": await pack(FIXTURE_1_1),
+      };
+      // The real npm installer, with the registry spec mapped to the tarball.
+      const installer = npmInstallableInstaller(NO_REGISTRY_ENV, (name, version) => {
+        const tarball = tarballs[`${name}@${version}`];
+        if (!tarball) throw new Error(`no tarball for ${name}@${version}`);
+        return tarball;
+      });
+      const rpc = installRpc({ config: CONFIG, prefix, installer });
+      const dataDir = path.dirname(prefix);
+      const bin = path.join(installablePackageDir(prefix, "@omniralph/hello"), "bin", "hello.js");
+
+      expect(
+        await rpc.run(installJob({ name: "@omniralph/hello", version: "1.0.0" }), context()),
+      ).toEqual({
+        name: "@omniralph/hello",
+        version: "1.0.0",
+        changed: true,
+        commands: ["hello"],
+        mcpServers: [],
+        skills: 0,
+      });
+      expect(execFileSync(bin, { encoding: "utf8" })).toBe("hello from an installable\n");
+      expect(await listInstalledInstallables(dataDir)).toEqual([
+        { name: "@omniralph/hello", version: "1.0.0" },
+      ]);
+
+      // An update replaces the installed version.
+      expect(
+        await rpc.run(installJob({ name: "@omniralph/hello", version: "1.1.0" }), context()),
+      ).toEqual({
+        name: "@omniralph/hello",
+        version: "1.1.0",
+        changed: true,
+        commands: ["hello"],
+        mcpServers: ["hello"],
+        skills: 0,
+      });
+      expect(execFileSync(bin, { encoding: "utf8" })).toBe("hello from an updated installable\n");
+      expect(await listInstalledInstallables(dataDir)).toEqual([
+        { name: "@omniralph/hello", version: "1.1.0" },
+      ]);
+      expect(JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8"))).toMatchObject({
+        dependencies: { "@omniralph/hello": expect.any(String) },
+      });
+    },
+  );
+
+  it("fails with the tail of npm's stderr", { timeout: 120_000 }, async () => {
+    const installer = npmInstallableInstaller(NO_REGISTRY_ENV, () =>
+      path.join(root, "missing.tgz"),
+    );
+    const rpc = installRpc({ config: CONFIG, prefix, installer });
+    await expect(rpc.run(installJob({ name: "@omniralph/hello" }), context())).rejects.toThrow(
+      /^npm install --save-exact -- .*missing\.tgz failed: (.|\n)*npm error/,
+    );
   });
 });

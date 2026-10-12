@@ -16,7 +16,7 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
-import type { HarnessConfig } from "./config.js";
+import { execPathBlocked, type HarnessConfig } from "./config.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
 import { runCodingTask } from "./lifecycle/coding.js";
@@ -82,7 +82,11 @@ export interface DaemonOptions {
    * in every heartbeat (none when unset).
    */
   dataDir?: string;
-  /** The local config: host tool paths it blocks (`blockedExecPaths`) are never reported or used. */
+  /**
+   * The local config: paths it blocks (`blockedExecPaths`) are never reported
+   * as host tools, and no run executes a host tool, installable command or
+   * installable MCP server under them.
+   */
   localConfig?: Pick<HarnessConfig, "blockedExecPaths">;
   /** The `PATH` host tools are discovered on (default: the harness process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
@@ -346,7 +350,7 @@ export class AgentDaemon implements DrainableDaemon {
   private async installedInstallables(): Promise<Heartbeat["installables"]> {
     if (this.options.dataDir === undefined) return [];
     try {
-      return await listInstalledInstallables(this.options.dataDir);
+      return await listInstalledInstallables(this.options.dataDir, this.options.logger);
     } catch (error) {
       this.options.logger.warn({ err: error }, "cannot list installed installables");
       return [];
@@ -735,6 +739,7 @@ export class AgentDaemon implements DrainableDaemon {
         running.injector = inject;
       },
       hostToolPath: (name) => this.hostToolPath(name),
+      execPathBlocked: (file) => execPathBlocked(this.options.localConfig ?? {}, file),
       ...(this.options.dataDir !== undefined && { dataDir: this.options.dataDir }),
     };
   }

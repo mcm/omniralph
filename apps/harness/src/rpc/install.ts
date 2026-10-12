@@ -65,7 +65,15 @@ async function install(
   if (after?.ok && after.installable.name === name) {
     const installed = after.installable.version;
     log.info({ version: installed, previous }, "installed an installable");
-    return { name, version: installed, changed: installed !== previous };
+    const { manifest } = after.installable;
+    return {
+      name,
+      version: installed,
+      changed: installed !== previous,
+      commands: manifest.commands.map((command) => command.name),
+      mcpServers: manifest.mcpServers.map((server) => server.name),
+      skills: manifest.skills.length,
+    };
   }
 
   const problem = !after
