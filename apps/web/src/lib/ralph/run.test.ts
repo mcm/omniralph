@@ -1753,6 +1753,34 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(await storyStates(run.id)).toContainEqual([grant.identifier, "manual", 0]);
   });
 
+  it("makes a completed story's follow-ups block the stories it blocks", async () => {
+    const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
+    const first = linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id });
+    const validate = linear.add({
+      identifier: "ENG-57",
+      title: "Validate the epic",
+      parentId: epic.id,
+      priority: 1,
+    });
+    await linear.createBlocksRelation(first.id, validate.id);
+    const run = await delegate(epic.id);
+
+    await work(run.id, {
+      followUps: [{ title: "Add an index", description: "Queries are slow.", manual: false }],
+    });
+    const index = [...linear.issues.values()].find((i) => i.title === "Add an index")!;
+    expect(linear.blocks.get(first.id)).toBeUndefined();
+    expect(linear.blocks.get(validate.id)).toEqual([first.id, index.id]);
+    expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+      `Filed **${index.identifier}** as a new story of **ENG-55**, blocking **ENG-57**.`,
+    );
+
+    // Validation (priority 1) waits for the follow-up.
+    expect((await work(run.id)).story.identifier).toBe(index.identifier);
+    expect((await work(run.id)).story.identifier).toBe("ENG-57");
+    expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+  });
+
   it("waits on an outside blocker and resumes when an Issue webhook says it's done", async () => {
     const outside = linear.add({
       identifier: "OPS-1",

@@ -20,6 +20,7 @@ import {
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
 import { organizationDefinitions } from "@/lib/definitions";
+import type { IssueSummary } from "@/lib/linear/gateway";
 import { jobMaxAttempts } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
@@ -252,7 +253,9 @@ export async function recordFailedAttempt(
 
 /**
  * Files the follow-ups a story turned up as sub-issues of the epic (manual
- * ones with the manual label); `blocking` makes them block the story. A
+ * ones with the manual label); `blocking` makes them block the story, else
+ * they block the story's open dependents (the stories it blocks, such as the
+ * epic's validation story) so those still wait for the follow-up work. A
  * follow-up with the title of an open sub-issue reuses it, so a retry that
  * reports the same work again doesn't file it twice. Single-issue and chat runs have
  * no epic to file them in.
@@ -283,6 +286,16 @@ export async function fileFollowUps(
   );
   const priority = siblings.find((s) => s.id === story.linearIssueId)?.priority ?? 0;
   const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
+  // A blocking follow-up holds the story, so its dependents wait for it already.
+  const dependents = options.blocking
+    ? []
+    : await openDependents(ctx, story, [...open.values()]).catch((error: unknown) => {
+        console.warn(
+          `${run.linearIdentifier}: could not read the dependents of ${story.identifier}`,
+          error,
+        );
+        return [];
+      });
   const filed: string[] = [];
   const forPerson: string[] = [];
   const failed: string[] = [];
@@ -303,6 +316,12 @@ export async function fileFollowUps(
       if (options.blocking && issue.id !== story.linearIssueId) {
         await linear.createBlocksRelation(issue.id, story.linearIssueId);
       }
+      for (const dependent of dependents) {
+        // A reused follow-up may already block it, or be one of the dependents itself.
+        if (dependent.issue.id === issue.id || dependent.blockerIds.has(issue.id)) continue;
+        await linear.createBlocksRelation(issue.id, dependent.issue.id);
+        dependent.blockerIds.add(issue.id);
+      }
       filed.push(`**${issue.identifier}**`);
       if (followUp.manual) forPerson.push(`**${issue.identifier}**`);
     } catch (error) {
@@ -312,9 +331,12 @@ export async function fileFollowUps(
   }
   const lines: string[] = [];
   if (filed.length > 0) {
+    const blocked = options.blocking
+      ? [story.identifier]
+      : dependents.map((d) => d.issue.identifier);
     lines.push(
       `Filed ${filed.join(", ")} as ${filed.length === 1 ? "a new story" : "new stories"} of **${run.linearIdentifier}**` +
-        `${options.blocking ? `, blocking **${story.identifier}**` : ""}.`,
+        `${blocked.length > 0 ? `, blocking ${blocked.map((id) => `**${id}**`).join(", ")}` : ""}.`,
     );
   }
   if (forPerson.length > 0) {
@@ -330,4 +352,21 @@ export async function fileFollowUps(
       body: lines.join(" "),
     });
   }
+}
+
+/** The open sibling stories `story` blocks, with the IDs of their blockers. */
+async function openDependents(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  openSiblings: readonly IssueSummary[],
+): Promise<{ issue: IssueSummary; blockerIds: Set<string> }[]> {
+  const siblings = await Promise.all(
+    openSiblings
+      .filter((s) => s.id !== story.linearIssueId)
+      .map(async (issue) => ({
+        issue,
+        blockerIds: new Set((await ctx.linear.getBlockers(issue.id)).map((b) => b.id)),
+      })),
+  );
+  return siblings.filter((s) => s.blockerIds.has(story.linearIssueId));
 }
