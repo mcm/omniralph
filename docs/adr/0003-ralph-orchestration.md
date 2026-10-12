@@ -393,10 +393,12 @@ A coding task's own setup and teardown commands run in story and request runs, i
 worktree (after the repository's **Setup command**): setup before the prompt is rendered, as
 `setup.<name>`, teardown after the attempt, whatever happened.
 
-Not covered yet (open stories of TOOL-304): coding runs carry no
-`min_harness_version` (switch a repository to `tasks` only once its harnesses run a release with
-the coding lifecycle), and the repository's ralph **Model** isn't applied to the PR description
-query run (it uses the task's `opus`).
+Coding runs carry `CODING_TASKS_MIN_HARNESS_VERSION` (harness 0.11.0, the first release with
+the coding lifecycle) as their `min_harness_version`: an older harness leaves them queued rather
+than failing a story attempt as an unsupported task type.
+
+Not covered yet (an open story of TOOL-304): the repository's ralph **Model** isn't applied to the
+PR description query run (it uses the task's `opus`).
 
 Alternatives considered: rewriting the loop as a new coding orchestrator (the loop's guarantees
 are what this epic must not change; keeping the payloads as trigger contexts leaves `advanceRun`

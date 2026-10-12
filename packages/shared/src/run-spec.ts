@@ -34,6 +34,15 @@ export const SETUP_COMMANDS_MIN_HARNESS_VERSION = "0.10.0";
  */
 export const REVIEW_TASKS_MIN_HARNESS_VERSION = "0.10.0";
 
+/**
+ * The first harness release that runs coding tasks (`builtin:implement-story`,
+ * `builtin:handle-request` and their push runs) through the coding lifecycle,
+ * including a coding task's own setup and teardown commands; coding runs carry
+ * it as their `min_harness_version`, so older harnesses (which would fail them
+ * as an unsupported task type) leave them queued.
+ */
+export const CODING_TASKS_MIN_HARNESS_VERSION = "0.11.0";
+
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
   kind: TriggerKindSchema,

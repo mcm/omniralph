@@ -40,6 +40,7 @@ import {
   type LinearRun,
 } from "@omniralph/db";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   RalphPushPayload,
@@ -280,7 +281,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -407,6 +408,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       taskType: "coding",
       pool: "long",
       taskId: path === "tasks" ? taskId : null,
+      minHarnessVersion: path === "tasks" ? CODING_TASKS_MIN_HARNESS_VERSION : null,
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
@@ -784,7 +786,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         harnessId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -888,6 +890,31 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       // No story loop and no Linear state changes for a mention.
       expect(linear.comments).toEqual([]);
       expect(await storyStates(run.id)).toEqual([["ENG-61", "pending", 0]]);
+    });
+
+    it("leaves coding runs queued for harnesses older than the coding lifecycle", async () => {
+      const epic = linear.add({ identifier: "ENG-67", title: "Epic" });
+      linear.add({ identifier: "ENG-68", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      const job = await activeJob(run.id);
+      expect(job).toMatchObject({ type: "ralph.story", ...routing("builtin:implement-story") });
+      if (path === "tasks") {
+        // 0.10.0 has no coding lifecycle: it would fail the run as an unsupported task type.
+        for (const harnessVersion of [null, "0.10.0"]) {
+          const { claim } = await claimJob(db, {
+            organizationId: orgId,
+            harnessId: agentA,
+            acceptedTaskTypes: ["query", "coding"],
+            pools: ["short", "long"],
+            harnessVersion,
+            maxDeliveries: MAX_JOB_DELIVERIES,
+          });
+          expect(claim).toBeNull();
+        }
+      }
+      // A harness on the coding tasks' minimum (or later) runs it.
+      await work(run.id, { commitSha: sha(67) });
+      expect(await activeJob(run.id)).toMatchObject({ type: "ralph.describe-pr" });
     });
 
     it("runs stories with the repository's story task on the tasks path only", async () => {
@@ -1014,7 +1041,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           harnessId: agentA,
           acceptedTaskTypes: ["query", "coding"],
           pools: ["short", "long"],
-          harnessVersion: null,
+          harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
           maxDeliveries: MAX_JOB_DELIVERIES,
         });
         expect(started.claim?.job.id).toBe(job.id);
@@ -1028,7 +1055,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         harnessId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(gaveUp).toMatchObject({
@@ -1056,7 +1083,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         harnessId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1143,7 +1170,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         harnessId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1199,7 +1226,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         harnessId: agentB,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1488,7 +1515,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -1515,7 +1542,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -1878,7 +1905,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);

@@ -20,6 +20,7 @@ import {
   type RalphRunStatus,
 } from "@omniralph/db";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   ralphHiddenRef,
   WorktreeCleanupPayload,
@@ -206,7 +207,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-hidden-refs", () => {
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(queued!.id);
@@ -237,7 +238,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-hidden-refs", () => {
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     await completeJob(db, { jobId: again!.id, harnessId, result: result([ref]) });

@@ -1,4 +1,5 @@
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   harnessVersionAtLeast,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   REVIEW_TASKS_MIN_HARNESS_VERSION,
@@ -12,8 +13,9 @@ import type { TaskDefinition } from "@omniralph/tasks";
  * `insertJob`/`createAndPublish` input next to `organizationId`, `type` and
  * `dedupeKey`): the task's type and pool, its ID in `task_id` and the stored
  * `RunSpecJobPayload`, which `resolveRunSpec` turns into a run spec at claim time.
- * Query and review tasks need a harness with their lifecycle
- * (`QUERY_TASKS_MIN_HARNESS_VERSION`, `REVIEW_TASKS_MIN_HARNESS_VERSION`),
+ * Query, review and coding tasks need a harness with their lifecycle
+ * (`QUERY_TASKS_MIN_HARNESS_VERSION`, `REVIEW_TASKS_MIN_HARNESS_VERSION`,
+ * `CODING_TASKS_MIN_HARNESS_VERSION`),
  * and tasks with setup or teardown commands one that runs them
  * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`): the highest that applies.
  */
@@ -49,6 +51,7 @@ function minHarnessVersion(
   const needed = [
     task.taskType === "query" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
     task.taskType === "review" ? REVIEW_TASKS_MIN_HARNESS_VERSION : null,
+    task.taskType === "coding" ? CODING_TASKS_MIN_HARNESS_VERSION : null,
     commands ? SETUP_COMMANDS_MIN_HARNESS_VERSION : null,
   ].filter((version) => version !== null);
   return needed.reduce<string | null>(
