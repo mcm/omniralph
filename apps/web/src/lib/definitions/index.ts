@@ -22,6 +22,7 @@ import {
   getBuiltinAgent,
   getBuiltinTask,
   isBuiltinId,
+  prDescriptionProblem,
   TaskDefinition,
   TaskRequirements,
   type TaskType,
@@ -120,16 +121,16 @@ export interface TaskDefinitionFilter {
   taskType?: TaskType | readonly TaskType[];
   /** Only tasks accepting this trigger kind. */
   trigger?: TriggerKind;
+  /** Only tasks this accepts (e.g. by their output). */
+  accepts?: (task: TaskDefinition) => boolean;
 }
 
 /** Whether `task` passes `filter`. */
-export function matchesTaskFilter(
-  task: Pick<TaskDefinition, "taskType" | "triggers">,
-  filter: TaskDefinitionFilter,
-): boolean {
+export function matchesTaskFilter(task: TaskDefinition, filter: TaskDefinitionFilter): boolean {
   const types = filter.taskType === undefined ? null : [filter.taskType].flat();
   if (types && !types.includes(task.taskType)) return false;
-  return filter.trigger === undefined || task.triggers.includes(filter.trigger);
+  if (filter.trigger !== undefined && !task.triggers.includes(filter.trigger)) return false;
+  return filter.accepts === undefined || filter.accepts(task);
 }
 
 /**
@@ -147,6 +148,37 @@ export async function listTaskDefinitions(
     ...rows.map(parseStoredTask).filter((task) => task !== null),
   ].filter((task) => matchesTaskFilter(task.definition, filter));
 }
+
+/** A task a settings picker offers. */
+export interface TaskChoice {
+  id: string;
+  name: string;
+  builtin: boolean;
+}
+
+/** What a picker of the organization's tasks passing `filter` offers (built-ins first). */
+export async function listTaskChoices(
+  db: Queryable,
+  organizationId: string,
+  filter: TaskDefinitionFilter,
+): Promise<TaskChoice[]> {
+  const tasks = await listTaskDefinitions(db, organizationId, filter);
+  return tasks.map(({ definition, builtin }) => ({
+    id: definition.id,
+    name: definition.name,
+    builtin,
+  }));
+}
+
+/**
+ * The tasks a coding run can invoke for its PR description: query tasks
+ * accepting `run.invoked` whose output is `{ title, body }` (`prDescriptionProblem`).
+ */
+export const PR_DESCRIPTION_TASKS: TaskDefinitionFilter = {
+  taskType: "query",
+  trigger: "run.invoked",
+  accepts: (task) => prDescriptionProblem(task) === null,
+};
 
 /**
  * Where the run plumbing (run specs, sinks, ralph's coding runs) looks

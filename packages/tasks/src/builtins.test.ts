@@ -112,6 +112,7 @@ describe("builtinProblems", () => {
       id: "builtin:describe-pr",
       triggers: ["run.invoked"],
       promptTemplate: "Describe {{branch}}.",
+      outputSchema: getBuiltinTask("builtin:describe-pr")!.outputSchema,
       sink: "run-result",
     };
     expect(builtinProblems([agent, engineer], [coding, describer])).toEqual([]);

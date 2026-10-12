@@ -148,7 +148,8 @@ vi.mock("@omniralph/db", () => {
 
 const { cloneTaskDefinition, createTaskDefinition, deleteTaskDefinition, updateTaskDefinition } =
   await import("./actions");
-const { getTaskDefinition } = await import("@/lib/definitions");
+const { getTaskDefinition, listTaskChoices, PR_DESCRIPTION_TASKS } =
+  await import("@/lib/definitions");
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const TASK_ID = "33333333-3333-4333-8333-333333333333";
@@ -192,6 +193,78 @@ const INPUT = {
   pool: "short",
   model: "claude-opus-5-5",
   tokenBudget: { tokens: 50_000 },
+} satisfies Omit<TaskDefinitionInput, "id">;
+
+/** A query task with every section filled: what a custom PR description task looks like. */
+const DESCRIBER = {
+  name: "Describe with changelog",
+  description: "Writes the PR description, with the changelog entry.",
+  taskType: "query",
+  agentId: "builtin:pr-writer",
+  triggers: ["run.invoked"],
+  promptTemplate: "Describe {{branch}}.\n\n{{setup.changelog}}",
+  setupCommands: [
+    {
+      name: "changelog",
+      command: "git log --oneline -20",
+      timeoutSeconds: 30,
+      maxOutputBytes: 4000,
+      fence: "text",
+      optional: true,
+    },
+  ],
+  teardownCommands: [
+    { name: "cleanup", command: "rm -rf tmp", timeoutSeconds: 10, maxOutputBytes: 1000 },
+  ],
+  toolSettings: { shell: true, linearRead: true, network: true },
+  outputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", maxLength: 60 },
+      body: { type: "string" },
+      changelog: { type: "string" },
+    },
+    required: ["title", "body", "changelog"],
+    additionalProperties: false,
+  },
+  sink: "run-result",
+  pool: "short",
+  model: "claude-opus-5-5",
+  tokenBudget: { profileFraction: 0.25 },
+} satisfies Omit<TaskDefinitionInput, "id">;
+
+/** A coding task with every section filled (its PR description task is set per test). */
+const CODER = {
+  name: "Ship stories",
+  description: "Implements a story at a time.",
+  taskType: "coding",
+  agentId: "builtin:engineer",
+  triggers: ["linear.delegated"],
+  promptTemplate: "Implement {{story.title}}.\n\n{{setup.status}}",
+  setupCommands: [
+    {
+      name: "status",
+      command: "git status --short",
+      timeoutSeconds: 60,
+      maxOutputBytes: 2000,
+      fence: "",
+      optional: false,
+    },
+  ],
+  teardownCommands: [
+    { name: "stop", command: "docker compose down", timeoutSeconds: 120, maxOutputBytes: 500 },
+  ],
+  toolSettings: { shell: true, linearRead: false, network: true },
+  sink: "ralph-run",
+  pool: "long",
+  tokenBudget: null,
+  maxAttemptsPerStory: 2,
+  maxIterationsPerRun: 30,
+  maxReviewRounds: 3,
+  maxFixRounds: 4,
+  pushTiming: "end",
+  draftPullRequest: "end",
+  prDescriptionTaskId: "builtin:describe-pr",
 } satisfies Omit<TaskDefinitionInput, "id">;
 
 describe("Settings › Tasks actions", () => {
@@ -440,6 +513,111 @@ describe("Settings › Tasks actions", () => {
     expect(await deleteTaskDefinition(TASK_ID)).toEqual({
       ok: false,
       error: "Security review can't be deleted while 2 runs of it are queued or running.",
+    });
+    expect(state.writes).toBe(0);
+  });
+  it("round-trips every section of a query task and a coding task naming it", async () => {
+    const describer = await createTaskDefinition(DESCRIBER);
+    expect(describer).toMatchObject({ ok: true });
+    const describerId = (describer as { id: string }).id;
+    expect((await getTaskDefinition({} as never, "org-1", describerId))?.definition).toEqual({
+      id: describerId,
+      ...DESCRIBER,
+    });
+
+    const coder = { ...CODER, prDescriptionTaskId: describerId };
+    const created = await createTaskDefinition(coder);
+    expect(created).toMatchObject({ ok: true });
+    const coderId = (created as { id: string }).id;
+    expect((await getTaskDefinition({} as never, "org-1", coderId))?.definition).toEqual({
+      id: coderId,
+      ...coder,
+    });
+  });
+
+  it("round-trips an update of the commands, tool settings and coding fields", async () => {
+    const created = (await createTaskDefinition(CODER)) as { id: string };
+    const changed = {
+      ...CODER,
+      setupCommands: [],
+      promptTemplate: "Implement {{story.title}}.",
+      teardownCommands: [],
+      toolSettings: { shell: false, linearRead: true, network: false },
+      pushTiming: "per-story",
+      draftPullRequest: "early",
+    } satisfies Omit<TaskDefinitionInput, "id">;
+    expect(await updateTaskDefinition(created.id, changed)).toEqual({ ok: true });
+    expect((await getTaskDefinition({} as never, "org-1", created.id))?.definition).toEqual({
+      id: created.id,
+      ...changed,
+    });
+  });
+
+  it("lists built-in and custom tasks with the { title, body } output as PR description tasks", async () => {
+    const describer = (await createTaskDefinition(DESCRIBER)) as { id: string };
+    // A query task started by run.invoked with another output.
+    const other = (await createTaskDefinition({
+      ...DESCRIBER,
+      name: "Summarize",
+      outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+    })) as { id: string };
+    expect(other).toMatchObject({ ok: true });
+    const choices = await listTaskChoices({} as never, "org-1", PR_DESCRIPTION_TASKS);
+    expect(choices).toEqual([
+      { id: "builtin:describe-pr", name: "Describe a PR", builtin: true },
+      { id: describer.id, name: DESCRIBER.name, builtin: false },
+    ]);
+
+    expect(await createTaskDefinition({ ...CODER, prDescriptionTaskId: other.id })).toMatchObject({
+      ok: false,
+      fieldErrors: { prDescriptionTaskId: expect.stringContaining("{ title, body }") },
+    });
+    for (const id of ["builtin:ask-about-code", "builtin:correlate-findings", TASK_ID]) {
+      expect(await createTaskDefinition({ ...CODER, prDescriptionTaskId: id }), id).toMatchObject({
+        ok: false,
+        fieldErrors: { prDescriptionTaskId: expect.any(String) },
+      });
+    }
+  });
+
+  it("rejects a template using a setup command that was removed", async () => {
+    const result = await createTaskDefinition({ ...DESCRIBER, setupCommands: [] });
+    expect(result).toMatchObject({
+      ok: false,
+      fieldErrors: { promptTemplate: expect.stringContaining("{{setup.changelog}}") },
+    });
+    expect(state.writes).toBe(0);
+  });
+
+  it("rejects invalid setup commands, output schemas and coding timing by field", async () => {
+    const commands = await createTaskDefinition({
+      ...DESCRIBER,
+      setupCommands: [{ ...DESCRIBER.setupCommands[0]!, name: "Change Log", timeoutSeconds: 0 }],
+    });
+    expect(commands).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        "setupCommands.0.name": expect.any(String),
+        "setupCommands.0.timeoutSeconds": expect.any(String),
+      },
+    });
+    const schema = await createTaskDefinition({
+      ...DESCRIBER,
+      outputSchema: { type: "object", properties: { title: { type: "strng" } } },
+    });
+    expect(schema).toMatchObject({
+      ok: false,
+      fieldErrors: { outputSchema: expect.stringContaining("strng") },
+    });
+    const notObject = await createTaskDefinition({ ...DESCRIBER, outputSchema: { type: "array" } });
+    expect(notObject).toMatchObject({
+      ok: false,
+      fieldErrors: { outputSchema: expect.any(String) },
+    });
+    const timing = await createTaskDefinition({ ...CODER, draftPullRequest: "early" });
+    expect(timing).toMatchObject({
+      ok: false,
+      fieldErrors: { draftPullRequest: expect.stringContaining("An early draft PR") },
     });
     expect(state.writes).toBe(0);
   });
