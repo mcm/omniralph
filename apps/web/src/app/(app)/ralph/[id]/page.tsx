@@ -5,6 +5,7 @@ import { z } from "zod";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { organizationDefinitions } from "@/lib/definitions";
 import { ralphRunDetailView } from "@/lib/ralph/history";
 import { RalphRunDetailView } from "./ralph-run-detail-view";
 
@@ -21,7 +22,6 @@ export default async function RalphRunPage({ params }: { params: Promise<{ id: s
     getIntegration(db, user.organization.id, "linear"),
   ]);
   if (!detail) notFound();
-  return (
-    <RalphRunDetailView run={ralphRunDetailView(detail)} linearConnected={integration !== null} />
-  );
+  const run = await ralphRunDetailView(detail, organizationDefinitions(db, user.organization.id));
+  return <RalphRunDetailView run={run} linearConnected={integration !== null} />;
 }

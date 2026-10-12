@@ -18,12 +18,8 @@ import {
   type RunToolRestrictions,
   type ReviewProfileConfig,
 } from "@omniralph/shared";
-import {
-  getBuiltinAgent,
-  getBuiltinTask,
-  type AgentDefinition,
-  type TaskDefinition,
-} from "@omniralph/tasks";
+import type { TaskDefinition } from "@omniralph/tasks";
+import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /**
@@ -38,20 +34,10 @@ export class RunSpecError extends Error {
   }
 }
 
-/** Where definitions come from: the built-in registry (user-defined ones come later). */
-export interface DefinitionSource {
-  getTask(id: string): TaskDefinition | null;
-  getAgent(id: string): AgentDefinition | null;
-}
-
-export const BUILTIN_DEFINITIONS: DefinitionSource = {
-  getTask: getBuiltinTask,
-  getAgent: getBuiltinAgent,
-};
-
 /**
  * Resolves a run-spec job (one with a `task_id`) into the `RunSpec` the
- * harness runs: its task and the task's agent, the trigger (which must be one
+ * harness runs: its task and the task's agent (built-in or the job's
+ * organization's own, `organizationDefinitions`), the trigger (which must be one
  * the task allows), the repository with its tool settings, the model (task →
  * repository profile → agent; for a query run a ralph run invokes, the
  * repository's ralph `model` and `fallbackModel` first, like the legacy
@@ -69,12 +55,12 @@ export async function resolveRunSpec(
     "id" | "organizationId" | "taskType" | "pool" | "taskId" | "repositoryId" | "payload"
   >,
   tokens: { lifecycle: JobToken; session: JobToken },
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
+  definitions: DefinitionSource = organizationDefinitions(db, job.organizationId),
 ): Promise<RunSpec> {
   if (job.taskId === null) throw new RunSpecError("Not a run-spec job (no task)");
-  const task = definitions.getTask(job.taskId);
+  const task = await definitions.getTask(job.taskId);
   if (!task) throw new RunSpecError(`Unknown task ${job.taskId}`);
-  const agent = definitions.getAgent(task.agentId);
+  const agent = await definitions.getAgent(task.agentId);
   if (!agent) throw new RunSpecError(`Unknown agent ${task.agentId} of task ${task.id}`);
   if (job.taskType !== task.taskType || job.pool !== task.pool) {
     throw new RunSpecError(

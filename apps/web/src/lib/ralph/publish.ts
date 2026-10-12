@@ -32,6 +32,7 @@ import {
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
+import { organizationDefinitions } from "@/lib/definitions";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
 import { describePrPayload, describePrText, opensPullRequestEarly, pushResult } from "./coding";
@@ -248,7 +249,8 @@ async function openEarlyLanePullRequest(
 ): Promise<void> {
   const { lane } = input;
   const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
-  if (!found || !opensPullRequestEarly(found.repository)) return;
+  const definitions = organizationDefinitions(deps.db, run.organizationId);
+  if (!found || !(await opensPullRequestEarly(found.repository, definitions))) return;
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
   const where = input.main ? "" : ` in \`${found.repository.fullPath}\``;

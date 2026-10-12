@@ -522,7 +522,8 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         expect(settings).toEqual([{ key: "harness.desiredVersion", value: "1.2.3" }]);
         const { rows: old } = await client.query(
           `select table_name from information_schema.tables
-           where table_schema = 'public' and table_name like 'agent%'`,
+           where table_schema = 'public' and table_name like 'agent%'
+             and table_name <> 'agent_definitions'`,
         );
         expect(old).toEqual([]);
         // The renamed foreign keys still hold.

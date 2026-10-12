@@ -25,9 +25,9 @@ import {
   RunSpecJobPayload,
   type ReviewMode,
 } from "@omniralph/shared";
-import { getBuiltinTask, type TaskDefinition, type TriggerKind } from "@omniralph/tasks";
+import type { TaskDefinition, TriggerKind } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { runSpecJobInput } from "@/lib/runs/job";
+import { organizationDefinitions, taskJobInput, type DefinitionSource } from "@/lib/definitions";
 
 export interface EnqueueReviewInput {
   repositoryId: string;
@@ -127,14 +127,15 @@ export function isSummaryOnlyTask(task: Pick<TaskDefinition, "sink">): boolean {
  * `taskIds` (deduplicated, in order) that is a review task accepting the
  * trigger. Unknown and non-review task IDs are skipped with a warning.
  */
-export function reviewTasksFor(
+export async function reviewTasksFor(
   taskIds: readonly string[],
   trigger: Review["trigger"],
   context: { repositoryId: string },
-): TaskDefinition[] {
+  definitions: DefinitionSource,
+): Promise<TaskDefinition[]> {
   const tasks: TaskDefinition[] = [];
   for (const id of new Set(taskIds)) {
-    const task = getBuiltinTask(id);
+    const task = await definitions.getTask(id);
     if (!task || task.taskType !== "review") {
       console.warn(
         task
@@ -184,9 +185,13 @@ export async function enqueueReview(
     : settings.profile;
   if (!profile) return { status: "profile_not_found" };
 
-  const tasks = reviewTasksFor(repository.reviewTaskIds, input.trigger, {
-    repositoryId: repository.id,
-  });
+  const definitions = organizationDefinitions(db, repository.organizationId);
+  const tasks = await reviewTasksFor(
+    repository.reviewTaskIds,
+    input.trigger,
+    { repositoryId: repository.id },
+    definitions,
+  );
   if (tasks.length === 0) return { status: "no_review_tasks" };
 
   const prefix = reviewJobKeyPrefix(input.repositoryId, input.prNumber);
@@ -312,14 +317,14 @@ export async function enqueueReview(
       const { job, created } = await dispatcher.createAndPublish({
         organizationId: repository.organizationId,
         type: REVIEW_TASK_JOB_TYPE,
-        ...runSpecJobInput(task, {
+        ...(await taskJobInput(definitions, task, {
           trigger: {
             kind: TRIGGER_KINDS[input.trigger],
             context: ReviewTriggerContext.parse({ ...context, reviewId: review.id }),
           },
           repositoryId: input.repositoryId,
           ref: input.headSha,
-        }),
+        })),
         dedupeKey: reviewJobKey(input.repositoryId, input.prNumber, input.headSha, task.id),
       });
       if (!created) {

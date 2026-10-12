@@ -30,6 +30,7 @@ import {
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
+import { organizationDefinitions } from "@/lib/definitions";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
 import {
@@ -96,7 +97,10 @@ export async function chatTaskOf(
   role: ChatTaskRole,
 ): Promise<{ task: TaskDefinition } | { error: "task_unavailable"; message: string }> {
   const tasks = await chatTasksFor(context.db, context.connection, context.chatThread.channelId);
-  const choice = validateChatTaskChoice(role, tasks[role], context.getTask);
+  const getTask =
+    context.getTask ?? organizationDefinitions(context.db, context.organizationId).getTask;
+  const task = await getTask(tasks[role]);
+  const choice = validateChatTaskChoice(role, tasks[role], () => task);
   if (choice.ok) return { task: choice.task };
   return {
     error: "task_unavailable",
@@ -193,8 +197,13 @@ export async function findRalphRunId(
 }
 
 /** A ralph run as `get_ralph_run` and `get_run_status` show it. */
-function ralphRunState(detail: RalphRunDetail, appUrl: string) {
-  const run = ralphRunDetailView(detail);
+async function ralphRunState(
+  db: Database,
+  organizationId: string,
+  detail: RalphRunDetail,
+  appUrl: string,
+) {
+  const run = await ralphRunDetailView(detail, organizationDefinitions(db, organizationId));
   const currentStory = run.stories.find((story) => story.status === "running") ?? null;
   return {
     id: run.id,
@@ -260,7 +269,7 @@ export const getRalphRunTool = defineChatTool({
     if (!detail) {
       return { error: "not_found", message: `No ralph run of this organization matches "${ref}".` };
     }
-    return ralphRunState(detail, appUrl);
+    return ralphRunState(db, organizationId, detail, appUrl);
   },
 });
 
@@ -379,7 +388,7 @@ async function codingRunState(
   return {
     runType: "coding" as const,
     task: detail.run.codingTaskId,
-    ...ralphRunState(detail, appUrl),
+    ...(await ralphRunState(db, organizationId, detail, appUrl)),
     currentJob: currentJob && {
       id: currentJob.id,
       type: currentJob.type,

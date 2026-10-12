@@ -9,6 +9,7 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
 /** Delay before a retryable failure may be claimed again, when the harness doesn't name one. */
@@ -43,7 +44,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     retryAfterSeconds,
   });
   const job = outcome.status === "not_found" ? null : await getJob(db, jobId);
-  const handler = job && jobHooks(job);
+  const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
   if (job && handler) {
     const error = body.data.error ?? null;
     if (outcome.status === "failed") await handler.onFailed?.(db, job, error);

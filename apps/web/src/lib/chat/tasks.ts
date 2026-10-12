@@ -37,8 +37,8 @@ export const CHAT_TASK_LABELS: Record<ChatTaskRole, string> = {
   startWork: "Start work",
 };
 
-/** Looks a task definition up by ID: the built-ins (custom ones once they exist). */
-export type TaskLookup = (id: string) => TaskDefinition | null;
+/** Looks a task definition up by ID (e.g. `organizationDefinitions(…).getTask`). */
+export type TaskLookup = (id: string) => TaskDefinition | null | Promise<TaskDefinition | null>;
 
 export type ChatTaskChoiceResult =
   | { ok: true; task: TaskDefinition }
@@ -51,7 +51,7 @@ export type ChatTaskChoiceResult =
 export function validateChatTaskChoice(
   role: ChatTaskRole,
   taskId: string,
-  getTask: TaskLookup = getBuiltinTask,
+  getTask: (id: string) => TaskDefinition | null = getBuiltinTask,
 ): ChatTaskChoiceResult {
   const task = getTask(taskId);
   const label = CHAT_TASK_LABELS[role];

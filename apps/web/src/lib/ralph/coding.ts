@@ -32,8 +32,8 @@ import {
   type TaskDefinition,
   type TriggerKind,
 } from "@omniralph/tasks";
-import { runSpecJobInput } from "@/lib/runs/job";
-import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
+import type { runSpecJobInput } from "@/lib/runs/job";
+import { taskJobInput, type DefinitionSource } from "@/lib/definitions";
 
 /** Story attempts a run makes before it stops and asks (cyralph's `maxIterationsPerRun`). */
 export const MAX_ITERATIONS_PER_RUN = 50;
@@ -46,11 +46,11 @@ export function usesCodingTasks(repository: Pick<Repository, "codingPath">): boo
 }
 
 /** The coding task `id`, or null when it's unknown or of another task type. */
-export function codingTask(
+export async function codingTask(
   id: string,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): TaskDefinition | null {
-  const task = definitions.getTask(id);
+  definitions: DefinitionSource,
+): Promise<TaskDefinition | null> {
+  const task = await definitions.getTask(id);
   return task?.taskType === "coding" ? task : null;
 }
 
@@ -97,12 +97,12 @@ const LEGACY_STORY_LIMITS: StoryLimits = {
  * task's `maxAttemptsPerStory`/`maxIterationsPerRun`, otherwise (or without
  * a repository) the legacy loop's.
  */
-export function storyLimits(
+export async function storyLimits(
   repository: CodingRepository | null | undefined,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): StoryLimits {
+  definitions: DefinitionSource,
+): Promise<StoryLimits> {
   if (!repository || !usesCodingTasks(repository)) return LEGACY_STORY_LIMITS;
-  const task = codingTask(storyTaskFor(repository), definitions);
+  const task = await codingTask(storyTaskFor(repository), definitions);
   return {
     maxAttemptsPerStory: task?.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY,
     maxIterationsPerRun: task?.maxIterationsPerRun ?? MAX_ITERATIONS_PER_RUN,
@@ -110,11 +110,11 @@ export function storyLimits(
 }
 
 /** The attempts a story gets, by the job that ran its last attempt (its coding task's, else the legacy cap). */
-export function jobMaxAttempts(
+export async function jobMaxAttempts(
   job: Pick<Job, "taskId"> | null,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): number {
-  const task = job?.taskId ? codingTask(job.taskId, definitions) : null;
+  definitions: DefinitionSource,
+): Promise<number> {
+  const task = job?.taskId ? await codingTask(job.taskId, definitions) : null;
   return task?.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY;
 }
 
@@ -128,15 +128,15 @@ export interface RoundLimits {
  * The repository's `maxReviewRounds`/`maxFixRounds`, on the `tasks` path
  * capped by those of the run's request task (which runs the rounds).
  */
-export function roundLimits(
+export async function roundLimits(
   run: Pick<RalphRun, "codingTaskId">,
   repository: CodingRepository & { ralphSettings: unknown },
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): RoundLimits {
+  definitions: DefinitionSource,
+): Promise<RoundLimits> {
   const settings = parseRalphSettings(repository.ralphSettings);
   const limits = { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds };
   if (!usesCodingTasks(repository)) return limits;
-  const task = codingTask(requestTaskFor(run, repository), definitions);
+  const task = await codingTask(requestTaskFor(run, repository), definitions);
   return {
     maxReviewRounds: Math.min(limits.maxReviewRounds, task?.maxReviewRounds ?? Infinity),
     maxFixRounds: Math.min(limits.maxFixRounds, task?.maxFixRounds ?? Infinity),
@@ -148,12 +148,12 @@ export function roundLimits(
  * story task's `pushTiming` (`end` keeps them on the run's hidden ref until
  * the lane is published), otherwise after each story.
  */
-export function pushTimingFor(
+export async function pushTimingFor(
   repository: Pick<Repository, "codingPath" | "storyTaskId">,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): PushTiming {
+  definitions: DefinitionSource,
+): Promise<PushTiming> {
   if (!usesCodingTasks(repository)) return "per-story";
-  return codingTask(storyTaskFor(repository), definitions)?.pushTiming ?? "per-story";
+  return (await codingTask(storyTaskFor(repository), definitions))?.pushTiming ?? "per-story";
 }
 
 /**
@@ -164,13 +164,13 @@ export function pushTimingFor(
  * pushes only at the end never opens one early (there's no branch to open it
  * for until then).
  */
-export function opensPullRequestEarly(
+export async function opensPullRequestEarly(
   repository: Pick<Repository, "codingPath" | "storyTaskId"> & { ralphSettings: unknown },
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): boolean {
+  definitions: DefinitionSource,
+): Promise<boolean> {
   const early = parseRalphSettings(repository.ralphSettings).openPullRequestEarly;
   if (!usesCodingTasks(repository)) return early;
-  const task = codingTask(storyTaskFor(repository), definitions);
+  const task = await codingTask(storyTaskFor(repository), definitions);
   if (task?.pushTiming === "end") return false;
   return task?.draftPullRequest ? task.draftPullRequest === "early" : early;
 }
@@ -185,17 +185,17 @@ export type RalphJobInput =
  * (`payload` as is), or a coding run of `taskId` whose trigger context is
  * `payload` (null when that task isn't a coding task that accepts `trigger`).
  */
-export function ralphJobInput(
+export async function ralphJobInput(
   type: string,
   repository: Pick<Repository, "codingPath">,
   coding: { taskId: string; trigger: TriggerKind },
   payload: RalphStoryPayload | RalphRequestPayload,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): RalphJobInput | null {
+  definitions: DefinitionSource,
+): Promise<RalphJobInput | null> {
   if (!usesCodingTasks(repository)) return { ...legacyJobRouting(type), payload };
-  const task = codingTask(coding.taskId, definitions);
+  const task = await codingTask(coding.taskId, definitions);
   if (!task || !task.triggers.includes(coding.trigger)) return null;
-  return runSpecJobInput(task, {
+  return taskJobInput(definitions, task, {
     trigger: { kind: coding.trigger, context: payload },
     repositoryId: payload.repositoryId,
   });
@@ -207,14 +207,14 @@ export function ralphJobInput(
  * `payload` as its context); null when the story task isn't a coding task
  * taking that trigger.
  */
-export function pushJobInput(
+export async function pushJobInput(
   repository: Pick<Repository, "storyTaskId">,
   payload: RalphPushPayload,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): ReturnType<typeof runSpecJobInput> | null {
-  const task = codingTask(storyTaskFor(repository), definitions);
+  definitions: DefinitionSource,
+): Promise<ReturnType<typeof runSpecJobInput> | null> {
+  const task = await codingTask(storyTaskFor(repository), definitions);
   if (!task || !task.triggers.includes("linear.delegated")) return null;
-  return runSpecJobInput(task, {
+  return taskJobInput(definitions, task, {
     trigger: { kind: "linear.delegated", context: payload },
     repositoryId: payload.repositoryId,
   });
@@ -241,12 +241,12 @@ export function ralphJobPayload(job: Pick<Job, "taskId" | "payload">): unknown {
  * `tasks` path: its story task's `prDescriptionTaskId` (the default's when
  * the story task isn't a coding task).
  */
-export function prDescriptionTaskFor(
+export async function prDescriptionTaskFor(
   repository: Pick<Repository, "storyTaskId">,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): string {
+  definitions: DefinitionSource,
+): Promise<string> {
   return (
-    codingTask(storyTaskFor(repository), definitions)?.prDescriptionTaskId ??
+    (await codingTask(storyTaskFor(repository), definitions))?.prDescriptionTaskId ??
     CODING_DEFAULTS.prDescriptionTaskId
   );
 }
@@ -290,20 +290,20 @@ export type DescribePrJobInput =
  * trigger context) in a disposable checkout of the lane's branch. A string
  * says why there is none: that task isn't a query task taking `run.invoked`.
  */
-export function describePrJobInput(
+export async function describePrJobInput(
   repository: Pick<Repository, "codingPath" | "storyTaskId">,
   payload: RalphDescribePrPayload,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): DescribePrJobInput | string {
+  definitions: DefinitionSource,
+): Promise<DescribePrJobInput | string> {
   if (!usesCodingTasks(repository)) {
     return { ...legacyJobRouting(RALPH_DESCRIBE_PR_JOB_TYPE), payload };
   }
-  const taskId = prDescriptionTaskFor(repository, definitions);
-  const task = definitions.getTask(taskId);
+  const taskId = await prDescriptionTaskFor(repository, definitions);
+  const task = await definitions.getTask(taskId);
   if (task?.taskType !== "query" || !task.triggers.includes("run.invoked")) {
     return `${taskId} isn't a query task started by run.invoked`;
   }
-  return runSpecJobInput(task, {
+  return taskJobInput(definitions, task, {
     trigger: { kind: "run.invoked", context: describePrTriggerContext(payload) },
     repositoryId: payload.repositoryId,
     ref: payload.branch,

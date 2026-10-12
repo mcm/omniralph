@@ -8,9 +8,8 @@ import {
   type Review,
 } from "@omniralph/db";
 import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { runSpecJobInput } from "@/lib/runs/job";
+import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 
 /**
  * Learned rules: a `false_positive` dismissal (from the control panel or
@@ -79,7 +78,8 @@ export async function enqueueLearnRule(
   if (!found || !settings || found.repository.disconnectedAt) {
     return { status: "skipped", reason: "repository_unavailable" };
   }
-  const task = getBuiltinTask(LEARN_RULE_TASK_ID);
+  const definitions = organizationDefinitions(db, found.repository.organizationId);
+  const task = await definitions.getTask(LEARN_RULE_TASK_ID);
   if (!task) throw new Error(`Built-in task ${LEARN_RULE_TASK_ID} is missing`);
   const context = learnRuleContext({
     feedback,
@@ -90,10 +90,10 @@ export async function enqueueLearnRule(
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
     type: LEARN_RULE_JOB_TYPE,
-    ...runSpecJobInput(task, {
+    ...(await taskJobInput(definitions, task, {
       trigger: { kind: "finding.dismissed", context },
       repositoryId: review.repositoryId,
-    }),
+    })),
     dedupeKey: `${LEARN_RULE_JOB_TYPE}:${feedback.id}`,
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id };

@@ -4,7 +4,7 @@ import { QueryRunResult, type JobSkipReason } from "@omniralph/shared";
 import type { SinkKind } from "@omniralph/tasks";
 import type { z } from "zod";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
-import { BUILTIN_DEFINITIONS, type DefinitionSource } from "@/lib/runs/resolve";
+import type { DefinitionSource } from "@/lib/definitions";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
@@ -104,12 +104,12 @@ export function parseSinkResult<Output>(
 }
 
 /** The sink of a run-spec job's task; undefined for a legacy job, an unknown task or a sink not implemented yet. */
-export function taskSink(
+export async function taskSink(
   job: Pick<Job, "taskId">,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): Sink | undefined {
+  definitions: DefinitionSource,
+): Promise<Sink | undefined> {
   if (job.taskId === null) return undefined;
-  const task = definitions.getTask(job.taskId);
+  const task = await definitions.getTask(job.taskId);
   return task ? sinkFor(task.sink) : undefined;
 }
 
@@ -144,12 +144,12 @@ function sinkHooks(sink: Sink): JobHooks {
  * `task_id`), the legacy `jobOutcomeHandler` otherwise; undefined when it has
  * neither.
  */
-export function jobHooks(
+export async function jobHooks(
   job: Pick<Job, "type" | "payload" | "taskId">,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): JobHooks | undefined {
+  definitions: DefinitionSource,
+): Promise<JobHooks | undefined> {
   if (job.taskId !== null) {
-    const sink = taskSink(job, definitions);
+    const sink = await taskSink(job, definitions);
     return sink && sinkHooks(sink);
   }
   return jobOutcomeHandler(job);

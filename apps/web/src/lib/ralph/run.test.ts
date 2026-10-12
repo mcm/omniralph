@@ -74,11 +74,22 @@ import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
 import { fitTitle } from "@omniralph/ralph";
 import { CODING_DEFAULTS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
-import { BUILTIN_DEFINITIONS } from "@/lib/runs/resolve";
+import type * as Tasks from "@omniralph/tasks";
+import { BUILTIN_DEFINITIONS } from "@/lib/definitions";
 import { advanceRun, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
+/** Built-in tasks some tests change (the resolver reads built-ins through `getBuiltinTask`). */
+const changedBuiltins = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("@omniralph/tasks", async (importOriginal) => {
+  const actual = await importOriginal<typeof Tasks>();
+  return {
+    ...actual,
+    getBuiltinTask: (id: string) =>
+      (changedBuiltins.get(id) as TaskDefinition | undefined) ?? actual.getBuiltinTask(id),
+  };
+});
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 process.env.CRON_SECRET = "cron-secret";
 
@@ -263,8 +274,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   const storyPayload = (job: Job) => RalphStoryPayload.parse(ralphJobPayload(job));
 
   /** The job's outcome hooks: a coding run's are the `ralph-run` sink's, the same ralph hooks. */
-  const expectRalphHooks = (job: Job) => {
-    if (job.taskId !== null) expect(taskSink(job)?.kind).toBe("ralph-run");
+  const expectRalphHooks = async (job: Job) => {
+    if (job.taskId !== null)
+      expect((await taskSink(job, BUILTIN_DEFINITIONS))?.kind).toBe("ralph-run");
   };
 
   /**
@@ -303,7 +315,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       });
       expect(status).toEqual({ status: "completed" });
     }
-    expectRalphHooks(job);
+    await expectRalphHooks(job);
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     return storyPayload(job);
   }
@@ -345,7 +357,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
-    const sink = taskSink(job);
+    const sink = await taskSink(job, BUILTIN_DEFINITIONS);
     if (job.taskId !== null) expect(sink?.kind).toBe("run-result");
     expect(await (sink?.onStarted ?? onRalphJobStarted)(db, job, harnessId)).toEqual({
       skip: false,
@@ -796,7 +808,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
         status: "completed",
       });
-      expectRalphHooks(job);
+      await expectRalphHooks(job);
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
       return { job, payload: RalphRequestPayload.parse(ralphJobPayload(job)) };
     }
@@ -1136,18 +1148,18 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
     afterEach(async () => {
       vi.restoreAllMocks();
+      changedBuiltins.clear();
       await db
         .update(repositories)
         .set({ codingPath: "legacy", storyTaskId: "builtin:implement-story" });
       await setEarly(false);
     });
 
-    /** `builtin:implement-story` with `settings` (the built-in definitions are read through `getTask`). */
+    /** `builtin:implement-story` with `settings` (the built-in definitions are read through `getBuiltinTask`). */
     function storyTaskWith(settings: Partial<TaskDefinition>): void {
+      changedBuiltins.delete("builtin:implement-story");
       const builtin = getBuiltinTask("builtin:implement-story")!;
-      vi.spyOn(BUILTIN_DEFINITIONS, "getTask").mockImplementation((id) =>
-        id === builtin.id ? { ...builtin, ...settings } : getBuiltinTask(id),
-      );
+      changedBuiltins.set(builtin.id, { ...builtin, ...settings });
     }
 
     /**
@@ -1189,10 +1201,10 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           pushed: { branch: payload.branch, sha: outcome.sha },
           durationMs: 10,
         };
-        expect(taskSink(job)?.parseResult?.(result)).toEqual(result);
+        expect((await taskSink(job, BUILTIN_DEFINITIONS))?.parseResult?.(result)).toEqual(result);
         await completeJob(db, { jobId: job.id, harnessId: agentA, result });
       }
-      expectRalphHooks(job);
+      await expectRalphHooks(job);
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
       return payload;
     }

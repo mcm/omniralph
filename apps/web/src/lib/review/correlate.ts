@@ -19,9 +19,9 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
 import { z } from "zod";
-import { runSpecJobInput } from "@/lib/runs/job";
+import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { reviewTaskNames } from "./post";
 import { finishReviewRun } from "./run";
 
 /**
@@ -47,6 +47,7 @@ export function correlationContext(
   run: Pick<ReviewRun, "id" | "prNumber">,
   repository: string,
   inputs: readonly CorrelationInput[],
+  taskName: (taskId: string) => string,
 ): CorrelationTriggerContext {
   return CorrelationTriggerContext.parse({
     invoker: { kind: "review-run", id: run.id },
@@ -58,7 +59,7 @@ export function correlationContext(
           const taskId = review.taskId ?? "unknown";
           return {
             taskId,
-            name: getBuiltinTask(taskId)?.name ?? taskId,
+            name: taskName(taskId),
             summary: review.summary?.trim() || null,
             findings:
               findings.length === 0
@@ -93,7 +94,8 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
   const repository = await getRepository(tx, run.repositoryId);
   if (!repository) return { error: "Correlation skipped: the repository is gone" };
   const taskId = repository.correlationTaskId;
-  const task = getBuiltinTask(taskId);
+  const definitions = organizationDefinitions(tx, run.organizationId);
+  const task = await definitions.getTask(taskId);
   if (!task || task.taskType !== "query" || !task.triggers.includes("run.invoked")) {
     console.warn("skipping an unknown correlation task", {
       repositoryId: run.repositoryId,
@@ -104,13 +106,21 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
   const { job } = await insertJob(tx, {
     organizationId: run.organizationId,
     type: CORRELATION_JOB_TYPE,
-    ...runSpecJobInput(task, {
+    ...(await taskJobInput(definitions, task, {
       trigger: {
         kind: "run.invoked",
-        context: correlationContext(run, repository.fullPath, inputs),
+        context: correlationContext(
+          run,
+          repository.fullPath,
+          inputs,
+          await reviewTaskNames(
+            definitions,
+            inputs.map(({ review }) => review.taskId ?? "unknown"),
+          ),
+        ),
       },
       repositoryId: run.repositoryId,
-    }),
+    })),
     dedupeKey: correlationJobKey(run.id),
     targetHarnessId: await pinnedHarnessFor(tx, run.organizationId, run.repositoryId),
   });

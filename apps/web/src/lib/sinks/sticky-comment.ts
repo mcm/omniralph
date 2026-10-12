@@ -16,7 +16,8 @@ import {
   saveReviewResult,
   settleReviewRunOf,
 } from "@/lib/review/jobs";
-import { repositoryTarget, reviewTaskName, reviewUrl } from "@/lib/review/post";
+import { organizationDefinitions } from "@/lib/definitions";
+import { repositoryTarget, reviewTaskNames, reviewUrl } from "@/lib/review/post";
 import { inlineCode, MAX_SUMMARY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import type { Sink } from "./index";
 
@@ -65,7 +66,7 @@ export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
  */
 export async function postStickyComment(
   db: Database,
-  job: Pick<Job, "taskId">,
+  job: Pick<Job, "taskId" | "organizationId">,
   reviewId: string,
 ): Promise<boolean> {
   const review = await getReview(db, reviewId);
@@ -76,8 +77,9 @@ export async function postStickyComment(
   const taskId = review.taskId ?? job.taskId;
   if (!taskId) return false;
   const { adapter, repo, sanitize } = await repositoryTarget(db, review, run?.prAuthor ?? null);
+  const taskName = await reviewTaskNames(organizationDefinitions(db, job.organizationId), [taskId]);
   const body = [
-    `## ${reviewTaskName(taskId)}`,
+    `## ${taskName(taskId)}`,
     "",
     review.summary
       ? sanitizeCapped(review.summary, sanitize, MAX_SUMMARY_CHARS)

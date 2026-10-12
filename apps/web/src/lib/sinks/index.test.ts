@@ -6,6 +6,7 @@ import { z } from "zod";
 vi.mock("server-only", () => ({}));
 
 const { jobHooks, parseSinkResult, sinkFor, taskSink } = await import("./index");
+const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { learnedRuleSink } = await import("./learned-rule");
 const { findingThreadSink } = await import("./finding-thread");
@@ -48,7 +49,7 @@ const answered = (structured: unknown, answer: string | null = null) => ({
 });
 
 describe("sinkFor", () => {
-  it("finds every sink by kind", () => {
+  it("finds every sink by kind", async () => {
     expect(sinkFor("learned-rule")).toBe(learnedRuleSink);
     expect(sinkFor("finding-thread")).toBe(findingThreadSink);
     expect(sinkFor("chat-thread")).toBe(chatThreadSink);
@@ -61,23 +62,28 @@ describe("sinkFor", () => {
 });
 
 describe("taskSink", () => {
-  it("is the sink of the job's task", () => {
-    expect(taskSink({ taskId: "builtin:learn-rule" }, DEFINITIONS)).toBe(learnedRuleSink);
-    expect(taskSink({ taskId: "builtin:reply-to-finding" }, DEFINITIONS)).toBe(findingThreadSink);
-    expect(taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
-    expect(taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
-    expect(taskSink({ taskId: "builtin:review-pr" }, DEFINITIONS)).toBe(reviewSink);
-    expect(taskSink({ taskId: "builtin:summarize-pr" }, DEFINITIONS)).toBe(stickyCommentSink);
-    expect(taskSink({ taskId: "builtin:implement-story" }, DEFINITIONS)).toBe(ralphRunSink);
-    expect(taskSink({ taskId: "builtin:handle-request" }, DEFINITIONS)).toBe(ralphRunSink);
-    expect(taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
-    expect(taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
+  it("is the sink of the job's task", async () => {
+    expect(await taskSink({ taskId: "builtin:learn-rule" }, DEFINITIONS)).toBe(learnedRuleSink);
+    expect(await taskSink({ taskId: "builtin:reply-to-finding" }, DEFINITIONS)).toBe(
+      findingThreadSink,
+    );
+    expect(await taskSink({ taskId: "builtin:ask-about-code" }, DEFINITIONS)).toBe(chatThreadSink);
+    expect(await taskSink({ taskId: "builtin:triage" }, DEFINITIONS)).toBe(triageSink);
+    expect(await taskSink({ taskId: "builtin:review-pr" }, DEFINITIONS)).toBe(reviewSink);
+    expect(await taskSink({ taskId: "builtin:summarize-pr" }, DEFINITIONS)).toBe(stickyCommentSink);
+    expect(await taskSink({ taskId: "builtin:implement-story" }, DEFINITIONS)).toBe(ralphRunSink);
+    expect(await taskSink({ taskId: "builtin:handle-request" }, DEFINITIONS)).toBe(ralphRunSink);
+    expect(await taskSink({ taskId: "builtin:gone" }, DEFINITIONS)).toBeUndefined();
+    expect(await taskSink({ taskId: null }, DEFINITIONS)).toBeUndefined();
   });
 });
 
 describe("jobHooks", () => {
   it("uses the task's sink for a run-spec job, never its type's outcome handler", async () => {
-    const hooks = jobHooks({ type: "sinks.legacy", payload: {}, taskId: "builtin:learn-rule" })!;
+    const hooks = (await jobHooks(
+      { type: "sinks.legacy", payload: {}, taskId: "builtin:learn-rule" },
+      BUILTIN_DEFINITIONS,
+    ))!;
     expect(hooks.isValidResult!(answered({ rule: null }))).toBe(true);
     expect(hooks.isValidResult!({})).toBe(false);
     expect(hooks.onStarted).toBeUndefined();
@@ -90,8 +96,11 @@ describe("jobHooks", () => {
     expect(legacyCompleted).not.toHaveBeenCalled();
   });
 
-  it("validates a review run's result with the review sink, with every review hook", () => {
-    const hooks = jobHooks({ type: "review.task", payload: {}, taskId: "builtin:review-pr" })!;
+  it("validates a review run's result with the review sink, with every review hook", async () => {
+    const hooks = (await jobHooks(
+      { type: "review.task", payload: {}, taskId: "builtin:review-pr" },
+      BUILTIN_DEFINITIONS,
+    ))!;
     const result = {
       findings: [],
       usage: { inputTokens: 1, outputTokens: 1 },
@@ -110,12 +119,15 @@ describe("jobHooks", () => {
     }
   });
 
-  it("hands a coding run's story or request result to its ralph run, with the ralph hooks", () => {
-    const hooks = jobHooks({
-      type: "ralph.story",
-      payload: {},
-      taskId: "builtin:implement-story",
-    })!;
+  it("hands a coding run's story or request result to its ralph run, with the ralph hooks", async () => {
+    const hooks = (await jobHooks(
+      {
+        type: "ralph.story",
+        payload: {},
+        taskId: "builtin:implement-story",
+      },
+      BUILTIN_DEFINITIONS,
+    ))!;
     const story = {
       status: "complete",
       summary: "Did it.",
@@ -140,12 +152,20 @@ describe("jobHooks", () => {
     expect(hooks.onRetry).toBeUndefined();
   });
 
-  it("has no hooks for a run-spec job without an implemented sink", () => {
-    expect(jobHooks({ type: "sinks.legacy", payload: {}, taskId: "builtin:gone" })).toBeUndefined();
+  it("has no hooks for a run-spec job without an implemented sink", async () => {
+    expect(
+      await jobHooks(
+        { type: "sinks.legacy", payload: {}, taskId: "builtin:gone" },
+        BUILTIN_DEFINITIONS,
+      ),
+    ).toBeUndefined();
   });
 
   it("uses the type's outcome handler for a legacy job", async () => {
-    const hooks = jobHooks({ type: "sinks.legacy", payload: {}, taskId: null })!;
+    const hooks = (await jobHooks(
+      { type: "sinks.legacy", payload: {}, taskId: null },
+      BUILTIN_DEFINITIONS,
+    ))!;
     await hooks.onCompleted!({} as Database, {} as Job);
     expect(legacyCompleted).toHaveBeenCalledOnce();
   });
@@ -154,7 +174,7 @@ describe("jobHooks", () => {
 describe("parseSinkResult", () => {
   const textSink = { ...learnedRuleSink, kind: "chat-thread" as const, outputSchema: null };
 
-  it("parses the structured output with the sink's output schema", () => {
+  it("parses the structured output with the sink's output schema", async () => {
     expect(parseSinkResult(learnedRuleSink, answered({ rule: "Do not flag X." }))).toMatchObject({
       structured: { rule: "Do not flag X." },
     });
@@ -162,7 +182,7 @@ describe("parseSinkResult", () => {
     expect(parseSinkResult(learnedRuleSink, answered(null, "text"))).toBeNull();
   });
 
-  it("takes the Markdown answer for a sink without an output schema", () => {
+  it("takes the Markdown answer for a sink without an output schema", async () => {
     expect(parseSinkResult(textSink, answered(null, "The answer."))).toMatchObject({
       answer: "The answer.",
       structured: null,
@@ -170,7 +190,7 @@ describe("parseSinkResult", () => {
     expect(parseSinkResult(textSink, answered({ rule: "x" }))).toBeNull();
   });
 
-  it("accepts runs that ended without output", () => {
+  it("accepts runs that ended without output", async () => {
     const exhausted = { ...answered(null), outcome: "budget_exhausted" };
     expect(parseSinkResult(learnedRuleSink, exhausted)).toMatchObject({ structured: null });
     expect(parseSinkResult(textSink, exhausted)).toMatchObject({ answer: null });
