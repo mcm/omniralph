@@ -1040,8 +1040,15 @@ describe("AgentDaemon", () => {
     const runQueryTask = vi.fn(async (spec: RunSpec, c: JobContext) => ({
       query: spec.jobId,
       sameSpec: c.runSpec === spec,
+      dataDir: c.dataDir,
+      // The daemon's negotiated host tool paths (none negotiated in this test).
+      hostTool: c.hostToolPath?.("opengrep"),
     }));
-    const { api, claims, daemon } = setup({ run: capabilityRun, runQueryTask });
+    const { api, claims, daemon } = setup({
+      run: capabilityRun,
+      runQueryTask,
+      dataDir: "/data/omniralph",
+    });
     // A run-spec job of a legacy type: dispatched by its run spec, not its type.
     claims.push(job(runId, { taskType: "query", taskId: "builtin:test-task" }));
     claims.push(job(legacyId));
@@ -1050,7 +1057,7 @@ describe("AgentDaemon", () => {
     expect(runQueryTask).toHaveBeenCalledTimes(1);
     expect(runQueryTask.mock.calls[0]?.[0]).toMatchObject({ jobId: runId, taskType: "query" });
     expect(api.submitResult).toHaveBeenCalledWith(runId, {
-      result: { query: runId, sameSpec: true },
+      result: { query: runId, sameSpec: true, dataDir: "/data/omniralph", hostTool: null },
     });
     expect(capabilityRun).toHaveBeenCalledTimes(1);
     expect(capabilityRun.mock.calls[0]?.[0]).toMatchObject({ id: legacyId });

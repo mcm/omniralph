@@ -536,6 +536,30 @@ ${diff}
       expect(allowList.tools).toEqual(["Read"]);
     });
 
+    it("attaches the run's installable MCP servers to sessions with tools only", () => {
+      const executables = {
+        commands: new Map<string, string>(),
+        mcpServers: {
+          servers: { omniralph_graph_graph: { type: "stdio" as const, command: "/d/server.js" } },
+          allowedTools: ["mcp__omniralph_graph_graph"],
+        },
+      };
+      const provider = reviewTaskProvider(spec(), context(), silent, executables);
+      const build = (allowExploration: boolean) =>
+        provider.buildOptions(
+          { cwd: root, model: "claude-x", allowExploration },
+          new AbortController(),
+          7,
+          "SYS",
+        );
+      const exploring = build(true);
+      expect(exploring.mcpServers).toEqual(executables.mcpServers.servers);
+      expect(exploring.allowedTools).toContain("mcp__omniralph_graph_graph");
+      const repair = build(false);
+      expect(repair.mcpServers).toEqual({});
+      expect(repair.allowedTools ?? []).not.toContain("mcp__omniralph_graph_graph");
+    });
+
     it("gives no tools when the agent has none (a profile without exploration)", () => {
       const agent = AgentDefinition.parse({
         id: "builtin:test-reviewer",

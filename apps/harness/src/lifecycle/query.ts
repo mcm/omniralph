@@ -27,6 +27,7 @@ import {
   type OmniralphServerOptions,
 } from "../tools/omniralph-server.js";
 import { runSetupCommands, runTeardownCommands } from "./commands.js";
+import { resolveRunExecutables, sessionMcpServers } from "./executables.js";
 import { existingReferences } from "./references.js";
 import { queryToolPolicy } from "./tool-policy.js";
 import {
@@ -131,7 +132,9 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    tools, or, with `requireCheckout`, finishes with `no_checkout` and no
  *    session.
  *    The task's setup commands then run there, in order, without either job
- *    token in their environment; each one's capped stdout becomes
+ *    token in their environment, a first word naming one of the task's host
+ *    tools or required installables' commands by its absolute path
+ *    (`resolveRunExecutables`); each one's capped stdout becomes
  *    `setup.<name>`. A failing one fails the run, unless it's `optional`
  *    (see `runSetupCommands`).
  * 2. Render the task's prompt template over the trigger context, the
@@ -145,7 +148,8 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    the task type) and its read-only Linear tools (`tools.linear`, when the
  *    task turns on `linearRead`) come from the in-process `omniralph` MCP
  *    server, which calls the control panel with the session token too; with
- *    none, no server is attached.
+ *    none, no server is attached. The installable MCP servers the agent lists
+ *    (`<package>:<server>`) are attached from the installed packages.
  * 4. Finish: a structured result is validated against the task's output
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
@@ -170,11 +174,13 @@ export async function runQueryTask(
     durationMs: Date.now() - started,
   });
 
+  const executables = await resolveRunExecutables(spec, ctx);
   // Setup and teardown commands get neither job token, as the session's own shell doesn't get the lifecycle one.
   const commandOptions = (workspace: Workspace) => ({
     cwd: workspace.cwd,
     env: withoutJobEnv(ctx.env()),
     logger: log,
+    executables: executables.commands,
   });
 
   const run = async (workspace: Workspace): Promise<QueryRunResult> => {
@@ -234,6 +240,7 @@ export async function runQueryTask(
       logger: log,
       ...options.harnessTools,
     });
+    const mcpServers = sessionMcpServers(harness, executables);
     const result = await runner({
       prompt,
       cwd: workspace.cwd,
@@ -246,9 +253,7 @@ export async function runQueryTask(
       ...(spec.model !== null && { model: spec.model }),
       ...(spec.fallbackModel !== null && { fallbackModel: spec.fallbackModel }),
       ...(spec.task.idleTimeoutMs !== undefined && { idleTimeoutMs: spec.task.idleTimeoutMs }),
-      ...(harness && {
-        mcpServers: { servers: { omniralph: harness.config }, allowedTools: harness.allowedTools },
-      }),
+      ...(mcpServers && { mcpServers }),
       ...(runTmpDir !== workspace.cwd && { additionalDirectories: [runTmpDir] }),
       env: ctx.sessionEnv(),
       signal: ctx.signal,

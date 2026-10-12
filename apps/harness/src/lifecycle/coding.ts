@@ -23,6 +23,7 @@ import {
 import { PermissionRelay } from "../tools/permissions.js";
 import { withoutJobEnv } from "../job-env.js";
 import { runSetupCommands, runTeardownCommands } from "./commands.js";
+import { resolveRunExecutables, sessionMcpServers, type RunExecutables } from "./executables.js";
 import { querySystemPrompt } from "./query.js";
 import { requestEpic, runRequestAttempt, type RequestAttemptPrepared } from "./request-attempt.js";
 import {
@@ -126,14 +127,21 @@ export function requestRunPrompt(
  * environment. `setup` runs before the prompt is rendered and returns the
  * `setup.<name>` variables (a failing required one fails the run, see
  * `runSetupCommands`); `teardown` runs after the attempt, whatever happened,
- * and only logs failures.
+ * and only logs failures. A first word naming one of the run's `executables`
+ * (its host tools and installable commands) runs that absolute path.
  */
 export function taskCommands(
   spec: Pick<RunSpec, "task">,
   ctx: JobContext,
   log: JobContext["logger"],
+  executables?: RunExecutables,
 ) {
-  const commandOptions = (cwd: string) => ({ cwd, env: withoutJobEnv(ctx.env()), logger: log });
+  const commandOptions = (cwd: string) => ({
+    cwd,
+    env: withoutJobEnv(ctx.env()),
+    logger: log,
+    ...(executables && { executables: executables.commands }),
+  });
   return {
     setup: (cwd: string) =>
       runSetupCommands(spec.task.setupCommands, { ...commandOptions(cwd), signal: ctx.signal }),
@@ -226,7 +234,8 @@ export async function runStoryRun(
   options: CodingTaskOptions = {},
 ): Promise<RalphStoryResult> {
   const log = ctx.logger.child({ taskId: spec.task.id, agentId: spec.agent.id });
-  const commands = taskCommands(spec, ctx, log);
+  const executables = await resolveRunExecutables(spec, ctx);
+  const commands = taskCommands(spec, ctx, log, executables);
   return runStoryAttempt({
     payload,
     jobId: spec.jobId,
@@ -249,6 +258,7 @@ export async function runStoryRun(
         logger: log,
         ...options.harnessTools,
       });
+      const mcpServers = sessionMcpServers(harness, executables);
       const model = payload.settings.model ?? spec.model ?? DEFAULT_STORY_MODEL;
       const fallbackModel = payload.settings.fallbackModel ?? spec.fallbackModel;
       const idleTimeoutMs = options.idleTimeoutMs ?? spec.task.idleTimeoutMs;
@@ -262,12 +272,7 @@ export async function runStoryRun(
         ...(spec.task.maxTurns !== undefined && { maxTurns: spec.task.maxTurns }),
         ...(spec.tokenBudget !== null && { tokenBudget: spec.tokenBudget }),
         ...(idleTimeoutMs !== undefined && { idleTimeoutMs }),
-        ...(harness && {
-          mcpServers: {
-            servers: { omniralph: harness.config },
-            allowedTools: harness.allowedTools,
-          },
-        }),
+        ...(mcpServers && { mcpServers }),
         // The session token only: the session's git credential helper reads it from its token file.
         env: ctx.repos.gitEnv(ctx.sessionEnv()),
       };
@@ -316,7 +321,8 @@ export async function runRequestRun(
         }),
       })
     : null;
-  const commands = taskCommands(spec, ctx, log);
+  const executables = await resolveRunExecutables(spec, ctx);
+  const commands = taskCommands(spec, ctx, log, executables);
   // The lifecycle's own git commands (fetches, `ship`'s pushes) read the lifecycle token from a file.
   const git = await jobGitAccess(ctx, { refreshMs: options.tokenRefreshMs });
   try {
@@ -342,6 +348,7 @@ export async function runRequestRun(
           logger: log,
           ...options.harnessTools,
         });
+        const mcpServers = sessionMcpServers(harness, executables);
         const model = payload.settings.model ?? spec.model ?? DEFAULT_STORY_MODEL;
         const fallbackModel = payload.settings.fallbackModel ?? spec.fallbackModel;
         const idleTimeoutMs = options.idleTimeoutMs ?? spec.task.idleTimeoutMs;
@@ -355,12 +362,7 @@ export async function runRequestRun(
           ...(spec.task.maxTurns !== undefined && { maxTurns: spec.task.maxTurns }),
           ...(spec.tokenBudget !== null && { tokenBudget: spec.tokenBudget }),
           ...(idleTimeoutMs !== undefined && { idleTimeoutMs }),
-          ...(harness && {
-            mcpServers: {
-              servers: { omniralph: harness.config },
-              allowedTools: harness.allowedTools,
-            },
-          }),
+          ...(mcpServers && { mcpServers }),
           // The session token only: its git credential helper gets a read-only credential with it.
           env: ctx.repos.gitEnv(ctx.sessionEnv()),
           // The repository's Claude Code settings may `ask` about calls (e.g. `git commit`).

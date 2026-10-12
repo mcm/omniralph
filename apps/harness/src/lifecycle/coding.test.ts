@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFile, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,6 +21,7 @@ import { silentLogger } from "../logger.js";
 import { createSessionRunner, type SessionQueryFn } from "../session/session.js";
 import { firstPrompt } from "../test/fake-query.js";
 import { ENV, git, Remote } from "../test/git-remote.js";
+import { placeInstallable } from "../test/installables.js";
 import { PUSH_GUARD_HOOK, RepoCache } from "../workspace/repoCache.js";
 import { runCodingTask, storyRunPrompt, type CodingTaskOptions } from "./coding.js";
 import { promptEpic, stashPrefix } from "./story-attempt.js";
@@ -781,6 +782,70 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
           },
         ),
       );
+    });
+
+    it("runs the task's host tools and installable commands by absolute path, and attaches the agent's installable MCP servers", async () => {
+      const dataDir = path.join(root, "data");
+      const graphDir = await placeInstallable(
+        dataDir,
+        {
+          name: "@omniralph/graph",
+          version: "1.0.0",
+          omniralph: {
+            commands: [{ name: "graph-index", bin: "bin/index.sh" }],
+            mcpServers: [{ name: "graph", command: "bin/server.sh" }],
+          },
+        },
+        { "bin/index.sh": "#!/bin/sh\necho indexed\n", "bin/server.sh": "#!/bin/sh\n" },
+      );
+      const hostTool = path.join(root, "opengrep");
+      await writeFile(hostTool, "#!/bin/sh\necho negotiated\n");
+      await chmod(hostTool, 0o755);
+      // Executables of the same names, first on the run's PATH.
+      const planted = path.join(root, "planted");
+      await mkdir(planted);
+      for (const name of ["opengrep", "graph-index"]) {
+        await writeFile(path.join(planted, name), "#!/bin/sh\necho planted\n");
+        await chmod(path.join(planted, name), 0o755);
+      }
+      const teardownLog = path.join(root, "teardown-log");
+      const { query, calls } = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const run = withCommands(
+        [command("branch", "opengrep"), command("lint", "graph-index")],
+        [command("index", `graph-index >> '${teardownLog}'`)],
+      );
+      run.task.requires = { installables: [], hostTools: ["opengrep"] };
+      run.agent.tools.mcpServers = ["@omniralph/graph:graph"];
+      const out = await runStoryCoding(
+        run,
+        {
+          ...context(),
+          env: (extra) => ({
+            ...context().env(extra),
+            PATH: `${planted}:${process.env.PATH ?? ""}`,
+          }),
+          hostToolPath: (name) => (name === "opengrep" ? hostTool : null),
+          dataDir,
+        },
+        options(query),
+      );
+      expect(out.status).toBe("complete");
+      const [call] = calls;
+      expect(call!.prompt).toContain("The branch: ```\nnegotiated\n```");
+      expect(call!.prompt).toContain("The lint: ```\nindexed\n```");
+      expect(await readFile(teardownLog, "utf8")).toBe("indexed\n");
+      expect(Object.keys(call!.options.mcpServers ?? {}).sort()).toEqual([
+        "omniralph",
+        "omniralph_graph_graph",
+      ]);
+      expect(call!.options.mcpServers?.omniralph_graph_graph).toEqual({
+        type: "stdio",
+        command: path.join(graphDir, "bin/server.sh"),
+        args: [],
+      });
     });
 
     it("fails the run without a session when a required setup command fails, and still runs the teardown commands", async () => {
