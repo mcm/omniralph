@@ -178,7 +178,6 @@ describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear",
         request: "Fix the typo in the README.",
         quoted: [],
         author: "Ada",
-        announce: async () => {},
       },
     );
     expect(started.status).toBe("started");

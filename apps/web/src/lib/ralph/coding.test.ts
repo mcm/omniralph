@@ -124,7 +124,7 @@ describe("jobMaxAttempts", () => {
 });
 
 describe("roundLimits", () => {
-  const run = { id: "run-1" };
+  const run = { codingTaskId: null };
 
   it("are the repository's on the legacy path", () => {
     expect(
@@ -146,14 +146,25 @@ describe("roundLimits", () => {
       maxReviewRounds: 1,
       maxFixRounds: 0,
     });
+    // A run's own coding task caps them instead.
+    expect(roundLimits({ codingTaskId: cautious.id }, repository(), DEFINITIONS)).toEqual({
+      maxReviewRounds: 1,
+      maxFixRounds: 0,
+    });
   });
 });
 
 describe("requestTaskFor and requestTrigger", () => {
   it("runs requests with the repository's request task", () => {
-    expect(requestTaskFor({ id: "run-1" }, repository({ requestTaskId: cautious.id }))).toBe(
+    expect(requestTaskFor({ codingTaskId: null }, repository({ requestTaskId: cautious.id }))).toBe(
       cautious.id,
     );
+  });
+
+  it("runs requests with the run's own coding task when it has one", () => {
+    expect(
+      requestTaskFor({ codingTaskId: cautious.id }, repository({ requestTaskId: story.id })),
+    ).toBe(cautious.id);
   });
 
   it("is the oldest request's trigger, a Linear mention when it has none", () => {

@@ -1,8 +1,9 @@
 /**
  * Starts a request-mode ralph run from a chat thread (the control-panel
- * agent's `start_ralph_request`): the run belongs to the thread, works in the
+ * agent's `start_work`): the run belongs to the thread, works in the
  * repository the agent named and runs the agent's request as a `ralph.request`
- * job, like a Linear mention. A follow-up in the thread (its last run worked
+ * job (on the repository's `tasks` path, a coding run of the chat "start
+ * work" task), like a Linear mention. A follow-up in the thread (its last run worked
  * in the same repository) continues that run's branch and PR/MR.
  */
 import {
@@ -49,10 +50,10 @@ export interface ChatRequestInput {
    */
   ship?: boolean;
   /**
-   * Posts the handoff message to the thread, once the run exists and before
-   * its job is enqueued.
+   * The coding task the run's requests run (the chat "start work" task),
+   * stored on the run; omitted, they run the repository's request task.
    */
-  announce(run: RalphRun, repository: Repository, followUp: boolean): Promise<void>;
+  codingTaskId?: string;
 }
 
 export type ChatRequestOutcome =
@@ -138,6 +139,7 @@ export async function startChatRequest(
       // The main lane is the previous run's (copied below) or a new one.
       repositoryId: null,
       routedBy: ROUTED_BY_CHAT,
+      codingTaskId: input.codingTaskId ?? null,
     });
     if (!result.created) return result;
     let run = result.run;
@@ -171,7 +173,6 @@ export async function startChatRequest(
   });
   if (!created) return { status: "already_running", run };
 
-  await input.announce(run, repository, !!previous);
   try {
     await advanceRun(run.id, deps);
   } catch (error) {

@@ -1583,6 +1583,11 @@ export const ralphRuns = pgTable(
       .$type<Record<string, RalphAttachmentLink>>()
       .notNull()
       .default({}),
+    /**
+     * The coding task the run's requests run on the repository's `tasks`
+     * path, overriding its `request_task_id` (a chat run's "start work" task).
+     */
+    codingTaskId: text("coding_task_id"),
     /** Jobs enqueued for the run so far. */
     iterations: integer("iterations").notNull().default(0),
     error: text("error"),

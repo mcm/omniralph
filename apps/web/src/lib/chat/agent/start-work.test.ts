@@ -21,7 +21,10 @@ import {
   saveChatConnection,
   seedReviewProfiles,
   claimJob,
+  repositories,
+  setChatTaskDefaults,
   updateRepositoryRalphSettings,
+  upsertChatChannelTaskSetting,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
   type ChatConnection,
@@ -107,7 +110,7 @@ const toolOutput = (call: LanguageModelV2CallOptions) => {
 const REQUEST =
   "Fix the typo in the README of acme/app. The heading says 'Omniralhp'; it should say 'Omniralph'.";
 
-describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
+describe.skipIf(!dockerAvailable)("start_work", () => {
   const key = randomBytes(32);
   let container: StartedPostgreSqlContainer;
   let db: Database;
@@ -251,9 +254,14 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     await onRalphJobFinished(db, (await getJob(db, job.id))!, ralph());
   }
 
-  /** The handoff turn: the model calls the tool with `input`, then ends with no text. */
-  async function handOff(input: { repository: string; request: string; ship?: boolean }) {
-    const scripted = scriptedModel(toolCallResult("start_ralph_request", input), textResult(""));
+  const STARTED_REPLY = "Started a ralph run to fix the README typo.";
+
+  /** The start turn: the model calls the tool with `input`, then replies `reply`. */
+  async function handOff(
+    input: { repository: string; request: string; ship?: boolean },
+    reply = STARTED_REPLY,
+  ) {
+    const scripted = scriptedModel(toolCallResult("start_work", input), textResult(reply));
     await turn(scripted.model, "@omniralph fix the typo in the README of acme/app");
     return scripted.calls;
   }
@@ -325,6 +333,11 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
+    await setChatTaskDefaults(db, orgId, null, null);
+    await db
+      .update(repositories)
+      .set({ codingPath: "legacy", requestTaskId: "builtin:handle-request" })
+      .where(eq(repositories.id, appRepoId));
     await db.execute("DELETE FROM chat_threads");
     chatThread = (await ensureChatThread(db, {
       connectionId: connection.id,
@@ -352,7 +365,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     } as unknown as Logger;
   });
 
-  it("tells the agent to confirm an ambiguous repository and restate the handoff", async () => {
+  it("tells the agent to confirm an ambiguous repository and say in its reply that the run started", async () => {
     const { model, calls } = scriptedModel(
       textResult("Which repository do you mean: acme/app or acme/web?"),
     );
@@ -360,14 +373,15 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
 
     const system = systemOf(calls[0]!);
     expect(system).toContain("confirm which repository");
-    expect(system).toContain("restate what you are handing off");
-    expect(calls[0]!.tools?.map((t) => t.name)).toContain("start_ralph_request");
+    expect(system).toContain("tell the user in your own reply that the run started");
+    expect(calls[0]!.tools?.map((t) => t.name)).toContain("start_work");
+    expect(calls[0]!.tools?.map((t) => t.name)).not.toContain("start_ralph_request");
     expect(posts).toEqual(["Which repository do you mean: acme/app or acme/web?"]);
     expect(await threadRun()).toBeNull();
     expect(await queuedJobs()).toEqual([]);
   });
 
-  it("starts a chat run, announces it, enqueues its request job and completes in the thread", async () => {
+  it("starts a chat run of the start work task, enqueues its request job and completes in the thread", async () => {
     const calls = await handOff({ repository: "Acme/App", request: REQUEST });
 
     const run = (await threadRun())!;
@@ -379,28 +393,24 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
       repositoryId: appRepoId,
       status: "running",
       linearIssueId: null,
+      codingTaskId: "builtin:handle-request",
     });
     expect(toolOutput(calls[1]!)).toMatchObject({
       status: "started",
+      runId: run.id,
+      url: `${APP_URL}/ralph/${run.id}`,
+      task: "builtin:handle-request",
       repository: "acme/app",
       followUp: false,
-      run: { id: run.id, url: `${APP_URL}/ralph/${run.id}` },
     });
-    // The handoff message is the only post of the turn (the agent's empty answer posts nothing).
-    expect(posts).toEqual([
-      [
-        "Handing this to ralph in `acme/app`…",
-        "> Fix the typo in the README of acme/app.",
-        `Its progress and answer will follow here ([run](<${APP_URL}/ralph/${run.id}>)).`,
-      ].join("\n\n"),
-    ]);
+    // The agent's reply is the only post of the turn: the tool posts nothing.
+    expect(posts).toEqual([STARTED_REPLY]);
     const recorded = await db
       .select({ role: chatMessages.role, ralphRunId: chatMessages.ralphRunId })
       .from(chatMessages)
       .where(eq(chatMessages.threadId, chatThread.id))
       .orderBy(asc(chatMessages.createdAt));
-    expect(recorded.filter((m) => m.ralphRunId === run.id)).toHaveLength(1);
-    expect(recorded.map((m) => m.role)).toEqual(["user", "assistant", "assistant", "tool"]);
+    expect(recorded.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
 
     // The request: the agent's instruction, then the quoted user message.
     const [message] = await listMessages(db, run.id);
@@ -472,7 +482,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
 
   it("refuses a chat user who isn't a linked member", async () => {
     const { model, calls } = scriptedModel(
-      toolCallResult("start_ralph_request", { repository: "acme/app", request: REQUEST }),
+      toolCallResult("start_work", { repository: "acme/app", request: REQUEST }),
       textResult("You need to link your account first."),
     );
     await turn(model, "@omniralph fix the typo in the README of acme/app", domain);
@@ -488,7 +498,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     const first = (await threadRun())!;
     posts = [];
 
-    const calls = await handOff({ repository: "acme/web", request: "Also bump the version." });
+    const calls = await handOff({ repository: "acme/web", request: "Also bump the version." }, "");
 
     expect(toolOutput(calls[1]!)).toMatchObject({
       error: "run_active",
@@ -520,8 +530,15 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
 
     const second = (await threadRun())!;
     expect(second.id).not.toBe(first.id);
-    expect(toolOutput(calls[1]!)).toMatchObject({ status: "started", followUp: true });
-    expect(posts[0]).toContain("continuing the previous run's branch and pull request");
+    expect(toolOutput(calls[1]!)).toMatchObject({
+      status: "started",
+      runId: second.id,
+      followUp: true,
+    });
+    expect(String(toolOutput(calls[1]!).message)).toContain(
+      "continuing the previous run's branch and pull request",
+    );
+    expect(posts).toEqual([STARTED_REPLY]);
     const lane = (await getMainLane(db, second))!;
     expect(lane).toMatchObject({
       branch: firstLane.branch,
@@ -557,7 +574,7 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     const payload = RalphRequestPayload.parse(next!.payload);
     expect(payload).toMatchObject({ ship: true, branch: firstLane.branch });
     expect(payload.requests[0]!.text).toMatch(/^Ship it\./);
-    expect(systemOf(calls[0]!)).toContain("set `ship` on start_ralph_request");
+    expect(systemOf(calls[0]!)).toContain("set `ship` on start_work");
   });
 
   it("refuses to ship when the thread has no earlier run in that repository", async () => {
@@ -575,16 +592,75 @@ describe.skipIf(!dockerAvailable)("start_ralph_request", () => {
     await playRequestJob(job!, {});
     posts = [];
 
-    await handOff({ repository: "acme/app", request: REQUEST });
+    const calls = await handOff({ repository: "acme/app", request: REQUEST });
 
     const second = (await threadRun())!;
     expect(second.id).not.toBe(first.id);
-    expect(posts[0]).toMatch(/^Handing this to ralph in `acme\/app`…/);
+    expect(toolOutput(calls[1]!)).toMatchObject({ status: "started", followUp: false });
     expect((await getMainLane(db, second))!).toMatchObject({
       branch: `omniralph/chat-${second.id.slice(0, 8)}`,
       prUrl: null,
     });
   });
+  it("runs the channel's start work task on the tasks path, over the repository's request task", async () => {
+    // The repository's own request task doesn't take chat requests: the run's task is used instead.
+    await db
+      .update(repositories)
+      .set({ codingPath: "tasks", requestTaskId: "builtin:implement-story" })
+      .where(eq(repositories.id, appRepoId));
+    // The organization's choice is gone (e.g. a deleted custom task); the channel's override wins.
+    await setChatTaskDefaults(
+      db,
+      orgId,
+      { askAboutCode: "builtin:ask-about-code", startWork: "custom:deleted" },
+      null,
+    );
+    await upsertChatChannelTaskSetting(db, {
+      organizationId: orgId,
+      connectionId: connection.id,
+      channelId: chatThread.channelId,
+      askAboutCodeTaskId: null,
+      startWorkTaskId: "builtin:handle-request",
+      updatedBy: null,
+    });
+
+    const calls = await handOff({ repository: "acme/app", request: REQUEST });
+
+    const run = (await threadRun())!;
+    expect(run.codingTaskId).toBe("builtin:handle-request");
+    expect(toolOutput(calls[1]!)).toMatchObject({
+      status: "started",
+      runId: run.id,
+      task: "builtin:handle-request",
+    });
+    const [job, ...more] = await queuedJobs();
+    expect(more).toEqual([]);
+    expect(job).toMatchObject({
+      type: "ralph.request",
+      ralphRunId: run.id,
+      taskType: "coding",
+      taskId: "builtin:handle-request",
+    });
+    expect(posts).toEqual([STARTED_REPLY]);
+    await db.execute("DELETE FROM chat_channel_task_settings");
+  });
+
+  it("starts nothing when the channel's start work task can't run", async () => {
+    await setChatTaskDefaults(
+      db,
+      orgId,
+      { askAboutCode: "builtin:ask-about-code", startWork: "custom:deleted" },
+      null,
+    );
+
+    const calls = await handOff({ repository: "acme/app", request: REQUEST }, "");
+
+    expect(toolOutput(calls[1]!)).toMatchObject({ error: "task_unavailable" });
+    expect(String(toolOutput(calls[1]!).message)).toContain("There's no task custom:deleted.");
+    expect(await threadRun()).toBeNull();
+    expect(await queuedJobs()).toEqual([]);
+  });
+
   describe("thread replies", () => {
     const noModel = () => scriptedModel(textResult("I shouldn't be asked."));
 

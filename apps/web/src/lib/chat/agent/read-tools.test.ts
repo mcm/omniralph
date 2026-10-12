@@ -72,6 +72,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
   const context = (organizationId: string, actor: ChatActor = member): ChatToolContext => ({
     db,
     organizationId,
+    connection: { id: "00000000-0000-4000-8000-000000000000", organizationId },
     actor,
     requesterExternalUserId: "U-ADA",
     thread: {} as Thread,
@@ -239,14 +240,15 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_harnesses",
       "list_repositories",
       "ask_about_code",
-      "start_ralph_request",
+      "start_work",
       "send_to_session",
       "send_ralph_guidance",
       "draft_linear_issue",
       "delegate_linear_issue",
     ]);
     expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
-    expect(chatTools.start_ralph_request?.tier).toBe("action");
+    expect(chatTools.start_work?.tier).toBe("action");
+    expect(chatTools.start_ralph_request).toBeUndefined();
     expect(chatTools.send_to_session?.tier).toBe("action");
     expect(chatTools.draft_linear_issue?.tier).toBe("action");
     expect(chatTools.delegate_linear_issue?.tier).toBe("action");

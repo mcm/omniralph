@@ -19,7 +19,7 @@ import {
   QueryRunResult,
   RunSpecJobPayload,
 } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
+import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { queryClaimableHarnesses, type QueryHarnessStatus } from "@/lib/harnesses/claimable";
@@ -31,14 +31,14 @@ import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
 /**
  * Code questions from chat: a question about a repository enqueues a run of
- * the built-in query task `builtin:ask-about-code` (job type `chat.ask`),
+ * the channel's "ask about code" query task (`chatTasksFor`; the built-in
+ * `builtin:ask-about-code` unless chosen otherwise, job type `chat.ask`),
  * answered on a harness from a read-only checkout of the default branch,
- * capped at 25% of the profile budget; its `chat-thread` sink
- * (`lib/sinks/chat-thread.ts`) posts the answer in the thread and records it
- * in the thread's history. The control panel never reads the code itself.
+ * within the task's share of the profile budget; the built-in's `chat-thread`
+ * sink (`lib/sinks/chat-thread.ts`) posts the answer in the thread and
+ * records it in the thread's history. The control panel never reads the code
+ * itself.
  */
-
-export const ASK_ABOUT_CODE_TASK_ID = "builtin:ask-about-code";
 
 /** Normalized for dedupe: the same question asked twice in a thread runs once. */
 function questionKey(question: string): string {
@@ -150,8 +150,10 @@ export interface EnqueueChatAskDeps {
 /**
  * Hands a question about one of the organization's connected repositories
  * (`repositoryId`, already matched by the caller) to a harness as a run of
- * `builtin:ask-about-code` answered from its default branch. The same question asked
- * again in the thread while the first one runs is not enqueued twice.
+ * `task` (a query task taking `chat.request`, validated by the caller)
+ * answered from its default branch, and maps the run to the thread. The same
+ * question asked again in the thread while the first one runs is not
+ * enqueued twice.
  */
 export async function enqueueChatAsk(
   deps: EnqueueChatAskDeps,
@@ -159,6 +161,8 @@ export async function enqueueChatAsk(
     organizationId: string;
     repositoryId: string;
     chatThreadId: string;
+    /** The query task to run: the channel's "ask about code" task. */
+    task: TaskDefinition;
     question: string;
     messages: readonly QuotedMessage[];
     /** Files from the thread to include in the context. */
@@ -200,8 +204,7 @@ export async function enqueueChatAsk(
     };
   }
 
-  const task = getBuiltinTask(ASK_ABOUT_CODE_TASK_ID);
-  if (!task) throw new Error(`Built-in task ${ASK_ABOUT_CODE_TASK_ID} is missing`);
+  const { task } = input;
   const question = clip(input.question.trim(), MAX_CHAT_ASK_QUESTION_LENGTH);
   const context = chatAskContext({
     previous: await previousQuestion(db, input.organizationId, input.chatThreadId),

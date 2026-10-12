@@ -138,6 +138,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
   const context = (actor: ChatActor = ada, externalUserId = "D-ADA"): ChatToolContext => ({
     db,
     organizationId: orgId,
+    connection: { id: chatThread.connectionId, organizationId: orgId },
     actor,
     requesterExternalUserId: externalUserId,
     thread,

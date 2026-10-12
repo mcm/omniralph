@@ -187,6 +187,8 @@ export interface NewLinearRalphRunInput extends NewRalphRunBase {
 export interface NewChatRalphRunInput extends NewRalphRunBase {
   origin: "chat";
   chatThreadId: string;
+  /** The coding task its requests run (the chat "start work" task); null for the repository's. */
+  codingTaskId?: string | null;
 }
 
 export type NewRalphRunInput = NewLinearRalphRunInput | NewChatRalphRunInput;
@@ -215,6 +217,7 @@ export async function createRun(
           routedBy: input.routedBy,
           status: input.status,
           pendingElicitation: input.pendingElicitation,
+          codingTaskId: input.codingTaskId ?? null,
         }
       : { ...input, origin: "linear", focusStoryId: input.focusStoryId ?? null };
   // A conflicting run can finish between the insert and the lookup; then insert again.

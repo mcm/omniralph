@@ -1,4 +1,4 @@
-import type { ChatThread, Database } from "@omniralph/db";
+import type { ChatConnection, ChatThread, Database } from "@omniralph/db";
 import { tool, type ToolSet } from "ai";
 import type { Thread } from "chat";
 import type { z } from "zod";
@@ -6,6 +6,7 @@ import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
 import type { ThreadAttachment } from "../attachments";
 import type { ChatActor } from "../identity";
+import type { TaskLookup } from "../tasks";
 
 /**
  * The control-panel agent's tools. Each declares a tier:
@@ -21,6 +22,8 @@ export type ChatToolTier = "read" | "action";
 export interface ChatToolContext {
   db: Database;
   organizationId: string;
+  /** The chat connection that received the message (its channel's chat tasks, `chatTasksFor`). */
+  connection: Pick<ChatConnection, "id" | "organizationId">;
   actor: ChatActor;
   /** The chat user ID of the author of the message being answered. */
   requesterExternalUserId: string;
@@ -35,9 +38,11 @@ export interface ChatToolContext {
   ralph(): Promise<RalphDeps>;
   /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
   attachments?: ReadonlyMap<string, ThreadAttachment>;
+  /** Looks up the tasks chat runs (default: the built-ins, `getBuiltinTask`). */
+  getTask?: TaskLookup;
   /**
-   * A tool handed the thread to a ralph run, or posted its own message (e.g. a
-   * card), in the thread: an empty final answer then posts nothing.
+   * A tool posted its own message (e.g. a card) in the thread: an empty final
+   * answer then posts nothing.
    */
   handedOff(): void;
 }

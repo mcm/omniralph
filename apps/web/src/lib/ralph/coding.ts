@@ -60,14 +60,15 @@ export function storyTaskFor(repository: Pick<Repository, "storyTaskId">): strin
 }
 
 /**
- * The coding task a lane's requests run: the repository's `request_task_id`.
- * (A chat-origin run's own coding task overrides it here once runs carry one.)
+ * The coding task a lane's requests run: the run's own `coding_task_id` (a
+ * chat run's "start work" task) when set, else the repository's
+ * `request_task_id`.
  */
 export function requestTaskFor(
-  _run: Pick<RalphRun, "id">,
+  run: Pick<RalphRun, "codingTaskId">,
   repository: Pick<Repository, "requestTaskId">,
 ): string {
-  return repository.requestTaskId;
+  return run.codingTaskId ?? repository.requestTaskId;
 }
 
 /**
@@ -128,7 +129,7 @@ export interface RoundLimits {
  * capped by those of the run's request task (which runs the rounds).
  */
 export function roundLimits(
-  run: Pick<RalphRun, "id">,
+  run: Pick<RalphRun, "codingTaskId">,
   repository: CodingRepository & { ralphSettings: unknown },
   definitions: DefinitionSource = BUILTIN_DEFINITIONS,
 ): RoundLimits {
