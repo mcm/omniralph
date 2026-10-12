@@ -95,7 +95,8 @@ export const DESCRIBE_PR_TASK: TaskDefinitionInput = {
   },
   sink: "run-result",
   pool: "short",
-  // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
+  // Ralph's story model (`DEFAULT_STORY_MODEL`). A run a ralph run invokes uses the repository's
+  // `ralph_settings.model` (and `fallbackModel`) instead when it sets one (`resolveRunSpec`).
   model: "opus",
   tokenBudget: null,
 };

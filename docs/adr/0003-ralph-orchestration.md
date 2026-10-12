@@ -397,8 +397,8 @@ Coding runs carry `CODING_TASKS_MIN_HARNESS_VERSION` (harness 0.11.0, the first 
 the coding lifecycle) as their `min_harness_version`: an older harness leaves them queued rather
 than failing a story attempt as an unsupported task type.
 
-Not covered yet (an open story of TOOL-304): the repository's ralph **Model** isn't applied to the
-PR description query run (it uses the task's `opus`).
+The PR description query run uses the repository's ralph **Model** (and fallback model), like
+`ralph.describe-pr`; the task's `opus` applies only when the repository sets none.
 
 Alternatives considered: rewriting the loop as a new coding orchestrator (the loop's guarantees
 are what this epic must not change; keeping the payloads as trigger contexts leaves `advanceRun`
