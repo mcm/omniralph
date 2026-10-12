@@ -1,22 +1,51 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
+/** Installables a harness accepts when its config doesn't say. */
+export const DEFAULT_INSTALLABLE_ALLOW = ["@omniralph/*"] as const;
+
 /**
- * The agent's only local configuration. Everything else (concurrency,
- * accepted task types, pool limits, pinned repos) comes from the control panel
- * in every heartbeat response.
+ * An npm package name, optionally with `*` wildcards (each matching any run of
+ * characters except `/`): `@scope/name`, `@scope/*` or `name`.
  */
-export const AgentConfig = z.object({
+const PackagePattern = z
+  .string()
+  .refine((value) => value !== "" && !/\s/.test(value) && value.split("/").length <= 2, {
+    message: "must be an npm package name or a pattern like '@scope/*'",
+  });
+
+const AbsolutePath = z
+  .string()
+  .refine((value) => path.isAbsolute(value), { message: "must be an absolute path" });
+
+/**
+ * The harness's only local configuration. Everything else (concurrency,
+ * accepted task types, pool limits, pinned repos) comes from the control panel
+ * in every heartbeat response. The optional keys are left out when unset, so
+ * rewriting the file (token rotation) never adds them; use the accessors below
+ * for their defaults.
+ */
+export const HarnessConfig = z.object({
   server: z.string(),
   agentId: z.string(),
   /** Rotated on every `/api/harness/token` call; reusing an old one revokes the agent. */
   refreshToken: z.string(),
   workspaceRoot: z.string(),
+  /** Harness data (installables prefix, caches); default `~/.omniralph`. */
+  dataDir: AbsolutePath.optional(),
+  installables: z
+    .object({
+      /** Package-name patterns the `install` RPC accepts; default `["@omniralph/*"]`, `[]` allows none. */
+      allow: z.array(PackagePattern).optional(),
+    })
+    .optional(),
+  /** Absolute path prefixes the harness never executes, configured or discovered. */
+  blockedExecPaths: z.array(AbsolutePath).optional(),
 });
-export type AgentConfig = z.infer<typeof AgentConfig>;
+export type HarnessConfig = z.infer<typeof HarnessConfig>;
 
 export function defaultConfigPath(home = homedir()): string {
   return path.join(home, ".config", "omniralph", "harness.json");
@@ -24,6 +53,77 @@ export function defaultConfigPath(home = homedir()): string {
 
 export function defaultWorkspaceRoot(home = homedir()): string {
   return path.join(home, ".omniralph", "repos");
+}
+
+/** The harness data directory: the parent of the default workspace root. */
+export function defaultDataDir(home = homedir()): string {
+  return path.join(home, ".omniralph");
+}
+
+export function dataDir(config: HarnessConfig, home = homedir()): string {
+  return config.dataDir ?? defaultDataDir(home);
+}
+
+function packagePatternRegExp(pattern: string): RegExp {
+  const source = pattern
+    .split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[^/]*");
+  return new RegExp(`^${source}$`);
+}
+
+/** Whether `installables.allow` (default `["@omniralph/*"]`) accepts the package. */
+export function installableAllowed(config: HarnessConfig, packageName: string): boolean {
+  const allow = config.installables?.allow ?? DEFAULT_INSTALLABLE_ALLOW;
+  return allow.some((pattern) => packagePatternRegExp(pattern).test(packageName));
+}
+
+/**
+ * `realpath` of `file`; for a missing file, the realpath of its deepest
+ * existing ancestor joined with the rest (plain `path.resolve` when none
+ * resolves).
+ */
+async function resolveReal(file: string): Promise<string> {
+  const absolute = path.resolve(file);
+  let existing = absolute;
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(await realpath(existing), ...rest);
+    } catch {
+      const parent = path.dirname(existing);
+      if (parent === existing) return absolute;
+      rest.unshift(path.basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+function withinPrefix(file: string, prefix: string): boolean {
+  if (file === prefix) return true;
+  const base = prefix.endsWith(path.sep) ? prefix : prefix + path.sep;
+  return file.startsWith(base);
+}
+
+/**
+ * Whether `file` is covered by `blockedExecPaths`, matching whole path
+ * segments. Symlinks are resolved on both sides, and the unresolved paths are
+ * checked too, so neither a link into a blocked prefix nor a blocked link
+ * escapes.
+ */
+export async function execPathBlocked(config: HarnessConfig, file: string): Promise<boolean> {
+  const blocked = config.blockedExecPaths ?? [];
+  if (blocked.length === 0) return false;
+  const candidates = [path.resolve(file), await resolveReal(file)];
+  for (const entry of blocked) {
+    const prefixes = [path.resolve(entry), await resolveReal(entry)];
+    if (
+      candidates.some((candidate) => prefixes.some((prefix) => withinPrefix(candidate, prefix)))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export class ConfigError extends Error {
@@ -58,7 +158,7 @@ export function validateServerUrl(input: string): string {
  * Reads the config file. Refuses a file that group or others can access: it
  * holds the agent's refresh token.
  */
-export async function readConfig(file: string): Promise<AgentConfig> {
+export async function readConfig(file: string): Promise<HarnessConfig> {
   let mode: number;
   try {
     mode = (await stat(file)).mode;
@@ -79,8 +179,15 @@ export async function readConfig(file: string): Promise<AgentConfig> {
   } catch {
     throw new ConfigError(`${file} is not valid JSON`);
   }
-  const parsed = AgentConfig.safeParse(json);
-  if (!parsed.success) throw new ConfigError(`${file} is not a valid agent config`);
+  const parsed = HarnessConfig.safeParse(json);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) =>
+        issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
+      )
+      .join("; ");
+    throw new ConfigError(`${file} is not a valid agent config (${issues})`);
+  }
   return { ...parsed.data, server: validateServerUrl(parsed.data.server) };
 }
 
@@ -89,7 +196,7 @@ export async function readConfig(file: string): Promise<AgentConfig> {
  * written and fsynced, then renamed over the old file. A crash leaves either
  * the old or the new file, never a truncated one.
  */
-export async function writeConfig(file: string, config: AgentConfig): Promise<void> {
+export async function writeConfig(file: string, config: HarnessConfig): Promise<void> {
   await writePrivateJson(file, config);
 }
 
