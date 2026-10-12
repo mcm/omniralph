@@ -11,6 +11,7 @@ import {
   jobs,
   mapThreadRun,
   organizations,
+  ralphRuns,
   runActivities,
   runMigrations,
   saveChatConnection,
@@ -243,6 +244,7 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
       author: "Ada",
     });
 
+    const jobsBefore = (await db.select({ id: jobs.id }).from(jobs)).length;
     const byThread = await status({}, chatThread);
     const byId = await status({ run: run.id });
     const byJob = await status({ run: job.id });
@@ -261,12 +263,33 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
     }
     const recent = byThread.recentActivity as { type: string; text: string; parameter?: string }[];
     expect(recent).toHaveLength(RUN_STATUS_ACTIVITY_LIMIT);
+    // Newest first.
     expect(recent.map((a) => a.text)).toEqual([
-      ...Array.from({ length: RUN_STATUS_ACTIVITY_LIMIT - 1 }, (_, i) => `Step ${i + 2}`),
       "Bash",
+      ...Array.from(
+        { length: RUN_STATUS_ACTIVITY_LIMIT - 1 },
+        (_, i) => `Step ${RUN_STATUS_ACTIVITY_LIMIT - i}`,
+      ),
     ]);
-    expect(recent.at(-1)).toMatchObject({ type: "action", parameter: "pnpm test" });
+    expect(recent[0]).toMatchObject({ type: "action", parameter: "pnpm test" });
+    expect(byThread).toMatchObject({
+      queuedAt: run.createdAt.toISOString(),
+      startedAt: job.startedAt!.toISOString(),
+      finishedAt: null,
+    });
     expect(ralphCalls).toBe(0);
+    // Only read: no job was enqueued.
+    expect((await db.select({ id: jobs.id }).from(jobs)).length).toBe(jobsBefore);
+
+    const [done] = await db
+      .update(ralphRuns)
+      .set({ status: "completed" })
+      .where(eq(ralphRuns.id, run.id))
+      .returning();
+    expect(await status({ run: run.id })).toMatchObject({
+      status: "completed",
+      finishedAt: done!.updatedAt.toISOString(),
+    });
   });
 
   it("reports the thread's latest run: a query run asked after the coding run", async () => {
@@ -292,13 +315,13 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
       error: null,
       waitingOnApproval: [],
       recentActivity: [
-        { type: "thought", text: "Reading src/auth.ts", at: "2026-10-12T09:00:01.000Z" },
         {
           type: "action",
           text: "Grep",
           parameter: "authenticate",
           at: "2026-10-12T09:00:02.000Z",
         },
+        { type: "thought", text: "Reading src/auth.ts", at: "2026-10-12T09:00:01.000Z" },
       ],
       createdAt: job.createdAt.toISOString(),
       startedAt: job.startedAt!.toISOString(),
