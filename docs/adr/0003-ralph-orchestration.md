@@ -389,8 +389,11 @@ both paths, and both share all run state.
   the `cleanup` action with `keepBranch` stashes uncommitted work and removes the worktree, but
   keeps the local branch, so a resumed run carries on from it. Nothing deletes a remote branch.
 
-Not covered yet (open stories of TOOL-304): a coding task's own setup and teardown commands
-don't run in coding runs (only the repository's **Setup command**), coding runs carry no
+A coding task's own setup and teardown commands run in story and request runs, in the branch
+worktree (after the repository's **Setup command**): setup before the prompt is rendered, as
+`setup.<name>`, teardown after the attempt, whatever happened.
+
+Not covered yet (open stories of TOOL-304): coding runs carry no
 `min_harness_version` (switch a repository to `tasks` only once its harnesses run a release with
 the coding lifecycle), and the repository's ralph **Model** isn't applied to the PR description
 query run (it uses the task's `opus`).

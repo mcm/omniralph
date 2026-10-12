@@ -544,6 +544,41 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     expect(git(remote.bare, "for-each-ref", "--format=%(refname)")).toBe("refs/heads/main");
   });
 
+  it("runs the task's setup commands in the worktree without a token before the prompt, and its teardown commands after", async () => {
+    const command = (name: string, line: string) => ({
+      name,
+      command: line,
+      timeoutSeconds: 30,
+      maxOutputBytes: 20_000,
+      fence: "",
+      optional: false,
+    });
+    const tornDown = path.join(root, "torn-down");
+    const { query, calls } = fakeQuery(async function* () {
+      yield result({ summary: "Nothing to change." });
+    });
+    const out = await run(
+      spec(payload(), {
+        task: {
+          ...requestTask,
+          promptTemplate: `${requestTask.promptTemplate}\n\nThe service: {{setup.service}}`,
+          setupCommands: [
+            command(
+              "service",
+              "echo \"$(pwd) $(env | grep -cE '^(OMNIRALPH_|GIT_CONFIG_(COUNT|KEY_|VALUE_))')\"",
+            ),
+          ],
+          teardownCommands: [command("stop", `pwd > '${tornDown}'`)],
+        } as RunSpec["task"],
+      }),
+      query,
+    );
+    expect(out.error).toBeNull();
+    // The worktree, and no token or credential helper override in the command's environment.
+    expect(calls[0]!.prompt).toContain(`${worktreePath()} 0`);
+    expect(await readFile(tornDown, "utf8")).toBe(`${worktreePath()}\n`);
+  });
+
   it("resumes the lane's request conversation, and starts fresh when the resume fails", async () => {
     const resumed = fakeQuery(async function* () {
       yield result({ summary: "Shorter." }, "claude-req-2");
