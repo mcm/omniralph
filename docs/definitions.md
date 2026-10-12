@@ -232,6 +232,15 @@ and host tools (`jobs.required_installables`, `jobs.required_host_tools`), deriv
 and its agent as they are when the job is enqueued: only a harness whose heartbeat reports every
 installable and that has an effective path for every host tool claims it.
 
+On the harness, a setup or teardown command whose first word is one of the task's host tools runs
+that tool's negotiated absolute path, and one whose first word names a command of a required
+installable runs that command's `bin` inside the installed package, never an executable of the
+same name the checkout puts on the run's `PATH`. Other commands run as written. The installable
+MCP servers the agent lists are attached to its sessions from the installed packages (their tools
+are `mcp__<package>_<server>__<tool>`, with every character but letters, digits, `_` and `-`
+replaced by `_` and no leading `_`, e.g. `mcp__omniralph_code-graph_graph__<tool>`). A run whose
+host tool or installable is missing on the harness that claimed it is retried after a minute.
+
 ## Delete refusals
 
 **Delete** (custom definitions only, after a confirmation) is refused, with nothing deleted, when:

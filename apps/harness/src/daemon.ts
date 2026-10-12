@@ -734,6 +734,8 @@ export class AgentDaemon implements DrainableDaemon {
       setMessageInjector: (inject) => {
         running.injector = inject;
       },
+      hostToolPath: (name) => this.hostToolPath(name),
+      ...(this.options.dataDir !== undefined && { dataDir: this.options.dataDir }),
     };
   }
 

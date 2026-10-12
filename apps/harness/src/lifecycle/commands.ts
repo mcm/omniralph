@@ -13,6 +13,12 @@ export interface CommandOptions {
   /** The command environment: the harness's, without either job token (`withoutJobEnv`). */
   env: NodeJS.ProcessEnv;
   logger: Logger;
+  /**
+   * Absolute path by command name (the run's host tools and installable
+   * commands, see `resolveRunExecutables`): a command whose first word names
+   * one runs that path instead (`resolveCommand`).
+   */
+  executables?: ReadonlyMap<string, string>;
 }
 
 /** What one command did. */
@@ -56,6 +62,28 @@ export function commandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
         !name.startsWith("GIT_CONFIG_VALUE_"),
     ),
   );
+}
+
+/** `value` quoted for `sh`. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** A command's first word: up to whitespace or a shell operator. */
+const FIRST_WORD = /^(\s*)([^\s;&|<>()]+)/;
+
+/**
+ * `command` with its first word replaced by that executable's absolute path
+ * (quoted) when it names one of `commands`; otherwise unchanged.
+ */
+export function resolveCommand(
+  command: string,
+  commands: ReadonlyMap<string, string> = new Map(),
+): string {
+  const match = FIRST_WORD.exec(command);
+  const resolved = match ? commands.get(match[2]!) : undefined;
+  if (!match || resolved === undefined) return command;
+  return `${match[1]}${shellQuote(resolved)}${command.slice(match[0].length)}`;
 }
 
 function tail(text: string, max: number): string {
@@ -190,7 +218,7 @@ export async function runSetupCommands(
     options.signal.throwIfAborted();
     const started = Date.now();
     const timeoutMs = command.timeoutSeconds * 1000;
-    const outcome = await runCommand(command.command, {
+    const outcome = await runCommand(resolveCommand(command.command, options.executables), {
       cwd: options.cwd,
       env: commandEnv(options.env),
       timeoutMs,
@@ -240,7 +268,7 @@ export async function runTeardownCommands(
   for (const command of commands) {
     const started = Date.now();
     const timeoutMs = command.timeoutSeconds * 1000;
-    const outcome = await runCommand(command.command, {
+    const outcome = await runCommand(resolveCommand(command.command, options.executables), {
       cwd: options.cwd,
       env: commandEnv(options.env),
       timeoutMs,

@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -27,6 +36,7 @@ import { silentLogger } from "../logger.js";
 import { createSessionRunner } from "../session/session.js";
 import { assistantMessage, resultMessage, scriptedQuery } from "../test/fake-query.js";
 import { ENV, exists, Remote } from "../test/git-remote.js";
+import { placeInstallable } from "../test/installables.js";
 import { RepoCache, WORKTREES_DIR } from "../workspace/repoCache.js";
 import { runQueryTask } from "./query.js";
 
@@ -879,6 +889,88 @@ describe("runQueryTask", () => {
         }),
       );
       expect(calls[0]?.prompt).toBe("Files:\n```text\nCLAUDE.md\nsrc\n```\nEnv:\n```\n0\n```\n");
+      await expectTornDown();
+    });
+
+    it("runs host tools and installable commands by their absolute paths, ahead of the run's PATH", async () => {
+      const dataDir = path.join(root, "data");
+      const graphDir = await placeInstallable(
+        dataDir,
+        {
+          name: "@omniralph/graph",
+          version: "1.0.0",
+          omniralph: {
+            commands: [{ name: "graph-index", bin: "bin/index.sh" }],
+            mcpServers: [{ name: "graph", command: "bin/server.sh" }],
+          },
+        },
+        {
+          "bin/index.sh": '#!/bin/sh\necho "indexed $1"\n',
+          "bin/server.sh": "#!/bin/sh\n",
+        },
+      );
+      const hostTool = path.join(root, "host", "opengrep");
+      await mkdir(path.dirname(hostTool));
+      await writeFile(hostTool, '#!/bin/sh\necho "negotiated $1"\n');
+      await chmod(hostTool, 0o755);
+      const planted = "#!/bin/sh\necho planted";
+      const fake = answering();
+      await runQueryTask(
+        spec({
+          agent: agentFixture({
+            tools: { builtin: ["Read"], mcpServers: ["@omniralph/graph:graph"] },
+          }),
+          task: taskFixture({
+            promptTemplate: "{{setup.scan}}|{{setup.index}}|{{setup.other}}",
+            requires: { installables: [], hostTools: ["opengrep"] },
+            setupCommands: [
+              // The checkout puts its own opengrep and graph-index first on the run's PATH.
+              {
+                name: "plant",
+                command: `mkdir -p bin && for c in opengrep graph-index; do printf '${planted}' > bin/$c && chmod +x bin/$c; done`,
+              },
+              { name: "scan", command: "opengrep ." },
+              { name: "index", command: "graph-index src" },
+              { name: "other", command: "bin/opengrep" },
+            ],
+          }),
+        }),
+        {
+          ...context(),
+          env: (extra) => ({ ...ENV, PATH: `bin:${ENV.PATH ?? ""}`, ...extra }),
+          hostToolPath: (name) => (name === "opengrep" ? hostTool : null),
+          dataDir,
+        },
+        { runner: createSessionRunner(fake.query), tmpDir: tmp },
+      );
+      expect(fake.calls[0]?.prompt).toBe(
+        [fence("negotiated ."), fence("indexed src"), fence("planted")].join("|"),
+      );
+      expect(fake.calls[0]?.options.mcpServers).toEqual({
+        omniralph_graph_graph: {
+          type: "stdio",
+          command: path.join(graphDir, "bin/server.sh"),
+          args: [],
+        },
+      });
+      expect(fake.calls[0]?.options.allowedTools).toContain("mcp__omniralph_graph_graph");
+      await expectTornDown();
+    });
+
+    it("retries a run whose host tool isn't available, without running anything", async () => {
+      const fake = answering();
+      await expect(
+        run(
+          spec({
+            task: taskFixture({
+              requires: { installables: [], hostTools: ["opengrep"] },
+              setupCommands: [{ name: "scan", command: "opengrep ." }],
+            }),
+          }),
+          fake,
+        ),
+      ).rejects.toBeInstanceOf(RetryableJobError);
+      expect(fake.calls).toEqual([]);
       await expectTornDown();
     });
 

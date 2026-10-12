@@ -26,6 +26,7 @@ import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import { narrowPermissions, sdkPermissions } from "../capabilities/tool-policy.js";
 import { withoutJobEnv } from "../job-env.js";
 import { runSetupCommands, runTeardownCommands } from "./commands.js";
+import { NO_EXECUTABLES, resolveRunExecutables, type RunExecutables } from "./executables.js";
 import { queryToolPolicy } from "./tool-policy.js";
 
 export interface ReviewTaskOptions {
@@ -33,7 +34,12 @@ export interface ReviewTaskOptions {
    * Builds the session's provider (default: the engine's Claude Agent SDK
    * provider with the run's tool policy and `sessionEnv()`).
    */
-  provider?: (spec: RunSpec, ctx: JobContext, logger: ReviewLogger) => ReviewProvider;
+  provider?: (
+    spec: RunSpec,
+    ctx: JobContext,
+    logger: ReviewLogger,
+    executables: RunExecutables,
+  ) => ReviewProvider;
   /** Retry delay for rate limits whose reset time is unknown. */
   defaultRetryAfterSeconds?: number;
 }
@@ -41,17 +47,28 @@ export interface ReviewTaskOptions {
 /**
  * The Claude provider of a review task's session: the agent's read-only
  * tools ∩ the task's tool settings (as a query session's), narrowed by the
- * repository's tool settings, with the session token only.
+ * repository's tool settings, with the session token only. A session with
+ * tools also gets the installable MCP servers the agent lists.
  */
 export function reviewTaskProvider(
   spec: RunSpec,
   ctx: JobContext,
   logger: ReviewLogger,
+  executables: RunExecutables = NO_EXECUTABLES,
 ): ClaudeAgentProvider {
   const permissions = sdkPermissions(queryToolPolicy(spec.agent, spec.task.toolSettings));
+  const mcp = executables.mcpServers;
   return new ClaudeAgentProvider({
     logger,
-    permissions: (scope) => narrowPermissions(permissions(scope), spec.tools),
+    permissions: (scope) => {
+      const narrowed = narrowPermissions(permissions(scope), spec.tools);
+      if (!mcp || !scope.allowExploration) return narrowed;
+      return {
+        ...narrowed,
+        allowedTools: [...(narrowed.allowedTools ?? []), ...mcp.allowedTools],
+        mcpServers: { ...narrowed.mcpServers, ...mcp.servers },
+      };
+    },
     env: ctx.sessionEnv(),
   });
 }
@@ -127,6 +144,7 @@ export async function runReviewTask(
     headSha,
   });
 
+  const executables = await resolveRunExecutables(spec, ctx);
   await ctx.repos.sync(repository, { ...git, shas: [baseSha, headSha] });
   if (previousReview?.headSha) {
     await ctx.repos
@@ -145,6 +163,7 @@ export async function runReviewTask(
       cwd,
       env: withoutJobEnv(ctx.env()),
       logger: log,
+      executables: executables.commands,
       signal: ctx.signal,
     });
     const input: RunReviewInput = {
@@ -182,7 +201,7 @@ export async function runReviewTask(
     const sessions = emptyReviewSessions();
     const [task] = context.plan.tasks;
     if (task && task.files.length > 0) {
-      const provider = (options.provider ?? reviewTaskProvider)(spec, ctx, log);
+      const provider = (options.provider ?? reviewTaskProvider)(spec, ctx, log, executables);
       const budget = Math.min(task.budget, spec.tokenBudget ?? Infinity);
       const systemPrompt = reviewSystemPrompt(spec);
       const result = await provider.review({
@@ -274,6 +293,7 @@ export async function runReviewTask(
           cwd: worktree.path,
           env: withoutJobEnv(ctx.env()),
           logger: log,
+          executables: executables.commands,
         });
       }
     },
