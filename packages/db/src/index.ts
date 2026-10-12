@@ -537,6 +537,8 @@ export {
   createRunPermissionRequest,
   getRunPermissionRequest,
   insertRunActivity,
+  listOpenRunPermissionRequests,
+  listRecentRunActivities,
   listRunActivities,
   type AnswerRunPermissionRequestInput,
   type NewRunActivityInput,

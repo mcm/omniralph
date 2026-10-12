@@ -2,7 +2,7 @@
  * What a run's session reported (`run_activities`) and the tool calls it asked
  * a person to approve (`run_permission_requests`), stored with the run's job.
  */
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   runActivities,
@@ -140,4 +140,49 @@ export async function answerRunPermissionRequest(
     request: await getRunPermissionRequest(db, input.jobId, input.requestId),
     answered: false,
   };
+}
+
+/**
+ * The latest `limit` activities of the organization's jobs `jobIds` (a run's
+ * jobs), oldest first.
+ */
+export async function listRecentRunActivities(
+  db: Queryable,
+  organizationId: string,
+  jobIds: readonly string[],
+  limit: number,
+): Promise<RunActivity[]> {
+  if (jobIds.length === 0 || limit <= 0) return [];
+  const rows = await db
+    .select()
+    .from(runActivities)
+    .where(
+      and(
+        eq(runActivities.organizationId, organizationId),
+        inArray(runActivities.jobId, [...jobIds]),
+      ),
+    )
+    .orderBy(desc(runActivities.createdAt), desc(runActivities.id))
+    .limit(limit);
+  return rows.reverse();
+}
+
+/** The unanswered, unexpired permission requests of jobs `jobIds` (a run's jobs), oldest first. */
+export async function listOpenRunPermissionRequests(
+  db: Queryable,
+  jobIds: readonly string[],
+  now: Date = new Date(),
+): Promise<RunPermissionRequest[]> {
+  if (jobIds.length === 0) return [];
+  return db
+    .select()
+    .from(runPermissionRequests)
+    .where(
+      and(
+        inArray(runPermissionRequests.jobId, [...jobIds]),
+        isNull(runPermissionRequests.answer),
+        gt(runPermissionRequests.expiresAt, now),
+      ),
+    )
+    .orderBy(asc(runPermissionRequests.askedAt), asc(runPermissionRequests.id));
 }

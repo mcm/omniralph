@@ -10,6 +10,8 @@ import {
   createRunPermissionRequest,
   getRunPermissionRequest,
   insertRunActivity,
+  listOpenRunPermissionRequests,
+  listRecentRunActivities,
   listRunActivities,
 } from "./runs.js";
 import { jobs, organizations, runActivities, runPermissionRequests } from "./schema.js";
@@ -85,6 +87,36 @@ describe.skipIf(!dockerAvailable)("run activities and permission requests", () =
       ]);
       expect(listed.every((a) => a.organizationId === orgId && a.jobId === jobId)).toBe(true);
       expect(await listRunActivities(db, randomUUID())).toEqual([]);
+    });
+
+    it("lists the latest activities of a run's jobs, oldest first, for the organization only", async () => {
+      const first = await newJob();
+      const second = await newJob();
+      const elsewhere = await newJob();
+      const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s));
+      for (const [jobId, body, s] of [
+        [first, "one", 1],
+        [second, "two", 2],
+        [elsewhere, "not this run", 3],
+        [first, "three", 4],
+      ] as const) {
+        const row = await insertRunActivity(db, {
+          jobId,
+          organizationId: orgId,
+          type: "thought",
+          body,
+        });
+        await db
+          .update(runActivities)
+          .set({ createdAt: at(s) })
+          .where(eq(runActivities.id, row.id));
+      }
+      const bodies = async (orgOf: string, ids: string[], limit: number) =>
+        (await listRecentRunActivities(db, orgOf, ids, limit)).map((a) => a.body);
+      expect(await bodies(orgId, [first, second], 10)).toEqual(["one", "two", "three"]);
+      expect(await bodies(orgId, [first, second], 2)).toEqual(["two", "three"]);
+      expect(await bodies(randomUUID(), [first, second], 10)).toEqual([]);
+      expect(await bodies(orgId, [], 10)).toEqual([]);
     });
 
     it("rejects unknown types and goes away with the job", async () => {
@@ -178,6 +210,41 @@ describe.skipIf(!dockerAvailable)("run activities and permission requests", () =
       expect(
         await answerRunPermissionRequest(db, { jobId, requestId: randomUUID(), answer: "denied" }),
       ).toEqual({ request: null, answered: false });
+    });
+
+    it("lists a run's open requests: unanswered and unexpired", async () => {
+      const jobId = await newJob();
+      const other = await newJob();
+      const now = new Date();
+      const later = new Date(now.getTime() + 60_000);
+      const open = await createRunPermissionRequest(db, {
+        jobId,
+        requestId: randomUUID(),
+        tool: "Bash",
+        expiresAt: later,
+      });
+      const answered = randomUUID();
+      await createRunPermissionRequest(db, {
+        jobId,
+        requestId: answered,
+        tool: "Edit",
+        expiresAt: later,
+      });
+      await answerRunPermissionRequest(db, { jobId, requestId: answered, answer: "denied" });
+      await createRunPermissionRequest(db, {
+        jobId,
+        requestId: randomUUID(),
+        tool: "Write",
+        expiresAt: new Date(now.getTime() - 1_000),
+      });
+      await createRunPermissionRequest(db, {
+        jobId: other,
+        requestId: randomUUID(),
+        tool: "Bash",
+        expiresAt: later,
+      });
+      expect(await listOpenRunPermissionRequests(db, [jobId], now)).toEqual([open.request]);
+      expect(await listOpenRunPermissionRequests(db, [], now)).toEqual([]);
     });
 
     it("rejects unknown answers and goes away with the job", async () => {
