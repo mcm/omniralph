@@ -22,6 +22,7 @@ import {
   sessionAttachmentNote,
   threadAttachments,
 } from "../attachments";
+import type { TaskLookup } from "../tasks";
 import {
   CHAT_AGENT_HISTORY_LIMIT,
   CHAT_AGENT_MAX_STEPS,
@@ -58,6 +59,8 @@ export interface ChatAgentDeps {
   now?: () => Date;
   /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
   ralph?: (organizationId: string) => Promise<RalphDeps>;
+  /** Looks up the tasks chat runs (default: the built-ins). */
+  getTask?: TaskLookup;
   /** Limits on the attachments a turn reads (default: `CHAT_ATTACHMENT_LIMITS`). */
   attachmentLimits?: ChatAttachmentLimits;
   rateLimits?: {
@@ -237,6 +240,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           {
             db,
             organizationId,
+            connection,
             actor,
             requesterExternalUserId: message.author.userId,
             thread,
@@ -245,6 +249,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             turnMessages,
             ralph: () => ralphDeps(organizationId),
             attachments,
+            getTask: deps.getTask,
             handedOff: () => {
               handedOff = true;
             },
@@ -277,7 +282,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           maxRetries: 1,
         });
 
-        // After a handoff (announced in the thread already), an empty answer posts nothing.
+        // After a tool posted its own message (e.g. a card), an empty answer posts nothing.
         const quiet = handedOff && !result.text.trim();
         const text = quiet
           ? ""

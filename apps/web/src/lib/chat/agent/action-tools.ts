@@ -1,21 +1,18 @@
 import "server-only";
 import {
-  appendChatMessage,
   createChatLinearIssueDraft,
   setChatLinearIssueDraftMessage,
   type ChatMessageAttachment,
   type RalphRun,
-  type Repository,
 } from "@omniralph/db";
 import { z } from "zod";
 import { LinearNotConnectedError } from "@/lib/linear/client";
 import type { IssueSummary, Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
-import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { attachmentName } from "../attachments";
 import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
-import { findRalphRunId } from "./read-tools";
+import { chatTaskOf, findRalphRunId } from "./read-tools";
 import {
   defineChatTool,
   LINK_REQUIRED_RESULT,
@@ -25,47 +22,16 @@ import {
 
 /**
  * `action` tools: what the control-panel agent does for a linked member. A
- * ralph run started here belongs to the thread: its progress and answer are
- * posted in it (`ChatConversation`).
+ * ralph run started here belongs to the thread (`chat_thread_runs`): its
+ * progress and answer are posted in it (`ChatConversation`).
  */
-
-/** Longest summary of the request the handoff message quotes. */
-const MAX_HANDOFF_SUMMARY_CHARS = 300;
-
-/** The first sentence (or line) of a request: the agent's summary of what it hands off. */
-export function requestSummary(request: string): string {
-  const line = request.trim().split("\n")[0]?.trim() ?? "";
-  const sentence = /^.*?[.!?](?=\s|$)/.exec(line)?.[0] ?? line;
-  return sentence.length > MAX_HANDOFF_SUMMARY_CHARS
-    ? `${sentence.slice(0, MAX_HANDOFF_SUMMARY_CHARS - 1)}…`
-    : sentence;
-}
-
-/** The message handing the thread to a new run, posted before its job is enqueued. */
-export function handoffMessage(input: {
-  repository: Pick<Repository, "fullPath">;
-  request: string;
-  followUp: boolean;
-  runUrl: string;
-}): string {
-  const where = `\`${input.repository.fullPath}\``;
-  const lines = [
-    input.followUp
-      ? `Handing this to ralph in ${where}, continuing the previous run's branch and pull request…`
-      : `Handing this to ralph in ${where}…`,
-  ];
-  const summary = requestSummary(input.request);
-  if (summary) lines.push(`> ${summary}`);
-  lines.push(`Its progress and answer will follow here ([run](${input.runUrl})).`);
-  return lines.join("\n\n");
-}
 
 const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/ralph/${run.id}`;
 
-export const startRalphRequest = defineChatTool({
+export const startWork = defineChatTool({
   tier: "action",
   description:
-    "Hands a change request to ralph, Omniralph's coding agent: starts a ralph run in one of the organization's ralph-enabled repositories, bound to this thread. Ralph works on its own branch, posts its progress and its answer in this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous and you have told the user what you are handing off. It posts the handoff message itself.",
+    "Starts work on a change request: a ralph run of this channel's \"start work\" coding task in one of the organization's ralph-enabled repositories, bound to this thread. Ralph works on its own branch, reports its progress and answer in this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous. It returns the run's id right away and posts nothing: tell the user in your reply that the run started.",
   inputSchema: z.object({
     repository: z
       .string()
@@ -87,7 +53,9 @@ export const startRalphRequest = defineChatTool({
       ),
   }),
   async execute(input, context: ChatToolContext) {
-    const { db, thread, chatThread, appUrl } = context;
+    const { chatThread, appUrl } = context;
+    const task = await chatTaskOf(context, "startWork");
+    if ("error" in task) return task;
     const outcome = await startChatRequest(await context.ralph(), {
       chatThreadId: chatThread.id,
       repository: input.repository,
@@ -95,27 +63,7 @@ export const startRalphRequest = defineChatTool({
       quoted: context.turnMessages,
       author: context.turnMessages.at(-1)?.author ?? null,
       ...(input.ship && { ship: true }),
-      async announce(run, repository, followUp) {
-        // The summary is the model's: sanitized like its answers.
-        const text = sanitizeCapped(
-          handoffMessage({
-            repository,
-            request: input.request,
-            followUp,
-            runUrl: runUrl(appUrl, run),
-          }),
-          { allowedHosts: [new URL(appUrl).host] },
-          MAX_BODY_CHARS,
-        );
-        await thread.post({ markdown: text });
-        await appendChatMessage(db, {
-          threadId: chatThread.id,
-          role: "assistant",
-          content: text,
-          ralphRunId: run.id,
-        });
-        context.handedOff();
-      },
+      codingTaskId: task.task.id,
     });
     switch (outcome.status) {
       case "unknown_repository":
@@ -139,16 +87,19 @@ export const startRalphRequest = defineChatTool({
       case "nothing_to_ship":
         return {
           error: "nothing_to_ship",
-          message: `This thread has no earlier ralph run in \`${input.repository}\`, so there's no branch to ship. Tell the user, or hand ralph the change itself without \`ship\`.`,
+          message: `This thread has no earlier ralph run in \`${input.repository}\`, so there's no branch to ship. Tell the user, or start the change itself without \`ship\`.`,
         };
       case "started":
         return {
           status: "started",
-          run: { id: outcome.run.id, url: runUrl(appUrl, outcome.run) },
+          runId: outcome.run.id,
+          url: runUrl(appUrl, outcome.run),
+          task: task.task.id,
           repository: outcome.repository.fullPath,
           followUp: outcome.followUp,
-          message:
-            "The handoff message is posted in the thread, and ralph will post its progress and answer there. Don't repeat it: end your turn with no text unless you have something else to say.",
+          message: outcome.followUp
+            ? "The run started, continuing the previous run's branch and pull request; ralph reports its progress and answer in this thread. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request)."
+            : "The run started; ralph reports its progress and answer in this thread. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request).",
         };
     }
   },
@@ -185,7 +136,7 @@ export const sendToSession = defineChatTool({
         return {
           error: "no_active_run",
           message:
-            "This thread has no ralph run in progress. To have ralph do more, hand it a new request with start_ralph_request.",
+            "This thread has no ralph run in progress. To have ralph do more, start new work with start_work.",
         };
       case "live":
         return {
@@ -244,7 +195,7 @@ export const sendRalphGuidance = defineChatTool({
       case "finished":
         return {
           error: "run_finished",
-          message: `That run is ${outcome.run.status}, so it takes no more guidance. A Linear run starts again when its issue is delegated to Omniralph again; for a change in a repository, hand ralph a new request with start_ralph_request.`,
+          message: `That run is ${outcome.run.status}, so it takes no more guidance. A Linear run starts again when its issue is delegated to Omniralph again; for a change in a repository, start new work with start_work.`,
           run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
         };
       case "applied":
@@ -444,7 +395,7 @@ export const delegateLinearIssue = defineChatTool({
 });
 
 export const actionTools: ChatToolRegistry = {
-  start_ralph_request: startRalphRequest,
+  start_work: startWork,
   send_to_session: sendToSession,
   send_ralph_guidance: sendRalphGuidance,
   draft_linear_issue: draftLinearIssue,

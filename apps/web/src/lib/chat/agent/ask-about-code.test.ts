@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { createMockAdapter } from "@chat-adapter/tests";
 import {
   harnessRepoPins,
   appendChatMessage,
@@ -14,7 +15,9 @@ import {
   runMigrations,
   saveChatConnection,
   seedReviewProfiles,
+  upsertChatChannelTaskSetting,
   upsertScmConnection,
+  type ChatConnection,
   type ChatThread,
   type Database,
 } from "@omniralph/db";
@@ -23,8 +26,10 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
+import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import type { Thread } from "chat";
+import { MockLanguageModelV2 } from "ai/test";
+import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,12 +38,14 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { threadAttachments } from "../attachments";
+import type { ChatConversationContext } from "../bot";
 import type { ChatActor } from "../identity";
 import { toAiTools, type ChatToolContext } from "./tools";
 
 vi.mock("server-only", () => ({}));
 
 const { chatTools } = await import("./registry");
+const { createChatAgentHandler } = await import("./handler");
 const { chatAskContext, chatAskDedupeKey } = await import("../ask");
 const { queryClaimableHarnesses } = await import("@/lib/harnesses/claimable");
 
@@ -146,6 +153,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
   let harnessId: string;
   let otherHarnessId: string;
   let connectionId: string;
+  let connection: ChatConnection;
   let scm: FakeScmAdapter;
   let seq = 0;
 
@@ -177,6 +185,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     const context: ChatToolContext = {
       db,
       organizationId,
+      connection: { id: connectionId, organizationId },
       actor,
       requesterExternalUserId: "U-ADA",
       thread: thread as unknown as Thread,
@@ -263,6 +272,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       key,
     );
     if (saved === "other_organization") throw new Error("taken");
+    connection = saved;
     connectionId = saved.id;
   }, 180_000);
 
@@ -281,13 +291,14 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     await setAgent(harnessId, capable);
     await setAgent(otherHarnessId, capable);
     await db.delete(harnessRepoPins);
+    await db.execute("DELETE FROM chat_channel_task_settings");
   });
 
   it("is a read tool", () => {
     expect(chatTools.ask_about_code?.tier).toBe("read");
   });
 
-  it("enqueues a builtin:ask-about-code run of the default branch and says it's looking into it", async () => {
+  it("enqueues a builtin:ask-about-code run of the default branch and returns its id without posting", async () => {
     const h = await harness();
 
     const result = await ask(h, {
@@ -295,8 +306,13 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       question: "How are webhooks verified?",
     });
 
-    expect(result).toMatchObject({ status: "asked" });
     const [job] = await chatAskJobs(h.chatThread.id);
+    expect(result).toMatchObject({
+      status: "started",
+      runId: job!.id,
+      task: "builtin:ask-about-code",
+      repository: "acme/api",
+    });
     expect(job).toMatchObject({
       status: "queued",
       repositoryId,
@@ -332,12 +348,10 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(await listThreadRuns(db, orgId, h.chatThread.id)).toMatchObject([
       { kind: "query", jobId: job!.id, ralphRunId: null },
     ]);
-    expect(h.thread.post).toHaveBeenCalledWith({ markdown: "Looking into `acme/api`…" });
-    expect(h.handedOff).toHaveBeenCalled();
-    expect((await listChatMessages(db, h.chatThread.id, 10)).at(-1)).toMatchObject({
-      role: "assistant",
-      content: "Looking into `acme/api`…",
-    });
+    // The tool posts nothing: the responder's reply says it started.
+    expect(h.thread.post).not.toHaveBeenCalled();
+    expect(h.handedOff).not.toHaveBeenCalled();
+    expect(await listChatMessages(db, h.chatThread.id, 10)).toEqual([]);
   });
 
   it("includes attached files in the question's context", async () => {
@@ -388,7 +402,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       question: "Why does webhook verification fail with this log? The screenshot shows a 401.",
       attachments: refs,
     });
-    expect(result).toMatchObject({ status: "asked" });
+    expect(result).toMatchObject({ status: "started" });
     const [job] = await chatAskJobs(h.chatThread.id);
     const context = contextOf(job!.payload);
     expect(context).toContain("File app.log:\nError: signature mismatch at 12");
@@ -402,7 +416,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       { repository: "acme/api", question: "Which ORM do we use?" },
       { toolCallId: "1", messages: [] },
     )) as Result;
-    expect(result).toMatchObject({ status: "asked" });
+    expect(result).toMatchObject({ status: "started" });
     expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
   });
 
@@ -416,7 +430,8 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       question: "  where is the RETRY logic? ",
     });
 
-    expect(again).toMatchObject({ status: "already_asked" });
+    const [first] = await chatAskJobs(h.chatThread.id);
+    expect(again).toMatchObject({ status: "already_asked", runId: first!.id });
     expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
     expect(h.thread.post).not.toHaveBeenCalled();
     // A different question, or the same one in another thread, is asked.
@@ -507,6 +522,170 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       harnesses: [{ name: "pinned-agent", capable: false }],
     });
     await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));
+  });
+
+  it("runs the channel's ask about code task and enqueues nothing when it can't run", async () => {
+    const h = await harness();
+    await upsertChatChannelTaskSetting(db, {
+      organizationId: orgId,
+      connectionId,
+      channelId: h.chatThread.channelId,
+      askAboutCodeTaskId: "builtin:handle-request",
+      startWorkTaskId: null,
+      updatedBy: null,
+    });
+
+    const result = await ask(h, { repository: "acme/api", question: "What is this?" });
+
+    expect(result).toMatchObject({ error: "task_unavailable" });
+    expect(String(result.message)).toContain("needs a query task");
+    expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+    expect(await listThreadRuns(db, orgId, h.chatThread.id)).toEqual([]);
+  });
+
+  describe("in a responder turn", () => {
+    const USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+    type CallOptions = Parameters<MockLanguageModelV2["doGenerate"]>[0];
+    type GenerateResult = Awaited<ReturnType<MockLanguageModelV2["doGenerate"]>>;
+    const REPLY =
+      "I'm looking into how webhooks are verified in acme/api; the answer will follow here.";
+    /** A custom query task the channel picked (looked up through the injected task lookup). */
+    const customTask: TaskDefinition = {
+      ...getBuiltinTask("builtin:ask-about-code")!,
+      id: "custom:ask-briefly",
+      name: "Ask briefly",
+    };
+    const getTask = (id: string) => (id === customTask.id ? customTask : getBuiltinTask(id));
+
+    it("starts a run of the channel's override task and posts only the responder's reply", async () => {
+      const chatThread = (await ensureChatThread(db, {
+        connectionId,
+        externalThreadId: "discord:G1:CH2:TURN",
+        channelId: "discord:G1:CH2",
+        startedByExternalUserId: "D1",
+      }))!;
+      await upsertChatChannelTaskSetting(db, {
+        organizationId: orgId,
+        connectionId,
+        channelId: chatThread.channelId,
+        askAboutCodeTaskId: customTask.id,
+        startWorkTaskId: null,
+        updatedBy: null,
+      });
+      const calls: CallOptions[] = [];
+      const results: GenerateResult[] = [
+        {
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: "ask_about_code",
+              input: JSON.stringify({
+                repository: "acme/api",
+                question: "How are webhooks verified?",
+              }),
+            },
+          ],
+          finishReason: "tool-calls",
+          usage: USAGE,
+          warnings: [],
+        },
+        {
+          content: [{ type: "text", text: REPLY }],
+          finishReason: "stop",
+          usage: USAGE,
+          warnings: [],
+        },
+      ];
+      const model = new MockLanguageModelV2({
+        doGenerate: async (options) => {
+          calls.push(options);
+          return results[Math.min(calls.length - 1, results.length - 1)]!;
+        },
+      });
+      const adapter: Adapter = createMockAdapter("discord");
+      const posts: string[] = [];
+      const thread = {
+        id: chatThread.externalThreadId,
+        adapter,
+        async post(message: string | { markdown: string }) {
+          posts.push(typeof message === "string" ? message : message.markdown);
+          return {};
+        },
+        async startTyping() {},
+        get state() {
+          return Promise.resolve(null);
+        },
+        async setState() {},
+      } as unknown as Thread;
+      const text = "@omniralph how are webhooks verified in acme/api?";
+      await appendChatMessage(db, {
+        threadId: chatThread.id,
+        role: "user",
+        externalUserId: "D1",
+        authorName: "Ada Lovelace",
+        content: text,
+      });
+      const message = {
+        id: "msg-1",
+        text,
+        isMention: true,
+        author: { userId: "D1", userName: "ada", fullName: "Ada Lovelace" },
+      } as Message;
+      const logger = {
+        child: () => logger,
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Logger;
+      const context: ChatConversationContext = {
+        organizationId: orgId,
+        connection,
+        chatThread,
+        skipped: [],
+        thread,
+        message,
+        actor: member,
+        logger,
+        linkUrl: async () => `${APP_URL}/chat/link?state=s`,
+      };
+      const handler = createChatAgentHandler({
+        db,
+        model,
+        env: { APP_URL } as unknown as NodeJS.ProcessEnv,
+        logger,
+        getTask,
+        ralph: async () => ralph(orgId),
+        rateLimits: {
+          perOrganization: () => ({ key: `test:org:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
+          perChatUser: () => ({ key: `test:user:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
+        },
+      });
+
+      await handler.handle(thread, message, context);
+
+      const [job, ...more] = await chatAskJobs(chatThread.id);
+      expect(more).toEqual([]);
+      expect(job).toMatchObject({ taskId: customTask.id, taskType: "query", status: "queued" });
+      expect(await listThreadRuns(db, orgId, chatThread.id)).toMatchObject([
+        { kind: "query", jobId: job!.id },
+      ]);
+      // The tool result the model saw carries the run's id.
+      const toolResult = calls[1]!.prompt.flatMap((m) =>
+        m.role === "tool" ? m.content.map((p) => p.output) : [],
+      )[0] as { type: string; value: Record<string, unknown> };
+      expect(toolResult.value).toMatchObject({
+        status: "started",
+        runId: job!.id,
+        task: customTask.id,
+      });
+      // Exactly one message for the turn: the responder's reply.
+      expect(posts).toEqual([REPLY]);
+      expect(adapter.postMessage).not.toHaveBeenCalled();
+      const recorded = await listChatMessages(db, chatThread.id, 10);
+      expect(recorded.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    });
   });
 
   it("gives an unlinked user no way to ask", async () => {

@@ -1,7 +1,6 @@
 import "server-only";
 import {
   ACTIVE_RALPH_RUN_STATUSES,
-  appendChatMessage,
   getDesiredHarnessVersion,
   getReviewDetail,
   getRunDetail,
@@ -16,6 +15,7 @@ import {
   type RepositoryOverview,
 } from "@omniralph/db";
 import { MAX_CHAT_ASK_QUESTION_LENGTH, QUERY_TASKS_MIN_HARNESS_VERSION } from "@omniralph/shared";
+import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
@@ -26,11 +26,16 @@ import {
   ralphRunRow,
 } from "@/lib/ralph/history";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
 import { enqueueChatAsk, type ChatAskAttachment } from "../ask";
 import { attachmentName } from "../attachments";
+import {
+  CHAT_TASK_LABELS,
+  chatTasksFor,
+  validateChatTaskChoice,
+  type ChatTaskRole,
+} from "../tasks";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
@@ -67,6 +72,24 @@ export const UNKNOWN_REPOSITORY = {
   message:
     "No connected repository of this organization matches. Use list_repositories to see their names.",
 } as const;
+
+/**
+ * The task chat runs for `role` in this thread's channel (`chatTasksFor`),
+ * checked again since a stored choice may no longer be valid; an error
+ * result when it isn't.
+ */
+export async function chatTaskOf(
+  context: ChatToolContext,
+  role: ChatTaskRole,
+): Promise<{ task: TaskDefinition } | { error: "task_unavailable"; message: string }> {
+  const tasks = await chatTasksFor(context.db, context.connection, context.chatThread.channelId);
+  const choice = validateChatTaskChoice(role, tasks[role], context.getTask);
+  if (choice.ok) return { task: choice.task };
+  return {
+    error: "task_unavailable",
+    message: `This channel's "${CHAT_TASK_LABELS[role]}" task can't run: ${choice.error} Nothing was started. An admin can pick another one under Settings › Integrations › Chat tasks on ${context.appUrl}/settings/integrations.`,
+  };
+}
 
 /** One of the organization's connected repositories, by id or full path (case-insensitive). */
 export async function findRepository(
@@ -440,11 +463,6 @@ export const listRepositoriesTool = defineChatTool({
   },
 });
 
-/** The message posted when a code question is handed to a harness. */
-export function lookingIntoMessage(fullPath: string): string {
-  return `Looking into \`${fullPath}\`…`;
-}
-
 /** Most attached files a code question includes. */
 const MAX_CHAT_ASK_ATTACHMENTS = 5;
 
@@ -478,7 +496,7 @@ async function chatAskAttachments(
 export const askAboutCodeTool = defineChatTool({
   tier: "read",
   description:
-    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones). A harness answers it from a read-only checkout of the default branch; the answer is posted in this thread a little later, so the tool only posts that it is looking into it. A follow-up's context includes the thread's previous code question and its answer.",
+    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones): starts a run of this channel's \"ask about code\" task, which a harness answers from a read-only checkout of the default branch. It returns the run's id right away; the answer follows in this thread a little later. A follow-up's context includes the thread's previous code question and its answer.",
   inputSchema: z.object({
     repository: z
       .string()
@@ -503,11 +521,13 @@ export const askAboutCodeTool = defineChatTool({
       ),
   }),
   async execute(input, context: ChatToolContext) {
-    const { db, organizationId, chatThread, thread, appUrl } = context;
+    const { db, organizationId, chatThread, appUrl } = context;
     const attachments = await chatAskAttachments(context, input.attachments ?? []);
     if ("error" in attachments) return attachments;
     const repository = await findRepository(db, organizationId, input.repository);
     if (!repository) return UNKNOWN_REPOSITORY;
+    const task = await chatTaskOf(context, "askAboutCode");
+    if ("error" in task) return task;
     const { dispatcher, adapterFor } = await context.ralph();
     const outcome = await enqueueChatAsk(
       { db, dispatcher, adapterFor },
@@ -515,6 +535,7 @@ export const askAboutCodeTool = defineChatTool({
         organizationId,
         repositoryId: repository.id,
         chatThreadId: chatThread.id,
+        task: task.task,
         question: input.question,
         messages: context.turnMessages,
         attachments: attachments.files,
@@ -537,24 +558,20 @@ export const askAboutCodeTool = defineChatTool({
       case "duplicate":
         return {
           status: "already_asked",
+          runId: outcome.jobId,
           message:
-            "This question is already being looked into in this thread; its answer will be posted here. Don't ask it again.",
+            "This question is already being looked into in this thread; its answer will be posted here. Don't ask it again: tell the user it's still being looked into.",
         };
-      case "enqueued": {
-        const text = sanitizeCapped(
-          lookingIntoMessage(outcome.repository.fullPath),
-          { allowedHosts: [new URL(appUrl).host] },
-          MAX_BODY_CHARS,
-        );
-        await thread.post({ markdown: text });
-        await appendChatMessage(db, { threadId: chatThread.id, role: "assistant", content: text });
-        context.handedOff();
+      case "enqueued":
         return {
-          status: "asked",
+          status: "started",
+          runId: outcome.jobId,
+          task: task.task.id,
+          repository: outcome.repository.fullPath,
+          url: `${appUrl}${jobHref(outcome.jobId)}`,
           message:
-            "The question was handed to a harness and the thread was told; the answer will be posted here. End your turn without repeating it.",
+            "The question was handed to a harness; its answer will be posted in this thread. Tell the user briefly, in your reply, that you're looking into it (don't answer the question yourself).",
         };
-      }
     }
   },
 });

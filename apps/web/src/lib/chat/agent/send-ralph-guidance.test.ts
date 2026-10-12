@@ -81,6 +81,7 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
   const context = (organizationId: string, actor: ChatActor = member): ChatToolContext => ({
     db,
     organizationId,
+    connection: { id: chatThread.connectionId, organizationId },
     actor,
     requesterExternalUserId: "U-ADA",
     thread: {} as Thread,

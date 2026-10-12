@@ -1,0 +1,1 @@
+ALTER TABLE "ralph_runs" ADD COLUMN "coding_task_id" text;

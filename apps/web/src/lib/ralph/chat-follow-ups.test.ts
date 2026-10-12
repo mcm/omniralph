@@ -308,7 +308,6 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       request: "Fix the typo in the README.",
       quoted: [],
       author: "Ada Lovelace",
-      announce: async () => undefined,
     });
     if (started.status !== "started") throw new Error(`not started: ${started.status}`);
     await finish(
@@ -480,7 +479,6 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       request: "Fix the typo in the README.",
       quoted: [],
       author: "Ada Lovelace",
-      announce: async () => undefined,
     });
     if (started.status !== "started") throw new Error(`not started: ${started.status}`);
     const job = await start(started.run.id, "ralph.request");
@@ -539,7 +537,6 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       request: "Fix the crash on the settings page.",
       quoted: [],
       author: "Ada Lovelace",
-      announce: async () => undefined,
     });
     if (started.status !== "started") throw new Error(`not started: ${started.status}`);
     const job = await start(started.run.id, "ralph.request");
