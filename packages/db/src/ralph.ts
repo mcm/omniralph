@@ -108,6 +108,10 @@ export interface RepositoryRalphSettingsUpdate {
   ralphSettings: RalphSettings;
   /** Omitted: unchanged. */
   codingPath?: RepositoryCodingPath;
+  /** The coding task of its story runs (`story_task_id`); omitted: unchanged. */
+  storyTaskId?: string;
+  /** The coding task of its request runs (`request_task_id`); omitted: unchanged. */
+  requestTaskId?: string;
 }
 
 /**
@@ -128,6 +132,8 @@ export async function updateRepositoryRalphSettings(
       linearLabels: input.linearLabels,
       ralphSettings: input.ralphSettings,
       ...(input.codingPath && { codingPath: input.codingPath }),
+      ...(input.storyTaskId && { storyTaskId: input.storyTaskId }),
+      ...(input.requestTaskId && { requestTaskId: input.requestTaskId }),
     })
     .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
     .returning();

@@ -3,6 +3,7 @@ import {
   harnessRepoPins,
   harnesses,
   connectRepository,
+  insertTaskDefinition,
   closeDb,
   createDb,
   getRepository,
@@ -27,6 +28,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { asc, eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { getBuiltinTask } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -91,6 +93,7 @@ const baseSettings: RepositorySettingsInput = {
   customInstructions: "",
   pinnedHarnessIds: [],
   reviewTaskIds: ["builtin:review-pr"],
+  correlationTaskId: "builtin:correlate-findings",
 };
 
 const baseRalph: RalphSettingsInput = {
@@ -99,6 +102,8 @@ const baseRalph: RalphSettingsInput = {
   linearProjectNames: [],
   linearLabels: [],
   codingPath: "legacy",
+  storyTaskId: "builtin:implement-story",
+  requestTaskId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
@@ -209,6 +214,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
         customInstructions: "  Prefer early returns.  ",
         pinnedHarnessIds: [],
         reviewTaskIds: ["builtin:review-pr"],
+        correlationTaskId: "builtin:correlate-findings",
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
@@ -289,7 +295,6 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
       reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
-      // Not editable here: the correlation task keeps its default.
       correlationTaskId: "builtin:correlate-findings",
     });
 
@@ -338,6 +343,108 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(await getRepository(db, repoId)).toMatchObject({
       profileId: "standard",
       reviewTaskIds: ["builtin:review-pr"],
+    });
+  });
+
+  /** A task of `organizationId` stored as a copy of built-in `builtinId` (with `changes`). */
+  async function storedTask(builtinId: string, changes: object = {}, organizationId = orgId) {
+    const { name, ...definition } = getBuiltinTask(builtinId)!;
+    const row = await insertTaskDefinition(db, organizationId, {
+      name: `Custom ${name}`,
+      definition: { ...definition, ...changes },
+      requirements: {},
+      createdBy: null,
+    });
+    return row.id;
+  }
+
+  async function otherOrganization(): Promise<string> {
+    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+    return other!.id;
+  }
+
+  it("saves a custom review task and correlation task, and the next review run fans out to the custom task", async () => {
+    const review = await storedTask("builtin:review-pr", {
+      promptTemplate: "Review {{repository}} for security problems.",
+    });
+    const correlation = await storedTask("builtin:correlate-findings");
+    expect(
+      await updateRepositorySettings(repoId, {
+        ...baseSettings,
+        reviewTaskIds: ["builtin:review-pr", review],
+        correlationTaskId: correlation,
+      }),
+    ).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      reviewTaskIds: ["builtin:review-pr", review],
+      correlationTaskId: correlation,
+    });
+
+    prNumber += 1;
+    const result = await enqueueReview(db, getDispatcher(), {
+      repositoryId: repoId,
+      prNumber,
+      baseSha: SHA(1),
+      headSha: SHA(2),
+      title: "Change",
+      description: null,
+      author: "dev",
+      trigger: "webhook",
+    });
+    if (result.status !== "enqueued") throw new Error(result.status);
+    expect(result.runs.map((run) => run.taskId)).toEqual(["builtin:review-pr", review]);
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, result.runs[1]!.jobId));
+    expect(job!.taskId).toBe(review);
+
+    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+  });
+
+  it("rejects review and correlation tasks of another organization or of the wrong type without saving", async () => {
+    const other = await otherOrganization();
+    const othersReview = await storedTask("builtin:review-pr", {}, other);
+    const othersCorrelation = await storedTask("builtin:correlate-findings", {}, other);
+    const queryReview = await storedTask("builtin:ask-about-code");
+    // A query task taking run.invoked whose output isn't the correlation's.
+    const wrongOutput = await storedTask("builtin:correlate-findings", {
+      outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+    });
+
+    for (const reviewTaskIds of [
+      [othersReview],
+      [queryReview],
+      ["builtin:review-pr", wrongOutput],
+    ]) {
+      expect(
+        await updateRepositorySettings(repoId, {
+          ...baseSettings,
+          profileId: "deep",
+          reviewTaskIds,
+        }),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: { reviewTaskIds: "Some selected review tasks don't exist." },
+      });
+    }
+    for (const correlationTaskId of [
+      othersCorrelation,
+      wrongOutput,
+      "builtin:describe-pr",
+      "builtin:review-pr",
+      "builtin:nope",
+      randomUUID(),
+    ]) {
+      expect(
+        await updateRepositorySettings(repoId, {
+          ...baseSettings,
+          profileId: "deep",
+          correlationTaskId,
+        }),
+      ).toMatchObject({ ok: false, fieldErrors: { correlationTaskId: expect.any(String) } });
+    }
+    expect(await getRepository(db, repoId)).toMatchObject({
+      profileId: "standard",
+      reviewTaskIds: ["builtin:review-pr"],
+      correlationTaskId: "builtin:correlate-findings",
     });
   });
 
@@ -540,6 +647,61 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       } as unknown as RalphSettingsInput),
     ).toMatchObject({ ok: false, fieldErrors: { codingPath: "Choose a path." } });
     expect((await getRepository(db, repoId))!.codingPath).toBe("legacy");
+  });
+
+  it("saves custom story and request tasks", async () => {
+    const story = await storedTask("builtin:implement-story");
+    const request = await storedTask("builtin:handle-request");
+    expect(
+      await updateRalphSettings(repoId, {
+        ...baseRalph,
+        storyTaskId: story,
+        requestTaskId: request,
+      }),
+    ).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      storyTaskId: story,
+      requestTaskId: request,
+    });
+    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      storyTaskId: "builtin:implement-story",
+      requestTaskId: "builtin:handle-request",
+    });
+  });
+
+  it("rejects story and request tasks of another organization or of the wrong type or triggers without saving", async () => {
+    const other = await otherOrganization();
+    const othersStory = await storedTask("builtin:implement-story", {}, other);
+    const othersRequest = await storedTask("builtin:handle-request", {}, other);
+    const chatOnly = await storedTask("builtin:handle-request", { triggers: ["chat.request"] });
+
+    for (const storyTaskId of [
+      othersStory,
+      "builtin:handle-request",
+      "builtin:review-pr",
+      "builtin:nope",
+      randomUUID(),
+    ]) {
+      expect(
+        await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true, storyTaskId }),
+      ).toMatchObject({ ok: false, fieldErrors: { storyTaskId: expect.any(String) } });
+    }
+    for (const requestTaskId of [
+      othersRequest,
+      chatOnly,
+      "builtin:implement-story",
+      "builtin:nope",
+    ]) {
+      expect(
+        await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true, requestTaskId }),
+      ).toMatchObject({ ok: false, fieldErrors: { requestTaskId: expect.any(String) } });
+    }
+    expect(await getRepository(db, repoId)).toMatchObject({
+      ralphEnabled: false,
+      storyTaskId: "builtin:implement-story",
+      requestTaskId: "builtin:handle-request",
+    });
   });
 
   it("saves every cyralph setting, storing empty text and lists as none", async () => {

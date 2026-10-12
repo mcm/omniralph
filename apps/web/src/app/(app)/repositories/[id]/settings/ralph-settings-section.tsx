@@ -32,6 +32,7 @@ import {
 } from "@omniralph/shared";
 import { useAction } from "@/components/use-action";
 import { updateRalphSettings } from "./actions";
+import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 
 /** The form's values: the saved settings, with empty text and lists for none. */
 export type RalphSettingsValues = RalphSettingsInput;
@@ -111,9 +112,12 @@ function Group({
 export function RalphSettingsSection({
   repositoryId,
   settings,
+  codingTasks,
 }: {
   repositoryId: string;
   settings: RalphSettingsValues;
+  /** The coding tasks its story and request runs can use (built-in and the organization's). */
+  codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
 }) {
   const { pending, run } = useAction();
   const [ralphEnabled, setRalphEnabled] = React.useState(settings.ralphEnabled);
@@ -121,6 +125,8 @@ export function RalphSettingsSection({
   const [projectNames, setProjectNames] = React.useState(settings.linearProjectNames.join(", "));
   const [labels, setLabels] = React.useState(settings.linearLabels.join(", "));
   const [codingPath, setCodingPath] = React.useState<RalphCodingPath>(settings.codingPath);
+  const [storyTaskId, setStoryTaskId] = React.useState(settings.storyTaskId);
+  const [requestTaskId, setRequestTaskId] = React.useState(settings.requestTaskId);
   // Verification
   const [verifyCommands, setVerifyCommands] = React.useState(settings.verifyCommands.join("\n"));
   const [runPrdQualityGates, setRunPrdQualityGates] = React.useState(settings.runPrdQualityGates);
@@ -165,6 +171,8 @@ export function RalphSettingsSection({
       linearProjectNames: parseCommaList(projectNames),
       linearLabels: parseCommaList(labels),
       codingPath,
+      storyTaskId,
+      requestTaskId,
       verifyCommands: parseLines(verifyCommands),
       runPrdQualityGates,
       setupCommand,
@@ -297,7 +305,7 @@ export function RalphSettingsSection({
           <Field
             label="Coding path"
             htmlFor="ralph-coding-path"
-            hint="How runs work stories and requests: the legacy ralph jobs, or coding runs of the built-in implement-story and handle-request tasks."
+            hint="How runs work stories and requests: the legacy ralph jobs, or coding runs of the story and request tasks below."
             error={errors.codingPath}
           >
             <NativeSelect
@@ -310,6 +318,28 @@ export function RalphSettingsSection({
               <option value="tasks">Coding tasks</option>
             </NativeSelect>
           </Field>
+          <div style={row}>
+            <TaskPicker
+              id="ralph-story-task"
+              label="Story task"
+              hint="The coding task that works delegated stories (linear.delegated) on the coding-tasks path."
+              value={storyTaskId}
+              choices={codingTasks.story}
+              disabled={pending}
+              error={errors.storyTaskId}
+              onChange={setStoryTaskId}
+            />
+            <TaskPicker
+              id="ralph-request-task"
+              label="Request task"
+              hint="The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path."
+              value={requestTaskId}
+              choices={codingTasks.request}
+              disabled={pending}
+              error={errors.requestTaskId}
+              onChange={setRequestTaskId}
+            />
+          </div>
           {textInput(
             "ralph-labels",
             "Linear labels",

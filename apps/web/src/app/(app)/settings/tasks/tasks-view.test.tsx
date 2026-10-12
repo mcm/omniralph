@@ -205,7 +205,14 @@ describe("TaskDetailView", () => {
         }}
         referrers={{
           repositories: [
-            { id: "repo-1", fullPath: "acme/app", reviewTask: false, correlationTask: true },
+            {
+              id: "repo-1",
+              fullPath: "acme/app",
+              reviewTask: false,
+              correlationTask: true,
+              storyTask: false,
+              requestTask: false,
+            },
           ],
           chatTasks: ["askAboutCode"],
           chatChannels: [

@@ -35,6 +35,7 @@ import { RepositoryNav } from "../repository-nav";
 import { ProfileFacts, type ProfileSummary } from "../../../settings/profiles/profile-facts";
 import { updateRepositorySettings } from "./actions";
 import { RalphSettingsSection, type RalphSettingsValues } from "./ralph-settings-section";
+import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 
 interface RepositorySettingsViewProps {
   repository: {
@@ -50,14 +51,19 @@ interface RepositorySettingsViewProps {
     customInstructions: string;
     pinnedHarnessIds: string[];
     reviewTaskIds: string[];
+    correlationTaskId: string;
   };
-  /** The review tasks the repository can run on its PRs/MRs. */
-  reviewTasks: { id: string; name: string; description: string }[];
+  /** The review tasks the repository can run on its PRs/MRs (built-in and the organization's). */
+  reviewTasks: (TaskChoiceOption & { description: string })[];
+  /** The tasks that can correlate its review runs' findings. */
+  correlationTasks: TaskChoiceOption[];
   profiles: ProfileSummary[];
   /** Harnesses that can be pinned (not revoked). */
   agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
   /** The Ralph section's settings; only passed to admins. */
   ralph: RalphSettingsValues | null;
+  /** The Ralph section's story and request task choices. */
+  codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
 }
 
 const stack: React.CSSProperties = {
@@ -125,9 +131,11 @@ export function RepositorySettingsView({
   repository,
   settings,
   reviewTasks,
+  correlationTasks,
   profiles,
   agents,
   ralph,
+  codingTasks,
 }: RepositorySettingsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const { pending, run } = useAction();
@@ -139,6 +147,7 @@ export function RepositorySettingsView({
   const [customInstructions, setCustomInstructions] = React.useState(settings.customInstructions);
   const [pinnedHarnessIds, setPinnedHarnessIds] = React.useState(settings.pinnedHarnessIds);
   const [reviewTaskIds, setReviewTaskIds] = React.useState(settings.reviewTaskIds);
+  const [correlationTaskId, setCorrelationTaskId] = React.useState(settings.correlationTaskId);
   const [errors, setErrors] = React.useState<FieldErrors>({});
 
   // Pinned harnesses that were revoked since are dropped from the selection on save.
@@ -162,6 +171,7 @@ export function RepositorySettingsView({
       pinnedHarnessIds: pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)),
       // In the listed order; review tasks that no longer exist are dropped.
       reviewTaskIds: reviewTasks.map((t) => t.id).filter((id) => reviewTaskIds.includes(id)),
+      correlationTaskId,
     };
     const parsed = RepositorySettingsInput.safeParse(input);
     if (!parsed.success) {
@@ -329,13 +339,25 @@ export function RepositorySettingsView({
                     <div
                       style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}
                     >
-                      <Label htmlFor={`review-task-${task.id}`}>{task.name}</Label>
+                      <Label htmlFor={`review-task-${task.id}`}>
+                        {task.name} {task.builtin && <Badge variant="neutral">Built-in</Badge>}
+                      </Label>
                       {task.description && <Muted>{task.description}</Muted>}
                     </div>
                   </div>
                 ))}
               </div>
               <InlineError message={errors.reviewTaskIds} />
+              <TaskPicker
+                id="correlation-task"
+                label="Correlation task"
+                hint="Merges the review tasks' findings that describe the same issue and writes the combined summary."
+                value={correlationTaskId}
+                choices={correlationTasks}
+                disabled={disabled}
+                error={errors.correlationTaskId}
+                onChange={setCorrelationTaskId}
+              />
             </CardContent>
           </Card>
 
@@ -479,7 +501,13 @@ export function RepositorySettingsView({
           )}
         </form>
 
-        {isAdmin && ralph && <RalphSettingsSection repositoryId={repository.id} settings={ralph} />}
+        {isAdmin && ralph && (
+          <RalphSettingsSection
+            repositoryId={repository.id}
+            settings={ralph}
+            codingTasks={codingTasks}
+          />
+        )}
       </main>
     </>
   );

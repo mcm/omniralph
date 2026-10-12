@@ -23,6 +23,8 @@ interface RepositoryReference {
   fullPath: string;
   reviewTaskIds: string[];
   correlationTaskId: string;
+  storyTaskId?: string;
+  requestTaskId?: string;
 }
 
 interface ChannelReference {
@@ -120,13 +122,18 @@ vi.mock("@omniralph/db", () => {
         .filter(
           (repo) =>
             repo.organizationId === organizationId &&
-            (repo.reviewTaskIds.includes(taskId) || repo.correlationTaskId === taskId),
+            (repo.reviewTaskIds.includes(taskId) ||
+              repo.correlationTaskId === taskId ||
+              repo.storyTaskId === taskId ||
+              repo.requestTaskId === taskId),
         )
         .map((repo) => ({
           id: repo.id,
           fullPath: repo.fullPath,
           reviewTask: repo.reviewTaskIds.includes(taskId),
           correlationTask: repo.correlationTaskId === taskId,
+          storyTask: repo.storyTaskId === taskId,
+          requestTask: repo.requestTaskId === taskId,
         })),
     listChatChannelTaskReferences: async (_db: unknown, organizationId: string, taskId: string) =>
       state.channels
@@ -502,6 +509,29 @@ describe("Settings › Tasks actions", () => {
     expect(error).toContain("the chat ask about code task");
     expect(error).toContain("chat channel Acme Slack › C0123 (ask about code)");
     expect(error).toContain("coding task Ship it");
+    expect(state.writes).toBe(0);
+  });
+
+  it("refuses to delete a repository's story or request task, naming the repository", async () => {
+    state.tasks.push(
+      row({ id: CODING_TASK_ID, name: "Ship it", definition: fieldsOf("builtin:implement-story") }),
+    );
+    state.repositories = [
+      {
+        organizationId: "org-1",
+        id: "repo-1",
+        fullPath: "acme/app",
+        reviewTaskIds: ["builtin:review-pr"],
+        correlationTaskId: "builtin:correlate-findings",
+        storyTaskId: CODING_TASK_ID,
+        requestTaskId: CODING_TASK_ID,
+      },
+    ];
+    const result = await deleteTaskDefinition(CODING_TASK_ID);
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("repository acme/app (story task, request task)"),
+    });
     expect(state.writes).toBe(0);
   });
 

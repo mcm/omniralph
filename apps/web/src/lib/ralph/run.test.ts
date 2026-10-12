@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
   harnessRepoPins,
+  insertTaskDefinition,
   chatLinearDelegations,
   chatMessages,
   chatRunEvents,
@@ -75,7 +76,7 @@ import type { ChatChannel } from "./conversation";
 import { fitTitle } from "@omniralph/ralph";
 import { CODING_DEFAULTS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
-import { BUILTIN_DEFINITIONS } from "@/lib/definitions";
+import { organizationDefinitions } from "@/lib/definitions";
 import { advanceRun, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -276,7 +277,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   /** The job's outcome hooks: a coding run's are the `ralph-run` sink's, the same ralph hooks. */
   const expectRalphHooks = async (job: Job) => {
     if (job.taskId !== null)
-      expect((await taskSink(job, BUILTIN_DEFINITIONS))?.kind).toBe("ralph-run");
+      expect((await taskSink(job, organizationDefinitions(db, job.organizationId)))?.kind).toBe(
+        "ralph-run",
+      );
   };
 
   /**
@@ -357,7 +360,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
-    const sink = await taskSink(job, BUILTIN_DEFINITIONS);
+    const sink = await taskSink(job, organizationDefinitions(db, job.organizationId));
     if (job.taskId !== null) expect(sink?.kind).toBe("run-result");
     expect(await (sink?.onStarted ?? onRalphJobStarted)(db, job, harnessId)).toEqual({
       skip: false,
@@ -950,6 +953,26 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       });
     });
 
+    it("runs stories with the organization's custom story task on the tasks path", async () => {
+      const { id: _id, name: _name, ...definition } = getBuiltinTask("builtin:implement-story")!;
+      const custom = await insertTaskDefinition(db, orgId, {
+        name: "Careful story",
+        definition: { ...definition, promptTemplate: `Be careful.\n${definition.promptTemplate}` },
+        requirements: { minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION },
+        createdBy: null,
+      });
+      await db
+        .update(repositories)
+        .set({ storyTaskId: custom.id })
+        .where(eq(repositories.id, repoId));
+      const epic = linear.add({ identifier: "ENG-69", title: "Epic" });
+      linear.add({ identifier: "ENG-70", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      expect(await activeJob(run.id)).toMatchObject({ type: "ralph.story", ...routing(custom.id) });
+      await work(run.id, { commitSha: sha(69) });
+      expect(await activeJob(run.id)).toMatchObject({ type: "ralph.describe-pr" });
+    });
+
     /** A one-story epic whose story is done: the run is describing its PR. */
     async function describingRun(n: number): Promise<LinearRun> {
       const epic = linear.add({
@@ -1201,7 +1224,11 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           pushed: { branch: payload.branch, sha: outcome.sha },
           durationMs: 10,
         };
-        expect((await taskSink(job, BUILTIN_DEFINITIONS))?.parseResult?.(result)).toEqual(result);
+        expect(
+          (await taskSink(job, organizationDefinitions(db, job.organizationId)))?.parseResult?.(
+            result,
+          ),
+        ).toEqual(result);
         await completeJob(db, { jobId: job.id, harnessId: agentA, result });
       }
       await expectRalphHooks(job);

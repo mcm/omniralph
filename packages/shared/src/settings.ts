@@ -71,6 +71,9 @@ export function parsePathExcludes(text: string): string[] {
     .filter(Boolean);
 }
 
+/** A task picker's value: a task ID (`builtin:<name>` or a UUID) the server resolves. */
+const TaskId = (message: string) => z.string({ error: message }).min(1, message).max(200);
+
 export const RepositorySettingsInput = z.object({
   profileId: z.enum(BUILT_IN_PROFILE_IDS, { error: "Choose a profile." }),
   triggers: z.object({
@@ -99,6 +102,11 @@ export const RepositorySettingsInput = z.object({
     .min(1, "Choose at least one review task.")
     .max(MAX_REVIEW_TASKS, `At most ${MAX_REVIEW_TASKS} review tasks.`)
     .refine((ids) => new Set(ids).size === ids.length, "Choose each review task once."),
+  /**
+   * The query task that merges a review run's findings (`repositories.correlation_task_id`);
+   * the server checks it outputs the correlation's `{ findings, summary }`.
+   */
+  correlationTaskId: TaskId("Choose a correlation task."),
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
@@ -332,6 +340,10 @@ export const RalphSettingsInput = z.object({
   linearLabels: routingValues(RoutingName, "labels"),
   /** Legacy `ralph.*` jobs, or coding tasks (`repositories.coding_path`). */
   codingPath: z.enum(RALPH_CODING_PATHS, { error: "Choose a path." }),
+  /** The coding task of its story runs (`story_task_id`); the server checks it accepts `linear.delegated`. */
+  storyTaskId: TaskId("Choose a story task."),
+  /** The coding task of its request runs (`request_task_id`); the server checks it accepts the request triggers. */
+  requestTaskId: TaskId("Choose a request task."),
 
   // Verification
   verifyCommands: RalphSettings.shape.verifyCommands.unwrap(),
@@ -403,7 +415,13 @@ export function ralphSettingsFormValues(
   settings: RalphSettings,
 ): Omit<
   RalphSettingsInput,
-  "ralphEnabled" | "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "codingPath"
+  | "ralphEnabled"
+  | "linearTeamKeys"
+  | "linearProjectNames"
+  | "linearLabels"
+  | "codingPath"
+  | "storyTaskId"
+  | "requestTaskId"
 > {
   return {
     verifyCommands: [...settings.verifyCommands],

@@ -16,6 +16,7 @@ import { getDb } from "@/lib/db";
 import { getTaskDefinition } from "@/lib/definitions";
 import { findTaskReferrers, hasNoReferrers, type TaskReferrers } from "@/lib/definitions/referrers";
 import { validateOrganizationTask } from "@/lib/definitions/validation";
+import { repositoryTaskRoles } from "./repository-roles";
 
 /** What the task form submits: a definition without its ID (the row's). */
 export type TaskDefinitionFields = Omit<TaskDefinitionInput, "id">;
@@ -46,10 +47,9 @@ function revalidateTasks() {
 /** Each setting or definition using a task, for error messages. */
 function referrerNames(referrers: TaskReferrers): string[] {
   return [
-    ...referrers.repositories.map((repo) => {
-      const roles = [repo.reviewTask && "review task", repo.correlationTask && "correlation task"];
-      return `repository ${repo.fullPath} (${roles.filter(Boolean).join(", ")})`;
-    }),
+    ...referrers.repositories.map(
+      (repo) => `repository ${repo.fullPath} (${repositoryTaskRoles(repo)})`,
+    ),
     ...referrers.chatTasks.map((role) => `the chat ${CHAT_TASK_NAMES[role]} task`),
     ...referrers.chatChannels.map((channel) => {
       const roles = [

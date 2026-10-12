@@ -244,6 +244,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         customInstructions: "",
         pinnedHarnessIds: [],
         reviewTaskIds: ["builtin:review-pr"],
+        correlationTaskId: "builtin:correlate-findings",
       }),
     ).toEqual(refused);
     expect(
@@ -253,6 +254,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         linearProjectNames: [],
         linearLabels: [],
         codingPath: "legacy",
+        storyTaskId: "builtin:implement-story",
+        requestTaskId: "builtin:handle-request",
         ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
       }),
     ).toEqual(refused);
@@ -304,6 +307,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
         customInstructions: "",
         pinnedHarnessIds: [],
         reviewTaskIds: ["builtin:review-pr"],
+        correlationTaskId: "builtin:correlate-findings",
       }),
     ).toEqual({ ok: true });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.profile).toMatchObject({

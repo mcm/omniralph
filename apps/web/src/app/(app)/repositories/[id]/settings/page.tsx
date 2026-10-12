@@ -12,7 +12,14 @@ import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
-import { reviewTaskChoices } from "@/lib/repositories/settings";
+import {
+  CORRELATION_TASKS,
+  listTaskChoices,
+  listTaskDefinitions,
+  REQUEST_TASKS,
+  REVIEW_TASKS,
+  STORY_TASKS,
+} from "@/lib/definitions";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { RepositorySettingsView } from "./repository-settings-view";
 
@@ -30,10 +37,23 @@ export default async function RepositorySettingsPage({
   const db = getDb();
   const found = await getRepositoryWithConnection(db, id, user.organization.id);
   if (!found || found.repository.disconnectedAt) notFound();
-  const [profiles, agents, pinnedHarnessIds] = await Promise.all([
-    listReviewProfiles(db, user.organization.id),
-    listPinnableHarnesses(db, user.organization.id),
+  const orgId = user.organization.id;
+  const [
+    profiles,
+    agents,
+    pinnedHarnessIds,
+    reviewTasks,
+    correlationTasks,
+    storyTasks,
+    requestTasks,
+  ] = await Promise.all([
+    listReviewProfiles(db, orgId),
+    listPinnableHarnesses(db, orgId),
     listRepositoryPinnedHarnessIds(db, id),
+    listTaskDefinitions(db, orgId, REVIEW_TASKS),
+    listTaskChoices(db, orgId, CORRELATION_TASKS),
+    listTaskChoices(db, orgId, STORY_TASKS),
+    listTaskChoices(db, orgId, REQUEST_TASKS),
   ]);
   const { repository, connection } = found;
 
@@ -52,12 +72,15 @@ export default async function RepositorySettingsPage({
         customInstructions: repository.customInstructions ?? "",
         pinnedHarnessIds,
         reviewTaskIds: repository.reviewTaskIds,
+        correlationTaskId: repository.correlationTaskId,
       }}
-      reviewTasks={reviewTaskChoices().map((task) => ({
-        id: task.id,
-        name: task.name,
-        description: task.description,
+      reviewTasks={reviewTasks.map(({ definition, builtin }) => ({
+        id: definition.id,
+        name: definition.name,
+        description: definition.description,
+        builtin,
       }))}
+      correlationTasks={correlationTasks}
       profiles={profiles.map((p) => ({
         id: p.id,
         name: p.name,
@@ -80,11 +103,14 @@ export default async function RepositorySettingsPage({
               linearProjectNames: repository.linearProjectNames,
               linearLabels: repository.linearLabels,
               codingPath: repository.codingPath,
+              storyTaskId: repository.storyTaskId,
+              requestTaskId: repository.requestTaskId,
               ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
               manualLabels: repositoryManualLabels(repository),
             }
           : null
       }
+      codingTasks={{ story: storyTasks, request: requestTasks }}
     />
   );
 }
