@@ -88,4 +88,54 @@ describe("builtinProblems", () => {
       expect.stringMatching(/^Task builtin:learn-rule template \(1:1\): /),
     ]);
   });
+
+  it("reports a coding task that may run without an epic but renders one, or can't be timed or described", () => {
+    const engineer: AgentDefinitionInput = {
+      id: "builtin:coder",
+      name: "Coder",
+      systemPrompt: "You write code.",
+      taskTypes: ["coding"],
+    };
+    const coding: TaskDefinitionInput = {
+      id: "builtin:handle",
+      name: "Handle a request",
+      taskType: "coding",
+      agentId: "builtin:coder",
+      triggers: ["linear.mention", "chat.request"],
+      promptTemplate: "{{#epic.prd}}{{epic.prd}}{{/epic.prd}} on {{branch}}",
+      sink: "ralph-run",
+      pool: "long",
+      prDescriptionTaskId: "builtin:describe-pr",
+    };
+    const describer: TaskDefinitionInput = {
+      ...task,
+      id: "builtin:describe-pr",
+      triggers: ["run.invoked"],
+      promptTemplate: "Describe {{branch}}.",
+      sink: "run-result",
+    };
+    expect(builtinProblems([agent, engineer], [coding, describer])).toEqual([]);
+    expect(
+      builtinProblems(
+        [agent, engineer],
+        [
+          {
+            ...coding,
+            promptTemplate: "{{epic.prd}} on {{branch}}",
+            pushTiming: "end",
+            draftPullRequest: "early",
+            prDescriptionTaskId: "builtin:learn-rule",
+          },
+          describer,
+          task,
+        ],
+      ),
+    ).toEqual([
+      expect.stringMatching(/^Task builtin:handle draftPullRequest: An early draft PR needs/),
+      "Task builtin:handle prDescriptionTaskId: builtin:learn-rule isn't a query task started by run.invoked.",
+      expect.stringMatching(
+        /^Task builtin:handle promptTemplate: A request \(linear\.mention, chat\.request\) may have no epic or story: put \{\{epic\.prd\}\} in an optional section/,
+      ),
+    ]);
+  });
 });

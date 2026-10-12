@@ -117,7 +117,7 @@ Ralph only builds in repositories that opted in. On **Repository â€º Settings â€
 | **Linear projects** | Comma-separated project names. |
 | **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. On the **Coding tasks** path the story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
-| **Coding path** (`codingPath`) | `legacy` (**Legacy jobs**, the default) or `tasks` (**Coding tasks**): whether stories and requests run as the legacy ralph jobs or as coding runs of `builtin:implement-story` and `builtin:handle-request`. Applies from a run's next job. |
+| **Coding path** (`codingPath`) | `legacy` (**Legacy jobs**, the default) or `tasks` (**Coding tasks**): whether stories and requests run as the legacy ralph jobs or as coding runs of `builtin:implement-story` and `builtin:handle-request`. Applies from a run's next job. On **Coding tasks**, the story task's `pushTiming` says when the branch is pushed: `per-story` (the default, today's behaviour) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
 
 The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
 config), with the same names and defaults, grouped as on the page:

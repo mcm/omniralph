@@ -52,7 +52,7 @@ import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from
 import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
-import { MAX_ITERATIONS_PER_RUN } from "./run";
+import { MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -933,6 +933,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
         pool: null,
         taskId: null,
         targetHarnessId: agentA,
+        dedupeKey: runDedupeKey(run.id),
       });
       const payload = await prepare(run.id, {});
       expect(payload).toMatchObject({
@@ -998,6 +999,33 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       } finally {
         await codingPath("legacy");
       }
+    });
+
+    it("still applies a ralph.prepare job queued before preparations ran as worktree.exec", async () => {
+      const { bucket, run } = await manualEpic();
+      await work(run.id, { commitSha: sha(7) });
+      await reply(run, "Run it");
+      const queued = await activeJob(run.id);
+      await db
+        .update(jobs)
+        .set({ type: "ralph.prepare", taskType: "coding", pool: "long" })
+        .where(eq(jobs.id, queued.id));
+      const job = await start(run.id);
+      expect(job.type).toBe("ralph.prepare");
+      await finish(job, {
+        status: "completed",
+        commands: PREPARE_COMMANDS.map((command) => ({ command, exitCode: 0, output: "ok" })),
+        headSha: sha(7),
+        durationMs: 5,
+      });
+      expect((await getRun(db, run.id))?.preparation?.handled).toMatchObject({
+        [bucket.id]: { how: "prepared", headSha: sha(7) },
+      });
+      expect(
+        linear
+          .bodies(run.linearAgentSessionId, "thought")
+          .some((b) => b.startsWith("Ran the preparation of **ENG-3**")),
+      ).toBe(true);
     });
 
     it("asks again after a stale approval, bound to the HEAD the job found", async () => {

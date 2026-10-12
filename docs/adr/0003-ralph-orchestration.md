@@ -338,7 +338,7 @@ conversation call is cheap and already runs where the activity arrives).
 
 ## Addendum: coding runs and the cutover switch
 
-TOOL-304 moves the loop's sessions onto the `coding` task type of
+TOOL-304 (2026-10-12) moves the loop's sessions onto the `coding` task type of
 [ADR 0008](0008-agents-tasks-and-the-harness.md#coding-runs) without changing the decision above:
 `advanceRun`, the run lock, one active job per run, the sticky harness, attempts vs deliveries,
 story selection, Linear state changes, follow-up issues and the reconcile cron are the same on

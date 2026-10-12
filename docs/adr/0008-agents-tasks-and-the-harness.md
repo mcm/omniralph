@@ -429,17 +429,23 @@ So adding a review task (a security reviewer, say) is a definitions-only change:
 
 `repo.sync`, `worktree.exec` and `worktree.cleanup` are system RPCs (`apps/harness/src/rpc/`,
 `SYSTEM_RPCS` in `@omniralph/shared`): fixed commands with no Claude session, no run spec and no
-session token, targeted at one harness, with a single `lifecycle` token (`credentials:read`). They use the same claim, lease,
+session token, usually targeted at one harness, with a single `lifecycle` token (`credentials:read`). They use the same claim, lease,
 result and fail plumbing as every other job. `worktree.exec` runs a manual story's approved
 `cyralph-prepare` commands in the lane's branch worktree on the run's sticky harness (on both
 coding paths, replacing `ralph.prepare`): nothing runs if the commands' hash or the branch HEAD
 changed since the approval, then `bash -lc` one at a time, stopping at the first failure, without
 the job token (no git credential). `worktree.cleanup` (replacing `ralph.cleanup`, same payload,
-result and actions) cleans up a merged lane on the run's sticky harness: `cleanup` stashes the
-worktree's changes, removes it and deletes the local branch unless it has unmerged commits;
+result and actions) cleans up a lane on the run's sticky harness: `cleanup` stashes the
+worktree's changes, removes it and deletes the local branch unless it has unmerged commits (after
+a merge), or keeps the branch (`keepBranch`, after a PR closed without merging or a stopped run);
 `stashes` pushes leftover stashes to `ralph/stash/<epic>` or drops them; `branch` pushes a kept
-branch or deletes it. Its token is the only system RPC token with `credentials:write`, for those
-pushes; nothing in it deletes a remote branch. Self-update stays on the heartbeat.
+branch or deletes it. Its payload can also list a finished run's hidden refs
+(`refs/omniralph/runs/<run>`, `hiddenRefs`, with or without an action), which it deletes on
+`origin`; a job with only hidden refs targets no harness, since any harness can delete them. Its
+token is the only system RPC token with `credentials:write`, for those pushes; nothing in it
+deletes a remote branch. Self-update stays on the heartbeat. Two differences from the design: the
+keep-branch cleanup and the hidden refs were added by TOOL-377 and TOOL-378, and a hidden-refs-only
+job is the one system RPC not pinned to a harness.
 
 ### What later epics add
 

@@ -17,7 +17,8 @@ const ENDED_RUN_STATUSES: RalphRunStatus[] = ["completed", "failed"];
 
 /**
  * Records a hidden ref a story pushed (its latest SHA). One deleted before is
- * live again (a resumed run pushed it anew).
+ * live again (a resumed run pushed it anew). `created_at` is the latest push,
+ * so the age sweep counts from it.
  */
 export async function recordHiddenRef(
   db: Executor,
@@ -28,7 +29,7 @@ export async function recordHiddenRef(
     .values(input)
     .onConflictDoUpdate({
       target: [hiddenRefs.repositoryId, hiddenRefs.ref],
-      set: { runId: input.runId, sha: input.sha, deletedAt: null },
+      set: { runId: input.runId, sha: input.sha, createdAt: new Date(), deletedAt: null },
     })
     .returning();
   return row!;
@@ -45,7 +46,7 @@ export function listRunHiddenRefs(db: Executor, runId: string): Promise<HiddenRe
 
 /**
  * Hidden refs the sweep deletes: not deleted yet, and either their run is
- * over (completed or failed) or they were created before `olderThan` and
+ * over (completed or failed) or they were last pushed before `olderThan` and
  * their run isn't running. A stopped run's ref is kept until then (the run
  * may resume from it). Oldest first, with the run.
  */
