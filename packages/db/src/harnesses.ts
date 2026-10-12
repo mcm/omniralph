@@ -3,7 +3,19 @@
  * (returned to the harness in its next heartbeat), the audit log and the job list.
  */
 import { INSTALL_JOB_TYPE } from "@omniralph/shared";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -347,19 +359,36 @@ export interface JobListEntry {
   finishedAt: Date | null;
 }
 
-/** An organization's recent jobs of every type, newest first, optionally of some statuses and types only. */
-export async function listRecentJobs(
-  db: Database,
+/** Jobs per page of the Jobs list. */
+export const JOB_PAGE_SIZE = 50;
+
+export interface JobListPage {
+  jobs: JobListEntry[];
+  /** Matching jobs across all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+function jobListWhere(
   organizationId: string,
-  filter: { statuses?: JobStatus[]; types?: string[]; limit?: number } = {},
-): Promise<JobListEntry[]> {
-  const where = and(
+  filter: { statuses?: JobStatus[]; types?: string[] },
+): SQL | undefined {
+  return and(
     eq(jobs.organizationId, organizationId),
     filter.statuses && filter.statuses.length > 0
       ? inArray(jobs.status, filter.statuses)
       : undefined,
     filter.types && filter.types.length > 0 ? inArray(jobs.type, filter.types) : undefined,
   );
+}
+
+async function selectJobs(
+  db: Database,
+  where: SQL | undefined,
+  limit: number,
+  offset = 0,
+): Promise<JobListEntry[]> {
   const rows = await db
     .select({
       id: jobs.id,
@@ -383,7 +412,8 @@ export async function listRecentJobs(
     .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
     .where(where)
     .orderBy(desc(jobs.createdAt), desc(jobs.id))
-    .limit(filter.limit ?? 100);
+    .limit(limit)
+    .offset(offset);
   return rows.map((row) => ({
     id: row.id,
     type: row.type,
@@ -403,6 +433,62 @@ export async function listRecentJobs(
     finishedAt: row.finishedAt,
   }));
 }
+
+/** An organization's recent jobs of every type, newest first, optionally of some statuses and types only. */
+export async function listRecentJobs(
+  db: Database,
+  organizationId: string,
+  filter: { statuses?: JobStatus[]; types?: string[]; limit?: number } = {},
+): Promise<JobListEntry[]> {
+  return selectJobs(db, jobListWhere(organizationId, filter), filter.limit ?? 100);
+}
+
+/** One page of an organization's jobs, newest first, optionally of some statuses only. */
+export async function listJobs(
+  db: Database,
+  organizationId: string,
+  filter: { statuses?: JobStatus[]; page?: number; pageSize?: number } = {},
+): Promise<JobListPage> {
+  const pageSize = Math.max(1, Math.floor(filter.pageSize ?? JOB_PAGE_SIZE));
+  const page = Math.max(1, Math.floor(filter.page ?? 1));
+  const where = jobListWhere(organizationId, filter);
+  const [[totalRow], rows] = await Promise.all([
+    db.select({ total: count() }).from(jobs).where(where),
+    selectJobs(db, where, pageSize, (page - 1) * pageSize),
+  ]);
+  return { jobs: rows, total: totalRow?.total ?? 0, page, pageSize };
+}
+
+/**
+ * The page of the unfiltered Jobs list that shows the job, or null when the
+ * job isn't one of the organization's (or the ID isn't a UUID).
+ */
+export async function findJobPage(
+  db: Database,
+  organizationId: string,
+  jobId: string,
+  pageSize = JOB_PAGE_SIZE,
+): Promise<number | null> {
+  if (!UUID.test(jobId)) return null;
+  const [target] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), eq(jobs.organizationId, organizationId)));
+  if (!target) return null;
+  // Jobs listed before it: newer, or as new with a greater ID (the list's order).
+  const [row] = await db
+    .select({ before: count() })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        sql`(${jobs.createdAt}, ${jobs.id}) > (select j.created_at, j.id from jobs j where j.id = ${jobId})`,
+      ),
+    );
+  return Math.floor((row?.before ?? 0) / Math.max(1, Math.floor(pageSize))) + 1;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Queued jobs only this harness may claim (`target_harness_id`: pinned and `repo.sync` jobs). */
 export async function listQueuedJobsTargetingHarness(

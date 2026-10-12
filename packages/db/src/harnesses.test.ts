@@ -5,7 +5,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarnessEnrollment, enrollHarness, revokeHarness } from "./harness-auth.js";
 import {
+  findJobPage,
   getHarnessOverview,
+  listJobs,
   listHarnessInstallJobs,
   listHarnessOverview,
   markHarnessDeleted,
@@ -183,6 +185,38 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
       }),
     ]);
     expect(await listHarnessInstallJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
+  });
+
+  it("pages an organization's jobs and finds the page that shows a job", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Paged jobs" }).returning();
+    const base = new Date("2026-10-01T00:00:00Z").getTime();
+    const inserted = await db
+      .insert(jobs)
+      .values(
+        Array.from({ length: 5 }, (_, i) => ({
+          organizationId: org!.id,
+          type: "repo.sync",
+          taskType: "system" as const,
+          status: i === 0 ? ("failed" as const) : ("completed" as const),
+          createdAt: new Date(base + i * 60_000),
+        })),
+      )
+      .returning({ id: jobs.id });
+    const newestFirst = inserted.map((j) => j.id).reverse();
+
+    const first = await listJobs(db, org!.id, { page: 1, pageSize: 2 });
+    expect(first.total).toBe(5);
+    expect(first.jobs.map((j) => j.id)).toEqual(newestFirst.slice(0, 2));
+    const last = await listJobs(db, org!.id, { page: 3, pageSize: 2 });
+    expect(last.jobs.map((j) => j.id)).toEqual(newestFirst.slice(4));
+    const failed = await listJobs(db, org!.id, { statuses: ["failed"], pageSize: 2 });
+    expect(failed.total).toBe(1);
+
+    expect(await findJobPage(db, org!.id, newestFirst[0]!, 2)).toBe(1);
+    expect(await findJobPage(db, org!.id, newestFirst[2]!, 2)).toBe(2);
+    expect(await findJobPage(db, org!.id, newestFirst[4]!, 2)).toBe(3);
+    expect(await findJobPage(db, orgB, newestFirst[4]!, 2)).toBeNull();
+    expect(await findJobPage(db, org!.id, "not-a-uuid", 2)).toBeNull();
   });
 
   it("keeps an update request until the harness reports it handled", async () => {

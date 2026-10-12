@@ -19,13 +19,13 @@ import {
   TableHeader,
   TableRow,
 } from "@iamthemcmaster/ui";
-import { IconChevronRight, IconExternalLink, IconHistory } from "@tabler/icons-react";
+import { IconExternalLink, IconHistory } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ReviewStatusBadge, SeverityBadge, TriggerBadge } from "@/components/review-badges";
+import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
-import { formatDateTime } from "@/lib/format-date";
 import { totalPages } from "@/lib/pagination";
 import {
   FINDING_SEVERITIES,
@@ -57,10 +57,6 @@ interface ReviewsViewProps {
   pageSize: number;
 }
 
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
-const column = { display: "flex", flexDirection: "column", gap: "var(--space-1)" } as const;
-
 function FindingCounts({ counts }: { counts: ReviewRow["findingCounts"] }) {
   const present = FINDING_SEVERITIES.filter((s) => counts[s] > 0);
   if (present.length === 0) return <Muted>None</Muted>;
@@ -83,116 +79,88 @@ function ReviewTableRow({
   isAdmin: boolean;
 }) {
   const overBudget = review.tokensUsed > review.budget;
+  const change = `${review.repository.provider === "gitlab" ? "!" : "#"}${review.prNumber}`;
+  const host = review.repository.provider === "gitlab" ? "GitLab" : "GitHub";
   return (
     <TableRow>
-      <TableCell>
-        <div style={column}>
-          <a
-            href={review.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              fontSize: "var(--text-sm)",
-              color: "var(--text-primary)",
-              textDecoration: "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--space-1)",
-            }}
-          >
-            <span style={{ fontFamily: "var(--font-mono)" }}>
-              {review.repository.provider === "gitlab" ? "!" : "#"}
-              {review.prNumber}
+      <TableCell className="list-col-main">
+        <div className="list-cell-stack">
+          <Link href={`/reviews/${review.id}`} className="list-title">
+            <span className="text-numeric list-nowrap">{change}</span>
+            <span
+              className={
+                review.prTitle ? "list-title-text" : "list-title-text list-title-text-muted"
+              }
+            >
+              {review.prTitle ?? "Untitled"}
             </span>
-            <span>{review.prTitle ?? <Muted>Untitled</Muted>}</span>
-            <IconExternalLink size={12} style={{ flexShrink: 0 }} />
-          </a>
+          </Link>
           {showRepository && (
             <Link
               href={`/repositories/${review.repository.id}/reviews`}
-              style={{
-                ...mono,
-                color: "var(--text-secondary)",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "var(--space-1)",
-              }}
+              className="list-secondary text-numeric list-nowrap"
             >
               <ProviderIcon provider={review.repository.provider} size={12} />
               {review.repository.fullPath}
             </Link>
           )}
         </div>
-      </TableCell>
-      <TableCell>
-        <TriggerBadge trigger={review.trigger} />
-      </TableCell>
-      <TableCell>
-        <div style={column}>
+        <PhoneMeta>
           <ReviewStatusBadge status={review.status} />
+          <Timestamp iso={review.createdAt} />
+        </PhoneMeta>
+      </TableCell>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <ReviewStatusBadge status={review.status} />
+          <TriggerBadge trigger={review.trigger} />
           {review.status === "failed" && review.error && (
-            <Muted title={review.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
+            <Muted title={review.error} className="list-error">
               {review.error.length > 80 ? `${review.error.slice(0, 80)}…` : review.error}
             </Muted>
           )}
         </div>
       </TableCell>
-      <TableCell>
-        <div style={column}>
-          <span style={{ ...cellText, color: "var(--text-primary)" }}>
-            {review.profileName ?? "—"}
-          </span>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <span className="list-text list-text-primary">{review.profileName ?? "—"}</span>
           {review.agent ? (
             isAdmin ? (
-              <Link
-                href={`/harnesses/${review.agent.id}`}
-                style={{ ...cellText, textDecoration: "none" }}
-              >
+              <Link href={`/harnesses/${review.agent.id}`} className="list-text">
                 {review.agent.name}
               </Link>
             ) : (
-              <span style={cellText}>{review.agent.name}</span>
+              <span className="list-text">{review.agent.name}</span>
             )
           ) : (
             <Muted>No agent</Muted>
           )}
         </div>
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <FindingCounts counts={review.findingCounts} />
       </TableCell>
-      <TableCell>
-        <span
-          style={{ ...mono, color: overBudget ? "var(--danger-fg)" : "var(--text-secondary)" }}
-          title={`${review.tokensUsed.toLocaleString()} of ${review.budget.toLocaleString()} tokens`}
-        >
-          {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
-        </span>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <span
+            className={`list-time text-numeric${overBudget ? " list-text-danger" : ""}`}
+            title={`${review.tokensUsed.toLocaleString()} of ${review.budget.toLocaleString()} tokens`}
+          >
+            {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
+          </span>
+          <span className="list-time text-numeric" title="Duration">
+            {formatDuration(review.durationMs) ?? "—"}
+          </span>
+        </div>
       </TableCell>
-      <TableCell>
-        <span style={cellText}>{formatDuration(review.durationMs) ?? "—"}</span>
+      <TableCell className={WIDE_COLUMN}>
+        <Timestamp iso={review.createdAt} />
       </TableCell>
-      <TableCell>
-        <span style={cellText}>{formatDateTime(review.createdAt)}</span>
-      </TableCell>
-      <TableCell style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-        <RerunReviewDialog
-          reviewId={review.id}
-          changeLabel={`${review.repository.provider === "gitlab" ? "!" : "#"}${review.prNumber}`}
-          compact
-        />
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={`Review of ${review.prNumber}`}
-          title="View review"
-        >
-          <Link href={`/reviews/${review.id}`}>
-            <IconChevronRight size={14} />
-          </Link>
-        </Button>
+      <TableCell className="list-actions">
+        <div className="list-actions-group">
+          <RerunReviewDialog reviewId={review.id} changeLabel={change} compact />
+          <ExternalRowLink href={review.prUrl} label={`Open ${change} on ${host}`} />
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -265,15 +233,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
 
         <Card>
           <CardHeader>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "var(--space-4)",
-                flexWrap: "wrap",
-              }}
-            >
+            <div className="list-card-header">
               <div>
                 <CardTitle as="h2">Review history</CardTitle>
                 <CardDescription>
@@ -282,7 +242,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                     : `Newest first. Showing ${first}–${last} of ${total.toLocaleString()}.`}
                 </CardDescription>
               </div>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <div className="list-filters">
                 <NativeSelect
                   aria-label="Filter by status"
                   value={params.status ?? ""}
@@ -314,7 +274,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
               </div>
             </div>
           </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          <CardContent className="list-card-content">
             {reviews.length === 0 ? (
               <Empty
                 icon={<IconHistory size={24} />}
@@ -333,19 +293,17 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                 }
               />
             ) : (
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>
                       {repository ? (repository.provider === "gitlab" ? "MR" : "PR") : "PR / MR"}
                     </TableHead>
-                    <TableHead>Trigger</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Profile / agent</TableHead>
-                    <TableHead>Findings</TableHead>
-                    <TableHead>Tokens / budget</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Status / trigger</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Profile / agent</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Findings</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Tokens / duration</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Created</TableHead>
                     <TableHead aria-label="Actions" />
                   </TableRow>
                 </TableHeader>

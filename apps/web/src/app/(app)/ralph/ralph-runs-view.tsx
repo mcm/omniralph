@@ -25,17 +25,16 @@ import {
 import {
   IconBrandDiscord,
   IconBrandSlack,
-  IconChevronRight,
   IconExternalLink,
   IconPlugConnected,
   IconRepeat,
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
-import { formatDateTime } from "@/lib/format-date";
 import { totalPages } from "@/lib/pagination";
 import {
   RALPH_RUN_STATUSES,
@@ -59,8 +58,6 @@ interface RalphRunsViewProps {
 }
 
 const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
-const column = { display: "flex", flexDirection: "column", gap: "var(--space-1)" } as const;
 const externalLink = {
   color: "var(--text-primary)",
   textDecoration: "none",
@@ -81,7 +78,7 @@ export function LinearIssueLink({
 }) {
   const content = (
     <>
-      <span style={{ fontFamily: "var(--font-mono)" }}>{identifier}</span>
+      <span className="text-numeric list-nowrap">{identifier}</span>
       {title && <span>{title}</span>}
     </>
   );
@@ -127,7 +124,7 @@ export function RunSource({
   return (
     <span style={{ ...externalLink, fontSize: "var(--text-sm)" }}>
       {run.chatThread && <Icon size={12} style={{ flexShrink: 0 }} />}
-      <span style={{ fontFamily: "var(--font-mono)" }}>{runSourceLabel(run)}</span>
+      <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
     </span>
   );
 }
@@ -136,7 +133,13 @@ export function RunSource({
 export function PullRequestLink({ pullRequest }: { pullRequest: RalphRunRow["pullRequest"] }) {
   if (!pullRequest) return <Muted>—</Muted>;
   return (
-    <a href={pullRequest.url} target="_blank" rel="noreferrer" style={{ ...externalLink, ...mono }}>
+    <a
+      href={pullRequest.url}
+      target="_blank"
+      rel="noreferrer"
+      className="list-secondary list-text-primary text-numeric list-nowrap"
+      aria-label={`Open ${pullRequest.label} on the code host`}
+    >
       {pullRequest.label}
       <IconExternalLink size={12} />
     </a>
@@ -182,71 +185,70 @@ export function LinearNotConnected({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+/** Where a run's source lives outside the panel: its Linear issue (null for chat runs). */
+function externalSource(run: RalphRunRow): { href: string; label: string } | null {
+  if (run.origin !== "linear" || !run.linearUrl) return null;
+  return { href: run.linearUrl, label: `Open ${runSourceLabel(run)} in Linear` };
+}
+
 function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
+  const external = externalSource(run);
+  const title = run.origin === "linear" ? run.linearTitle : null;
   return (
     <TableRow>
-      <TableCell>
-        <RunSource run={run} />
+      <TableCell className="list-col-main">
+        <Link href={`/ralph/${run.id}`} className="list-title">
+          <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
+          {title && <span className="list-title-text">{title}</span>}
+        </Link>
+        <PhoneMeta>
+          <RalphRunStatusBadge status={run.status} />
+          <Timestamp iso={run.updatedAt} />
+        </PhoneMeta>
       </TableCell>
-      <TableCell>
-        <span
-          style={{
-            ...mono,
-            color: "var(--text-secondary)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--space-1)",
-          }}
-        >
-          {run.repository ? (
-            <>
-              <ProviderIcon provider={run.repository.provider} size={12} />
-              {run.repository.fullPath}
-            </>
-          ) : (
-            "Not chosen yet"
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <span className="list-secondary text-numeric list-nowrap">
+            {run.repository ? (
+              <>
+                <ProviderIcon provider={run.repository.provider} size={12} />
+                {run.repository.fullPath}
+              </>
+            ) : (
+              "Not chosen yet"
+            )}
+          </span>
+          {run.branch && (
+            <span className="list-secondary text-numeric list-nowrap">{run.branch}</span>
           )}
-        </span>
+        </div>
       </TableCell>
-      <TableCell>
-        <div style={column}>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
           <RalphRunStatusBadge status={run.status} />
           {run.error && (
-            <Muted title={run.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
+            <Muted title={run.error} className="list-error">
               {run.error.length > 80 ? `${run.error.slice(0, 80)}…` : run.error}
             </Muted>
           )}
         </div>
       </TableCell>
-      <TableCell>
-        <span style={cellText}>
+      <TableCell className={WIDE_COLUMN}>
+        <span className="list-text text-numeric list-nowrap">
           {run.stories.completed} / {run.stories.total}
         </span>
       </TableCell>
-      <TableCell>
-        <span style={{ ...mono, color: "var(--text-secondary)" }}>{run.branch}</span>
-      </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <PullRequestLink pullRequest={run.pullRequest} />
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <AgentName agent={run.agent} isAdmin={isAdmin} />
       </TableCell>
-      <TableCell>
-        <span style={cellText}>{formatDateTime(run.updatedAt)}</span>
+      <TableCell className={WIDE_COLUMN}>
+        <Timestamp iso={run.updatedAt} />
       </TableCell>
-      <TableCell style={{ textAlign: "right" }}>
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={`Run of ${runSourceLabel(run)}`}
-          title="View run"
-        >
-          <Link href={`/ralph/${run.id}`}>
-            <IconChevronRight size={14} />
-          </Link>
-        </Button>
+      <TableCell className="list-actions">
+        {external && <ExternalRowLink href={external.href} label={external.label} />}
       </TableCell>
     </TableRow>
   );
@@ -293,15 +295,7 @@ export function RalphRunsView({
 
         <Card>
           <CardHeader>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "var(--space-4)",
-                flexWrap: "wrap",
-              }}
-            >
+            <div className="list-card-header">
               <div>
                 <CardTitle as="h2">Runs</CardTitle>
                 <CardDescription>
@@ -310,7 +304,7 @@ export function RalphRunsView({
                     : `Newest first. Showing ${first}–${last} of ${total.toLocaleString()}.`}
                 </CardDescription>
               </div>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <div className="list-filters">
                 <NativeSelect
                   aria-label="Filter by status"
                   value={params.status ?? ""}
@@ -340,7 +334,7 @@ export function RalphRunsView({
               </div>
             </div>
           </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          <CardContent className="list-card-content">
             {total === 0 && !filtered && !linearConnected ? (
               <Empty
                 icon={<IconPlugConnected size={24} />}
@@ -380,18 +374,17 @@ export function RalphRunsView({
                 }
               />
             ) : (
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Linear issue</TableHead>
-                    <TableHead>Repository</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Stories</TableHead>
-                    <TableHead>Branch</TableHead>
-                    <TableHead>PR / MR</TableHead>
-                    <TableHead>Harness</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead aria-label="Actions" />
+                    <TableHead>Run</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Repository / branch</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Stories</TableHead>
+                    <TableHead className={WIDE_COLUMN}>PR / MR</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Updated</TableHead>
+                    <TableHead aria-label="Links" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>

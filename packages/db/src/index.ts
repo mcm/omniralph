@@ -130,7 +130,10 @@ export {
   type RotateRefreshTokenResult,
 } from "./harness-auth.js";
 export {
+  findJobPage,
   getHarnessOverview,
+  JOB_PAGE_SIZE,
+  listJobs,
   listHarnessInstallJobs,
   listHarnessOverview,
   listQueuedJobsTargetingHarness,
@@ -145,6 +148,7 @@ export {
   type HarnessJobSummary,
   type HarnessOverview,
   type JobListEntry,
+  type JobListPage,
   type RepositoryLink,
 } from "./harnesses.js";
 export {
