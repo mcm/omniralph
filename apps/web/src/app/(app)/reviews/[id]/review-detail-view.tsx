@@ -91,6 +91,9 @@ function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
 }
 
 function FindingItem({ finding }: { finding: FindingView }) {
+  // Dismissed and resolved findings are marked by their status badge, a dashed border and a
+  // secondary title, never by opacity: dimming the item would also dim its Restore control.
+  const inactive = finding.status !== "open";
   return (
     <div
       // Target of the source-finding links on Repository › Rules.
@@ -99,8 +102,7 @@ function FindingItem({ finding }: { finding: FindingView }) {
         ...stack,
         padding: "var(--space-4)",
         borderRadius: "var(--radius-md)",
-        border: "1px solid var(--border-subtle)",
-        opacity: finding.status === "open" ? 1 : 0.7,
+        border: `1px ${inactive ? "dashed" : "solid"} var(--border-subtle)`,
       }}
     >
       <div
@@ -117,6 +119,7 @@ function FindingItem({ finding }: { finding: FindingView }) {
           style={{
             fontSize: "var(--text-sm)",
             fontWeight: "var(--font-weight-semibold)",
+            color: inactive ? "var(--text-secondary)" : "var(--text-primary)",
             flex: 1,
             minWidth: 0,
           }}

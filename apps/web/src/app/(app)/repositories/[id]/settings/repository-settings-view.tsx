@@ -276,8 +276,7 @@ export function RepositorySettingsView({
                         alignItems: "flex-start",
                         padding: "var(--space-4)",
                         borderRadius: "var(--radius-md)",
-                        border: `1px solid ${selected ? "var(--border-strong)" : "var(--border-subtle)"}`,
-                        background: selected ? "var(--bg-raised)" : "transparent",
+                        border: `1px solid ${selected ? "var(--accent)" : "var(--border-subtle)"}`,
                         cursor: disabled ? "default" : "pointer",
                       }}
                     >

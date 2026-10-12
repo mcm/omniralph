@@ -61,7 +61,7 @@ export function OrganizationSwitcher({
               : { width: "100%", justifyContent: "flex-start", gap: "var(--space-2)" }
           }
         >
-          <IconBuilding size={16} style={{ color: "var(--glacier-300)", flexShrink: 0 }} />
+          <IconBuilding size={16} style={{ color: "var(--text-accent)", flexShrink: 0 }} />
           {!collapsed && (
             <>
               <span
