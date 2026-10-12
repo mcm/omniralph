@@ -6,7 +6,9 @@
   task type, review runs, setup and teardown commands and the `review`, `sticky-comment` and
   `run-result` sinks. Amended by TOOL-304 (the third epic): the `coding` task type, coding runs
   behind a per-repository switch, the `ship` harness tool, push and draft PR timing, and the
-  `worktree.exec` and `worktree.cleanup` system RPCs.
+  `worktree.exec` and `worktree.cleanup` system RPCs. Amended by TOOL-306 (the fifth epic):
+  [organization definitions](#organization-definitions) stored in the database and edited in the
+  control panel.
 - **Date:** 2026-10-11
 
 ## Context
@@ -60,7 +62,8 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
 (`variables.ts`), the template engine (`template.ts`) and the built-in definitions
 (`builtins.ts`, `builtin/*.ts`).
 
-- **IDs.** Built-ins are `builtin:<name>`; user-defined definitions (a later epic) are UUIDs.
+- **IDs.** Built-ins are `builtin:<name>`; an organization's own definitions are UUIDs
+  ([organization definitions](#organization-definitions)).
 - **Validation.** `validateAgentForTask` rejects an agent that doesn't list the task's type, or
   wants harness tools the type doesn't allow. `builtinProblems` checks every built-in (templates,
   variables, limits, agent fit); a test keeps it empty.
@@ -125,12 +128,12 @@ over-long values (with `[… truncated]`) before fencing.
 
 ### Task types and the query lifecycle
 
-| Task type | What the harness does                            | Pool    | Status                                                   |
-| --------- | ------------------------------------------------ | ------- | -------------------------------------------------------- |
-| `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                        |
-| `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                        |
-| `coding`  | A session that changes code and ships it         | `long`  | Built in TOOL-304, behind a per-repository switch        |
-| `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`, `worktree.cleanup`         |
+| Task type | What the harness does                            | Pool    | Status                                            |
+| --------- | ------------------------------------------------ | ------- | ------------------------------------------------- |
+| `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                 |
+| `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                 |
+| `coding`  | A session that changes code and ships it         | `long`  | Built in TOOL-304, behind a per-repository switch |
+| `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`, `worktree.cleanup`  |
 
 `runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
 code:
@@ -393,7 +396,7 @@ parallel on any harnesses that accept `review` tasks.
   chosen under **Repository › Settings › Review tasks**, run in that order) lists the review tasks;
   one whose triggers don't include the event's kind is skipped, and with none left nothing is
   enqueued (`no_review_tasks`). `repositories.correlation_task_id` (default
-  `builtin:correlate-findings`) isn't editable yet. Review triggers (`onOpen`, `onPush`, drafts),
+  `builtin:correlate-findings`) is picked in the same card. Review triggers (`onOpen`, `onPush`, drafts),
   the profile and its depth apply to the whole run.
 - **Dedupe and supersede.** Each task's job key is
   `review.run:<repositoryId>:<pr>:<headSha>:<taskId>`. An event for a head that already has active
@@ -430,8 +433,8 @@ parallel on any harnesses that accept `review` tasks.
   deleted it. Its findings are dropped (and logged); a superseded run's summary isn't posted. A run
   of only summary-only tasks posts no review.
 
-So adding a review task (a security reviewer, say) is a definitions-only change: a `review` task in
-`packages/tasks`, picked per repository.
+So adding a review task (a security reviewer, say) is a definitions-only change: a `review` task
+(built-in, or one of the organization's made under **Settings › Tasks**), picked per repository.
 
 ### System RPCs
 
@@ -455,6 +458,52 @@ deletes a remote branch. Self-update stays on the heartbeat. Two differences fro
 keep-branch cleanup and the hidden refs were added by TOOL-377 and TOOL-378, and a hidden-refs-only
 job is the one system RPC not pinned to a harness.
 
+### Organization definitions
+
+TOOL-306 lets organization admins add their own agents and tasks (a security reviewer with its own
+rubric, a research agent) without a deploy. The user guide, with every field and validation rule,
+is [docs/definitions.md](../definitions.md).
+
+- **Tables.** `agent_definitions` and `task_definitions` (migration `0070_agent_task_definitions`):
+  organization, UUID `id`, `name`, the definition as `definition` jsonb (without its ID and name,
+  which the columns hold), timestamps and `created_by`/`updated_by`; task rows also store
+  `requirements` jsonb. Every helper (`packages/db/src/definitions.ts`) takes the organization and
+  returns nothing for a non-UUID ID, so built-in IDs never reach Postgres and one organization never
+  sees another's rows.
+- **Resolver.** `apps/web/src/lib/definitions/index.ts` merges the built-ins (code) and the
+  organization's rows: `getAgentDefinition`, `getTaskDefinition`, `listAgentDefinitions`,
+  `listTaskDefinitions` (filtered by task type, trigger or a predicate) and
+  `organizationDefinitions(db, organizationId)`, the `DefinitionSource` every enqueue, claim
+  (`resolveRunSpec`), sink and settings path uses. A `builtin:` ID only resolves from code and a UUID
+  only from the organization's rows, so they can't clash, and a stored row that no longer parses is
+  unresolvable (its runs fail at claim like an unknown task). No code path is built-in only.
+- **Save-time validation.** `validateAgentDefinition` and `validateTaskDefinition`
+  (`packages/tasks/src/validate.ts`) run the zod schemas, then the static checks: triggers the task
+  type accepts; the template parses and every variable is available for every trigger (a coding
+  task accepting a request trigger keeps `epic.prd` and `story` in optional sections); variable
+  limits; the agent exists and suits the task type and its harness tools; the output schema is an
+  object schema `z.fromJSONSchema` accepts (query tasks only); the sink takes the task type and its
+  output (`outputSchemaProblem` compares the task's schema with the sink's); coding settings combine
+  and the PR description task outputs `{ title, body }`. Errors are keyed by field path, the format
+  of `fieldErrors`. The server actions (`apps/web/src/app/(app)/settings/agents/actions.ts`,
+  `settings/tasks/actions.ts`) call them through `validateOrganizationTask`
+  (`apps/web/src/lib/definitions/validation.ts`: the organization's agents and tasks, the real
+  sinks), admins only. A test runs every built-in (and its clone) through the same validation.
+- **Stored requirements.** A task save derives `TaskRequirements` (`deriveTaskRequirements`: the
+  minimum harness version for the task type, commands and template variables; installables and
+  host tools, empty for now) and stores them with the row. `taskJobInput` puts the minimum version
+  on every job of the task (`jobs.min_harness_version`), so the claim path filters harnesses
+  without deriving anything again.
+- **Built-ins stay read-only.** Changing one is a code change; **Clone** copies one (or a custom
+  definition) into a new UUID row. A custom task may name a built-in agent and follows it as it
+  changes.
+- **References.** Repository settings (review tasks, correlation, story and request tasks), chat
+  task settings and coding tasks' PR description task may name custom tasks (pickers use
+  `listTaskChoices` with a filter per role; saves re-check with `getTaskChoice`).
+  `findTaskReferrers` (`apps/web/src/lib/definitions/referrers.ts`) lists them, so deleting a task
+  (or changing its type) is refused while anything uses it, and deleting an agent while a task runs
+  on it.
+
 ### What later epics add
 
 TOOL-302 built the plumbing and the query task type, TOOL-303 the review task type and review
@@ -468,8 +517,7 @@ runs, TOOL-304 the coding task type and coding runs. Not built yet:
   ([TOOL-33](https://linear.app/thefrakinship/issue/TOOL-33/plan-based-code-reviews)), on top of
   review runs;
 - installables and the `install` system RPC;
-- user-defined (UUID) agent and task definitions and the UI to create and edit them, and a chat
-  tool to run tasks.
+- a chat tool to run tasks.
 
 ## Alternatives considered
 
