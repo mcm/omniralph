@@ -25,6 +25,7 @@ import type { Sink } from "./index";
  */
 export const triageSink: Sink<TriageAgentOutput> = {
   kind: "triage",
+  taskType: "query",
   outputSchema: TriageAgentOutput,
   onStarted: (db, job) => onTriageJobStarted(db, job),
   apply: (db, job) => onTriageJobCompleted(db, job),

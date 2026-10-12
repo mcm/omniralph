@@ -1,7 +1,7 @@
 import "server-only";
 import type { Database, Job } from "@omniralph/db";
 import { QueryRunResult, type JobSkipReason } from "@omniralph/shared";
-import type { SinkKind } from "@omniralph/tasks";
+import { SINK_KINDS, type SinkKind, type TaskType } from "@omniralph/tasks";
 import type { z } from "zod";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
 import type { DefinitionSource } from "@/lib/definitions";
@@ -31,6 +31,13 @@ export type SinkResult<Output> = Omit<QueryRunResult, "structured"> & { structur
  */
 export interface Sink<Output = unknown, Result = SinkResult<Output>> {
   kind: SinkKind;
+  /** The task type whose runs it applies; a task definition naming the sink must have it. */
+  taskType: TaskType;
+  /**
+   * Takes any query result, structured or not (checking it in `parseResult`),
+   * instead of the kind `outputSchema` says.
+   */
+  anyOutput?: boolean;
   /**
    * The structured part (`structured`) of a `QueryRunResult` the sink accepts
    * from an answered run; null for a sink that takes the Markdown `answer`.
@@ -78,6 +85,11 @@ const SINKS = new Map<SinkKind, Sink>(
     registered(ralphRunSink),
   ].map((sink) => [sink.kind, sink]),
 );
+
+/** Every implemented sink, in `SINK_KINDS` order. */
+export function allSinks(): Sink[] {
+  return SINK_KINDS.flatMap((kind) => SINKS.get(kind) ?? []);
+}
 
 /** The sink of `kind`, or undefined while none is implemented. */
 export function sinkFor(kind: SinkKind): Sink | undefined {

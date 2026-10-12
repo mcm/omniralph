@@ -140,6 +140,7 @@ export async function onChatAnswerFailed(
 /** `chat-thread`: records a run's Markdown answer as an event of the chat thread it was asked in. */
 export const chatThreadSink: Sink<null> = {
   kind: "chat-thread",
+  taskType: "query",
   outputSchema: null,
   apply: (db, job, result) => applyChatAnswer(db, job, result),
   onFailed: (db, job, error) => onChatAnswerFailed(db, job, defaultChatChannel, error),

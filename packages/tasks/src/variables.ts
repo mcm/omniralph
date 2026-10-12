@@ -30,7 +30,16 @@ interface VariableBase {
 
 export type VariableDefinition =
   | (VariableBase & { source: "trigger"; triggers: readonly TriggerKind[] })
-  | (VariableBase & { source: "taskType"; taskTypes: readonly TaskType[] })
+  | (VariableBase & {
+      source: "taskType";
+      taskTypes: readonly TaskType[];
+      /**
+       * The first harness release that provides the variable, when later than
+       * the release that runs its task types (`HARNESS_VERSION_BY_TASK_TYPE`).
+       * A task whose template uses it requires that release.
+       */
+      minHarnessVersion?: string;
+    })
   | (VariableBase & { source: "setup" });
 
 const PR_TRIGGERS = [
@@ -737,17 +746,23 @@ export function findVariable(name: string): VariableDefinition | undefined {
  * those every one of its triggers provides. Setup variables are per task and
  * not included.
  */
-export function availableVariables(taskType: TaskType, triggers: readonly TriggerKind[]): string[] {
-  return VARIABLES.filter((variable) => {
-    switch (variable.source) {
-      case "taskType":
-        return variable.taskTypes.includes(taskType);
-      case "trigger":
-        return triggers.length > 0 && triggers.every((t) => variable.triggers.includes(t));
-      case "setup":
-        return false;
-    }
-  }).map((variable) => variable.name);
+export function availableVariables(
+  taskType: TaskType,
+  triggers: readonly TriggerKind[],
+  catalog: readonly VariableDefinition[] = VARIABLES,
+): string[] {
+  return catalog
+    .filter((variable) => {
+      switch (variable.source) {
+        case "taskType":
+          return variable.taskTypes.includes(taskType);
+        case "trigger":
+          return triggers.length > 0 && triggers.every((t) => variable.triggers.includes(t));
+        case "setup":
+          return false;
+      }
+    })
+    .map((variable) => variable.name);
 }
 
 /**
@@ -780,9 +795,12 @@ export function taskCatalog(task: Pick<TaskVariableSource, "setupCommands">): Va
 }
 
 /** Names of every variable a task can use: `availableVariables` plus its `setup.<name>` variables. */
-export function taskVariables(task: TaskVariableSource): string[] {
+export function taskVariables(
+  task: TaskVariableSource,
+  catalog: readonly VariableDefinition[] = VARIABLES,
+): string[] {
   return [
-    ...availableVariables(task.taskType, task.triggers),
+    ...availableVariables(task.taskType, task.triggers, catalog),
     ...task.setupCommands.map((command) => `setup.${command.name}`),
   ];
 }

@@ -69,6 +69,7 @@ export async function applyLearnedRule(
 /** `learned-rule`: turns a rule generation into a repository rule (`applyLearnedRule`). */
 export const learnedRuleSink: Sink<LearnedRuleOutput> = {
   kind: "learned-rule",
+  taskType: "query",
   outputSchema: LearnedRuleOutput,
   apply: applyLearnedRule,
 };

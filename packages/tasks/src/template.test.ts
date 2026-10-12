@@ -5,6 +5,7 @@ import {
   parseTemplate,
   quote,
   renderTemplate,
+  templateVariables,
   validateTemplate,
   VARIABLES,
   type VariableDefinition,
@@ -268,5 +269,18 @@ describe("renderTemplate", () => {
         expect(() => render(template, { pr: { body } })).toThrow(TemplateError);
       },
     );
+  });
+});
+
+describe("templateVariables", () => {
+  it("lists the available variables a template uses, resolved against its sections", () => {
+    const available = ["finding.title", "finding.body", "hunk", "question"];
+    expect(
+      templateVariables(
+        "{{#finding}}{{title}}{{/finding}} {{#hunk}}{{hunk}}{{/hunk}}{{^question}}-{{/question}} {{nope}}",
+        available,
+      ),
+    ).toEqual(["finding.title", "hunk", "question"]);
+    expect(templateVariables("{{> partial}}", available)).toEqual([]);
   });
 });
