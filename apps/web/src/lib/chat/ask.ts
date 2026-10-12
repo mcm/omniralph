@@ -35,9 +35,9 @@ import { ChatThreadContext } from "@/lib/sinks/chat-thread";
  * `builtin:ask-about-code` unless chosen otherwise, job type `chat.ask`),
  * answered on a harness from a read-only checkout of the default branch,
  * within the task's share of the profile budget; the built-in's `chat-thread`
- * sink (`lib/sinks/chat-thread.ts`) posts the answer in the thread and
- * records it in the thread's history. The control panel never reads the code
- * itself.
+ * sink (`lib/sinks/chat-thread.ts`) records the answer as a run event of the
+ * thread, for the chat responder to relay. The control panel never reads the
+ * code itself.
  */
 
 /** Normalized for dedupe: the same question asked twice in a thread runs once. */

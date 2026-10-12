@@ -141,7 +141,11 @@ const now = () => new Date().toISOString();
  * active (pending, running or waiting), otherwise a response, so Linear
  * sees a finished session complete again (in chat, always a new message).
  */
-async function notify(deps: Pick<RalphDeps, "linear">, run: RalphRun, body: string): Promise<void> {
+async function notify(
+  deps: Pick<RalphDeps, "linear" | "chat">,
+  run: RalphRun,
+  body: string,
+): Promise<void> {
   await postActivity(
     conversationFor(run, deps),
     { type: FINISHED_RUN_STATUSES.has(run.status) ? "response" : "thought", body },
@@ -540,6 +544,7 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
         await ask(
           deps,
           run,
+          { lane, jobId: job.id },
           question,
           stashQuestion({
             epic: runReference(run),
@@ -561,6 +566,7 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
         await ask(
           deps,
           run,
+          { lane, jobId: job.id },
           question,
           branchQuestion({ branch: lane.branch, commits: result.unmerged, minutes }),
         );
@@ -619,17 +625,25 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
 
 /** Posts a cleanup question as a select elicitation with its two options. */
 async function ask(
-  deps: Pick<RalphDeps, "linear">,
+  deps: Pick<RalphDeps, "linear" | "chat">,
   run: RalphRun,
+  where: { lane: RalphLane; jobId: string },
   question: RalphCleanupQuestion,
   body: string,
 ): Promise<void> {
+  const options = cleanupOptions(question);
   await postActivity(
     conversationFor(run, deps),
     { type: "elicitation", body },
     {
       signal: "select",
-      signalMetadata: { options: cleanupOptions(question).map((value) => ({ value })) },
+      signalMetadata: { options: options.map((value) => ({ value })) },
+      event: {
+        kind: "cleanup_question",
+        // One question of each kind per lane and cleanup job (a replayed result asks once).
+        key: `cleanup:${where.lane.id}:${where.jobId}:${question.kind}`,
+        details: { laneId: where.lane.id, branch: where.lane.branch, question, options },
+      },
     },
   );
 }

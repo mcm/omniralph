@@ -72,9 +72,9 @@ describe("conversationFor", () => {
     await conversation.updatePlan([]);
     await conversation.addLink("Pull request", "https://github.com/acme/app/pull/1");
     expect(source).not.toHaveBeenCalled();
-    // Its thread is gone: nothing to post to.
+    // Its thread is gone: nothing to record (the plan records nothing anyway).
     expect(chat).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });
 });

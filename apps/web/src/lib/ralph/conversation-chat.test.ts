@@ -8,6 +8,8 @@ import {
   createRun,
   deleteChatConnection,
   ensureChatThread,
+  insertJob,
+  listRunEvents,
   organizations,
   runMigrations,
   saveChatConnection,
@@ -26,12 +28,13 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import {
   ChatConversation,
   conversationFor,
-  currentPlanStep,
-  statusText,
+  runCompletedEvent,
+  runFailedEvent,
   type ChatChannel,
 } from "./conversation";
 import { relayActivity } from "./activities";
 import { postActivity } from "./notify";
+import { askPermission, expirePermission } from "./permissions";
 
 vi.mock("server-only", () => ({}));
 
@@ -170,12 +173,19 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
     expect(conversation.name).toBe(`chat thread ${run.chatThreadId}`);
   });
 
-  it("edits one status message per request job with thoughts, actions and the plan", async () => {
+  const events = (run: RalphRun) => listRunEvents(db, orgId, run.chatThreadId!);
+
+  /** Nothing was posted or edited in the thread, nor added to its history. */
+  async function expectNothingPosted(adapter: Adapter, run: RalphRun) {
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+    expect(adapter.editMessage).not.toHaveBeenCalled();
+    expect(await recorded(run.id)).toEqual([]);
+  }
+
+  it("records nothing for thoughts, actions and the plan, and edits no status message", async () => {
     const { run } = await chatRun();
-    const { adapter, tokens } = slackAdapter();
-    const chat = channel(adapter);
-    const first = { ...run, requestJobId: "11111111-1111-4111-8111-111111111111" };
-    const conversation = new ChatConversation(first, chat);
+    const { adapter } = slackAdapter();
+    const conversation = new ChatConversation(run, channel(adapter));
 
     await conversation.post({ type: "thought", body: "Reading the README\nmore detail" });
     await conversation.post({ type: "action", action: "Ran", parameter: "pnpm test" });
@@ -184,56 +194,11 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
       { content: "Open a PR", status: "inProgress" },
     ]);
 
-    expect(adapter.postMessage).toHaveBeenCalledOnce();
-    expect(adapter.postMessage).toHaveBeenCalledWith(SLACK_THREAD, {
-      markdown: "⏳ Working on it\nReading the README",
-    });
-    expect(adapter.editMessage).toHaveBeenCalledTimes(2);
-    expect(adapter.editMessage).toHaveBeenNthCalledWith(1, SLACK_THREAD, "ts-1", {
-      markdown: "⏳ Working on it\nRan `pnpm test`",
-    });
-    expect(adapter.editMessage).toHaveBeenLastCalledWith(SLACK_THREAD, "ts-1", {
-      markdown: "⏳ Working on it · Step 2/2: Open a PR\nRan `pnpm test`",
-    });
-    // Posted with the workspace's bot token, outside any webhook.
-    expect(tokens).toEqual(Array(3).fill(`xoxb-${threads}@T${threads}`));
-    // Status updates aren't part of the thread's history.
-    expect(await recorded(run.id)).toEqual([]);
-
-    // Between jobs (no request job), updates keep editing the same message.
-    await new ChatConversation({ ...run, requestJobId: null }, chat).post({
-      type: "thought",
-      body: "Wrapping up",
-    });
-    expect(adapter.postMessage).toHaveBeenCalledOnce();
-    expect(adapter.editMessage).toHaveBeenLastCalledWith(SLACK_THREAD, "ts-1", {
-      markdown: "⏳ Working on it · Step 2/2: Open a PR\nWrapping up",
-    });
-
-    // The next request job gets its own status message.
-    const second = { ...run, requestJobId: "22222222-2222-4222-8222-222222222222" };
-    await new ChatConversation(second, chat).post({ type: "thought", body: "Looking again" });
-    expect(adapter.postMessage).toHaveBeenCalledTimes(2);
-    expect(adapter.postMessage).toHaveBeenLastCalledWith(SLACK_THREAD, {
-      markdown: "⏳ Working on it\nLooking again",
-    });
+    await expectNothingPosted(adapter, run);
+    expect(await events(run)).toEqual([]);
   });
 
-  it("posts a new status message when editing the old one fails", async () => {
-    const { run } = await chatRun();
-    const { adapter } = slackAdapter();
-    vi.mocked(adapter.editMessage).mockRejectedValueOnce(new Error("message_not_found"));
-    const conversation = new ChatConversation(run, channel(adapter));
-    await conversation.post({ type: "thought", body: "one" });
-    await conversation.post({ type: "thought", body: "two" });
-    await conversation.post({ type: "thought", body: "three" });
-    expect(adapter.postMessage).toHaveBeenCalledTimes(2);
-    expect(adapter.editMessage).toHaveBeenLastCalledWith(SLACK_THREAD, "ts-2", {
-      markdown: "⏳ Working on it\nthree",
-    });
-  });
-
-  it("posts responses, errors and elicitations as new, sanitized messages recorded as the run's", async () => {
+  it("records responses, notices, errors and elicitations as sanitized run events, posting nothing", async () => {
     const { run } = await chatRun();
     const { adapter } = slackAdapter();
     const conversation = new ChatConversation(run, channel(adapter));
@@ -242,36 +207,132 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
       type: "response",
       body: "Done: https://github.com/acme/app/pull/7 (see https://evil.example/x) @here",
     });
+    await conversation.post({ type: "thought", body: "CI failed on main." }, { notice: true });
     await conversation.post({ type: "error", body: "The job failed." });
     await conversation.post({ type: "elicitation", body: "Which branch should I use?" });
 
-    const expected = [
-      "Done: https://github.com/acme/app/pull/7 (see `https://evil.example/x`) `@here`",
-      "⚠️ The job failed.",
-      "Which branch should I use?",
-    ];
-    expect(vi.mocked(adapter.postMessage).mock.calls).toEqual(
-      expected.map((markdown) => [SLACK_THREAD, { markdown }]),
-    );
-    expect(adapter.editMessage).not.toHaveBeenCalled();
-    const rows = await recorded(run.id);
-    expect(rows.map((r) => ({ role: r.role, content: r.content, threadId: r.threadId }))).toEqual(
-      expected.map((content) => ({ role: "assistant", content, threadId: run.chatThreadId })),
-    );
+    await expectNothingPosted(adapter, run);
+    const recordedEvents = await events(run);
+    expect(recordedEvents.map((e) => [e.kind, e.body])).toEqual([
+      [
+        "response",
+        { text: "Done: https://github.com/acme/app/pull/7 (see `https://evil.example/x`) `@here`" },
+      ],
+      ["response", { text: "CI failed on main." }],
+      ["failure", { text: "⚠️ The job failed." }],
+      ["question", { text: "Which branch should I use?" }],
+    ]);
+    expect(
+      recordedEvents.every(
+        (e) => e.chatThreadId === run.chatThreadId && e.organizationId === orgId,
+      ),
+    ).toBe(true);
+    // Each without a key of its own is a separate event.
+    expect(new Set(recordedEvents.map((e) => e.idempotencyKey)).size).toBe(4);
   });
 
-  it("posts each link once", async () => {
+  it("records a run's end once per round, with its kind and details", async () => {
+    const { run } = await chatRun();
+    const { adapter } = slackAdapter();
+    const conversation = new ChatConversation(run, channel(adapter));
+    const at = run.updatedAt.toISOString();
+    for (let i = 0; i < 2; i += 1) {
+      await conversation.post(
+        { type: "response", body: "All done." },
+        { event: runCompletedEvent(run) },
+      );
+      await conversation.post({ type: "error", body: "Gave up." }, { event: runFailedEvent(run) });
+    }
+    // A run resumed after it ended (e.g. by a CI fix) ends again.
+    const resumed = { ...run, updatedAt: new Date(run.updatedAt.getTime() + 1000) };
+    await conversation.post(
+      { type: "response", body: "Fixed CI." },
+      { event: runCompletedEvent(resumed) },
+    );
+    await expectNothingPosted(adapter, run);
+    expect((await events(run)).map((e) => [e.kind, e.idempotencyKey, e.body])).toEqual([
+      [
+        "completion",
+        `chat-run-event:ralph:${run.id}:completed:${at}`,
+        { status: "completed", text: "All done." },
+      ],
+      [
+        "failure",
+        `chat-run-event:ralph:${run.id}:failed:${at}`,
+        { status: "failed", text: "⚠️ Gave up." },
+      ],
+      [
+        "completion",
+        `chat-run-event:ralph:${run.id}:completed:${resumed.updatedAt.toISOString()}`,
+        { status: "completed", text: "Fixed CI." },
+      ],
+    ]);
+  });
+
+  it("records each link once", async () => {
     const { run } = await chatRun();
     const { adapter } = slackAdapter();
     const chat = channel(adapter);
     const url = "https://github.com/acme/app/pull/7";
     await new ChatConversation(run, chat).addLink("Pull request", url);
     await new ChatConversation(run, chat).addLink("Pull request", url);
-    expect(adapter.postMessage).toHaveBeenCalledOnce();
-    expect(adapter.postMessage).toHaveBeenCalledWith(SLACK_THREAD, {
-      markdown: `Pull request: ${url}`,
+    await expectNothingPosted(adapter, run);
+    expect((await events(run)).map((e) => [e.kind, e.body])).toEqual([
+      ["response", { label: "Pull request", url, text: `Pull request: ${url}` }],
+    ]);
+  });
+
+  it("records a permission request once per request, and its timeout", async () => {
+    const { run } = await chatRun();
+    await updateRun(db, run.id, { status: "running" });
+    const { adapter } = slackAdapter();
+    const linear = vi.fn(async () => new FakeLinearGateway());
+    const deps = { db, linear, chat: channel(adapter) };
+    const { job } = await insertJob(db, {
+      organizationId: orgId,
+      type: "ralph.request",
+      taskType: "coding",
+      pool: "long",
+      ralphRunId: run.id,
     });
-    expect((await recorded(run.id)).map((r) => r.content)).toEqual([`Pull request: ${url}`]);
+    const request = {
+      requestId: "REQ-1",
+      tool: "Bash",
+      detail: "git push --force",
+      reason: "The repository asks before pushing.",
+      timeoutSeconds: 600,
+    };
+    const now = new Date("2026-10-12T10:00:00Z");
+
+    expect(await askPermission(deps, job, request, now)).toEqual({ status: "asked" });
+    // The agent asking again (a retry) records no second event.
+    expect(await askPermission(deps, job, request, now)).toEqual({ status: "asked" });
+    await expirePermission(deps, job, "req-1", new Date("2026-10-12T10:10:00Z"));
+    await expirePermission(deps, job, "req-1", new Date("2026-10-12T10:10:00Z"));
+
+    await expectNothingPosted(adapter, run);
+    expect(linear).not.toHaveBeenCalled();
+    const [asked, expired, ...more] = await events(run);
+    expect(more).toEqual([]);
+    expect(asked).toMatchObject({
+      kind: "permission_request",
+      idempotencyKey: `chat-run-event:ralph:${run.id}:permission:req-1`,
+      body: {
+        requestId: "req-1",
+        tool: "Bash",
+        detail: "git push --force",
+        reason: "The repository asks before pushing.",
+        timeoutSeconds: 600,
+        timeoutMinutes: 10,
+        options: ["Allow", "Deny"],
+      },
+    });
+    expect((asked!.body as { text: string }).text).toContain("Bash");
+    expect(expired).toMatchObject({
+      kind: "response",
+      idempotencyKey: `chat-run-event:ralph:${run.id}:permission:req-1:expired`,
+      body: { text: "Nobody answered in time, so I didn't use **Bash**." },
+    });
   });
 
   it("skips posts quietly once the chat connection was removed", async () => {
@@ -291,6 +352,7 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
     }
     expect(adapter.postMessage).not.toHaveBeenCalled();
     expect(adapter.editMessage).not.toHaveBeenCalled();
+    expect(await events(run)).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("the thread or its chat connection is gone"),
     );
@@ -304,6 +366,7 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
     });
     await conversation.post({ type: "response", body: "done" });
     expect(await recorded(run.id)).toEqual([]);
+    expect(await events(run)).toEqual([]);
     expect(warn).toHaveBeenCalledOnce();
   });
 
@@ -325,10 +388,9 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
     );
 
     expect(outcome).toEqual({ forwarded: true });
-    expect(adapter.postMessage).toHaveBeenCalledWith(SLACK_THREAD, {
-      markdown: "⏳ Working on it\nEdited `README.md`",
-    });
     expect(linear).not.toHaveBeenCalled();
+    // An agent's thoughts and actions are progress: nothing is relayed.
+    expect(await events(run)).toEqual([]);
 
     await updateRun(db, run.id, { status: "stopped" });
     expect(
@@ -338,24 +400,7 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
         { type: "thought", body: "late", ephemeral: false },
       ),
     ).toEqual({ forwarded: false, reason: "run_finished" });
-    expect(adapter.postMessage).toHaveBeenCalledOnce();
-    expect(adapter.editMessage).not.toHaveBeenCalled();
-  });
-});
-
-describe("status text", () => {
-  it("shows the plan step in progress, else the next one", () => {
-    expect(currentPlanStep([])).toBeUndefined();
-    expect(
-      currentPlanStep([
-        { content: "A", status: "completed" },
-        { content: "B", status: "pending" },
-      ]),
-    ).toBe("Step 2/2: B");
-    expect(currentPlanStep([{ content: "A", status: "completed" }])).toBe("All steps done");
-    expect(statusText({})).toBe("⏳ Working on it");
-    expect(statusText({ step: "Step 1/1: A", last: "Ran x" })).toBe(
-      "⏳ Working on it · Step 1/1: A\nRan x",
-    );
+    expect(await events(run)).toEqual([]);
+    await expectNothingPosted(adapter, run);
   });
 });

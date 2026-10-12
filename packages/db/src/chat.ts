@@ -4,7 +4,7 @@
  * agent's threads and their messages. Connection credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, desc, eq, gt, lte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -16,6 +16,7 @@ import {
   chatLinearIssueDrafts,
   chatLinkStateUses,
   chatMessages,
+  chatRunEvents,
   chatThreadRuns,
   chatThreads,
   chatUserProfiles,
@@ -63,6 +64,8 @@ export type ChatThreadRun = typeof chatThreadRuns.$inferSelect;
 export type ChatThreadRunKind = ChatThreadRun["kind"];
 /** A thread's run: a query run's job, or a coding run. */
 export type ThreadRunRef = { jobId: string } | { ralphRunId: string };
+export type ChatRunEvent = typeof chatRunEvents.$inferSelect;
+export type ChatRunEventKind = ChatRunEvent["kind"];
 
 export interface LinkChatIdentityInput {
   organizationId: string;
@@ -798,6 +801,79 @@ export async function threadOfRun(
     .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
     .limit(1);
   return row?.thread ?? null;
+}
+
+/** The organization's mapping of a run to its thread, or null. */
+export async function threadRunOf(
+  db: ChatExecutor,
+  organizationId: string,
+  ref: ThreadRunRef,
+): Promise<ChatThreadRun | null> {
+  const [row] = await db
+    .select()
+    .from(chatThreadRuns)
+    .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// ── Run events ───────────────────────────────────────────────────────────────
+
+export interface RecordRunEventInput {
+  organizationId: string;
+  /** The run's mapping to its thread (`threadRunOf`). */
+  threadRun: Pick<ChatThreadRun, "id" | "chatThreadId" | "organizationId">;
+  kind: ChatRunEventKind;
+  body: Record<string, unknown>;
+  /** Identifies the event: recording the same key again does nothing. */
+  idempotencyKey: string;
+}
+
+/**
+ * Stores an event a mapped run has for its thread (for the chat responder to
+ * relay). Idempotent per `idempotencyKey`: `created` is false when the event
+ * was already recorded, or the mapping isn't the organization's.
+ */
+export async function recordRunEvent(
+  db: ChatExecutor,
+  input: RecordRunEventInput,
+): Promise<{ created: boolean; event: ChatRunEvent | null }> {
+  if (input.threadRun.organizationId !== input.organizationId) {
+    return { created: false, event: null };
+  }
+  const [row] = await db
+    .insert(chatRunEvents)
+    .values({
+      organizationId: input.organizationId,
+      chatThreadId: input.threadRun.chatThreadId,
+      threadRunId: input.threadRun.id,
+      kind: input.kind,
+      body: input.body,
+      idempotencyKey: input.idempotencyKey,
+    })
+    .onConflictDoNothing({ target: chatRunEvents.idempotencyKey })
+    .returning();
+  return { created: row !== undefined, event: row ?? null };
+}
+
+/** The organization's thread's run events, oldest first (only unprocessed ones with `pending`). */
+export async function listRunEvents(
+  db: ChatExecutor,
+  organizationId: string,
+  threadId: string,
+  options: { pending?: boolean } = {},
+): Promise<ChatRunEvent[]> {
+  return db
+    .select()
+    .from(chatRunEvents)
+    .where(
+      and(
+        eq(chatRunEvents.organizationId, organizationId),
+        eq(chatRunEvents.chatThreadId, threadId),
+        options.pending ? isNull(chatRunEvents.processedAt) : undefined,
+      ),
+    )
+    .orderBy(asc(chatRunEvents.createdAt), asc(chatRunEvents.id));
 }
 
 // ── Linear issue drafts ──────────────────────────────────────────────────────

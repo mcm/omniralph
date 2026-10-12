@@ -73,7 +73,13 @@ import type { ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { notifyRunThread } from "./chat-notify";
-import { conversationFor, type ChatSource, type RunConversation } from "./conversation";
+import {
+  conversationFor,
+  runCompletedEvent,
+  runFailedEvent,
+  type ChatSource,
+  type RunConversation,
+} from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { deleteRunHiddenRefs } from "./hidden-refs";
@@ -423,7 +429,11 @@ async function failRun(
   error: string,
 ): Promise<AdvanceResult> {
   const failed = (await updateRun(tx, run.id, { status: "failed", waitingOn: null, error })) ?? run;
-  await postActivity(conversationFor(run, deps), { type: "error", body: error });
+  await postActivity(
+    conversationFor(run, deps),
+    { type: "error", body: error },
+    { event: runFailedEvent(run) },
+  );
   await notifyRunThread(deps, run, { kind: "failed", error });
   return { action: "failed", run: failed };
 }
@@ -885,10 +895,11 @@ async function finishRequests(
   const completed =
     (await updateRun(tx, run.id, { status: "completed", waitingOn: null, error: null })) ?? run;
   const lanes = await runLanes(deps, tx, run);
-  await postActivity(conversationFor(run, deps), {
-    type: "response",
-    body: output ? withPullRequestLinks(output, lanes) : NOTHING_TO_DO,
-  });
+  await postActivity(
+    conversationFor(run, deps),
+    { type: "response", body: output ? withPullRequestLinks(output, lanes) : NOTHING_TO_DO },
+    { event: runCompletedEvent(run) },
+  );
   await notifyRunThread(deps, run, { kind: "completed", lanes });
   return { action: "completed", run: completed };
 }
@@ -907,10 +918,11 @@ async function complete(
   const lanes = await runLanes(deps, tx, run);
   await notifyRunThread(deps, run, { kind: "completed", lanes });
   if (output) {
-    await postActivity(conversationFor(run, deps), {
-      type: "response",
-      body: withPullRequestLinks(output, lanes),
-    });
+    await postActivity(
+      conversationFor(run, deps),
+      { type: "response", body: withPullRequestLinks(output, lanes) },
+      { event: runCompletedEvent(run) },
+    );
     await moveCompletedEpic(deps, run);
     return { action: "completed", run: completed };
   }
@@ -918,10 +930,14 @@ async function complete(
     run.kind === "single"
       ? `**${input.epic.identifier}**`
       : `all ${input.stories.length} ${input.stories.length === 1 ? "story" : "stories"} of **${input.epic.identifier}**`;
-  await postActivity(conversationFor(run, deps), {
-    type: "response",
-    body: `Finished ${what} on \`${await mainBranch(tx, run)}\`. Nothing was committed, so there is no pull/merge request.`,
-  });
+  await postActivity(
+    conversationFor(run, deps),
+    {
+      type: "response",
+      body: `Finished ${what} on \`${await mainBranch(tx, run)}\`. Nothing was committed, so there is no pull/merge request.`,
+    },
+    { event: runCompletedEvent(run) },
+  );
   await moveCompletedEpic(deps, run);
   return { action: "completed", run: completed };
 }

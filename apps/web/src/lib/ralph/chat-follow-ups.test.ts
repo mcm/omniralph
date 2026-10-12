@@ -12,6 +12,7 @@ import {
   getRun,
   jobs,
   listPendingRequests,
+  listRunEvents,
   organizations,
   ralphMessages,
   ralphRuns,
@@ -149,9 +150,20 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       },
     );
 
-  /** The markdown of every message posted to the thread, in order. */
-  const posted = () =>
-    vi.mocked(adapter.postMessage).mock.calls.map(([, m]) => (m as { markdown: string }).markdown);
+  /** How many of the thread's run events `relayed` skips (`mark`). */
+  let seen = 0;
+  /** The run events recorded for the thread since `mark`, oldest first. */
+  const events = async () => (await listRunEvents(db, orgId, chatThread.id)).slice(seen);
+  /** The text of each of those events. */
+  const relayed = async () => (await events()).map((e) => (e.body as { text: string }).text);
+  const mark = async () => {
+    seen = (await listRunEvents(db, orgId, chatThread.id)).length;
+  };
+  /** The run never posts in the thread itself: the responder relays its events. */
+  const expectNothingPosted = () => {
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+    expect(adapter.editMessage).not.toHaveBeenCalled();
+  };
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -233,6 +245,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       }),
     });
     state = createMockState();
+    seen = 0;
     linearCalls = [];
     linearLoads = 0;
   });
@@ -321,8 +334,8 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     expect(run.status).toBe("completed");
     expect(scm.changeRequests).toHaveLength(1);
     scm.changeRequests[0]!.headSha = "head1";
-    vi.mocked(adapter.postMessage).mockClear();
-    vi.mocked(adapter.editMessage).mockClear();
+    expectNothingPosted();
+    await mark();
     return run;
   }
 
@@ -346,19 +359,19 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     });
     expect(await res.json()).toEqual({ status: "accepted", event: "ci_failure" });
     expect(await getMainLane(db, run)).toMatchObject({ ciFixRounds: 1, handledCiShas: ["head1"] });
-    // New messages, not edits of the finished request's status message far up the thread:
-    // the notice, then the fix's request job status.
-    expect(posted()).toEqual([
+    // The notice is an event for the responder to relay (the fix's progress isn't).
+    expect(await relayed()).toEqual([
       "CI failed on the pull request (`head1`: `CI / test`). Working on a fix.",
-      "⏳ Working on it\nWorking on your request.",
     ]);
-    expect(adapter.editMessage).not.toHaveBeenCalled();
 
-    // The fix runs as a request job with its own status message, then answers in the thread.
+    // The fix runs as a request job, then completes with what it did.
     await finish(await start(run.id, "ralph.request"), requestResult({ summary: "Fixed CI." }));
     expect((await getRun(db, run.id))?.status).toBe("completed");
-    expect(posted()).toHaveLength(3);
-    expect(posted()[2]).toContain("Fixed CI.");
+    const [, fixed, ...more] = await events();
+    expect(more).toEqual([]);
+    expect(fixed?.kind).toBe("completion");
+    expect((fixed?.body as { text: string }).text).toContain("Fixed CI.");
+    expectNothingPosted();
 
     expect(linearCalls).toEqual([]);
     expect(linearLoads).toBe(0);
@@ -378,10 +391,26 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     });
     expect(await res.json()).toEqual({ status: "accepted", event: "merged" });
     await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ unmerged: 1 }));
-    const [merged, question] = posted();
-    expect(merged).toContain(`The pull request ${pr.url} was merged, so I removed its worktree`);
-    expect(question).toContain(`\`${branch}\` has 1 commit that wasn't merged`);
-    expect(posted()).toHaveLength(2);
+    const [merged, question, ...more] = await events();
+    expect(more).toEqual([]);
+    expect(merged?.kind).toBe("response");
+    expect((merged?.body as { text: string }).text).toContain(
+      `The pull request ${pr.url} was merged, so I removed its worktree`,
+    );
+    const lane = (await getMainLane(db, run))!;
+    expect(question).toMatchObject({
+      kind: "cleanup_question",
+      idempotencyKey: expect.stringContaining(`:cleanup:${lane.id}:`),
+      body: {
+        laneId: lane.id,
+        branch,
+        question: { kind: "branch", commits: 1 },
+        options: expect.any(Array),
+      },
+    });
+    expect((question?.body as { text: string }).text).toContain(
+      `\`${branch}\` has 1 commit that wasn't merged`,
+    );
 
     // A member's plain reply in the thread answers the question, like a reply in Linear.
     const reactions: string[] = [];
@@ -432,9 +461,10 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       push: false,
     });
     await finish(answer, cleanupResult({ handled: 1 }));
-    expect(posted().at(-1)).toBe(
+    expect((await relayed()).at(-1)).toBe(
       `Deleted the local branch \`${branch}\` with its 1 unmerged commit.`,
     );
+    expectNothingPosted();
 
     expect(linearCalls).toEqual([]);
     expect(linearLoads).toBe(0);
@@ -463,10 +493,10 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     expect(comments).toEqual([
       "On it, @maintainer: I passed this to ralph's run, which will work on it and push the changes here. Follow along in its chat thread.",
     ]);
-    expect(posted()).toEqual([
+    expect(await relayed()).toEqual([
       "`@maintainer` asked for changes on the pull request. Working through it.",
-      "⏳ Working on it\nWorking on your request.",
     ]);
+    expectNothingPosted();
     expect(await activeJobs(run.id, "ralph.request")).toHaveLength(1);
 
     expect(linearCalls).toEqual([]);
@@ -482,7 +512,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     });
     if (started.status !== "started") throw new Error(`not started: ${started.status}`);
     const job = await start(started.run.id, "ralph.request");
-    vi.mocked(adapter.postMessage).mockClear();
+    await mark();
 
     const requestId = randomUUID();
     expect(
@@ -493,7 +523,12 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
         timeoutSeconds: 1800,
       }),
     ).toEqual({ status: "asked" });
-    expect(posted().join("\n")).toContain("I need permission to use **Bash**");
+    const [asked] = await events();
+    expect(asked).toMatchObject({
+      kind: "permission_request",
+      body: { requestId, tool: "Bash", detail: "git commit -m 'Fix the typo'" },
+    });
+    expect((asked?.body as { text: string }).text).toContain("I need permission to use **Bash**");
 
     const reply = (text: string) =>
       sendToChatRun(ralph(), { chatThreadId: chatThread.id, text, author: "Ada Lovelace" });
@@ -502,7 +537,8 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       status: "allowed",
       answeredBy: "Ada Lovelace",
     });
-    expect(posted().at(-1)).toContain("Allowed **Bash**");
+    expect((await relayed()).at(-1)).toContain("Allowed **Bash**");
+    expectNothingPosted();
 
     // `/ship` waits for the running session instead of going into it.
     expect(await reply("/ship")).toMatchObject({ status: "queued" });

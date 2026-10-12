@@ -1,12 +1,13 @@
 /**
  * Where a ralph run talks to people: every write to a run's session (its
  * activities, plan and PR/MR links) goes through a `RunConversation`, so a run
- * from Linear posts to its agent session and a run from chat to its thread.
+ * from Linear posts to its agent session and a run from chat records run
+ * events of its thread.
  * `conversationFor` picks the run's channel.
  */
+import { randomUUID } from "node:crypto";
 import type { SlackAdapter } from "@chat-adapter/slack";
 import {
-  appendChatMessage,
   getChatThreadWithConnection,
   getRepositoryWithConnection,
   linearSessionOf,
@@ -22,9 +23,9 @@ import type {
   LinearGateway,
   PlanStep,
 } from "@/lib/linear/gateway";
+import { recordChatRunEvent, type ChatRunEventKind } from "@/lib/chat/run-events";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { inlineCode, MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
-import { errorMessage } from "./notify";
+import { inlineCode } from "@/lib/review/sanitize";
 
 /** How an activity is posted. */
 export interface PostOptions extends ActivityOptions {
@@ -35,6 +36,13 @@ export interface PostOptions extends ActivityOptions {
    * edit may be far up the thread.
    */
   notice?: boolean;
+  /**
+   * The run event a chat run records for it (`lib/chat/run-events.ts`): its
+   * kind (default: by the activity's type), its key within the run, so it is
+   * recorded once (default: a new one), and structured details for the
+   * responder. Linear ignores it.
+   */
+  event?: { kind?: ChatRunEventKind; key?: string; details?: Record<string, unknown> };
 }
 
 export interface RunConversation {
@@ -46,6 +54,25 @@ export interface RunConversation {
   updatePlan(plan: PlanStep[]): Promise<void>;
   /** Links the conversation to a URL (a PR/MR). Throws on failure. */
   addLink(label: string, url: string): Promise<void>;
+}
+
+/**
+ * The key of a run's end within the run: its final status, and the run's
+ * last update before it (a finished chat run resumed by a follow-up, like a
+ * CI fix, ends again).
+ */
+function endKey(status: "completed" | "failed", run: Pick<RalphRun, "updatedAt">): string {
+  return `${status}:${run.updatedAt.toISOString()}`;
+}
+
+/** A chat run's final response: its `completion` event (`run` as it was before it completed). */
+export function runCompletedEvent(run: Pick<RalphRun, "updatedAt">): PostOptions["event"] {
+  return { kind: "completion", key: endKey("completed", run), details: { status: "completed" } };
+}
+
+/** A chat run's last error: its `failure` event (`run` as it was before it failed). */
+export function runFailedEvent(run: Pick<RalphRun, "updatedAt">): PostOptions["event"] {
+  return { kind: "failure", key: endKey("failed", run), details: { status: "failed" } };
 }
 
 /** A Linear gateway, or a way to get one only when a write needs it. */
@@ -74,7 +101,7 @@ export class LinearConversation implements RunConversation {
 
   async post(content: ActivityContent, options?: PostOptions): Promise<void> {
     // A notice is an ordinary activity in Linear.
-    const { notice: _notice, ...activity } = options ?? {};
+    const { notice: _notice, event: _event, ...activity } = options ?? {};
     await (
       await this.client()
     ).createActivity(
@@ -98,7 +125,7 @@ export interface ChatChannel {
   db: Database;
   /** The bot's adapter of each configured platform. */
   adapters: Partial<Record<ChatPlatform, Adapter>>;
-  /** Remembers each run's status message between posts (the Chat SDK state). */
+  /** The Chat SDK state. */
   state: StateAdapter;
   /** The control panel's URL: its links stay clickable. */
   appUrl: string;
@@ -124,22 +151,8 @@ export async function defaultChatChannel(): Promise<ChatChannel> {
 /** The run fields a chat conversation needs. */
 export type ChatRunRef = Pick<
   RalphRun,
-  "id" | "organizationId" | "chatThreadId" | "repositoryId" | "requestJobId"
+  "id" | "organizationId" | "chatThreadId" | "repositoryId"
 >;
-
-/** A run's status message in its thread, and the links already posted. */
-interface ChatRunState {
-  status?: {
-    /** The request job it shows (null: before the run's first one). */
-    jobId: string | null;
-    messageId: string;
-    /** The plan step in progress. */
-    step?: string;
-    /** The last thought or action. */
-    last?: string;
-  };
-  links?: string[];
-}
 
 /** A chat thread to post to proactively, through its connection's adapter. */
 export interface ChatTarget {
@@ -199,62 +212,47 @@ export async function loadChatTarget(
   return { channel, thread, adapter, send, allowedHosts, repositoryUrl };
 }
 
-/** How long a run's status message is remembered after its last update. */
-const CHAT_STATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const STATUS_LOCK_TTL_MS = 10_000;
-const STATUS_LOCK_ATTEMPTS = 50;
-const STATUS_LOCK_WAIT_MS = 100;
-/** How much of a thought or action the status message shows. */
-const MAX_STATUS_CHARS = 300;
-
-const STATUS_HEADER = "⏳ Working on it";
+/** How much of an action's parameter a notice shows. */
+const MAX_PARAMETER_CHARS = 300;
 
 function truncate(text: string, max: number): string {
   const flat = text.trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** The status line of a thought or action. */
-function statusLine(content: ActivityContent): string {
+/** The text of an activity a chat run records (a response, error, elicitation or notice). */
+function messageText(content: ActivityContent): string {
+  if (content.type === "error") return `⚠️ ${content.body}`;
   if (content.type === "action") {
     const parameter = content.parameter.trim();
     return parameter
-      ? `${content.action} ${inlineCode(truncate(parameter, MAX_STATUS_CHARS))}`
+      ? `${content.action} ${inlineCode(truncate(parameter, MAX_PARAMETER_CHARS))}`
       : content.action;
   }
-  return "body" in content ? truncate(content.body.split("\n")[0] ?? "", MAX_STATUS_CHARS) : "";
+  return "body" in content ? content.body : "";
 }
 
-/** The plan step in progress (else the next one), numbered. */
-export function currentPlanStep(plan: PlanStep[]): string | undefined {
-  const inProgress = plan.findIndex((s) => s.status === "inProgress");
-  const index = inProgress >= 0 ? inProgress : plan.findIndex((s) => s.status === "pending");
-  if (index < 0) return plan.length > 0 ? "All steps done" : undefined;
-  return `Step ${index + 1}/${plan.length}: ${plan[index]!.content}`;
+/** The event an activity of a chat run is (null: thoughts and actions aren't relayed). */
+function eventKind(content: ActivityContent, options?: PostOptions): ChatRunEventKind | null {
+  switch (content.type) {
+    case "thought":
+    case "action":
+      return options?.notice ? "response" : null;
+    case "response":
+      return "response";
+    case "elicitation":
+      return "question";
+    case "error":
+      return "failure";
+  }
 }
-
-/** The text of a run's status message. */
-export function statusText(status: { step?: string; last?: string }): string {
-  return [status.step ? `${STATUS_HEADER} · ${status.step}` : STATUS_HEADER, status.last]
-    .filter(Boolean)
-    .join("\n");
-}
-
-/** The text of a message an activity posts (a response, error or elicitation). */
-function messageText(content: ActivityContent): string {
-  if (content.type === "error") return `⚠️ ${content.body}`;
-  return "body" in content ? content.body : statusLine(content);
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * A chat run's thread, posted to proactively through the Chat SDK (session
- * updates arrive long after the webhook that started the run). Chat isn't a
- * Linear session: thoughts, actions and plan updates edit one status message
- * per request job, while responses, errors, elicitations and links are new
- * messages, sanitized and recorded in the thread's history as the run's.
- * When the thread or its connection is gone, writes are skipped (logged).
+ * A chat run's thread. The run doesn't post there itself: its responses,
+ * notices, questions, errors and links are recorded as run events of the
+ * thread (`lib/chat/run-events.ts`), sanitized, for the chat responder to
+ * relay; thoughts, actions and plan updates record nothing. When the thread
+ * or its connection is gone, writes are skipped (logged).
  */
 export class ChatConversation implements RunConversation {
   readonly name: string;
@@ -267,137 +265,51 @@ export class ChatConversation implements RunConversation {
     this.name = `chat thread ${run.chatThreadId ?? "(gone)"}`;
   }
 
-  private stateKey(): string {
-    return `ralph-chat:${this.run.id}`;
-  }
-
   private skip(what: string, reason: string): null {
     console.warn(`Skipping ${what} of ralph run ${this.run.id} to ${this.name}: ${reason}`);
     return null;
   }
 
-  /** The thread to post to, or null (logged) when it or its connection is gone. */
+  /** The run's thread, or null (logged) when it or its connection is gone. */
   private resolve(what: string): Promise<ChatTarget | null> {
-    this.target ??= this.load();
+    this.target ??= loadChatTarget(this.source, this.run);
     return this.target.then((target) =>
       target ? target : this.skip(what, "the thread or its chat connection is gone"),
     );
   }
 
-  private load(): Promise<ChatTarget | null> {
-    return loadChatTarget(this.source, this.run);
-  }
-
-  private sanitize(target: ChatTarget, text: string): string {
-    return sanitizeCapped(text, { allowedHosts: target.allowedHosts }, MAX_BODY_CHARS);
-  }
-
-  /** Posts a new message and records it in the thread's history as the run's. */
-  private async postMessage(target: ChatTarget, text: string): Promise<void> {
-    const markdown = this.sanitize(target, text);
-    await target.send(() =>
-      target.adapter.postMessage(target.thread.externalThreadId, { markdown }),
-    );
-    await appendChatMessage(target.channel.db, {
-      threadId: target.thread.id,
-      role: "assistant",
-      content: markdown,
-      ralphRunId: this.run.id,
-    });
-  }
-
-  /** Runs `fn` holding the run's chat state lock (posts of one run race: relays, outcomes). */
-  private async locked<T>(target: ChatTarget, fn: () => Promise<T>): Promise<T> {
-    const { state } = target.channel;
-    const key = this.stateKey();
-    for (let attempt = 1; ; attempt += 1) {
-      const lock = await state.acquireLock(key, STATUS_LOCK_TTL_MS);
-      if (lock) {
-        try {
-          return await fn();
-        } finally {
-          await state.releaseLock(lock);
-        }
-      }
-      // A stuck lock expires; past that, go ahead rather than drop the update.
-      if (attempt >= STATUS_LOCK_ATTEMPTS) return fn();
-      await sleep(STATUS_LOCK_WAIT_MS);
-    }
-  }
-
-  /** Edits the request job's status message (posted on its first update). */
-  private async updateStatus(
+  /** Records a run event in the thread (once per `key`; a new key by default). */
+  private async record(
     what: string,
-    change: { step?: string; last?: string },
+    kind: ChatRunEventKind,
+    text: string,
+    event?: PostOptions["event"],
   ): Promise<void> {
     const target = await this.resolve(what);
     if (!target) return;
-    await this.locked(target, async () => {
-      const { state } = target.channel;
-      const saved = (await state.get<ChatRunState>(this.stateKey())) ?? {};
-      const jobId = this.run.requestJobId ?? saved.status?.jobId ?? null;
-      const current = saved.status?.jobId === jobId ? saved.status : undefined;
-      const next = {
-        step: change.step ?? current?.step,
-        last: change.last ?? current?.last,
-      };
-      const markdown = this.sanitize(target, statusText(next));
-      const threadId = target.thread.externalThreadId;
-      let messageId = current?.messageId;
-      if (messageId) {
-        const id = messageId;
-        const edited = await target
-          .send(() => target.adapter.editMessage(threadId, id, { markdown }))
-          .then(
-            () => true,
-            (error: unknown) => {
-              console.warn(
-                `Editing the status message of ralph run ${this.run.id} failed, posting a new one: ${errorMessage(error)}`,
-              );
-              return false;
-            },
-          );
-        if (!edited) messageId = undefined;
-      }
-      if (!messageId) {
-        const posted = await target.send(() => target.adapter.postMessage(threadId, { markdown }));
-        messageId = posted.id;
-      }
-      await state.set<ChatRunState>(
-        this.stateKey(),
-        { ...saved, status: { jobId, messageId, ...next } },
-        CHAT_STATE_TTL_MS,
-      );
+    await recordChatRunEvent(target, {
+      organizationId: this.run.organizationId,
+      run: { ralphRunId: this.run.id },
+      kind,
+      body: { ...event?.details, text },
+      key: event?.key ?? `${kind}:${randomUUID()}`,
     });
   }
 
   async post(content: ActivityContent, options?: PostOptions): Promise<void> {
-    if ((content.type === "thought" || content.type === "action") && !options?.notice) {
-      const last = statusLine(content);
-      await this.updateStatus(`a ${content.type}`, last ? { last } : {});
-      return;
-    }
-    const target = await this.resolve(`a ${content.type}`);
-    if (target) await this.postMessage(target, messageText(content));
+    const kind = options?.event?.kind ?? eventKind(content, options);
+    if (!kind) return;
+    await this.record(`a ${content.type}`, kind, messageText(content), options?.event);
   }
 
-  async updatePlan(plan: PlanStep[]): Promise<void> {
-    await this.updateStatus("the plan", { step: currentPlanStep(plan) });
+  async updatePlan(_plan: PlanStep[]): Promise<void> {
+    // The plan isn't relayed: the responder answers "what's the run doing?" from the database.
   }
 
   async addLink(label: string, url: string): Promise<void> {
-    const target = await this.resolve("a link");
-    if (!target) return;
-    await this.locked(target, async () => {
-      const { state } = target.channel;
-      const saved = (await state.get<ChatRunState>(this.stateKey())) ?? {};
-      if (saved.links?.includes(url)) return;
-      await this.postMessage(target, `${label}: ${url}`);
-      await state.set<ChatRunState>(
-        this.stateKey(),
-        { ...saved, links: [...(saved.links ?? []), url] },
-        CHAT_STATE_TTL_MS,
-      );
+    await this.record("a link", "response", `${label}: ${url}`, {
+      key: `link:${url}`,
+      details: { label, url },
     });
   }
 }
@@ -419,7 +331,6 @@ export function conversationFor(
     | "linearAgentSessionId"
     | "chatThreadId"
     | "repositoryId"
-    | "requestJobId"
   >,
   deps: ConversationDeps,
 ): RunConversation {

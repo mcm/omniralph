@@ -15,6 +15,7 @@ import {
   getRunByChatThread,
   jobs,
   listMessages,
+  listRunEvents,
   organizations,
   ralphRuns,
   runMigrations,
@@ -442,10 +443,9 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       requests: [{ id: message!.id, text: message!.text }],
       attachments: [],
     });
-    // Its later posts go to the thread through the bot's adapter: the status message.
-    expect(adapter.postMessage).toHaveBeenCalledWith(THREAD_ID, {
-      markdown: "⏳ Working on it\nWorking on your request.",
-    });
+    // The run doesn't post in the thread itself: its progress isn't relayed.
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+    expect(await listRunEvents(db, orgId, chatThread.id)).toEqual([]);
 
     // The job's outcome: the PR it asked for is opened and the run completes with its answer.
     await playRequestJob(job!, {
@@ -460,11 +460,15 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       draft: true,
     });
     expect(pr!.body).toContain("Requested in chat. Opened by Omniralph.");
-    const markdown = vi
-      .mocked(adapter.postMessage)
-      .mock.calls.map(([, m]) => (m as { markdown: string }).markdown);
-    expect(markdown).toContain(`Pull request #1: ${pr!.url}`);
-    expect(markdown.at(-1)).toContain("Fixed the typo and opened a draft PR.");
+    // Its PR/MR link and its answer are run events of the thread, for the responder to relay.
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+    expect(adapter.editMessage).not.toHaveBeenCalled();
+    const events = await listRunEvents(db, orgId, chatThread.id);
+    expect(events.map((e) => e.kind)).toEqual(["response", "completion"]);
+    expect(events[0]!.body).toMatchObject({ text: `Pull request #1: ${pr!.url}`, url: pr!.url });
+    expect((events[1]!.body as { text: string }).text).toContain(
+      "Fixed the typo and opened a draft PR.",
+    );
     expect(await queuedJobs()).toEqual([]);
   });
 
@@ -785,16 +789,16 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       expect(await listMessages(db, run.id)).toEqual(messages);
       expect(posts).toEqual(["It fixed the typo in the README."]);
 
-      // The agent's history has the session's posts, marked as the run's.
+      // The session posted nothing in the thread: its answer is a run event for the responder.
       const assistantTexts = calls[0]!.prompt.flatMap((m) =>
         m.role === "assistant" ? m.content.flatMap((p) => (p.type === "text" ? [p.text] : [])) : [],
       );
-      expect(assistantTexts).toEqual(
-        expect.arrayContaining([
-          expect.stringMatching(
-            new RegExp(`^\\[ralph run ${run.id}\\] .*Fixed the typo in the README\\.`, "s"),
-          ),
-        ]),
+      expect(assistantTexts.some((t) => t.startsWith(`[ralph run ${run.id}]`))).toBe(false);
+      const [completion] = (await listRunEvents(db, orgId, chatThread.id)).filter(
+        (e) => e.kind === "completion",
+      );
+      expect((completion?.body as { text: string }).text).toContain(
+        "Fixed the typo in the README.",
       );
     });
 

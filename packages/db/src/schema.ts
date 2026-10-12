@@ -122,6 +122,14 @@ export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
 /** A chat thread's run: a query task's job, or a coding run. */
 export const chatThreadRunKind = pgEnum("chat_thread_run_kind", ["query", "coding"]);
+export const chatRunEventKind = pgEnum("chat_run_event_kind", [
+  "response",
+  "question",
+  "permission_request",
+  "completion",
+  "failure",
+  "cleanup_question",
+]);
 /**
  * Where a request came from (the request run's trigger kind, one of
  * `REQUEST_TRIGGERS` in `@omniralph/tasks`).
@@ -1654,6 +1662,39 @@ export const chatThreadRuns = pgTable(
       sql`(kind = 'query' and job_id is not null and ralph_run_id is null)
         or (kind = 'coding' and ralph_run_id is not null and job_id is null)`,
     ),
+  ],
+);
+
+/**
+ * Something a run mapped to a chat thread has for the thread (an answer, a
+ * question, an approval request, its end), stored instead of posted: the
+ * chat responder relays it in the thread (`processed_at` once it has).
+ */
+export const chatRunEvents = pgTable(
+  "chat_run_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    chatThreadId: uuid("chat_thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    threadRunId: uuid("thread_run_id")
+      .notNull()
+      .references(() => chatThreadRuns.id, { onDelete: "cascade" }),
+    kind: chatRunEventKind("kind").notNull(),
+    /** What happened, sanitized for the thread (`ChatRunEventBody`). */
+    body: jsonb("body").$type<Record<string, unknown>>().notNull(),
+    /** Identifies the event, so a replayed one is recorded once. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAt(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("chat_run_events_idempotency_key_uq").on(t.idempotencyKey),
+    index("chat_run_events_chat_thread_id_created_at_idx").on(t.chatThreadId, t.createdAt),
   ],
 );
 

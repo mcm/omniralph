@@ -34,11 +34,14 @@ import {
   listChatConnections,
   listChatIdentities,
   listChatMessages,
+  listRunEvents,
   listThreadRuns,
   mapThreadRun,
+  recordRunEvent,
   saveChatConnection,
   saveChatUserProfile,
   threadOfRun,
+  threadRunOf,
   unlinkChatIdentity,
   upsertChatChannelTaskSetting,
   type ChatConnection,
@@ -53,6 +56,7 @@ import {
   chatIdentities,
   chatLinkStateUses,
   chatMessages,
+  chatRunEvents,
   chatThreadRuns,
   chatThreads,
   chatUserProfiles,
@@ -695,6 +699,67 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
       // Rows go with their thread.
       await db.delete(chatThreads).where(eq(chatThreads.id, thread.id));
       expect(await db.select().from(chatThreadRuns)).toEqual([]);
+    });
+
+    it("records a run's events once per idempotency key", async () => {
+      const thread = await newThread();
+      const job = await newJob();
+      await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: job.id });
+      const threadRun = (await threadRunOf(db, orgId, { jobId: job.id }))!;
+      expect(threadRun.chatThreadId).toBe(thread.id);
+      expect(await threadRunOf(db, otherOrgId, { jobId: job.id })).toBeNull();
+      const event = {
+        organizationId: orgId,
+        threadRun,
+        kind: "response" as const,
+        body: { text: "The answer." },
+        idempotencyKey: `chat-run-event:job:${job.id}:response`,
+      };
+
+      const first = await recordRunEvent(db, event);
+      expect(first.created).toBe(true);
+      expect(first.event).toMatchObject({
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        threadRunId: threadRun.id,
+        kind: "response",
+        body: { text: "The answer." },
+        processedAt: null,
+        attempts: 0,
+      });
+      // The same key again (a replay) records nothing.
+      expect(await recordRunEvent(db, { ...event, body: { text: "Again." } })).toEqual({
+        created: false,
+        event: null,
+      });
+      // Another organization can't record on this mapping.
+      expect(
+        await recordRunEvent(db, { ...event, organizationId: otherOrgId, idempotencyKey: "other" }),
+      ).toEqual({ created: false, event: null });
+      await recordRunEvent(db, {
+        ...event,
+        kind: "failure",
+        body: { error: "boom" },
+        idempotencyKey: `chat-run-event:job:${job.id}:failure`,
+      });
+
+      const events = await listRunEvents(db, orgId, thread.id);
+      expect(events.map((e) => [e.kind, e.body])).toEqual([
+        ["response", { text: "The answer." }],
+        ["failure", { error: "boom" }],
+      ]);
+      expect(await listRunEvents(db, otherOrgId, thread.id)).toEqual([]);
+      await db
+        .update(chatRunEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(chatRunEvents.id, first.event!.id));
+      expect(
+        (await listRunEvents(db, orgId, thread.id, { pending: true })).map((e) => e.kind),
+      ).toEqual(["failure"]);
+
+      // Events go with their thread.
+      await db.delete(chatThreads).where(eq(chatThreads.id, thread.id));
+      expect(await db.select().from(chatRunEvents)).toEqual([]);
     });
   });
 
