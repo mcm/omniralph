@@ -5,6 +5,8 @@ import { AgentDetailView } from "./[id]/agent-detail-view";
 import { AgentsView, type AgentSummary } from "./agents-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
+vi.mock("./actions", () => ({ cloneAgentDefinition: vi.fn(), deleteAgentDefinition: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const reviewer = BUILTIN_AGENTS.find((agent) => agent.id === "builtin:reviewer") as AgentDefinition;
 
@@ -50,6 +52,13 @@ describe("AgentsView", () => {
     expect(custom).not.toContain("Built-in");
     expect(custom).toContain(">review<");
     expect(custom).toContain("claude-opus-5-5");
+    expect(html).not.toContain("New agent");
+  });
+
+  it("offers admins a new agent", () => {
+    const html = renderToStaticMarkup(<AgentsView agents={[BUILTIN]} isAdmin />);
+    expect(html).toContain('href="/settings/agents/new"');
+    expect(html).toContain("New agent");
   });
 });
 
@@ -95,6 +104,25 @@ describe("AgentDetailView", () => {
     expect(html).toContain(">Clone<");
     expect(html).not.toContain(">Edit<");
     expect(html).not.toContain(">Delete<");
+  });
+
+  it("offers admins Clone, Edit and Delete on a custom agent", () => {
+    const custom = { ...agent, id: CUSTOM.id, name: CUSTOM.name };
+    const html = renderToStaticMarkup(
+      <AgentDetailView agent={custom} builtin={false} tasks={[]} isAdmin />,
+    );
+    expect(html).not.toContain("Built-in");
+    expect(html).toContain(">Clone<");
+    expect(html).toContain(`href="/settings/agents/${CUSTOM.id}/edit"`);
+    expect(html).toContain(">Edit<");
+    expect(html).toContain(">Delete<");
+
+    const member = renderToStaticMarkup(
+      <AgentDetailView agent={custom} builtin={false} tasks={[]} isAdmin={false} />,
+    );
+    expect(member).not.toContain(">Clone<");
+    expect(member).not.toContain(">Edit<");
+    expect(member).not.toContain(">Delete<");
   });
 
   it("offers members no Clone", () => {

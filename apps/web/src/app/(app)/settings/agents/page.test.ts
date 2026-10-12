@@ -51,9 +51,12 @@ vi.mock("@omniralph/db", () => ({
 }));
 vi.mock("./agents-view", () => ({ AgentsView: () => null }));
 vi.mock("./[id]/agent-detail-view", () => ({ AgentDetailView: () => null }));
+vi.mock("./agent-form", () => ({ AgentForm: () => null }));
 
 const { default: AgentsPage } = await import("./page");
 const { default: AgentPage } = await import("./[id]/page");
+const { default: NewAgentPage } = await import("./new/page");
+const { default: EditAgentPage } = await import("./[id]/edit/page");
 
 const user = (role: Role, organizationId = "org-1") => ({
   id: `${role}-1`,
@@ -119,5 +122,37 @@ describe("Settings › Agents pages", () => {
     await expect(AgentPage(params(CUSTOM_ID))).rejects.toThrow("NEXT_NOT_FOUND");
     await expect(AgentPage(params("builtin:nope"))).rejects.toThrow("NEXT_NOT_FOUND");
     await expect(AgentPage(params("%E0%A4%A"))).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("new and edit pages are admin-only", async () => {
+    state.user = user("member");
+    await expect(NewAgentPage()).rejects.toThrow();
+    await expect(EditAgentPage(params(CUSTOM_ID))).rejects.toThrow();
+  });
+
+  it("new page renders an empty form for an admin", async () => {
+    state.user = user("admin");
+    expect((await NewAgentPage()).props).toEqual({ agent: null });
+  });
+
+  it("edit page renders the organization's agent in the form", async () => {
+    state.user = user("admin");
+    const { props } = await EditAgentPage(params(CUSTOM_ID));
+    expect(props.agent).toMatchObject({
+      id: CUSTOM_ID,
+      name: "Security reviewer",
+      systemPrompt: "Find vulnerabilities.",
+      taskTypes: ["review"],
+    });
+  });
+
+  it("edit page doesn't find a built-in, another organization's agent or an unknown ID", async () => {
+    state.user = user("admin");
+    await expect(EditAgentPage(params(encodeURIComponent("builtin:reviewer")))).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
+    await expect(EditAgentPage(params("builtin:nope"))).rejects.toThrow("NEXT_NOT_FOUND");
+    state.user = user("admin", "org-2");
+    await expect(EditAgentPage(params(CUSTOM_ID))).rejects.toThrow("NEXT_NOT_FOUND");
   });
 });

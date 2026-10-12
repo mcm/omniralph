@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -15,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@iamthemcmaster/ui";
+import { IconPlus } from "@tabler/icons-react";
 import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import {
@@ -46,15 +48,32 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
     <>
       <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Agents" }]} />
       <main style={pageMain}>
-        <div>
-          <h1 style={pageTitle}>Agents</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            The personas tasks run on: system prompt, tools, skills and model. Built-in agents are
-            read-only
-            {isAdmin
-              ? "; clone one to make your own."
-              : "; an admin can clone one to customize it."}
-          </Muted>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "var(--space-4)",
+          }}
+        >
+          <div>
+            <h1 style={pageTitle}>Agents</h1>
+            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+              The personas tasks run on: system prompt, tools, skills and model. Built-in agents are
+              read-only
+              {isAdmin
+                ? "; clone one or create a new agent to make your own."
+                : "; an admin can clone one to customize it."}
+            </Muted>
+          </div>
+          {isAdmin && (
+            <Button asChild variant="primary">
+              <Link href="/settings/agents/new">
+                <IconPlus size={14} />
+                New agent
+              </Link>
+            </Button>
+          )}
         </div>
         <Card>
           <CardHeader>
