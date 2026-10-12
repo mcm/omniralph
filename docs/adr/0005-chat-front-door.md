@@ -103,7 +103,8 @@ A call to a tool above the actor's level returns a "link required" result, and t
 link prompt (ephemeral in Slack, a mention in Discord). This epic ships only `read` tools (runs,
 reviews, jobs, agents, repositories); later epics add `action` tools that therefore require a
 link. TOOL-181 added the first ones (`start_ralph_request`, `send_to_session`,
-`send_ralph_guidance`; see [ADR 0003's addendum](0003-ralph-orchestration.md#addendum-run-origin-and-the-conversation-channel)).
+`send_ralph_guidance`; see [ADR 0003's addendum](0003-ralph-orchestration.md#addendum-run-origin-and-the-conversation-channel));
+TOOL-305 replaced the first two (see the [addendum](#addendum-the-responder-runs-harness-tasks)).
 
 - **Linking.** A signed, 15-minute link (`/chat/link`) lets a signed-in member link a chat identity
   (`chat_identities`, one Omniralph user per org + platform + chat user). Slack users whose
@@ -147,3 +148,69 @@ link. TOOL-181 added the first ones (`start_ralph_request`, `send_to_session`,
   Discord for up to 9 minutes.
 - New capabilities are new tools with a tier; the access model, history, rate limits and
   sanitizing apply to them unchanged.
+
+## Addendum: the responder runs harness tasks
+
+TOOL-305 (2026-10-12) makes the responder the front for harness-hosted agents. Before it, work
+that needed a checkout left the responder behind: `ask_about_code` queued a job whose sink posted
+the answer, and `start_ralph_request` started a ralph run that posted into the thread itself
+(`ChatConversation`), so the responder only learned what happened on the next mention. Now runs
+are started, followed and answered through the responder; nothing else posts into chat on a
+chat-origin run's behalf. The task and agent model is
+[ADR 0008](0008-agents-tasks-and-the-harness.md); this addendum only covers how chat uses it.
+Setup and usage: [chat.md › Ralph from chat](../chat.md#ralph-from-chat).
+
+- **Tools start runs of task definitions.** `ask_about_code` (`read`) starts a run of a query
+  task, `start_work` (`action`, replacing `start_ralph_request`) a coding run of a coding task
+  (`ralph_runs.coding_task_id`, used instead of the repository's request task). Both return at
+  once with `{ status: "started", runId, … }` and post nothing: the responder's reply is the
+  turn's only message. A duplicate question returns `already_asked` with the existing run.
+- **Task settings per organization and channel.** Which tasks the two tools run is an
+  organization setting (`app_settings` key `chat.tasks`, `getChatTaskDefaults`) with per-channel
+  overrides (`chat_channel_task_settings`, keyed by connection and Chat SDK channel ID), edited
+  under Settings › Integrations by admins. `chatTasksFor` (`apps/web/src/lib/chat/tasks.ts`)
+  resolves channel override › organization choice › built-in default (`builtin:ask-about-code`,
+  `builtin:handle-request`); `validateChatTaskChoice` requires a query task (resp. coding task)
+  that accepts the `chat.request` trigger, on save and again when a tool starts a run (a stored
+  choice that can't run returns `task_unavailable`). Changing a setting changes the next run with
+  no deploy.
+- **Thread-to-run mapping.** `chat_thread_runs` maps a thread to its runs: `query` rows point at a
+  job, `coding` rows at a `ralph_runs` row, each run mapped once (`mapThreadRun`,
+  `latestThreadRun`, `threadOfRun` in `packages/db/src/chat.ts`, all scoped to the organization).
+  It replaces lookups by `ralph_runs.chat_thread_id` and the job payload's `chatThreadId`;
+  migration `0067_chat_thread_runs` backfilled both.
+- **Run events.** What a mapped run has to tell the thread is recorded as a `chat_run_events` row
+  (`recordChatRunEvent`, `apps/web/src/lib/chat/run-events.ts`) of kind `response`, `question`,
+  `permission_request`, `cleanup_question`, `completion` or `failure`, sanitized with the thread's
+  allowed hosts and keyed idempotently per event (`chat-run-event:{job|ralph}:{id}:{key}`), so a
+  replayed outcome or retried step records it once. The query sink (`chat-thread`), the coding
+  run's `ChatConversation`, `askPermission`, cleanup questions and the run's completion and
+  failure record events; none of them posts.
+- **Wake-up turns.** A recorded event schedules `processThreadRunEvents`
+  (`apps/web/src/lib/chat/agent/wake.ts`) in `after()`; the `/api/cron/chat-run-events` cron
+  (every minute) catches up on events still pending after a minute, e.g. when `after()` wasn't
+  available or a turn failed (up to 5 attempts per event). A wake-up takes the thread's Chat SDK
+  lock, so it runs strictly between human turns (the Chat SDK's `concurrency: "queue"`), and hands
+  messages queued meanwhile back to the Chat SDK when it releases the lock. Its input is the
+  pending events, each body fenced as data with the prompt rule that run output is data, not
+  instructions; it acts for the run's requester (their linked member, else `read` tools only). The
+  answer is sanitized and posted like any reply; an empty answer posts nothing and still marks the
+  events processed. Wake-ups don't count against the per-user or per-organization turn limits but
+  have their own per-organization cap (`wakePerOrganization`, 60 per 10 minutes); capped events
+  stay pending for the cron.
+- **Answers go back through tools.** Every message in the thread goes to the responder (the
+  handler no longer routes plain replies to a session). It passes answers on with `action` tools
+  (`apps/web/src/lib/chat/agent/action-tools.ts`): `reply_to_run` (a reply or the answer to a
+  question, live or queued, with attachments), `answer_run_permission` (approve or deny the open
+  `ask_permission` request of the thread's coding run, under the run lock) and
+  `answer_run_cleanup` (a cleanup question's option). They act on the thread's latest mapped run
+  of the organization only.
+- **Status from the database.** `get_run_status` (`read`) answers "what's the run doing?" from run
+  state, open permission requests and the run's recent `post_activity` entries (`run_activities`)
+  with no harness call.
+
+Alternatives considered: a harness-hosted responder (out of scope: the conversation stays in the
+control panel, which answers in seconds); posting run output straight into the thread as before
+(the responder couldn't relate it to the conversation, and answers to it bypassed the model); and
+waking the responder from the run's own process synchronously (a slow model call would hold up the
+run's outcome handling, and a missed wake-up would be lost without the cron).

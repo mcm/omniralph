@@ -41,7 +41,7 @@ const domain: ChatActor = { kind: "domain", email: "ada@acme.test" };
 
 type Result = Record<string, unknown>;
 
-describe.skipIf(!dockerAvailable)("run_status", () => {
+describe.skipIf(!dockerAvailable)("get_run_status", () => {
   const key = randomBytes(32);
   let container: StartedPostgreSqlContainer;
   let db: Database;
@@ -66,13 +66,13 @@ describe.skipIf(!dockerAvailable)("run_status", () => {
     // Status comes from the database: nothing reaches the orchestrator or a harness.
     ralph: () => {
       ralphCalls += 1;
-      return Promise.reject(new Error("run_status must not use ralph"));
+      return Promise.reject(new Error("get_run_status must not use ralph"));
     },
     handedOff: () => undefined,
   });
 
   async function status(input: unknown, chatThread = quietThread, organizationId = orgId) {
-    const tool = readTools.run_status!;
+    const tool = readTools.get_run_status!;
     return (await tool.execute(
       tool.inputSchema.parse(input),
       context(chatThread, organizationId),

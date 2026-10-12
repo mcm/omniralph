@@ -461,7 +461,9 @@ TOOL-302 built the plumbing and the query task type, TOOL-303 the review task ty
 runs, TOOL-304 the coding task type and coding runs. Not built yet:
 
 - deleting the legacy `ralph.*` job types, capability code and single tokens, once a coding run has
-  merged a real PR (a follow-up issue); the chat responder still uses `start_ralph_request`;
+  merged a real PR (a follow-up issue); chat runs are covered by it too, since the responder's
+  `start_work` starts coding runs of a coding task chosen in the chat settings
+  ([ADR 0005](0005-chat-front-door.md#addendum-the-responder-runs-harness-tasks));
 - planned reviews: a review task fanning out internally by diff group or check type
   ([TOOL-33](https://linear.app/thefrakinship/issue/TOOL-33/plan-based-code-reviews)), on top of
   review runs;
