@@ -180,7 +180,8 @@ when unset:
 }
 ```
 
-An invalid value stops the harness at startup with an error naming the key. Edit the file while the
+[installables.md](installables.md) explains installables, host tools and how these keys lock a
+host down. An invalid value stops the harness at startup with an error naming the key. Edit the file while the
 harness is stopped: it rewrites the file when it rotates its refresh token, and a re-enrollment
 replaces it.
 

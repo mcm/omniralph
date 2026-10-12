@@ -250,7 +250,8 @@ The PR caches are a separate tree, never inside a repository cache, so data deri
 untrusted PR must only go to the PR cache, which other runs never read. The installable owns
 what's inside (including keying by commit, e.g. an index per base commit). Caches are
 best-effort: nothing is stored in the control panel, and a run on another harness starts cold.
-A run without a repository gets neither variable.
+A run without a repository gets neither variable. Writing, installing and locking down
+installables and host tools is covered in [installables.md](installables.md).
 
 ## Delete refusals
 
