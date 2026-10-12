@@ -193,16 +193,7 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Profiles" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Review profiles"
           description="Each repository uses one of these profiles. Changes apply to the next review of every repository using the profile. Built-in profiles can be edited but not deleted."

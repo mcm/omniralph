@@ -18,6 +18,7 @@ import {
   NativeSelect,
   RadioGroup,
   RadioGroupItem,
+  Stack,
   notify,
 } from "@iamthemcmaster/ui";
 import { IconRefresh } from "@tabler/icons-react";
@@ -126,41 +127,42 @@ export function RerunReviewDialog({
               request and posts the results there.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-            <RadioGroup
-              value={mode}
-              onValueChange={(value) => setMode(value as RerunMode)}
-              aria-label="Mode"
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
-            >
-              {RERUN_MODES.map((value) => (
-                <div
-                  key={value}
-                  style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}
-                >
-                  <RadioGroupItem id={`rerun-${reviewId}-${value}`} value={value} />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-                    <Label htmlFor={`rerun-${reviewId}-${value}`}>{MODE_LABELS[value].label}</Label>
-                    <Muted style={{ fontSize: "var(--text-xs)" }}>{MODE_LABELS[value].hint}</Muted>
-                  </div>
-                </div>
-              ))}
-            </RadioGroup>
-            <Field label="Profile" htmlFor={`rerun-${reviewId}-profile`}>
-              <NativeSelect
-                id={`rerun-${reviewId}-profile`}
-                value={profile}
-                onChange={(e) => setProfile(e.target.value)}
+          <Stack asChild gap={4}>
+            <DialogBody>
+              <RadioGroup
+                value={mode}
+                onValueChange={(value) => setMode(value as RerunMode)}
+                aria-label="Mode"
+                className="gap-3"
               >
-                <option value="">Repository default</option>
-                {RERUN_PROFILES.map((id) => (
-                  <option key={id} value={id}>
-                    {PROFILE_LABELS[id]}
-                  </option>
+                {RERUN_MODES.map((value) => (
+                  <div key={value} className="review-radio-option">
+                    <RadioGroupItem id={`rerun-${reviewId}-${value}`} value={value} />
+                    <Stack gap={1}>
+                      <Label htmlFor={`rerun-${reviewId}-${value}`}>
+                        {MODE_LABELS[value].label}
+                      </Label>
+                      <Muted className="text-xs">{MODE_LABELS[value].hint}</Muted>
+                    </Stack>
+                  </div>
                 ))}
-              </NativeSelect>
-            </Field>
-          </DialogBody>
+              </RadioGroup>
+              <Field label="Profile" htmlFor={`rerun-${reviewId}-profile`}>
+                <NativeSelect
+                  id={`rerun-${reviewId}-profile`}
+                  value={profile}
+                  onChange={(e) => setProfile(e.target.value)}
+                >
+                  <option value="">Repository default</option>
+                  {RERUN_PROFILES.map((id) => (
+                    <option key={id} value={id}>
+                      {PROFILE_LABELS[id]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </DialogBody>
+          </Stack>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel

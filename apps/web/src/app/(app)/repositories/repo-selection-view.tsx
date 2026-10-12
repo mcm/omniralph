@@ -15,10 +15,12 @@ import {
   CardTitle,
   Checkbox,
   Badge,
+  Cluster,
   Empty,
   InlineCode,
   Label,
   Muted,
+  Stack,
 } from "@iamthemcmaster/ui";
 import {
   IconAlertTriangle,
@@ -152,85 +154,60 @@ export function RepoSelectionView({
                 <CardTitle as="h2">Repositories</CardTitle>
                 <CardDescription>{listedDescription}</CardDescription>
               </CardHeader>
-              <CardContent
-                style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
-              >
-                {repos.length === 0 ? (
-                  <Empty
-                    icon={emptyIcon}
-                    title="No repositories"
-                    titleAs="h3"
-                    description={emptyDescription}
-                  />
-                ) : (
-                  <>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "var(--space-2)",
-                        padding: "var(--space-2) 0",
-                      }}
-                    >
-                      <Checkbox
-                        id="select-all"
-                        checked={allSelected}
-                        onCheckedChange={(checked) =>
-                          setSelected(
-                            checked === true ? new Set(repos.map((repo) => repo.id)) : new Set(),
-                          )
-                        }
-                      />
-                      <Label htmlFor="select-all">Select all ({repos.length})</Label>
-                      <Muted style={{ marginLeft: "auto" }}>
-                        {selected.size} selected
-                        {pageCount > 1 && ` · showing ${first}–${last} of ${repos.length}`}
-                      </Muted>
-                    </div>
-                    {shown.map((repo) => (
-                      <div
-                        key={repo.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "var(--space-3)",
-                          padding: "var(--space-3) var(--space-4)",
-                          background: "var(--bg-raised)",
-                          borderRadius: "var(--radius-md)",
-                          border: "1px solid var(--border-subtle)",
-                        }}
-                      >
-                        <Checkbox
-                          id={`repo-${repo.id}`}
-                          checked={selected.has(repo.id)}
-                          onCheckedChange={(checked) => toggle(repo.id, checked === true)}
-                        />
-                        <Label
-                          htmlFor={`repo-${repo.id}`}
-                          style={{
-                            flex: 1,
-                            fontFamily: "var(--font-mono)",
-                            fontSize: "var(--text-sm)",
-                          }}
-                        >
-                          {repo.fullPath}
-                        </Label>
-                        {repo.private && <Badge variant="neutral">Private</Badge>}
-                        {repo.enabled && <Badge variant="success">Enabled</Badge>}
-                      </div>
-                    ))}
-                    <ListPagination
-                      page={currentPage}
-                      pageCount={pageCount}
-                      hrefFor={(p) => `#page-${p}`}
-                      onSelect={setPage}
+              <Stack asChild gap={2}>
+                <CardContent>
+                  {repos.length === 0 ? (
+                    <Empty
+                      icon={emptyIcon}
+                      title="No repositories"
+                      titleAs="h3"
+                      description={emptyDescription}
                     />
-                  </>
-                )}
-              </CardContent>
+                  ) : (
+                    <>
+                      <div className="repo-select-all">
+                        <Checkbox
+                          id="select-all"
+                          checked={allSelected}
+                          onCheckedChange={(checked) =>
+                            setSelected(
+                              checked === true ? new Set(repos.map((repo) => repo.id)) : new Set(),
+                            )
+                          }
+                        />
+                        <Label htmlFor="select-all">Select all ({repos.length})</Label>
+                        <Muted className="ml-auto">
+                          {selected.size} selected
+                          {pageCount > 1 && ` · showing ${first}–${last} of ${repos.length}`}
+                        </Muted>
+                      </div>
+                      {shown.map((repo) => (
+                        <div key={repo.id} className="repo-panel repo-row">
+                          <Checkbox
+                            id={`repo-${repo.id}`}
+                            checked={selected.has(repo.id)}
+                            onCheckedChange={(checked) => toggle(repo.id, checked === true)}
+                          />
+                          <Label htmlFor={`repo-${repo.id}`} className="repo-select-name">
+                            {repo.fullPath}
+                          </Label>
+                          {repo.private && <Badge variant="neutral">Private</Badge>}
+                          {repo.enabled && <Badge variant="success">Enabled</Badge>}
+                        </div>
+                      ))}
+                      <ListPagination
+                        page={currentPage}
+                        pageCount={pageCount}
+                        hrefFor={(p) => `#page-${p}`}
+                        onSelect={setPage}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Stack>
             </Card>
 
-            <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+            <Cluster justify="end">
               <Button asChild variant="ghost">
                 <Link href="/repositories">
                   <IconArrowLeft size={14} />
@@ -241,7 +218,7 @@ export function RepoSelectionView({
                 <IconDeviceFloppy size={14} />
                 {pending ? "Saving…" : "Save"}
               </Button>
-            </div>
+            </Cluster>
           </>
         )}
       </main>

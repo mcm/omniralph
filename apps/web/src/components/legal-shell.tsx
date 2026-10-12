@@ -8,22 +8,13 @@ export function LegalShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <AuroraField />
-      <main
-        style={{
-          position: "relative",
-          zIndex: 1,
-          minHeight: "100vh",
-          padding: "var(--space-16) var(--space-8)",
-        }}
-      >
-        <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
+      <main className="legal-main">
+        <div className="legal-column">
           <AuthBrand />
           <Card>
-            <CardContent className="legal-document" style={{ paddingTop: "var(--space-8)" }}>
-              {children}
-            </CardContent>
+            <CardContent className="legal-document pt-8">{children}</CardContent>
           </Card>
-          <LegalLinks style={{ marginTop: "var(--space-4)" }} />
+          <LegalLinks />
         </div>
       </main>
     </>

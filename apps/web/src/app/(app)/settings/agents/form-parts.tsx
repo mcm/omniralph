@@ -1,8 +1,6 @@
 /** Form pieces shared by the agent and task forms. */
-import { Checkbox, Label } from "@iamthemcmaster/ui";
+import { Checkbox, Cluster, Label } from "@iamthemcmaster/ui";
 import type { FieldErrors } from "@omniralph/shared";
-
-export const monoInput = { fontFamily: "var(--font-mono)" } as const;
 
 /** Names from a comma- or newline-separated list. */
 export function splitNames(value: string): string[] {
@@ -40,20 +38,20 @@ export function Choices<T extends string>({
   disabled: boolean;
 }) {
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-4)" }}>
+    <Cluster gap={4}>
       {options.map((option) => (
-        <div key={option} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <div key={option} className="settings-check settings-check-center">
           <Checkbox
             id={`${id}-${option}`}
             checked={value.includes(option)}
             disabled={disabled}
             onCheckedChange={(checked) => onChange(toggled(value, option, checked === true))}
           />
-          <Label htmlFor={`${id}-${option}`} style={monoInput}>
+          <Label htmlFor={`${id}-${option}`} className="settings-mono">
             {option}
           </Label>
         </div>
       ))}
-    </div>
+    </Cluster>
   );
 }

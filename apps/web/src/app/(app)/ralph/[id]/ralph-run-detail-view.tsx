@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import {
   Alert,
@@ -24,6 +23,7 @@ import {
   CardTitle,
   InlineCode,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -69,9 +69,6 @@ import {
   PullRequestLink,
 } from "../ralph-runs-view";
 
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;
 /** Characters of a story's last feedback shown in the table (all of it on hover). */
 const FEEDBACK_PREVIEW = 120;
 /** Characters of a request or message shown in the tables (all of it on hover). */
@@ -101,33 +98,37 @@ function WaitingOn({ run }: { run: RalphRunDetail }) {
     return null;
   }
   const list = (items: { identifier: string; title: string }[]) => (
-    <ul style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack, gap: "var(--space-1)" }}>
-      {items.map((item) => (
-        <li key={item.identifier}>
-          <IssueRef identifier={item.identifier} title={item.title} runUrl={run.linearUrl} />
-        </li>
-      ))}
-    </ul>
+    <Stack asChild gap={1} className="run-issue-list">
+      <ul>
+        {items.map((item) => (
+          <li key={item.identifier}>
+            <IssueRef identifier={item.identifier} title={item.title} runUrl={run.linearUrl} />
+          </li>
+        ))}
+      </ul>
+    </Stack>
   );
   return (
     <Alert variant="warning">
       <IconClockPause size={16} />
       <AlertTitle as="h2">Waiting</AlertTitle>
-      <AlertDescription style={stack}>
-        {waitingOn.blockers.length > 0 && (
-          <div style={stack}>
-            <span>Open blockers outside the epic:</span>
-            {list(waitingOn.blockers)}
-          </div>
-        )}
-        {waitingOn.manual.length > 0 && (
-          <div style={stack}>
-            <span>Manual stories a person has to finish:</span>
-            {list(waitingOn.manual)}
-          </div>
-        )}
-        <span>The run resumes by itself when these are completed in Linear.</span>
-      </AlertDescription>
+      <Stack asChild gap={3}>
+        <AlertDescription>
+          {waitingOn.blockers.length > 0 && (
+            <Stack gap={3}>
+              <span>Open blockers outside the epic:</span>
+              {list(waitingOn.blockers)}
+            </Stack>
+          )}
+          {waitingOn.manual.length > 0 && (
+            <Stack gap={3}>
+              <span>Manual stories a person has to finish:</span>
+              {list(waitingOn.manual)}
+            </Stack>
+          )}
+          <span>The run resumes by itself when these are completed in Linear.</span>
+        </AlertDescription>
+      </Stack>
     </Alert>
   );
 }
@@ -200,7 +201,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
               <RalphStoryStatusBadge status={story.status} />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
-              <span style={cellText}>{story.attempts}</span>
+              <span className="list-text">{story.attempts}</span>
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               {story.commitSha ? (
@@ -211,10 +212,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               {story.lastFeedback ? (
-                <Muted
-                  title={story.lastFeedback}
-                  style={{ maxWidth: "calc(var(--space-8) * 12)", overflowWrap: "anywhere" }}
-                >
+                <Muted title={story.lastFeedback} className="run-feedback-preview">
                   {truncate(story.lastFeedback, FEEDBACK_PREVIEW)}
                 </Muted>
               ) : (
@@ -223,12 +221,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               {story.lastJobId ? (
-                <Link
-                  href={jobPageHref(story.lastJobId)}
-                  style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
-                >
-                  {shortJobId(story.lastJobId)}
-                </Link>
+                <JobLink id={story.lastJobId} label={shortJobId(story.lastJobId)} />
               ) : (
                 <Muted>—</Muted>
               )}
@@ -315,14 +308,20 @@ function ElsewhereCard({ run }: { run: RalphRunDetail }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ul style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack }}>
-          {stories.map((story) => (
-            <li key={story.id} style={{ fontSize: "var(--text-sm)" }}>
-              <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />{" "}
-              <Muted>({story.elsewhere})</Muted>
-            </li>
-          ))}
-        </ul>
+        <Stack asChild gap={3} className="run-issue-list">
+          <ul>
+            {stories.map((story) => (
+              <li key={story.id} className="text-sm">
+                <IssueRef
+                  identifier={story.identifier}
+                  title={story.title}
+                  runUrl={run.linearUrl}
+                />{" "}
+                <Muted>({story.elsewhere})</Muted>
+              </li>
+            ))}
+          </ul>
+        </Stack>
       </CardContent>
     </Card>
   );
@@ -363,20 +362,9 @@ function laneRepository(run: RalphRunDetail, laneId: string | null): string | nu
   return lane?.repository.fullPath ?? run.repository?.fullPath ?? null;
 }
 
-const textCell: React.CSSProperties = {
-  ...cellText,
-  display: "block",
-  maxWidth: "calc(var(--space-8) * 16)",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-};
-
 function JobLink({ id, label }: { id: string; label: string }) {
   return (
-    <Link
-      href={jobPageHref(id)}
-      style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
-    >
+    <Link href={jobPageHref(id)} className="run-job-link">
       {label}
     </Link>
   );
@@ -409,11 +397,11 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
               <TableRow key={request.id}>
                 {multiLane && (
                   <TableCell className={WIDE_COLUMN}>
-                    <span style={mono}>{laneRepository(run, request.laneId) ?? "—"}</span>
+                    <span className="fact-mono">{laneRepository(run, request.laneId) ?? "—"}</span>
                   </TableCell>
                 )}
                 <TableCell>
-                  <span style={textCell} title={request.text}>
+                  <span className="run-text-cell" title={request.text}>
                     {truncate(request.text, MESSAGE_PREVIEW)}
                   </span>
                   <PhoneMeta>
@@ -423,13 +411,13 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
                   {request.author ? (
-                    <span style={cellText}>{request.author}</span>
+                    <span className="list-text">{request.author}</span>
                   ) : (
                     <Muted>—</Muted>
                   )}
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  <span style={cellText}>{formatDateTime(request.createdAt)}</span>
+                  <span className="list-text">{formatDateTime(request.createdAt)}</span>
                 </TableCell>
               </TableRow>
             ))}
@@ -472,7 +460,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                     <Badge variant="neutral">{message.kind}</Badge>
                   </TableCell>
                   <TableCell>
-                    <span style={textCell} title={message.text}>
+                    <span className="run-text-cell" title={message.text}>
                       {truncate(message.text, MESSAGE_PREVIEW)}
                     </span>
                     <PhoneMeta>
@@ -484,7 +472,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
                     {message.author ? (
-                      <span style={cellText}>{message.author}</span>
+                      <span className="list-text">{message.author}</span>
                     ) : (
                       <Muted>—</Muted>
                     )}
@@ -497,15 +485,11 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                       <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
                         {RALPH_MESSAGE_STATE_LABELS[message.state]}
                       </Badge>
-                      {settledAt && (
-                        <Muted style={{ fontSize: "var(--text-xs)" }}>
-                          {formatDateTime(settledAt)}
-                        </Muted>
-                      )}
+                      {settledAt && <Muted className="text-xs">{formatDateTime(settledAt)}</Muted>}
                     </div>
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
-                    <span style={cellText}>{formatDateTime(message.createdAt)}</span>
+                    <span className="list-text">{formatDateTime(message.createdAt)}</span>
                   </TableCell>
                 </TableRow>
               );
@@ -540,10 +524,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
             {run.jobs.map((job) => (
               <TableRow key={job.id}>
                 <TableCell>
-                  <Link
-                    href={jobPageHref(job.id)}
-                    style={{ ...mono, color: "var(--text-primary)", textDecoration: "none" }}
-                  >
+                  <Link href={jobPageHref(job.id)} className="fact-mono list-text-primary">
                     {job.type}
                   </Link>
                   <PhoneMeta>
@@ -567,17 +548,17 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                   </div>
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  <span style={cellText}>{job.deliveryCount}</span>
+                  <span className="list-text">{job.deliveryCount}</span>
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
                   <AgentName agent={job.agent} isAdmin={isAdmin} />
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  <span style={cellText}>{formatDateTime(job.createdAt)}</span>
+                  <span className="list-text">{formatDateTime(job.createdAt)}</span>
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
                   {job.finishedAt ? (
-                    <span style={cellText}>{formatDateTime(job.finishedAt)}</span>
+                    <span className="list-text">{formatDateTime(job.finishedAt)}</span>
                   ) : (
                     <Muted>—</Muted>
                   )}

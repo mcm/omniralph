@@ -14,6 +14,7 @@ import {
   CardTitle,
   Field,
   Input,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconAlertTriangle, IconBrandGithub, IconBrandGitlab } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
@@ -66,76 +67,62 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
             Use your GitHub or GitLab account. Access is limited to approved team members.
           </CardDescription>
         </CardHeader>
-        <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-          {error && (
-            <Alert variant="danger">
-              <IconAlertTriangle size={16} />
-              <AlertTitle as="h2">Couldn&apos;t sign you in</AlertTitle>
-              <AlertDescription>{errorMessage(error)}</AlertDescription>
-            </Alert>
-          )}
-          {providers.length === 0 && !devSignIn && (
-            <Alert variant="warning">
-              <IconAlertTriangle size={16} />
-              <AlertTitle as="h2">No sign-in providers configured</AlertTitle>
-              <AlertDescription>
-                Set AUTH_GITHUB_ID/AUTH_GITHUB_SECRET or AUTH_GITLAB_ID/AUTH_GITLAB_SECRET.
-              </AlertDescription>
-            </Alert>
-          )}
-          {providers.map(({ id, name }) => {
-            const Icon = providerIcons[id];
-            return (
-              <Button
-                key={id}
-                variant="secondary"
-                disabled={pending !== null}
-                onClick={() => signIn(id)}
-                style={{ width: "100%", gap: "var(--space-2)" }}
-              >
-                <Icon size={16} />
-                {pending === id ? `Redirecting to ${name}…` : `Continue with ${name}`}
-              </Button>
-            );
-          })}
-          {devSignIn && (
-            <form
-              action={DEV_SIGN_IN_PATH}
-              method="get"
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
-            >
-              <input type="hidden" name="callbackUrl" value={callbackUrl} />
-              <Field
-                label="Dev sign-in"
-                htmlFor="dev-sign-in-email"
-                description="Development only (OMNIRALPH_DEV_SIGNIN=1): signs in as an existing user, e.g. admin@fixtures.example."
-              >
-                <Input id="dev-sign-in-email" name="email" type="email" required />
-              </Field>
-              <Button type="submit" variant="secondary" style={{ width: "100%" }}>
-                Sign in by email
-              </Button>
-            </form>
-          )}
-          <p
-            style={{
-              margin: 0,
-              fontSize: "var(--text-xs)",
-              color: "var(--text-tertiary)",
-              textAlign: "center",
-            }}
-          >
-            By signing in, you agree to the{" "}
-            <Link href={TERMS_PATH} style={{ color: "inherit" }}>
-              terms of service
-            </Link>{" "}
-            and the{" "}
-            <Link href={PRIVACY_PATH} style={{ color: "inherit" }}>
-              privacy policy
-            </Link>
-            .
-          </p>
-        </CardContent>
+        <Stack asChild gap={3}>
+          <CardContent>
+            {error && (
+              <Alert variant="danger">
+                <IconAlertTriangle size={16} />
+                <AlertTitle as="h2">Couldn&apos;t sign you in</AlertTitle>
+                <AlertDescription>{errorMessage(error)}</AlertDescription>
+              </Alert>
+            )}
+            {providers.length === 0 && !devSignIn && (
+              <Alert variant="warning">
+                <IconAlertTriangle size={16} />
+                <AlertTitle as="h2">No sign-in providers configured</AlertTitle>
+                <AlertDescription>
+                  Set AUTH_GITHUB_ID/AUTH_GITHUB_SECRET or AUTH_GITLAB_ID/AUTH_GITLAB_SECRET.
+                </AlertDescription>
+              </Alert>
+            )}
+            {providers.map(({ id, name }) => {
+              const Icon = providerIcons[id];
+              return (
+                <Button
+                  key={id}
+                  variant="secondary"
+                  disabled={pending !== null}
+                  onClick={() => signIn(id)}
+                  className="w-full"
+                >
+                  <Icon size={16} />
+                  {pending === id ? `Redirecting to ${name}…` : `Continue with ${name}`}
+                </Button>
+              );
+            })}
+            {devSignIn && (
+              <Stack asChild gap={2}>
+                <form action={DEV_SIGN_IN_PATH} method="get">
+                  <input type="hidden" name="callbackUrl" value={callbackUrl} />
+                  <Field
+                    label="Dev sign-in"
+                    htmlFor="dev-sign-in-email"
+                    description="Development only (OMNIRALPH_DEV_SIGNIN=1): signs in as an existing user, e.g. admin@fixtures.example."
+                  >
+                    <Input id="dev-sign-in-email" name="email" type="email" required />
+                  </Field>
+                  <Button type="submit" variant="secondary" className="w-full">
+                    Sign in by email
+                  </Button>
+                </form>
+              </Stack>
+            )}
+            <p className="auth-fine-print">
+              By signing in, you agree to the <Link href={TERMS_PATH}>terms of service</Link> and
+              the <Link href={PRIVACY_PATH}>privacy policy</Link>.
+            </p>
+          </CardContent>
+        </Stack>
       </Card>
     </>
   );

@@ -11,10 +11,12 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Field,
   Input,
   Muted,
   SonnerToaster,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconBuilding, IconLogout, IconPlus } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
@@ -48,33 +50,11 @@ interface OnboardingViewProps {
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
 
-const rowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-3)",
-  padding: "var(--space-3) var(--space-4)",
-  borderRadius: "var(--radius-md)",
-  border: "1px solid var(--border-subtle)",
-};
-
 function OrganizationName({ name, detail }: { name: string; detail?: string }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div
-        style={{
-          fontSize: "var(--text-sm)",
-          color: "var(--text-primary)",
-          fontWeight: 500,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {name}
-      </div>
-      {detail && (
-        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{detail}</div>
-      )}
+    <div className="min-w-0 flex-1">
+      <div className="truncate text-sm font-medium text-text-primary">{name}</div>
+      {detail && <div className="text-xs text-text-tertiary">{detail}</div>}
     </div>
   );
 }
@@ -112,25 +92,24 @@ function CreateOrganizationCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form
-          onSubmit={submit}
-          style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
-        >
-          <Field label="Name" htmlFor="organization-name" required>
-            <Input
-              id="organization-name"
-              required
-              maxLength={100}
-              placeholder="Acme"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
-            <IconPlus size={14} />
-            {pending ? "Creating…" : "Create organization"}
-          </Button>
-        </form>
+        <Stack asChild gap={3}>
+          <form onSubmit={submit}>
+            <Field label="Name" htmlFor="organization-name" required>
+              <Input
+                id="organization-name"
+                required
+                maxLength={100}
+                placeholder="Acme"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
+              <IconPlus size={14} />
+              {pending ? "Creating…" : "Create organization"}
+            </Button>
+          </form>
+        </Stack>
       </CardContent>
     </Card>
   );
@@ -140,7 +119,7 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
   const { pending, run, open } = useOrganizationAction();
   const router = useRouter();
   return (
-    <div style={rowStyle}>
+    <div className="onboarding-row">
       <OrganizationName
         name={invitation.organizationName}
         detail={`${roleLabel[invitation.role]} · expires ${new Date(invitation.expiresAt).toLocaleDateString()}`}
@@ -179,7 +158,7 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
 function JoinableOrganization({ organization }: { organization: { id: string; name: string } }) {
   const { pending, open } = useOrganizationAction();
   return (
-    <div style={rowStyle}>
+    <div className="onboarding-row">
       <OrganizationName name={organization.name} detail="Open to your email domain" />
       <Button
         variant="secondary"
@@ -198,7 +177,7 @@ function JoinableOrganization({ organization }: { organization: { id: string; na
 function Membership({ organization }: { organization: { id: string; name: string; role: Role } }) {
   const { pending, open } = useOrganizationAction();
   return (
-    <div style={rowStyle}>
+    <div className="onboarding-row">
       <OrganizationName name={organization.name} />
       <Badge variant="neutral">{roleLabel[organization.role]}</Badge>
       <Button
@@ -230,9 +209,9 @@ function ListCard({
         <CardTitle as="h2">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-        {children}
-      </CardContent>
+      <Stack asChild gap={2}>
+        <CardContent>{children}</CardContent>
+      </Stack>
     </Card>
   );
 }
@@ -248,10 +227,10 @@ export function OnboardingView({
   return (
     <>
       <AuthBrand />
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <IconBuilding size={18} style={{ color: "var(--text-accent)" }} />
-          <h1 style={{ margin: 0, fontSize: "var(--text-xl)", fontWeight: 600 }}>
+      <Stack>
+        <div className="auth-title-row">
+          <IconBuilding size={18} className="text-text-accent" />
+          <h1 className="onboarding-title">
             {hasActiveOrganization ? "Organizations" : "Choose an organization"}
           </h1>
         </div>
@@ -291,7 +270,7 @@ export function OnboardingView({
 
         <CreateOrganizationCard />
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)" }}>
+        <Cluster justify="between" gap={2}>
           {hasActiveOrganization ? (
             <Button asChild variant="ghost">
               <Link href="/">Back to the control panel</Link>
@@ -307,8 +286,8 @@ export function OnboardingView({
             <IconLogout size={14} />
             Sign out
           </Button>
-        </div>
-      </div>
+        </Cluster>
+      </Stack>
       <SonnerToaster position="bottom-right" />
     </>
   );

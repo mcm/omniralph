@@ -22,11 +22,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Field,
   Input,
   Muted,
   NativeSelect,
   Separator,
+  Stack,
   Switch,
 } from "@iamthemcmaster/ui";
 import { IconDoorExit, IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
@@ -100,7 +102,7 @@ function RoleSelect({
       onChange={(e) => {
         if (isRole(e.target.value)) onChange(e.target.value);
       }}
-      style={{ width: 120 }}
+      className="org-role-select"
       {...props}
     >
       <option value="member">Member</option>
@@ -154,29 +156,13 @@ function DangerIconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      style={{ color: "var(--danger-fg)" }}
+      className="org-danger-icon"
       {...props}
     >
       {children}
     </Button>
   );
 }
-
-const rowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-3)",
-  padding: "var(--space-3) 0",
-};
-
-const secondaryLine: React.CSSProperties = {
-  fontSize: "var(--text-xs)",
-  color: "var(--text-tertiary)",
-  fontFamily: "var(--font-mono)",
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
 
 // ── General ───────────────────────────────────────────────────────────────────
 
@@ -198,30 +184,29 @@ function GeneralCard({ name, isAdmin }: { name: string; isAdmin: boolean }) {
         <CardDescription>The organization&apos;s name, shown to its members.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form
-          onSubmit={submit}
-          style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-3)" }}
-        >
-          <Field label="Name" htmlFor="organization-name" required style={{ flex: 1 }}>
-            <Input
-              id="organization-name"
-              required
-              maxLength={MAX_ORGANIZATION_NAME_LENGTH}
-              value={value}
-              disabled={!isAdmin}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          </Field>
-          {isAdmin && (
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={pending || !trimmed || trimmed === name}
-            >
-              {pending ? "Saving…" : "Rename"}
-            </Button>
-          )}
-        </form>
+        <Cluster gap={3} align="end" asChild>
+          <form onSubmit={submit}>
+            <Field label="Name" htmlFor="organization-name" required className="flex-1">
+              <Input
+                id="organization-name"
+                required
+                maxLength={MAX_ORGANIZATION_NAME_LENGTH}
+                value={value}
+                disabled={!isAdmin}
+                onChange={(e) => setValue(e.target.value)}
+              />
+            </Field>
+            {isAdmin && (
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={pending || !trimmed || trimmed === name}
+              >
+                {pending ? "Saving…" : "Rename"}
+              </Button>
+            )}
+          </form>
+        </Cluster>
       </CardContent>
     </Card>
   );
@@ -241,35 +226,22 @@ function Member({
   const { pending, run } = useAction();
   const name = userDisplayName(member);
   return (
-    <div style={rowStyle}>
-      <Avatar style={{ width: 36, height: 36 }}>
+    <div className="org-row">
+      <Avatar className="org-avatar">
         {member.image && <AvatarImage src={member.image} alt="" />}
-        <AvatarFallback
-          style={{ fontSize: 12, background: "var(--bg-raised)", color: "var(--text-accent)" }}
-        >
-          {userInitials(member)}
-        </AvatarFallback>
+        <AvatarFallback className="org-avatar-fallback">{userInitials(member)}</AvatarFallback>
       </Avatar>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: "var(--text-sm)",
-            color: "var(--text-primary)",
-            fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-          }}
-        >
+      <div className="org-row-text">
+        <div className="org-row-title">
           {name}
           {isSelf && <Badge variant="neutral">You</Badge>}
         </div>
-        <div style={secondaryLine}>
+        <div className="org-row-secondary">
           {member.email ?? "no email"} · joined {new Date(member.joinedAt).toLocaleDateString()}
         </div>
       </div>
       {isAdmin ? (
-        <>
+        <div className="org-row-actions">
           <RoleSelect
             aria-label={`Role for ${name}`}
             value={member.role}
@@ -292,7 +264,7 @@ function Member({
               </DangerIconButton>
             }
           />
-        </>
+        </div>
       ) : (
         <Badge variant="neutral">{roleLabel[member.role]}</Badge>
       )}
@@ -321,7 +293,7 @@ function MembersCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div>
           {members.map((member, i) => (
             <React.Fragment key={member.id}>
               <Member member={member} isSelf={member.id === currentUserId} isAdmin={isAdmin} />
@@ -339,30 +311,33 @@ function MembersCard({
 function Invitation({ invitation }: { invitation: InvitationRow }) {
   const { pending, run } = useAction();
   return (
-    <div style={rowStyle}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)", fontWeight: 500 }}>
-          {invitation.email}
-        </div>
-        <div style={secondaryLine}>
+    <div className="org-row">
+      <div className="org-row-text">
+        <div className="org-row-title">{invitation.email}</div>
+        <div className="org-row-secondary">
           invited {formatDateTime(invitation.createdAt)} · expires{" "}
           {formatDateTime(invitation.expiresAt)}
         </div>
       </div>
-      <Badge variant="neutral">{roleLabel[invitation.role]}</Badge>
-      <Confirm
-        title={`Revoke the invitation for ${invitation.email}?`}
-        description="They can no longer accept it. You can invite them again afterwards."
-        action="Revoke"
-        onConfirm={() =>
-          run(() => revokeInvitationAction(invitation.id), `Revoked ${invitation.email}`)
-        }
-        trigger={
-          <DangerIconButton label={`Revoke invitation for ${invitation.email}`} disabled={pending}>
-            <IconX size={14} />
-          </DangerIconButton>
-        }
-      />
+      <div className="org-row-actions">
+        <Badge variant="neutral">{roleLabel[invitation.role]}</Badge>
+        <Confirm
+          title={`Revoke the invitation for ${invitation.email}?`}
+          description="They can no longer accept it. You can invite them again afterwards."
+          action="Revoke"
+          onConfirm={() =>
+            run(() => revokeInvitationAction(invitation.id), `Revoked ${invitation.email}`)
+          }
+          trigger={
+            <DangerIconButton
+              label={`Revoke invitation for ${invitation.email}`}
+              disabled={pending}
+            >
+              <IconX size={14} />
+            </DangerIconButton>
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -402,43 +377,44 @@ function InvitationsCard({
           {domains.length > 0 && ` Only emails in ${domains.join(", ")} can be invited.`}
         </CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-        <form
-          onSubmit={submit}
-          style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-3)" }}
-        >
-          <Field label="Email" htmlFor="invite-email" required style={{ flex: 1 }}>
-            <Input
-              id="invite-email"
-              type="email"
-              required
-              autoComplete="off"
-              placeholder="name@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <Field label="Role" htmlFor="invite-role">
-            <RoleSelect id="invite-role" aria-label="Role" value={role} onChange={setRole} />
-          </Field>
-          <Button type="submit" variant="primary" disabled={pending || !email.trim()}>
-            <IconMailPlus size={14} />
-            {pending ? "Inviting…" : "Invite"}
-          </Button>
-        </form>
-        {invitations.length === 0 ? (
-          <Muted>No pending invitations.</Muted>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {invitations.map((invitation, i) => (
-              <React.Fragment key={invitation.id}>
-                <Invitation invitation={invitation} />
-                {i < invitations.length - 1 && <Separator />}
-              </React.Fragment>
-            ))}
-          </div>
-        )}
-      </CardContent>
+      <Stack gap={3} asChild>
+        <CardContent>
+          <Cluster gap={3} align="end" asChild>
+            <form onSubmit={submit}>
+              <Field label="Email" htmlFor="invite-email" required className="flex-1">
+                <Input
+                  id="invite-email"
+                  type="email"
+                  required
+                  autoComplete="off"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Role" htmlFor="invite-role">
+                <RoleSelect id="invite-role" aria-label="Role" value={role} onChange={setRole} />
+              </Field>
+              <Button type="submit" variant="primary" disabled={pending || !email.trim()}>
+                <IconMailPlus size={14} />
+                {pending ? "Inviting…" : "Invite"}
+              </Button>
+            </form>
+          </Cluster>
+          {invitations.length === 0 ? (
+            <Muted>No pending invitations.</Muted>
+          ) : (
+            <div>
+              {invitations.map((invitation, i) => (
+                <React.Fragment key={invitation.id}>
+                  <Invitation invitation={invitation} />
+                  {i < invitations.length - 1 && <Separator />}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Stack>
     </Card>
   );
 }
@@ -448,10 +424,8 @@ function InvitationsCard({
 function Domain({ domain, isAdmin }: { domain: string; isAdmin: boolean }) {
   const { pending, run } = useAction();
   return (
-    <div style={{ ...rowStyle, padding: "var(--space-2) 0" }}>
-      <span style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
-        {domain}
-      </span>
+    <div className="org-row org-row-compact">
+      <span className="flex-1 font-mono text-sm">{domain}</span>
       {isAdmin && (
         <DangerIconButton
           label={`Remove ${domain}`}
@@ -498,65 +472,63 @@ function DomainsCard({
           when the domains change.
         </CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-        {domains.length === 0 ? (
-          <Muted>No domains: anyone can be invited.</Muted>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {domains.map((d) => (
-              <Domain key={d} domain={d} isAdmin={isAdmin} />
-            ))}
-          </div>
-        )}
-        {isAdmin && (
-          <form
-            onSubmit={submit}
-            style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-3)" }}
-          >
-            <Field label="Domain" htmlFor="organization-domain" style={{ flex: 1 }}>
-              <Input
-                id="organization-domain"
-                required
-                autoComplete="off"
-                placeholder="example.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-              />
-            </Field>
-            <Button type="submit" disabled={add.pending || !domain.trim()}>
-              <IconPlus size={14} />
-              Add domain
-            </Button>
-          </form>
-        )}
-        <Separator />
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-          <div style={{ flex: 1 }}>
-            <label
-              htmlFor="allow-domain-join"
-              style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)", fontWeight: 500 }}
-            >
-              Allow anyone with a matching email to join
-            </label>
-            <Muted style={{ display: "block" }}>
-              Signed-in users with an email in these domains can join as members without an
-              invitation.
-              {domains.length === 0 && " Add a domain first."}
-            </Muted>
-          </div>
-          <Switch
-            id="allow-domain-join"
-            checked={allowDomainJoin}
-            disabled={!isAdmin || toggle.pending || (domains.length === 0 && !allowDomainJoin)}
-            onCheckedChange={(enabled) =>
-              toggle.run(
-                () => setAllowDomainJoin(enabled),
-                enabled ? "Anyone with a matching email can join" : "Joining by email turned off",
-              )
-            }
-          />
-        </div>
-      </CardContent>
+      <Stack gap={3} asChild>
+        <CardContent>
+          {domains.length === 0 ? (
+            <Muted>No domains: anyone can be invited.</Muted>
+          ) : (
+            <div>
+              {domains.map((d) => (
+                <Domain key={d} domain={d} isAdmin={isAdmin} />
+              ))}
+            </div>
+          )}
+          {isAdmin && (
+            <Cluster gap={3} align="end" asChild>
+              <form onSubmit={submit}>
+                <Field label="Domain" htmlFor="organization-domain" className="flex-1">
+                  <Input
+                    id="organization-domain"
+                    required
+                    autoComplete="off"
+                    placeholder="example.com"
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                  />
+                </Field>
+                <Button type="submit" disabled={add.pending || !domain.trim()}>
+                  <IconPlus size={14} />
+                  Add domain
+                </Button>
+              </form>
+            </Cluster>
+          )}
+          <Separator />
+          <Cluster gap={3}>
+            <div className="flex-1">
+              <label htmlFor="allow-domain-join" className="settings-group-label">
+                Allow anyone with a matching email to join
+              </label>
+              <Muted>
+                Signed-in users with an email in these domains can join as members without an
+                invitation.
+                {domains.length === 0 && " Add a domain first."}
+              </Muted>
+            </div>
+            <Switch
+              id="allow-domain-join"
+              checked={allowDomainJoin}
+              disabled={!isAdmin || toggle.pending || (domains.length === 0 && !allowDomainJoin)}
+              onCheckedChange={(enabled) =>
+                toggle.run(
+                  () => setAllowDomainJoin(enabled),
+                  enabled ? "Anyone with a matching email can join" : "Joining by email turned off",
+                )
+              }
+            />
+          </Cluster>
+        </CardContent>
+      </Stack>
     </Card>
   );
 }
@@ -615,16 +587,7 @@ export function OrganizationSettingsView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Organization" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={organization.name}
           description={

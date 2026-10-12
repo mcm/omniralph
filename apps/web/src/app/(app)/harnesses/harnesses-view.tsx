@@ -10,6 +10,7 @@ import {
   Empty,
   InlineCode,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -39,8 +40,6 @@ interface HarnessesViewProps {
   now: number;
 }
 
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-
 function HarnessTableRow({
   harness,
   isAdmin,
@@ -53,19 +52,16 @@ function HarnessTableRow({
   return (
     <TableRow>
       <TableCell>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+        <Stack gap={1}>
           {isAdmin ? (
-            <Link
-              href={`/harnesses/${harness.id}`}
-              style={{ color: "var(--text-primary)", fontWeight: 500, textDecoration: "none" }}
-            >
+            <Link href={`/harnesses/${harness.id}`} className="list-text-primary font-medium">
               {harness.name}
             </Link>
           ) : (
-            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{harness.name}</span>
+            <span className="text-text-primary font-medium">{harness.name}</span>
           )}
           <HarnessStatusBadge harness={harness} />
-        </div>
+        </Stack>
       </TableCell>
       <TableCell>
         <HarnessVersionCell harness={harness} />
@@ -74,22 +70,22 @@ function HarnessTableRow({
         <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
       </TableCell>
       <TableCell>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-          <span style={cellText}>
+        <Stack gap={1}>
+          <span className="list-text">
             {harness.runningJobs.length} / {harness.maxConcurrency}
           </span>
           <Muted>Pools: {formatPoolLimits(harness.effectivePoolLimits)}</Muted>
           {harness.runningJobs.map((job) => (
             <JobTargetLink key={job.id} job={job} />
           ))}
-        </div>
+        </Stack>
       </TableCell>
       <TableCell>
         <RepositoryBadges repositories={harness.pinnedRepositories} />
       </TableCell>
       <TableCell>
         {harness.lastHeartbeatAt ? (
-          <span style={cellText}>{formatRelative(harness.lastHeartbeatAt, now)}</span>
+          <span className="list-text">{formatRelative(harness.lastHeartbeatAt, now)}</span>
         ) : (
           <Muted>Never</Muted>
         )}
@@ -103,16 +99,7 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Harnesses" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Harnesses"
           description={

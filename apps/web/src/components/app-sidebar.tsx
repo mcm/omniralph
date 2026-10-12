@@ -61,61 +61,21 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
   return (
     <SidebarRoot>
       {!collapsed && (
-        <SidebarHeader
-          style={{
-            height: 52,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 12px",
-            borderBottom: "1px solid var(--border-subtle)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <div
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "var(--radius-sm)",
-                background: "var(--accent)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--accent-fg)",
-                  fontWeight: 600,
-                }}
-              >
-                O
-              </span>
+        <SidebarHeader className="sidebar-header">
+          <div className="sidebar-brand">
+            <div className="sidebar-brand-mark">
+              <span className="font-mono font-semibold text-ui-xs text-accent-fg">O</span>
             </div>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-xs)",
-                color: "var(--text-accent)",
-                letterSpacing: ".12em",
-              }}
-            >
-              OMNIRALPH
-            </span>
+            <span className="sidebar-brand-name">OMNIRALPH</span>
           </div>
           <SidebarTrigger />
         </SidebarHeader>
       )}
 
       <SidebarContent>
-        {collapsed && <SidebarTrigger style={{ margin: "var(--space-2) auto" }} />}
+        {collapsed && <SidebarTrigger className="mx-auto my-2" />}
 
-        <div
-          style={{ padding: collapsed ? "var(--space-1) 0" : "var(--space-2) var(--space-2) 0" }}
-        >
+        <div className={collapsed ? "sidebar-org sidebar-org-collapsed" : "sidebar-org"}>
           <OrganizationSwitcher organizations={organizations} collapsed={collapsed} />
         </div>
 
@@ -138,45 +98,15 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
         ))}
       </SidebarContent>
 
-      <SidebarFooter
-        style={{
-          padding: "var(--space-3)",
-          borderTop: "1px solid var(--border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-2)",
-        }}
-      >
-        <Avatar style={{ width: 28, height: 28, flexShrink: 0 }}>
+      <SidebarFooter className="sidebar-footer">
+        <Avatar className="sidebar-avatar">
           {user.image && <AvatarImage src={user.image} alt="" />}
-          <AvatarFallback
-            style={{ fontSize: 11, background: "var(--bg-raised)", color: "var(--text-secondary)" }}
-          >
-            {userInitials(user)}
-          </AvatarFallback>
+          <AvatarFallback className="sidebar-avatar-fallback">{userInitials(user)}</AvatarFallback>
         </Avatar>
         {!collapsed && (
-          <div style={{ overflow: "hidden", flex: 1 }}>
-            <div
-              style={{
-                fontSize: "var(--text-sm)",
-                color: "var(--text-primary)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {userDisplayName(user)}
-            </div>
-            <div
-              style={{
-                fontSize: "var(--text-xs)",
-                color: "var(--text-tertiary)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="truncate text-sm text-text-primary">{userDisplayName(user)}</div>
+            <div className="truncate text-xs text-text-tertiary">
               {user.role === "admin" ? "Admin" : "Member"}
             </div>
           </div>

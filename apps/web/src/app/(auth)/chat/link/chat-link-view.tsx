@@ -61,7 +61,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
       <AuthBrand />
       <Card>
         <CardHeader>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <div className="auth-title-row">
             <IconLink size={18} />
             <CardTitle as="h1">
               {linked ? `${platform} account linked` : `Link ${platform} account`}
@@ -83,7 +83,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
           </CardDescription>
         </CardHeader>
         {!linked && (
-          <CardContent style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+          <CardContent className="text-sm text-text-secondary">
             The bot in {confirmation.connectionName} will act as you for this {platform} user. Only
             link an account that is yours.
           </CardContent>

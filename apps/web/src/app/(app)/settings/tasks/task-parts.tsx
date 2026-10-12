@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Badge } from "@iamthemcmaster/ui";
+import { Badge, Cluster } from "@iamthemcmaster/ui";
 import type { TaskType } from "@omniralph/tasks";
-import { agentHref, mono } from "../agents/agent-parts";
+import { agentHref } from "../agents/agent-parts";
 
 /** The path of a task's detail page (built-in IDs contain a colon). */
 export function taskHref(id: string): string {
@@ -22,21 +22,21 @@ export const TASK_TYPE_LABELS: Record<TaskType, string> = {
 
 export function TriggerBadges({ triggers }: { triggers: readonly string[] }) {
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+    <Cluster gap={1}>
       {triggers.map((trigger) => (
         <Badge key={trigger} variant="neutral">
           {trigger}
         </Badge>
       ))}
-    </div>
+    </Cluster>
   );
 }
 
 /** A task's agent: its name linking to its page, or the bare ID when it doesn't resolve. */
 export function AgentLink({ id, name }: { id: string; name: string | null }) {
-  if (name === null) return <span style={{ ...mono, color: "var(--text-secondary)" }}>{id}</span>;
+  if (name === null) return <span className="font-mono text-xs text-text-secondary">{id}</span>;
   return (
-    <Link href={agentHref(id)} style={{ color: "var(--text-primary)", fontSize: "var(--text-sm)" }}>
+    <Link href={agentHref(id)} className="text-sm text-text-primary">
       {name}
     </Link>
   );

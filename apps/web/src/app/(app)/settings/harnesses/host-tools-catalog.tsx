@@ -12,10 +12,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
   Button,
+  Cluster,
   Empty,
   Field,
   Input,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -33,9 +35,6 @@ export interface HostToolCatalogRow {
   name: string;
   description: string | null;
 }
-
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" } as const;
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-4)" } as const;
 
 function DeleteHostTool({ tool }: { tool: HostToolCatalogRow }) {
   const { pending, run } = useAction();
@@ -87,53 +86,55 @@ function AddHostToolForm() {
   };
 
   return (
-    <form onSubmit={submit} style={stack} aria-label="Add a host tool">
-      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-        <Field
-          label="Name"
-          htmlFor="host-tool-name"
-          description="The executable's name, e.g. semgrep: lowercase letters, digits, dots, dashes and underscores."
-          style={{ flex: 1, minWidth: "12rem" }}
-        >
-          <Input
-            id="host-tool-name"
-            name="name"
-            required
-            disabled={pending}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)" }}
-          />
-        </Field>
-        <Field
-          label="Description"
-          htmlFor="host-tool-description"
-          description="Optional: what it's for or how to install it."
-          style={{ flex: 2, minWidth: "16rem" }}
-        >
-          <Input
-            id="host-tool-description"
-            name="description"
-            disabled={pending}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </Field>
-      </div>
-      <div>
-        <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
-          <IconPlus size={14} />
-          {pending ? "Adding…" : "Add host tool"}
-        </Button>
-      </div>
-    </form>
+    <Stack asChild>
+      <form onSubmit={submit} aria-label="Add a host tool">
+        <Cluster gap={4} align="stretch">
+          <Field
+            label="Name"
+            htmlFor="host-tool-name"
+            description="The executable's name, e.g. semgrep: lowercase letters, digits, dots, dashes and underscores."
+            className="host-tools-name"
+          >
+            <Input
+              id="host-tool-name"
+              name="name"
+              required
+              disabled={pending}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+          <Field
+            label="Description"
+            htmlFor="host-tool-description"
+            description="Optional: what it's for or how to install it."
+            className="host-tools-description"
+          >
+            <Input
+              id="host-tool-description"
+              name="description"
+              disabled={pending}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </Field>
+        </Cluster>
+        <div>
+          <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
+            <IconPlus size={14} />
+            {pending ? "Adding…" : "Add host tool"}
+          </Button>
+        </div>
+      </form>
+    </Stack>
   );
 }
 
 /** The organization's host tools, by name, with a form to add one. */
 export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[] }) {
   return (
-    <div style={stack}>
+    <Stack>
       {hostTools.length === 0 ? (
         <Empty
           icon={<IconTool size={24} />}
@@ -154,16 +155,16 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
             {hostTools.map((tool) => (
               <TableRow key={tool.id} data-host-tool={tool.name}>
                 <TableCell>
-                  <span style={mono}>{tool.name}</span>
+                  <span className="font-mono text-sm">{tool.name}</span>
                 </TableCell>
                 <TableCell>
                   {tool.description ? (
-                    <span style={{ fontSize: "var(--text-sm)" }}>{tool.description}</span>
+                    <span className="text-sm">{tool.description}</span>
                   ) : (
                     <Muted>—</Muted>
                   )}
                 </TableCell>
-                <TableCell style={{ textAlign: "right" }}>
+                <TableCell className="text-right">
                   <DeleteHostTool tool={tool} />
                 </TableCell>
               </TableRow>
@@ -172,6 +173,6 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
         </Table>
       )}
       <AddHostToolForm />
-    </div>
+    </Stack>
   );
 }

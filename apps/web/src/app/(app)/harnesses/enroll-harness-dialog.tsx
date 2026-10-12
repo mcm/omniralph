@@ -17,6 +17,7 @@ import {
   Field,
   Input,
   notify,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
@@ -38,25 +39,6 @@ async function copy(text: string, what: string) {
   }
 }
 
-const secretRow = {
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-3)",
-  padding: "var(--space-3) var(--space-4)",
-  background: "var(--bg-raised)",
-  borderRadius: "var(--radius-md)",
-  border: "1px solid var(--border-subtle)",
-} as const;
-
-const secretText = {
-  flex: 1,
-  minWidth: 0,
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--text-xs)",
-  color: "var(--text-primary)",
-  wordBreak: "break-all",
-} as const;
-
 /** A one-time secret row, following the template's API-key display. */
 function SecretRow({
   icon,
@@ -68,9 +50,9 @@ function SecretRow({
   value: string;
 }) {
   return (
-    <div style={secretRow}>
+    <div className="harness-raised-row harness-secret-row">
       {icon}
-      <div style={secretText} aria-label={label}>
+      <div className="harness-secret-text" aria-label={label}>
         {value}
       </div>
       <Button size="sm" variant="ghost" onClick={() => copy(value, label)}>
@@ -125,42 +107,32 @@ export function EnrollHarnessDialog() {
                 expires {formatDateTime(enrollment.expiresAt)}.
               </DialogDescription>
             </DialogHeader>
-            <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-              <Alert variant="warning">
-                <AlertTitle as="h3">Shown once</AlertTitle>
-                <AlertDescription>
-                  Copy it now: only its hash is stored, so it can&apos;t be shown again. Treat it
-                  like a password.
-                </AlertDescription>
-              </Alert>
-              <SecretRow
-                icon={
-                  <IconPackage
-                    size={14}
-                    style={{ color: "var(--text-secondary)", flexShrink: 0 }}
-                  />
-                }
-                label="Install command"
-                value={HARNESS_INSTALL_COMMAND}
-              />
-              <SecretRow
-                icon={
-                  <IconTerminal2
-                    size={14}
-                    style={{ color: "var(--text-secondary)", flexShrink: 0 }}
-                  />
-                }
-                label="Enroll command"
-                value={enrollment.command}
-              />
-              <SecretRow
-                icon={
-                  <IconKey size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
-                }
-                label="Token"
-                value={enrollment.token}
-              />
-            </DialogBody>
+            <Stack asChild gap={3}>
+              <DialogBody>
+                <Alert variant="warning">
+                  <AlertTitle as="h3">Shown once</AlertTitle>
+                  <AlertDescription>
+                    Copy it now: only its hash is stored, so it can&apos;t be shown again. Treat it
+                    like a password.
+                  </AlertDescription>
+                </Alert>
+                <SecretRow
+                  icon={<IconPackage size={14} className="shrink-0 text-text-secondary" />}
+                  label="Install command"
+                  value={HARNESS_INSTALL_COMMAND}
+                />
+                <SecretRow
+                  icon={<IconTerminal2 size={14} className="shrink-0 text-text-secondary" />}
+                  label="Enroll command"
+                  value={enrollment.command}
+                />
+                <SecretRow
+                  icon={<IconKey size={14} className="shrink-0 text-text-secondary" />}
+                  label="Token"
+                  value={enrollment.token}
+                />
+              </DialogBody>
+            </Stack>
             <DialogFooter>
               <Button variant="primary" onClick={() => onOpenChange(false)}>
                 Done

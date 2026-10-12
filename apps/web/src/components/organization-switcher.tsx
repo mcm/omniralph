@@ -55,47 +55,24 @@ export function OrganizationSwitcher({
           disabled={pending}
           aria-label={`Organization: ${active.name}. Switch organization`}
           title={collapsed ? active.name : undefined}
-          style={
-            collapsed
-              ? { margin: "0 auto" }
-              : { width: "100%", justifyContent: "flex-start", gap: "var(--space-2)" }
-          }
+          className={collapsed ? "mx-auto" : "org-switcher-trigger"}
         >
-          <IconBuilding size={16} style={{ color: "var(--text-accent)", flexShrink: 0 }} />
+          <IconBuilding size={16} className="shrink-0 text-text-accent" />
           {!collapsed && (
             <>
-              <span
-                style={{
-                  flex: 1,
-                  textAlign: "left",
-                  fontSize: "var(--text-sm)",
-                  color: "var(--text-primary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <span className="flex-1 truncate text-left text-sm text-text-primary">
                 {active.name}
               </span>
-              <IconSelector size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+              <IconSelector size={14} className="shrink-0 text-text-tertiary" />
             </>
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" style={{ minWidth: 220 }}>
+      <DropdownMenuContent align="start" className="org-switcher-menu">
         <DropdownMenuLabel>Organizations</DropdownMenuLabel>
         {organizations.map((organization) => (
           <DropdownMenuItem key={organization.id} onSelect={() => select(organization)}>
-            <span
-              style={{
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {organization.name}
-            </span>
+            <span className="flex-1 truncate">{organization.name}</span>
             {organization.id === active.id && <IconCheck size={14} aria-label="Active" />}
           </DropdownMenuItem>
         ))}

@@ -41,6 +41,7 @@ import {
   InlineCode,
   Input,
   Muted,
+  Stack,
   Switch,
   Table,
   TableBody,
@@ -128,7 +129,7 @@ export function ProviderIcon({
     <Icon
       size={size}
       aria-label={provider === "github" ? "GitHub" : "GitLab"}
-      style={{ color: "var(--text-secondary)", flexShrink: 0 }}
+      className="shrink-0 text-text-secondary"
     />
   );
 }
@@ -179,34 +180,36 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
               merge request and comment events.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-            <Field
-              label="GitLab URL"
-              htmlFor="gitlab-url"
-              description="gitlab.com or your self-managed instance."
-              required
-            >
-              <Input
-                id="gitlab-url"
-                type="url"
+          <Stack asChild gap={4}>
+            <DialogBody>
+              <Field
+                label="GitLab URL"
+                htmlFor="gitlab-url"
+                description="gitlab.com or your self-managed instance."
                 required
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://gitlab.com"
-              />
-            </Field>
-            <Field label="Access token" htmlFor="gitlab-token" required>
-              <Input
-                id="gitlab-token"
-                type="password"
-                required
-                autoComplete="off"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="glpat-…"
-              />
-            </Field>
-          </DialogBody>
+              >
+                <Input
+                  id="gitlab-url"
+                  type="url"
+                  required
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://gitlab.com"
+                />
+              </Field>
+              <Field label="Access token" htmlFor="gitlab-token" required>
+                <Input
+                  id="gitlab-token"
+                  type="password"
+                  required
+                  autoComplete="off"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="glpat-…"
+                />
+              </Field>
+            </DialogBody>
+          </Stack>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
@@ -383,22 +386,10 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
   const { pending, run } = useAction();
   const kind = connection.provider === "github" ? "GitHub installation" : "GitLab connection";
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--space-2)",
-        padding: "var(--space-3) var(--space-4)",
-        background: "var(--bg-raised)",
-        borderRadius: "var(--radius-md)",
-        border: "1px solid var(--border-subtle)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+    <Stack gap={2} className="repo-panel">
+      <div className="repo-row">
         <ProviderIcon provider={connection.provider} size={14} />
-        <span style={{ flex: 1, fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
-          {connection.name}
-        </span>
+        <span className="flex-1 text-sm text-text-primary">{connection.name}</span>
         <Button asChild variant="ghost" size="sm">
           <Link href={`/repositories/${connection.provider}/${connection.id}`}>
             <IconSettings size={14} />
@@ -413,7 +404,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
               disabled={pending}
               aria-label={`Remove ${connection.name}`}
               title={`Remove ${connection.name}`}
-              style={{ color: "var(--danger-fg)" }}
+              className="list-text-danger"
             >
               <IconTrash size={14} />
             </Button>
@@ -447,7 +438,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
       {connection.provider === "gitlab" && (
         <ConnectionHealth health={connection.health} isAdmin={isAdmin} />
       )}
-    </div>
+    </Stack>
   );
 }
 
@@ -509,16 +500,7 @@ export function RepositoriesView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Repositories" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Repositories"
           description="Pull and merge requests in enabled repositories are reviewed automatically when they're opened or pushed to."
@@ -626,19 +608,19 @@ export function RepositoriesView({
                 history from this organization.
               </CardDescription>
             </CardHeader>
-            <CardContent
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
-            >
-              {connections.map((connection) => (
-                <ConnectionItem key={connection.id} connection={connection} isAdmin={isAdmin} />
-              ))}
-              {githubInstallUrl && connections.some((c) => c.provider === "github") && (
-                <Muted style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                  <IconExternalLink size={12} />
-                  Repositories missing? Add them to the installation on GitHub via Connect GitHub.
-                </Muted>
-              )}
-            </CardContent>
+            <Stack asChild gap={2}>
+              <CardContent>
+                {connections.map((connection) => (
+                  <ConnectionItem key={connection.id} connection={connection} isAdmin={isAdmin} />
+                ))}
+                {githubInstallUrl && connections.some((c) => c.provider === "github") && (
+                  <Muted className="flex items-center gap-1">
+                    <IconExternalLink size={12} />
+                    Repositories missing? Add them to the installation on GitHub via Connect GitHub.
+                  </Muted>
+                )}
+              </CardContent>
+            </Stack>
           </Card>
         )}
       </main>

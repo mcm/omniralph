@@ -70,22 +70,6 @@ interface RulesViewProps {
   rules: RuleView[];
 }
 
-const stack: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-3)",
-};
-
-const ruleText: React.CSSProperties = {
-  margin: 0,
-  fontSize: "var(--text-sm)",
-  color: "var(--text-primary)",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-};
-
-const disabledRuleText: React.CSSProperties = { ...ruleText, color: "var(--text-secondary)" };
-
 /** Validates a rule's text like the server action does; returns the error message, if any. */
 function ruleTextError(text: string): string | undefined {
   const parsed = RuleInput.safeParse({ text });
@@ -159,21 +143,23 @@ function AddRuleCard({ repositoryId }: { repositoryId: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={submit} noValidate style={stack}>
-          <RuleTextField
-            id="new-rule"
-            value={text}
-            error={error}
-            onChange={setText}
-            disabled={pending}
-          />
-          <div>
-            <Button type="submit" variant="primary" disabled={pending}>
-              <IconPlus size={14} />
-              {pending ? "Adding…" : "Add rule"}
-            </Button>
-          </div>
-        </form>
+        <Stack asChild gap={3}>
+          <form onSubmit={submit} noValidate>
+            <RuleTextField
+              id="new-rule"
+              value={text}
+              error={error}
+              onChange={setText}
+              disabled={pending}
+            />
+            <div>
+              <Button type="submit" variant="primary" disabled={pending}>
+                <IconPlus size={14} />
+                {pending ? "Adding…" : "Add rule"}
+              </Button>
+            </div>
+          </form>
+        </Stack>
       </CardContent>
     </Card>
   );
@@ -323,7 +309,7 @@ function RulesTable({
       <TableBody>
         {rules.map((rule) => (
           <TableRow key={rule.id}>
-            <TableCell style={{ minWidth: 280 }}>
+            <TableCell className="repo-rule-cell">
               <Stack gap={1} align="start">
                 {/* Disabled rules are marked by a badge and secondary text, never by opacity:
                     dimming the row would also dim its working controls. */}
@@ -332,7 +318,13 @@ function RulesTable({
                     Disabled
                   </Badge>
                 )}
-                <p style={rule.enabled ? ruleText : disabledRuleText}>{rule.text}</p>
+                <p
+                  className={
+                    rule.enabled ? "repo-rule-text" : "repo-rule-text repo-rule-text-disabled"
+                  }
+                >
+                  {rule.text}
+                </p>
               </Stack>
             </TableCell>
             <TableCell>
@@ -343,7 +335,7 @@ function RulesTable({
                 rule.sourceFinding ? (
                   <Link
                     href={rule.sourceFinding.href}
-                    style={{ color: "var(--text-accent)", fontSize: "var(--text-sm)" }}
+                    className="text-sm text-text-accent"
                     title={rule.sourceFinding.path}
                   >
                     {rule.sourceFinding.title}
@@ -352,17 +344,15 @@ function RulesTable({
                   <Muted>Finding deleted</Muted>
                 )
               ) : (
-                <span style={{ fontSize: "var(--text-sm)" }}>
-                  {rule.createdBy ?? "Unknown user"}
-                </span>
+                <span className="text-sm">{rule.createdBy ?? "Unknown user"}</span>
               )}
             </TableCell>
-            <TableCell style={{ whiteSpace: "nowrap" }}>
+            <TableCell className="list-nowrap">
               <Muted>{formatDateTime(rule.createdAt)}</Muted>
             </TableCell>
             {isAdmin && (
               <TableCell>
-                <div style={{ display: "flex", gap: "var(--space-1)", justifyContent: "flex-end" }}>
+                <div className="flex justify-end gap-1">
                   <EditRuleDialog repositoryId={repositoryId} rule={rule} />
                   <DeleteRuleButton repositoryId={repositoryId} rule={rule} />
                 </div>
@@ -389,16 +379,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           { label: "Rules" },
         ]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={
             <>

@@ -8,11 +8,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Field,
   Input,
   InlineCode,
   Muted,
   NativeSelect,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useAction } from "@/components/use-action";
@@ -88,47 +90,50 @@ export function ChatTasksCard({ defaults, choices, connections }: ChatTasksSetti
           Discord. A channel can run different ones.
         </CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
-        <form
-          style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end" }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(() => saveChatTaskDefaults(chosen), "Saved the chat tasks");
-          }}
-        >
-          {ROLES.map((role) => (
-            <Field
-              key={role}
-              label={LABELS[role]}
-              htmlFor={`chat-task-${role}`}
-              style={{ flex: 1 }}
+      <Stack gap={6} asChild>
+        <CardContent>
+          <Cluster gap={3} align="end" asChild>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                run(() => saveChatTaskDefaults(chosen), "Saved the chat tasks");
+              }}
             >
-              <NativeSelect
-                id={`chat-task-${role}`}
-                value={chosen[role]}
-                disabled={pending}
-                onChange={(e) => setChosen({ ...chosen, [role]: e.target.value })}
-              >
-                <TaskOptions choices={choices[role]} value={chosen[role]} />
-              </NativeSelect>
-            </Field>
-          ))}
-          <Button type="submit" variant="primary" disabled={pending || !changed}>
-            <IconDeviceFloppy size={14} />
-            Save
-          </Button>
-        </form>
+              {ROLES.map((role) => (
+                <Field
+                  key={role}
+                  label={LABELS[role]}
+                  htmlFor={`chat-task-${role}`}
+                  className="flex-1"
+                >
+                  <NativeSelect
+                    id={`chat-task-${role}`}
+                    value={chosen[role]}
+                    disabled={pending}
+                    onChange={(e) => setChosen({ ...chosen, [role]: e.target.value })}
+                  >
+                    <TaskOptions choices={choices[role]} value={chosen[role]} />
+                  </NativeSelect>
+                </Field>
+              ))}
+              <Button type="submit" variant="primary" disabled={pending || !changed}>
+                <IconDeviceFloppy size={14} />
+                Save
+              </Button>
+            </form>
+          </Cluster>
 
-        {connections.map((connection) => (
-          <ConnectionChannels
-            key={connection.id}
-            connection={connection}
-            choices={choices}
-            pending={pending}
-            run={run}
-          />
-        ))}
-      </CardContent>
+          {connections.map((connection) => (
+            <ConnectionChannels
+              key={connection.id}
+              connection={connection}
+              choices={choices}
+              pending={pending}
+              run={run}
+            />
+          ))}
+        </CardContent>
+      </Stack>
     </Card>
   );
 }
@@ -156,75 +161,87 @@ function ConnectionChannels({
   const prefix = `chat-channel-${connection.id}`;
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-      <strong>
-        {connection.name} <Muted>({platform})</Muted>
-      </strong>
-      {connection.channels.length === 0 ? (
-        <Muted>No channel runs different tasks.</Muted>
-      ) : (
-        connection.channels.map((override) => (
-          <ChannelRow
-            key={override.channelId}
-            connectionId={connection.id}
-            override={override}
-            choices={choices}
-            pending={pending}
-            run={run}
-          />
-        ))
-      )}
-      <form
-        style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end" }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(
-            () =>
-              saveChatChannelTasks(connection.id, channel, {
-                askAboutCode: tasks.askAboutCode || null,
-                startWork: tasks.startWork || null,
-              }),
-            `Channel ${channel.trim()} runs its own tasks`,
-            () => {
-              setChannel("");
-              setTasks({ askAboutCode: "", startWork: "" });
-            },
-          );
-        }}
-      >
-        <Field label={`${platform} channel ID`} htmlFor={`${prefix}-channel`} style={{ flex: 1 }}>
-          <Input
-            id={`${prefix}-channel`}
-            autoComplete="off"
-            placeholder={connection.platform === "slack" ? "C0123ABCD" : "123456789012345678"}
-            value={channel}
-            disabled={pending}
-            onChange={(e) => setChannel(e.target.value)}
-          />
-        </Field>
-        {ROLES.map((role) => (
-          <Field key={role} label={LABELS[role]} htmlFor={`${prefix}-${role}`} style={{ flex: 1 }}>
-            <NativeSelect
-              id={`${prefix}-${role}`}
-              value={tasks[role]}
-              disabled={pending}
-              onChange={(e) => setTasks({ ...tasks, [role]: e.target.value })}
+    <Stack gap={2} asChild>
+      <section>
+        <strong>
+          {connection.name} <Muted>({platform})</Muted>
+        </strong>
+        {connection.channels.length === 0 ? (
+          <Muted>No channel runs different tasks.</Muted>
+        ) : (
+          connection.channels.map((override) => (
+            <ChannelRow
+              key={override.channelId}
+              connectionId={connection.id}
+              override={override}
+              choices={choices}
+              pending={pending}
+              run={run}
+            />
+          ))
+        )}
+        <Cluster gap={3} align="end" asChild>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(
+                () =>
+                  saveChatChannelTasks(connection.id, channel, {
+                    askAboutCode: tasks.askAboutCode || null,
+                    startWork: tasks.startWork || null,
+                  }),
+                `Channel ${channel.trim()} runs its own tasks`,
+                () => {
+                  setChannel("");
+                  setTasks({ askAboutCode: "", startWork: "" });
+                },
+              );
+            }}
+          >
+            <Field
+              label={`${platform} channel ID`}
+              htmlFor={`${prefix}-channel`}
+              className="flex-1"
             >
-              <option value="">Organization&apos;s task</option>
-              <TaskOptions choices={choices[role]} value={tasks[role]} />
-            </NativeSelect>
-          </Field>
-        ))}
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={pending || !channel.trim() || (!tasks.askAboutCode && !tasks.startWork)}
-        >
-          <IconPlus size={14} />
-          Add channel
-        </Button>
-      </form>
-    </section>
+              <Input
+                id={`${prefix}-channel`}
+                autoComplete="off"
+                placeholder={connection.platform === "slack" ? "C0123ABCD" : "123456789012345678"}
+                value={channel}
+                disabled={pending}
+                onChange={(e) => setChannel(e.target.value)}
+              />
+            </Field>
+            {ROLES.map((role) => (
+              <Field
+                key={role}
+                label={LABELS[role]}
+                htmlFor={`${prefix}-${role}`}
+                className="flex-1"
+              >
+                <NativeSelect
+                  id={`${prefix}-${role}`}
+                  value={tasks[role]}
+                  disabled={pending}
+                  onChange={(e) => setTasks({ ...tasks, [role]: e.target.value })}
+                >
+                  <option value="">Organization&apos;s task</option>
+                  <TaskOptions choices={choices[role]} value={tasks[role]} />
+                </NativeSelect>
+              </Field>
+            ))}
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={pending || !channel.trim() || (!tasks.askAboutCode && !tasks.startWork)}
+            >
+              <IconPlus size={14} />
+              Add channel
+            </Button>
+          </form>
+        </Cluster>
+      </section>
+    </Stack>
   );
 }
 
@@ -250,12 +267,12 @@ function ChannelRow({
   const prefix = `chat-channel-${connectionId}-${override.channel}`;
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end" }}>
-      <div style={{ flex: 1, paddingBottom: "var(--space-2)" }}>
+    <Cluster gap={3} align="end">
+      <div className="flex-1 pb-2">
         <InlineCode>{override.channel}</InlineCode>
       </div>
       {ROLES.map((role) => (
-        <Field key={role} label={LABELS[role]} htmlFor={`${prefix}-${role}`} style={{ flex: 1 }}>
+        <Field key={role} label={LABELS[role]} htmlFor={`${prefix}-${role}`} className="flex-1">
           <NativeSelect
             id={`${prefix}-${role}`}
             value={tasks[role]}
@@ -298,6 +315,6 @@ function ChannelRow({
         <IconTrash size={14} />
         Remove
       </Button>
-    </div>
+    </Cluster>
   );
 }

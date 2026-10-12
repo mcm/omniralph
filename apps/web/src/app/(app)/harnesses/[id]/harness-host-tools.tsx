@@ -7,6 +7,7 @@ import {
   Empty,
   Input,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -33,8 +34,6 @@ export interface HostToolRow {
   effectivePath: string | null;
 }
 
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" } as const;
-
 function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
   if (tool.configuredPath === null) return <Muted>Not configured</Muted>;
   if (tool.configuredPathExists === null) return <Badge variant="neutral">Not checked yet</Badge>;
@@ -46,12 +45,12 @@ function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
 }
 
 function DiscoveredPath({ tool }: { tool: HostToolRow }) {
-  if (tool.discoveredPath) return <span style={mono}>{tool.discoveredPath}</span>;
+  if (tool.discoveredPath) return <span className="font-mono text-sm">{tool.discoveredPath}</span>;
   return <Muted>{tool.reportedAt ? "Not found on PATH" : "Not reported yet"}</Muted>;
 }
 
 function EffectivePath({ tool }: { tool: HostToolRow }) {
-  if (tool.effectivePath) return <span style={mono}>{tool.effectivePath}</span>;
+  if (tool.effectivePath) return <span className="font-mono text-sm">{tool.effectivePath}</span>;
   return <Badge variant="warning">unavailable</Badge>;
 }
 
@@ -72,7 +71,7 @@ function ConfiguredPathForm({ harnessId, tool }: { harnessId: string; tool: Host
   };
 
   return (
-    <form onSubmit={save} style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+    <form onSubmit={save} className="harness-inline-form">
       <Input
         id={`host-tool-path-${tool.hostToolId}`}
         aria-label={`Configured path of ${tool.name}`}
@@ -81,7 +80,7 @@ function ConfiguredPathForm({ harnessId, tool }: { harnessId: string; tool: Host
         disabled={pending}
         value={path}
         onChange={(e) => setPath(e.target.value)}
-        style={{ fontFamily: "var(--font-mono)", minWidth: "14rem" }}
+        className="harness-path-input font-mono"
       />
       <Button type="submit" variant="secondary" size="sm" disabled={pending}>
         <IconDeviceFloppy size={14} />
@@ -129,15 +128,15 @@ export function HarnessHostTools({
         {hostTools.map((tool) => (
           <TableRow key={tool.hostToolId} data-host-tool={tool.name}>
             <TableCell>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-                <span style={mono}>{tool.name}</span>
+              <Stack gap={1}>
+                <span className="font-mono text-sm">{tool.name}</span>
                 {tool.description && <Muted>{tool.description}</Muted>}
-              </div>
+              </Stack>
             </TableCell>
             <TableCell>
               {revoked ? (
                 tool.configuredPath ? (
-                  <span style={mono}>{tool.configuredPath}</span>
+                  <span className="font-mono text-sm">{tool.configuredPath}</span>
                 ) : (
                   <Muted>Not configured</Muted>
                 )

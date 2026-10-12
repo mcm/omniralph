@@ -20,8 +20,10 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   InlineCode,
   Muted,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
@@ -227,16 +229,7 @@ export function IntegrationsView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Integrations" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Integrations"
           description="Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating a Linear issue to the Omniralph app starts a ralph run."
@@ -263,10 +256,7 @@ export function IntegrationsView({
 
         <Card>
           <CardHeader>
-            <CardTitle
-              as="h2"
-              style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-            >
+            <CardTitle as="h2" className="settings-card-title">
               Linear
               {linear ? (
                 <Badge variant="success" size="sm">
@@ -289,63 +279,65 @@ export function IntegrationsView({
               )}
             </CardDescription>
           </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            {!linearConfigured && (
-              <AppNotConfiguredAlert
-                platform="Linear"
-                envVars={["LINEAR_CLIENT_ID", "LINEAR_CLIENT_SECRET", "LINEAR_WEBHOOK_SECRET"]}
-                connectedName={linear?.name ?? null}
-                ignored="delegations from Linear are rejected"
-              />
-            )}
-            <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              {linearConfigured &&
-                (linear ? (
-                  <Button asChild variant="secondary" disabled={pending}>
-                    {/* A plain link: the route redirects to Linear's consent screen. */}
-                    <a href="/api/integrations/linear/connect">
-                      <IconPlugConnected size={14} />
-                      Reconnect
-                    </a>
-                  </Button>
-                ) : (
-                  <Button asChild variant="primary">
-                    <a href="/api/integrations/linear/connect">
-                      <IconPlugConnected size={14} />
-                      Connect Linear
-                    </a>
-                  </Button>
-                ))}
-              {linear && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="danger" disabled={pending}>
-                      <IconUnlink size={14} />
-                      Disconnect
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Disconnect {linear.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Omniralph forgets the workspace&apos;s tokens and revokes them. Delegations
-                        from Linear are ignored until you connect again.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        variant="danger"
-                        onClick={() => run(disconnectLinear, `Disconnected ${linear.name}`)}
-                      >
-                        Disconnect
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+          <Stack gap={3} asChild>
+            <CardContent>
+              {!linearConfigured && (
+                <AppNotConfiguredAlert
+                  platform="Linear"
+                  envVars={["LINEAR_CLIENT_ID", "LINEAR_CLIENT_SECRET", "LINEAR_WEBHOOK_SECRET"]}
+                  connectedName={linear?.name ?? null}
+                  ignored="delegations from Linear are rejected"
+                />
               )}
-            </div>
-          </CardContent>
+              <Cluster>
+                {linearConfigured &&
+                  (linear ? (
+                    <Button asChild variant="secondary" disabled={pending}>
+                      {/* A plain link: the route redirects to Linear's consent screen. */}
+                      <a href="/api/integrations/linear/connect">
+                        <IconPlugConnected size={14} />
+                        Reconnect
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button asChild variant="primary">
+                      <a href="/api/integrations/linear/connect">
+                        <IconPlugConnected size={14} />
+                        Connect Linear
+                      </a>
+                    </Button>
+                  ))}
+                {linear && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="danger" disabled={pending}>
+                        <IconUnlink size={14} />
+                        Disconnect
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Disconnect {linear.name}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Omniralph forgets the workspace&apos;s tokens and revokes them.
+                          Delegations from Linear are ignored until you connect again.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="danger"
+                          onClick={() => run(disconnectLinear, `Disconnected ${linear.name}`)}
+                        >
+                          Disconnect
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </Cluster>
+            </CardContent>
+          </Stack>
         </Card>
 
         <ChatPlatformCard
@@ -416,7 +408,7 @@ function ChatPlatformCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <CardTitle as="h2" className="settings-card-title">
           {platform}
           {connections.length > 0 ? (
             <Badge variant="success" size="sm">
@@ -430,82 +422,76 @@ function ChatPlatformCard({
         </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-        {!configured && (
-          <AppNotConfiguredAlert
-            platform={platform}
-            envVars={envVars}
-            connectedName={
-              connections.length === 0
-                ? null
-                : connections.length === 1
-                  ? connections[0]!.name
-                  : `${connections.length} connections`
-            }
-            ignored={`mentions in ${platform} are ignored`}
-          />
-        )}
-        {connections.map((connection) => (
-          <div
-            key={connection.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--space-3)",
-            }}
-          >
-            <div>
-              <strong>{connection.name}</strong>
-              <Muted style={{ display: "block" }}>
-                Connected {formatDateTime(connection.connectedAt)}
-                {connection.installedBy && <> by {connection.installedBy}</>}
-              </Muted>
-            </div>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="danger" disabled={pending}>
-                  <IconUnlink size={14} />
-                  Disconnect
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Disconnect {connection.name}?</AlertDialogTitle>
-                  <AlertDialogDescription>{disconnectDescription}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="danger"
-                    onClick={() =>
-                      run(() => disconnect(connection.id), `Disconnected ${connection.name}`)
-                    }
-                  >
-                    Disconnect
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-        ))}
-        <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          {configured ? (
-            <Button asChild variant={connections.length > 0 ? "secondary" : "primary"}>
-              {/* A plain link: the route redirects to the platform's install screen. */}
-              <a href={connectHref}>
-                <IconPlugConnected size={14} />
-                {connections.length > 0 ? connectAnother : `Connect ${platform}`}
-              </a>
-            </Button>
-          ) : (
-            <Button variant="primary" disabled>
-              <IconPlugConnected size={14} />
-              Connect {platform}
-            </Button>
+      <Stack gap={3} asChild>
+        <CardContent>
+          {!configured && (
+            <AppNotConfiguredAlert
+              platform={platform}
+              envVars={envVars}
+              connectedName={
+                connections.length === 0
+                  ? null
+                  : connections.length === 1
+                    ? connections[0]!.name
+                    : `${connections.length} connections`
+              }
+              ignored={`mentions in ${platform} are ignored`}
+            />
           )}
-        </div>
-      </CardContent>
+          {connections.map((connection) => (
+            <Cluster key={connection.id} gap={3} justify="between">
+              <div>
+                <strong>{connection.name}</strong>
+                <Muted>
+                  Connected {formatDateTime(connection.connectedAt)}
+                  {connection.installedBy && <> by {connection.installedBy}</>}
+                </Muted>
+              </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="danger" disabled={pending}>
+                    <IconUnlink size={14} />
+                    Disconnect
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Disconnect {connection.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>{disconnectDescription}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="danger"
+                      onClick={() =>
+                        run(() => disconnect(connection.id), `Disconnected ${connection.name}`)
+                      }
+                    >
+                      Disconnect
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </Cluster>
+          ))}
+          <Cluster>
+            {configured ? (
+              <Button asChild variant={connections.length > 0 ? "secondary" : "primary"}>
+                {/* A plain link: the route redirects to the platform's install screen. */}
+                <a href={connectHref}>
+                  <IconPlugConnected size={14} />
+                  {connections.length > 0 ? connectAnother : `Connect ${platform}`}
+                </a>
+              </Button>
+            ) : (
+              <Button variant="primary" disabled>
+                <IconPlugConnected size={14} />
+                Connect {platform}
+              </Button>
+            )}
+          </Cluster>
+        </CardContent>
+      </Stack>
     </Card>
   );
 }

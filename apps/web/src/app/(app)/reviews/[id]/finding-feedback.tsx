@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Badge,
   Button,
+  Cluster,
   Dialog,
   DialogBody,
   DialogContent,
@@ -17,6 +18,7 @@ import {
   Muted,
   RadioGroup,
   RadioGroupItem,
+  Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconBan } from "@tabler/icons-react";
@@ -93,45 +95,44 @@ export function DismissFindingDialog({ finding }: { finding: FindingView }) {
               resolved. You can restore it later.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-            <RadioGroup
-              value={reason}
-              onValueChange={(value) => setReason(value as FeedbackReasonValue)}
-              aria-label="Reason"
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
-            >
-              {FEEDBACK_REASONS.map((value) => (
-                <div
-                  key={value}
-                  style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}
-                >
-                  <RadioGroupItem id={`reason-${finding.id}-${value}`} value={value} />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-                    <Label htmlFor={`reason-${finding.id}-${value}`}>
-                      {FEEDBACK_REASON_LABELS[value]}
-                    </Label>
-                    <Muted style={{ fontSize: "var(--text-xs)" }}>{REASON_HINTS[value]}</Muted>
+          <Stack asChild gap={4}>
+            <DialogBody>
+              <RadioGroup
+                value={reason}
+                onValueChange={(value) => setReason(value as FeedbackReasonValue)}
+                aria-label="Reason"
+                className="gap-3"
+              >
+                {FEEDBACK_REASONS.map((value) => (
+                  <div key={value} className="review-radio-option">
+                    <RadioGroupItem id={`reason-${finding.id}-${value}`} value={value} />
+                    <Stack gap={1}>
+                      <Label htmlFor={`reason-${finding.id}-${value}`}>
+                        {FEEDBACK_REASON_LABELS[value]}
+                      </Label>
+                      <Muted className="text-xs">{REASON_HINTS[value]}</Muted>
+                    </Stack>
                   </div>
-                </div>
-              ))}
-            </RadioGroup>
-            <Field
-              label="Note"
-              htmlFor={`note-${finding.id}`}
-              description={`Optional. ${note.length.toLocaleString()} / ${MAX_FEEDBACK_NOTE_LENGTH.toLocaleString()} characters.`}
-              error={error}
-            >
-              <Textarea
-                id={`note-${finding.id}`}
-                rows={3}
-                error={Boolean(error)}
-                aria-invalid={Boolean(error)}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. The input is validated by the caller."
-              />
-            </Field>
-          </DialogBody>
+                ))}
+              </RadioGroup>
+              <Field
+                label="Note"
+                htmlFor={`note-${finding.id}`}
+                description={`Optional. ${note.length.toLocaleString()} / ${MAX_FEEDBACK_NOTE_LENGTH.toLocaleString()} characters.`}
+                error={error}
+              >
+                <Textarea
+                  id={`note-${finding.id}`}
+                  rows={3}
+                  error={Boolean(error)}
+                  aria-invalid={Boolean(error)}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. The input is validated by the caller."
+                />
+              </Field>
+            </DialogBody>
+          </Stack>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
@@ -167,71 +168,38 @@ export function RestoreFindingButton({ finding }: { finding: FindingView }) {
 export function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
   if (feedback.length === 0) return null;
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--space-2)",
-        paddingTop: "var(--space-3)",
-        borderTop: "1px solid var(--border-subtle)",
-      }}
-    >
-      <Muted style={{ fontSize: "var(--text-xs)" }}>Feedback</Muted>
-      <ul
-        style={{
-          margin: 0,
-          padding: 0,
-          listStyle: "none",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-2)",
-        }}
-      >
-        {feedback.map((entry) => (
-          <li
-            key={entry.id}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--space-1)",
-              fontSize: "var(--text-sm)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
-              <Badge variant="neutral" size="sm">
-                {FEEDBACK_REASON_LABELS[entry.reason]}
-              </Badge>
-              <span>
-                Dismissed by <span style={{ color: "var(--text-primary)" }}>{entry.actor}</span> via{" "}
-                {SOURCE_LABELS[entry.source]} · {formatDateTime(entry.createdAt)}
-              </span>
-              {entry.restoredAt && (
-                <Badge variant="neutral" size="sm">
-                  restored
-                </Badge>
-              )}
-            </div>
-            {entry.note && (
-              <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                &ldquo;{entry.note}&rdquo;
-              </span>
-            )}
-            {entry.restoredAt && (
-              <Muted style={{ fontSize: "var(--text-xs)" }}>
-                Restored by {entry.restoredBy} · {formatDateTime(entry.restoredAt)}
-              </Muted>
-            )}
-          </li>
-        ))}
-      </ul>
+    <div className="review-feedback">
+      <Muted className="text-xs">Feedback</Muted>
+      <Stack asChild gap={2} className="m-0 list-none p-0">
+        <ul>
+          {feedback.map((entry) => (
+            <Stack asChild gap={1} key={entry.id} className="text-sm text-text-secondary">
+              <li>
+                <Cluster gap={2}>
+                  <Badge variant="neutral" size="sm">
+                    {FEEDBACK_REASON_LABELS[entry.reason]}
+                  </Badge>
+                  <span>
+                    Dismissed by <span className="text-text-primary">{entry.actor}</span> via{" "}
+                    {SOURCE_LABELS[entry.source]} · {formatDateTime(entry.createdAt)}
+                  </span>
+                  {entry.restoredAt && (
+                    <Badge variant="neutral" size="sm">
+                      restored
+                    </Badge>
+                  )}
+                </Cluster>
+                {entry.note && <span className="review-pre-wrap">&ldquo;{entry.note}&rdquo;</span>}
+                {entry.restoredAt && (
+                  <Muted className="text-xs">
+                    Restored by {entry.restoredBy} · {formatDateTime(entry.restoredAt)}
+                  </Muted>
+                )}
+              </li>
+            </Stack>
+          ))}
+        </ul>
+      </Stack>
     </div>
   );
 }
