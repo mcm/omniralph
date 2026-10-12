@@ -2,6 +2,11 @@
 export const SESSION_COOKIES = ["authjs.session-token", "__Secure-authjs.session-token"] as const;
 
 export const SIGN_IN_PATH = "/sign-in";
+/**
+ * Dev-only sign-in by email, without OAuth (`devSignInEnabled()`), for agents rendering
+ * the panel against the fixture database. Public as a sub-path of the sign-in page.
+ */
+export const DEV_SIGN_IN_PATH = `${SIGN_IN_PATH}/dev`;
 export const ACCESS_DENIED_PATH = "/access-denied";
 /** Where signed-in users without an active organization create, accept or join one. */
 export const ONBOARDING_PATH = "/onboarding";

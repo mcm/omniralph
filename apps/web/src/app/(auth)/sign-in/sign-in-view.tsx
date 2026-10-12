@@ -12,11 +12,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Field,
+  Input,
 } from "@iamthemcmaster/ui";
 import { IconAlertTriangle, IconBrandGithub, IconBrandGitlab } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
 import { signInWithProvider } from "@/lib/auth/actions";
-import { PRIVACY_PATH, TERMS_PATH } from "@/lib/auth/routes";
+import { DEV_SIGN_IN_PATH, PRIVACY_PATH, TERMS_PATH } from "@/lib/auth/routes";
 
 type ProviderId = "github" | "gitlab";
 
@@ -41,9 +43,11 @@ interface SignInViewProps {
   providers: { id: ProviderId; name: string }[];
   callbackUrl: string;
   error: string | null;
+  /** Show the dev-only sign-in by email (`devSignInEnabled()`). */
+  devSignIn: boolean;
 }
 
-export function SignInView({ providers, callbackUrl, error }: SignInViewProps) {
+export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInViewProps) {
   const [pending, setPending] = React.useState<ProviderId | null>(null);
   const [, startTransition] = React.useTransition();
 
@@ -70,7 +74,7 @@ export function SignInView({ providers, callbackUrl, error }: SignInViewProps) {
               <AlertDescription>{errorMessage(error)}</AlertDescription>
             </Alert>
           )}
-          {providers.length === 0 && (
+          {providers.length === 0 && !devSignIn && (
             <Alert variant="warning">
               <IconAlertTriangle size={16} />
               <AlertTitle>No sign-in providers configured</AlertTitle>
@@ -94,6 +98,25 @@ export function SignInView({ providers, callbackUrl, error }: SignInViewProps) {
               </Button>
             );
           })}
+          {devSignIn && (
+            <form
+              action={DEV_SIGN_IN_PATH}
+              method="get"
+              style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
+            >
+              <input type="hidden" name="callbackUrl" value={callbackUrl} />
+              <Field
+                label="Dev sign-in"
+                htmlFor="dev-sign-in-email"
+                hint="Development only (OMNIRALPH_DEV_SIGNIN=1): signs in as an existing user, e.g. admin@fixtures.example."
+              >
+                <Input id="dev-sign-in-email" name="email" type="email" required />
+              </Field>
+              <Button type="submit" variant="secondary" style={{ width: "100%" }}>
+                Sign in by email
+              </Button>
+            </form>
+          )}
           <p
             style={{
               margin: 0,

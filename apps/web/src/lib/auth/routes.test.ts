@@ -17,6 +17,7 @@ describe("classifyPath", () => {
 
   it("lets the sign-in and access-denied pages through", () => {
     expect(classifyPath("/sign-in")).toBe("public");
+    expect(classifyPath("/sign-in/dev")).toBe("public");
     expect(classifyPath("/access-denied")).toBe("public");
   });
 
