@@ -165,6 +165,35 @@ describe("resolveRunSpec", () => {
       );
       expect(spec.model).toBeNull();
     });
+
+    describe("a query run a ralph run invokes (its PR description)", () => {
+      const invoked = (context: Record<string, unknown>) =>
+        job({
+          payload: { ...payload, trigger: { kind: "run.invoked", context } },
+        });
+      const ralphRun = { invoker: { kind: "ralph-run", id: JOB_ID } };
+      const describePr = (task: Partial<TaskDefinitionInput> = {}) =>
+        definitions({ triggers: ["run.invoked"], sink: "run-result", model: "sonnet", ...task });
+
+      it("takes the repository's ralph model and fallback model when they are set", async () => {
+        state.repository = repository({ model: "claude-opus-5-5", fallbackModel: "haiku" });
+        const spec = await resolveRunSpec(db, invoked(ralphRun), tokens, describePr());
+        expect(spec).toMatchObject({ model: "claude-opus-5-5", fallbackModel: "haiku" });
+      });
+
+      it("takes the task's model when the repository sets none", async () => {
+        state.repository = repository();
+        const spec = await resolveRunSpec(db, invoked(ralphRun), tokens, describePr());
+        expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
+      });
+
+      it("ignores the ralph model for a run another kind of run invokes", async () => {
+        state.repository = repository({ model: "claude-opus-5-5", fallbackModel: "haiku" });
+        const review = { invoker: { kind: "review-run", id: JOB_ID } };
+        const spec = await resolveRunSpec(db, invoked(review), tokens, describePr());
+        expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
+      });
+    });
   });
 
   describe("token budget", () => {

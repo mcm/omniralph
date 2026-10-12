@@ -241,8 +241,9 @@ commands leave in the worktree is part of it: the story's commit or the next att
 write outside it or to ignored paths. Push runs have no prompt and run neither. Coding runs
 (story, request and push runs) carry `CODING_TASKS_MIN_HARNESS_VERSION` (0.11.0, the first
 release with the coding lifecycle) as their `min_harness_version`, so an older harness leaves them
-queued instead of failing them as an unsupported task type. Their PR description run doesn't use
-the repository's ralph model yet; an open story of TOOL-304 covers it.
+queued instead of failing them as an unsupported task type. A query run a ralph run invokes (its
+PR description) takes the repository's ralph model and fallback model over the task's
+(`resolveRunSpec`), like the legacy `ralph.describe-pr` job.
 
 ### Setup and teardown commands
 

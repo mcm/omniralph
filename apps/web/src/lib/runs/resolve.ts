@@ -9,6 +9,8 @@ import {
   ReviewTaskContext,
   RunSpecJobPayload,
   parseRalphSettings,
+  RalphRunInvoker,
+  RalphSettings,
   ruleTool,
   type JobRepository,
   type JobToken,
@@ -51,7 +53,9 @@ export const BUILTIN_DEFINITIONS: DefinitionSource = {
  * Resolves a run-spec job (one with a `task_id`) into the `RunSpec` the
  * harness runs: its task and the task's agent, the trigger (which must be one
  * the task allows), the repository with its tool settings, the model (task →
- * repository profile → agent), the token budget (a `profileFraction` of the
+ * repository profile → agent; for a query run a ralph run invokes, the
+ * repository's ralph `model` and `fallbackModel` first, like the legacy
+ * `ralph.describe-pr` job), the token budget (a `profileFraction` of the
  * repository profile's budget) and the job's `tokens`. The agent's tools are
  * narrowed by the repository's tool settings, never widened. A review run's
  * review profile (from its trigger context: the repository's, or the one a
@@ -89,6 +93,8 @@ export async function resolveRunSpec(
   let repository: JobRepository | null = null;
   let tools: RunToolRestrictions = { allowedTools: [], disallowedTools: [] };
   let profile: { model: string; maxTokensPerReview: number } | null = null;
+  // The repository's ralph models, for a query run a ralph run invokes (its PR description).
+  let ralphModels: { model: string | null; fallbackModel: string | null } | null = null;
   if (repositoryId) {
     const found = await getRepositoryWithConnection(db, repositoryId, job.organizationId);
     const settings = found && (await getRepositoryReviewSettings(db, repositoryId));
@@ -100,6 +106,12 @@ export async function resolveRunSpec(
       disallowedTools: ralph.disallowedTools ?? [],
     };
     profile = settings.profile;
+    if (RalphRunInvoker.safeParse(payload.trigger.context.invoker).success) {
+      ralphModels = {
+        model: storedRalphModel(found.repository.ralphSettings) ? ralph.model : null,
+        fallbackModel: ralph.fallbackModel,
+      };
+    }
   }
 
   const spec: RunSpec = {
@@ -116,8 +128,8 @@ export async function resolveRunSpec(
     ref: payload.ref ?? null,
     requireCheckout: payload.requireCheckout ?? false,
     tools,
-    model: task.model ?? profile?.model ?? agent.model,
-    fallbackModel: agent.fallbackModel,
+    model: ralphModels?.model ?? task.model ?? profile?.model ?? agent.model,
+    fallbackModel: ralphModels?.fallbackModel ?? agent.fallbackModel,
     tokenBudget: runTokenBudget(task, profile),
     tokens,
   };
@@ -129,6 +141,15 @@ export async function resolveRunSpec(
     throw new RunSpecError(`Review run of task ${task.id} has no valid review configuration`);
   }
   return narrowByReviewProfile(spec, reviewConfig.data.profile);
+}
+
+/**
+ * Whether the repository's stored ralph settings set a valid `model` (parsing
+ * them fills in the default model when they don't).
+ */
+function storedRalphModel(stored: unknown): boolean {
+  if (!stored || typeof stored !== "object" || !("model" in stored)) return false;
+  return RalphSettings.shape.model.safeParse(stored.model).success;
 }
 
 /** Read-only file tools a review uses to read beyond the diff (the engine's `EXPLORATION_TOOLS`). */
