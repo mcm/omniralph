@@ -37,7 +37,8 @@ invitation, GitHub and GitLab connections with repositories (one disabled, one d
 a Linear workspace, harnesses online, offline, outdated, updating and revoked, ralph runs in
 every status with stories in every status (attempts, progress logs, follow-ups, a run waiting
 on a manual story), reviews over the last 40 days with findings open, dismissed and restored,
-learned and custom rules, a custom review profile, and jobs in every status.
+learned and custom rules, a custom review profile, a custom agent and task (editable,
+unlike the built-ins), and jobs in every status.
 
 All data is fake: emails are `@fixtures.example`, hosts `*.fixtures.example`, external IDs
 and tokens start with `fixture`. The repository pages for a GitHub or GitLab connection call

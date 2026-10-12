@@ -24,6 +24,8 @@ const KINDS = {
   feedback: 0x101,
   rule: 0x102,
   pin: 0x103,
+  agentDefinition: 0x104,
+  taskDefinition: 0x105,
 } as const;
 
 /** The fixture UUID `n` of a kind of row. */
@@ -70,6 +72,11 @@ export const FIXTURE_IDS = {
     failed: fixtureId("ralphRun", 4),
     stopped: fixtureId("ralphRun", 5),
     pending: fixtureId("ralphRun", 6),
+  },
+  /** A custom agent and a task on it (built-ins are read-only). */
+  definitions: {
+    agent: fixtureId("agentDefinition", 1),
+    task: fixtureId("taskDefinition", 1),
   },
   reviews: {
     /** Completed, with findings in every severity and status (open, dismissed, restored, …). */
