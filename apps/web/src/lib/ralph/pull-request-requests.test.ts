@@ -33,6 +33,7 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   type RalphRequestResult,
@@ -174,7 +175,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

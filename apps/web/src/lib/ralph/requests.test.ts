@@ -29,6 +29,7 @@ import {
   type LinearRun,
 } from "@omniralph/db";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -225,7 +226,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -811,7 +812,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
         harnessId: agentA,
         acceptedTaskTypes: ["coding"],
         pools: ["short", "long"],
-        harnessVersion: null,
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       await completeJob(db, {

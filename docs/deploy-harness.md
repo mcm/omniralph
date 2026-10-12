@@ -382,7 +382,8 @@ under the new limit.
 Accepted task types and pool limits replace the former capabilities (`review`, `ralph`, `triage`)
 and their concurrency caps. Query tasks (replies, code questions, learned rules, triage) are
 only claimed by harnesses on 0.9.0 or later, and reviews (`review.task` jobs, one per review task
-the repository enables) and tasks with setup commands only by harnesses on 0.10.0 or later (the
+the repository enables) and tasks with setup commands only by harnesses on 0.10.0 or later, and
+coding runs (a repository on the **Coding tasks** path) only by harnesses on 0.11.0 or later (the
 jobs' `min_harness_version`); older harnesses leave them queued. The control panel sends each job's
 prompt, tools and model with the job (its run spec), so changing a task needs no harness release.
 A task's setup and teardown commands (e.g. Semgrep feeding a review) run on the host, in the job's
@@ -426,11 +427,11 @@ requests; it applies from the run's next job, and both paths share all run state
   what happened. A story task that pushes only at the end pushes story commits to a hidden ref and
   the branch once, with a `ralph.push` job, before the PR/MR is described.
 
-Coding runs don't carry a minimum harness version yet: switch a repository to **Coding tasks** only
-when every harness that may run its jobs (its pinned ones, or any accepting `coding`) runs a
-release with coding runs; an older one fails them as an unsupported task type. The repository's
-ralph **Model** isn't applied to the description run yet (it uses `opus`), and a task's own setup
-and teardown commands don't run in coding runs (the repository's **Setup command** does).
+Coding runs are only claimed by harnesses on 0.11.0 or later; older ones leave them queued. A run
+sticks to the harness that ran its first job, so update a repository's harnesses (its pinned ones,
+or any accepting `coding`) before switching it to **Coding tasks**, or a run started on an older
+one waits for it to update. The repository's ralph **Model** isn't applied to the description run
+yet (it uses `opus`).
 
 ### Enabling ralph
 
@@ -615,8 +616,8 @@ the newly enrolled one) picks them up.
 - **Ralph stories fail every attempt on a quality gate** with `command not found` or similar: the
   gate's toolchain isn't installed for the harness's user or isn't on the unit's `PATH`
   ([Host prerequisites](#host-prerequisites)).
-- **Ralph jobs stay queued**: no harness accepts the `coding` task type, or the run's sticky (or pinned) harness is
-  offline. Check **Jobs** for the job's status.
+- **Ralph jobs stay queued**: no harness accepts the `coding` task type, the run's sticky (or pinned) harness is
+  offline, or (on the **Coding tasks** path) it runs a version older than 0.11.0. Check **Jobs** for the job's status.
 - **Reviews stay queued**: no online harness accepts the `review` task type on version 0.10.0 or
   later (or, if the repository pins jobs to harnesses, none of the pinned ones). Update the harness
   ([self-update](#self-update-pm2) or `omniralph-harness update`).

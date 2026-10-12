@@ -28,6 +28,7 @@ import {
 } from "@omniralph/db";
 import type { CiFailedJob, CiStatus } from "@omniralph/scm";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   type RalphRequestResult,
@@ -176,7 +177,7 @@ describe.skipIf(!dockerAvailable)("failed CI on ralph pull requests", () => {
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

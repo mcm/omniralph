@@ -30,6 +30,7 @@ import {
 } from "@omniralph/db";
 import { preparationHash } from "@omniralph/ralph";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -183,7 +184,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       harnessId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -336,7 +337,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       harnessId: agentA,
       acceptedTaskTypes: ["coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);

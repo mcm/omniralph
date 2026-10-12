@@ -30,6 +30,7 @@ import {
   type RalphRun,
 } from "@omniralph/db";
 import {
+  CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
   RalphCleanupPayload,
   type RalphCleanupResult,
@@ -258,7 +259,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
       harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: null,
+      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
