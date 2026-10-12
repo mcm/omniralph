@@ -8,7 +8,8 @@
   behind a per-repository switch, the `ship` harness tool, push and draft PR timing, and the
   `worktree.exec` and `worktree.cleanup` system RPCs. Amended by TOOL-306 (the fifth epic):
   [organization definitions](#organization-definitions) stored in the database and edited in the
-  control panel.
+  control panel. Amended by TOOL-307 (the sixth epic): [installables and host
+  tools](#installables-and-host-tools) and the `install` system RPC.
 - **Date:** 2026-10-11
 
 ## Context
@@ -438,7 +439,7 @@ So adding a review task (a security reviewer, say) is a definitions-only change:
 
 ### System RPCs
 
-`repo.sync`, `worktree.exec` and `worktree.cleanup` are system RPCs (`apps/harness/src/rpc/`,
+`repo.sync`, `worktree.exec`, `worktree.cleanup` and `install` are system RPCs (`apps/harness/src/rpc/`,
 `SYSTEM_RPCS` in `@omniralph/shared`): fixed commands with no Claude session, no run spec and no
 session token, usually targeted at one harness, with a single `lifecycle` token (`credentials:read`). They use the same claim, lease,
 result and fail plumbing as every other job. `worktree.exec` runs a manual story's approved
@@ -454,8 +455,9 @@ branch or deletes it. Its payload can also list a finished run's hidden refs
 (`refs/omniralph/runs/<run>`, `hiddenRefs`, with or without an action), which it deletes on
 `origin`; a job with only hidden refs targets no harness, since any harness can delete them. Its
 token is the only system RPC token with `credentials:write`, for those pushes; nothing in it
-deletes a remote branch. Self-update stays on the heartbeat. Two differences from the design: the
-keep-branch cleanup and the hidden refs were added by TOOL-377 and TOOL-378, and a hidden-refs-only
+deletes a remote branch. `install` installs an installable on one harness (see
+[Installables and host tools](#installables-and-host-tools)). Self-update stays on the
+heartbeat. Two differences from the design: the keep-branch cleanup and the hidden refs were added by TOOL-377 and TOOL-378, and a hidden-refs-only
 job is the one system RPC not pinned to a harness.
 
 ### Organization definitions
@@ -506,10 +508,54 @@ is [docs/definitions.md](../definitions.md).
   (or changing its type) is refused while anything uses it, and deleting an agent while a task runs
   on it.
 
+### Installables and host tools
+
+TOOL-307 lets tasks use software on the host without a harness release per tool. The guide for
+installable authors, admins and harness owners is [docs/installables.md](../installables.md).
+
+- **Installables** are npm packages whose `package.json` has an `omniralph` field
+  (`InstallableManifest` in `packages/tasks/src/installables.ts`: `commands`, stdio `mcpServers`
+  and `skills`, every path relative to and inside the package). npm packages rather than Claude
+  Code plugins, because later non-Claude runtimes won't share a plugin format.
+- **The `install` system RPC** (`apps/harness/src/rpc/install.ts`), targeted at one harness by an
+  admin, installs `<name>@<version>` (exact version or dist-tag; never a path, URL or alias) into a
+  harness-managed npm prefix, `<dataDir>/installables`, not `npm -g`. It is remote code execution
+  on the host, so the harness checks its local `installables.allow` (default `@omniralph/*`)
+  before npm runs, whatever the control panel allowed, and removes a package without a valid
+  manifest again (or restores the previous version). npm runs with the harness's environment, never
+  a job's credentials.
+- **The heartbeat** reports the installed installables (`{name, version}`, the prefix's own
+  dependencies with a valid manifest; `harnesses.reported_installables`) and the host tools.
+  Self-update stays on the heartbeat too; it is not an RPC.
+- **Host tools** are installed by hand. The organization's catalog (`host_tools`) and per-harness
+  configured paths (`harness_host_tools`) go out in the heartbeat response; the next heartbeat
+  reports whether each configured path is a usable executable and what the harness discovered on
+  its own `PATH`. The effective path is the configured one if it exists, else, with none
+  configured, the discovered one: a configured but missing path makes the tool unavailable rather
+  than falling back to `PATH`. Paths under the local `blockedExecPaths` (compared after resolving
+  symlinks) are never reported usable or run.
+- **Claims** filter on `jobs.required_installables` and `jobs.required_host_tools` (see
+  [Organization definitions](#organization-definitions)): a harness claims a run only if its last
+  heartbeat reported every installable and it has an effective path for every host tool.
+- **Running them.** Before checkout, the lifecycles resolve the run's executables
+  (`resolveRunExecutables`, `apps/harness/src/lifecycle/executables.ts`): host tools by their
+  effective path, installable commands and MCP servers by absolute path inside the prefix. A setup
+  or teardown command whose first word names one runs that path, never what the run's `PATH`
+  (which the checkout can influence) finds; agents list installable MCP servers as
+  `<package>:<server>`. Something missing since the claim retries the job after a minute.
+- **Caches.** Installable commands and MCP servers get `OMNIRALPH_CACHE_DIR`
+  (`<dataDir>/cache/<package>/<repository id>/`) and, on PR triggers, `OMNIRALPH_PR_CACHE_DIR`
+  (`<dataDir>/pr-cache/<package>/<repository id>/<number>/`, a separate tree, so data derived from
+  an untrusted PR can't poison the repository's shared cache). Caches are best-effort and local:
+  nothing is stored in the control panel, and a run on another harness starts cold.
+- **Not built:** loading an installable's skills into sessions, an uninstall RPC, and pruning
+  caches.
+
 ### What later epics add
 
 TOOL-302 built the plumbing and the query task type, TOOL-303 the review task type and review
-runs, TOOL-304 the coding task type and coding runs. Not built yet:
+runs, TOOL-304 the coding task type and coding runs, TOOL-306 organization definitions and
+TOOL-307 installables and host tools. Not built yet:
 
 - deleting the legacy `ralph.*` job types, capability code and single tokens, once a coding run has
   merged a real PR (a follow-up issue); chat runs are covered by it too, since the responder's
@@ -518,7 +564,6 @@ runs, TOOL-304 the coding task type and coding runs. Not built yet:
 - planned reviews: a review task fanning out internally by diff group or check type
   ([TOOL-33](https://linear.app/thefrakinship/issue/TOOL-33/plan-based-code-reviews)), on top of
   review runs;
-- installables and the `install` system RPC;
 - a chat tool to run tasks.
 
 ## Alternatives considered
