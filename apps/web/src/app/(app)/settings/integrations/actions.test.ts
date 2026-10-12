@@ -30,12 +30,47 @@ const state = vi.hoisted(() => ({
     updatedBy: string | null;
   }>,
 }));
+/** Stored tasks: org-a's chat query and coding tasks, a non-chat one, and org-b's chat query task. */
+const IDS = {
+  query: "11111111-1111-4111-8111-111111111111",
+  coding: "22222222-2222-4222-8222-222222222222",
+  notChat: "33333333-3333-4333-8333-333333333333",
+  foreign: "44444444-4444-4444-8444-444444444444",
+};
+const rows = vi.hoisted(async () => {
+  const { getBuiltinTask } = await import("@omniralph/tasks");
+  const row = (id: string, organizationId: string, base: string, changes: object = {}) => {
+    const { id: _id, name, ...definition } = getBuiltinTask(base)!;
+    const now = new Date("2026-10-01T00:00:00Z");
+    return {
+      id,
+      organizationId,
+      name: `Custom ${name}`,
+      definition: { ...definition, ...changes },
+      requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+      updatedBy: null,
+    };
+  };
+  return [
+    row("11111111-1111-4111-8111-111111111111", "org-a", "builtin:ask-about-code"),
+    row("22222222-2222-4222-8222-222222222222", "org-a", "builtin:handle-request"),
+    row("33333333-3333-4333-8333-333333333333", "org-a", "builtin:ask-about-code", {
+      triggers: ["finding.mention"],
+    }),
+    row("44444444-4444-4444-8444-444444444444", "org-b", "builtin:ask-about-code"),
+  ];
+});
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") =>
     assertRole(state.user && { ...state.user, organization: { id: "org-a", name: "Acme" } }, role),
 }));
-vi.mock("@omniralph/db", () => ({
+vi.mock("@omniralph/db", async () => ({
+  getStoredTaskDefinition: async (_db: unknown, organizationId: string, id: string) =>
+    (await rows).find((r) => r.organizationId === organizationId && r.id === id) ?? null,
   deleteIntegration: async (_db: unknown, organizationId: string) => {
     state.deletes += 1;
     state.deletedFrom.push(organizationId);
@@ -358,6 +393,25 @@ describe("saveChatTaskDefaults", () => {
     expect(state.chatTaskDefaults).toEqual([]);
   });
 
+  it("saves the organization's own chat tasks", async () => {
+    const tasks = { askAboutCode: IDS.query, startWork: IDS.coding };
+    expect(await saveChatTaskDefaults(tasks)).toEqual({ ok: true });
+    expect(state.chatTaskDefaults).toEqual([["org-a", tasks, "admin-1"]]);
+  });
+
+  it("rejects another organization's task, one of the wrong type or not accepting chat.request", async () => {
+    for (const [tasks, field] of [
+      [{ askAboutCode: IDS.foreign, startWork: IDS.coding }, "askAboutCode"],
+      [{ askAboutCode: IDS.coding, startWork: IDS.coding }, "askAboutCode"],
+      [{ askAboutCode: IDS.query, startWork: IDS.query }, "startWork"],
+      [{ askAboutCode: IDS.notChat, startWork: IDS.coding }, "askAboutCode"],
+    ] as const) {
+      const result = await saveChatTaskDefaults(tasks);
+      expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
+    }
+    expect(state.chatTaskDefaults).toEqual([]);
+  });
+
   it("refuses non-admins", async () => {
     state.user = user("member");
     expect(
@@ -436,6 +490,35 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
     expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toEqual({ ok: true });
     expect(state.channelTasks.map((t) => t.connectionId)).toEqual(["d1"]);
     expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toMatchObject({ ok: false });
+  });
+
+  it("saves a channel override naming the organization's own tasks", async () => {
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", {
+        askAboutCode: IDS.query,
+        startWork: IDS.coding,
+      }),
+    ).toEqual({ ok: true });
+    expect(state.channelTasks).toEqual([
+      expect.objectContaining({
+        channelId: "slack:C0123ABCD",
+        askAboutCodeTaskId: IDS.query,
+        startWorkTaskId: IDS.coding,
+      }),
+    ]);
+  });
+
+  it("rejects a channel override naming another organization's task, or a wrong one", async () => {
+    for (const [tasks, field] of [
+      [{ askAboutCode: IDS.foreign, startWork: null }, "askAboutCode"],
+      [{ askAboutCode: IDS.coding, startWork: null }, "askAboutCode"],
+      [{ askAboutCode: null, startWork: IDS.query }, "startWork"],
+      [{ askAboutCode: IDS.notChat, startWork: null }, "askAboutCode"],
+    ] as const) {
+      const result = await saveChatChannelTasks("s1", "C0123ABCD", tasks);
+      expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
+    }
+    expect(state.channelTasks).toEqual([]);
   });
 
   it("rejects an invalid task, channel or connection", async () => {

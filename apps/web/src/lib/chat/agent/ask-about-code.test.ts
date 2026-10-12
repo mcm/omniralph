@@ -5,6 +5,7 @@ import {
   appendChatMessage,
   harnesses,
   closeDb,
+  insertTaskDefinition,
   listThreadRuns,
   connectRepository,
   createDb,
@@ -26,7 +27,7 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import { deriveTaskRequirements, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
@@ -541,6 +542,32 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(String(result.message)).toContain("needs a query task");
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
     expect(await listThreadRuns(db, orgId, h.chatThread.id)).toEqual([]);
+  });
+
+  it("runs the organization's own query task a channel picked, by its UUID", async () => {
+    const h = await harness();
+    const { id: _id, name: _name, ...definition } = getBuiltinTask("builtin:ask-about-code")!;
+    const stored = await insertTaskDefinition(db, orgId, {
+      name: "Security Q&A",
+      definition,
+      requirements: deriveTaskRequirements(getBuiltinTask("builtin:ask-about-code")!),
+      createdBy: null,
+    });
+    await upsertChatChannelTaskSetting(db, {
+      organizationId: orgId,
+      connectionId,
+      channelId: h.chatThread.channelId,
+      askAboutCodeTaskId: stored.id,
+      startWorkTaskId: null,
+      updatedBy: null,
+    });
+
+    const result = await ask(h, { repository: "acme/api", question: "What is this?" });
+
+    const [job, ...more] = await chatAskJobs(h.chatThread.id);
+    expect(more).toEqual([]);
+    expect(job).toMatchObject({ taskId: stored.id, taskType: "query", status: "queued" });
+    expect(result).toMatchObject({ status: "started", runId: job!.id, task: stored.id });
   });
 
   describe("in a responder turn", () => {

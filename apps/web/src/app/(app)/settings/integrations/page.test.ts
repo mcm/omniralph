@@ -8,6 +8,36 @@ const state = vi.hoisted(() => ({
   slackConfigured: true,
   discordConfigured: true,
 }));
+/**
+ * org-a's own tasks: a chat query task, a chat coding task, and a query task
+ * not accepting `chat.request` (no picker offers it).
+ */
+async function storedTaskRows() {
+  const { getBuiltinTask } = await import("@omniralph/tasks");
+  const row = (id: string, name: string, base: string, changes: object = {}) => {
+    const { id: _id, name: _name, ...definition } = getBuiltinTask(base)!;
+    const now = new Date("2026-10-01T00:00:00Z");
+    return {
+      id,
+      organizationId: "org-a",
+      name,
+      definition: { ...definition, ...changes },
+      requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+      updatedBy: null,
+    };
+  };
+  return [
+    row("11111111-1111-4111-8111-111111111111", "Security Q&A", "builtin:ask-about-code"),
+    row("22222222-2222-4222-8222-222222222222", "Hotfix", "builtin:handle-request"),
+    row("33333333-3333-4333-8333-333333333333", "Not for chat", "builtin:ask-about-code", {
+      triggers: ["finding.mention"],
+    }),
+  ];
+}
+
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requirePageUser: async (role: Role = "member") =>
@@ -21,6 +51,8 @@ vi.mock("@/lib/chat/discord-oauth", () => ({
   discordOAuthConfig: () => (state.discordConfigured ? { applicationId: "a" } : null),
 }));
 vi.mock("@omniralph/db", () => ({
+  listStoredTaskDefinitions: async (_db: unknown, organizationId: string) =>
+    organizationId === "org-a" ? await storedTaskRows() : [],
   // Only the active organization's integration exists.
   getIntegration: async (_db: unknown, organizationId: string, provider: string) =>
     organizationId === "org-a" && provider === "linear"
@@ -195,9 +227,16 @@ describe("Settings › Integrations page › chat tasks", () => {
     const { props } = await render();
     expect(props.chatTasks).toEqual({
       defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+      // Built-in and the organization's own tasks of the role's type accepting chat.request.
       choices: {
-        askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code" }],
-        startWork: [{ id: "builtin:handle-request", name: "Handle a request" }],
+        askAboutCode: [
+          { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
+          { id: "11111111-1111-4111-8111-111111111111", name: "Security Q&A", builtin: false },
+        ],
+        startWork: [
+          { id: "builtin:handle-request", name: "Handle a request", builtin: true },
+          { id: "22222222-2222-4222-8222-222222222222", name: "Hotfix", builtin: false },
+        ],
       },
       connections: [
         {

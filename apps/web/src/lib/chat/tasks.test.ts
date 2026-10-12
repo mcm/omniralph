@@ -1,5 +1,5 @@
 import type * as Db from "@omniralph/db";
-import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import { BUILTIN_TASKS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -33,8 +33,14 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
   },
 }));
 
-const { chatChannelId, chatTaskChoices, chatTasksFor, platformChannelId, validateChatTaskChoice } =
-  await import("./tasks");
+const {
+  CHAT_TASK_FILTERS,
+  chatChannelId,
+  chatTasksFor,
+  platformChannelId,
+  validateChatTaskChoice,
+} = await import("./tasks");
+const { matchesTaskFilter } = await import("@/lib/definitions");
 
 /** A database whose `app_settings` read returns the organization's `chat.tasks` setting. */
 const db = {
@@ -126,44 +132,58 @@ const task = (id: string, base: string, changes: Partial<TaskDefinition> = {}): 
 
 describe("validateChatTaskChoice", () => {
   it("accepts the built-in chat tasks", () => {
-    expect(validateChatTaskChoice("askAboutCode", "builtin:ask-about-code")).toMatchObject({
+    expect(
+      validateChatTaskChoice("askAboutCode", "builtin:ask-about-code", getBuiltinTask),
+    ).toMatchObject({
       ok: true,
       task: { id: "builtin:ask-about-code" },
     });
-    expect(validateChatTaskChoice("startWork", "builtin:handle-request")).toMatchObject({
+    expect(
+      validateChatTaskChoice("startWork", "builtin:handle-request", getBuiltinTask),
+    ).toMatchObject({
       ok: true,
       task: { id: "builtin:handle-request" },
     });
   });
 
   it("refuses an unknown task", () => {
-    expect(validateChatTaskChoice("askAboutCode", "builtin:nope")).toMatchObject({
+    expect(validateChatTaskChoice("askAboutCode", "builtin:nope", getBuiltinTask)).toMatchObject({
       ok: false,
       reason: "unknown_task",
     });
   });
 
   it("refuses a task of the wrong type", () => {
-    expect(validateChatTaskChoice("askAboutCode", "builtin:handle-request")).toMatchObject({
+    expect(
+      validateChatTaskChoice("askAboutCode", "builtin:handle-request", getBuiltinTask),
+    ).toMatchObject({
       ok: false,
       reason: "wrong_type",
     });
-    expect(validateChatTaskChoice("startWork", "builtin:ask-about-code")).toMatchObject({
+    expect(
+      validateChatTaskChoice("startWork", "builtin:ask-about-code", getBuiltinTask),
+    ).toMatchObject({
       ok: false,
       reason: "wrong_type",
     });
-    expect(validateChatTaskChoice("askAboutCode", "builtin:review-pr")).toMatchObject({
+    expect(
+      validateChatTaskChoice("askAboutCode", "builtin:review-pr", getBuiltinTask),
+    ).toMatchObject({
       ok: false,
       reason: "wrong_type",
     });
   });
 
   it("refuses a task that doesn't run on chat requests", () => {
-    expect(validateChatTaskChoice("askAboutCode", "builtin:learn-rule")).toMatchObject({
+    expect(
+      validateChatTaskChoice("askAboutCode", "builtin:learn-rule", getBuiltinTask),
+    ).toMatchObject({
       ok: false,
       reason: "missing_trigger",
     });
-    expect(validateChatTaskChoice("startWork", "builtin:implement-story")).toMatchObject({
+    expect(
+      validateChatTaskChoice("startWork", "builtin:implement-story", getBuiltinTask),
+    ).toMatchObject({
       ok: false,
       reason: "missing_trigger",
     });
@@ -171,9 +191,9 @@ describe("validateChatTaskChoice", () => {
 
   it("gives each refusal a distinct error", () => {
     const errors = [
-      validateChatTaskChoice("askAboutCode", "builtin:nope"),
-      validateChatTaskChoice("askAboutCode", "builtin:handle-request"),
-      validateChatTaskChoice("askAboutCode", "builtin:learn-rule"),
+      validateChatTaskChoice("askAboutCode", "builtin:nope", getBuiltinTask),
+      validateChatTaskChoice("askAboutCode", "builtin:handle-request", getBuiltinTask),
+      validateChatTaskChoice("askAboutCode", "builtin:learn-rule", getBuiltinTask),
     ].map((result) => (result.ok ? null : result.error));
     expect(new Set(errors).size).toBe(3);
     expect(errors).not.toContain(null);
@@ -191,21 +211,40 @@ describe("validateChatTaskChoice", () => {
   });
 });
 
-describe("chatTaskChoices", () => {
-  it("lists the built-in tasks each chat task can run", () => {
-    expect(chatTaskChoices("askAboutCode").map((t) => t.id)).toEqual(["builtin:ask-about-code"]);
-    expect(chatTaskChoices("startWork").map((t) => t.id)).toEqual(["builtin:handle-request"]);
+describe("CHAT_TASK_FILTERS", () => {
+  it("offers tasks of the role's type accepting chat.request, built-in or custom", () => {
+    const tasks = [
+      task("builtin:ask-about-code", "builtin:ask-about-code"),
+      task("00000000-0000-4000-8000-000000000001", "builtin:ask-about-code"),
+      task("00000000-0000-4000-8000-000000000002", "builtin:ask-about-code", {
+        triggers: ["run.invoked"],
+      }),
+      task("builtin:handle-request", "builtin:handle-request"),
+      task("00000000-0000-4000-8000-000000000003", "builtin:handle-request"),
+      task("00000000-0000-4000-8000-000000000004", "builtin:handle-request", {
+        triggers: ["linear.mention"],
+      }),
+    ];
+    const offered = (role: "askAboutCode" | "startWork") =>
+      tasks.filter((t) => matchesTaskFilter(t, CHAT_TASK_FILTERS[role])).map((t) => t.id);
+    expect(offered("askAboutCode")).toEqual([
+      "builtin:ask-about-code",
+      "00000000-0000-4000-8000-000000000001",
+    ]);
+    expect(offered("startWork")).toEqual([
+      "builtin:handle-request",
+      "00000000-0000-4000-8000-000000000003",
+    ]);
   });
 
-  it("lists only tasks passing validateChatTaskChoice", () => {
-    const tasks = [
-      task("builtin:query-chat", "builtin:ask-about-code"),
-      task("builtin:query-other", "builtin:ask-about-code", { triggers: ["run.invoked"] }),
-      task("builtin:coding-chat", "builtin:handle-request"),
-      task("builtin:coding-other", "builtin:handle-request", { triggers: ["linear.mention"] }),
-    ];
-    expect(chatTaskChoices("askAboutCode", tasks).map((t) => t.id)).toEqual(["builtin:query-chat"]);
-    expect(chatTaskChoices("startWork", tasks).map((t) => t.id)).toEqual(["builtin:coding-chat"]);
+  it("offers exactly the tasks passing validateChatTaskChoice", () => {
+    for (const role of ["askAboutCode", "startWork"] as const) {
+      for (const t of BUILTIN_TASKS) {
+        expect(matchesTaskFilter(t, CHAT_TASK_FILTERS[role])).toBe(
+          validateChatTaskChoice(role, t.id, () => t).ok,
+        );
+      }
+    }
   });
 });
 

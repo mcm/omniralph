@@ -27,9 +27,11 @@ const LABELS: Record<Role, string> = {
   startWork: "Start work",
 };
 
+/** A task a chat setting can pick (built-in or the organization's own). */
 export interface TaskChoice {
   id: string;
   name: string;
+  builtin: boolean;
 }
 
 export interface ChannelTasks {
@@ -45,7 +47,7 @@ export interface ChannelTasks {
 export interface ChatTasksSettings {
   /** The organization's tasks (the built-in ones unless chosen). */
   defaults: Record<Role, string>;
-  /** The tasks each can run (those passing `validateChatTaskChoice`). */
+  /** The tasks each can run (the organization's passing `CHAT_TASK_FILTERS`). */
   choices: Record<Role, TaskChoice[]>;
   connections: Array<{
     id: string;
@@ -64,7 +66,7 @@ function TaskOptions({ choices, value }: { choices: TaskChoice[]; value: string 
       )}
       {choices.map((choice) => (
         <option key={choice.id} value={choice.id}>
-          {choice.name}
+          {choice.builtin ? `${choice.name} (built-in)` : choice.name}
         </option>
       ))}
     </>
