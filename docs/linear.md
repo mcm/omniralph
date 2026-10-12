@@ -3,7 +3,10 @@
 Ralph builds Linear issues: delegate an epic (or a single issue) to the Omniralph Linear app and
 the control panel runs it story by story on a harness, one `ralph.story` job per
 story, then opens a pull/merge request to the repository's default branch. See
-[ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated.
+[ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated. Depending on the
+repository's **Coding path**, those jobs run the harness's legacy ralph code or are coding runs of
+built-in tasks ([deploy-harness.md](deploy-harness.md#coding-path-legacy-jobs-or-coding-tasks));
+everything below applies to both, except where it says otherwise.
 
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
@@ -113,7 +116,8 @@ Ralph only builds in repositories that opted in. On **Repository â€º Settings â€
 | **Linear labels** | Comma-separated label names. Issues with any of them route here. |
 | **Linear projects** | Comma-separated project names. |
 | **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
-| **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. |
+| **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. On the **Coding tasks** path the story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
+| **Coding path** (`codingPath`) | `legacy` (**Legacy jobs**, the default) or `tasks` (**Coding tasks**): whether stories and requests run as the legacy ralph jobs or as coding runs of `builtin:implement-story` and `builtin:handle-request`. Applies from a run's next job. |
 
 The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
 config), with the same names and defaults, grouped as on the page:
@@ -273,9 +277,12 @@ epic as context. The mention's text (without a leading `@name`) is the request.
 - **One session per request.** A `ralph.request` job runs one Claude session in the branch worktree
   of the issue's run (the branch, lanes, PR/MR, stashes and guidance of an earlier run carry
   over). Its prompt has the epic's status and stories, the PR/MR, the progress log, the quality
-  gates and the PRD. It may commit and push the run's branch (never another one: the agent's
+  gates and the PRD (a request on a single issue or from chat has no epic, PRD or story wording).
+  It may commit and push the run's branch (never another one: the agent's
   `pre-push` hook rejects that), and rebase and `--force-with-lease` it when asked, unless the
-  repository's **History rewrites** setting is `never`.
+  repository's **History rewrites** setting is `never`. On the **Coding tasks** path the session
+  can't push itself: it calls the `ship` tool and the harness commits, pushes and tells it what
+  happened.
 - **PRs/MRs.** The agent never runs `gh` or `glab`: it asks for a PR/MR change in its result, and
   the control panel makes it (opens it as a draft, updates its title or description, or marks it
   ready), sanitizing the agent's text. An open PR/MR for the branch is adopted.

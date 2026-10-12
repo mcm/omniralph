@@ -398,16 +398,39 @@ audit log (enrollment, token refreshes, credential issuance, revocation).
 
 Ralph builds delegated Linear issues story by story (see [linear.md](linear.md)
 for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). A harness
-runs five ralph job types: `ralph.story` (a Claude session, the quality gates, commit and push),
-`ralph.describe-pr` (a read-only session writing the PR/MR description), `ralph.prepare` (a
-manual story's approved preparation commands; now enqueued as the `worktree.exec` system RPC
-instead, with the same guards), `ralph.request` (one Claude session for an
-@mention, a reply, review findings or a failed CI run, on the run's branch) and `ralph.cleanup`
-(removes a merged PR/MR's worktree and local branch, no session; now enqueued as the
-`worktree.cleanup` system RPC instead). Running `ralph.story` and
-`ralph.request` sessions also take Linear replies live: the heartbeat response carries them
-(`jobMessages`) and the harness acknowledges them in its next heartbeat. Jobs download the run's
-Linear attachments through the control panel and cache them in `<workspaceRoot>/.attachments/`.
+runs these jobs for a run: `ralph.story` (a Claude session, the quality gates, commit and push),
+`ralph.request` (one Claude session for an @mention, a reply, review findings or a failed CI run,
+on the run's branch), `ralph.describe-pr` (a read-only session writing the PR/MR description), and
+the system RPCs `worktree.exec` (a manual story's approved preparation commands, no session) and
+`worktree.cleanup` (removes a closed PR/MR's or stopped run's worktree, and after a merge the local
+branch, no session). `ralph.prepare` and `ralph.cleanup` jobs queued before the upgrade still run.
+Running `ralph.story` and `ralph.request` sessions also take Linear replies live: the heartbeat
+response carries them (`jobMessages`) and the harness acknowledges them in its next heartbeat.
+Jobs download the run's Linear attachments through the control panel and cache them in
+`<workspaceRoot>/.attachments/`.
+
+### Coding path: legacy jobs or coding tasks
+
+**Repository › Settings › Ralph › Coding path** picks how a repository's runs work stories and
+requests; it applies from the run's next job, and both paths share all run state:
+
+- **Legacy jobs** (the default): `ralph.story`, `ralph.request` and `ralph.describe-pr` run the
+  harness's built-in ralph code, with one job token that can push. A request session can push the
+  branch by itself.
+- **Coding tasks**: the same jobs are coding runs of the built-in tasks `builtin:implement-story`
+  and `builtin:handle-request` (agent `builtin:engineer`), and the PR/MR description a query run
+  of `builtin:describe-pr` (see
+  [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#coding-runs)). Only the harness's own git
+  commands can push: the session's git gets a read-only credential, and a request session
+  publishes its work by calling the `ship` tool, which makes the harness commit, push and return
+  what happened. A story task that pushes only at the end pushes story commits to a hidden ref and
+  the branch once, with a `ralph.push` job, before the PR/MR is described.
+
+Coding runs don't carry a minimum harness version yet: switch a repository to **Coding tasks** only
+when every harness that may run its jobs (its pinned ones, or any accepting `coding`) runs a
+release with coding runs; an older one fails them as an unsupported task type. The repository's
+ralph **Model** isn't applied to the description run yet (it uses `opus`), and a task's own setup
+and teardown commands don't run in coding runs (the repository's **Setup command** does).
 
 ### Enabling ralph
 
@@ -455,15 +478,18 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
   existing credentials are used; a dedicated user needs its own.
 - **No `gh` or `glab` login.** The harness never uses code-host CLIs or API tokens. It pushes with
   the brokered, job-scoped `git-credential` helper (a write token for that one repository, only for
-  running `ralph` jobs), and the control panel opens and updates the PR/MR itself. Sessions can
+  a running coding run's lifecycle token, a legacy `ralph.*` job's token or a `worktree.cleanup`
+  RPC), and the control panel opens and updates the PR/MR itself. Sessions can
   use any `gh`/`glab` login, SSH key or API token the harness's user has. Running as your workspace
   user, that includes yours: if ralph sessions shouldn't be able to act as you on the code host,
   log out of them on that workspace or use a dedicated user.
 
 Claude Code sessions in a ralph job load the harness user's `~/.claude/` settings, skills and
 `CLAUDE.md` plus the repository's `.claude/` settings and `CLAUDE.md`
-(`settingSources: ["user", "project", "local"]`) like a local session would, but they never see the job
-token, so they can't fetch credentials themselves; only the job's own git commands can.
+(`settingSources: ["user", "project", "local"]`) like a local session would. On the **Coding tasks**
+path their git credential helper uses the run's session token, which only ever gets a read
+credential, so only the harness's own git commands (and `ship`) can push. On the legacy path a
+story session never sees the job token, but a request session's git uses it and can push.
 
 ### Branch worktrees
 

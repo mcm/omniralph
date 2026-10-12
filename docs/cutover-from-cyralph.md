@@ -64,13 +64,13 @@ always behaves like cyralph's default and has no setting for it.
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
-| `maxAttemptsPerStory` | Fixed: 3 | |
-| `maxIterationsPerRun` | Fixed: 50 | Story jobs per run. |
+| `maxAttemptsPerStory` | Fixed: 3 | On the **Coding tasks** path, the story task's `maxAttemptsPerStory` (3 for `builtin:implement-story`). |
+| `maxIterationsPerRun` | Fixed: 50 | Story jobs per run. On the **Coding tasks** path, the story task's `maxIterationsPerRun` (50). |
 | `materializeStories` | Fixed: on | A PRD in an issue's description is always turned into sub-issues first. |
-| `commitPerStory`, `pushPerStory` | Fixed: on | Every finished story is committed and pushed; the remote branch is the only state between jobs (harnesses can change). |
+| `commitPerStory`, `pushPerStory` | Fixed: on | Every finished story is committed and pushed; the remote branch is the only state between jobs (harnesses can change). On the **Coding tasks** path the story task's `pushTiming` can be `end`: stories are then pushed to a hidden ref (`refs/omniralph/runs/<run>`) and the branch once at the end. |
 | `createPullRequest` | Fixed: on | The control panel opens the PR/MR through the GitHub App or GitLab bot. |
-| `openPullRequestEarly` | **Open the pull request early** per repository | Same default (off). |
-| `describePullRequest` | Fixed: on | A read-only `ralph.describe-pr` job writes the title and body. |
+| `openPullRequestEarly` | **Open the pull request early** per repository | Same default (off). On the **Coding tasks** path the story task's `draftPullRequest` wins when set. |
+| `describePullRequest` | Fixed: on | A read-only `ralph.describe-pr` job writes the title and body (on the **Coding tasks** path, a run of the story task's PR description task, `builtin:describe-pr`). |
 | `markPrReadyWhenComplete` | Fixed: on | |
 | `historyRewrite` | **History rewrites** per repository | Same values and default (`when-asked`). |
 | `allowPreparation` | **Offer to run preparation** per repository | Same default (on). |
@@ -190,6 +190,10 @@ For every entry in cyralph's `repositories[]`:
    `runPrdQualityGates` unset).
 3. Tick **Enable ralph**, but leave **Linear team keys**, **Linear labels** and **Linear projects**
    **empty** for now: routing moves in step 4.
+4. Leave **Coding path** on **Legacy jobs** (the default), which behaves like cyralph. **Coding
+   tasks** runs the same loop as coding runs of built-in tasks, where sessions can't push by
+   themselves ([deploy-harness.md](deploy-harness.md#coding-path-legacy-jobs-or-coding-tasks));
+   switch to it per repository once the move from cyralph is done.
 
 **Verify:** the form saves without errors, and the repository is listed as ralph-enabled. Nothing
 is delegated to Omniralph yet, so nothing runs.

@@ -1,6 +1,6 @@
 # ADR 0003: Ralph orchestration — one job per story, the control panel as orchestrator
 
-- **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update)); amended by TOOL-181 (see the [addendum](#addendum-run-origin-and-the-conversation-channel))
+- **Status:** Accepted (TOOL-32, Omniralph v2a); amended by TOOL-99 (v2b, see the [addendum](#addendum-v2b-request-mode-lanes-live-messages-and-self-update)); amended by TOOL-181 (see the [addendum](#addendum-run-origin-and-the-conversation-channel)); amended by TOOL-304 (see the [addendum](#addendum-coding-runs-and-the-cutover-switch))
 - **Date:** 2026-10-06
 
 > **Superseded in part by [ADR 0008](0008-agents-tasks-and-the-harness.md):** job-token scopes.
@@ -8,9 +8,10 @@
 > [ADR 0002](0002-agent-auth.md)); the `ralph:activity` and `ralph:attachments` scopes below are now
 > `run:activity` and `run:attachments`, and the activity, permission and attachment routes accept
 > any running job whose token has them, not only ralph jobs. `ralph.*` jobs keep one token with
-> `credentials:read`, `credentials:write`, `run:activity` and `run:attachments` until a later epic
-> ports them to `coding` tasks. They run on harnesses that accept the `coding` task type, in the
-> `long` pool, instead of on the `ralph` capability. Since TOOL-303 a review is a review run (one
+> `credentials:read`, `credentials:write`, `run:activity` and `run:attachments` on the legacy
+> coding path; on the `tasks` path (TOOL-304, [addendum](#addendum-coding-runs-and-the-cutover-switch))
+> story and request runs are `coding` runs whose session token can't push. They run on harnesses
+> that accept the `coding` task type, in the `long` pool, instead of on the `ralph` capability. Since TOOL-303 a review is a review run (one
 > task run per review task, see [ADR 0008](0008-agents-tasks-and-the-harness.md#review-runs)), and
 > the `review.run` outcome handler below is gone: `finishReviewRun` hands a completed review run's
 > open findings to `respondToReview`, once per review run (`handled_review_ids` holds review run
@@ -47,7 +48,10 @@ topics, using the v1 job lifecycle, repo cache and credential broker unchanged:
 
 - `ralph.story`: one attempt at one story in the epic's long-lived branch worktree: Claude session,
   quality gates, commit, push (with a brokered, job-scoped write credential), structured result.
-- `ralph.describe-pr`: a read-only session that writes the PR/MR title and body.
+  On the `tasks` coding path it's a coding run of the repository's story task (see the
+  [addendum](#addendum-coding-runs-and-the-cutover-switch)).
+- `ralph.describe-pr`: a read-only session that writes the PR/MR title and body (on the `tasks`
+  path, a run of the story task's PR description query task).
 - `ralph.prepare`: runs a manual story's approved `cyralph-prepare` commands (now the
   `worktree.exec` system RPC, same payload, result and guards; ADR 0008).
 
@@ -57,7 +61,8 @@ Linear attachments are gathered by the control panel from the run's Linear text 
 the run (`ralph_runs.attachments`: ID → upload URL); agents download those listed in their job's
 payload through `GET /api/harness/jobs/{id}/attachments/{attachmentId}` (job scope
 `ralph:attachments`), which the control panel proxies with its Linear token. Every completed story is pushed, so the remote branch
-is the only state that matters between jobs.
+is the only state that matters between jobs (a coding task that pushes only at the end pushes
+each story to the run's hidden ref instead; see the addendum).
 
 ### Lanes
 
@@ -330,3 +335,67 @@ Alternatives considered: a separate chat-runs table (would duplicate lanes, requ
 PR follow-up bookkeeping that already hang off `ralph_runs`); mirroring every thought into chat as
 Linear does (too noisy for a channel); and posting from a background job per message (the
 conversation call is cheap and already runs where the activity arrives).
+
+## Addendum: coding runs and the cutover switch
+
+TOOL-304 moves the loop's sessions onto the `coding` task type of
+[ADR 0008](0008-agents-tasks-and-the-harness.md#coding-runs) without changing the decision above:
+`advanceRun`, the run lock, one active job per run, the sticky harness, attempts vs deliveries,
+story selection, Linear state changes, follow-up issues and the reconcile cron are the same on
+both paths, and both share all run state.
+
+- **The switch.** `repositories.coding_path` (**Repository › Settings › Ralph › Coding path**) is
+  `legacy` (the default) or `tasks`. On `legacy`, `advanceRun` enqueues the `ralph.story`,
+  `ralph.request` and `ralph.describe-pr` jobs above, run by the harness's legacy `ralph`
+  capability code. On `tasks`, the same steps are run-spec jobs (`ralphJobInput`,
+  `describePrJobInput` in `apps/web/src/lib/ralph/coding.ts`): story runs of
+  `repositories.story_task_id` (default `builtin:implement-story`) and request runs of
+  `repositories.request_task_id` (default `builtin:handle-request`), both coding tasks on agent
+  `builtin:engineer`, with sink `ralph-run`. They keep the legacy job types (`ralph.story`,
+  `ralph.request`, `ralph.describe-pr`), the run dedupe key and the sticky target, and carry the
+  legacy payload (`buildStoryPayload`, `buildRequestPayload`, …) as their trigger context, so live
+  messages, the Jobs page and the outcome hooks are unchanged; code reads a ralph job's payload
+  with `ralphJobPayload(job)`. Omniralph builds itself with this loop, so the legacy path stays
+  until a coding run has merged a real PR; deleting it is a separate issue.
+- **Prompts.** Story and request prompts are the tasks' templates over contexts built from the same
+  inputs as `buildStoryPrompt` and `buildRequestPrompt`, and render the same for the same inputs
+  (snapshot and parity tests in `packages/tasks`). `builtin:engineer`'s system prompt is
+  mode-neutral; epic, PRD and story wording lives only in the story task's template, and a request
+  prompt never mentions them for any non-epic trigger (`request-prompt.test.ts`). Each request is
+  stored with its trigger (`ralph_messages.trigger`: `linear.mention`, `chat.request`,
+  `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`), which picks the request task.
+- **The PR description** is a run of the story task's `prDescriptionTaskId` (default
+  `builtin:describe-pr` on `builtin:pr-writer`): a query task invoked by the ralph run
+  (`run.invoked`, `RunInvoker { kind: "ralph-run" }`) with a fixed `{ title, body }` output, handed
+  back through the `run-result` sink.
+- **Pushing moves behind the harness.** On `tasks`, only a coding run's `lifecycle` token can get a
+  write credential; the session's git credential helper uses its `session` token, which only ever
+  gets a read credential. The story lifecycle commits and pushes after the gates, as before. A
+  request session can't push by itself: it calls the `ship` harness tool, and the harness commits,
+  pushes (`--force-with-lease` only when asked and **History rewrites** isn't `never`) and returns
+  the outcome, recording the PR/MR action (`open | update | ready`) the control panel then
+  performs. `/ship` still has the lifecycle commit and push after the session.
+- **Push and draft PR timing** are story task settings: `pushTiming` `per-story` (default, today's
+  behaviour) or `end`, and `draftPullRequest` `early` or `end` (unset: the repository's
+  `openPullRequestEarly`). With `end`, each story is pushed to the run's hidden ref
+  `refs/omniralph/runs/<run>` (which keeps the "remote is the state between jobs" property), a
+  `ralph.push` job pushes the branch once every story is done, before the description, and no
+  early draft PR is opened; `end` with an early draft is an invalid task (`validateCodingTask`). The
+  hidden refs are deleted when the run completes or fails (a `worktree.cleanup` RPC with only
+  refs, recorded in `hidden_refs`), and a daily cron prunes leftovers after 14 days.
+- **Preparation and cleanup** run as the system RPCs `worktree.exec` and `worktree.cleanup` on
+  both paths (replacing `ralph.prepare` and `ralph.cleanup`, which stay registered for queued
+  jobs). Cleanup now also runs after a PR/MR closes without merging and after a run is stopped:
+  the `cleanup` action with `keepBranch` stashes uncommitted work and removes the worktree, but
+  keeps the local branch, so a resumed run carries on from it. Nothing deletes a remote branch.
+
+Not covered yet (open stories of TOOL-304): a coding task's own setup and teardown commands
+don't run in coding runs (only the repository's **Setup command**), coding runs carry no
+`min_harness_version` (switch a repository to `tasks` only once its harnesses run a release with
+the coding lifecycle), and the repository's ralph **Model** isn't applied to the PR description
+query run (it uses the task's `opus`).
+
+Alternatives considered: rewriting the loop as a new coding orchestrator (the loop's guarantees
+are what this epic must not change; keeping the payloads as trigger contexts leaves `advanceRun`
+as it was), and a global switch instead of a per-repository one (Omniralph's own repository has
+to be able to fall back while others try the new path).
