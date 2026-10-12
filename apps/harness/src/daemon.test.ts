@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +47,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     jobMessages: [],
     desiredVersion: null,
     updateRequest: null,
+    hostTools: [],
     ...overrides,
   };
 }
@@ -234,6 +235,8 @@ function setup(options: {
   repos?: RepoCache;
   updater?: SelfUpdater;
   dataDir?: string;
+  localConfig?: DaemonOptions["localConfig"];
+  hostToolSearchPath?: string;
 }) {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
@@ -258,6 +261,8 @@ function setup(options: {
     logger: silentLogger(),
     reportRetryDelayMs: 10,
     dataDir: options.dataDir,
+    localConfig: options.localConfig,
+    hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
   });
   return { api, state, claims, tokens, daemon };
@@ -322,6 +327,107 @@ describe("AgentDaemon", () => {
     }
   });
 
+  it("negotiates host tool paths in the heartbeat and exposes the effective ones", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-tools-"));
+    try {
+      const executable = async (relative: string) => {
+        const file = path.join(root, relative);
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, "#!/bin/sh\n");
+        await chmod(file, 0o755);
+        return file;
+      };
+      const configured = await executable("opt/configured");
+      const blocked = await executable("blocked/blocked");
+      const discovered = await executable("path/discovered");
+      await executable("path/missing");
+      await executable("blocked/hidden");
+      const { api, state, daemon } = setup({
+        localConfig: { blockedExecPaths: [path.join(root, "blocked")] },
+        hostToolSearchPath: [path.join(root, "blocked"), path.join(root, "path")].join(
+          path.delimiter,
+        ),
+      });
+      state.config = centralConfig({
+        hostTools: [
+          { name: "configured", configuredPath: configured },
+          { name: "missing", configuredPath: path.join(root, "opt/missing") },
+          { name: "discovered", configuredPath: null },
+          { name: "nowhere", configuredPath: null },
+          { name: "blocked", configuredPath: blocked },
+          { name: "hidden", configuredPath: null },
+        ],
+      });
+
+      // The first heartbeat knows no tools yet; the response lists them.
+      await daemon.heartbeat();
+      expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ hostTools: [] }));
+      expect(daemon.hostToolPath("discovered")).toBeNull();
+
+      await daemon.heartbeat();
+      expect(api.heartbeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          hostTools: [
+            {
+              name: "configured",
+              configuredPath: configured,
+              configuredPathExists: true,
+              discoveredPath: null,
+            },
+            {
+              name: "missing",
+              configuredPath: path.join(root, "opt/missing"),
+              configuredPathExists: false,
+              discoveredPath: path.join(root, "path/missing"),
+            },
+            {
+              name: "discovered",
+              configuredPath: null,
+              configuredPathExists: null,
+              discoveredPath: discovered,
+            },
+            {
+              name: "nowhere",
+              configuredPath: null,
+              configuredPathExists: null,
+              discoveredPath: null,
+            },
+            {
+              name: "blocked",
+              configuredPath: blocked,
+              configuredPathExists: false,
+              discoveredPath: null,
+            },
+            {
+              name: "hidden",
+              configuredPath: null,
+              configuredPathExists: null,
+              discoveredPath: null,
+            },
+          ],
+        }),
+      );
+      expect(daemon.hostToolPath("configured")).toBe(configured);
+      expect(daemon.hostToolPath("missing")).toBeNull();
+      expect(daemon.hostToolPath("discovered")).toBe(discovered);
+      expect(daemon.hostToolPath("nowhere")).toBeNull();
+      expect(daemon.hostToolPath("blocked")).toBeNull();
+      expect(daemon.hostToolPath("hidden")).toBeNull();
+
+      // A response configuring another path makes the tool unavailable until it's checked.
+      state.config = centralConfig({
+        hostTools: [{ name: "discovered", configuredPath: configured }],
+      });
+      daemon.applyConfig(state.config);
+      expect(daemon.hostToolPath("discovered")).toBeNull();
+      expect(daemon.hostToolPath("configured")).toBeNull();
+      await daemon.heartbeat();
+      expect(daemon.hostToolPath("discovered")).toBe(configured);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("heartbeats every 20s with its version, running jobs and free slots", async () => {
     const { api, daemon } = setup({});
     void daemon.run();
@@ -335,6 +441,7 @@ describe("AgentDaemon", () => {
       rejectedMessageIds: [],
       failedVersions: [],
       installables: [],
+      hostTools: [],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);

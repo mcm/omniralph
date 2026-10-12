@@ -1122,6 +1122,54 @@ export const harnessRepoPins = pgTable(
   ],
 );
 
+/**
+ * An organization's catalog of host tools: software harness owners install by
+ * hand (e.g. `opengrep`), which harnesses look up by name on their `PATH`.
+ */
+export const hostTools = pgTable(
+  "host_tools",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Matches `HOST_TOOL_NAME_PATTERN`: the executable's name on `PATH`. */
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("host_tools_organization_name_uq").on(t.organizationId, t.name)],
+);
+
+/**
+ * A host tool on one harness: the path an admin configured (null: none) and
+ * what the harness last reported for it in its heartbeat.
+ */
+export const harnessHostTools = pgTable(
+  "harness_host_tools",
+  {
+    harnessId: uuid("harness_id")
+      .notNull()
+      .references(() => harnesses.id, { onDelete: "cascade" }),
+    hostToolId: uuid("host_tool_id")
+      .notNull()
+      .references(() => hostTools.id, { onDelete: "cascade" }),
+    /** An absolute path; when set it wins over `discoveredPath`, even when it doesn't exist. */
+    configuredPath: text("configured_path"),
+    /** Whether the configured path is a usable executable on the harness; null until reported or with none configured. */
+    configuredPathExists: boolean("configured_path_exists"),
+    /** The first match the harness found on its own `PATH` (never one it blocks). */
+    discoveredPath: text("discovered_path"),
+    /** When the harness last reported on the tool. */
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.harnessId, t.hostToolId] }),
+    index("harness_host_tools_host_tool_id_idx").on(t.hostToolId),
+  ],
+);
+
 export const scmCredentialCache = pgTable(
   "scm_credential_cache",
   {

@@ -16,6 +16,8 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
+import type { HarnessConfig } from "./config.js";
+import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
 import { runCodingTask } from "./lifecycle/coding.js";
 import { runQueryTask } from "./lifecycle/query.js";
@@ -80,6 +82,10 @@ export interface DaemonOptions {
    * in every heartbeat (none when unset).
    */
   dataDir?: string;
+  /** The local config: host tool paths it blocks (`blockedExecPaths`) are never reported or used. */
+  localConfig?: Pick<HarnessConfig, "blockedExecPaths">;
+  /** The `PATH` host tools are discovered on (default: the harness process's own `PATH`). */
+  hostToolSearchPath?: () => string | undefined;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
 }
@@ -151,8 +157,14 @@ export class AgentDaemon implements DrainableDaemon {
   private readonly pendingAcks = new Map<string, { jobId: string; delivered: boolean }>();
   /** Message IDs already acknowledged (oldest first). */
   private readonly ackedMessageIds = new Set<string>();
+  private readonly hostTools: HostToolPaths;
 
   constructor(private readonly options: DaemonOptions) {
+    this.hostTools = new HostToolPaths({
+      config: options.localConfig ?? {},
+      searchPath: options.hostToolSearchPath ?? (() => process.env.PATH),
+      logger: options.logger,
+    });
     this.repoCache = options.repos;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_SECONDS * 1000;
     this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
@@ -300,6 +312,7 @@ export class AgentDaemon implements DrainableDaemon {
     const deliveredMessageIds = ids(true);
     const rejectedMessageIds = ids(false);
     const installables = await this.installedInstallables();
+    const hostTools = await this.checkHostTools();
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
@@ -309,6 +322,7 @@ export class AgentDaemon implements DrainableDaemon {
         rejectedMessageIds,
         failedVersions: [],
         installables,
+        hostTools,
         ...this.options.updater?.report(),
       });
       this.lastHeartbeatAt = new Date();
@@ -337,6 +351,29 @@ export class AgentDaemon implements DrainableDaemon {
       this.options.logger.warn({ err: error }, "cannot list installed installables");
       return [];
     }
+  }
+
+  /**
+   * Reports on the host tools of the last heartbeat response (none before the
+   * first) and keeps their effective paths for `hostToolPath()`.
+   */
+  private async checkHostTools(): Promise<Heartbeat["hostTools"]> {
+    try {
+      return await this.hostTools.check(this.config?.hostTools ?? []);
+    } catch (error) {
+      this.options.logger.warn({ err: error }, "cannot check host tools");
+      return [];
+    }
+  }
+
+  /**
+   * The absolute path to run a host tool from, as negotiated in the last
+   * heartbeats: its configured path when that's a usable executable, else the
+   * one discovered on the harness's `PATH` when none is configured, else null
+   * (unavailable). Never a path covered by `blockedExecPaths`.
+   */
+  hostToolPath(name: string): string | null {
+    return this.hostTools.path(name);
   }
 
   private notifyUpdater(response: HeartbeatResponse | null): void {
@@ -393,6 +430,7 @@ export class AgentDaemon implements DrainableDaemon {
         if (job.sessionToken === undefined) job.sessionTokenFile.update(token);
       }
     }
+    this.hostTools.update(config.hostTools);
     this.deliverMessages(config.jobMessages);
     this.refreshClaim();
   }

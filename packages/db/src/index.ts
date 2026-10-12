@@ -148,6 +148,22 @@ export {
   type RepositoryLink,
 } from "./harnesses.js";
 export {
+  createHostTool,
+  deleteHostTool,
+  effectiveHostToolPath,
+  isValidHostToolName,
+  isValidHostToolPath,
+  listHarnessHostTools,
+  listHostTools,
+  recordHarnessHostTools,
+  setHarnessHostToolPath,
+  type CreateHostToolResult,
+  type HarnessHostTool,
+  type HarnessHostToolRow,
+  type HostTool,
+  type SetHarnessHostToolPathResult,
+} from "./host-tools.js";
+export {
   CHAT_TASKS_KEY,
   DEFAULT_CHAT_TASKS,
   DESIRED_HARNESS_VERSION_KEY,

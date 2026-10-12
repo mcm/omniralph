@@ -505,6 +505,13 @@
       "when": 1791811487798,
       "tag": "0071_harness_reported_installables",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1791812310464,
+      "tag": "0072_host_tools",
+      "breakpoints": true
     }
   ]
 }
