@@ -3,7 +3,12 @@
  * job lifecycle endpoints (`/api/harness/heartbeat`, `/api/harness/claim`,
  * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
-import { InstallablePackageName, InstallableVersion } from "@omniralph/tasks";
+import {
+  HOST_TOOL_NAME_PATTERN,
+  HostToolName,
+  InstallablePackageName,
+  InstallableVersion,
+} from "@omniralph/tasks";
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
 import { RunSpec } from "./run-spec.js";
@@ -234,12 +239,8 @@ export const ReportedInstallable = z.object({
 });
 export type ReportedInstallable = z.infer<typeof ReportedInstallable>;
 
-/**
- * A host tool's name: software a harness owner installs by hand (e.g.
- * `opengrep`), in the organization's catalog and looked up on the harness's `PATH`.
- */
-export const HOST_TOOL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-export const HostToolName = z.string().regex(HOST_TOOL_NAME_PATTERN);
+/** A host tool's name (`HostToolName` of `@omniralph/tasks`, which task definitions require by). */
+export { HOST_TOOL_NAME_PATTERN, HostToolName };
 
 /** An absolute path to a host tool's executable on a harness. */
 export const HostToolPath = z

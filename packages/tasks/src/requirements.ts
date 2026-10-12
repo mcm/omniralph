@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { TaskDefinition } from "./definitions.js";
+import type { AgentDefinition, TaskDefinition } from "./definitions.js";
+import { parseInstallableMcpServerRef } from "./installables.js";
 import type { TaskType } from "./kinds.js";
 import { templateVariables } from "./template.js";
 import { taskVariables, VARIABLES, type VariableDefinition } from "./variables.js";
@@ -54,17 +55,42 @@ function higherVersion(a: string, b: string): string {
 type RequirementFields = Pick<
   TaskDefinition,
   "taskType" | "triggers" | "promptTemplate" | "setupCommands" | "teardownCommands"
->;
+> &
+  Partial<Pick<TaskDefinition, "requires">>;
+
+/** The fields of a task's agent its requirements come from. */
+export type RequirementAgentFields = { tools: Pick<AgentDefinition["tools"], "mcpServers"> };
 
 /**
- * What a run of `task` needs: the harness release that runs its task type,
- * its setup and teardown commands (if any) and every task-type variable its
- * template uses (`minHarnessVersion` in `catalog`), whichever is highest.
- * Definitions don't name installables or host tools yet, so those are empty.
+ * The installables and host tools a run of `task` on `agent` needs: the
+ * task's `requires`, plus each installable whose MCP servers the agent lists
+ * (`<package>:<server>`), each once and sorted.
+ */
+export function deriveHarnessRequirements(
+  task: Partial<Pick<TaskDefinition, "requires">>,
+  agent?: RequirementAgentFields | null,
+): Pick<TaskRequirements, "installables" | "hostTools"> {
+  const installables = new Set(task.requires?.installables ?? []);
+  for (const entry of agent?.tools.mcpServers ?? []) {
+    const ref = parseInstallableMcpServerRef(entry);
+    if (ref) installables.add(ref.installable);
+  }
+  return {
+    installables: [...installables].sort(),
+    hostTools: [...new Set(task.requires?.hostTools ?? [])].sort(),
+  };
+}
+
+/**
+ * What a run of `task` (on `agent`) needs: the harness release that runs its
+ * task type, its setup and teardown commands (if any) and every task-type
+ * variable its template uses (`minHarnessVersion` in `catalog`), whichever is
+ * highest; and the installables and host tools of `deriveHarnessRequirements`.
  */
 export function deriveTaskRequirements(
   task: RequirementFields,
   catalog: readonly VariableDefinition[] = VARIABLES,
+  agent?: RequirementAgentFields | null,
 ): TaskRequirements {
   const entries = new Map(catalog.map((variable) => [variable.name, variable]));
   const versions = [HARNESS_VERSION_BY_TASK_TYPE[task.taskType]];
@@ -79,7 +105,6 @@ export function deriveTaskRequirements(
   }
   return {
     minHarnessVersion: versions.reduce(higherVersion),
-    installables: [],
-    hostTools: [],
+    ...deriveHarnessRequirements(task, agent),
   };
 }

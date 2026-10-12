@@ -411,6 +411,21 @@ describe("runSpecJobInput", () => {
       payload,
       repositoryId: REPO_ID,
       minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      requiredInstallables: [],
+      requiredHostTools: [],
+    });
+  });
+
+  it("requires the installables and host tools it's given, each once and sorted", () => {
+    const task = TaskDefinition.parse(taskInput);
+    expect(
+      runSpecJobInput(task, payload, {
+        installables: ["@omniralph/sast", "@omniralph/code-graph", "@omniralph/sast"],
+        hostTools: ["opengrep"],
+      }),
+    ).toMatchObject({
+      requiredInstallables: ["@omniralph/code-graph", "@omniralph/sast"],
+      requiredHostTools: ["opengrep"],
     });
   });
 

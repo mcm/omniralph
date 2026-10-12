@@ -9,10 +9,13 @@ import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "dr
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
 import type { Database } from "./client.js";
+import { effectiveHostToolPath } from "./host-tools.js";
 import {
   chatThreadRuns,
+  harnessHostTools,
   harnessRepoPins,
   harnesses,
+  hostTools,
   jobs,
   type HarnessUpdateState,
   type JobTaskType,
@@ -41,6 +44,10 @@ export interface NewJobInput {
   taskId?: string | null;
   /** Only harnesses reporting at least this version claim the job. */
   minHarnessVersion?: string | null;
+  /** Only harnesses reporting every one of these installables claim the job. */
+  requiredInstallables?: readonly string[];
+  /** Only harnesses with an effective path for every one of these host tools claim the job. */
+  requiredHostTools?: readonly string[];
   payload?: Record<string, unknown>;
   repositoryId?: string | null;
   /** At most one queued/running job per key; a second insert returns the active job. */
@@ -70,6 +77,8 @@ export async function insertJob(
         pool: input.pool,
         taskId: input.taskId ?? null,
         minHarnessVersion: input.minHarnessVersion ?? null,
+        requiredInstallables: [...(input.requiredInstallables ?? [])],
+        requiredHostTools: [...(input.requiredHostTools ?? [])],
         payload: input.payload ?? {},
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
@@ -218,6 +227,9 @@ export interface ClaimJobResult {
  * slot in), plus `system` jobs (always accepted, no pool); whose
  * `min_harness_version` is null or at most `harnessVersion`
  * (`harnessVersionAtLeast`; none when the harness reported no version);
+ * whose `required_installables` are all in the harness's
+ * `reported_installables` and whose `required_host_tools` all have an
+ * `effectiveHostToolPath` on it (`harness_host_tools`);
  * targeted at this harness or at none; that are `queued` with
  * `available_at <= now` or `running` with a lapsed lease (the previous
  * harness's results are then rejected). Jobs targeted at this harness come
@@ -273,11 +285,14 @@ export async function claimJob(
   const metMinimums = minimums
     .map((m) => m.version!)
     .filter((minimum) => harnessVersion !== null && harnessVersionAtLeast(harnessVersion, minimum));
+  const { installables, hostTools: tools } = await harnessCapabilities(db, input);
   const eligible = and(
     claimable,
     metMinimums.length > 0
       ? or(isNull(jobs.minHarnessVersion), inArray(jobs.minHarnessVersion, metMinimums))
       : isNull(jobs.minHarnessVersion),
+    sql`${jobs.requiredInstallables} <@ ${textArray(installables)}`,
+    sql`${jobs.requiredHostTools} <@ ${textArray(tools)}`,
   );
   return db.transaction(async (tx): Promise<ClaimJobResult> => {
     for (;;) {
@@ -338,6 +353,55 @@ export async function claimJob(
       return { claim: { action: "run", job: claimed! }, settled };
     }
   });
+}
+
+/**
+ * The installables a harness reported and the host tools it has an effective
+ * path for, by name: what jobs' `required_installables` and
+ * `required_host_tools` are checked against.
+ */
+async function harnessCapabilities(
+  db: Database,
+  input: { harnessId: string; organizationId: string },
+): Promise<{ installables: string[]; hostTools: string[] }> {
+  const [harness] = await db
+    .select({ installables: harnesses.reportedInstallables })
+    .from(harnesses)
+    .where(
+      and(eq(harnesses.id, input.harnessId), eq(harnesses.organizationId, input.organizationId)),
+    )
+    .limit(1);
+  const tools = await db
+    .select({
+      name: hostTools.name,
+      configuredPath: harnessHostTools.configuredPath,
+      configuredPathExists: harnessHostTools.configuredPathExists,
+      discoveredPath: harnessHostTools.discoveredPath,
+    })
+    .from(harnessHostTools)
+    .innerJoin(hostTools, eq(hostTools.id, harnessHostTools.hostToolId))
+    .where(
+      and(
+        eq(harnessHostTools.harnessId, input.harnessId),
+        eq(hostTools.organizationId, input.organizationId),
+      ),
+    );
+  return {
+    installables: (harness?.installables ?? []).map((installable) => installable.name),
+    hostTools: tools
+      .filter((tool) => effectiveHostToolPath(tool) !== null)
+      .map((tool) => tool.name),
+  };
+}
+
+/** `values` as a SQL `text[]`. */
+function textArray(values: readonly string[]) {
+  return values.length > 0
+    ? sql`array[${sql.join(
+        values.map((value) => sql`${value}`),
+        sql`, `,
+      )}]::text[]`
+    : sql`'{}'::text[]`;
 }
 
 /**

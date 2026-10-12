@@ -1422,6 +1422,16 @@ export const jobs = pgTable(
     taskId: text("task_id"),
     /** Only harnesses reporting at least this version (semver) claim the job. */
     minHarnessVersion: text("min_harness_version"),
+    /** Only harnesses reporting every one of these installables (npm package names) claim the job. */
+    requiredInstallables: text("required_installables")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** Only harnesses with an effective path for every one of these host tools (by name) claim the job. */
+    requiredHostTools: text("required_host_tools")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     status: jobStatus("status").notNull().default("queued"),
     repositoryId: uuid("repository_id").references(() => repositories.id, {

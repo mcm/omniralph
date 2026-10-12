@@ -33,7 +33,7 @@ import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { pageMain, pageTitle } from "../agents/agent-parts";
-import { Choices, errorFor, monoInput } from "../agents/form-parts";
+import { Choices, errorFor, monoInput, splitNames } from "../agents/form-parts";
 import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
 import {
   codingDraft,
@@ -161,6 +161,12 @@ export function TaskForm({
   const [toolSettings, setToolSettings] = React.useState<ToolSettings>(
     task?.toolSettings ?? { shell: false, linearRead: false, network: false },
   );
+  const [requiredInstallables, setRequiredInstallables] = React.useState(
+    task?.requires?.installables.join(", ") ?? "",
+  );
+  const [requiredHostTools, setRequiredHostTools] = React.useState(
+    task?.requires?.hostTools.join(", ") ?? "",
+  );
   const [outputSchema, setOutputSchema] = React.useState(schemaText(task?.outputSchema));
   const [coding, setCoding] = React.useState(codingDraft(task));
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
@@ -207,6 +213,10 @@ export function TaskForm({
       toolSettings: {
         ...toolSettings,
         shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
+      },
+      requires: {
+        installables: splitNames(requiredInstallables),
+        hostTools: splitNames(requiredHostTools),
       },
       ...(schema.schema && { outputSchema: schema.schema }),
       ...(taskType === "coding" && codingFields(coding)),
@@ -419,6 +429,50 @@ export function TaskForm({
                 errors={errors}
                 disabled={pending}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Requirements</CardTitle>
+              <CardDescription>
+                Only harnesses that have these claim the task&apos;s runs (besides the installables
+                of MCP servers its agent lists).
+              </CardDescription>
+            </CardHeader>
+            <CardContent style={stack}>
+              <Field
+                label="Installables"
+                htmlFor="task-requires-installables"
+                hint="Comma-separated npm package names, e.g. @omniralph/code-graph."
+                error={errorFor(errors, "requires.installables")}
+              >
+                <Input
+                  id="task-requires-installables"
+                  disabled={pending}
+                  error={Boolean(errorFor(errors, "requires.installables"))}
+                  aria-invalid={Boolean(errorFor(errors, "requires.installables"))}
+                  value={requiredInstallables}
+                  onChange={(e) => setRequiredInstallables(e.target.value)}
+                  style={monoInput}
+                />
+              </Field>
+              <Field
+                label="Host tools"
+                htmlFor="task-requires-host-tools"
+                hint="Comma-separated names from Settings › Harnesses › Host tools, e.g. opengrep."
+                error={errorFor(errors, "requires.hostTools")}
+              >
+                <Input
+                  id="task-requires-host-tools"
+                  disabled={pending}
+                  error={Boolean(errorFor(errors, "requires.hostTools"))}
+                  aria-invalid={Boolean(errorFor(errors, "requires.hostTools"))}
+                  value={requiredHostTools}
+                  onChange={(e) => setRequiredHostTools(e.target.value)}
+                  style={monoInput}
+                />
+              </Field>
             </CardContent>
           </Card>
 

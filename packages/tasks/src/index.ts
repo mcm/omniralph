@@ -10,3 +10,4 @@ export * from "./requirements.js";
 export * from "./output-schema.js";
 export * from "./validate.js";
 export * from "./installables.js";
+export * from "./host-tools.js";

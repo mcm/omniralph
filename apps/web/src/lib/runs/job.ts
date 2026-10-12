@@ -19,13 +19,15 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
  * tasks with setup or teardown commands one that runs them
  * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`), and a custom task the
  * `minHarnessVersion` of the `requirements` stored with it: the highest that
- * applies.
+ * applies. Only harnesses with every installable and host tool in
+ * `requirements` (`deriveHarnessRequirements` of the task and its agent)
+ * claim the job.
  */
 export function runSpecJobInput(
   task: Pick<TaskDefinition, "id" | "taskType" | "pool"> &
     Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
   payload: RunSpecJobPayload,
-  requirements?: Pick<TaskRequirements, "minHarnessVersion"> | null,
+  requirements?: Partial<TaskRequirements> | null,
 ): {
   taskType: TaskDefinition["taskType"];
   pool: TaskDefinition["pool"];
@@ -33,6 +35,8 @@ export function runSpecJobInput(
   payload: RunSpecJobPayload;
   repositoryId: string | null;
   minHarnessVersion: string | null;
+  requiredInstallables: string[];
+  requiredHostTools: string[];
 } {
   const parsed = RunSpecJobPayload.parse(payload);
   return {
@@ -42,6 +46,8 @@ export function runSpecJobInput(
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
     minHarnessVersion: minHarnessVersion(task, requirements?.minHarnessVersion ?? null),
+    requiredInstallables: [...new Set(requirements?.installables ?? [])].sort(),
+    requiredHostTools: [...new Set(requirements?.hostTools ?? [])].sort(),
   };
 }
 

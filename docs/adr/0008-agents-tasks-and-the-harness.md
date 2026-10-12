@@ -490,10 +490,12 @@ is [docs/definitions.md](../definitions.md).
   (`apps/web/src/lib/definitions/validation.ts`: the organization's agents and tasks, the real
   sinks), admins only. A test runs every built-in (and its clone) through the same validation.
 - **Stored requirements.** A task save derives `TaskRequirements` (`deriveTaskRequirements`: the
-  minimum harness version for the task type, commands and template variables; installables and
-  host tools, empty for now) and stores them with the row. `taskJobInput` puts the minimum version
-  on every job of the task (`jobs.min_harness_version`), so the claim path filters harnesses
-  without deriving anything again.
+  minimum harness version for the task type, commands and template variables; the installables and
+  host tools of the task's `requires` and of its agent's `<package>:<server>` MCP servers) and
+  stores them with the row. `taskJobInput` puts the minimum version on every job of the task
+  (`jobs.min_harness_version`), and the installables and host tools derived from the task and its
+  agent at enqueue time (`deriveHarnessRequirements`; `jobs.required_installables`,
+  `jobs.required_host_tools`), so the claim path filters harnesses without deriving anything again.
 - **Built-ins stay read-only.** Changing one is a code change; **Clone** copies one (or a custom
   definition) into a new UUID row. A custom task may name a built-in agent and follows it as it
   changes.

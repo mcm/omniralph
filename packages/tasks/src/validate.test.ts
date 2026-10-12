@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILTIN_AGENTS,
   BUILTIN_TASKS,
+  deriveHarnessRequirements,
   deriveTaskRequirements,
   getBuiltinAgent,
   getBuiltinTask,
@@ -409,6 +410,38 @@ describe("deriveTaskRequirements", () => {
       task({ ...query, teardownCommands: [{ name: "clean", command: "rm -rf tmp" }] }).requirements
         .minHarnessVersion,
     ).toBe(HARNESS_VERSION_FOR_COMMANDS);
+  });
+
+  it("needs the task's installables and host tools and those of its agent's MCP servers", () => {
+    const graphAgent = {
+      ...validAgent(),
+      tools: {
+        ...validAgent().tools,
+        mcpServers: ["github", "@omniralph/code-graph:graph", "@omniralph/code-graph:search"],
+      },
+    };
+    const result = validateTaskDefinition(
+      {
+        ...query,
+        taskType: "review",
+        agentId: AGENT_ID,
+        triggers: ["pr.updated"],
+        promptTemplate: "{{pr.title}}",
+        sink: "review",
+        requires: { installables: ["@omniralph/sast"], hostTools: ["opengrep", "git", "opengrep"] },
+      },
+      { ...context, getAgent: (id) => (id === AGENT_ID ? graphAgent : null) },
+    );
+    expect(result.ok && result.requirements).toEqual({
+      minHarnessVersion: HARNESS_VERSION_BY_TASK_TYPE.review,
+      installables: ["@omniralph/code-graph", "@omniralph/sast"],
+      hostTools: ["git", "opengrep"],
+    });
+    expect(deriveHarnessRequirements({}, graphAgent)).toEqual({
+      installables: ["@omniralph/code-graph"],
+      hostTools: [],
+    });
+    expect(deriveHarnessRequirements({}, null)).toEqual({ installables: [], hostTools: [] });
   });
 
   it("needs the release that provides each task-type variable its template uses", () => {

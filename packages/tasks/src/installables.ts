@@ -97,6 +97,35 @@ export const InstallableMcpServer = z.object({
 });
 export type InstallableMcpServer = z.infer<typeof InstallableMcpServer>;
 
+/**
+ * Separates an installable's package name from one of its MCP servers where an
+ * agent's `tools.mcpServers` lists that server (`@omniralph/code-graph:graph`).
+ * npm package names never contain it.
+ */
+export const INSTALLABLE_MCP_SERVER_SEPARATOR = ":";
+
+/** An installable's MCP server, as an agent's `tools.mcpServers` names it. */
+export interface InstallableMcpServerRef {
+  installable: string;
+  server: string;
+}
+
+/**
+ * The installable and server an agent's `tools.mcpServers` entry names
+ * (`<package>:<server>`), or null when it names a configured MCP server
+ * instead (no separator) or isn't a valid reference.
+ */
+export function parseInstallableMcpServerRef(entry: string): InstallableMcpServerRef | null {
+  const at = entry.lastIndexOf(INSTALLABLE_MCP_SERVER_SEPARATOR);
+  if (at < 0) return null;
+  const installable = entry.slice(0, at);
+  const server = entry.slice(at + 1);
+  return InstallablePackageName.safeParse(installable).success &&
+    INSTALLABLE_ITEM_NAME_PATTERN.test(server)
+    ? { installable, server }
+    : null;
+}
+
 function uniqueNames(field: string) {
   return (items: { name: string }[], ctx: z.RefinementCtx) => {
     const names = new Set<string>();

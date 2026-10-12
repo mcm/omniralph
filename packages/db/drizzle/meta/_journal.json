@@ -512,6 +512,13 @@
       "when": 1791812310464,
       "tag": "0072_host_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791814126966,
+      "tag": "0073_job_requirements",
+      "breakpoints": true
     }
   ]
 }

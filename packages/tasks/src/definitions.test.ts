@@ -75,6 +75,16 @@ describe("AgentDefinition", () => {
     expect(AgentDefinition.parse(full)).toEqual(full);
   });
 
+  it("accepts an installable's MCP servers as <package>:<server> and rejects malformed ones", () => {
+    const tools = (mcpServers: string[]) =>
+      AgentDefinition.safeParse({ ...agent, tools: { mcpServers } });
+    expect(tools(["github", "@omniralph/code-graph:graph"]).success).toBe(true);
+    expect(issues(tools(["github", "code graph:graph", "pkg:"]))).toEqual([
+      "tools.mcpServers.1",
+      "tools.mcpServers.2",
+    ]);
+  });
+
   it("rejects bad definitions", () => {
     expect(issues(AgentDefinition.safeParse({ ...agent, taskTypes: [] }))).toEqual(["taskTypes"]);
     expect(issues(AgentDefinition.safeParse({ ...agent, taskTypes: ["deploy"] }))).toEqual([
@@ -109,6 +119,21 @@ describe("TaskDefinition", () => {
     expect(parsed.systemAppend).toBeUndefined();
     expect(parsed.maxTurns).toBeUndefined();
     expect(TaskDefinition.parse({ ...task, tokenBudget: undefined }).tokenBudget).toBeNull();
+  });
+
+  it("takes required installables and host tools, checking their names", () => {
+    expect(TaskDefinition.parse(task).requires).toBeUndefined();
+    expect(
+      TaskDefinition.parse({ ...task, requires: { hostTools: ["opengrep"] } }).requires,
+    ).toEqual({ installables: [], hostTools: ["opengrep"] });
+    expect(
+      issues(
+        TaskDefinition.safeParse({
+          ...task,
+          requires: { installables: ["@omniralph/code-graph", "-x"], hostTools: ["Open Grep"] },
+        }),
+      ),
+    ).toEqual(["requires.installables.1", "requires.hostTools.0"]);
   });
 
   it("accepts the token budget forms", () => {

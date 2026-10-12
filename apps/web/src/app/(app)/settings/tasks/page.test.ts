@@ -25,8 +25,13 @@ const rows = vi.hoisted(async () => {
     id: "22222222-2222-4222-8222-222222222222",
     organizationId: "org-1",
     name: "Security review",
-    definition,
-    requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
+    definition: { ...definition, requires: { hostTools: ["git"] } },
+    // The installables and host tools shown follow the definitions, not what was stored.
+    requirements: {
+      minHarnessVersion: "0.40.0",
+      installables: ["@omniralph/stale"],
+      hostTools: [],
+    },
     createdAt: now,
     updatedAt: now,
     createdBy: null,
@@ -152,7 +157,7 @@ describe("Settings › Tasks pages", () => {
     expect(props.agentName).toEqual(expect.any(String));
   });
 
-  it("show the organization's own task with its stored requirements and referrers", async () => {
+  it("show the organization's own task with its requirements and referrers", async () => {
     state.user = user("member");
     const { props } = await TaskPage(params(CUSTOM_ID));
     expect(props.builtin).toBe(false);

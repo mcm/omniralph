@@ -1,0 +1,2 @@
+ALTER TABLE "jobs" ADD COLUMN "required_installables" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+ALTER TABLE "jobs" ADD COLUMN "required_host_tools" text[] DEFAULT '{}'::text[] NOT NULL;
