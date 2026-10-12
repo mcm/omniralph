@@ -114,6 +114,20 @@ export async function resolveChatActor(
   return { kind: "unlinked" };
 }
 
+/**
+ * The organization member a chat user is linked to, or null (no identity
+ * lookup on the platform, no auto-linking): who a wake-up acts for.
+ */
+export async function linkedMemberActor(
+  db: Database,
+  organizationId: string,
+  platform: ChatPlatform,
+  externalUserId: string,
+): Promise<ChatMemberActor | null> {
+  const identity = await getChatIdentity(db, organizationId, platform, externalUserId);
+  return identity ? memberActor(db, organizationId, identity.userId) : null;
+}
+
 async function memberActor(
   db: Database,
   organizationId: string,

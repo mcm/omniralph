@@ -38,6 +38,10 @@ import {
   listThreadRuns,
   mapThreadRun,
   recordRunEvent,
+  recordRunEventAttempt,
+  markRunEventsProcessed,
+  listThreadsWithPendingRunEvents,
+  runRequester,
   saveChatConnection,
   saveChatUserProfile,
   threadOfRun,
@@ -760,6 +764,66 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
       // Events go with their thread.
       await db.delete(chatThreads).where(eq(chatThreads.id, thread.id));
       expect(await db.select().from(chatRunEvents)).toEqual([]);
+    });
+
+    it("tracks relaying run events: attempts, processed, and the threads still waiting", async () => {
+      const thread = await newThread();
+      const job = await newJob();
+      await appendChatMessage(db, {
+        threadId: thread.id,
+        role: "user",
+        externalUserId: "U-ASKER",
+        authorName: "Asker",
+        content: "how does it work?",
+      });
+      const threadRun = (await mapThreadRun(db, {
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        jobId: job.id,
+      }))!;
+      await appendChatMessage(db, {
+        threadId: thread.id,
+        role: "user",
+        externalUserId: "U-LATER",
+        content: "and later?",
+      });
+      // The author of the message the run was started for, not a later one.
+      expect(await runRequester(db, orgId, threadRun)).toEqual({
+        externalUserId: "U-ASKER",
+        authorName: "Asker",
+      });
+      expect(await runRequester(db, otherOrgId, threadRun)).toBeNull();
+
+      const { event } = await recordRunEvent(db, {
+        organizationId: orgId,
+        threadRun,
+        kind: "response",
+        body: { text: "The answer." },
+        idempotencyKey: `chat-run-event:job:${job.id}:relay`,
+      });
+      const id = event!.id;
+      const later = new Date(Date.now() + 60_000);
+      const waiting = (maxAttempts = 3) =>
+        listThreadsWithPendingRunEvents(db, { createdBefore: later, maxAttempts });
+
+      expect(await waiting()).toContain(thread.id);
+      expect(
+        await listThreadsWithPendingRunEvents(db, { createdBefore: new Date(0), maxAttempts: 3 }),
+      ).not.toContain(thread.id);
+
+      // Another organization can neither count attempts nor mark it processed.
+      await recordRunEventAttempt(db, otherOrgId, [id]);
+      expect(await markRunEventsProcessed(db, otherOrgId, [id])).toBe(0);
+      await recordRunEventAttempt(db, orgId, [id]);
+      await recordRunEventAttempt(db, orgId, [id]);
+      expect((await listRunEvents(db, orgId, thread.id))[0]).toMatchObject({ attempts: 2 });
+      expect(await waiting(2)).not.toContain(thread.id);
+      expect(await waiting(3)).toContain(thread.id);
+
+      expect(await markRunEventsProcessed(db, orgId, [id])).toBe(1);
+      expect(await markRunEventsProcessed(db, orgId, [id])).toBe(0);
+      expect(await listRunEvents(db, orgId, thread.id, { pending: true })).toEqual([]);
+      expect(await waiting()).not.toContain(thread.id);
     });
   });
 

@@ -66,6 +66,15 @@ export const CHAT_AGENT_RATE_LIMITS = {
     limit: 10,
     windowSeconds: 60,
   }),
+  /**
+   * Wake-ups: responder turns relaying run events (`lib/chat/agent/wake.ts`),
+   * counted apart from people's turns.
+   */
+  wakePerOrganization: (organizationId: string): RateLimit => ({
+    key: `chat_agent:wake:${organizationId}`,
+    limit: 60,
+    windowSeconds: 10 * 60,
+  }),
 } as const;
 
 /** After this many failed auth attempts from one IP within the window, the IP is locked out. */
