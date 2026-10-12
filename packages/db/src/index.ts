@@ -154,6 +154,7 @@ export {
   isValidHostToolName,
   isValidHostToolPath,
   listHarnessHostTools,
+  listHarnessesUsableHostTools,
   listHostTools,
   recordHarnessHostTools,
   setHarnessHostToolPath,

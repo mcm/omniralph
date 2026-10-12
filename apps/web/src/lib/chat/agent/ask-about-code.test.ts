@@ -5,7 +5,10 @@ import {
   appendChatMessage,
   harnesses,
   closeDb,
+  createHostTool,
+  deleteHostTool,
   insertTaskDefinition,
+  recordHarnessHostTools,
   listThreadRuns,
   connectRepository,
   createDb,
@@ -67,16 +70,19 @@ describe("queryClaimableHarnesses", () => {
   type Overview = Parameters<typeof queryClaimableHarnesses>[0][number];
   const harness = (over: Partial<Overview> = {}) =>
     ({
+      id: over.name ?? "a",
       name: "a",
       reportedVersion: "0.9.0",
       revokedAt: null,
       lastHeartbeatAt: now,
       acceptedTaskTypes: ["query", "review"],
+      reportedInstallables: [],
       pinnedRepositories: [],
       ...over,
     }) as unknown as Overview;
+  const minimum = { minHarnessVersion: "0.9.0", installables: [], hostTools: [] };
   const claimable = (harnesses: Overview[], repositoryId = "r1") =>
-    queryClaimableHarnesses(harnesses, repositoryId, "0.9.0", now);
+    queryClaimableHarnesses(harnesses, new Map(), repositoryId, minimum, now);
 
   it("counts online harnesses accepting query tasks on the minimum version or later", () => {
     expect(claimable([harness(), harness({ name: "newer", reportedVersion: "0.10.0" })])).toEqual([
@@ -89,6 +95,46 @@ describe("queryClaimableHarnesses", () => {
       harness({ name: "no-query", acceptedTaskTypes: ["review", "coding"] }),
     ];
     expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false]);
+  });
+
+  it("only counts harnesses with every required installable and host tool", () => {
+    const graph = { name: "@omniralph/code-graph", version: "1.0.0" };
+    const hello = { name: "@omniralph/hello", version: "1.0.0" };
+    const all = harness({ name: "all", reportedInstallables: [graph, hello] });
+    const missingInstallable = harness({ name: "no-hello", reportedInstallables: [graph] });
+    const missingHostTool = harness({ name: "no-semgrep", reportedInstallables: [graph, hello] });
+    // As `listHarnessesUsableHostTools`: tools with an effective path, by harness ID.
+    const usable = new Map([
+      ["all", ["opengrep", "semgrep"]],
+      ["no-hello", ["opengrep", "semgrep"]],
+      ["no-semgrep", ["opengrep"]],
+    ]);
+    const requirements = {
+      minHarnessVersion: "0.9.0",
+      installables: [graph.name, hello.name],
+      hostTools: ["opengrep", "semgrep"],
+    };
+    expect(
+      queryClaimableHarnesses(
+        [all, missingInstallable, missingHostTool],
+        usable,
+        "r1",
+        requirements,
+        now,
+      ),
+    ).toEqual([
+      { name: "all", version: "0.9.0", capable: true },
+      { name: "no-hello", version: "0.9.0", capable: false },
+      { name: "no-semgrep", version: "0.9.0", capable: false },
+    ]);
+    // A harness with no usable host tools at all.
+    expect(
+      queryClaimableHarnesses([all], new Map(), "r1", requirements, now).map((h) => h.capable),
+    ).toEqual([false]);
+    // Without requirements, neither is needed.
+    expect(
+      queryClaimableHarnesses([missingInstallable], new Map(), "r1", minimum, now)[0]?.capable,
+    ).toBe(true);
   });
 
   it("leaves out offline and revoked harnesses, and only counts pinned harnesses of a pinned repository", () => {
@@ -568,6 +614,77 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     expect(more).toEqual([]);
     expect(job).toMatchObject({ taskId: stored.id, taskType: "query", status: "queued" });
     expect(result).toMatchObject({ status: "started", runId: job!.id, task: stored.id });
+  });
+
+  it("enqueues nothing until a harness has the task's installables and host tools", async () => {
+    const h = await harness();
+    const { id: _id, name: _name, ...builtin } = getBuiltinTask("builtin:ask-about-code")!;
+    const definition = {
+      ...builtin,
+      requires: { installables: ["@omniralph/code-graph"], hostTools: ["opengrep"] },
+    };
+    const stored = await insertTaskDefinition(db, orgId, {
+      name: "Graph Q&A",
+      definition,
+      requirements: deriveTaskRequirements(definition),
+      createdBy: null,
+    });
+    await upsertChatChannelTaskSetting(db, {
+      organizationId: orgId,
+      connectionId,
+      channelId: h.chatThread.channelId,
+      askAboutCodeTaskId: stored.id,
+      startWorkTaskId: null,
+      updatedBy: null,
+    });
+    const tool = await createHostTool(db, orgId, { name: "opengrep" });
+    if (!tool.ok) throw new Error("setup");
+
+    try {
+      const missingBoth = await ask(h, { repository: "acme/api", question: "What is this?" });
+      expect(missingBoth).toMatchObject({
+        error: "no_capable_harness",
+        harnesses: [{ name: "acme-agent", capable: false }],
+      });
+      expect(missingBoth.message).toContain("@omniralph/code-graph");
+      expect(missingBoth.message).toContain("opengrep");
+
+      // The installable alone isn't enough: the host tool has no path on the harness.
+      await setAgent(harnessId, {
+        reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
+      });
+      await recordHarnessHostTools(db, orgId, harnessId, [
+        { name: "opengrep", configuredPathExists: null, discoveredPath: null },
+      ]);
+      expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
+        error: "no_capable_harness",
+        harnesses: [{ name: "acme-agent", capable: false }],
+      });
+
+      // The host tool alone isn't enough either.
+      await setAgent(harnessId, { reportedInstallables: [] });
+      await recordHarnessHostTools(db, orgId, harnessId, [
+        { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
+      ]);
+      expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
+        error: "no_capable_harness",
+      });
+      expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+
+      await setAgent(harnessId, {
+        reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
+      });
+      const result = await ask(h, { repository: "acme/api", question: "What is this?" });
+      const [job] = await chatAskJobs(h.chatThread.id);
+      expect(result).toMatchObject({ status: "started", runId: job!.id });
+      expect(job).toMatchObject({
+        requiredInstallables: ["@omniralph/code-graph"],
+        requiredHostTools: ["opengrep"],
+      });
+    } finally {
+      await setAgent(harnessId, { reportedInstallables: [] });
+      await deleteHostTool(db, orgId, tool.hostTool.id);
+    }
   });
 
   describe("in a responder turn", () => {

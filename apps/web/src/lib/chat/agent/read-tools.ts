@@ -22,15 +22,11 @@ import {
   type RepositoryOverview,
   type ThreadRunRef,
 } from "@omniralph/db";
-import {
-  MAX_CHAT_ASK_QUESTION_LENGTH,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
-  QueryRunResult,
-  RunSpecJobPayload,
-} from "@omniralph/shared";
+import { MAX_CHAT_ASK_QUESTION_LENGTH, QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
 import { organizationDefinitions } from "@/lib/definitions";
+import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
 import {
@@ -748,7 +744,7 @@ export const askAboutCodeTool = defineChatTool({
           message:
             outcome.harnesses.length === 0
               ? `No harness of the organization that would take this question is online, so nobody can answer it now. Nothing was queued. An admin can check the harnesses on ${appUrl}/harnesses.`
-              : `None of the online harnesses that would take this question can answer code questions: that needs a harness accepting query tasks on version ${QUERY_TASKS_MIN_HARNESS_VERSION} or later. Nothing was queued. An admin can change or update the harnesses on ${appUrl}/harnesses.`,
+              : `None of the online harnesses that would take this question can answer code questions: that needs a harness ${harnessNeeds(outcome.requirements)}. Nothing was queued. An admin can change or update the harnesses on ${appUrl}/harnesses.`,
           harnesses: outcome.harnesses,
         };
       case "failed":
@@ -773,6 +769,22 @@ export const askAboutCodeTool = defineChatTool({
     }
   },
 });
+
+/** What a harness needs to claim a run, as a phrase: "accepting query tasks on version 0.9.0 or later, with …". */
+function harnessNeeds(requirements: RunHarnessRequirements): string {
+  const parts = [
+    requirements.minHarnessVersion === null
+      ? "accepting query tasks"
+      : `accepting query tasks on version ${requirements.minHarnessVersion} or later`,
+  ];
+  if (requirements.installables.length > 0) {
+    parts.push(`with the installables ${requirements.installables.join(", ")}`);
+  }
+  if (requirements.hostTools.length > 0) {
+    parts.push(`with the host tools ${requirements.hostTools.join(", ")}`);
+  }
+  return parts.join(", ");
+}
 
 export const readTools: ChatToolRegistry = {
   list_ralph_runs: listRalphRunsTool,

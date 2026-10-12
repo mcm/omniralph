@@ -9,6 +9,7 @@ import {
   deleteHostTool,
   effectiveHostToolPath,
   listHarnessHostTools,
+  listHarnessesUsableHostTools,
   listHostTools,
   recordHarnessHostTools,
   setHarnessHostToolPath,
@@ -307,6 +308,37 @@ describe.skipIf(!dockerAvailable)("host tools", () => {
     expect(
       (await listHarnessHostTools(db, orgId, other)).map((tool) => tool.effectivePath),
     ).toEqual(["/usr/bin/configured", "/usr/bin/discovered"]);
+  });
+
+  it("lists each harness's host tools with an effective path, within the organization", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Usable" }).returning();
+    const orgId = org!.id;
+    const h1 = await harness(orgId, "h1");
+    const h2 = await harness(orgId, "h2");
+    const h3 = await harness(orgId, "h3");
+    const tools: Record<string, string> = {};
+    for (const name of ["semgrep", "opengrep", "ctags"]) {
+      const tool = await createHostTool(db, orgId, { name });
+      if (!tool.ok) throw new Error("setup");
+      tools[name] = tool.hostTool.id;
+    }
+    // h1: semgrep discovered, opengrep configured and found, ctags configured but missing.
+    await setHarnessHostToolPath(db, orgId, h1, tools.opengrep!, "/opt/opengrep");
+    await setHarnessHostToolPath(db, orgId, h1, tools.ctags!, "/opt/ctags");
+    await recordHarnessHostTools(db, orgId, h1, [
+      { name: "semgrep", configuredPathExists: null, discoveredPath: "/usr/bin/semgrep" },
+      { name: "opengrep", configuredPathExists: true, discoveredPath: null },
+      { name: "ctags", configuredPathExists: false, discoveredPath: "/usr/bin/ctags" },
+    ]);
+    // h2: nothing found; h3: no report.
+    await recordHarnessHostTools(db, orgId, h2, [
+      { name: "semgrep", configuredPathExists: null, discoveredPath: null },
+    ]);
+    const usable = await listHarnessesUsableHostTools(db, orgId);
+    expect(usable.get(h1)).toEqual(["opengrep", "semgrep"]);
+    expect(usable.has(h2)).toBe(false);
+    expect(usable.has(h3)).toBe(false);
+    expect([...(await listHarnessesUsableHostTools(db, orgB)).keys()]).not.toContain(h1);
   });
 
   it("cascades harness and tool deletion to the harness rows", async () => {

@@ -6,21 +6,37 @@ import { isHarnessOnline } from "./display";
 export interface QueryHarnessStatus {
   name: string;
   version: string | null;
-  /** Whether it claims the run: online, accepting `query` tasks, on `minVersion` or later. */
+  /**
+   * Whether it claims the run: online, accepting `query` tasks, on the run's
+   * minimum version or later, with every installable and host tool it requires.
+   */
   capable: boolean;
+}
+
+/** What a run needs from the harness claiming it, as `claimJob` checks it. */
+export interface RunHarnessRequirements {
+  /** The run's `min_harness_version`; null for none. */
+  minHarnessVersion: string | null;
+  /** `required_installables`: each must be in the harness's `reportedInstallables`. */
+  installables: readonly string[];
+  /** `required_host_tools`: each must have an effective path on the harness. */
+  hostTools: readonly string[];
 }
 
 /**
  * The organization's harnesses that would get a query run in `repositoryId`
  * (its pinned harnesses when it has some, else all), each saying whether it
- * can claim one now: it accepts `query` tasks and reports `minVersion` (the
- * run's `min_harness_version`) or later. Revoked and offline harnesses are
- * left out.
+ * can claim one now as `claimJob` decides: it accepts `query` tasks, reports
+ * the run's minimum version or later, reports every required installable and
+ * has an effective path for every required host tool (`usableHostTools`, by
+ * harness ID: `listHarnessesUsableHostTools`). Revoked and offline harnesses
+ * are left out.
  */
 export function queryClaimableHarnesses(
   harnesses: readonly HarnessOverview[],
+  usableHostTools: ReadonlyMap<string, readonly string[]>,
   repositoryId: string,
-  minVersion: string,
+  requirements: RunHarnessRequirements,
   now: Date = new Date(),
 ): QueryHarnessStatus[] {
   const live = harnesses.filter((h) => !h.revokedAt);
@@ -32,7 +48,16 @@ export function queryClaimableHarnesses(
       version: h.reportedVersion,
       capable:
         h.acceptedTaskTypes.includes("query") &&
-        h.reportedVersion !== null &&
-        harnessVersionAtLeast(h.reportedVersion, minVersion),
+        versionCapable(h.reportedVersion, requirements.minHarnessVersion) &&
+        requirements.installables.every((name) =>
+          h.reportedInstallables.some((installable) => installable.name === name),
+        ) &&
+        requirements.hostTools.every((name) => usableHostTools.get(h.id)?.includes(name)),
     }));
+}
+
+/** As `claimJob`: no minimum takes any harness, a minimum one that reported a version. */
+function versionCapable(reported: string | null, minimum: string | null): boolean {
+  if (minimum === null) return true;
+  return reported !== null && harnessVersionAtLeast(reported, minimum);
 }

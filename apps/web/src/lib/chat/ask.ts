@@ -5,6 +5,7 @@ import {
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
   listHarnessOverview,
+  listHarnessesUsableHostTools,
   mapThreadRun,
   type Database,
   type Repository,
@@ -15,17 +16,21 @@ import {
   CHAT_ASK_JOB_TYPE,
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
   QueryRunResult,
   RunSpecJobPayload,
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { organizationDefinitions, taskRunRequirements } from "@/lib/definitions";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { queryClaimableHarnesses, type QueryHarnessStatus } from "@/lib/harnesses/claimable";
+import {
+  queryClaimableHarnesses,
+  type QueryHarnessStatus,
+  type RunHarnessRequirements,
+} from "@/lib/harnesses/claimable";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
+import { runSpecJobInput, runSpecMinHarnessVersion } from "@/lib/runs/job";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
@@ -137,7 +142,12 @@ async function previousQuestion(
 export type EnqueueChatAskOutcome =
   | { status: "unknown_repository" }
   /** No online harness that would get the run can claim it: nothing was enqueued. */
-  | { status: "no_capable_harness"; harnesses: QueryHarnessStatus[] }
+  | {
+      status: "no_capable_harness";
+      harnesses: QueryHarnessStatus[];
+      /** What the run would need from a harness. */
+      requirements: RunHarnessRequirements;
+    }
   | { status: "failed"; error: string }
   | { status: "enqueued" | "duplicate"; jobId: string; repository: Repository };
 
@@ -183,13 +193,28 @@ export async function enqueueChatAsk(
   }
   const { repository, connection } = found;
 
+  const { task } = input;
+  const definitions = organizationDefinitions(db, input.organizationId);
+  const taskRequirements = await taskRunRequirements(definitions, task);
+  const requirements: RunHarnessRequirements = {
+    minHarnessVersion: runSpecMinHarnessVersion(task, taskRequirements.minHarnessVersion),
+    installables: taskRequirements.installables,
+    hostTools: taskRequirements.hostTools,
+  };
+  const [overview, usableHostTools] = await Promise.all([
+    listHarnessOverview(db, input.organizationId),
+    listHarnessesUsableHostTools(db, input.organizationId),
+  ]);
   const harnesses = queryClaimableHarnesses(
-    await listHarnessOverview(db, input.organizationId),
+    overview,
+    usableHostTools,
     repository.id,
-    QUERY_TASKS_MIN_HARNESS_VERSION,
+    requirements,
     input.now,
   );
-  if (!harnesses.some((h) => h.capable)) return { status: "no_capable_harness", harnesses };
+  if (!harnesses.some((h) => h.capable)) {
+    return { status: "no_capable_harness", harnesses, requirements };
+  }
 
   let defaultBranch: string;
   try {
@@ -204,7 +229,6 @@ export async function enqueueChatAsk(
     };
   }
 
-  const { task } = input;
   const question = clip(input.question.trim(), MAX_CHAT_ASK_QUESTION_LENGTH);
   const context = chatAskContext({
     previous: await previousQuestion(db, input.organizationId, input.chatThreadId),
@@ -224,13 +248,17 @@ export async function enqueueChatAsk(
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,
     type: CHAT_ASK_JOB_TYPE,
-    ...(await taskJobInput(organizationDefinitions(db, input.organizationId), task, {
-      trigger: { kind: "chat.request", context: trigger },
-      repositoryId: repository.id,
-      // A missing default branch (e.g. an empty repository) finishes with `no_checkout`.
-      ref: defaultBranch,
-      requireCheckout: true,
-    })),
+    ...runSpecJobInput(
+      task,
+      {
+        trigger: { kind: "chat.request", context: trigger },
+        repositoryId: repository.id,
+        // A missing default branch (e.g. an empty repository) finishes with `no_checkout`.
+        ref: defaultBranch,
+        requireCheckout: true,
+      },
+      taskRequirements,
+    ),
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
   });
   // The thread's query run: a follow-up's context, and the thread of the run's events.
