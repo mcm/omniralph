@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
-import { getIntegration, getUserById, listChatConnections } from "@omniralph/db";
+import {
+  getChatTaskDefaults,
+  getIntegration,
+  getUserById,
+  listChatChannelTaskSettings,
+  listChatConnections,
+} from "@omniralph/db";
 import { requirePageUser } from "@/lib/auth/session";
 import { discordOAuthConfig } from "@/lib/chat/discord-oauth";
 import { slackOAuthConfig } from "@/lib/chat/slack-oauth";
+import { chatTaskChoices, platformChannelId } from "@/lib/chat/tasks";
 import { getDb } from "@/lib/db";
 import { linearOAuthConfig } from "@/lib/linear/oauth";
 import { IntegrationsView, type IntegrationNotice } from "./integrations-view";
@@ -29,10 +36,14 @@ export default async function IntegrationsPage({
   const admin = await requirePageUser("admin");
   const { linear, slack, discord } = await searchParams;
   const db = getDb();
-  const [integration, chatConnections] = await Promise.all([
+  const [integration, chatConnections, chatTaskDefaults, channelTasks] = await Promise.all([
     getIntegration(db, admin.organization.id, "linear"),
     listChatConnections(db, admin.organization.id),
+    getChatTaskDefaults(db, admin.organization.id),
+    listChatChannelTaskSettings(db, admin.organization.id),
   ]);
+  const taskChoices = (role: "askAboutCode" | "startWork") =>
+    chatTaskChoices(role).map((task) => ({ id: task.id, name: task.name }));
   const slackConnections = chatConnections.filter((c) => c.platform === "slack");
   const discordConnections = chatConnections.filter((c) => c.platform === "discord");
   // The installer may have left the organization since, so look them up as a user.
@@ -78,6 +89,23 @@ export default async function IntegrationsPage({
       }))}
       discordConfigured={discordOAuthConfig() !== null}
       discordNotice={toNotice(discord)}
+      chatTasks={{
+        defaults: chatTaskDefaults,
+        choices: { askAboutCode: taskChoices("askAboutCode"), startWork: taskChoices("startWork") },
+        connections: chatConnections.map((c) => ({
+          id: c.id,
+          name: c.name,
+          platform: c.platform,
+          channels: channelTasks
+            .filter((t) => t.connectionId === c.id)
+            .map((t) => ({
+              channelId: t.channelId,
+              channel: platformChannelId(t.channelId),
+              askAboutCode: t.askAboutCodeTaskId,
+              startWork: t.startWorkTaskId,
+            })),
+        })),
+      }}
     />
   );
 }

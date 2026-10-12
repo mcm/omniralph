@@ -67,6 +67,27 @@ vi.mock("@omniralph/db", () => ({
           },
         ]
       : [],
+  getChatTaskDefaults: async (_db: unknown, organizationId: string) =>
+    organizationId === "org-a"
+      ? { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" }
+      : null,
+  listChatChannelTaskSettings: async (_db: unknown, organizationId: string) =>
+    organizationId === "org-a"
+      ? [
+          {
+            connectionId: "conn-1",
+            channelId: "slack:C0SECURITY",
+            askAboutCodeTaskId: null,
+            startWorkTaskId: "builtin:handle-request",
+          },
+          {
+            connectionId: "conn-3",
+            channelId: "discord:G01:222",
+            askAboutCodeTaskId: "builtin:ask-about-code",
+            startWorkTaskId: null,
+          },
+        ]
+      : [],
   getUserById: async (_db: unknown, id: string) =>
     id === "user-1" ? { id, name: null, email: "ada@acme.test" } : undefined,
 }));
@@ -135,6 +156,7 @@ describe("Settings › Integrations page", () => {
       ],
       discordConfigured: true,
       discordNotice: null,
+      chatTasks: expect.anything(),
     });
     expect((await render("bogus")).props.notice).toBeNull();
     expect((await render("other_organization")).props.notice).toBe("other_organization");
@@ -164,6 +186,50 @@ describe("Settings › Integrations page", () => {
     } finally {
       state.slackConfigured = true;
     }
+  });
+});
+
+describe("Settings › Integrations page › chat tasks", () => {
+  it("shows the organization's chat tasks, the choices and each connection's channels", async () => {
+    state.user = user("admin");
+    const { props } = await render();
+    expect(props.chatTasks).toEqual({
+      defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+      choices: {
+        askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code" }],
+        startWork: [{ id: "builtin:handle-request", name: "Handle a request" }],
+      },
+      connections: [
+        {
+          id: "conn-1",
+          name: "Acme Slack",
+          platform: "slack",
+          channels: [
+            {
+              channelId: "slack:C0SECURITY",
+              channel: "C0SECURITY",
+              askAboutCode: null,
+              startWork: "builtin:handle-request",
+            },
+          ],
+        },
+        { id: "conn-2", name: "Acme Grid", platform: "slack", channels: [] },
+        {
+          id: "conn-3",
+          name: "Acme Discord",
+          platform: "discord",
+          channels: [
+            {
+              channelId: "discord:G01:222",
+              channel: "222",
+              askAboutCode: "builtin:ask-about-code",
+              startWork: null,
+            },
+          ],
+        },
+        { id: "conn-4", name: "Acme Gaming", platform: "discord", channels: [] },
+      ],
+    });
   });
 });
 

@@ -463,6 +463,13 @@
       "when": 1791764029221,
       "tag": "0065_hidden_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1791771243600,
+      "tag": "0066_chat_channel_task_settings",
+      "breakpoints": true
     }
   ]
 }

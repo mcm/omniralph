@@ -20,6 +20,15 @@ const state = vi.hoisted(() => ({
     credentials: { botToken: string } | null;
   }>,
   chatDeletes: [] as Array<[string, string]>,
+  chatTaskDefaults: [] as Array<[string, unknown, string | null]>,
+  channelTasks: [] as Array<{
+    organizationId: string;
+    connectionId: string;
+    channelId: string;
+    askAboutCodeTaskId: string | null;
+    startWorkTaskId: string | null;
+    updatedBy: string | null;
+  }>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
@@ -42,9 +51,59 @@ vi.mock("@omniralph/db", () => ({
     state.chat = state.chat.filter((c) => c !== removed);
     return removed ?? null;
   },
+  getChatConnection: async (_db: unknown, organizationId: string, id: string) =>
+    state.chat.find((c) => c.organizationId === organizationId && c.id === id) ?? null,
+  setChatTaskDefaults: async (
+    _db: unknown,
+    organizationId: string,
+    tasks: unknown,
+    updatedBy: string | null,
+  ) => {
+    state.chatTaskDefaults.push([organizationId, tasks, updatedBy]);
+  },
+  upsertChatChannelTaskSetting: async (
+    _db: unknown,
+    input: (typeof state.channelTasks)[number],
+  ) => {
+    if (
+      !state.chat.some(
+        (c) => c.organizationId === input.organizationId && c.id === input.connectionId,
+      )
+    )
+      return null;
+    state.channelTasks = state.channelTasks.filter(
+      (t) => !(t.connectionId === input.connectionId && t.channelId === input.channelId),
+    );
+    state.channelTasks.push(input);
+    return { id: "setting-1", ...input, updatedAt: new Date() };
+  },
+  deleteChatChannelTaskSetting: async (
+    _db: unknown,
+    organizationId: string,
+    connectionId: string,
+    channelId: string,
+  ) => {
+    const before = state.channelTasks.length;
+    state.channelTasks = state.channelTasks.filter(
+      (t) =>
+        !(
+          t.organizationId === organizationId &&
+          t.connectionId === connectionId &&
+          t.channelId === channelId
+        ),
+    );
+    return state.channelTasks.length < before;
+  },
 }));
 
-const { disconnectDiscord, disconnectLinear, disconnectSlack } = await import("./actions");
+const {
+  disconnectDiscord,
+  disconnectLinear,
+  disconnectSlack,
+  removeChatChannelTasks,
+  saveChatChannelTasks,
+  saveChatTaskDefaults,
+} = await import("./actions");
 
 const revoked: string[] = [];
 let revokeStatus = 200;
@@ -265,5 +324,170 @@ describe("disconnectDiscord", () => {
     expect(await disconnectDiscord("d1")).toMatchObject({ ok: false });
     expect(state.chatDeletes).toEqual([]);
     expect(discordLeft).toEqual([]);
+  });
+});
+
+describe("saveChatTaskDefaults", () => {
+  beforeEach(() => {
+    state.user = user("admin");
+    state.chatTaskDefaults = [];
+  });
+
+  it("saves the organization's chat tasks", async () => {
+    const tasks = { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" };
+    expect(await saveChatTaskDefaults(tasks)).toEqual({ ok: true });
+    expect(state.chatTaskDefaults).toEqual([["org-a", tasks, "admin-1"]]);
+  });
+
+  it("rejects a task that doesn't pass validateChatTaskChoice", async () => {
+    for (const [tasks, field] of [
+      [
+        { askAboutCode: "builtin:handle-request", startWork: "builtin:handle-request" },
+        "askAboutCode",
+      ],
+      [
+        { askAboutCode: "builtin:ask-about-code", startWork: "builtin:implement-story" },
+        "startWork",
+      ],
+      [{ askAboutCode: "builtin:ask-about-code", startWork: "builtin:nope" }, "startWork"],
+    ] as const) {
+      const result = await saveChatTaskDefaults(tasks);
+      expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
+    }
+    expect(await saveChatTaskDefaults(null as never)).toMatchObject({ ok: false });
+    expect(state.chatTaskDefaults).toEqual([]);
+  });
+
+  it("refuses non-admins", async () => {
+    state.user = user("member");
+    expect(
+      await saveChatTaskDefaults({
+        askAboutCode: "builtin:ask-about-code",
+        startWork: "builtin:handle-request",
+      }),
+    ).toMatchObject({ ok: false });
+    expect(state.chatTaskDefaults).toEqual([]);
+  });
+});
+
+describe("saveChatChannelTasks and removeChatChannelTasks", () => {
+  beforeEach(() => {
+    state.user = user("admin");
+    state.chat = [
+      {
+        id: "s1",
+        organizationId: "org-a",
+        platform: "slack",
+        externalId: "T1",
+        name: "Acme",
+        credentials: { botToken: "xoxb" },
+      },
+      {
+        id: "d1",
+        organizationId: "org-a",
+        platform: "discord",
+        externalId: "111",
+        name: "Acme",
+        credentials: null,
+      },
+      {
+        id: "foreign",
+        organizationId: "org-b",
+        platform: "slack",
+        externalId: "T2",
+        name: "Other",
+        credentials: { botToken: "xoxb" },
+      },
+    ];
+    state.channelTasks = [];
+  });
+
+  it("saves a channel's overrides under its Chat SDK channel ID", async () => {
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: null,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      await saveChatChannelTasks("d1", "222", {
+        askAboutCode: null,
+        startWork: "builtin:handle-request",
+      }),
+    ).toEqual({ ok: true });
+    expect(state.channelTasks).toEqual([
+      {
+        organizationId: "org-a",
+        connectionId: "s1",
+        channelId: "slack:C0123ABCD",
+        askAboutCodeTaskId: "builtin:ask-about-code",
+        startWorkTaskId: null,
+        updatedBy: "admin-1",
+      },
+      {
+        organizationId: "org-a",
+        connectionId: "d1",
+        channelId: "discord:111:222",
+        askAboutCodeTaskId: null,
+        startWorkTaskId: "builtin:handle-request",
+        updatedBy: "admin-1",
+      },
+    ]);
+    expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toEqual({ ok: true });
+    expect(state.channelTasks.map((t) => t.connectionId)).toEqual(["d1"]);
+    expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toMatchObject({ ok: false });
+  });
+
+  it("rejects an invalid task, channel or connection", async () => {
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", {
+        askAboutCode: "builtin:review-pr",
+        startWork: null,
+      }),
+    ).toMatchObject({ ok: false, fieldErrors: { askAboutCode: expect.any(String) } });
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", {
+        askAboutCode: null,
+        startWork: "builtin:implement-story",
+      }),
+    ).toMatchObject({ ok: false, fieldErrors: { startWork: expect.any(String) } });
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", { askAboutCode: null, startWork: null }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await saveChatChannelTasks("s1", "#general", {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: null,
+      }),
+    ).toMatchObject({ ok: false, fieldErrors: { channel: expect.any(String) } });
+    expect(
+      await saveChatChannelTasks("foreign", "C0123ABCD", {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: null,
+      }),
+    ).toEqual({ ok: false, error: "That chat connection isn't connected." });
+    expect(state.channelTasks).toEqual([]);
+  });
+
+  it("refuses non-admins", async () => {
+    state.channelTasks = [
+      {
+        organizationId: "org-a",
+        connectionId: "s1",
+        channelId: "slack:C1",
+        askAboutCodeTaskId: "builtin:ask-about-code",
+        startWorkTaskId: null,
+        updatedBy: "admin-1",
+      },
+    ];
+    state.user = user("member");
+    expect(
+      await saveChatChannelTasks("s1", "C0123ABCD", {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: null,
+      }),
+    ).toMatchObject({ ok: false });
+    expect(await removeChatChannelTasks("s1", "slack:C1")).toMatchObject({ ok: false });
+    expect(state.channelTasks).toHaveLength(1);
   });
 });

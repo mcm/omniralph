@@ -8,10 +8,19 @@ import pg from "pg";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  CHAT_TASKS_KEY,
+  DEFAULT_CHAT_TASKS,
+  getAppSetting,
+  getChatTaskDefaults,
+  setChatTaskDefaults,
+} from "./app-settings.js";
+import {
   appendChatMessage,
+  deleteChatChannelTaskSetting,
   deleteChatConnection,
   deleteChatConnectionByExternalId,
   ensureChatThread,
+  getChatChannelTaskSetting,
   getChatConnectionByExternalId,
   getChatConnectionWithCredentials,
   getChatIdentity,
@@ -20,12 +29,14 @@ import {
   isChatLinkStateUsed,
   linkChatIdentity,
   linkChatIdentityWithState,
+  listChatChannelTaskSettings,
   listChatConnections,
   listChatIdentities,
   listChatMessages,
   saveChatConnection,
   saveChatUserProfile,
   unlinkChatIdentity,
+  upsertChatChannelTaskSetting,
   type ChatConnection,
   type ChatPlatform,
 } from "./chat.js";
@@ -33,6 +44,7 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
 import {
+  chatChannelTaskSettings,
   chatConnections,
   chatIdentities,
   chatLinkStateUses,
@@ -204,6 +216,105 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
     });
     expect(await getChatConnectionByExternalId(db, "discord", "G1")).toBeNull();
     expect(await deleteChatConnectionByExternalId(db, "discord", "G1")).toBeNull();
+  });
+
+  describe("channel task settings", () => {
+    const save = (connectionId: string, channelId: string, organizationId = orgId) =>
+      upsertChatChannelTaskSetting(db, {
+        organizationId,
+        connectionId,
+        channelId,
+        askAboutCodeTaskId: "builtin:ask-about-code",
+        startWorkTaskId: null,
+        updatedBy: "admin-1",
+      });
+
+    it("creates and replaces a channel's overrides", async () => {
+      const slack = await connect("slack", "T1", { botToken: "t" });
+      const created = await save(slack.id, "C1");
+      expect(created).toMatchObject({
+        organizationId: orgId,
+        connectionId: slack.id,
+        channelId: "C1",
+        askAboutCodeTaskId: "builtin:ask-about-code",
+        startWorkTaskId: null,
+        updatedBy: "admin-1",
+      });
+      const replaced = await upsertChatChannelTaskSetting(db, {
+        organizationId: orgId,
+        connectionId: slack.id,
+        channelId: "C1",
+        askAboutCodeTaskId: null,
+        startWorkTaskId: "builtin:handle-request",
+        updatedBy: "member-1",
+      });
+      expect(replaced).toMatchObject({
+        id: created!.id,
+        askAboutCodeTaskId: null,
+        startWorkTaskId: "builtin:handle-request",
+        updatedBy: "member-1",
+      });
+      await save(slack.id, "C0");
+      expect(
+        (await listChatChannelTaskSettings(db, orgId, slack.id)).map((s) => s.channelId),
+      ).toEqual(["C0", "C1"]);
+      expect(await getChatChannelTaskSetting(db, orgId, slack.id, "C1")).toEqual(replaced);
+      expect(await getChatChannelTaskSetting(db, orgId, slack.id, "C2")).toBeNull();
+    });
+
+    it("deletes a channel's overrides", async () => {
+      const slack = await connect("slack", "T1", { botToken: "t" });
+      await save(slack.id, "C1");
+      await save(slack.id, "C2");
+      expect(await deleteChatChannelTaskSetting(db, otherOrgId, slack.id, "C1")).toBe(false);
+      expect(await deleteChatChannelTaskSetting(db, orgId, slack.id, "C1")).toBe(true);
+      expect(await deleteChatChannelTaskSetting(db, orgId, slack.id, "C1")).toBe(false);
+      expect(
+        (await listChatChannelTaskSettings(db, orgId, slack.id)).map((s) => s.channelId),
+      ).toEqual(["C2"]);
+    });
+
+    it("goes with its connection", async () => {
+      const slack = await connect("slack", "T1", { botToken: "t" });
+      const discord = await connect("discord", "G1", null);
+      await save(slack.id, "C1");
+      await save(discord.id, "C1");
+      await deleteChatConnection(db, orgId, slack.id, key);
+      expect((await listChatChannelTaskSettings(db, orgId)).map((s) => s.connectionId)).toEqual([
+        discord.id,
+      ]);
+      expect(await db.select().from(chatChannelTaskSettings)).toHaveLength(1);
+    });
+
+    it("never touches another organization's rows", async () => {
+      const ours = await connect("slack", "T1", { botToken: "t" });
+      const theirs = await connect("slack", "T2", { botToken: "t" }, otherOrgId);
+      await save(ours.id, "C1");
+      await save(theirs.id, "C1", otherOrgId);
+      // Another organization's connection can't be given overrides.
+      expect(await save(theirs.id, "C9")).toBeNull();
+      expect(await listChatChannelTaskSettings(db, orgId, theirs.id)).toEqual([]);
+      expect(await getChatChannelTaskSetting(db, orgId, theirs.id, "C1")).toBeNull();
+      const listed = await listChatChannelTaskSettings(db, orgId);
+      expect(listed.map((s) => [s.organizationId, s.connectionId])).toEqual([[orgId, ours.id]]);
+      expect(await deleteChatChannelTaskSetting(db, orgId, theirs.id, "C1")).toBe(false);
+      expect(await listChatChannelTaskSettings(db, otherOrgId)).toHaveLength(1);
+    });
+  });
+
+  it("stores the organization's chat tasks, defaulting to the built-ins", async () => {
+    expect(await getChatTaskDefaults(db, orgId)).toEqual(DEFAULT_CHAT_TASKS);
+    expect(DEFAULT_CHAT_TASKS).toEqual({
+      askAboutCode: "builtin:ask-about-code",
+      startWork: "builtin:handle-request",
+    });
+    const chosen = { askAboutCode: "builtin:other-query", startWork: "builtin:other-coding" };
+    await setChatTaskDefaults(db, orgId, chosen, "admin-1");
+    expect(await getChatTaskDefaults(db, orgId)).toEqual(chosen);
+    expect(await getChatTaskDefaults(db, otherOrgId)).toEqual(DEFAULT_CHAT_TASKS);
+    expect((await getAppSetting(db, orgId, CHAT_TASKS_KEY))?.updatedBy).toBe("admin-1");
+    await setChatTaskDefaults(db, orgId, null, "admin-1");
+    expect(await getChatTaskDefaults(db, orgId)).toEqual(DEFAULT_CHAT_TASKS);
   });
 
   it("links, relinks and unlinks chat identities", async () => {
