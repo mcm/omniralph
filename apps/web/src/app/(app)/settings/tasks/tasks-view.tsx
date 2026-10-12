@@ -94,7 +94,7 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
               <span style={mono}>{task.sink}</span>
             </TableCell>
             <TableCell>
-              <Badge variant="outline">{task.pool}</Badge>
+              <Badge variant="neutral">{task.pool}</Badge>
             </TableCell>
           </TableRow>
         ))}

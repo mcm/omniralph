@@ -24,7 +24,7 @@ export function TriggerBadges({ triggers }: { triggers: readonly string[] }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
       {triggers.map((trigger) => (
-        <Badge key={trigger} variant="outline">
+        <Badge key={trigger} variant="neutral">
           {trigger}
         </Badge>
       ))}

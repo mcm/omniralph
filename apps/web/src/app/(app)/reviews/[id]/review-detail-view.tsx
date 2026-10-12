@@ -112,7 +112,14 @@ function FindingItem({ finding }: { finding: FindingView }) {
       >
         <SeverityBadge severity={finding.severity} />
         <span style={{ ...mono, color: "var(--text-secondary)" }}>{lineRange(finding)}</span>
-        <span style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-semibold)", flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            fontSize: "var(--text-sm)",
+            fontWeight: "var(--font-weight-semibold)",
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
           {finding.title}
         </span>
         <FindingStatusBadge status={finding.status} />
@@ -206,10 +213,10 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
@@ -267,7 +274,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
         </div>
 
         {review.status === "failed" && (
-          <Alert variant="destructive">
+          <Alert variant="danger">
             <IconAlertTriangle size={16} />
             <AlertTitle>The review failed</AlertTitle>
             <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
@@ -300,7 +307,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
                 : `, last updated ${formatDateTime(review.updatedAt)}.`}
             </CardDescription>
           </CardHeader>
-          <CardContent style={{ ...stack, gap: "var(--space-5)" }}>
+          <CardContent style={{ ...stack, gap: "var(--space-6)" }}>
             <div
               style={{
                 display: "grid",
@@ -358,7 +365,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               </div>
               <Progress
                 value={budgetShare}
-                color={budgetShare >= 100 ? "danger" : budgetShare >= 80 ? "warning" : "brand"}
+                variant={budgetShare >= 100 ? "danger" : budgetShare >= 80 ? "warning" : "accent"}
                 aria-label="Tokens used of the budget"
               />
             </div>
@@ -389,7 +396,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
                         <span style={{ ...mono, overflowWrap: "anywhere" }}>{file.path}</span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{file.reason.replaceAll("_", " ")}</Badge>
+                        <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -408,7 +415,13 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               flexWrap: "wrap",
             }}
           >
-            <h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: "var(--font-weight-semibold)" }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "var(--text-lg)",
+                fontWeight: "var(--font-weight-semibold)",
+              }}
+            >
               Findings ({review.findingCount})
             </h2>
             {severityCounts.map(({ severity, count }) => (

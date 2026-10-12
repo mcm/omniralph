@@ -106,7 +106,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={pending}>
+              <Button variant="danger" disabled={pending}>
                 <IconTrash size={14} />
                 Delete
               </Button>
@@ -123,6 +123,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  variant="danger"
                   onClick={() =>
                     run(
                       () => deleteAgentDefinition(agent.id),
@@ -278,7 +279,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
                 >
                   <span style={{ fontSize: "var(--text-sm)" }}>{task.name}</span>
                   <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
-                  <Badge variant="outline">{task.taskType}</Badge>
+                  <Badge variant="neutral">{task.taskType}</Badge>
                   {task.builtin && <BuiltinBadge />}
                 </div>
               ))

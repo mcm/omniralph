@@ -16,9 +16,9 @@ import {
   DialogTrigger,
   Field,
   Input,
+  notify,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
 import { createEnrollment } from "./actions";
@@ -32,9 +32,9 @@ interface Enrollment {
 async function copy(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
-    toast.success(`${what} copied`);
+    notify(`${what} copied`);
   } catch {
-    toast.error("Couldn't copy to the clipboard");
+    notify("Couldn't copy to the clipboard", { variant: "danger" });
   }
 }
 
@@ -102,7 +102,7 @@ export function EnrollHarnessDialog() {
     startTransition(async () => {
       const result = await createEnrollment(name);
       if (result.ok) setEnrollment(result);
-      else toast.error(result.error);
+      else notify(result.error, { variant: "danger" });
     });
   };
 
@@ -180,7 +180,7 @@ export function EnrollHarnessDialog() {
               <Field
                 label="Name"
                 htmlFor="harness-name"
-                hint="Optional. Defaults to the host's name."
+                description="Optional. Defaults to the host's name."
               >
                 <Input
                   id="harness-name"

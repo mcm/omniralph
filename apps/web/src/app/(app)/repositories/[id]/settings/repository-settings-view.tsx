@@ -75,7 +75,7 @@ const stack: React.CSSProperties = {
 const errorText: React.CSSProperties = {
   margin: 0,
   fontSize: "var(--text-sm)",
-  color: "var(--error)",
+  color: "var(--danger-fg)",
 };
 
 function InlineError({ message }: { message?: string }) {
@@ -207,10 +207,10 @@ export function RepositorySettingsView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
@@ -408,7 +408,7 @@ export function RepositorySettingsView({
               <Field
                 label="Path excludes"
                 htmlFor="path-excludes"
-                hint="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped."
+                description="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped."
               >
                 <Textarea
                   id="path-excludes"
@@ -428,7 +428,7 @@ export function RepositorySettingsView({
               <Field
                 label="Custom instructions"
                 htmlFor="custom-instructions"
-                hint={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`}
+                description={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`}
                 error={errors.customInstructions}
               >
                 <Textarea

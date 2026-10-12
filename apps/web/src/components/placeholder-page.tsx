@@ -13,7 +13,7 @@ export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: title }]} />
-      <main style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)" }}>
+      <main style={{ flex: 1, overflowY: "auto", padding: "var(--space-8)" }}>
         <Card>
           <CardHeader>
             <CardTitle>{title}</CardTitle>

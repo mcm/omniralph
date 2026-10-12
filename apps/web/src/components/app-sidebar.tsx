@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   SidebarRoot,
   SidebarHeader,
@@ -54,7 +55,6 @@ const navIcons: Record<NavIcon, React.ElementType> = {
 
 export function AppSidebar({ organizations }: { organizations: OrganizationOption[] }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { collapsed } = useSidebar();
   const user = useCurrentUser();
 
@@ -77,7 +77,7 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
                 width: 24,
                 height: 24,
                 borderRadius: "var(--radius-sm)",
-                background: "linear-gradient(135deg, var(--glacier-500), var(--glacier-700))",
+                background: "var(--accent)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -88,7 +88,7 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 11,
-                  color: "var(--bg-page)",
+                  color: "var(--accent-fg)",
                   fontWeight: 600,
                 }}
               >
@@ -99,7 +99,7 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "var(--text-xs)",
-                color: "var(--glacier-300)",
+                color: "var(--text-accent)",
                 letterSpacing: ".12em",
               }}
             >
@@ -126,11 +126,12 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
               return (
                 <SidebarItem
                   key={href}
+                  asChild
                   icon={<Icon size={16} />}
-                  label={label}
                   active={isNavItemActive(href, pathname)}
-                  onClick={() => router.push(href)}
-                />
+                >
+                  <Link href={href}>{label}</Link>
+                </SidebarItem>
               );
             })}
           </SidebarGroup>

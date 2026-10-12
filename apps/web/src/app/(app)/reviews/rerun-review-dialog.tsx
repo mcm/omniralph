@@ -18,10 +18,10 @@ import {
   NativeSelect,
   RadioGroup,
   RadioGroupItem,
+  notify,
 } from "@iamthemcmaster/ui";
 import { IconRefresh } from "@tabler/icons-react";
 import { RERUN_MODES, RERUN_PROFILES, type RerunMode } from "@omniralph/shared";
-import { toast } from "sonner";
 import { useCurrentUser } from "@/components/current-user";
 import { rerunReview } from "./actions";
 
@@ -86,14 +86,14 @@ export function RerunReviewDialog({
     startTransition(async () => {
       const result = await rerunReview(reviewId, { mode, profileId });
       if (result.ok) {
-        toast.success(`Re-run of ${changeLabel} queued`, { action: view(result.reviewId) });
+        notify(`Re-run of ${changeLabel} queued`, { action: view(result.reviewId) });
         onOpenChange(false);
         router.refresh();
       } else if (result.activeReviewId) {
-        toast.info(result.error, { action: view(result.activeReviewId) });
+        notify(result.error, { variant: "info", action: view(result.activeReviewId) });
         onOpenChange(false);
       } else {
-        toast.error(result.error);
+        notify(result.error, { variant: "danger" });
       }
     });
   };

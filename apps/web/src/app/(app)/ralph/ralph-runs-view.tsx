@@ -211,7 +211,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
         <div style={column}>
           <RalphRunStatusBadge status={run.status} />
           {run.error && (
-            <Muted title={run.error} style={{ maxWidth: "calc(var(--space-6) * 10)" }}>
+            <Muted title={run.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
               {run.error.length > 80 ? `${run.error.slice(0, 80)}…` : run.error}
             </Muted>
           )}
@@ -277,10 +277,10 @@ export function RalphRunsView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>

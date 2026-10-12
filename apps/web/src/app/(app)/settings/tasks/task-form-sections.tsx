@@ -34,7 +34,7 @@ const grid = {
   gap: "var(--space-4)",
 } as const;
 const row = { display: "flex", alignItems: "center", gap: "var(--space-2)" } as const;
-const danger = { margin: 0, color: "var(--text-danger)" } as const;
+const danger = { margin: 0, color: "var(--danger-fg)" } as const;
 
 /** A setup or teardown command being edited; numbers as typed (empty uses the default). */
 export interface CommandDraft {
@@ -129,7 +129,7 @@ export function CommandsEditor({
             <Field
               label="Name"
               htmlFor={id("name")}
-              hint={
+              description={
                 setup
                   ? `Its output is {{setup.${command.name.trim() || "<name>"}}} in the template.`
                   : "Names it in the run log."
@@ -150,7 +150,7 @@ export function CommandsEditor({
             <Field
               label="Command"
               htmlFor={id("command")}
-              hint="Run with sh -c in the working directory."
+              description="Run with sh -c in the working directory."
               error={error("command")}
               required
             >
@@ -203,7 +203,7 @@ export function CommandsEditor({
                 <Field
                   label="Fence"
                   htmlFor={id("fence")}
-                  hint="Info string of the fence around the output (e.g. json)."
+                  description="Info string of the fence around the output (e.g. json)."
                   error={error("fence")}
                 >
                   <Input
@@ -405,7 +405,7 @@ export function CodingFields({
         <Field
           label="Push"
           htmlFor="task-push-timing"
-          hint="When the run pushes its branch."
+          description="When the run pushes its branch."
           error={errors.pushTiming}
         >
           <NativeSelect
@@ -425,7 +425,7 @@ export function CodingFields({
         <Field
           label="Draft PR"
           htmlFor="task-draft-pull-request"
-          hint="When the run opens its draft PR."
+          description="When the run opens its draft PR."
           error={errors.draftPullRequest}
         >
           <NativeSelect
@@ -448,7 +448,7 @@ export function CodingFields({
         <Field
           label="PR description task"
           htmlFor="task-pr-description-task"
-          hint="A query task started by run.invoked that outputs { title, body }."
+          description="A query task started by run.invoked that outputs { title, body }."
           error={errors.prDescriptionTaskId}
           required
         >
@@ -476,7 +476,7 @@ export function CodingFields({
             key={key}
             label={label}
             htmlFor={`task-${key}`}
-            hint="Empty uses the default."
+            description="Empty uses the default."
             error={errors[key]}
           >
             <Input

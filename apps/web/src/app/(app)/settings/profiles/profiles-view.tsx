@@ -72,7 +72,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
       <CardHeader>
         <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           {profile.name}
-          <Badge variant="outline" size="sm">
+          <Badge variant="neutral" size="sm">
             Built-in
           </Badge>
         </CardTitle>
@@ -97,7 +97,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
             <Field
               label="Model"
               htmlFor={`${idPrefix}-model`}
-              hint="Claude model ID."
+              description="Claude model ID."
               error={errors.model}
               required
             >
@@ -114,7 +114,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
             <Field
               label="Token cap per review"
               htmlFor={`${idPrefix}-max-tokens`}
-              hint={`At least ${MIN_PROFILE_TOKEN_CAP.toLocaleString()}. Reviews stop at the cap and keep partial findings.`}
+              description={`At least ${MIN_PROFILE_TOKEN_CAP.toLocaleString()}. Reviews stop at the cap and keep partial findings.`}
               error={errors.maxTokensPerReview}
               required
             >
@@ -133,7 +133,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
             <Field
               label="Max files"
               htmlFor={`${idPrefix}-max-files`}
-              hint="Files reviewed at most; the lowest-risk ones are skipped first."
+              description="Files reviewed at most; the lowest-risk ones are skipped first."
               error={errors.maxFiles}
               required
             >
@@ -184,14 +184,20 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: "var(--font-weight-semibold)" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "var(--text-2xl)",
+              fontWeight: "var(--font-weight-semibold)",
+            }}
+          >
             Review profiles
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>

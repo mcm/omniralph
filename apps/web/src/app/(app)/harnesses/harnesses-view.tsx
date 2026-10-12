@@ -106,10 +106,10 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>

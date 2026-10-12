@@ -160,7 +160,7 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
             <Field
               label="Max concurrency"
               htmlFor="max-concurrency"
-              hint="Jobs the harness runs at once (1–32)."
+              description="Jobs the harness runs at once (1–32)."
             >
               <Input
                 id="max-concurrency"
@@ -210,7 +210,7 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
                   key={pool}
                   label={pool}
                   htmlFor={`limit-${pool}`}
-                  hint={`Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
+                  description={`Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
                   // Fields size to their hint; keep room for the "Default (n)" placeholder.
                   style={{ minWidth: "12rem" }}
                 >
@@ -304,7 +304,7 @@ function VersionCard({
           <Field
             label="Desired version override"
             htmlFor="desired-version"
-            hint={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harnesses).`}
+            description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harnesses).`}
           >
             <Input
               id="desired-version"
@@ -522,7 +522,7 @@ function RevokeCard({ harness }: { harness: HarnessRow }) {
       <CardContent>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive" disabled={pending}>
+            <Button variant="danger" disabled={pending}>
               <IconBan size={14} />
               Revoke harness
             </Button>
@@ -540,6 +540,7 @@ function RevokeCard({ harness }: { harness: HarnessRow }) {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                variant="danger"
                 onClick={() => run(() => revokeHarness(harness.id), `Revoked ${harness.name}`)}
               >
                 Revoke
@@ -569,7 +570,7 @@ function DeleteCard({ harness }: { harness: HarnessRow }) {
       <CardContent>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive" disabled={pending}>
+            <Button variant="danger" disabled={pending}>
               <IconTrash size={14} />
               Delete harness
             </Button>
@@ -589,6 +590,7 @@ function DeleteCard({ harness }: { harness: HarnessRow }) {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                variant="danger"
                 onClick={() =>
                   run(
                     () => deleteHarness(harness.id),
@@ -628,10 +630,10 @@ export function HarnessDetailView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
@@ -660,7 +662,7 @@ export function HarnessDetailView({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(calc(var(--space-6) * 8), 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(calc(var(--space-8) * 8), 1fr))",
                 gap: "var(--space-4)",
               }}
             >

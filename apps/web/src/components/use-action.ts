@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
+import { notify } from "@iamthemcmaster/ui";
 import type { ActionResult } from "@/lib/action-result";
 import { useIsOrganizationStale } from "./organization-guard";
 
@@ -23,11 +23,11 @@ export function useAction() {
       startTransition(async () => {
         const result = await action();
         if (result.ok) {
-          if (result.warning) toast.warning(result.warning);
-          else toast.success(success);
+          if (result.warning) notify(result.warning, { variant: "warning" });
+          else notify(success);
           onSuccess?.();
         } else {
-          toast.error(result.error);
+          notify(result.error, { variant: "danger" });
           onError?.(result);
         }
       });

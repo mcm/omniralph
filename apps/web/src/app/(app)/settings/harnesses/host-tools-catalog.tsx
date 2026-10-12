@@ -58,6 +58,7 @@ function DeleteHostTool({ tool }: { tool: HostToolCatalogRow }) {
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            variant="danger"
             onClick={() => run(() => removeHostTool(tool.id), `Deleted ${tool.name}`)}
           >
             Delete
@@ -91,7 +92,7 @@ function AddHostToolForm() {
         <Field
           label="Name"
           htmlFor="host-tool-name"
-          hint="The executable's name, e.g. semgrep: lowercase letters, digits, dots, dashes and underscores."
+          description="The executable's name, e.g. semgrep: lowercase letters, digits, dots, dashes and underscores."
           style={{ flex: 1, minWidth: "12rem" }}
         >
           <Input
@@ -107,7 +108,7 @@ function AddHostToolForm() {
         <Field
           label="Description"
           htmlFor="host-tool-description"
-          hint="Optional: what it's for or how to install it."
+          description="Optional: what it's for or how to install it."
           style={{ flex: 2, minWidth: "16rem" }}
         >
           <Input

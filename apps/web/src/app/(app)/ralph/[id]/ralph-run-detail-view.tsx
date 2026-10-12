@@ -56,10 +56,9 @@ import {
   shortSha,
   STOPPABLE_RALPH_RUN_STATUSES,
   truncate,
-  type RalphMessageState,
   type RalphRunDetailView as RalphRunDetail,
 } from "@/lib/ralph/display";
-import { STATUS_BADGES as JOB_STATUS_BADGES } from "../../jobs/jobs-view";
+import { JOB_STATUS_VARIANTS, RALPH_MESSAGE_STATE_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { stopRalphRun } from "../actions";
 import {
@@ -85,7 +84,7 @@ const codeBlock: React.CSSProperties = {
   overflowX: "auto",
   whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
-  maxHeight: "calc(var(--space-6) * 20)",
+  maxHeight: "calc(var(--space-8) * 20)",
   overflowY: "auto",
 };
 
@@ -129,7 +128,7 @@ function WaitingOn({ run }: { run: RalphRunDetail }) {
     return null;
   }
   const list = (items: { identifier: string; title: string }[]) => (
-    <ul style={{ margin: 0, paddingLeft: "var(--space-5)", ...stack, gap: "var(--space-1)" }}>
+    <ul style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack, gap: "var(--space-1)" }}>
       {items.map((item) => (
         <li key={item.identifier}>
           <IssueRef identifier={item.identifier} title={item.title} runUrl={run.linearUrl} />
@@ -165,7 +164,7 @@ function StopRunButton({ run }: { run: RalphRunDetail }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="destructive" disabled={pending}>
+        <Button variant="danger" disabled={pending}>
           <IconPlayerStop size={14} />
           Stop
         </Button>
@@ -181,7 +180,10 @@ function StopRunButton({ run }: { run: RalphRunDetail }) {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep running</AlertDialogCancel>
-          <AlertDialogAction onClick={() => runAction(() => stopRalphRun(run.id), "Run stopped")}>
+          <AlertDialogAction
+            variant="danger"
+            onClick={() => runAction(() => stopRalphRun(run.id), "Run stopped")}
+          >
             Stop run
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -229,7 +231,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
               {story.lastFeedback ? (
                 <Muted
                   title={story.lastFeedback}
-                  style={{ maxWidth: "calc(var(--space-6) * 12)", overflowWrap: "anywhere" }}
+                  style={{ maxWidth: "calc(var(--space-8) * 12)", overflowWrap: "anywhere" }}
                 >
                   {truncate(story.lastFeedback, FEEDBACK_PREVIEW)}
                 </Muted>
@@ -316,7 +318,7 @@ function ElsewhereCard({ run }: { run: RalphRunDetail }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ul style={{ margin: 0, paddingLeft: "var(--space-5)", ...stack }}>
+        <ul style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack }}>
           {stories.map((story) => (
             <li key={story.id} style={{ fontSize: "var(--text-sm)" }}>
               <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />{" "}
@@ -373,7 +375,7 @@ function laneRepository(run: RalphRunDetail, laneId: string | null): string | nu
 const textCell: React.CSSProperties = {
   ...cellText,
   display: "block",
-  maxWidth: "calc(var(--space-6) * 16)",
+  maxWidth: "calc(var(--space-8) * 16)",
   whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
 };
@@ -452,14 +454,6 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
   );
 }
 
-const MESSAGE_STATE_BADGES: Record<RalphMessageState, "neutral" | "success" | "warning" | "info"> =
-  {
-    waiting: "info",
-    delivered: "success",
-    guidance: "warning",
-    undelivered: "neutral",
-  };
-
 /** Linear replies and mentions sent to running jobs' live sessions. */
 function MessagesCard({ run }: { run: RalphRunDetail }) {
   return (
@@ -497,7 +491,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                 return (
                   <TableRow key={message.id}>
                     <TableCell>
-                      <Badge variant="outline">{message.kind}</Badge>
+                      <Badge variant="neutral">{message.kind}</Badge>
                     </TableCell>
                     <TableCell>
                       <span style={textCell} title={message.text}>
@@ -516,7 +510,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                     </TableCell>
                     <TableCell>
                       <div style={{ ...stack, gap: "var(--space-1)" }}>
-                        <Badge variant={MESSAGE_STATE_BADGES[message.state]} dot>
+                        <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
                           {RALPH_MESSAGE_STATE_LABELS[message.state]}
                         </Badge>
                         {settledAt && (
@@ -579,12 +573,12 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                   </TableCell>
                   <TableCell>
                     <div style={{ ...stack, gap: "var(--space-1)" }}>
-                      <Badge variant={JOB_STATUS_BADGES[job.status]} dot>
+                      <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
                         {job.status}
                         {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
                       </Badge>
                       {job.error && (
-                        <Muted title={job.error} style={{ maxWidth: "calc(var(--space-6) * 10)" }}>
+                        <Muted title={job.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
                           {truncate(job.error, 80)}
                         </Muted>
                       )}
@@ -636,10 +630,10 @@ export function RalphRunDetailView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
@@ -686,7 +680,7 @@ export function RalphRunDetailView({
                 )}
               </span>
               <RalphRunStatusBadge status={run.status} />
-              <Badge variant="outline">{run.kind}</Badge>
+              <Badge variant="neutral">{run.kind}</Badge>
             </div>
           </div>
           {isAdmin && stoppable && (
@@ -699,7 +693,7 @@ export function RalphRunDetailView({
         {!linearConnected && <LinearNotConnected isAdmin={isAdmin} />}
 
         {run.error && (
-          <Alert variant="destructive">
+          <Alert variant="danger">
             <IconAlertTriangle size={16} />
             <AlertTitle>{run.status === "waiting" ? "The PR/MR step failed" : "Error"}</AlertTitle>
             <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
@@ -776,7 +770,7 @@ export function RalphRunDetailView({
                 description="Reply in the Linear agent session to steer the run."
               />
             ) : (
-              <ol style={{ margin: 0, paddingLeft: "var(--space-5)", ...stack }}>
+              <ol style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack }}>
                 {run.guidance.map((g, i) => (
                   <li key={`${g.at}-${i}`} style={{ ...stack, gap: "var(--space-1)" }}>
                     <Muted style={{ fontSize: "var(--text-xs)" }}>{formatDateTime(g.at)}</Muted>

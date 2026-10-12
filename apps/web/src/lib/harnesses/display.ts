@@ -66,17 +66,15 @@ export type AuditEventName =
   | "result_submitted"
   | "auth_failed";
 
-export type AuditTone = "success" | "warning" | "info" | "danger" | "neutral";
-
-export const AUDIT_EVENT_LABELS: Record<AuditEventName, { label: string; tone: AuditTone }> = {
-  enroll: { label: "Enrolled", tone: "success" },
-  token_refresh: { label: "Token refresh", tone: "neutral" },
-  refresh_reuse: { label: "Refresh token reuse", tone: "danger" },
-  revoke: { label: "Revoked", tone: "danger" },
-  delete: { label: "Deleted", tone: "danger" },
-  credential_issued: { label: "Credential issued", tone: "info" },
-  result_submitted: { label: "Result submitted", tone: "info" },
-  auth_failed: { label: "Auth failure", tone: "warning" },
+export const AUDIT_EVENT_LABELS: Record<AuditEventName, string> = {
+  enroll: "Enrolled",
+  token_refresh: "Token refresh",
+  refresh_reuse: "Refresh token reuse",
+  revoke: "Revoked",
+  delete: "Deleted",
+  credential_issued: "Credential issued",
+  result_submitted: "Result submitted",
+  auth_failed: "Auth failure",
 };
 
 function str(value: unknown): string | null {

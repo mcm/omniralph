@@ -69,7 +69,7 @@ function Documents({
     onChange(documents.map((doc, i) => (i === index ? { ...doc, ...change } : doc)));
   return (
     <div style={stack}>
-      {errors[field] && <p style={{ margin: 0, color: "var(--text-danger)" }}>{errors[field]}</p>}
+      {errors[field] && <p style={{ margin: 0, color: "var(--danger-fg)" }}>{errors[field]}</p>}
       {documents.length === 0 && <Muted>No {noun}s.</Muted>}
       {documents.map((doc, index) => {
         const prefix = `${field}.${index}`;
@@ -101,7 +101,7 @@ function Documents({
             <Field
               label="Content"
               htmlFor={`agent-${prefix}-content`}
-              hint="Markdown."
+              description="Markdown."
               error={errors[`${prefix}.content`]}
               required
             >
@@ -222,8 +222,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
             it.
           </Muted>
         </div>
-        <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-5)" }}>
-          {errors.form && <p style={{ margin: 0, color: "var(--text-danger)" }}>{errors.form}</p>}
+        <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-6)" }}>
+          {errors.form && <p style={{ margin: 0, color: "var(--danger-fg)" }}>{errors.form}</p>}
           <Card>
             <CardHeader>
               <CardTitle>Overview</CardTitle>
@@ -252,7 +252,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
               <Field
                 label="Suited task types"
                 htmlFor="agent-task-types"
-                hint="Tasks of these types may run on the agent."
+                description="Tasks of these types may run on the agent."
                 error={errorFor(errors, "taskTypes")}
                 required
               >
@@ -268,7 +268,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Model"
                   htmlFor="agent-model"
-                  hint="Claude model ID. Empty uses the repository profile's model."
+                  description="Claude model ID. Empty uses the repository profile's model."
                   error={errors.model}
                 >
                   <Input
@@ -284,7 +284,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Fallback model"
                   htmlFor="agent-fallback-model"
-                  hint="Used when the model is overloaded. Empty for none."
+                  description="Used when the model is overloaded. Empty for none."
                   error={errors.fallbackModel}
                 >
                   <Input
@@ -350,7 +350,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
               <Field
                 label="Claude Code tools"
                 htmlFor="agent-tools-builtin"
-                hint="Comma-separated, e.g. Read, Grep, Glob."
+                description="Comma-separated, e.g. Read, Grep, Glob."
                 error={errorFor(errors, "tools.builtin")}
               >
                 <Input
@@ -379,7 +379,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
               <Field
                 label="Linear tools"
                 htmlFor="agent-tools-linear"
-                hint="Read-only; a task must also enable Linear reads."
+                description="Read-only; a task must also enable Linear reads."
                 error={errorFor(errors, "tools.linear")}
               >
                 <Choices
@@ -393,7 +393,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
               <Field
                 label="MCP servers"
                 htmlFor="agent-tools-mcp"
-                hint="Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable)."
+                description="Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable)."
                 error={errorFor(errors, "tools.mcpServers")}
               >
                 <Input

@@ -68,7 +68,7 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
         </CardHeader>
         <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="danger">
               <IconAlertTriangle size={16} />
               <AlertTitle>Couldn&apos;t sign you in</AlertTitle>
               <AlertDescription>{errorMessage(error)}</AlertDescription>
@@ -108,7 +108,7 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
               <Field
                 label="Dev sign-in"
                 htmlFor="dev-sign-in-email"
-                hint="Development only (OMNIRALPH_DEV_SIGNIN=1): signs in as an existing user, e.g. admin@fixtures.example."
+                description="Development only (OMNIRALPH_DEV_SIGNIN=1): signs in as an existing user, e.g. admin@fixtures.example."
               >
                 <Input id="dev-sign-in-email" name="email" type="email" required />
               </Field>

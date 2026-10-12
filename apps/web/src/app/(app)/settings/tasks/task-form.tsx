@@ -259,8 +259,8 @@ export function TaskForm({
             its sink. Changes apply to the next run.
           </Muted>
         </div>
-        <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-5)" }}>
-          {errors.form && <p style={{ margin: 0, color: "var(--text-danger)" }}>{errors.form}</p>}
+        <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-6)" }}>
+          {errors.form && <p style={{ margin: 0, color: "var(--danger-fg)" }}>{errors.form}</p>}
           <Card>
             <CardHeader>
               <CardTitle>Overview</CardTitle>
@@ -290,7 +290,7 @@ export function TaskForm({
                 <Field
                   label="Task type"
                   htmlFor="task-type"
-                  hint="How the harness runs it."
+                  description="How the harness runs it."
                   error={errors.taskType}
                   required
                 >
@@ -311,7 +311,7 @@ export function TaskForm({
                 <Field
                   label="Agent"
                   htmlFor="task-agent"
-                  hint="Agents suited to the task type."
+                  description="Agents suited to the task type."
                   error={errors.agentId}
                   required
                 >
@@ -334,7 +334,7 @@ export function TaskForm({
               <Field
                 label="Triggers"
                 htmlFor="task-triggers"
-                hint="The events that may start it; the task type decides which it accepts."
+                description="The events that may start it; the task type decides which it accepts."
                 error={errorFor(errors, "triggers")}
                 required
               >
@@ -361,7 +361,7 @@ export function TaskForm({
               <Field
                 label="Template"
                 htmlFor="task-prompt-template"
-                hint={setupHint(setupCommands)}
+                description={setupHint(setupCommands)}
                 error={errors.promptTemplate}
                 required
               >
@@ -444,7 +444,7 @@ export function TaskForm({
               <Field
                 label="Installables"
                 htmlFor="task-requires-installables"
-                hint="Comma-separated npm package names, e.g. @omniralph/code-graph."
+                description="Comma-separated npm package names, e.g. @omniralph/code-graph."
                 error={errorFor(errors, "requires.installables")}
               >
                 <Input
@@ -460,7 +460,7 @@ export function TaskForm({
               <Field
                 label="Host tools"
                 htmlFor="task-requires-host-tools"
-                hint="Comma-separated names from Settings › Harnesses › Host tools, e.g. opengrep."
+                description="Comma-separated names from Settings › Harnesses › Host tools, e.g. opengrep."
                 error={errorFor(errors, "requires.hostTools")}
               >
                 <Input
@@ -534,7 +534,7 @@ export function TaskForm({
               <Field
                 label="Sink"
                 htmlFor="task-sink"
-                hint="What applies the run's output."
+                description="What applies the run's output."
                 error={errors.sink}
                 required
               >
@@ -556,7 +556,7 @@ export function TaskForm({
               <Field
                 label="Pool"
                 htmlFor="task-pool"
-                hint="Whose concurrency slots its runs take."
+                description="Whose concurrency slots its runs take."
                 error={errors.pool}
                 required
               >
@@ -578,7 +578,7 @@ export function TaskForm({
               <Field
                 label="Model override"
                 htmlFor="task-model"
-                hint="Claude model ID. Empty uses the agent's model."
+                description="Claude model ID. Empty uses the agent's model."
                 error={errors.model}
               >
                 <Input

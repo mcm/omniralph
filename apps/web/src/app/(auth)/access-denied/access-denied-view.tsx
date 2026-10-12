@@ -30,7 +30,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
               display: "flex",
               alignItems: "center",
               gap: "var(--space-2)",
-              color: "var(--error)",
+              color: "var(--danger-fg)",
             }}
           >
             <IconLock size={18} />
@@ -47,7 +47,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
             ? "Ask an admin of your organization to change your role if you need access."
             : "Sign-in is limited to approved email domains and people invited to an organization. Ask an organization admin to invite your email, then try again."}
         </CardContent>
-        <CardFooter style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+        <CardFooter>
           <Button asChild variant={forbidden ? "secondary" : "primary"}>
             <Link href={forbidden ? "/" : "/sign-in"}>
               {forbidden ? "Back to the control panel" : "Try another account"}

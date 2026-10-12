@@ -13,13 +13,13 @@ export function LegalShell({ children }: { children: React.ReactNode }) {
           position: "relative",
           zIndex: 1,
           minHeight: "100vh",
-          padding: "var(--space-8) var(--space-6)",
+          padding: "var(--space-16) var(--space-8)",
         }}
       >
         <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
           <AuthBrand />
           <Card>
-            <CardContent className="legal-document" style={{ paddingTop: "var(--space-6)" }}>
+            <CardContent className="legal-document" style={{ paddingTop: "var(--space-8)" }}>
               {children}
             </CardContent>
           </Card>

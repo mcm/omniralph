@@ -9,6 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
   Button,
+  Cluster,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -18,9 +19,11 @@ import {
   Avatar,
   AvatarFallback,
   AvatarImage,
+  SidebarTrigger,
+  notify,
+  useSidebar,
 } from "@iamthemcmaster/ui";
 import { IconChevronDown, IconSun, IconMoon, IconLogout } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { signOutAction } from "@/lib/auth/actions";
 import type { Theme } from "@/lib/theme";
 import { saveThemePreference } from "@/lib/theme-actions";
@@ -40,22 +43,26 @@ function subscribeToTheme(onChange: () => void) {
   return () => observer.disconnect();
 }
 
+// Polar Night (dark) is the library's default: anything but "light" is dark.
 function readTheme(): Theme {
-  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
 }
 
 function useTheme() {
-  const theme = React.useSyncExternalStore<Theme>(subscribeToTheme, readTheme, () => "light");
+  const theme = React.useSyncExternalStore<Theme>(subscribeToTheme, readTheme, () => "dark");
 
   const toggle = React.useCallback(() => {
     const next = readTheme() === "light" ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", next);
+    const root = document.documentElement;
+    // Opts into the library's body cross-fade for this switch only (not on page load).
+    root.setAttribute("data-theme-transition", "");
+    root.setAttribute("data-theme", next);
     // Saved server-side so the choice follows the user across reloads and devices.
     void saveThemePreference(next).then(
       (result) => {
-        if (!result.ok) toast.error(result.error);
+        if (!result.ok) notify(result.error, { variant: "danger" });
       },
-      () => toast.error("Couldn't save your theme preference."),
+      () => notify("Couldn't save your theme preference.", { variant: "danger" }),
     );
   }, []);
 
@@ -65,43 +72,47 @@ function useTheme() {
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   const { theme, toggle } = useTheme();
   const user = useCurrentUser();
+  const { isMobile } = useSidebar();
   const [signingOut, startSignOut] = React.useTransition();
   return (
     <header
       style={{
         position: "sticky",
         top: 0,
-        zIndex: 30,
+        zIndex: "var(--z-sticky)",
         height: 52,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 var(--space-5)",
+        padding: "0 var(--space-6)",
         background: "color-mix(in srgb, var(--bg-page) 88%, transparent)",
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid var(--border-subtle)",
         flexShrink: 0,
       }}
     >
-      {/* Breadcrumbs */}
-      {breadcrumbs.length > 0 && (
-        <Breadcrumb>
-          <BreadcrumbList>
-            {breadcrumbs.map((crumb, i) => (
-              <React.Fragment key={i}>
-                <BreadcrumbItem>
-                  {i < breadcrumbs.length - 1 ? (
-                    <BreadcrumbLink href={crumb.href ?? "#"}>{crumb.label}</BreadcrumbLink>
-                  ) : (
-                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                  )}
-                </BreadcrumbItem>
-                {i < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-              </React.Fragment>
-            ))}
-          </BreadcrumbList>
-        </Breadcrumb>
-      )}
+      <Cluster gap={2} className="min-w-0">
+        {/* Below 768px the sidebar is a sheet; this opens it. */}
+        {isMobile && <SidebarTrigger />}
+        {breadcrumbs.length > 0 && (
+          <Breadcrumb>
+            <BreadcrumbList>
+              {breadcrumbs.map((crumb, i) => (
+                <React.Fragment key={i}>
+                  <BreadcrumbItem>
+                    {i < breadcrumbs.length - 1 ? (
+                      <BreadcrumbLink href={crumb.href ?? "#"}>{crumb.label}</BreadcrumbLink>
+                    ) : (
+                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    )}
+                  </BreadcrumbItem>
+                  {i < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                </React.Fragment>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
+        )}
+      </Cluster>
 
       {/* Right controls */}
       <div

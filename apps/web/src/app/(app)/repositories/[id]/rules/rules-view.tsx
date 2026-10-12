@@ -105,7 +105,7 @@ function RuleTextField({
     <Field
       label="Rule"
       htmlFor={id}
-      hint={`${value.length.toLocaleString()} / ${MAX_RULE_LENGTH.toLocaleString()} characters.`}
+      description={`${value.length.toLocaleString()} / ${MAX_RULE_LENGTH.toLocaleString()} characters.`}
       error={error}
     >
       <Textarea
@@ -258,6 +258,7 @@ function DeleteRuleButton({ repositoryId, rule }: { repositoryId: string; rule: 
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            variant="danger"
             onClick={() => run(() => deleteRule(repositoryId, rule.id), "Rule deleted")}
           >
             Delete
@@ -379,10 +380,10 @@ export function RulesView({ repository, rules }: RulesViewProps) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
