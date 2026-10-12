@@ -66,7 +66,7 @@ const SETTLED_STORY_STATUSES = new Set(["completed", "canceled", "manual"]);
 
 /**
  * Stores a reply as guidance for the next story attempts, with fresh
- * attempts (`freshAttempts`; cyralph resets `attempts`).
+ * attempts and rounds (`freshAttempts`; cyralph resets `attempts`).
  */
 export async function applyGuidance(
   tx: RalphTransaction,
@@ -78,16 +78,18 @@ export async function applyGuidance(
 }
 
 /**
- * The attempts of the unfinished stories reset (exhausted ones get another
- * go) and a waiting PR/MR step is retried: guidance, or a bare `/continue`.
+ * The attempts and rounds (with their metric history) of the unfinished
+ * stories reset (exhausted ones get another go) and a waiting PR/MR step is
+ * retried: guidance, or a bare `/continue`.
  */
 export async function freshAttempts(tx: RalphTransaction, run: RalphRun): Promise<void> {
+  const fresh = { attempts: 0, rounds: 0, roundMetrics: null };
   for (const story of await listStories(tx, run.id)) {
     if (SETTLED_STORY_STATUSES.has(story.status)) continue;
     if (story.status === "exhausted") {
-      await updateStory(tx, story.id, { status: "pending", attempts: 0 });
-    } else if (story.attempts !== 0) {
-      await updateStory(tx, story.id, { attempts: 0 });
+      await updateStory(tx, story.id, { status: "pending", ...fresh });
+    } else if (story.attempts !== 0 || story.rounds !== 0 || story.roundMetrics !== null) {
+      await updateStory(tx, story.id, fresh);
     }
   }
   // A waiting run's error is a failed PR/MR step: clearing it retries the step.

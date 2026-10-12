@@ -247,6 +247,8 @@ describe("TaskForm", () => {
       "task-draft-pull-request",
       "task-pr-description-task",
       "task-maxAttemptsPerStory",
+      "task-maxRoundsPerStory",
+      "task-stallRounds",
       "task-maxIterationsPerRun",
       "task-maxReviewRounds",
       "task-maxFixRounds",

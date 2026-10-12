@@ -459,6 +459,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         summary: "I need an API key for the payment sandbox.",
         commit: { summary: "Add the payment client" },
         followUps: [{ title: "Get a sandbox key", description: "We need one.", manual: true }],
+        metric: { name: "critique score", value: 26, direction: "higher" },
       });
     });
     const out = await runStoryCoding(spec(), context(), options(query));
@@ -473,6 +474,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(out.followUps).toEqual([
       { title: "Get a sandbox key", description: "We need one.", manual: true },
     ]);
+    expect(out.metric).toEqual({ name: "critique score", value: 26, direction: "higher" });
     expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
   });
 

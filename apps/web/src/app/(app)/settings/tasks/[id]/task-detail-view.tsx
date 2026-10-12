@@ -436,6 +436,8 @@ export function TaskDetailView({
                 )}
               </Fact>
               <Fact label="Attempts per story">{task.maxAttemptsPerStory}</Fact>
+              <Fact label="Rounds per story">{task.maxRoundsPerStory}</Fact>
+              <Fact label="Rounds without progress">{task.stallRounds}</Fact>
               <Fact label="Iterations per run">{task.maxIterationsPerRun}</Fact>
               <Fact label="Review rounds (at most)">{task.maxReviewRounds}</Fact>
               <Fact label="Fix rounds (at most)">{task.maxFixRounds}</Fact>

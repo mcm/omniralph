@@ -1239,7 +1239,17 @@ export async function getStory(db: Executor, id: string): Promise<RalphStory | n
 
 /** Story columns the orchestrator changes. */
 export type RalphStoryUpdate = Partial<
-  Pick<RalphStory, "status" | "attempts" | "lastFeedback" | "commitSha" | "lastJobId" | "title">
+  Pick<
+    RalphStory,
+    | "status"
+    | "attempts"
+    | "rounds"
+    | "roundMetrics"
+    | "lastFeedback"
+    | "commitSha"
+    | "lastJobId"
+    | "title"
+  >
 >;
 
 /** Updates a story (e.g. its status after an attempt). Returns null if it's gone. */

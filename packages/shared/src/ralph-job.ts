@@ -42,6 +42,13 @@ export const RALPH_JOB_TYPES = [
 
 /** Attempts (not queue deliveries) a story gets before it is marked exhausted. */
 export const MAX_ATTEMPTS_PER_STORY = 3;
+/**
+ * Rounds (blocked results that file follow-ups, as a review loop does) a
+ * story gets before it is marked exhausted. Rounds don't use attempts.
+ */
+export const MAX_ROUNDS_PER_STORY = 8;
+/** Rounds in a row a story's reported metric may fail to beat its best before the story is set aside. */
+export const STALL_ROUNDS = 3;
 
 /** Longest PRD, progress log or story description passed to an agent. */
 const MAX_DOCUMENT_LENGTH = 200_000;
@@ -203,6 +210,20 @@ export const RalphFollowUp = z.object({
 });
 export type RalphFollowUp = z.infer<typeof RalphFollowUp>;
 
+export const RALPH_METRIC_DIRECTIONS = ["higher", "lower"] as const;
+export type RalphMetricDirection = (typeof RALPH_METRIC_DIRECTIONS)[number];
+
+/** A progress metric a story reports each round of a review loop (e.g. a critique score). */
+export const RalphStoryMetric = z.object({
+  name: z.string().trim().min(1).max(200),
+  value: z.number(),
+  /** Whether a higher or a lower value is better. */
+  direction: z.enum(RALPH_METRIC_DIRECTIONS),
+  /** The value the story aims for, when it has one (shown, not acted on). */
+  target: z.number().optional(),
+});
+export type RalphStoryMetric = z.infer<typeof RalphStoryMetric>;
+
 /** Result of a `ralph.story` job (`/api/harness/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
@@ -217,6 +238,8 @@ export const RalphStoryResult = z.object({
    */
   hiddenRef: z.object({ ref: z.string().min(1).max(255), sha: CommitSha }).optional(),
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
+  /** The story's progress metric this round, when it reports one (older harnesses never do). */
+  metric: RalphStoryMetric.optional(),
   /** Why the attempt didn't complete (e.g. failed gate output), for the next attempt; null when complete. */
   feedback: z.string().max(20_000).nullable(),
   /** The whole progress log after the session, when the session changed it (replaces the run's). */

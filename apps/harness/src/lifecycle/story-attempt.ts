@@ -349,6 +349,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             ...(extra.commitSha && { commitSha: extra.commitSha }),
             ...(extra.hiddenRef && { hiddenRef: extra.hiddenRef }),
             followUps,
+            ...(outcome?.metric && { metric: outcome.metric }),
             feedback: extra.feedback === null ? null : clip(extra.feedback),
             ...progress,
             usage: session.usage,

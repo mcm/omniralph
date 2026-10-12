@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   GitBranch,
   MAX_ATTEMPTS_PER_STORY,
+  MAX_ROUNDS_PER_STORY,
+  STALL_ROUNDS,
   RALPH_JOB_TYPES,
   RalphActivity,
   RalphCleanupPayload,
@@ -355,6 +357,8 @@ describe("RalphActivity", () => {
 describe("the coding tasks' limits", () => {
   it("default to ralph's", () => {
     expect(CODING_DEFAULTS.maxAttemptsPerStory).toBe(MAX_ATTEMPTS_PER_STORY);
+    expect(CODING_DEFAULTS.maxRoundsPerStory).toBe(MAX_ROUNDS_PER_STORY);
+    expect(CODING_DEFAULTS.stallRounds).toBe(STALL_ROUNDS);
     expect(CODING_MAX_FIX_ROUNDS).toBe(MAX_FIX_ROUNDS);
     expect(CODING_DEFAULTS.maxReviewRounds).toBe(MAX_FIX_ROUNDS);
     expect(CODING_DEFAULTS.maxFixRounds).toBe(MAX_FIX_ROUNDS);

@@ -406,6 +406,22 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);
 
+  /** A story's status, attempts and rounds. */
+  const storyRounds = async (runId: string, identifier: string) => {
+    const story = (await listStories(db, runId)).find((s) => s.identifier === identifier)!;
+    return { status: story.status, attempts: story.attempts, rounds: story.rounds };
+  };
+
+  /** A review loop's round: blocked, with a follow-up to fix and (optionally) its score. */
+  const reviewRound = (n: number, value?: number): Partial<RalphStoryResult> => ({
+    status: "blocked",
+    summary: `Round ${n} found problems.`,
+    followUps: [{ title: `Fix round ${n}`, description: "Fix it.", manual: false }],
+    ...(value !== undefined && {
+      metric: { name: "critique score", value, direction: "higher" as const },
+    }),
+  });
+
   describe.each(["legacy", "tasks"] as const)("on the %s coding path", (path) => {
     beforeEach(async () => {
       await db.update(repositories).set({ codingPath: path });
@@ -1516,6 +1532,32 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       },
     );
 
+    it("takes the round cap from the story task: a story without a metric runs until it", async () => {
+      storyTaskWith({ maxRoundsPerStory: 2 });
+      const epic = linear.add({ identifier: "ENG-310", title: "Epic" });
+      linear.add({ identifier: "ENG-311", title: "Validate", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      expect((await work(run.id, reviewRound(1))).story.identifier).toBe("ENG-311");
+      expect(await storyRounds(run.id, "ENG-311")).toEqual({
+        status: "pending",
+        attempts: 0,
+        rounds: 1,
+      });
+      expect((await work(run.id)).story.title).toBe("Fix round 1");
+      expect((await work(run.id, reviewRound(2))).story).toMatchObject({ identifier: "ENG-311" });
+      expect(await storyRounds(run.id, "ENG-311")).toEqual({
+        status: "exhausted",
+        attempts: 0,
+        rounds: 2,
+      });
+      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      expect(error).toContain("**ENG-311** reached its round cap (2 rounds) without completing");
+      expect(error).not.toContain("Trend:");
+      // Its follow-up still gets done.
+      expect((await work(run.id)).story.title).toBe("Fix round 2");
+    });
+
     it("takes the attempt and iteration limits from the story task", async () => {
       storyTaskWith({ maxAttemptsPerStory: 2, maxIterationsPerRun: 3 });
       const epic = linear.add({ identifier: "ENG-80", title: "Epic" });
@@ -1779,6 +1821,71 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await work(run.id)).story.identifier).toBe(index.identifier);
     expect((await work(run.id)).story.identifier).toBe("ENG-57");
     expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+  });
+
+  it("counts a blocked result with follow-ups as a round, not an attempt, until its metric stalls", async () => {
+    const epic = linear.add({ identifier: "ENG-300", title: "Epic" });
+    linear.add({ identifier: "ENG-301", title: "Validate", parentId: epic.id });
+    const run = await delegate(epic.id);
+
+    for (const n of [1, 2]) {
+      const payload = await work(run.id, reviewRound(n, 20));
+      expect(payload).toMatchObject({ attempt: 1, story: { identifier: "ENG-301" } });
+      expect(await storyRounds(run.id, "ENG-301")).toEqual({
+        status: "pending",
+        attempts: 0,
+        rounds: n,
+      });
+      expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        `**ENG-301** round ${n}/8 filed follow-ups; it runs again once they're done.`,
+      );
+      // The follow-up blocks the story: it runs first.
+      expect((await work(run.id)).story.title).toBe(`Fix round ${n}`);
+    }
+    // The third round without a better score sets it aside.
+    expect((await work(run.id, reviewRound(3, 20))).attempt).toBe(1);
+    expect(await storyRounds(run.id, "ENG-301")).toEqual({
+      status: "exhausted",
+      attempts: 0,
+      rounds: 3,
+    });
+    const [error] = linear.bodies(run.linearAgentSessionId, "error");
+    expect(error).toContain(
+      "**ENG-301**'s critique score hasn't beaten its best (20) in 3 rounds, so I'm setting it aside after round 3.",
+    );
+    expect(error).toContain("Trend: critique score (higher is better): 20 → 20 → 20");
+    const story = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-301")!;
+    expect(story.roundMetrics).toMatchObject({
+      name: "critique score",
+      direction: "higher",
+      values: [
+        { round: 1, value: 20 },
+        { round: 2, value: 20 },
+        { round: 3, value: 20 },
+      ],
+    });
+    expect((await work(run.id)).story.title).toBe("Fix round 3");
+    expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
+
+    // `/continue` gives it fresh rounds and clears its metric history.
+    await handleLinearEvent(
+      { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "/continue" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
+      { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+    );
+    const resumed = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-301")!;
+    expect(resumed).toMatchObject({
+      status: "running",
+      attempts: 0,
+      rounds: 0,
+      roundMetrics: null,
+    });
+    expect((await work(run.id, reviewRound(4, 25))).story.identifier).toBe("ENG-301");
+    expect(await storyRounds(run.id, "ENG-301")).toEqual({
+      status: "pending",
+      attempts: 0,
+      rounds: 1,
+    });
   });
 
   it("waits on an outside blocker and resumes when an Issue webhook says it's done", async () => {

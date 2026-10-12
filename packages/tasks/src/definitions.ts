@@ -192,6 +192,10 @@ export type TaskRequires = z.infer<typeof TaskRequires>;
 
 /** Attempts a story gets before it is marked exhausted (`MAX_ATTEMPTS_PER_STORY` in `@omniralph/shared`). */
 export const DEFAULT_MAX_ATTEMPTS_PER_STORY = 3;
+/** Rounds (blocked results that file follow-ups) a story gets (`MAX_ROUNDS_PER_STORY` in `@omniralph/shared`). */
+export const DEFAULT_MAX_ROUNDS_PER_STORY = 8;
+/** Rounds without a better metric before a story is set aside (`STALL_ROUNDS` in `@omniralph/shared`). */
+export const DEFAULT_STALL_ROUNDS = 3;
 /** Story attempts a run makes before it stops and asks (`MAX_ITERATIONS_PER_RUN` of the control panel). */
 export const DEFAULT_MAX_ITERATIONS_PER_RUN = 50;
 /** Most review or CI fix rounds (`MAX_FIX_ROUNDS` in `@omniralph/shared`; a test there checks they agree). */
@@ -212,6 +216,10 @@ const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 /** Settings only coding tasks have; parsing a coding task fills their defaults (see `CODING_DEFAULTS`). */
 const CODING_FIELDS = {
   maxAttemptsPerStory: z.int().min(1).max(20).optional(),
+  /** Rounds of a review loop (blocked results that file follow-ups) a story gets. */
+  maxRoundsPerStory: z.int().min(1).max(100).optional(),
+  /** Rounds in a row a story's reported metric may fail to beat its best. */
+  stallRounds: z.int().min(1).max(100).optional(),
   maxIterationsPerRun: z.int().min(1).max(1000).optional(),
   /** Caps the repository's `ralph_settings.maxReviewRounds`. */
   maxReviewRounds: FixRounds.optional(),
@@ -229,6 +237,8 @@ export const CODING_FIELD_NAMES = Object.keys(CODING_FIELDS) as (keyof typeof CO
 /** What a coding task's unset coding-only fields become. */
 export const CODING_DEFAULTS = {
   maxAttemptsPerStory: DEFAULT_MAX_ATTEMPTS_PER_STORY,
+  maxRoundsPerStory: DEFAULT_MAX_ROUNDS_PER_STORY,
+  stallRounds: DEFAULT_STALL_ROUNDS,
   maxIterationsPerRun: DEFAULT_MAX_ITERATIONS_PER_RUN,
   maxReviewRounds: CODING_MAX_FIX_ROUNDS,
   maxFixRounds: CODING_MAX_FIX_ROUNDS,

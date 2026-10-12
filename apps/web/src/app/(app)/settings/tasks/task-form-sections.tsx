@@ -329,6 +329,8 @@ export interface CodingDraft {
   draftPullRequest: DraftPullRequestTiming | "";
   prDescriptionTaskId: string;
   maxAttemptsPerStory: string;
+  maxRoundsPerStory: string;
+  stallRounds: string;
   maxIterationsPerRun: string;
   maxReviewRounds: string;
   maxFixRounds: string;
@@ -336,6 +338,8 @@ export interface CodingDraft {
 
 const LIMITS = [
   ["maxAttemptsPerStory", "Attempts per story"],
+  ["maxRoundsPerStory", "Rounds per story"],
+  ["stallRounds", "Rounds without progress"],
   ["maxIterationsPerRun", "Story attempts per run"],
   ["maxReviewRounds", "Review fix rounds"],
   ["maxFixRounds", "CI fix rounds"],
@@ -348,6 +352,8 @@ export function codingDraft(task: TaskDefinition | null): CodingDraft {
     draftPullRequest: task?.draftPullRequest ?? "",
     prDescriptionTaskId: task?.prDescriptionTaskId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
     maxAttemptsPerStory: text(task?.maxAttemptsPerStory),
+    maxRoundsPerStory: text(task?.maxRoundsPerStory),
+    stallRounds: text(task?.stallRounds),
     maxIterationsPerRun: text(task?.maxIterationsPerRun),
     maxReviewRounds: text(task?.maxReviewRounds),
     maxFixRounds: text(task?.maxFixRounds),

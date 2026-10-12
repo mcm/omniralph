@@ -266,6 +266,8 @@ const CODER = {
   pool: "long",
   tokenBudget: null,
   maxAttemptsPerStory: 2,
+  maxRoundsPerStory: 6,
+  stallRounds: 2,
   maxIterationsPerRun: 30,
   maxReviewRounds: 3,
   maxFixRounds: 4,

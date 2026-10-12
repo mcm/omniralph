@@ -13,6 +13,7 @@ import {
 } from "@omniralph/ralph";
 import {
   MAX_ATTEMPTS_PER_STORY,
+  MAX_ROUNDS_PER_STORY,
   QueryRunResult,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RalphDescribePrPayload,
@@ -20,6 +21,7 @@ import {
   RalphDescribePrTriggerContext,
   RalphPushResult,
   RunSpecJobPayload,
+  STALL_ROUNDS,
   legacyJobRouting,
   parseRalphSettings,
   type RalphPushPayload,
@@ -84,18 +86,43 @@ export function requestTrigger(
 /** How a run's story attempts are capped. */
 export interface StoryLimits {
   maxAttemptsPerStory: number;
+  /** Rounds (blocked results that file follow-ups) a story gets. */
+  maxRoundsPerStory: number;
+  /** Rounds in a row a story's metric may fail to beat its best. */
+  stallRounds: number;
   maxIterationsPerRun: number;
 }
 
-const LEGACY_STORY_LIMITS: StoryLimits = {
+/** The caps of a story's attempts and rounds. */
+export type StoryCaps = Pick<
+  StoryLimits,
+  "maxAttemptsPerStory" | "maxRoundsPerStory" | "stallRounds"
+>;
+
+const LEGACY_STORY_CAPS: StoryCaps = {
   maxAttemptsPerStory: MAX_ATTEMPTS_PER_STORY,
+  maxRoundsPerStory: MAX_ROUNDS_PER_STORY,
+  stallRounds: STALL_ROUNDS,
+};
+
+const LEGACY_STORY_LIMITS: StoryLimits = {
+  ...LEGACY_STORY_CAPS,
   maxIterationsPerRun: MAX_ITERATIONS_PER_RUN,
 };
 
+/** A coding task's story caps, the legacy loop's where it has none. */
+function taskStoryCaps(task: TaskDefinition | null | undefined): StoryCaps {
+  return {
+    maxAttemptsPerStory: task?.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY,
+    maxRoundsPerStory: task?.maxRoundsPerStory ?? MAX_ROUNDS_PER_STORY,
+    stallRounds: task?.stallRounds ?? STALL_ROUNDS,
+  };
+}
+
 /**
  * The story caps of a repository's runs: on the `tasks` path its story
- * task's `maxAttemptsPerStory`/`maxIterationsPerRun`, otherwise (or without
- * a repository) the legacy loop's.
+ * task's `maxAttemptsPerStory`/`maxRoundsPerStory`/`stallRounds`/
+ * `maxIterationsPerRun`, otherwise (or without a repository) the legacy loop's.
  */
 export async function storyLimits(
   repository: CodingRepository | null | undefined,
@@ -104,18 +131,18 @@ export async function storyLimits(
   if (!repository || !usesCodingTasks(repository)) return LEGACY_STORY_LIMITS;
   const task = await codingTask(storyTaskFor(repository), definitions);
   return {
-    maxAttemptsPerStory: task?.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY,
+    ...taskStoryCaps(task),
     maxIterationsPerRun: task?.maxIterationsPerRun ?? MAX_ITERATIONS_PER_RUN,
   };
 }
 
-/** The attempts a story gets, by the job that ran its last attempt (its coding task's, else the legacy cap). */
-export async function jobMaxAttempts(
+/** The attempts and rounds a story gets, by the job that ran its last attempt (its coding task's, else the legacy caps). */
+export async function jobStoryCaps(
   job: Pick<Job, "taskId"> | null,
   definitions: DefinitionSource,
-): Promise<number> {
+): Promise<StoryCaps> {
   const task = job?.taskId ? await codingTask(job.taskId, definitions) : null;
-  return task?.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY;
+  return task ? taskStoryCaps(task) : LEGACY_STORY_CAPS;
 }
 
 /** How many review and CI fix rounds a lane's PR/MR gets. */

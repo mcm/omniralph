@@ -18,15 +18,21 @@ import {
   runReference,
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
-import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
+import {
+  MAX_ATTEMPTS_PER_STORY,
+  RalphStoryResult,
+  type RalphFollowUp,
+  type RalphStoryMetric,
+} from "@omniralph/shared";
 import { organizationDefinitions } from "@/lib/definitions";
 import type { IssueSummary } from "@/lib/linear/gateway";
-import { jobMaxAttempts } from "./coding";
+import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
 import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
+import { addRoundMetric, bestValue, isStalled, metricTrend } from "./rounds";
 import type { RalphDeps } from "./run";
 
 /** Marks follow-ups the orchestrator filed (cyralph's `FOLLOW_UP_MARK`). */
@@ -110,21 +116,18 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
       continue;
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
-    // A coding run's story gets its task's attempts.
-    const maxAttempts = await jobMaxAttempts(
-      job,
-      organizationDefinitions(ctx.db, ctx.run.organizationId),
-    );
+    // A coding run's story gets its task's attempts and rounds.
+    const caps = await jobStoryCaps(job, organizationDefinitions(ctx.db, ctx.run.organizationId));
     if (parsed?.success && parsed.data.hiddenRef) {
       // The story commits sit on the run's hidden ref: deleted once the run is over.
       const repositoryId = (await storyLane(ctx.tx, ctx.run, story))?.repositoryId;
       if (repositoryId) await recordStoryHiddenRef(ctx.tx, ctx.run, repositoryId, parsed.data);
     }
-    if (parsed?.success) await applyStoryResult(ctx, story, parsed.data, maxAttempts);
+    if (parsed?.success) await applyStoryResult(ctx, story, parsed.data, caps);
     else {
       const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
       await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`, {
-        maxAttempts,
+        maxAttempts: caps.maxAttemptsPerStory,
       });
     }
   }
@@ -135,7 +138,7 @@ async function applyStoryResult(
   ctx: OutcomeContext,
   story: RalphStory,
   result: RalphStoryResult,
-  maxAttempts: number,
+  caps: StoryCaps,
 ): Promise<void> {
   const { tx, linear } = ctx;
   let run = ctx.run;
@@ -152,12 +155,21 @@ async function applyStoryResult(
       const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
       run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
     }
-    await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result), {
-      // Another attempt can't get past it; blocking follow-ups hold its retry instead.
-      setAside: blocked && result.followUps.length === 0,
-      wipSha,
-      maxAttempts,
-    });
+    if (blocked && result.followUps.length > 0) {
+      // A round of a review loop: it runs again once its follow-ups are done.
+      await recordRound({ ...ctx, run }, story, resultFeedback(result), {
+        metric: result.metric,
+        wipSha,
+        caps,
+      });
+    } else {
+      await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result), {
+        // Another attempt can't get past it.
+        setAside: blocked,
+        wipSha,
+        maxAttempts: caps.maxAttemptsPerStory,
+      });
+    }
     // Work the story turned up has to be done first (cyralph: follow-ups of an unfinished story block it).
     await fileFollowUps({ ...ctx, run }, story, result.followUps, { blocking: true });
     return;
@@ -212,8 +224,8 @@ async function applyStoryResult(
  * incomplete or blocked): stores the feedback and retries it, or, out of
  * attempts, sets it aside as `exhausted`. `setAside` (a blocked story) uses
  * up the remaining attempts at once, as cyralph does: the run carries on with
- * other stories and a reply gives it new ones. A blocked story's blocking
- * follow-ups hold its retry until they're done.
+ * other stories and a reply gives it new ones. A blocked story that filed
+ * follow-ups is a round instead (`recordRound`).
  */
 export async function recordFailedAttempt(
   ctx: OutcomeContext,
@@ -247,6 +259,57 @@ export async function recordFailedAttempt(
     await postActivity(conversation, {
       type: "thought",
       body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${tail(feedback, 1500)}`,
+    });
+  }
+}
+
+/**
+ * Counts a round: a blocked result that filed follow-ups (a review loop
+ * filing its fixes), which doesn't use an attempt. The story waits for its
+ * blocking follow-ups and runs again, until it reaches `maxRoundsPerStory`
+ * or the metric it reports stops beating its best for `stallRounds` rounds:
+ * then it is set aside as `exhausted` until a reply gives it fresh rounds.
+ */
+export async function recordRound(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  feedback: string,
+  options: { metric?: RalphStoryMetric; wipSha?: string | null; caps: StoryCaps },
+): Promise<void> {
+  const { maxRoundsPerStory: max, stallRounds } = options.caps;
+  const round = story.rounds + 1;
+  const metrics = options.metric
+    ? addRoundMetric(story.roundMetrics, options.metric, round, ctx.now ?? new Date())
+    : story.roundMetrics;
+  const capped = round >= max;
+  const stalled = metrics ? isStalled(metrics, stallRounds) : false;
+  await updateStory(ctx.tx, story.id, {
+    status: capped || stalled ? "exhausted" : "pending",
+    rounds: round,
+    roundMetrics: metrics,
+    lastFeedback: feedback,
+  });
+  const conversation = conversationFor(ctx.run, ctx);
+  const saved = options.wipSha
+    ? ` Its work so far is committed as \`${options.wipSha.slice(0, 10)}\`.`
+    : "";
+  const trend = metrics ? `\n\nTrend: ${metricTrend(metrics)}` : "";
+  const setAside =
+    "Stories that don't depend on it carry on; reply `/continue` to give it more rounds.";
+  if (capped) {
+    await postActivity(conversation, {
+      type: "error",
+      body: `⚠️ **${story.identifier}** reached its round cap (${max} rounds) without completing, so I'm setting it aside.${saved} ${setAside}${trend}\n\n${tail(feedback, 1500)}`,
+    });
+  } else if (stalled && metrics) {
+    await postActivity(conversation, {
+      type: "error",
+      body: `⚠️ **${story.identifier}**'s ${metrics.name} hasn't beaten its best (${bestValue(metrics)}) in ${stallRounds} rounds, so I'm setting it aside after round ${round}.${saved} ${setAside}${trend}\n\n${tail(feedback, 1500)}`,
+    });
+  } else {
+    await postActivity(conversation, {
+      type: "thought",
+      body: `🔁 **${story.identifier}** round ${round}/${max} filed follow-ups; it runs again once they're done.${saved}${trend}\n\n${tail(feedback, 1500)}`,
     });
   }
 }
