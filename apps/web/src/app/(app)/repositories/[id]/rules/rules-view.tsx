@@ -30,6 +30,7 @@ import {
   Empty,
   Field,
   Muted,
+  Stack,
   Switch,
   Table,
   TableBody,
@@ -82,6 +83,8 @@ const ruleText: React.CSSProperties = {
   whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
 };
+
+const disabledRuleText: React.CSSProperties = { ...ruleText, color: "var(--text-secondary)" };
 
 /** Validates a rule's text like the server action does; returns the error message, if any. */
 function ruleTextError(text: string): string | undefined {
@@ -319,9 +322,18 @@ function RulesTable({
       </TableHeader>
       <TableBody>
         {rules.map((rule) => (
-          <TableRow key={rule.id} style={{ opacity: rule.enabled ? 1 : 0.7 }}>
+          <TableRow key={rule.id}>
             <TableCell style={{ minWidth: 280 }}>
-              <p style={ruleText}>{rule.text}</p>
+              <Stack gap={1} align="start">
+                {/* Disabled rules are marked by a badge and secondary text, never by opacity:
+                    dimming the row would also dim its working controls. */}
+                {!rule.enabled && (
+                  <Badge variant="neutral" size="sm">
+                    Disabled
+                  </Badge>
+                )}
+                <p style={rule.enabled ? ruleText : disabledRuleText}>{rule.text}</p>
+              </Stack>
             </TableCell>
             <TableCell>
               <EnabledSwitch repositoryId={repositoryId} rule={rule} isAdmin={isAdmin} />

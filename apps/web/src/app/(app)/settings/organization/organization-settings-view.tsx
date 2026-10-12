@@ -245,7 +245,7 @@ function Member({
       <Avatar style={{ width: 36, height: 36 }}>
         {member.image && <AvatarImage src={member.image} alt="" />}
         <AvatarFallback
-          style={{ fontSize: 12, background: "var(--bg-raised)", color: "var(--glacier-300)" }}
+          style={{ fontSize: 12, background: "var(--bg-raised)", color: "var(--text-accent)" }}
         >
           {userInitials(member)}
         </AvatarFallback>

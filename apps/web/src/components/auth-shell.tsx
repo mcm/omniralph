@@ -49,7 +49,7 @@ export function AuthBrand() {
           width: 28,
           height: 28,
           borderRadius: "var(--radius-sm)",
-          background: "linear-gradient(135deg, var(--glacier-500), var(--glacier-700))",
+          background: "var(--accent)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -59,7 +59,7 @@ export function AuthBrand() {
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "var(--text-sm)",
-            color: "var(--bg-page)",
+            color: "var(--accent-fg)",
             fontWeight: 600,
           }}
         >
@@ -70,7 +70,7 @@ export function AuthBrand() {
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: "var(--text-sm)",
-          color: "var(--glacier-300)",
+          color: "var(--text-accent)",
           letterSpacing: ".12em",
         }}
       >

@@ -53,7 +53,6 @@ const rowStyle: React.CSSProperties = {
   alignItems: "center",
   gap: "var(--space-3)",
   padding: "var(--space-3) var(--space-4)",
-  background: "var(--bg-raised)",
   borderRadius: "var(--radius-md)",
   border: "1px solid var(--border-subtle)",
 };
@@ -251,7 +250,7 @@ export function OnboardingView({
       <AuthBrand />
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <IconBuilding size={18} style={{ color: "var(--glacier-300)" }} />
+          <IconBuilding size={18} style={{ color: "var(--text-accent)" }} />
           <h1 style={{ margin: 0, fontSize: "var(--text-xl)", fontWeight: 600 }}>
             {hasActiveOrganization ? "Organizations" : "Choose an organization"}
           </h1>
