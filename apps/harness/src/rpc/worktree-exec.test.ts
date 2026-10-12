@@ -157,6 +157,16 @@ describe("worktree.exec", { timeout: 60_000 }, () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("gives the commands no git credential helper", async () => {
+    const out = await run(
+      job([
+        'echo "helper=$(git config --get-all credential.helper || echo none) count=${GIT_CONFIG_COUNT:-none} file=${OMNIRALPH_JOB_TOKEN_FILE:-none}"',
+      ]),
+    );
+    expect(out.status).toBe("completed");
+    expect(out.commands[0]!.output).toBe("helper=none count=none file=none");
+  });
+
   it("stops at the first failure and reports its exit code and output tail", async () => {
     const out = await run(job(["echo ok", "echo broken >&2; exit 3", "touch never.txt"]));
     expect(out.status).toBe("failed");

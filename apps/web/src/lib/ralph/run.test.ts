@@ -994,6 +994,98 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       });
       expect(scm.changeRequests.map((c) => c.title)).toEqual(["Add gadgets"]);
     });
+
+    it("counts redeliveries as one attempt, and a job that runs out of deliveries as a failed one", async () => {
+      const epic = linear.add({ identifier: "ENG-25", title: "Epic" });
+      linear.add({ identifier: "ENG-26", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      // The agent crashes (lease lost) on every delivery: no outcome is reported.
+      const job = await activeJob(run.id);
+      const lapseLease = () =>
+        db
+          .update(jobs)
+          .set({ leaseExpiresAt: new Date(0) })
+          .where(eq(jobs.id, job.id));
+      for (let delivery = 1; delivery <= MAX_JOB_DELIVERIES; delivery += 1) {
+        await lapseLease();
+        const started = await claimJob(db, {
+          organizationId: orgId,
+          harnessId: agentA,
+          acceptedTaskTypes: ["query", "coding"],
+          pools: ["short", "long"],
+          harnessVersion: null,
+          maxDeliveries: MAX_JOB_DELIVERIES,
+        });
+        expect(started.claim?.job.id).toBe(job.id);
+        await advanceRun(run.id, deps());
+        expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 0]]);
+        expect((await activeJob(run.id)).id).toBe(job.id);
+      }
+      await lapseLease();
+      const gaveUp = await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentA,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(gaveUp).toMatchObject({
+        claim: null,
+        settled: [{ outcome: "failed", job: { id: job.id, status: "failed" } }],
+      });
+      await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+
+      expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 1]]);
+      const retry = await work(run.id, { commitSha: sha(4) });
+      expect(retry).toMatchObject({
+        attempt: 2,
+        lastFeedback: `The previous attempt failed: Gave up after ${MAX_JOB_DELIVERIES} deliveries.`,
+      });
+      expect(await storyStates(run.id)).toEqual([["ENG-26", "completed", 2]]);
+    });
+
+    it("doesn't count a retried delivery (a rate limit) as an attempt", async () => {
+      const epic = linear.add({ identifier: "ENG-34", title: "Epic" });
+      linear.add({ identifier: "ENG-35", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      const job = await activeJob(run.id);
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentA,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      const failed = await failJob(db, {
+        jobId: job.id,
+        harnessId: agentA,
+        retryable: true,
+        error: "Claude rate limit",
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(failed).toEqual({ status: "retry" });
+      await advanceRun(run.id, deps());
+      expect(await storyStates(run.id)).toEqual([["ENG-35", "running", 0]]);
+      expect((await activeJob(run.id)).id).toBe(job.id);
+
+      const redelivered = await work(run.id, { commitSha: sha(6) });
+      expect(redelivered).toMatchObject({ attempt: 1, lastFeedback: null });
+      expect(await storyStates(run.id)).toEqual([["ENG-35", "completed", 1]]);
+    });
+
+    it("stops enqueueing at the per-run iteration cap", async () => {
+      const run = await unblockedWaitingRun();
+      await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
+      expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+        `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`,
+      );
+    });
   });
 
   describe("push and draft PR timing on the tasks path", () => {
@@ -1356,6 +1448,33 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         expect(await withPullRequest(run.id)).toMatchObject({ status: "completed" });
       },
     );
+
+    it("takes the attempt and iteration limits from the story task", async () => {
+      storyTaskWith({ maxAttemptsPerStory: 2, maxIterationsPerRun: 3 });
+      const epic = linear.add({ identifier: "ENG-80", title: "Epic" });
+      linear.add({ identifier: "ENG-81", title: "X", parentId: epic.id, priority: 1 });
+      linear.add({ identifier: "ENG-82", title: "Y", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+
+      expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-81");
+      const second = await work(run.id, { status: "failed", summary: "Nope" });
+      expect(second).toMatchObject({ attempt: 2, story: { identifier: "ENG-81" } });
+      expect(linear.bodies(run.linearAgentSessionId, "error")[0]).toContain(
+        "**ENG-81** did not complete after 2 attempts",
+      );
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-81", "exhausted", 2],
+        ["ENG-82", "running", 0],
+      ]);
+
+      // One more story attempt reaches the task's iteration cap of 3.
+      expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-82");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect((await getRun(db, run.id))?.status).toBe("waiting");
+      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+        "I reached the per-run iteration cap (3 story attempts).",
+      );
+    });
   });
 
   it("goes back to the organization's ralph agents when the sticky agent was revoked before the next job", async () => {
@@ -1407,57 +1526,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
 
-  it("counts redeliveries as one attempt, and a job that runs out of deliveries as a failed one", async () => {
-    const epic = linear.add({ identifier: "ENG-25", title: "Epic" });
-    linear.add({ identifier: "ENG-26", title: "Only", parentId: epic.id });
-    const run = await delegate(epic.id);
-
-    // The agent crashes (lease lost) on every delivery: no outcome is reported.
-    const job = await activeJob(run.id);
-    const lapseLease = () =>
-      db
-        .update(jobs)
-        .set({ leaseExpiresAt: new Date(0) })
-        .where(eq(jobs.id, job.id));
-    for (let delivery = 1; delivery <= MAX_JOB_DELIVERIES; delivery += 1) {
-      await lapseLease();
-      const started = await claimJob(db, {
-        organizationId: orgId,
-        harnessId: agentA,
-        acceptedTaskTypes: ["query", "coding"],
-        pools: ["short", "long"],
-        harnessVersion: null,
-        maxDeliveries: MAX_JOB_DELIVERIES,
-      });
-      expect(started.claim?.job.id).toBe(job.id);
-      await advanceRun(run.id, deps());
-      expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 0]]);
-      expect((await activeJob(run.id)).id).toBe(job.id);
-    }
-    await lapseLease();
-    const gaveUp = await claimJob(db, {
-      organizationId: orgId,
-      harnessId: agentA,
-      acceptedTaskTypes: ["query", "coding"],
-      pools: ["short", "long"],
-      harnessVersion: null,
-      maxDeliveries: MAX_JOB_DELIVERIES,
-    });
-    expect(gaveUp).toMatchObject({
-      claim: null,
-      settled: [{ outcome: "failed", job: { id: job.id, status: "failed" } }],
-    });
-    await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-
-    expect(await storyStates(run.id)).toEqual([["ENG-26", "running", 1]]);
-    const retry = await work(run.id, { commitSha: sha(4) });
-    expect(retry).toMatchObject({
-      attempt: 2,
-      lastFeedback: `The previous attempt failed: Gave up after ${MAX_JOB_DELIVERIES} deliveries.`,
-    });
-    expect(await storyStates(run.id)).toEqual([["ENG-26", "completed", 2]]);
-  });
-
   it("runs a delegated sub-issue's story first, then the rest of the epic", async () => {
     const epic = linear.add({ identifier: "ENG-27", title: "Epic" });
     linear.add({ identifier: "ENG-28", title: "Urgent", parentId: epic.id, priority: 1 });
@@ -1467,37 +1535,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect((await work(run.id)).story.identifier).toBe("ENG-29");
     expect((await work(run.id)).story.identifier).toBe("ENG-28");
     expect((await getRun(db, run.id))?.status).toBe("completed");
-  });
-
-  it("doesn't count a retried delivery (a rate limit) as an attempt", async () => {
-    const epic = linear.add({ identifier: "ENG-34", title: "Epic" });
-    linear.add({ identifier: "ENG-35", title: "Only", parentId: epic.id });
-    const run = await delegate(epic.id);
-    const job = await activeJob(run.id);
-    const { claim } = await claimJob(db, {
-      organizationId: orgId,
-      harnessId: agentA,
-      acceptedTaskTypes: ["query", "coding"],
-      pools: ["short", "long"],
-      harnessVersion: null,
-      maxDeliveries: MAX_JOB_DELIVERIES,
-    });
-    expect(claim?.job.id).toBe(job.id);
-    const failed = await failJob(db, {
-      jobId: job.id,
-      harnessId: agentA,
-      retryable: true,
-      error: "Claude rate limit",
-      maxDeliveries: MAX_JOB_DELIVERIES,
-    });
-    expect(failed).toEqual({ status: "retry" });
-    await advanceRun(run.id, deps());
-    expect(await storyStates(run.id)).toEqual([["ENG-35", "running", 0]]);
-    expect((await activeJob(run.id)).id).toBe(job.id);
-
-    const redelivered = await work(run.id, { commitSha: sha(6) });
-    expect(redelivered).toMatchObject({ attempt: 1, lastFeedback: null });
-    expect(await storyStates(run.id)).toEqual([["ENG-35", "completed", 1]]);
   });
 
   it("waits while the epic itself is blocked and resumes from the Issue webhook", async () => {
@@ -1828,16 +1865,6 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(
       linear.bodies(run.linearAgentSessionId, "thought").filter((t) => t.startsWith("▶️")),
     ).toHaveLength(1);
-  });
-
-  it("stops enqueueing at the per-run iteration cap", async () => {
-    const run = await unblockedWaitingRun();
-    await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
-    expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
-    expect(await activeJobs(run.id)).toEqual([]);
-    expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
-      `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`,
-    );
   });
 
   it("reconciles waiting runs and outcomes that were never applied", async () => {

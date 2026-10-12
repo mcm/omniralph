@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { RALPH_SYSTEM_APPEND, storyTemplateContext } from "@omniralph/ralph";
+import { RALPH_SYSTEM_APPEND, STORY_OUTPUT_SCHEMA, storyTemplateContext } from "@omniralph/ralph";
 import {
   RalphPushResult,
   RalphStoryResult,
@@ -337,7 +337,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       cwd: worktreePath(),
       model: "opus",
       permissionMode: "bypassPermissions",
-      outputFormat: { type: "json_schema" },
+      outputFormat: { type: "json_schema", schema: STORY_OUTPUT_SCHEMA },
     });
     expect(Object.keys(call!.options.mcpServers ?? {})).toEqual(["omniralph"]);
 
@@ -365,6 +365,48 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       .filter((key) => env[key] === "credential.helper")
       .map((key) => env[key.replace("KEY", "VALUE")]);
     expect(helpers).toEqual(["", "!true"]);
+  });
+
+  it("downloads its attachments with the lifecycle token and points the session at them", async () => {
+    const id = "a".repeat(32);
+    const downloads: { url: string; auth: string | null }[] = [];
+    const withUploads = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (!/\/attachments\/[^/]+$/.test(String(input))) return fetchFn(input, init);
+      downloads.push({
+        url: String(input),
+        auth: new Headers(init?.headers).get("authorization"),
+      });
+      return new Response("PNGDATA", { headers: { "content-type": "image/png" } });
+    }) as typeof fetch;
+    const { query, calls } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const run = spec(
+      payload({
+        attachments: [{ id, title: "mockup.png", sources: ["TOOL-91 description"] }],
+      }),
+    );
+    const out = await runStoryCoding(run, context(), options(query, { fetch: withUploads }));
+    expect(out.status).toBe("complete");
+
+    expect(downloads).toEqual([
+      {
+        url: `https://omniralph.example.com/api/harness/jobs/${run.jobId}/attachments/${id}`,
+        auth: "Bearer lifecycle-token",
+      },
+    ]);
+    const dir = path.join(workspaceRoot, ".attachments", "TOOL-32");
+    const file = path.join(dir, "mockup.png");
+    expect(await readFile(file, "utf8")).toBe("PNGDATA");
+    const [call] = calls;
+    expect(call!.prompt).toContain("### Attachments");
+    expect(call!.prompt).toContain(`- **mockup.png** (from TOOL-91 description): \`${file}\``);
+    expect(call!.options.additionalDirectories).toContain(dir);
+    // Nothing of the attachment ends up in the story's commit.
+    expect(git(remote.bare, "ls-tree", "-r", "--name-only", `refs/heads/${branch}`)).toBe(
+      "README.md\nfeature.txt",
+    );
   });
 
   it("pushes with the lifecycle token, read from a file", async () => {

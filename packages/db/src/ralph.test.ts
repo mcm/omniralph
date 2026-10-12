@@ -197,6 +197,17 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
     const selected = (await listHiddenRefsToDelete(db, cutoff)).map((r) => r.hiddenRef.id);
     const completedIds = (await listRunHiddenRefs(db, completed.id)).map((r) => r.id);
     expect(selected.sort()).toEqual([...completedIds, failed, oldStopped, oldPending].sort());
+    // A resumed run that pushes its old ref again restarts its age.
+    const [pending] = await db.select().from(hiddenRefs).where(eq(hiddenRefs.id, oldPending));
+    await recordHiddenRef(db, {
+      repositoryId: repoA,
+      runId: pending!.runId,
+      ref: pending!.ref,
+      sha: sha(5),
+    });
+    expect((await listHiddenRefsToDelete(db, cutoff)).map((r) => r.hiddenRef.id).sort()).toEqual(
+      [...completedIds, failed, oldStopped].sort(),
+    );
     expect(
       (await listHiddenRefsToDelete(db, cutoff)).find((r) => r.hiddenRef.id === failed)?.run.id,
     ).toBeDefined();
