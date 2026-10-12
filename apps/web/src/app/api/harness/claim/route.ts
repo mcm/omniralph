@@ -115,12 +115,17 @@ async function claimNext(
   }
 }
 
+/** A failing hook or hook lookup is logged, so it can't lose the claim or stop the other settled jobs' hooks. */
 async function onSettled(db: Database, { outcome, job }: SettledJob): Promise<void> {
-  const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
-  if (outcome === "failed") {
-    await handler?.onFailed?.(db, job, job.error ?? "Gave up after too many deliveries");
-  } else {
-    await handler?.onCanceled?.(db, job);
+  try {
+    const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+    if (outcome === "failed") {
+      await handler?.onFailed?.(db, job, job.error ?? "Gave up after too many deliveries");
+    } else {
+      await handler?.onCanceled?.(db, job);
+    }
+  } catch (error) {
+    console.error(`Job outcome hook failed for job ${job.id}`, error);
   }
 }
 

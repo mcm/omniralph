@@ -21,12 +21,14 @@ export async function GET(req: Request): Promise<Response> {
     now,
   );
   for (const jobId of expired) {
-    const job = await getJob(db, jobId);
-    const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
-    if (job && handler?.onFailed) {
-      await handler
-        .onFailed(db, job, "No agent picked up the job within 24 hours")
-        .catch((error: unknown) => console.error("failed to record expired job", jobId, error));
+    try {
+      const job = await getJob(db, jobId);
+      const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
+      if (job && handler?.onFailed) {
+        await handler.onFailed(db, job, "No agent picked up the job within 24 hours");
+      }
+    } catch (error) {
+      console.error("failed to record expired job", jobId, error);
     }
   }
   return Response.json({ expired: expired.length });
