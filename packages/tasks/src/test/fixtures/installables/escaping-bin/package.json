@@ -1,0 +1,12 @@
+{
+  "name": "@omniralph/test-escaping",
+  "version": "1.0.0",
+  "omniralph": {
+    "commands": [
+      {
+        "name": "x",
+        "bin": "../x"
+      }
+    ]
+  }
+}

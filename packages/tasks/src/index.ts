@@ -9,3 +9,4 @@ export * from "./correlation.js";
 export * from "./requirements.js";
 export * from "./output-schema.js";
 export * from "./validate.js";
+export * from "./installables.js";

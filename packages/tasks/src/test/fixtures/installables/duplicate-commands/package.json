@@ -1,0 +1,16 @@
+{
+  "name": "@omniralph/test-duplicates",
+  "version": "1.0.0",
+  "omniralph": {
+    "commands": [
+      {
+        "name": "graph",
+        "bin": "bin/a.js"
+      },
+      {
+        "name": "graph",
+        "bin": "bin/b.js"
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@omniralph/test-full",
+  "version": "1.2.3",
+  "omniralph": {
+    "commands": [
+      {
+        "name": "graph",
+        "bin": "./bin/graph.js"
+      },
+      {
+        "name": "graph-index",
+        "bin": "bin/index.js"
+      }
+    ],
+    "mcpServers": [
+      {
+        "name": "code-graph",
+        "command": "bin/mcp.js",
+        "args": [
+          "--stdio"
+        ]
+      },
+      {
+        "name": "code-graph.lite",
+        "command": "bin/mcp.js"
+      }
+    ],
+    "skills": [
+      "skills/graph",
+      "skills/./extra/../query.md"
+    ]
+  }
+}
