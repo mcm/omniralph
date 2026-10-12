@@ -782,3 +782,129 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+/* Analytics (app/(app)/analytics): every grid reflows by a minimum width, never a fixed
+   column count, so no KPI, chart or table is clipped from 390px to 1440px. */
+.analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.analytics-section-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.analytics-metrics,
+.analytics-cards,
+.analytics-split {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.analytics-metrics > *,
+.analytics-cards > *,
+.analytics-split > * {
+  min-width: 0;
+}
+/* Two KPIs a row on a phone, all four in one row from about 700px. */
+.analytics-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+}
+/* Metric truncates its label; in a narrow tile it wraps instead. */
+.analytics-metrics .text-label {
+  white-space: normal;
+  overflow: visible;
+}
+.analytics-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+/* A wide chart next to a narrow one; stacked below 1024px. */
+.analytics-split {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 1024px) {
+  .analytics-split {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+.analytics-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.analytics-count-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.analytics-count-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(3rem, 1fr) minmax(3ch, auto);
+  align-items: center;
+  gap: var(--space-3);
+}
+.analytics-count-label,
+.analytics-cell-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.analytics-num {
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.analytics-num[data-failed] {
+  color: var(--danger-fg);
+}
+.analytics-repo-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.analytics-link {
+  color: inherit;
+  text-decoration: none;
+}
+.analytics-repo-link:hover,
+.analytics-link:hover {
+  text-decoration: underline;
+}
+@media (min-width: 768px) {
+  .analytics-rate-col {
+    width: 12rem;
+  }
+}
+.analytics-rate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 5rem;
+}
+.analytics-phone-detail {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.analytics-rate > :first-child {
+  flex: 1;
+}
+
+/* Recharts measures tick labels in a hidden span to space them out, but the library
+   renders ticks in mono (`.text-numeric`): measure in the same face, or the measured
+   labels come out narrower than drawn and the x-axis ticks overlap. The padding (it has to
+   beat recharts' inline `padding: 0`) keeps a visible gap between neighbouring ticks. */
+#recharts_measurement_span {
+  padding-inline: var(--space-1) !important;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

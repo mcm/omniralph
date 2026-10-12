@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   analyticsData,
   analyticsHref,
+  countTick,
   dayLabel,
   formatRate,
   overallAverageTokens,
@@ -53,6 +54,14 @@ describe("formatting", () => {
   it("labels UTC days", () => {
     expect(dayLabel("2026-10-05")).toBe("Oct 5");
     expect(dayLabel("2026-01-01")).toBe("Jan 1");
+  });
+
+  it("labels count ticks with whole numbers only", () => {
+    expect(countTick(0)).toBe("0");
+    expect(countTick(2)).toBe("2");
+    expect(countTick(1200)).toBe("1,200");
+    expect(countTick(0.5)).toBe("");
+    expect(countTick(1.5)).toBe("");
   });
 
   it("formats rates", () => {

@@ -132,6 +132,15 @@ export function dayLabel(date: string): string {
   });
 }
 
+/**
+ * Value-axis ticks of a count chart: whole numbers only. The chart picks its
+ * ticks itself (0, 0.5, 1, 1.5 … when the counts are small); the fractional
+ * ones are left unlabelled.
+ */
+export function countTick(value: number): string {
+  return Number.isInteger(value) ? value.toLocaleString("en-US") : "";
+}
+
 /** Mean tokens per review across profiles, weighted by their review counts. */
 export function overallAverageTokens(byProfile: Analytics["byProfile"]): number {
   const reviews = byProfile.reduce((sum, p) => sum + p.reviews, 0);
