@@ -4,7 +4,9 @@
   [ADR 0006](0006-postgres-job-queue.md) and the job-token scopes of
   [ADR 0003](0003-ralph-orchestration.md). Amended by TOOL-303 (the second epic): the `review`
   task type, review runs, setup and teardown commands and the `review`, `sticky-comment` and
-  `run-result` sinks.
+  `run-result` sinks. Amended by TOOL-304 (the third epic): the `coding` task type, coding runs
+  behind a per-repository switch, the `ship` harness tool, push and draft PR timing, and the
+  `worktree.exec` and `worktree.cleanup` system RPCs.
 - **Date:** 2026-10-11
 
 ## Context
@@ -40,7 +42,7 @@ kind) and concurrency (pool) are separate levers.**
 | **Task type**        | How the harness runs a task: `query`, `review` or `coding`. A fixed lifecycle per type, in harness code.                                                                                                                                                                                                                                             |
 | **Run spec**         | Everything one run needs, resolved by the control panel at claim time and sent with the job.                                                                                                                                                                                                                                                         |
 | **Sink**             | Control-panel code, keyed by kind, that validates and applies a run's output.                                                                                                                                                                                                                                                                        |
-| **System RPC**       | A fixed harness command with no Claude session (`repo.sync`), carried by the same claim and lease plumbing.                                                                                                                                                                                                                                          |
+| **System RPC**       | A fixed harness command with no Claude session (`repo.sync`, `worktree.exec`, `worktree.cleanup`), carried by the same claim and lease plumbing.                                                                                                                                                                                                     |
 | **Pool**             | A named concurrency pool. A job takes a slot of its pool; harnesses limit their jobs per pool.                                                                                                                                                                                                                                                       |
 
 "Agent" now only means an agent definition. A few internal names keep the old word on purpose: the
@@ -92,6 +94,21 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
   `packages/engine/src/rubric` by `pnpm --filter @omniralph/tasks generate:rubric`). Templates
   that need a literal `{{` (e.g. GitHub Actions' `${{ }}`) write `\{{`.
 
+- **Built-ins of TOOL-304** (see [Coding runs](#coding-runs)):
+
+  | Task                      | Type     | Agent                                                            | Triggers                                                                                 | Sink         | Notes                                                                   |
+  | ------------------------- | -------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------- |
+  | `builtin:implement-story` | `coding` | `builtin:engineer` (ralph's tool policy; the four harness tools) | `linear.delegated`                                                                       | `ralph-run`  | `long` pool, `opus`; one attempt at one story                           |
+  | `builtin:handle-request`  | `coding` | `builtin:engineer`                                               | `linear.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`  | `long` pool, `opus`; one request session on the lane's branch           |
+  | `builtin:describe-pr`     | `query`  | `builtin:pr-writer` (Read, Grep, Glob)                           | `run.invoked`                                                                            | `run-result` | `short` pool, checkout of the branch required; output `{ title, body }` |
+
+  Their templates render byte for byte as `buildStoryPrompt`, `buildRequestPrompt` and
+  `buildDescribePrPrompt` did for the same inputs (snapshots and parity tests in
+  `packages/tasks/src/builtin/coding.test.ts`), with two intended differences in request prompts:
+  they say to call `ship` instead of `git push`, and a request on a run that isn't a Linear epic
+  never mentions epics, PRDs or stories. `builtin:engineer`'s system prompt is mode-neutral; the
+  story-only rules live in `builtin:implement-story`'s template.
+
 ### Templates
 
 Prompt templates are a logic-less subset of Mustache: variables (dotted names, `{{.}}`), sections
@@ -112,7 +129,7 @@ over-long values (with `[… truncated]`) before fencing.
 | --------- | ------------------------------------------------ | ------- | -------------------------------------------------------- |
 | `query`   | One read-only session; its output goes to a sink | `short` | Built in TOOL-302                                        |
 | `review`  | One review session over a PR/MR's diff           | `short` | Built in TOOL-303                                        |
-| `coding`  | A session that changes code and ships it         | `long`  | `ralph.*` still run through their legacy capability code |
+| `coding`  | A session that changes code and ships it         | `long`  | Built in TOOL-304, behind a per-repository switch        |
 | `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`, `worktree.cleanup`         |
 
 `runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
@@ -163,6 +180,63 @@ The review profile still narrows each review run at claim time (`narrowByReviewP
 the smaller of the profile's maximum and the task's, and `maxFiles` comes from the profile. Review
 run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
 
+### Coding runs
+
+`runCodingTask` (`apps/harness/src/lifecycle/coding.ts`) runs coding tasks. The trigger context is
+the legacy ralph payload the control panel built (`RalphStoryPayload`, `RalphRequestPayload` or
+`RalphPushPayload`, from `apps/web/src/lib/ralph/payload.ts`), so `advanceRun`'s logic is the same
+on both paths ([ADR 0003](0003-ralph-orchestration.md#addendum-coding-runs-and-the-cutover-switch)).
+The lifecycle is today's ralph code, moved rather than rewritten (`story-attempt.ts`,
+`request-attempt.ts`; the legacy `capabilities/ralph/story.ts` and `request.ts` are thin wrappers
+around the same code):
+
+1. **Prepare.** The lane's long-lived branch worktree (`withBranchWorktree`: created from the
+   remote branch, the run's hidden ref or the base; the repository's setup command once; the
+   `pre-push` guard), the stash offered from an earlier attempt, the Linear attachments and the
+   progress file.
+2. **Render** the task's template over the trigger context (`storyTemplateContext`,
+   `requestTemplateContext` from `@omniralph/ralph`) plus the task-type variables (`progress`,
+   `stashes`, `feedback`, `attempt`, …).
+3. **One session** with the agent's system prompt, ralph's tool policy narrowed by the run spec's
+   tools, the model (the repository's ralph model, else the run spec's), and only the `session`
+   token: its env and git credential helper read the session token file. A request run resumes
+   the lane's earlier Claude session on the same harness and takes live messages.
+4. **Finish.** A story run runs the quality gates, commits (`feat(<ID>)`, or a wip commit when
+   blocked) and pushes with the `lifecycle` token: `-u origin <branch>`, or to the run's hidden ref
+   when the task pushes at the end; a rejected push resets the commit and stashes the work. A
+   request run's session ships through the `ship` harness tool (below); a `/ship` request commits
+   and pushes after the session instead. Leftovers are stashed. The result (`RalphStoryResult` or
+   `RalphRequestResult`) goes to the `ralph-run` sink, which calls the ralph outcome hooks.
+
+A `RalphPushPayload` run (`ralph.push`) has no session: it checks out the branch worktree from the
+hidden ref and pushes the branch once.
+
+**Settings.** A coding task carries the loop's limits (`maxAttemptsPerStory`,
+`maxIterationsPerRun`, `maxReviewRounds`, `maxFixRounds`; a repository's rounds are capped by the
+request task's), `prDescriptionTaskId` (default `builtin:describe-pr`, a query task taking
+`run.invoked`), `pushTiming` (`per-story`, the default, or `end`) and `draftPullRequest` (`early`
+or `end`; unset follows the repository's `openPullRequestEarly`). `validateCodingTask` rejects
+`pushTiming: end` with `draftPullRequest: early` (the draft would have nothing to show), a
+`prDescriptionTaskId` that isn't such a query task, and, on a task that accepts a request
+trigger, a template that uses `epic.prd` or `story` outside an optional section. The repository's
+ralph settings (verify commands, model, tools, history rewrites, review and CI rounds, cleanup)
+still apply to every run.
+
+**Pushing at the end.** With `pushTiming: end` every story commit goes to the run's hidden ref
+`refs/omniralph/runs/<run>` (the `pre-push` guard allows that ref and no other), so another harness
+continues from it; once every story is done a `ralph.push` job pushes the branch, then the PR/MR
+is described. The control panel records each hidden ref (`hidden_refs`) and deletes the run's refs
+with a `worktree.cleanup` RPC when the run completes or fails; the daily `prune-hidden-refs` cron
+retries missed ones and deletes refs older than 14 days of runs that aren't running.
+
+**The PR/MR description** is a run of the story task's `prDescriptionTaskId`, invoked by the
+ralph run (`RunInvoker { kind: "ralph-run" }`) on a checkout of the branch, whose fixed
+`{ title, body }` output the `run-result` sink hands to the run's publish step.
+
+Coding runs don't run the task's own setup and teardown commands yet, carry no
+`min_harness_version`, and their PR description run doesn't use the repository's ralph model;
+open stories of TOOL-304 cover these.
+
 ### Setup and teardown commands
 
 Any task definition can declare `setupCommands` (each with a `name`, `command`, `timeoutSeconds`,
@@ -186,8 +260,8 @@ Setup commands run in both lifecycles (in a review, in the head's worktree befor
 read) and run whatever is on the harness's `PATH`; installing tools is a later epic.
 
 The daemon dispatches a claimed job by its task type: `system` jobs to the system RPC registry,
-jobs with a run spec to their task type's lifecycle (`runQueryTask`, `runReviewTask`), the rest to
-the legacy `ralph` capability. A job of an unknown type fails without retries; that includes a
+jobs with a run spec to their task type's lifecycle (`runQueryTask`, `runReviewTask`,
+`runCodingTask`), the rest (legacy `ralph.*` jobs) to the legacy `ralph` capability. A job of an unknown type fails without retries; that includes a
 leftover legacy `review.run` job without a task (migration 0063 cancels the active ones).
 
 ### Run specs, resolved at claim time
@@ -238,9 +312,11 @@ A run-spec job gets two job tokens (both `typ: "job"`, 900 s, renewed by the hea
 | `lifecycle` | The harness, for its own git calls (syncing and checking out the repository)                                                             | `credentials:read`; `credentials:write` only for `coding` runs                                  |
 | `session`   | The Claude session: `OMNIRALPH_JOB_TOKEN` / `OMNIRALPH_JOB_TOKEN_FILE` in its env, its git credential helper, the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
 
-The credential broker decides push access by token kind and task type: only a `coding` run's
-`lifecycle` token (or, until the coding epic, a legacy `ralph.*` job's single token) gets a write
-credential. A system RPC gets a single `lifecycle` token (it runs no session): `credentials:read`,
+The credential broker (`/api/harness/credentials`) decides push access by token kind and task
+type: only a `coding` run's `lifecycle` token (or, on the legacy coding path, a legacy `ralph.*`
+job's single token) gets a write credential. A session token never does, whatever its scopes, so a
+coding run's session pushes only through the harness (`ship`); `credentials.test.ts` and
+`coding-request.test.ts` prove it, and every issuance is audited with its `access` and `tokenKind`. A system RPC gets a single `lifecycle` token (it runs no session): `credentials:read`,
 plus `credentials:write` for `worktree.cleanup` only, the one system RPC the broker gives a write
 credential. Legacy jobs keep one token without a kind: `ralph.*` `credentials:read`,
 `credentials:write`, `run:activity` and `run:attachments` (renamed from their ralph-only names). Review runs are run-spec jobs, so their sessions hold only a `session` token.
@@ -252,6 +328,11 @@ Sessions reach harness primitives through an in-process MCP server named `omnira
 (`apps/harness/src/tools/omniralph-server.ts`), which calls the control panel with the session
 token:
 
+- `ship`, offered only to request runs (not `/ship` ones): the harness commits what the session
+  left (with its `message`), pushes the run's branch (`forceWithLease` only when the repository's
+  **History rewrites** allows it; never another branch) and returns `{ commitSha, pushed, error }`.
+  A `pullRequest` action (`open | update | ready`) on the call or in the result is performed by the
+  control panel, as before. A failed push undoes the commit.
 - `post_activity`, `ask_permission`, `get_attachment`, backed by
   `/api/harness/jobs/{id}/activities`, `permissions` and `attachments`. These routes are no longer
   ralph-only: they accept any running job whose token has `run:activity` or `run:attachments`, and
@@ -283,7 +364,7 @@ with 400 before the job completes.
 | `review`         | Saves a review task run's findings and summary on its review, then settles its review run                                 |
 | `sticky-comment` | Posts a summary-only review task's summary to its sticky comment on the PR/MR (findings dropped)                          |
 | `run-result`     | Hands a query task's result back to the run that invoked it (a review run's correlation, a ralph run's PR/MR description) |
-| `ralph-run`      | Hands a coding run's story or request result to its ralph run (the `ralph.*` outcome hooks)                               |
+| `ralph-run`      | Hands a coding run's story, request or push result to its ralph run (the `ralph.*` outcome hooks)                         |
 
 Sinks stay idempotent: results can be replayed, and comments go through `postJobCommentOnce`.
 Every model output is sanitized (`sanitizeCapped`) before it's posted. Sinks other than query
@@ -363,14 +444,14 @@ pushes; nothing in it deletes a remote branch. Self-update stays on the heartbea
 ### What later epics add
 
 TOOL-302 built the plumbing and the query task type, TOOL-303 the review task type and review
-runs. Not built yet:
+runs, TOOL-304 the coding task type and coding runs. Not built yet:
 
-- the `coding` lifecycle and the port of `ralph.*`, including the `ship` harness tool,
-  `describePrTaskId` (a `run-result` use) and the end of legacy single tokens;
+- deleting the legacy `ralph.*` job types, capability code and single tokens, once a coding run has
+  merged a real PR (a follow-up issue); the chat responder still uses `start_ralph_request`;
 - planned reviews: a review task fanning out internally by diff group or check type
   ([TOOL-33](https://linear.app/thefrakinship/issue/TOOL-33/plan-based-code-reviews)), on top of
   review runs;
-- installables and the `worktree.*` and `install` system RPCs;
+- installables and the `install` system RPC;
 - user-defined (UUID) agent and task definitions and the UI to create and edit them, and a chat
   tool to run tasks.
 
@@ -415,13 +496,19 @@ runs. Not built yet:
 
 - Adding or changing a query or review task is a change to definitions in `packages/tasks`, with
   no harness code. The harness's `capabilities/` no longer has `chat-ask.ts`, `reply.ts`,
-  `learn-rule.ts`, `triage/` or `review.ts`; only `ralph` is left.
+  `learn-rule.ts`, `triage/` or `review.ts`; only `ralph` is left, as thin wrappers around the
+  coding lifecycle and system RPCs, for repositories on the legacy coding path.
+- Two coding paths coexist until the legacy one is deleted: a repository's **Coding path** decides
+  which one its runs' next jobs take, and both share all run state, so it can be switched between
+  jobs.
 - A PR/MR with several review tasks costs a session per task plus one correlation session per
   head, and its review waits for the slowest task. Reviews need harnesses on 0.10.0 or later.
 - Trust, concurrency and persona are configured separately: **Harnesses › <harness>** sets
   accepted task types and pool limits, and the task definition sets the agent and pool.
 - The claim route does more work (resolving and signing two tokens per run-spec job).
-- A Claude session never holds a push credential.
+- A Claude session of a run-spec job never holds a push credential. On the legacy coding path a
+  `ralph.request` session's git still authenticates with the job's single, write-scoped token (it
+  pushes by itself); that ends with the legacy path.
 - The rename needed a one-time reinstall of every host (`@omniralph/harness`, the new config
   path), since hosts on 0.8.0 can't self-update across it; see
   [deploy-harness.md](../deploy-harness.md#reinstalling-a-host-after-the-rename).
