@@ -3,6 +3,7 @@
  * job lifecycle endpoints (`/api/harness/heartbeat`, `/api/harness/claim`,
  * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
+import { InstallablePackageName, InstallableVersion } from "@omniralph/tasks";
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
 import { RunSpec } from "./run-spec.js";
@@ -47,6 +48,14 @@ export const WORKTREE_EXEC_JOB_TYPE = "worktree.exec";
 export const WORKTREE_CLEANUP_JOB_TYPE = "worktree.cleanup";
 
 /**
+ * `system` job that installs or updates an installable (an npm package with an
+ * `omniralph` manifest) into the harness's installables prefix. Its payload and
+ * result are `InstallPayload`/`InstallResult`. The harness refuses packages its
+ * local `installables.allow` doesn't allow.
+ */
+export const INSTALL_JOB_TYPE = "install";
+
+/**
  * The system RPCs a harness runs: fixed commands with no Claude session,
  * dispatched by job type (`jobs.type`) as jobs of task type `system`.
  */
@@ -54,6 +63,7 @@ export const SYSTEM_RPCS = [
   REPO_SYNC_JOB_TYPE,
   WORKTREE_EXEC_JOB_TYPE,
   WORKTREE_CLEANUP_JOB_TYPE,
+  INSTALL_JOB_TYPE,
 ] as const;
 export type SystemRpcName = (typeof SYSTEM_RPCS)[number];
 
@@ -98,6 +108,7 @@ const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
   [REPO_SYNC_JOB_TYPE]: { taskType: "system", pool: null },
   [WORKTREE_EXEC_JOB_TYPE]: { taskType: "system", pool: null },
   [WORKTREE_CLEANUP_JOB_TYPE]: { taskType: "system", pool: null },
+  [INSTALL_JOB_TYPE]: { taskType: "system", pool: null },
 };
 
 /**
@@ -420,6 +431,22 @@ export const RepoSyncPayload = z.object({
   repository: JobRepository,
 });
 export type RepoSyncPayload = z.infer<typeof RepoSyncPayload>;
+
+/** Payload of an `install` job: the installable and its version (default `latest`). */
+export const InstallPayload = z.object({
+  name: InstallablePackageName,
+  version: InstallableVersion.optional(),
+});
+export type InstallPayload = z.infer<typeof InstallPayload>;
+
+/** Result of an `install` job: the installed installable's name and version. */
+export const InstallResult = z.object({
+  name: z.string(),
+  version: z.string(),
+  /** False when that version was installed already. */
+  changed: z.boolean(),
+});
+export type InstallResult = z.infer<typeof InstallResult>;
 
 /**
  * `POST /api/harness/credentials` response (authenticated with a job token): a

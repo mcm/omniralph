@@ -6,6 +6,7 @@ import {
   effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
+  InstallPayload,
   JobFailure,
   JobStartResponse,
   isSystemRpc,
@@ -63,15 +64,35 @@ describe("protocol", () => {
   });
 
   it("lists the system RPCs, each routed as a system job", () => {
-    expect(SYSTEM_RPCS).toEqual(["repo.sync", "worktree.exec", "worktree.cleanup"]);
+    expect(SYSTEM_RPCS).toEqual(["repo.sync", "worktree.exec", "worktree.cleanup", "install"]);
     for (const name of SYSTEM_RPCS) {
       expect(legacyJobRouting(name)).toEqual({ taskType: "system", pool: null });
     }
     expect(isSystemRpc("repo.sync")).toBe(true);
     expect(isSystemRpc("worktree.exec")).toBe(true);
     expect(isSystemRpc("worktree.cleanup")).toBe(true);
+    expect(isSystemRpc("install")).toBe(true);
     expect(isSystemRpc("ralph.prepare")).toBe(false);
     expect(isSystemRpc("review.run")).toBe(false);
+  });
+
+  it("accepts only an npm package name and a version or dist-tag in install payloads", () => {
+    const ok = (payload: unknown) => InstallPayload.safeParse(payload).success;
+    expect(ok({ name: "@omniralph/code-graph" })).toBe(true);
+    expect(ok({ name: "@omniralph/code-graph", version: "1.2.3" })).toBe(true);
+    expect(ok({ name: "semgrep-wrapper", version: "next" })).toBe(true);
+    expect(ok({ name: "@omniralph/code-graph", version: "1.2.3-beta.1" })).toBe(true);
+    // Anything npm could read as another package, a URL, a path or a range.
+    expect(ok({ name: "@omniralph/x", version: "npm:evil@1.0.0" })).toBe(false);
+    expect(ok({ name: "@omniralph/x", version: "file:../evil" })).toBe(false);
+    expect(ok({ name: "@omniralph/x", version: "github:evil/evil" })).toBe(false);
+    expect(ok({ name: "@omniralph/x", version: "^1.0.0" })).toBe(false);
+    expect(ok({ name: "@omniralph/x", version: "" })).toBe(false);
+    expect(ok({ name: "./evil.tgz" })).toBe(false);
+    expect(ok({ name: "https://evil.example/x.tgz" })).toBe(false);
+    expect(ok({ name: "evil/evil" })).toBe(false);
+    expect(ok({ name: "-g" })).toBe(false);
+    expect(ok({ name: "Upper" })).toBe(false);
   });
 
   it("leaves a slot free of long jobs by default on harnesses with two or more slots", () => {

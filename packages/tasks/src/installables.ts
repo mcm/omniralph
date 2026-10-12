@@ -17,6 +17,27 @@ const NPM_NAME_MAX_LENGTH = 214;
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
+/** An npm package name an installable may have (as `parseInstallablePackage` checks it). */
+export const InstallablePackageName = z
+  .string()
+  .max(NPM_NAME_MAX_LENGTH)
+  .regex(NPM_NAME_PATTERN, "Expected a valid npm package name")
+  // Never an option to npm.
+  .refine((name) => !name.startsWith("-"), "Expected a valid npm package name");
+
+/**
+ * The version of an installable to install: an exact semver version or a
+ * dist-tag (e.g. `latest`). Nothing npm could read as another package, a URL,
+ * a path or an alias (`npm:`), so `<name>@<version>` always names that package.
+ */
+export const InstallableVersion = z
+  .string()
+  .max(64)
+  .refine(
+    (v) => SEMVER_PATTERN.test(v) || /^[a-z][a-z0-9._-]{0,63}$/i.test(v),
+    "Expected a semver version or a dist-tag",
+  );
+
 /**
  * `path` relative to the package directory and normalized (no `.`, empty or
  * `..` segments), or null when it is empty, absolute, uses backslashes, or

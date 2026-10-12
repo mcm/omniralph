@@ -12,6 +12,7 @@ import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
 import { CapabilityRegistry, defaultCapabilities, type Capability } from "./capabilities/index.js";
 import {
   ConfigError,
+  dataDir,
   defaultConfigPath,
   defaultWorkspaceRoot,
   readConfig,
@@ -21,7 +22,13 @@ import {
 import { AgentDaemon } from "./daemon.js";
 import { readCredentialRequest, runGitCredential } from "./credential-helper.js";
 import { startHealthServer } from "./healthz.js";
+import {
+  installablesPrefix,
+  npmInstallableInstaller,
+  type InstallableInstaller,
+} from "./installables.js";
 import { createLogger, type Logger } from "./logger.js";
+import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import {
   SelfUpdater,
   npmInstaller,
@@ -83,6 +90,8 @@ export interface MainDeps {
   onShutdownSignal?: (handler: () => void) => void;
   /** Installs harness versions for self-update (default: `npm i -g`). */
   installer?: Installer;
+  /** Installs installables for the `install` RPC (default: `npm install --prefix`). */
+  installableInstaller?: InstallableInstaller;
   /** Clock for self-update confirmation (ms since epoch). */
   now?: () => number;
   /** The running harness version (default: this package's). */
@@ -299,6 +308,13 @@ async function runStart(
     api,
     tokens,
     registry,
+    rpcs: new SystemRpcRegistry(
+      defaultSystemRpcs({
+        config,
+        prefix: installablesPrefix(dataDir(config, deps.homeDir)),
+        installer: deps.installableInstaller ?? npmInstallableInstaller(deps.env),
+      }),
+    ),
     logger,
     updater,
   });

@@ -4,6 +4,7 @@ import {
   harnessRepoPins,
   harnesses,
   connectRepository,
+  claimJob,
   closeDb,
   createDb,
   getHarnessOverview,
@@ -64,6 +65,7 @@ process.env.APP_URL = "https://omniralph.example.com/";
 const {
   createEnrollment,
   deleteHarness,
+  installInstallable,
   pinRepository,
   requestHarnessUpdate,
   revokeHarness,
@@ -526,6 +528,88 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(await pinRepository(harnessId, repoA)).toMatchObject({ ok: false });
       const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       expect(harness!.maxConcurrency).toBe(1);
+    });
+  });
+
+  describe("install", () => {
+    /** The IDs of every job the harness claims now (other tests' system jobs too). */
+    async function claimAll(harnessId: string): Promise<string[]> {
+      const ids: string[] = [];
+      for (;;) {
+        const { claim } = await claimJob(db, {
+          harnessId,
+          organizationId: orgId,
+          acceptedTaskTypes: [],
+          pools: [],
+          harnessVersion: "0.2.0",
+          maxDeliveries: 3,
+        });
+        if (!claim) return ids;
+        ids.push(claim.job.id);
+      }
+    }
+
+    it("enqueues an install RPC only the chosen harness claims", async () => {
+      const target = await enrolledHarness();
+      const other = await enrolledHarness();
+      expect(
+        await installInstallable(target.harnessId, {
+          name: " @omniralph/hello ",
+          version: "1.2.0",
+        }),
+      ).toEqual({ ok: true });
+      // Asking again while it's queued doesn't enqueue a second one.
+      expect(
+        await installInstallable(target.harnessId, { name: "@omniralph/hello", version: "1.2.0" }),
+      ).toEqual({ ok: true });
+      const queued = await db.select().from(jobs).where(eq(jobs.targetHarnessId, target.harnessId));
+      expect(queued).toHaveLength(1);
+      expect(queued[0]).toMatchObject({
+        type: "install",
+        taskType: "system",
+        pool: null,
+        status: "queued",
+        payload: { name: "@omniralph/hello", version: "1.2.0" },
+      });
+
+      expect(await claimAll(other.harnessId)).not.toContain(queued[0]!.id);
+      expect(await claimAll(target.harnessId)).toContain(queued[0]!.id);
+    });
+
+    it("defaults to the latest version", async () => {
+      const { harnessId } = await enrolledHarness();
+      expect(
+        await installInstallable(harnessId, { name: "@omniralph/graph", version: " " }),
+      ).toEqual({ ok: true });
+      const [job] = await db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
+      expect(job!.payload).toEqual({ name: "@omniralph/graph" });
+    });
+
+    it("rejects invalid packages and versions, unknown harnesses and members", async () => {
+      const { harnessId } = await enrolledHarness();
+      expect(await installInstallable(harnessId, { name: "../evil" })).toEqual({
+        ok: false,
+        error: "That isn't a valid package name.",
+      });
+      expect(
+        await installInstallable(harnessId, { name: "@omniralph/x", version: "npm:evil@1.0.0" }),
+      ).toEqual({ ok: false, error: "That isn't a valid version." });
+      expect(await installInstallable(randomUUID(), { name: "@omniralph/x" })).toMatchObject({
+        ok: false,
+      });
+      await revokeHarness(harnessId);
+      expect(await installInstallable(harnessId, { name: "@omniralph/x" })).toMatchObject({
+        ok: false,
+      });
+      const fresh = await enrolledHarness();
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await installInstallable(fresh.harnessId, { name: "@omniralph/x" })).toMatchObject({
+        ok: false,
+      });
+      const none = await db.select().from(jobs).where(eq(jobs.type, "install"));
+      expect(
+        none.every((j) => j.targetHarnessId !== harnessId && j.targetHarnessId !== fresh.harnessId),
+      ).toBe(true);
     });
   });
 
