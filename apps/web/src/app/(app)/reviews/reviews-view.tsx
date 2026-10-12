@@ -131,7 +131,7 @@ function ReviewTableRow({
         <div style={column}>
           <ReviewStatusBadge status={review.status} />
           {review.status === "failed" && review.error && (
-            <Muted title={review.error} style={{ maxWidth: "calc(var(--space-6) * 10)" }}>
+            <Muted title={review.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
               {review.error.length > 80 ? `${review.error.slice(0, 80)}…` : review.error}
             </Muted>
           )}
@@ -163,7 +163,7 @@ function ReviewTableRow({
       </TableCell>
       <TableCell>
         <span
-          style={{ ...mono, color: overBudget ? "var(--error)" : "var(--text-secondary)" }}
+          style={{ ...mono, color: overBudget ? "var(--danger-fg)" : "var(--text-secondary)" }}
           title={`${review.tokensUsed.toLocaleString()} of ${review.budget.toLocaleString()} tokens`}
         >
           {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
@@ -226,10 +226,10 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>

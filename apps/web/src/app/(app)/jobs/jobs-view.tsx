@@ -35,6 +35,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { useAction } from "@/components/use-action";
 import type { JobRow } from "@/lib/harnesses/rows";
 import { formatDateTime } from "@/lib/format-date";
+import { JOB_STATUS_VARIANTS } from "@/lib/state-variants";
 import { cancelJob } from "./actions";
 
 type JobStatus = JobRow["status"];
@@ -46,19 +47,6 @@ interface JobsViewProps {
   statuses: JobStatus[];
   limit: number;
 }
-
-export const STATUS_BADGES: Record<
-  JobStatus,
-  "success" | "warning" | "info" | "danger" | "neutral"
-> = {
-  queued: "neutral",
-  running: "info",
-  completed: "success",
-  failed: "danger",
-  canceled: "warning",
-  expired: "warning",
-  skipped: "neutral",
-};
 
 const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
@@ -73,7 +61,7 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
     // Target of the job links on the Ralph run pages.
     <TableRow id={`job-${job.id}`}>
       <TableCell>
-        <Badge variant="outline">{job.taskType}</Badge>
+        <Badge variant="neutral">{job.taskType}</Badge>
       </TableCell>
       <TableCell>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
@@ -103,12 +91,12 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
       </TableCell>
       <TableCell>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-          <Badge variant={STATUS_BADGES[job.status]} dot>
+          <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
             {job.status}
             {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
           </Badge>
           {job.error && (
-            <Muted title={job.error} style={{ maxWidth: "calc(var(--space-6) * 10)" }}>
+            <Muted title={job.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
               {job.error.length > 80 ? `${job.error.slice(0, 80)}…` : job.error}
             </Muted>
           )}
@@ -164,7 +152,10 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Keep it</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => run(() => cancelJob(job.id), "Job canceled")}>
+                  <AlertDialogAction
+                    variant="danger"
+                    onClick={() => run(() => cancelJob(job.id), "Job canceled")}
+                  >
                     Cancel job
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -189,10 +180,10 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>

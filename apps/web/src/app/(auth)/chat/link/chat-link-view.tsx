@@ -45,7 +45,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
             <CardTitle>Can&apos;t link this chat account</CardTitle>
             <CardDescription>{problem}</CardDescription>
           </CardHeader>
-          <CardFooter style={{ display: "flex", justifyContent: "flex-end" }}>
+          <CardFooter>
             <Button asChild variant="secondary">
               <Link href="/">Back to the control panel</Link>
             </Button>
@@ -88,7 +88,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
             link an account that is yours.
           </CardContent>
         )}
-        <CardFooter style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+        <CardFooter>
           {linked ? (
             <Button asChild variant="primary">
               <Link href={CHAT_ACCOUNTS_PATH}>Chat accounts</Link>

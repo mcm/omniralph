@@ -88,7 +88,7 @@ export function ChatTasksCard({ defaults, choices, connections }: ChatTasksSetti
           Discord. A channel can run different ones.
         </CardDescription>
       </CardHeader>
-      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+      <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
         <form
           style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end" }}
           onSubmit={(e) => {
@@ -285,7 +285,7 @@ function ChannelRow({
         Save
       </Button>
       <Button
-        variant="destructive"
+        variant="danger"
         disabled={pending}
         aria-label={`Remove channel ${override.channel}`}
         onClick={() =>

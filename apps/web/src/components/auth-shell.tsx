@@ -20,7 +20,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
         }}
       >
         <div style={{ width: "100%", maxWidth: 420 }}>
@@ -41,7 +41,7 @@ export function AuthBrand() {
         alignItems: "center",
         justifyContent: "center",
         gap: "var(--space-2)",
-        marginBottom: "var(--space-5)",
+        marginBottom: "var(--space-6)",
       }}
     >
       <div

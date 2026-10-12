@@ -48,10 +48,10 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>
@@ -107,7 +107,7 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
                   </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" disabled={pending}>
+                      <Button variant="danger" disabled={pending}>
                         <IconUnlink size={14} />
                         Unlink
                       </Button>
@@ -117,13 +117,14 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
                         <AlertDialogTitle>Unlink {name}?</AlertDialogTitle>
                         <AlertDialogDescription>
                           The bot stops answering this {platform} account as you in{" "}
-                          {identity.organizationName}, and won&apos;t link it automatically again. You
-                          can link it again through the bot.
+                          {identity.organizationName}, and won&apos;t link it automatically again.
+                          You can link it again through the bot.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
+                          variant="danger"
                           onClick={() =>
                             run(
                               () =>

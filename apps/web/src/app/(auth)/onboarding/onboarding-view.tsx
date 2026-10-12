@@ -201,7 +201,7 @@ function Membership({ organization }: { organization: { id: string; name: string
   return (
     <div style={rowStyle}>
       <OrganizationName name={organization.name} />
-      <Badge variant="outline">{roleLabel[organization.role]}</Badge>
+      <Badge variant="neutral">{roleLabel[organization.role]}</Badge>
       <Button
         variant="secondary"
         size="sm"
@@ -310,7 +310,7 @@ export function OnboardingView({
           </Button>
         </div>
       </div>
-      <SonnerToaster position="bottom-right" richColors />
+      <SonnerToaster position="bottom-right" />
     </>
   );
 }

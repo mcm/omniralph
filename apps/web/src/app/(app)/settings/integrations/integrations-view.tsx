@@ -42,7 +42,7 @@ export type IntegrationNotice =
 
 type Notices = Record<
   IntegrationNotice,
-  { title: string; description: string; variant: "success" | "warning" | "destructive" }
+  { title: string; description: string; variant: "success" | "warning" | "danger" }
 >;
 
 const linearNotices: Notices = {
@@ -57,18 +57,18 @@ const linearNotices: Notices = {
     description: "The installation was cancelled on Linear's consent screen.",
   },
   invalid: {
-    variant: "destructive",
+    variant: "danger",
     title: "Linear didn't return an authorization code",
     description: "Click Connect Linear to try again.",
   },
   invalid_state: {
-    variant: "destructive",
+    variant: "danger",
     title: "The Linear sign-in link was invalid or expired",
     description:
       "For your safety the request was rejected. Click Connect Linear again from this browser and finish within 10 minutes.",
   },
   other_organization: {
-    variant: "destructive",
+    variant: "danger",
     title: "This Linear workspace belongs to another organization",
     description:
       "A Linear workspace can be connected to one organization only. Disconnect it there first, or connect a different workspace.",
@@ -79,7 +79,7 @@ const linearNotices: Notices = {
     description: "Set LINEAR_CLIENT_ID and LINEAR_CLIENT_SECRET, then connect again.",
   },
   error: {
-    variant: "destructive",
+    variant: "danger",
     title: "Connecting Linear failed",
     description: "Linear rejected the authorization or couldn't be reached. Try again.",
   },
@@ -97,18 +97,18 @@ const slackNotices: Notices = {
     description: "The installation was cancelled on Slack's install screen.",
   },
   invalid: {
-    variant: "destructive",
+    variant: "danger",
     title: "Slack didn't return an authorization code",
     description: "Click Connect Slack to try again.",
   },
   invalid_state: {
-    variant: "destructive",
+    variant: "danger",
     title: "The Slack sign-in link was invalid or expired",
     description:
       "For your safety the request was rejected. Click Connect Slack again from this browser and finish within 10 minutes.",
   },
   other_organization: {
-    variant: "destructive",
+    variant: "danger",
     title: "This Slack workspace belongs to another organization",
     description:
       "A Slack workspace can be connected to one organization only. Disconnect it there first, or connect a different workspace.",
@@ -120,7 +120,7 @@ const slackNotices: Notices = {
       "Set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and SLACK_SIGNING_SECRET, then connect again.",
   },
   error: {
-    variant: "destructive",
+    variant: "danger",
     title: "Connecting Slack failed",
     description: "Slack rejected the authorization or couldn't be reached. Try again.",
   },
@@ -138,18 +138,18 @@ const discordNotices: Notices = {
     description: "Adding the bot was cancelled on Discord's authorization screen.",
   },
   invalid: {
-    variant: "destructive",
+    variant: "danger",
     title: "Discord didn't return an authorization code",
     description: "Click Connect Discord to try again.",
   },
   invalid_state: {
-    variant: "destructive",
+    variant: "danger",
     title: "The Discord sign-in link was invalid or expired",
     description:
       "For your safety the request was rejected. Click Connect Discord again from this browser and finish within 10 minutes.",
   },
   other_organization: {
-    variant: "destructive",
+    variant: "danger",
     title: "This Discord server belongs to another organization",
     description:
       "A Discord server can be connected to one organization only. Disconnect it there first, or connect a different server.",
@@ -161,7 +161,7 @@ const discordNotices: Notices = {
       "Set DISCORD_APPLICATION_ID, DISCORD_CLIENT_SECRET, DISCORD_BOT_TOKEN and DISCORD_PUBLIC_KEY, then connect again.",
   },
   error: {
-    variant: "destructive",
+    variant: "danger",
     title: "Connecting Discord failed",
     description: "Discord rejected the authorization or couldn't be reached. Try again.",
   },
@@ -230,10 +230,10 @@ export function IntegrationsView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>
@@ -329,7 +329,7 @@ export function IntegrationsView({
               {linear && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={pending}>
+                    <Button variant="danger" disabled={pending}>
                       <IconUnlink size={14} />
                       Disconnect
                     </Button>
@@ -345,6 +345,7 @@ export function IntegrationsView({
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
+                        variant="danger"
                         onClick={() => run(disconnectLinear, `Disconnected ${linear.name}`)}
                       >
                         Disconnect
@@ -474,7 +475,7 @@ function ChatPlatformCard({
             </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={pending}>
+                <Button variant="danger" disabled={pending}>
                   <IconUnlink size={14} />
                   Disconnect
                 </Button>
@@ -487,6 +488,7 @@ function ChatPlatformCard({
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
+                    variant="danger"
                     onClick={() =>
                       run(() => disconnect(connection.id), `Disconnected ${connection.name}`)
                     }

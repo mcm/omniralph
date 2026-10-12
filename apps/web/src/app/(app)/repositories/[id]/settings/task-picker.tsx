@@ -34,7 +34,7 @@ export function TaskPicker({
 }) {
   const unlisted = value !== "" && !choices.some((task) => task.id === value);
   return (
-    <Field label={label} htmlFor={id} hint={hint} error={error} required>
+    <Field label={label} htmlFor={id} description={hint} error={error} required>
       <NativeSelect
         id={id}
         disabled={disabled}

@@ -17,6 +17,11 @@ body {
   font-family: var(--font-body);
 }
 
+/* The signed-in shell: sidebar rail and content fill at least the viewport. */
+.app-shell {
+  min-height: 100dvh;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
@@ -45,7 +50,7 @@ body {
   color: var(--text-primary);
 }
 .legal-document h2 {
-  margin: var(--space-6) 0 var(--space-2);
+  margin: var(--space-8) 0 var(--space-2);
   font-size: var(--text-base);
   color: var(--text-primary);
 }
@@ -54,11 +59,11 @@ body {
   margin: 0 0 var(--space-3);
 }
 .legal-document ul {
-  padding-left: var(--space-5);
+  padding-left: var(--space-6);
 }
 .legal-document li + li {
   margin-top: var(--space-1);
 }
 .legal-document a {
-  color: var(--glacier-300);
+  color: var(--text-accent);
 }

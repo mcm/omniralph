@@ -131,7 +131,9 @@ function Confirm({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>{action}</AlertDialogAction>
+          <AlertDialogAction variant="danger" onClick={onConfirm}>
+            {action}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -151,7 +153,7 @@ function DangerIconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      style={{ color: "var(--error)" }}
+      style={{ color: "var(--danger-fg)" }}
       {...props}
     >
       {children}
@@ -291,7 +293,7 @@ function Member({
           />
         </>
       ) : (
-        <Badge variant="outline">{roleLabel[member.role]}</Badge>
+        <Badge variant="neutral">{roleLabel[member.role]}</Badge>
       )}
     </div>
   );
@@ -346,7 +348,7 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
           {formatDateTime(invitation.expiresAt)}
         </div>
       </div>
-      <Badge variant="outline">{roleLabel[invitation.role]}</Badge>
+      <Badge variant="neutral">{roleLabel[invitation.role]}</Badge>
       <Confirm
         title={`Revoke the invitation for ${invitation.email}?`}
         description="They can no longer accept it. You can invite them again afterwards."
@@ -588,7 +590,7 @@ function LeaveCard({ organizationName }: { organizationName: string }) {
             )
           }
           trigger={
-            <Button variant="destructive" disabled={pending}>
+            <Button variant="danger" disabled={pending}>
               <IconDoorExit size={14} />
               Leave organization
             </Button>
@@ -616,10 +618,10 @@ export function OrganizationSettingsView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>

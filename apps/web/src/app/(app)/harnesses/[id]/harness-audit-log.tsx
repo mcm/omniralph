@@ -22,6 +22,7 @@ import {
   type AuditEventName,
 } from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
+import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
 
 /** Serializable `harness_audit` row. */
 export interface AuditRow {
@@ -38,7 +39,7 @@ export function TokenTheftAlert({ audit }: { audit: AuditRow[] }) {
   if (!hasRefreshReuse(audit)) return null;
   const reuse = audit.find((e) => e.event === "refresh_reuse")!;
   return (
-    <Alert variant="destructive" role="alert">
+    <Alert variant="danger" role="alert">
       <IconAlertTriangle size={16} />
       <AlertTitle>Possible token theft</AlertTitle>
       <AlertDescription>
@@ -75,7 +76,7 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
       </TableHeader>
       <TableBody>
         {audit.map((entry) => {
-          const { label, tone } = AUDIT_EVENT_LABELS[entry.event];
+          const label = AUDIT_EVENT_LABELS[entry.event];
           const summary = auditDetailSummary(entry.event, entry.detail);
           return (
             <TableRow key={entry.id} data-event={entry.event}>
@@ -85,7 +86,7 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
                 </span>
               </TableCell>
               <TableCell>
-                <Badge variant={tone}>{label}</Badge>
+                <Badge variant={HARNESS_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>
               </TableCell>
               <TableCell>
                 {summary ? (

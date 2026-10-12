@@ -107,10 +107,10 @@ export function RepoSelectionView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>
@@ -119,7 +119,7 @@ export function RepoSelectionView({
         </div>
 
         {error && (
-          <Alert variant="destructive">
+          <Alert variant="danger">
             <AlertTitle>{errorTitle}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>

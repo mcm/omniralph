@@ -179,7 +179,7 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
             <Field
               label="GitLab URL"
               htmlFor="gitlab-url"
-              hint="gitlab.com or your self-managed instance."
+              description="gitlab.com or your self-managed instance."
               required
             >
               <Input
@@ -265,7 +265,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         )}
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{repo.profileName}</Badge>
+        <Badge variant="neutral">{repo.profileName}</Badge>
       </TableCell>
       <TableCell>
         {repo.pinnedHarnesses.length > 0 ? (
@@ -332,7 +332,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
                 disabled={pending}
                 aria-label={`Disconnect ${repo.fullPath}`}
                 title={`Disconnect ${repo.fullPath}`}
-                style={{ color: "var(--error)" }}
+                style={{ color: "var(--danger-fg)" }}
               >
                 <IconUnlink size={14} />
               </Button>
@@ -349,6 +349,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  variant="danger"
                   onClick={() =>
                     run(() => disconnectRepository(repo.id), `Disconnected ${repo.fullPath}`)
                   }
@@ -400,7 +401,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
               disabled={pending}
               aria-label={`Remove ${connection.name}`}
               title={`Remove ${connection.name}`}
-              style={{ color: "var(--error)" }}
+              style={{ color: "var(--danger-fg)" }}
             >
               <IconTrash size={14} />
             </Button>
@@ -420,6 +421,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                variant="danger"
                 onClick={() =>
                   run(() => removeScmConnection(connection.id), `Removed ${connection.name}`)
                 }
@@ -445,7 +447,7 @@ function repositoriesHref(page: number): string {
 
 const githubNotices: Record<
   GitHubNotice,
-  { title: string; description: string; variant: "warning" | "destructive" }
+  { title: string; description: string; variant: "warning" | "danger" }
 > = {
   requested: {
     variant: "warning",
@@ -465,13 +467,13 @@ const githubNotices: Record<
       "The installation didn't come back from a Connect GitHub started in this organization, or the link expired. Click Connect GitHub to try again.",
   },
   other_organization: {
-    variant: "destructive",
+    variant: "danger",
     title: "Installation belongs to another organization",
     description:
       "This GitHub App installation is already connected to another Omniralph organization. An installation can only be connected to one organization: an admin there has to remove it under Code-host connections (or uninstall the app on GitHub) first.",
   },
   error: {
-    variant: "destructive",
+    variant: "danger",
     title: "Couldn't look up the GitHub installation",
     description:
       "Omniralph couldn't authenticate as the GitHub App or reach GitHub. Check the GitHub App configuration (GITHUB_APP_ID and its signing key) and the server logs, then try connecting again.",
@@ -499,10 +501,10 @@ export function RepositoriesView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>

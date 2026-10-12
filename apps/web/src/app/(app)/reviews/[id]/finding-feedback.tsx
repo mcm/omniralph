@@ -118,7 +118,7 @@ export function DismissFindingDialog({ finding }: { finding: FindingView }) {
             <Field
               label="Note"
               htmlFor={`note-${finding.id}`}
-              hint={`Optional. ${note.length.toLocaleString()} / ${MAX_FEEDBACK_NOTE_LENGTH.toLocaleString()} characters.`}
+              description={`Optional. ${note.length.toLocaleString()} / ${MAX_FEEDBACK_NOTE_LENGTH.toLocaleString()} characters.`}
               error={error}
             >
               <Textarea
@@ -214,7 +214,7 @@ export function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
                 {SOURCE_LABELS[entry.source]} · {formatDateTime(entry.createdAt)}
               </span>
               {entry.restoredAt && (
-                <Badge variant="outline" size="sm">
+                <Badge variant="neutral" size="sm">
                   restored
                 </Badge>
               )}

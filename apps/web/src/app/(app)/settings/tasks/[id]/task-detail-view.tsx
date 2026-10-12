@@ -83,7 +83,7 @@ function tokenBudgetText(budget: TokenBudget): string {
 }
 
 function YesNo({ value }: { value: boolean }) {
-  return value ? <Badge variant="outline">Yes</Badge> : <Muted>No</Muted>;
+  return value ? <Badge variant="neutral">Yes</Badge> : <Muted>No</Muted>;
 }
 
 function Commands({
@@ -214,7 +214,7 @@ function AdminActions({
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={pending}>
+              <Button variant="danger" disabled={pending}>
                 <IconTrash size={14} />
                 Delete
               </Button>
@@ -231,6 +231,7 @@ function AdminActions({
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  variant="danger"
                   onClick={() =>
                     run(
                       () => deleteTaskDefinition(task.id),
@@ -314,7 +315,7 @@ export function TaskDetailView({
               <span style={mono}>{task.sink}</span>
             </Fact>
             <Fact label="Pool">
-              <Badge variant="outline">{task.pool}</Badge>
+              <Badge variant="neutral">{task.pool}</Badge>
             </Fact>
             <Fact label="Model override">
               {task.model ? <span style={mono}>{task.model}</span> : <Muted>Agent model</Muted>}

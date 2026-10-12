@@ -216,7 +216,13 @@ export function RalphSettingsSection({
   ) => {
     const error = listError(errors, field);
     return (
-      <Field label={label} htmlFor={id} hint={hint} error={error} required={options.required}>
+      <Field
+        label={label}
+        htmlFor={id}
+        description={hint}
+        error={error}
+        required={options.required}
+      >
         <Input
           id={id}
           disabled={pending}
@@ -242,7 +248,7 @@ export function RalphSettingsSection({
   ) => {
     const error = listError(errors, field);
     return (
-      <Field label={label} htmlFor={id} hint={hint} error={error}>
+      <Field label={label} htmlFor={id} description={hint} error={error}>
         <Textarea
           id={id}
           rows={3}
@@ -267,7 +273,7 @@ export function RalphSettingsSection({
     max: number,
     min = 0,
   ) => (
-    <Field label={label} htmlFor={id} hint={hint} error={errors[field]}>
+    <Field label={label} htmlFor={id} description={hint} error={errors[field]}>
       <Input
         id={id}
         type="number"
@@ -305,7 +311,7 @@ export function RalphSettingsSection({
           <Field
             label="Coding path"
             htmlFor="ralph-coding-path"
-            hint="How runs work stories and requests: the legacy ralph jobs, or coding runs of the story and request tasks below."
+            description="How runs work stories and requests: the legacy ralph jobs, or coding runs of the story and request tasks below."
             error={errors.codingPath}
           >
             <NativeSelect
@@ -409,7 +415,7 @@ export function RalphSettingsSection({
         <Field
           label="Appended instruction (appendInstruction)"
           htmlFor="ralph-append-instruction"
-          hint={`Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`}
+          description={`Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`}
           error={errors.appendInstruction}
         >
           <Textarea
@@ -482,7 +488,7 @@ export function RalphSettingsSection({
         <Field
           label="History rewrites (historyRewrite)"
           htmlFor="ralph-history-rewrite"
-          hint="Whether a request may rebase and push with --force-with-lease when someone asks for it."
+          description="Whether a request may rebase and push with --force-with-lease when someone asks for it."
           error={errors.historyRewrite}
         >
           <NativeSelect

@@ -56,6 +56,7 @@ import {
   type RalphAnalyticsData,
 } from "@/lib/analytics/display";
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
+import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "../repositories/repositories-view";
 
 interface AnalyticsViewProps {
@@ -66,25 +67,8 @@ interface AnalyticsViewProps {
   params: AnalyticsParams;
 }
 
-/** Series colors: the library's brand and info chart hues, as design tokens. */
-const SERIES = { primary: "var(--glacier-500)", secondary: "var(--aurora-violet)" } as const;
-
-/** Run status colors: the library's chart hues, as design tokens. */
-const RUN_COLORS = {
-  completed: "var(--aurora-moss)",
-  waiting: "var(--aurora-amber)",
-  stopped: "var(--slate-500)",
-  failed: "var(--aurora-rust)",
-  running: "var(--glacier-500)",
-} as const;
-
-/** Story outcome colors, as design tokens. */
-const STORY_COLORS = {
-  firstAttempt: "var(--aurora-moss)",
-  afterRetries: "var(--glacier-500)",
-  exhausted: "var(--aurora-rust)",
-  blocked: "var(--aurora-amber)",
-} as const;
+/** Series intents: the headline series in accent, the comparison in info. */
+const SERIES = { primary: "accent", secondary: "info" } as const;
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
@@ -117,7 +101,7 @@ function StatCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--glacier-500)",
+              color: "var(--text-accent)",
             }}
           >
             <Icon size={16} />
@@ -149,13 +133,13 @@ function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; coun
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       {rows.map((row) => (
         <div key={row.key} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-          <div style={{ width: "calc(var(--space-8) * 3)", flexShrink: 0 }}>{row.label}</div>
+          <div style={{ width: "calc(var(--space-16) * 3)", flexShrink: 0 }}>{row.label}</div>
           <Progress value={(row.count / max) * 100} style={{ flex: 1 }} />
           <span
             style={{
               ...mono,
               color: "var(--text-primary)",
-              width: "var(--space-8)",
+              width: "var(--space-16)",
               textAlign: "right",
             }}
           >
@@ -278,8 +262,8 @@ function RalphSection({
                   xKey="day"
                   showLegend
                   areas={[
-                    { key: "ralphTokens", label: "Ralph", color: SERIES.primary },
-                    { key: "reviewTokens", label: "Reviews", color: SERIES.secondary },
+                    { key: "ralphTokens", label: "Ralph", variant: SERIES.primary },
+                    { key: "reviewTokens", label: "Reviews", variant: SERIES.secondary },
                   ]}
                 />
               </ChartContainer>
@@ -305,7 +289,7 @@ function RalphSection({
                   bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
                     key: outcome,
                     label: RALPH_RUN_OUTCOME_LABELS[outcome],
-                    color: RUN_COLORS[outcome],
+                    variant: RALPH_RUN_STATUS_VARIANTS[outcome],
                   }))}
                 />
               </ChartContainer>
@@ -333,7 +317,7 @@ function RalphSection({
                 bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
                   key: outcome,
                   label: RALPH_STORY_OUTCOME_LABELS[outcome],
-                  color: STORY_COLORS[outcome],
+                  variant: RALPH_STORY_OUTCOME_VARIANTS[outcome],
                 }))}
               />
             </ChartContainer>
@@ -416,10 +400,10 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div
@@ -518,8 +502,8 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                   stacked
                   showLegend
                   areas={[
-                    { key: "tokensIn", label: "Tokens in", color: SERIES.primary },
-                    { key: "tokensOut", label: "Tokens out", color: SERIES.secondary },
+                    { key: "tokensIn", label: "Tokens in", variant: SERIES.primary },
+                    { key: "tokensOut", label: "Tokens out", variant: SERIES.secondary },
                   ]}
                 />
               </ChartContainer>
@@ -536,7 +520,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                   height={240}
                   data={daily}
                   xKey="day"
-                  bars={[{ key: "reviews", label: "Reviews", color: SERIES.primary }]}
+                  bars={[{ key: "reviews", label: "Reviews", variant: SERIES.primary }]}
                 />
               </ChartContainer>
             </CardContent>
@@ -562,7 +546,11 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                       data={profiles}
                       xKey="profile"
                       bars={[
-                        { key: "averageTokens", label: "Tokens per review", color: SERIES.primary },
+                        {
+                          key: "averageTokens",
+                          label: "Tokens per review",
+                          variant: SERIES.primary,
+                        },
                       ]}
                     />
                   </ChartContainer>
@@ -678,12 +666,12 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                               display: "flex",
                               alignItems: "center",
                               gap: "var(--space-2)",
-                              minWidth: "calc(var(--space-8) * 3)",
+                              minWidth: "calc(var(--space-16) * 3)",
                             }}
                           >
                             <Progress
                               value={d.dismissalRate * 100}
-                              color={d.dismissalRate >= 0.5 ? "warning" : "brand"}
+                              variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
                               style={{ flex: 1 }}
                             />
                             <span style={{ ...mono, color: "var(--text-primary)" }}>
@@ -741,7 +729,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                           style={{
                             ...mono,
                             textAlign: "right",
-                            color: a.failed > 0 ? "var(--error)" : undefined,
+                            color: a.failed > 0 ? "var(--danger-fg)" : undefined,
                           }}
                         >
                           {a.failed.toLocaleString()}

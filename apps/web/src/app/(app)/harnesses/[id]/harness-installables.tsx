@@ -20,7 +20,7 @@ import type { JobStatus } from "@omniralph/db";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { installInstallable } from "../actions";
-import { STATUS_BADGES } from "../../jobs/jobs-view";
+import { JOB_STATUS_VARIANTS } from "@/lib/state-variants";
 
 /** An installable the harness reported in its last heartbeat. */
 export interface InstallableRow {
@@ -105,11 +105,11 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
               </span>
             </TableCell>
             <TableCell>
-              <Badge variant={STATUS_BADGES[job.status]}>{job.status}</Badge>
+              <Badge variant={JOB_STATUS_VARIANTS[job.status]}>{job.status}</Badge>
             </TableCell>
             <TableCell>
               {job.error ? (
-                <span style={{ ...cellText, color: "var(--text-danger)" }}>{job.error}</span>
+                <span style={{ ...cellText, color: "var(--danger-fg)" }}>{job.error}</span>
               ) : job.installedVersion ? (
                 <span style={cellText}>Installed {job.installedVersion}</span>
               ) : (
@@ -148,7 +148,7 @@ export function InstallForm({ harnessId }: { harnessId: string }) {
         <Field
           label="Package name"
           htmlFor="install-name"
-          hint="An npm package with an omniralph manifest, e.g. @omniralph/code-graph. The harness only installs packages its local installables.allow allows."
+          description="An npm package with an omniralph manifest, e.g. @omniralph/code-graph. The harness only installs packages its local installables.allow allows."
           style={{ flex: 2, minWidth: "16rem" }}
         >
           <Input
@@ -165,7 +165,7 @@ export function InstallForm({ harnessId }: { harnessId: string }) {
         <Field
           label="Version"
           htmlFor="install-version"
-          hint="An exact version or a dist-tag."
+          description="An exact version or a dist-tag."
           style={{ flex: 1, minWidth: "10rem" }}
         >
           <Input

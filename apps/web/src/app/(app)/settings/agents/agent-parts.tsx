@@ -15,7 +15,7 @@ export function TaskTypeBadges({ taskTypes }: { taskTypes: readonly string[] }) 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
       {taskTypes.map((taskType) => (
-        <Badge key={taskType} variant="outline">
+        <Badge key={taskType} variant="neutral">
           {taskType}
         </Badge>
       ))}
@@ -38,10 +38,10 @@ export function ModelName({ model }: { model: string | null }) {
 export const pageMain = {
   flex: 1,
   overflowY: "auto",
-  padding: "var(--space-6)",
+  padding: "var(--space-8)",
   display: "flex",
   flexDirection: "column",
-  gap: "var(--space-5)",
+  gap: "var(--space-6)",
 } as const;
 
 export const pageTitle = {
@@ -81,7 +81,7 @@ export function NameList({ names }: { names: readonly string[] }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
       {names.map((name) => (
-        <Badge key={name} variant="outline">
+        <Badge key={name} variant="neutral">
           {name}
         </Badge>
       ))}

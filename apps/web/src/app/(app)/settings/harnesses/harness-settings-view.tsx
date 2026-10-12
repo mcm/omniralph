@@ -69,10 +69,10 @@ export function HarnessSettingsView({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "var(--space-6)",
+          padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-5)",
+          gap: "var(--space-6)",
         }}
       >
         <div>
@@ -107,7 +107,7 @@ export function HarnessSettingsView({
               onSubmit={save}
               style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
             >
-              <Field label="Desired version" htmlFor="desired-version" hint={hint}>
+              <Field label="Desired version" htmlFor="desired-version" description={hint}>
                 <Input
                   id="desired-version"
                   placeholder="Not set"

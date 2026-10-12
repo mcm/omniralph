@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { TabsLine, TabsLineList, TabsLineTrigger } from "@iamthemcmaster/ui";
+import { Tabs, TabsList, TabsTrigger } from "@iamthemcmaster/ui";
 import { IconHistory, IconListCheck, IconSettings } from "@tabler/icons-react";
 
 const tabs = [
@@ -20,18 +20,19 @@ export function RepositoryNav({
 }) {
   const router = useRouter();
   return (
-    <TabsLine
+    <Tabs
+      variant="underline"
       value={current}
       onValueChange={(value) => router.push(`/repositories/${repositoryId}/${value}`)}
     >
-      <TabsLineList aria-label="Repository pages">
+      <TabsList aria-label="Repository pages">
         {tabs.map(({ value, label, icon: Icon }) => (
-          <TabsLineTrigger key={value} value={value}>
+          <TabsTrigger key={value} value={value}>
             <Icon size={14} />
             {label}
-          </TabsLineTrigger>
+          </TabsTrigger>
         ))}
-      </TabsLineList>
-    </TabsLine>
+      </TabsList>
+    </Tabs>
   );
 }

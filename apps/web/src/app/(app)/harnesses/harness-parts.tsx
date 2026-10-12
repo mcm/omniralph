@@ -4,21 +4,28 @@ import { Badge, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
+import {
+  HARNESS_CONNECTION_VARIANTS,
+  HARNESS_UPDATE_STATUS_VARIANTS,
+  harnessConnectionState,
+} from "@/lib/state-variants";
 import { ProviderIcon } from "../repositories/repositories-view";
+
+const HARNESS_CONNECTION_LABELS = { online: "Online", offline: "Offline", revoked: "Revoked" };
 
 export function HarnessStatusBadge({
   harness,
 }: {
   harness: Pick<HarnessRow, "online" | "revoked">;
 }) {
-  if (harness.revoked) return <Badge variant="danger">Revoked</Badge>;
-  return harness.online ? (
-    <Badge variant="success" live>
-      Online
-    </Badge>
-  ) : (
-    <Badge variant="neutral" dot>
-      Offline
+  const state = harnessConnectionState(harness);
+  return (
+    <Badge
+      variant={HARNESS_CONNECTION_VARIANTS[state]}
+      dot={state === "offline"}
+      live={state === "online"}
+    >
+      {HARNESS_CONNECTION_LABELS[state]}
     </Badge>
   );
 }
@@ -29,7 +36,7 @@ export function TaskTypeBadges({ accepted }: { accepted: string[] }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
       {accepted.map((taskType) => (
-        <Badge key={taskType} variant="outline">
+        <Badge key={taskType} variant="neutral">
           {taskType}
         </Badge>
       ))}
@@ -88,13 +95,6 @@ export function RepositoryBadges({
   );
 }
 
-const UPDATE_STATUS_VARIANTS = {
-  up_to_date: "success",
-  updating: "info",
-  failed: "danger",
-  manual: "warning",
-} as const;
-
 const UPDATE_STATE_LABELS: Record<NonNullable<HarnessRow["update"]>["state"], string | null> = {
   idle: null,
   draining: "waiting for running jobs",
@@ -123,7 +123,7 @@ export function UpdateStatusBadge({
         ? `${harness.desiredVersion} failed on this harness, so it won't try it again unless you use Update now on its page.`
         : undefined;
   return (
-    <Badge variant={UPDATE_STATUS_VARIANTS[harness.updateStatus]} title={title}>
+    <Badge variant={HARNESS_UPDATE_STATUS_VARIANTS[harness.updateStatus]} title={title}>
       {UPDATE_STATUS_LABELS[harness.updateStatus]}
       {harness.updateStatus === "updating" && step && ` (${step})`}
     </Badge>
