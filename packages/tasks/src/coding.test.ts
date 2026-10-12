@@ -3,6 +3,7 @@ import {
   BUILTIN_TASKS,
   getBuiltinTask,
   TaskDefinition,
+  prDescriptionProblem,
   validateCodingTask,
   type TaskDefinitionInput,
 } from "./index.js";
@@ -49,12 +50,24 @@ describe("validateCodingTask", () => {
   });
 
   it("rejects a prDescriptionTaskId that isn't a query task started by run.invoked", () => {
-    for (const id of ["builtin:nope", "builtin:implement-story", "builtin:summarize-pr"]) {
+    for (const id of ["builtin:implement-story", "builtin:summarize-pr"]) {
       expect(errors({ ...story, prDescriptionTaskId: id })).toEqual({
         prDescriptionTaskId: `${id} isn't a query task started by run.invoked.`,
       });
     }
-    expect(errors({ ...story, prDescriptionTaskId: "builtin:correlate-findings" })).toEqual({});
+    expect(errors({ ...story, prDescriptionTaskId: "builtin:nope" })).toEqual({
+      prDescriptionTaskId: "There is no task builtin:nope.",
+    });
+    expect(errors({ ...story, prDescriptionTaskId: "builtin:describe-pr" })).toEqual({});
+  });
+
+  it("rejects a prDescriptionTaskId whose output isn't { title, body }", () => {
+    // A query task started by run.invoked with another output.
+    expect(errors({ ...story, prDescriptionTaskId: "builtin:correlate-findings" })).toEqual({
+      prDescriptionTaskId: expect.stringContaining(
+        "builtin:correlate-findings doesn't output the { title, body } of a PR description",
+      ),
+    });
   });
 
   it("rejects epic.prd or story outside an optional section on a task a request starts", () => {
@@ -88,5 +101,51 @@ describe("validateCodingTask", () => {
     expect(
       validateCodingTask({ ...query, promptTemplate: "{{epic.prd}}" }, getBuiltinTask),
     ).toEqual({});
+  });
+});
+
+describe("prDescriptionProblem", () => {
+  const describer = getBuiltinTask("builtin:describe-pr")!;
+
+  it("accepts a query task started by run.invoked whose output has a string title and body", () => {
+    expect(prDescriptionProblem(describer)).toBeNull();
+    expect(
+      prDescriptionProblem({
+        ...describer,
+        outputSchema: {
+          type: "object",
+          properties: {
+            title: { type: "string", maxLength: 60 },
+            body: { type: "string" },
+            labels: { type: "array" },
+          },
+          required: ["title", "body", "labels"],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects one without the output, or with an optional or mistyped field", () => {
+    expect(prDescriptionProblem({ ...describer, outputSchema: undefined })).toContain(
+      "has no output schema",
+    );
+    for (const outputSchema of [
+      { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+      {
+        type: "object",
+        properties: { title: { type: "string" }, body: { type: "number" } },
+        required: ["title", "body"],
+      },
+    ]) {
+      expect(prDescriptionProblem({ ...describer, outputSchema })).toContain(
+        "doesn't output the { title, body }",
+      );
+    }
+  });
+
+  it("rejects one of another type or trigger", () => {
+    expect(prDescriptionProblem({ ...describer, triggers: ["chat.request"] })).toBe(
+      "builtin:describe-pr isn't a query task started by run.invoked.",
+    );
   });
 });

@@ -6,10 +6,10 @@
  * `fieldErrors` in `@omniralph/shared`, so forms show them inline.
  */
 import type { z } from "zod";
-import { validateCodingTask } from "./coding.js";
+import { validateCodingTask, type PrDescriptionTaskFields } from "./coding.js";
 import { AgentDefinition, TaskDefinition, validateAgentForTask } from "./definitions.js";
 import { TRIGGERS_BY_TASK_TYPE, type SinkKind, type TaskType, type TriggerKind } from "./kinds.js";
-import { outputSchemaProblem, type JsonSchema } from "./output-schema.js";
+import { invalidOutputSchema, outputSchemaProblem, type JsonSchema } from "./output-schema.js";
 import { deriveTaskRequirements, type TaskRequirements } from "./requirements.js";
 import { validateTemplate } from "./template.js";
 import { findVariable, taskVariables } from "./variables.js";
@@ -43,7 +43,7 @@ export interface TaskValidationContext {
   /** The agent with an ID (built-in or the organization's), or null. */
   getAgent(id: string): Pick<AgentDefinition, "id" | "taskTypes" | "tools"> | null;
   /** The task with an ID (built-in or the organization's), or null: a coding task's PR description task. */
-  getTask(id: string): Pick<TaskDefinition, "taskType" | "triggers"> | null;
+  getTask(id: string): PrDescriptionTaskFields | null;
   /** What each sink accepts (control-panel code); a kind without an entry isn't available. */
   sinks: Readonly<Partial<Record<SinkKind, SinkOutput>>>;
 }
@@ -71,6 +71,7 @@ export function validateAgentDefinition(input: unknown): AgentValidation {
  *   a variable not available for every trigger; on a coding task, `epic.prd` or
  *   `story` outside an optional section when a request may start it;
  * - `variableLimits.<name>`: a limit on a variable the task can't use;
+ * - `outputSchema`: a schema the harness can't check output against (`invalidOutputSchema`);
  * - `agentId`: an unknown agent, or one that doesn't suit the task type;
  * - `sink`: a sink that isn't available or doesn't accept the task's output;
  * - coding settings that don't combine (`validateCodingTask`).
@@ -117,6 +118,9 @@ export function validateTaskDefinition(
     const problems = validateAgentForTask(agent, task);
     if (problems.length > 0) add("agentId", problems.join(" "));
   }
+
+  const schemaError = task.outputSchema && invalidOutputSchema(task.outputSchema);
+  if (schemaError) add("outputSchema", schemaError);
 
   const sinkError = sinkProblem(task, context.sinks[task.sink]);
   if (sinkError) add("sink", sinkError);

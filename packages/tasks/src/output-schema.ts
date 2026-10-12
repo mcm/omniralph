@@ -5,6 +5,7 @@
  * and items the sink's schema asks for. Value constraints (lengths, patterns,
  * ranges, formats) aren't compared: the sink still validates each result.
  */
+import { z } from "zod";
 
 export type JsonSchema = Readonly<Record<string, unknown>> | boolean;
 
@@ -188,4 +189,19 @@ function without(
   ...keys: string[]
 ): Record<string, unknown> {
   return Object.fromEntries(Object.entries(schema).filter(([key]) => !keys.includes(key)));
+}
+
+/**
+ * Why `schema` can't be a query task's output schema, or null when it can: a
+ * structured output is a JSON object, and the harness checks each result
+ * against the schema (`z.fromJSONSchema`), so it must convert.
+ */
+export function invalidOutputSchema(schema: Readonly<Record<string, unknown>>): string | null {
+  if (schema.type !== "object") return 'The output must be an object: set "type": "object".';
+  try {
+    z.fromJSONSchema(schema as Parameters<typeof z.fromJSONSchema>[0]);
+  } catch (error) {
+    return `This isn't a JSON schema the harness can check output against: ${error instanceof Error ? error.message : String(error)}.`;
+  }
+  return null;
 }

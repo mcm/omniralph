@@ -25,14 +25,27 @@ import {
   type TaskDefinition,
   type TaskType,
   type TokenBudget,
+  type ToolSettings,
   type TriggerKind,
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
+import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { pageMain, pageTitle } from "../agents/agent-parts";
 import { Choices, errorFor, monoInput } from "../agents/form-parts";
 import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
+import {
+  codingDraft,
+  codingFields,
+  CodingFields,
+  commandDraft,
+  CommandsEditor,
+  parseOutputSchema,
+  setupCommand,
+  teardownCommand,
+  ToolSettingsFields,
+} from "./task-form-sections";
 import { TASK_TYPE_LABELS, taskHref } from "./task-parts";
 
 /** An agent the form can pick. */
@@ -57,6 +70,8 @@ export interface TaskFormProps {
   sinks: TaskFormSink[];
   /** The organization's pools a task may run in. */
   pools: PoolName[];
+  /** The tasks a coding task may name for its PR description (`PR_DESCRIPTION_TASKS`). */
+  prDescriptionTasks: TaskChoice[];
   /** Field errors to show from the start (component tests). */
   initialErrors?: FieldErrors;
 }
@@ -93,20 +108,37 @@ function tokenBudget(mode: BudgetMode, amount: string): TokenBudget {
 }
 
 /**
- * The settings of `task` this form doesn't edit (commands, tool settings,
- * output schema, coding fields…), kept as they are, minus those `taskType`
- * doesn't allow.
+ * The settings of `task` this form doesn't edit (system text, variable
+ * limits, turn and idle limits), kept as they are.
  */
-function keptFields(task: TaskDefinition | null, taskType: TaskType): Partial<TaskDefinition> {
+function keptFields(task: TaskDefinition | null): Partial<TaskDefinition> {
   if (!task) return {};
   const { id: _id, ...kept }: Partial<TaskDefinition> = { ...task };
-  if (taskType !== "query") delete kept.outputSchema;
-  if (taskType !== "coding") for (const field of CODING_FIELD_NAMES) delete kept[field];
+  delete kept.outputSchema;
+  for (const field of CODING_FIELD_NAMES) delete kept[field];
   return kept;
 }
 
+/** The setup variables the template may use, by the commands' names. */
+function setupHint(commands: readonly { name: string }[]): string | undefined {
+  const names = commands.map((command) => command.name.trim()).filter(Boolean);
+  if (names.length === 0) return undefined;
+  return `Setup variables: ${names.map((name) => `{{setup.${name}}}`).join(", ")}.`;
+}
+
+function schemaText(schema: TaskDefinition["outputSchema"]): string {
+  return schema === undefined ? "" : JSON.stringify(schema, null, 2);
+}
+
 /** The form creating a task, or editing one of the organization's (common fields). */
-export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: TaskFormProps) {
+export function TaskForm({
+  task,
+  agents,
+  sinks,
+  pools,
+  prDescriptionTasks,
+  initialErrors = {},
+}: TaskFormProps) {
   const router = useRouter();
   const { pending, run } = useAction();
   const [name, setName] = React.useState(task?.name ?? "");
@@ -120,6 +152,17 @@ export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: Tas
   const [model, setModel] = React.useState(task?.model ?? "");
   const [budgetModeValue, setBudgetMode] = React.useState(budgetMode(task?.tokenBudget));
   const [budgetAmountValue, setBudgetAmount] = React.useState(budgetAmount(task?.tokenBudget));
+  const [setupCommands, setSetupCommands] = React.useState(
+    (task?.setupCommands ?? []).map(commandDraft),
+  );
+  const [teardownCommands, setTeardownCommands] = React.useState(
+    (task?.teardownCommands ?? []).map(commandDraft),
+  );
+  const [toolSettings, setToolSettings] = React.useState<ToolSettings>(
+    task?.toolSettings ?? { shell: false, linearRead: false, network: false },
+  );
+  const [outputSchema, setOutputSchema] = React.useState(schemaText(task?.outputSchema));
+  const [coding, setCoding] = React.useState(codingDraft(task));
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
 
   const typeAgents = agents.filter((agent) => agent.taskTypes.includes(taskType));
@@ -141,8 +184,13 @@ export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: Tas
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
+    const schema = taskType === "query" ? parseOutputSchema(outputSchema) : {};
+    if ("error" in schema) {
+      setErrors({ outputSchema: schema.error });
+      return;
+    }
     const input = {
-      ...keptFields(task, taskType),
+      ...keptFields(task),
       name,
       description,
       taskType,
@@ -153,6 +201,15 @@ export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: Tas
       pool,
       model: model.trim() || undefined,
       tokenBudget: tokenBudget(budgetModeValue, budgetAmountValue),
+      setupCommands: setupCommands.map(setupCommand),
+      teardownCommands: teardownCommands.map(teardownCommand),
+      // Shell is a query task setting: other types keep what they have.
+      toolSettings: {
+        ...toolSettings,
+        shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
+      },
+      ...(schema.schema && { outputSchema: schema.schema }),
+      ...(taskType === "coding" && codingFields(coding)),
       // Unset choices fail validation with their field's error.
     } as TaskDefinitionFields;
     let savedId = task?.id;
@@ -294,6 +351,7 @@ export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: Tas
               <Field
                 label="Template"
                 htmlFor="task-prompt-template"
+                hint={setupHint(setupCommands)}
                 error={errors.promptTemplate}
                 required
               >
@@ -309,6 +367,109 @@ export function TaskForm({ task, agents, sinks, pools, initialErrors = {} }: Tas
               </Field>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Setup commands</CardTitle>
+              <CardDescription>
+                Run in order in the working directory before the session. Each one&apos;s output is
+                the template variable {"{{setup.<name>}}"}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CommandsEditor
+                field="setupCommands"
+                commands={setupCommands}
+                onChange={setSetupCommands}
+                errors={errors}
+                disabled={pending}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Teardown commands</CardTitle>
+              <CardDescription>
+                Run in order after the session, whatever happened; their output is logged and a
+                failure never fails the run.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CommandsEditor
+                field="teardownCommands"
+                commands={teardownCommands}
+                onChange={setTeardownCommands}
+                errors={errors}
+                disabled={pending}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Tool settings</CardTitle>
+              <CardDescription>Narrow the agent&apos;s tools for this task.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ToolSettingsFields
+                value={toolSettings}
+                onChange={setToolSettings}
+                query={taskType === "query"}
+                errors={errors}
+                disabled={pending}
+              />
+            </CardContent>
+          </Card>
+
+          {taskType === "query" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Output schema</CardTitle>
+                <CardDescription>
+                  A JSON schema (an object) the run&apos;s structured output must match. Empty for a
+                  Markdown answer.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Field
+                  label="Schema"
+                  htmlFor="task-output-schema"
+                  error={errorFor(errors, "outputSchema")}
+                >
+                  <Textarea
+                    id="task-output-schema"
+                    rows={10}
+                    disabled={pending}
+                    aria-invalid={Boolean(errorFor(errors, "outputSchema"))}
+                    value={outputSchema}
+                    onChange={(e) => setOutputSchema(e.target.value)}
+                    style={monoInput}
+                  />
+                </Field>
+              </CardContent>
+            </Card>
+          )}
+
+          {taskType === "coding" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Coding</CardTitle>
+                <CardDescription>
+                  How the run publishes its work and how far it may go.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CodingFields
+                  value={coding}
+                  onChange={setCoding}
+                  prDescriptionTasks={prDescriptionTasks}
+                  errors={errors}
+                  disabled={pending}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

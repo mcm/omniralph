@@ -5,6 +5,7 @@
  */
 import type { TaskDefinition } from "./definitions.js";
 import { REQUEST_TRIGGERS } from "./kinds.js";
+import { outputSchemaProblem, type JsonSchema } from "./output-schema.js";
 import { parseTemplate, type TemplateNode } from "./template.js";
 
 /** Variables a request run may not have (it need not have an epic or a story). */
@@ -21,6 +22,35 @@ function unconditionalVariables(template: string): string[] {
   );
 }
 
+/** The output a coding run reads from its PR description task: a title and a markdown body. */
+export const PR_DESCRIPTION_OUTPUT_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: { title: { type: "string" }, body: { type: "string" } },
+  required: ["title", "body"],
+};
+
+/** A task a coding run may invoke for its PR description, as `prDescriptionProblem` sees it. */
+export type PrDescriptionTaskFields = Pick<
+  TaskDefinition,
+  "id" | "taskType" | "triggers" | "outputSchema"
+>;
+
+/**
+ * Why a coding run can't invoke `task` for its PR description, or null when it
+ * can: it must be a query task accepting `run.invoked` whose output schema
+ * guarantees `{ title, body }` (`PR_DESCRIPTION_OUTPUT_SCHEMA`).
+ */
+export function prDescriptionProblem(task: PrDescriptionTaskFields): string | null {
+  if (task.taskType !== "query" || !task.triggers.includes("run.invoked")) {
+    return `${task.id} isn't a query task started by run.invoked.`;
+  }
+  if (task.outputSchema === undefined) {
+    return `${task.id} has no output schema: a PR description task outputs { title, body }.`;
+  }
+  const problem = outputSchemaProblem(task.outputSchema, PR_DESCRIPTION_OUTPUT_SCHEMA);
+  return problem && `${task.id} doesn't output the { title, body } of a PR description: ${problem}`;
+}
+
 type CodingTaskFields = Pick<
   TaskDefinition,
   | "taskType"
@@ -34,14 +64,14 @@ type CodingTaskFields = Pick<
 /**
  * Problems with a coding task, by field (empty when there are none, or the
  * task isn't a coding task): pushing only at the end with an early draft PR
- * (the draft would have nothing to show), a `prDescriptionTaskId` that isn't
- * a query task accepting `run.invoked` (`getTask` finds tasks by ID), and on a
+ * (the draft would have nothing to show), a `prDescriptionTaskId` a coding
+ * run can't invoke (`prDescriptionProblem`) (`getTask` finds tasks by ID), and on a
  * task that accepts a request trigger, a template that renders `epic.prd` or
  * `story` (or any `story.*` path) outside an optional section.
  */
 export function validateCodingTask(
   task: CodingTaskFields,
-  getTask: (id: string) => Pick<TaskDefinition, "taskType" | "triggers"> | null,
+  getTask: (id: string) => PrDescriptionTaskFields | null,
 ): Record<string, string> {
   const errors: Record<string, string> = {};
   if (task.taskType !== "coding") return errors;
@@ -51,13 +81,10 @@ export function validateCodingTask(
   }
   if (task.prDescriptionTaskId !== undefined) {
     const describer = getTask(task.prDescriptionTaskId);
-    if (
-      !describer ||
-      describer.taskType !== "query" ||
-      !describer.triggers.includes("run.invoked")
-    ) {
-      errors.prDescriptionTaskId = `${task.prDescriptionTaskId} isn't a query task started by run.invoked.`;
-    }
+    const problem = describer
+      ? prDescriptionProblem(describer)
+      : `There is no task ${task.prDescriptionTaskId}.`;
+    if (problem) errors.prDescriptionTaskId = problem;
   }
   const requests = task.triggers.filter((t) => (REQUEST_TRIGGERS as readonly string[]).includes(t));
   if (requests.length > 0) {

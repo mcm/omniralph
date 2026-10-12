@@ -264,6 +264,43 @@ describe("validateTaskDefinition", () => {
     ).toEqual({ outputSchema: "outputSchema is only allowed on query tasks" });
   });
 
+  it("rejects an output schema that isn't an object, or the harness can't check output against", () => {
+    const structured = {
+      ...query,
+      sink: "run-result",
+      triggers: ["run.invoked"],
+      promptTemplate: "{{branch}}",
+    } as const;
+    expect(errors({ ...structured, outputSchema: { type: "object" } })).toEqual({});
+    expect(errors({ ...structured, outputSchema: { type: "string" } })).toEqual({
+      outputSchema: expect.stringContaining('"type": "object"'),
+    });
+    expect(
+      errors({
+        ...structured,
+        outputSchema: { type: "object", properties: { a: { type: "strin" } } },
+      }),
+    ).toEqual({ outputSchema: expect.stringContaining("Unsupported type: strin") });
+  });
+
+  it("rejects a PR description task whose output isn't { title, body }", () => {
+    const describer = {
+      ...getBuiltinTask("builtin:describe-pr")!,
+      outputSchema: { type: "object" },
+    };
+    expect(
+      validateTaskDefinition(
+        { ...coding, prDescriptionTaskId: describer.id },
+        { ...context, getTask: (id) => (id === describer.id ? describer : getBuiltinTask(id)) },
+      ),
+    ).toEqual({
+      ok: false,
+      fieldErrors: {
+        prDescriptionTaskId: expect.stringContaining("doesn't output the { title, body }"),
+      },
+    });
+  });
+
   it("rejects a trigger kind the task type doesn't accept", () => {
     expect(
       errors({
