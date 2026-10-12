@@ -381,6 +381,7 @@ export {
   listPinnableHarnesses,
   listRepositoryPinnedHarnessIds,
   listReviewProfiles,
+  listProfileRepositories,
   getReviewProfile,
   updateRepositorySettings,
   seedReviewProfiles,

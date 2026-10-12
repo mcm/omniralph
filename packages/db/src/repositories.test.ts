@@ -32,6 +32,7 @@ import {
 } from "./schema.js";
 import {
   getReviewProfile,
+  listProfileRepositories,
   listReviewProfiles,
   seedReviewProfiles,
   updateRepositorySettings,
@@ -216,6 +217,20 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
 
     const past = await listRepositoryOverviewPage(db, orgId, { page: 99, pageSize: 2 });
     expect(past).toMatchObject({ repositories: [], total: all.length, page: 99 });
+
+    await db
+      .update(repositories)
+      .set({ profileId: "deep" })
+      .where(eq(repositories.id, repos[1]!.id));
+    const byProfile = (await listProfileRepositories(db, orgId)).filter((r) =>
+      r.fullPath.startsWith("paged/"),
+    );
+    expect(byProfile.map((r) => [r.fullPath, r.profileId])).toEqual([
+      ["paged/a", "deep"],
+      ["paged/b", "standard"],
+      ["paged/c", "standard"],
+      ["paged/e", "standard"],
+    ]);
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
 

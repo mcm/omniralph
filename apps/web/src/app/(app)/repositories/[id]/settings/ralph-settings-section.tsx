@@ -1,113 +1,61 @@
 "use client";
 
 import * as React from "react";
+import { Field, Input, NativeSelect, Textarea } from "@iamthemcmaster/ui";
 import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Field,
-  Input,
-  Label,
-  Muted,
-  NativeSelect,
-  Switch,
-  Textarea,
-} from "@iamthemcmaster/ui";
-import { IconDeviceFloppy } from "@tabler/icons-react";
-import {
+  DEFAULT_RALPH_SETTINGS,
   fieldErrors as toFieldErrors,
   MAX_APPEND_INSTRUCTION_LENGTH,
   MAX_FIX_ROUNDS,
   MAX_SETUP_COMMAND_LENGTH,
   MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
-  parseCommaList,
-  parseLines,
+  RALPH_CODING_PATHS,
+  RALPH_HISTORY_REWRITE_POLICIES,
   RalphSettingsInput,
   type FieldErrors,
   type RalphCodingPath,
   type RalphHistoryRewrite,
 } from "@omniralph/shared";
-import { useAction } from "@/components/use-action";
+import { SettingsCard, SwitchField, type SettingsConfirmation } from "@/components/settings-card";
+import { settingChanges, withDefault, withoutFieldErrors } from "@/lib/settings/changes";
+import {
+  CODING_PATH_LABELS,
+  HISTORY_REWRITE_LABELS,
+  pickKeys,
+  RALPH_CARDS,
+  RALPH_DEFAULT_TEXT,
+  RALPH_REPOSITORY_DEFAULTS,
+  ralphDraft,
+  ralphSpecs,
+  ralphValues,
+  type RalphDraft,
+} from "@/lib/settings/forms";
 import { updateRalphSettings } from "./actions";
 import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 
 /** The form's values: the saved settings, with empty text and lists for none. */
 export type RalphSettingsValues = RalphSettingsInput;
 
-const stack: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-4)",
-};
-
-const row: React.CSSProperties = { display: "flex", gap: "var(--space-4)", flexWrap: "wrap" };
-
-const mono: React.CSSProperties = { fontFamily: "var(--font-mono)" };
-
 /** The first error of a list field (`linearLabels` or `linearLabels.2`). */
 function listError(errors: FieldErrors, field: string): string | undefined {
   return errors[field] ?? Object.entries(errors).find(([key]) => key.startsWith(`${field}.`))?.[1];
 }
 
-/** A whole number typed into a number input; NaN (rejected by the schema) when it isn't one. */
-function whole(value: string): number {
-  return value.trim() === "" ? Number.NaN : Number(value);
-}
+const onOff = RALPH_DEFAULT_TEXT.onOff;
 
-function Toggle({
-  id,
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-3)" }}>
-      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-        <Label htmlFor={id}>{label}</Label>
-        <Muted>{description}</Muted>
-      </div>
-    </div>
-  );
-}
-
-function Group({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent style={stack}>{children}</CardContent>
-    </Card>
-  );
-}
+/** Confirmation of a card that changes how runs work. */
+const RUN_AFFECTING: SettingsConfirmation = {
+  consequence:
+    "Every run of this repository picks these up with its next job, including runs in progress.",
+};
 
 /**
  * Repository › Settings › Ralph (admin-only): opts the repository into
  * Linear-driven builds, says which Linear issues route to it and how its runs
  * work (cyralph's per-repository settings), grouped as Verification, Prompt
- * and model, Tools, PR follow-up and Linear.
+ * and model, Tools, PR follow-up and Linear. Each card saves on its own; the
+ * ones that change what runs do (enabling, coding path, verification, model,
+ * tools) confirm their change list first.
  */
 export function RalphSettingsSection({
   repositoryId,
@@ -119,102 +67,63 @@ export function RalphSettingsSection({
   /** The coding tasks its story and request runs can use (built-in and the organization's). */
   codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
 }) {
-  const { pending, run } = useAction();
-  const [ralphEnabled, setRalphEnabled] = React.useState(settings.ralphEnabled);
-  const [teamKeys, setTeamKeys] = React.useState(settings.linearTeamKeys.join(", "));
-  const [projectNames, setProjectNames] = React.useState(settings.linearProjectNames.join(", "));
-  const [labels, setLabels] = React.useState(settings.linearLabels.join(", "));
-  const [codingPath, setCodingPath] = React.useState<RalphCodingPath>(settings.codingPath);
-  const [storyTaskId, setStoryTaskId] = React.useState(settings.storyTaskId);
-  const [requestTaskId, setRequestTaskId] = React.useState(settings.requestTaskId);
-  // Verification
-  const [verifyCommands, setVerifyCommands] = React.useState(settings.verifyCommands.join("\n"));
-  const [runPrdQualityGates, setRunPrdQualityGates] = React.useState(settings.runPrdQualityGates);
-  const [setupCommand, setSetupCommand] = React.useState(settings.setupCommand);
-  // Prompt and model
-  const [appendInstruction, setAppendInstruction] = React.useState(settings.appendInstruction);
-  const [model, setModel] = React.useState(settings.model);
-  const [fallbackModel, setFallbackModel] = React.useState(settings.fallbackModel);
-  // Tools
-  const [allowedTools, setAllowedTools] = React.useState(settings.allowedTools.join("\n"));
-  const [disallowedTools, setDisallowedTools] = React.useState(settings.disallowedTools.join("\n"));
-  // PR follow-up
-  const [openPullRequestEarly, setOpenPullRequestEarly] = React.useState(
-    settings.openPullRequestEarly,
-  );
-  const [historyRewrite, setHistoryRewrite] = React.useState<RalphHistoryRewrite>(
-    settings.historyRewrite,
-  );
-  const [respondToReviews, setRespondToReviews] = React.useState(settings.respondToReviews);
-  const [maxReviewRounds, setMaxReviewRounds] = React.useState(String(settings.maxReviewRounds));
-  const [respondToCiFailures, setRespondToCiFailures] = React.useState(
-    settings.respondToCiFailures,
-  );
-  const [maxFixRounds, setMaxFixRounds] = React.useState(String(settings.maxFixRounds));
-  const [cleanupMergedWorktrees, setCleanupMergedWorktrees] = React.useState(
-    settings.cleanupMergedWorktrees,
-  );
-  const [unmergedTimeout, setUnmergedTimeout] = React.useState(
-    String(settings.unmergedBranchTimeoutMinutes),
-  );
-  // Linear
-  const [manualLabels, setManualLabels] = React.useState(settings.manualLabels.join(", "));
-  const [allowPreparation, setAllowPreparation] = React.useState(settings.allowPreparation);
-  const [epicCompletedState, setEpicCompletedState] = React.useState(settings.epicCompletedState);
+  const saved = React.useMemo(() => ralphDraft(settings), [settings]);
+  const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
+  const set = <K extends keyof RalphDraft>(key: K, value: RalphDraft[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = RalphSettingsInput.safeParse({
-      ralphEnabled,
-      linearTeamKeys: parseCommaList(teamKeys),
-      linearProjectNames: parseCommaList(projectNames),
-      linearLabels: parseCommaList(labels),
-      codingPath,
-      storyTaskId,
-      requestTaskId,
-      verifyCommands: parseLines(verifyCommands),
-      runPrdQualityGates,
-      setupCommand,
-      appendInstruction,
-      model,
-      fallbackModel,
-      allowedTools: parseLines(allowedTools),
-      disallowedTools: parseLines(disallowedTools),
-      openPullRequestEarly,
-      historyRewrite,
-      respondToReviews,
-      maxReviewRounds: whole(maxReviewRounds),
-      respondToCiFailures,
-      maxFixRounds: whole(maxFixRounds),
-      cleanupMergedWorktrees,
-      unmergedBranchTimeoutMinutes: whole(unmergedTimeout),
-      manualLabels: parseCommaList(manualLabels),
-      allowPreparation,
-      epicCompletedState,
-    } satisfies RalphSettingsInput);
-    if (!parsed.success) {
-      setErrors(toFieldErrors(parsed.error));
-      return;
-    }
-    run(
-      () => updateRalphSettings(repositoryId, parsed.data),
-      "Ralph settings saved; they apply to new runs",
-      () => setErrors({}),
-      (result) => setErrors(result.fieldErrors ?? {}),
-    );
-  };
+  const savedValues = ralphValues(saved);
+  const draftValues = ralphValues(draft);
+  const tasks = [...codingTasks.story, ...codingTasks.request];
+  const specs = React.useMemo(
+    () =>
+      ralphSpecs(
+        new Map([...codingTasks.story, ...codingTasks.request].map((t) => [t.id, t.name])),
+      ),
+    [codingTasks],
+  );
+  const taskName = (id: string) => tasks.find((t) => t.id === id)?.name ?? id;
+
+  /** The props of the settings card saving `keys`. */
+  const card = (keys: readonly (keyof RalphSettingsInput)[]) => ({
+    changes: settingChanges(
+      keys.map((key) => specs[key]),
+      savedValues,
+      draftValues,
+    ),
+    onDiscard: () => {
+      setDraft((d) => ({ ...d, ...pickKeys(saved, keys) }));
+      setErrors((e) => withoutFieldErrors(e, keys));
+    },
+    prepare: () => {
+      // The saved settings with this card's changes only.
+      const parsed = RalphSettingsInput.safeParse({
+        ...savedValues,
+        ...pickKeys(draftValues, keys),
+      });
+      if (!parsed.success) {
+        setErrors((e) => ({ ...withoutFieldErrors(e, keys), ...toFieldErrors(parsed.error) }));
+        return null;
+      }
+      return {
+        action: () => updateRalphSettings(repositoryId, parsed.data),
+        success: "Ralph settings saved; they apply to the next job of every run",
+        onSuccess: () => setErrors((e) => withoutFieldErrors(e, keys)),
+        onError: (result: { fieldErrors?: FieldErrors }) =>
+          setErrors((e) => ({ ...e, ...result.fieldErrors })),
+      };
+    },
+  });
 
   const textInput = (
+    key: keyof RalphDraft & keyof RalphSettingsInput,
     id: string,
     label: string,
     hint: string,
-    field: keyof RalphSettingsValues,
-    value: string,
-    onChange: (value: string) => void,
     options: { placeholder?: string; mono?: boolean; required?: boolean } = {},
   ) => {
-    const error = listError(errors, field);
+    const error = listError(errors, key);
     return (
       <Field
         label={label}
@@ -225,370 +134,385 @@ export function RalphSettingsSection({
       >
         <Input
           id={id}
-          disabled={pending}
           error={Boolean(error)}
           aria-invalid={Boolean(error)}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={String(draft[key])}
+          onChange={(e) => set(key, e.target.value as never)}
           placeholder={options.placeholder}
-          style={options.mono ? mono : undefined}
+          className={options.mono ? "settings-mono" : undefined}
         />
       </Field>
     );
   };
 
   const linesInput = (
+    key: "verifyCommands" | "allowedTools" | "disallowedTools",
     id: string,
     label: string,
     hint: string,
-    field: keyof RalphSettingsValues,
-    value: string,
-    onChange: (value: string) => void,
     placeholder: string,
   ) => {
-    const error = listError(errors, field);
+    const error = listError(errors, key);
     return (
       <Field label={label} htmlFor={id} description={hint} error={error}>
         <Textarea
           id={id}
           rows={3}
-          disabled={pending}
           aria-invalid={Boolean(error)}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={draft[key]}
+          onChange={(e) => set(key, e.target.value)}
           placeholder={placeholder}
-          style={mono}
+          className="settings-mono"
         />
       </Field>
     );
   };
 
   const numberInput = (
+    key: "maxReviewRounds" | "maxFixRounds" | "unmergedBranchTimeoutMinutes",
     id: string,
     label: string,
     hint: string,
-    field: keyof RalphSettingsValues,
-    value: string,
-    onChange: (value: string) => void,
     max: number,
     min = 0,
   ) => (
-    <Field label={label} htmlFor={id} description={hint} error={errors[field]}>
+    <Field label={label} htmlFor={id} description={hint} error={errors[key]}>
       <Input
         id={id}
         type="number"
         min={min}
         max={max}
-        disabled={pending}
-        error={Boolean(errors[field])}
-        aria-invalid={Boolean(errors[field])}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        error={Boolean(errors[key])}
+        aria-invalid={Boolean(errors[key])}
+        value={draft[key]}
+        onChange={(e) => set(key, e.target.value)}
       />
     </Field>
   );
 
+  const switchInput = (
+    key:
+      | "ralphEnabled"
+      | "runPrdQualityGates"
+      | "openPullRequestEarly"
+      | "respondToReviews"
+      | "respondToCiFailures"
+      | "cleanupMergedWorktrees"
+      | "allowPreparation",
+    id: string,
+    label: string,
+    hint: string,
+    defaultValue: boolean,
+  ) => (
+    <SwitchField
+      id={id}
+      label={label}
+      description={withDefault(hint, onOff(defaultValue))}
+      checked={draft[key]}
+      disabled={false}
+      onChange={(value) => set(key, value)}
+    />
+  );
+
   return (
-    <form onSubmit={save} noValidate style={{ display: "contents" }}>
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Ralph</CardTitle>
-          <CardDescription>
+    <>
+      <SettingsCard
+        title="Ralph"
+        description={
+          <>
             Let Linear issues delegated to the Omniralph app be built here, story by story. A
             delegation goes to the first enabled repository that matches its{" "}
             <code>[repo=&lt;path&gt;]</code> tag, then its labels, project and team.
-          </CardDescription>
-        </CardHeader>
-        <CardContent style={stack}>
-          <Toggle
-            id="ralph-enabled"
-            label="Enable ralph"
-            description="Delegated Linear issues may build in this repository and push branches to it."
-            checked={ralphEnabled}
-            disabled={pending}
-            onChange={setRalphEnabled}
-          />
-          <Field
-            label="Coding path"
-            htmlFor="ralph-coding-path"
-            description="How runs work stories and requests: the legacy ralph jobs, or coding runs of the story and request tasks below."
-            error={errors.codingPath}
+          </>
+        }
+        confirm={RUN_AFFECTING}
+        {...card(RALPH_CARDS.ralph)}
+      >
+        {switchInput(
+          "ralphEnabled",
+          "ralph-enabled",
+          "Enable Ralph",
+          "Delegated Linear issues may build in this repository and push branches to it.",
+          RALPH_REPOSITORY_DEFAULTS.ralphEnabled,
+        )}
+        <Field
+          label="Coding path"
+          htmlFor="ralph-coding-path"
+          description={withDefault(
+            "How runs work stories and requests: the legacy Ralph jobs, or coding runs of the story and request tasks below.",
+            RALPH_DEFAULT_TEXT.codingPath,
+          )}
+          error={errors.codingPath}
+        >
+          <NativeSelect
+            id="ralph-coding-path"
+            value={draft.codingPath}
+            onChange={(e) => set("codingPath", e.target.value as RalphCodingPath)}
           >
-            <NativeSelect
-              id="ralph-coding-path"
-              disabled={pending}
-              value={codingPath}
-              onChange={(e) => setCodingPath(e.target.value as RalphCodingPath)}
-            >
-              <option value="legacy">Legacy jobs</option>
-              <option value="tasks">Coding tasks</option>
-            </NativeSelect>
-          </Field>
-          <div style={row}>
-            <TaskPicker
-              id="ralph-story-task"
-              label="Story task"
-              hint="The coding task that works delegated stories (linear.delegated) on the coding-tasks path."
-              value={storyTaskId}
-              choices={codingTasks.story}
-              disabled={pending}
-              error={errors.storyTaskId}
-              onChange={setStoryTaskId}
-            />
-            <TaskPicker
-              id="ralph-request-task"
-              label="Request task"
-              hint="The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path."
-              value={requestTaskId}
-              choices={codingTasks.request}
-              disabled={pending}
-              error={errors.requestTaskId}
-              onChange={setRequestTaskId}
-            />
-          </div>
-          {textInput(
-            "ralph-labels",
-            "Linear labels",
-            "Comma-separated. Issues with any of these labels route here.",
-            "linearLabels",
-            labels,
-            setLabels,
-            { placeholder: "backend, api" },
-          )}
-          {textInput(
-            "ralph-projects",
-            "Linear projects",
-            "Comma-separated project names.",
-            "linearProjectNames",
-            projectNames,
-            setProjectNames,
-            { placeholder: "Omniralph" },
-          )}
-          {textInput(
-            "ralph-teams",
-            "Linear team keys",
-            "Comma-separated, e.g. ENG.",
-            "linearTeamKeys",
-            teamKeys,
-            setTeamKeys,
-            { placeholder: "ENG, OPS" },
-          )}
-        </CardContent>
-      </Card>
+            {RALPH_CODING_PATHS.map((path) => (
+              <option key={path} value={path}>
+                {CODING_PATH_LABELS[path]}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+        <div className="settings-row">
+          <TaskPicker
+            id="ralph-story-task"
+            label="Story task"
+            hint={withDefault(
+              "The coding task that works delegated stories on the coding-tasks path.",
+              taskName(RALPH_REPOSITORY_DEFAULTS.storyTaskId),
+            )}
+            value={draft.storyTaskId}
+            choices={codingTasks.story}
+            disabled={false}
+            error={errors.storyTaskId}
+            onChange={(value) => set("storyTaskId", value)}
+          />
+          <TaskPicker
+            id="ralph-request-task"
+            label="Request task"
+            hint={withDefault(
+              "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path.",
+              taskName(RALPH_REPOSITORY_DEFAULTS.requestTaskId),
+            )}
+            value={draft.requestTaskId}
+            choices={codingTasks.request}
+            disabled={false}
+            error={errors.requestTaskId}
+            onChange={(value) => set("requestTaskId", value)}
+          />
+        </div>
+        {textInput(
+          "linearLabels",
+          "ralph-labels",
+          "Linear labels",
+          "Comma-separated. Issues with any of these labels route here. Default: none.",
+          { placeholder: "backend, api" },
+        )}
+        {textInput(
+          "linearProjectNames",
+          "ralph-projects",
+          "Linear projects",
+          "Comma-separated project names. Default: none.",
+          { placeholder: "Omniralph" },
+        )}
+        {textInput(
+          "linearTeamKeys",
+          "ralph-teams",
+          "Linear team keys",
+          "Comma-separated, e.g. ENG. Default: none.",
+          { placeholder: "ENG, OPS" },
+        )}
+      </SettingsCard>
 
-      <Group
+      <SettingsCard
         title="Ralph › Verification"
         description="The quality gates the job runs after a story's session reports it complete; a failing gate sends its output back for the next attempt."
+        confirm={RUN_AFFECTING}
+        {...card(RALPH_CARDS.verification)}
       >
         {linesInput(
-          "ralph-verify-commands",
-          "Verify commands (verifyCommands)",
-          "One per line. Run as quality gates for every story and request in this repository, before the PRD's.",
           "verifyCommands",
-          verifyCommands,
-          setVerifyCommands,
+          "ralph-verify-commands",
+          "Verify commands",
+          "One per line. Run as quality gates for every story and request in this repository, before the PRD's. Default: none.",
           "pnpm typecheck\npnpm test",
         )}
-        <Toggle
-          id="ralph-run-prd-gates"
-          label="Run the PRD's quality gates (runPrdQualityGates)"
-          description="Also run the commands under the PRD's ## Quality Gates heading. A single issue only runs the verify commands."
-          checked={runPrdQualityGates}
-          disabled={pending}
-          onChange={setRunPrdQualityGates}
-        />
+        {switchInput(
+          "runPrdQualityGates",
+          "ralph-run-prd-gates",
+          "Run the PRD's quality gates",
+          "Also run the commands under the PRD's ## Quality Gates heading. A single issue only runs the verify commands.",
+          DEFAULT_RALPH_SETTINGS.runPrdQualityGates,
+        )}
         {textInput(
+          "setupCommand",
           "ralph-setup-command",
           "Setup command",
-          `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters.`,
-          "setupCommand",
-          setupCommand,
-          setSetupCommand,
+          `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters. Default: none.`,
           { placeholder: "pnpm install --frozen-lockfile", mono: true },
         )}
-      </Group>
+      </SettingsCard>
 
-      <Group
+      <SettingsCard
         title="Ralph › Prompt and model"
         description="What the Claude sessions are told and which model runs them."
+        confirm={RUN_AFFECTING}
+        {...card(RALPH_CARDS.prompt)}
       >
         <Field
-          label="Appended instruction (appendInstruction)"
+          label="Appended instruction"
           htmlFor="ralph-append-instruction"
-          description={`Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`}
+          description={`Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters. Default: none.`}
           error={errors.appendInstruction}
         >
           <Textarea
             id="ralph-append-instruction"
             rows={4}
-            disabled={pending}
             aria-invalid={Boolean(errors.appendInstruction)}
-            value={appendInstruction}
-            onChange={(e) => setAppendInstruction(e.target.value)}
+            value={draft.appendInstruction}
+            onChange={(e) => set("appendInstruction", e.target.value)}
           />
         </Field>
-        <div style={row}>
+        <div className="settings-row">
           {textInput(
+            "model",
             "ralph-model",
             "Model",
-            "Claude model alias or ID the sessions use.",
-            "model",
-            model,
-            setModel,
+            withDefault("Claude model alias or ID the sessions use.", RALPH_DEFAULT_TEXT.model),
             { mono: true, required: true },
           )}
           {textInput(
-            "ralph-fallback-model",
-            "Fallback model (fallbackModel)",
-            "Used when the model is overloaded. Empty for none.",
             "fallbackModel",
-            fallbackModel,
-            setFallbackModel,
+            "ralph-fallback-model",
+            "Fallback model",
+            "Used when the model is overloaded. Empty for none. Default: none.",
             { mono: true, placeholder: "sonnet" },
           )}
         </div>
-      </Group>
+      </SettingsCard>
 
-      <Group
+      <SettingsCard
         title="Ralph › Tools"
-        description="Agent SDK tools or permission rules, one per line. They can only narrow ralph's tool policy, never widen it."
+        description="Agent SDK tools or permission rules, one per line. They can only narrow Ralph's tool policy, never widen it."
+        confirm={RUN_AFFECTING}
+        {...card(RALPH_CARDS.tools)}
       >
         {linesInput(
-          "ralph-allowed-tools",
-          "Allowed tools (allowedTools)",
-          "Empty for ralph's whole policy. Otherwise only these tools are available, and only calls matching these rules run, e.g. Bash(pnpm test:*).",
           "allowedTools",
-          allowedTools,
-          setAllowedTools,
+          "ralph-allowed-tools",
+          "Allowed tools",
+          "Empty for Ralph's whole policy. Otherwise only these tools are available, and only calls matching these rules run, e.g. Bash(pnpm test:*). Default: empty.",
           "Read\nEdit\nBash(pnpm test:*)",
         )}
         {linesInput(
-          "ralph-disallowed-tools",
-          "Disallowed tools (disallowedTools)",
-          "Always denied, on top of ralph's policy.",
           "disallowedTools",
-          disallowedTools,
-          setDisallowedTools,
+          "ralph-disallowed-tools",
+          "Disallowed tools",
+          "Always denied, on top of Ralph's policy. Default: none.",
           "WebFetch",
         )}
-      </Group>
+      </SettingsCard>
 
-      <Group
+      <SettingsCard
         title="Ralph › PR follow-up"
-        description="The run's pull or merge request: when it opens, and how ralph looks after it (reviews, CI and cleanup after the merge)."
+        description="The run's pull or merge request: when it opens, and how Ralph looks after it (reviews, CI and cleanup after the merge)."
+        {...card(RALPH_CARDS.followUp)}
       >
-        <Toggle
-          id="ralph-open-pr-early"
-          label="Open the pull request early (openPullRequestEarly)"
-          description="Open a draft pull or merge request after the first story is pushed, and mark it ready when the run finishes."
-          checked={openPullRequestEarly}
-          disabled={pending}
-          onChange={setOpenPullRequestEarly}
-        />
+        {switchInput(
+          "openPullRequestEarly",
+          "ralph-open-pr-early",
+          "Open the pull request early",
+          "Open a draft pull or merge request after the first story is pushed, and mark it ready when the run finishes.",
+          DEFAULT_RALPH_SETTINGS.openPullRequestEarly,
+        )}
         <Field
-          label="History rewrites (historyRewrite)"
+          label="History rewrites"
           htmlFor="ralph-history-rewrite"
-          description="Whether a request may rebase and push with --force-with-lease when someone asks for it."
+          description={withDefault(
+            "Whether a request may rebase and push with --force-with-lease when someone asks for it.",
+            RALPH_DEFAULT_TEXT.historyRewrite,
+          )}
           error={errors.historyRewrite}
         >
           <NativeSelect
             id="ralph-history-rewrite"
-            disabled={pending}
-            value={historyRewrite}
-            onChange={(e) => setHistoryRewrite(e.target.value as RalphHistoryRewrite)}
+            value={draft.historyRewrite}
+            onChange={(e) => set("historyRewrite", e.target.value as RalphHistoryRewrite)}
           >
-            <option value="when-asked">When asked</option>
-            <option value="never">Never</option>
+            {RALPH_HISTORY_REWRITE_POLICIES.map((policy) => (
+              <option key={policy} value={policy}>
+                {HISTORY_REWRITE_LABELS[policy]}
+              </option>
+            ))}
           </NativeSelect>
         </Field>
-        <Toggle
-          id="ralph-respond-to-reviews"
-          label="Fix review findings (respondToReviews)"
-          description="Omniralph's review findings and @bot requests on the run's pull or merge request become requests ralph works on."
-          checked={respondToReviews}
-          disabled={pending}
-          onChange={setRespondToReviews}
-        />
+        {switchInput(
+          "respondToReviews",
+          "ralph-respond-to-reviews",
+          "Fix review findings",
+          "Omniralph's review findings and @bot requests on the run's pull or merge request become requests Ralph works on.",
+          DEFAULT_RALPH_SETTINGS.respondToReviews,
+        )}
         {numberInput(
-          "ralph-max-review-rounds",
-          "Max review rounds (maxReviewRounds)",
-          `Reviews acted on per pull or merge request before ralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
           "maxReviewRounds",
-          maxReviewRounds,
-          setMaxReviewRounds,
+          "ralph-max-review-rounds",
+          "Max review rounds",
+          withDefault(
+            `Reviews acted on per pull or merge request before Ralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
+            RALPH_DEFAULT_TEXT.maxReviewRounds,
+          ),
           MAX_FIX_ROUNDS,
         )}
-        <Toggle
-          id="ralph-respond-to-ci"
-          label="Fix failed CI (respondToCiFailures)"
-          description="A failed CI run on the head commit becomes a request with the failed jobs' logs."
-          checked={respondToCiFailures}
-          disabled={pending}
-          onChange={setRespondToCiFailures}
-        />
+        {switchInput(
+          "respondToCiFailures",
+          "ralph-respond-to-ci",
+          "Fix failed CI",
+          "A failed CI run on the head commit becomes a request with the failed jobs' logs.",
+          DEFAULT_RALPH_SETTINGS.respondToCiFailures,
+        )}
         {numberInput(
-          "ralph-max-fix-rounds",
-          "Max CI fix rounds (maxFixRounds)",
-          `Failed CI runs acted on per pull or merge request (0–${MAX_FIX_ROUNDS}).`,
           "maxFixRounds",
-          maxFixRounds,
-          setMaxFixRounds,
+          "ralph-max-fix-rounds",
+          "Max CI fix rounds",
+          withDefault(
+            `Failed CI runs acted on per pull or merge request (0–${MAX_FIX_ROUNDS}).`,
+            RALPH_DEFAULT_TEXT.maxFixRounds,
+          ),
           MAX_FIX_ROUNDS,
         )}
-        <Toggle
-          id="ralph-cleanup"
-          label="Clean up after the merge (cleanupMergedWorktrees)"
-          description="Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first. A request closed without merging, or a stopped run, only has its worktree removed: the branch stays."
-          checked={cleanupMergedWorktrees}
-          disabled={pending}
-          onChange={setCleanupMergedWorktrees}
-        />
+        {switchInput(
+          "cleanupMergedWorktrees",
+          "ralph-cleanup",
+          "Clean up after the merge",
+          "Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first. A request closed without merging, or a stopped run, only has its worktree removed: the branch stays.",
+          DEFAULT_RALPH_SETTINGS.cleanupMergedWorktrees,
+        )}
         {numberInput(
-          "ralph-unmerged-timeout",
-          "Unmerged branch timeout, minutes (unmergedBranchTimeoutMinutes)",
-          "A branch with unmerged commits is deleted after this long without an answer.",
           "unmergedBranchTimeoutMinutes",
-          unmergedTimeout,
-          setUnmergedTimeout,
+          "ralph-unmerged-timeout",
+          "Unmerged branch timeout (minutes)",
+          withDefault(
+            "A branch with unmerged commits is deleted after this long without an answer.",
+            RALPH_DEFAULT_TEXT.unmergedBranchTimeoutMinutes,
+          ),
           MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
           1,
         )}
-      </Group>
+      </SettingsCard>
 
-      <Group title="Ralph › Linear" description="How ralph reads and updates the Linear epic.">
+      <SettingsCard
+        title="Ralph › Linear"
+        description="How Ralph reads and updates the Linear epic."
+        {...card(RALPH_CARDS.linear)}
+      >
         {textInput(
+          "manualLabels",
           "ralph-manual-labels",
           "Manual labels",
-          "Comma-separated. Stories with any of these labels are steps for a person: ralph skips them and waits until they're done. The first one labels the manual stories and follow-ups ralph files.",
-          "manualLabels",
-          manualLabels,
-          setManualLabels,
+          withDefault(
+            "Comma-separated. Stories with any of these labels are steps for a person: Ralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Ralph files.",
+            RALPH_DEFAULT_TEXT.manualLabels,
+          ),
           { placeholder: "manual" },
         )}
-        <Toggle
-          id="ralph-allow-preparation"
-          label="Offer to run preparation (allowPreparation)"
-          description="Ask whether to run a manual story's cyralph-prepare commands (“Run it”). Off, those blocks are plain text."
-          checked={allowPreparation}
-          disabled={pending}
-          onChange={setAllowPreparation}
-        />
+        {switchInput(
+          "allowPreparation",
+          "ralph-allow-preparation",
+          "Offer to run preparation",
+          "Ask whether to run a manual story's cyralph-prepare commands (“Run it”). Off, those blocks are plain text.",
+          DEFAULT_RALPH_SETTINGS.allowPreparation,
+        )}
         {textInput(
-          "ralph-epic-completed-state",
-          "Epic completed state (epicCompletedState)",
-          "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Empty leaves it alone.",
           "epicCompletedState",
-          epicCompletedState,
-          setEpicCompletedState,
+          "ralph-epic-completed-state",
+          "Epic completed state",
+          "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Empty leaves it alone. Default: empty.",
           { placeholder: "In Review" },
         )}
-        <div>
-          <Button type="submit" variant="primary" disabled={pending}>
-            <IconDeviceFloppy size={14} />
-            {pending ? "Saving…" : "Save Ralph settings"}
-          </Button>
-        </div>
-      </Group>
-    </form>
+      </SettingsCard>
+    </>
   );
 }

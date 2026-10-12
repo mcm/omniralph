@@ -59,3 +59,6 @@ inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP sta
 Routes wider than their viewport are always reported; failed captures always exit non-zero.
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
+To capture a state that needs interaction (unsaved changes, an open confirmation), add a
+route with `steps`: `{ action: "fill", selector, value }` or `{ action: "click", selector }`,
+run in order before the screenshot (e.g. `settings-profiles-confirm`).

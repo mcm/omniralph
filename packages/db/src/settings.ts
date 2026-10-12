@@ -67,6 +67,27 @@ export async function listReviewProfiles(
     .orderBy(asc(reviewProfiles.maxTokensPerReview), asc(reviewProfiles.name));
 }
 
+/**
+ * The organization's connected (not disconnected) repositories with their
+ * review profile, by path: who a profile change affects.
+ */
+export async function listProfileRepositories(
+  db: Database,
+  organizationId: string,
+): Promise<{ id: string; fullPath: string; profileId: string }[]> {
+  return db
+    .select({
+      id: repositories.id,
+      fullPath: repositories.fullPath,
+      profileId: repositories.profileId,
+    })
+    .from(repositories)
+    .where(
+      and(eq(repositories.organizationId, organizationId), isNull(repositories.disconnectedAt)),
+    )
+    .orderBy(asc(repositories.fullPath));
+}
+
 export interface ReviewProfileUpdate {
   model: string;
   maxTokensPerReview: number;

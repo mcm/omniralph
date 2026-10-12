@@ -370,3 +370,146 @@ body {
   background: var(--accent-tint);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+
+/* Settings cards (components/settings-card.tsx): one save per card, and the "old → new" list
+   its confirmation shows. */
+.settings-card-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.settings-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.settings-row > * {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.settings-group-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+.settings-mono {
+  font-family: var(--font-mono);
+}
+.settings-inline-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger-fg);
+}
+.settings-changes {
+  margin: var(--space-3) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.settings-change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-change-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+.settings-change-values {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.settings-change-from {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.settings-change-arrow {
+  color: var(--text-secondary);
+}
+.settings-change-to {
+  color: var(--text-primary);
+}
+.settings-affected {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.settings-affected ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.settings-link {
+  color: var(--text-accent);
+}
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.settings-check-center {
+  align-items: center;
+}
+.settings-profile-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+}
+.settings-profile-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.settings-profile-choice[data-selected] {
+  border-color: var(--accent);
+}
+.settings-profile-choice:has(:disabled) {
+  cursor: default;
+}
+.settings-profile-text {
+  min-width: 0;
+}
+.settings-profile-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}

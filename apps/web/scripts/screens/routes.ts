@@ -12,7 +12,15 @@ export interface ScreenRoute {
   page: string;
   /** `signed-out` screens are captured without a session. */
   auth: "signed-in" | "signed-out";
+  /** Interactions before the screenshot, in order (to capture a state, e.g. an open dialog). */
+  steps?: readonly ScreenStep[];
+  /** Screenshot only the viewport (e.g. an open dialog), not the full page. */
+  viewportOnly?: boolean;
 }
+
+/** One interaction: type into a field, or click an element (CSS selectors). */
+export type ScreenStep =
+  { action: "fill"; selector: string; value: string } | { action: "click"; selector: string };
 
 const ids = FIXTURE_IDS;
 /** Built-in definitions: their route segment encodes the colon of `builtin:`. */
@@ -121,6 +129,19 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/repositories/[id]/settings/page.tsx",
     auth: "signed-in",
   },
+  {
+    // A run-affecting card's save asks first, listing the changes.
+    name: "repository-settings-confirm",
+    path: `/repositories/${ids.repositories.controlPanel}/settings`,
+    page: "(app)/repositories/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
+      { action: "fill", selector: "#ralph-setup-command", value: "" },
+      { action: "click", selector: 'form[aria-label="Ralph › Verification"] [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
   { name: "reviews", path: "/reviews", page: "(app)/reviews/page.tsx", auth: "signed-in" },
   {
     name: "review",
@@ -217,6 +238,25 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     path: "/settings/profiles",
     page: "(app)/settings/profiles/page.tsx",
     auth: "signed-in",
+  },
+  {
+    name: "settings-profiles-unsaved",
+    path: "/settings/profiles",
+    page: "(app)/settings/profiles/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "fill", selector: "#profile-standard-max-tokens", value: "150000" }],
+  },
+  {
+    // A profile's save lists the changes and the repositories using it.
+    name: "settings-profiles-confirm",
+    path: "/settings/profiles",
+    page: "(app)/settings/profiles/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#profile-standard-max-tokens", value: "150000" },
+      { action: "click", selector: 'form[aria-label="Standard"] [type="submit"]' },
+    ],
+    viewportOnly: true,
   },
 ];
 
