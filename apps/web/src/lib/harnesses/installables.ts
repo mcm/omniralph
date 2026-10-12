@@ -3,7 +3,7 @@ import { getHarnessOverview, type Database } from "@omniralph/db";
 import { INSTALL_JOB_TYPE, type InstallPayload } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 
-export type InstallInstallableResult =
+export type EnqueueInstallResult =
   { result: "enqueued"; jobId: string; created: boolean } | { result: "unknown_harness" };
 
 /**
@@ -12,11 +12,11 @@ export type InstallInstallableResult =
  * harness, package and version while one is queued or running. Whether the package may
  * be installed is the harness's call (its local `installables.allow`).
  */
-export async function installInstallable(
+export async function enqueueInstall(
   db: Database,
   dispatcher: JobDispatcher,
   input: { organizationId: string; harnessId: string } & InstallPayload,
-): Promise<InstallInstallableResult> {
+): Promise<EnqueueInstallResult> {
   const harness = await getHarnessOverview(db, input.organizationId, input.harnessId);
   if (!harness || harness.revokedAt) return { result: "unknown_harness" };
   const payload: InstallPayload = {

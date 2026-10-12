@@ -49,6 +49,7 @@ export async function POST(req: Request): Promise<Response> {
     update: body.data.update,
     failedVersions: body.data.failedVersions,
     handledUpdateRequestId: body.data.handledUpdateRequestId,
+    installables: body.data.installables,
   });
   if (!agent) return badRequest("unknown_agent");
   const [pinnedRepoIds, poolNames, running, organizationVersion] = await Promise.all([

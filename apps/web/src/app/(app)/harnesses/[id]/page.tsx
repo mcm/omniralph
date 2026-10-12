@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getHarnessOverview, listRecentHarnessAudit, listRepositoryOverview } from "@omniralph/db";
+import {
+  getHarnessOverview,
+  listHarnessInstallJobs,
+  listRecentHarnessAudit,
+  listRepositoryOverview,
+} from "@omniralph/db";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
@@ -8,6 +13,7 @@ import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import type { AuditRow } from "./harness-audit-log";
 import { HarnessDetailView } from "./harness-detail-view";
+import type { InstallJobRow } from "./harness-installables";
 
 export const metadata: Metadata = { title: "Harness · Omniralph" };
 
@@ -15,6 +21,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Number of audit events shown on the page. */
 const AUDIT_LIMIT = 50;
+/** How far back the page lists install jobs. */
+const INSTALL_JOBS_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export default async function HarnessPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,14 +30,16 @@ export default async function HarnessPage({ params }: { params: Promise<{ id: st
   await enterResourceOrganization(await requirePageUser(), "harness", id, `/harnesses/${id}`);
   const admin = await requirePageUser("admin");
   const db = getDb();
-  const [harness, audit, repositories, organizationVersion] = await Promise.all([
+  const now = new Date();
+  const since = new Date(now.getTime() - INSTALL_JOBS_WINDOW_MS);
+  const [harness, audit, repositories, organizationVersion, installJobs] = await Promise.all([
     getHarnessOverview(db, admin.organization.id, id),
     listRecentHarnessAudit(db, id, AUDIT_LIMIT),
     listRepositoryOverview(db, admin.organization.id),
     organizationHarnessVersion(db, admin.organization.id),
+    listHarnessInstallJobs(db, admin.organization.id, id, since),
   ]);
   if (!harness) notFound();
-  const now = new Date();
 
   return (
     <HarnessDetailView
@@ -56,6 +66,16 @@ export default async function HarnessPage({ params }: { params: Promise<{ id: st
         ip: entry.ip,
         detail: entry.detail,
         createdAt: entry.createdAt.toISOString(),
+      }))}
+      installables={harness.reportedInstallables.map(({ name, version }) => ({ name, version }))}
+      installJobs={installJobs.map((job): InstallJobRow => ({
+        id: job.id,
+        status: job.status,
+        name: job.name,
+        version: job.version,
+        installedVersion: job.installedVersion,
+        error: job.error,
+        createdAt: job.createdAt.toISOString(),
       }))}
     />
   );

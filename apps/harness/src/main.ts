@@ -299,6 +299,7 @@ async function runStart(
   // No job runs yet: whatever is left in .worktrees is from a crash.
   await repos.pruneStaleWorktrees();
 
+  const harnessDataDir = dataDir(config, deps.homeDir);
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
@@ -311,11 +312,12 @@ async function runStart(
     rpcs: new SystemRpcRegistry(
       defaultSystemRpcs({
         config,
-        prefix: installablesPrefix(dataDir(config, deps.homeDir)),
+        prefix: installablesPrefix(harnessDataDir),
         installer: deps.installableInstaller ?? npmInstallableInstaller(deps.env),
       }),
     ),
     logger,
+    dataDir: harnessDataDir,
     updater,
   });
   running.daemon = daemon;

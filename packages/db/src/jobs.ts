@@ -559,6 +559,8 @@ export async function recordHarnessHeartbeat(
     failedVersions?: string[];
     /** The update request the agent acted on: cleared when it's still the pending one. */
     handledUpdateRequestId?: string | null;
+    /** The installables installed on the harness; replaces the last report (none clears it). */
+    installables?: { name: string; version: string }[];
     now?: Date;
   },
 ): Promise<typeof harnesses.$inferSelect | null> {
@@ -572,6 +574,7 @@ export async function recordHarnessHeartbeat(
       selfUpdate: input.selfUpdate ?? null,
       updateState: input.update ?? null,
       failedVersions: input.failedVersions ?? [],
+      reportedInstallables: input.installables ?? [],
       ...(handled !== null && {
         updateRequestId: clearIfHandled(harnesses.updateRequestId),
         updateRequestVersion: clearIfHandled(harnesses.updateRequestVersion),

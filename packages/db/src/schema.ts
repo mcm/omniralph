@@ -979,6 +979,11 @@ export const harnesses = pgTable(
     /** Overrides the organization's desired harness version (`app_settings` `harness.desiredVersion`). */
     desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
+    /** The installables installed on the harness, as its last heartbeat reported them. */
+    reportedInstallables: jsonb("reported_installables")
+      .$type<{ name: string; version: string }[]>()
+      .notNull()
+      .default([]),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older harnesses. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The harness's self-update progress, as last reported. */

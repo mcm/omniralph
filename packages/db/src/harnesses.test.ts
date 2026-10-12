@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarnessEnrollment, enrollHarness, revokeHarness } from "./harness-auth.js";
 import {
   getHarnessOverview,
+  listHarnessInstallJobs,
   listHarnessOverview,
   markHarnessDeleted,
   requestHarnessUpdate,
@@ -18,7 +19,7 @@ import { recordHarnessHeartbeat } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import { getResourceOrganizationId } from "./resource-organization.js";
 import { connectRepository, pinRepositoryToHarness } from "./repositories.js";
-import { harnesses, organizations, scmConnections } from "./schema.js";
+import { harnesses, jobs, organizations, scmConnections } from "./schema.js";
 import { filterActiveHarnessIds, listPinnableHarnesses, seedReviewProfiles } from "./settings.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -110,6 +111,78 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(await getResourceOrganizationId(db, "harness", a)).toBeNull();
     const [row] = await db.select().from(harnesses).where(eq(harnesses.id, a));
     expect(row?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("replaces the reported installables with each heartbeat's", async () => {
+    const a = await enroll(orgA, "a-installables");
+    expect((await getHarnessOverview(db, orgA, a))?.reportedInstallables).toEqual([]);
+    const hello = { name: "@omniralph/hello", version: "1.0.0" };
+    const graph = { name: "@omniralph/code-graph", version: "0.3.1" };
+    const heartbeat = (installables?: { name: string; version: string }[]) =>
+      recordHarnessHeartbeat(db, a, { version: "1.0.0", installables });
+    expect((await heartbeat([hello, graph]))?.reportedInstallables).toEqual([hello, graph]);
+    expect((await heartbeat([{ ...hello, version: "1.1.0" }]))?.reportedInstallables).toEqual([
+      { ...hello, version: "1.1.0" },
+    ]);
+    expect((await getHarnessOverview(db, orgA, a))?.reportedInstallables).toEqual([
+      { ...hello, version: "1.1.0" },
+    ]);
+    expect((await heartbeat([]))?.reportedInstallables).toEqual([]);
+    await heartbeat([hello]);
+    // An older harness reports none: nothing is known to be installed.
+    expect((await heartbeat())?.reportedInstallables).toEqual([]);
+  });
+
+  it("lists a harness's recent install jobs, newest first, within its organization", async () => {
+    const a = await enroll(orgA, "a-install-jobs");
+    const other = await enroll(orgA, "a-install-other");
+    const now = new Date("2026-10-12T12:00:00Z");
+    const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+    const job = (values: Partial<typeof jobs.$inferInsert>) => ({
+      organizationId: orgA,
+      type: "install",
+      taskType: "system" as const,
+      targetHarnessId: a,
+      payload: { name: "@omniralph/hello" },
+      ...values,
+    });
+    await db.insert(jobs).values([
+      job({
+        status: "completed",
+        payload: { name: "@omniralph/hello", version: "1.0.0" },
+        result: { name: "@omniralph/hello", version: "1.0.0", changed: true },
+        createdAt: hoursAgo(2),
+        finishedAt: hoursAgo(2),
+      }),
+      job({
+        status: "failed",
+        payload: { name: "@omniralph/graph" },
+        error: "not allowed",
+        createdAt: hoursAgo(1),
+      }),
+      job({ createdAt: hoursAgo(25) }),
+      job({ targetHarnessId: other, createdAt: hoursAgo(1) }),
+      job({ type: "repo.sync", createdAt: hoursAgo(1) }),
+    ]);
+
+    const listed = await listHarnessInstallJobs(db, orgA, a, hoursAgo(24));
+    expect(listed).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        name: "@omniralph/graph",
+        version: null,
+        installedVersion: null,
+        error: "not allowed",
+      }),
+      expect.objectContaining({
+        status: "completed",
+        name: "@omniralph/hello",
+        version: "1.0.0",
+        installedVersion: "1.0.0",
+        error: null,
+      }),
+    ]);
+    expect(await listHarnessInstallJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
   });
 
   it("keeps an update request until the harness reports it handled", async () => {

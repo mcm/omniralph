@@ -390,6 +390,21 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     expect(rows).toEqual([]);
   });
 
+  it("adds reported installables to harnesses, empty by default (0071)", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Installables" }).returning();
+    const { rows } = await db.$client.query<{ reported_installables: unknown }>(
+      `insert into harnesses (organization_id, name) values ($1, 'h') returning reported_installables`,
+      [org!.id],
+    );
+    expect(rows).toEqual([{ reported_installables: [] }]);
+    await expect(
+      db.$client.query(
+        `update harnesses set reported_installables = null where organization_id = $1`,
+        [org!.id],
+      ),
+    ).rejects.toThrow(/not-null/);
+  });
+
   it("drops the capability columns from jobs and harnesses (0057)", async () => {
     const { rows } = await db.$client.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns

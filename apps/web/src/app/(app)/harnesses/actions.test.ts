@@ -576,6 +576,32 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(await claimAll(target.harnessId)).toContain(queued[0]!.id);
     });
 
+    it("stores the installables each heartbeat reports, replacing the last report", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
+      const reported = async () => {
+        const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+        return row!.reportedInstallables;
+      };
+      expect(await reported()).toEqual([]);
+      const hello = { name: "@omniralph/hello", version: "1.0.0" };
+      const graph = { name: "@omniralph/code-graph", version: "0.3.1" };
+      expect(
+        (await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: [hello, graph] })).status,
+      ).toBe(200);
+      expect(await reported()).toEqual([hello, graph]);
+      await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: [graph] });
+      expect(await reported()).toEqual([graph]);
+      await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: [] });
+      expect(await reported()).toEqual([]);
+      // Too many to report: the heartbeat is refused and the last report stays.
+      await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: [hello] });
+      const tooMany = Array.from({ length: 101 }, (_, i) => ({ name: `p${i}`, version: "1.0.0" }));
+      expect(
+        (await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: tooMany })).status,
+      ).toBe(400);
+      expect(await reported()).toEqual([hello]);
+    });
+
     it("defaults to the latest version", async () => {
       const { harnessId } = await enrolledHarness();
       expect(
