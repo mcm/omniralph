@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -32,10 +33,13 @@ import {
 import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { ListPagination } from "@/components/list-pagination";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { JobRow } from "@/lib/harnesses/rows";
-import { formatDateTime } from "@/lib/format-date";
+import { jobIdFromHash, jobListHref, jobPageHref, shortJobId } from "@/lib/jobs/list";
+import { pageRange, totalPages } from "@/lib/pagination";
 import { JOB_STATUS_VARIANTS } from "@/lib/state-variants";
 import { cancelJob } from "./actions";
 
@@ -46,100 +50,129 @@ interface JobsViewProps {
   /** The status filter, or null for all. */
   status: JobStatus | null;
   statuses: JobStatus[];
-  limit: number;
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+  /** Matching jobs across all pages. */
+  total: number;
+  /** The job a `?job=<id>` link opened this page for. */
+  targetJobId: string | null;
 }
-
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 
 export function isCancelable(job: Pick<JobRow, "status" | "cancelRequested">): boolean {
   return job.status === "queued" || (job.status === "running" && !job.cancelRequested);
 }
 
-function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
+function JobStatusBadge({ job }: { job: JobRow }) {
+  return (
+    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
+      {job.status}
+      {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
+    </Badge>
+  );
+}
+
+function JobTableRow({
+  job,
+  isAdmin,
+  targeted,
+}: {
+  job: JobRow;
+  isAdmin: boolean;
+  targeted: boolean;
+}) {
   const { pending, run } = useAction();
   return (
-    // Target of the job links on the Ralph run pages.
-    <TableRow id={`job-${job.id}`}>
+    // Target of the job links on the Ralph run pages and in chat (`#job-<id>`).
+    <TableRow
+      id={`job-${job.id}`}
+      className="job-row"
+      data-targeted={targeted || undefined}
+      aria-current={targeted || undefined}
+    >
       <TableCell>
-        <Badge variant="neutral">{job.taskType}</Badge>
+        <a
+          href={`#job-${job.id}`}
+          className="list-title text-numeric list-nowrap"
+          title={job.id}
+          aria-label={`Job ${job.id}`}
+        >
+          {shortJobId(job.id)}
+        </a>
+        <PhoneMeta>
+          <span className="list-time text-numeric">{job.type}</span>
+          <JobStatusBadge job={job} />
+          <Timestamp iso={job.finishedAt ?? job.createdAt} />
+        </PhoneMeta>
       </TableCell>
-      <TableCell>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-          <span style={{ ...mono, color: "var(--text-primary)" }}>{job.type}</span>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <span className="list-filters">
+            <span className="list-time list-text-primary text-numeric">{job.type}</span>
+            <Badge variant="neutral">{job.taskType}</Badge>
+          </span>
           {job.target &&
             (job.target.url ? (
               <a
                 href={job.target.url}
                 target="_blank"
                 rel="noreferrer"
-                style={{
-                  ...mono,
-                  color: "var(--text-secondary)",
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "var(--space-1)",
-                }}
+                className="list-secondary text-numeric"
+                aria-label={`Open ${job.target.label} on the code host`}
               >
                 {job.target.label}
                 <IconExternalLink size={12} />
               </a>
             ) : (
-              <span style={{ ...mono, color: "var(--text-secondary)" }}>{job.target.label}</span>
+              <span className="list-secondary text-numeric">{job.target.label}</span>
             ))}
         </div>
       </TableCell>
-      <TableCell>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-          <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
-            {job.status}
-            {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
-          </Badge>
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <JobStatusBadge job={job} />
           {job.error && (
-            <Muted title={job.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
+            <Muted title={job.error} className="list-error">
               {job.error.length > 80 ? `${job.error.slice(0, 80)}…` : job.error}
             </Muted>
           )}
         </div>
       </TableCell>
-      <TableCell>
-        <span style={cellText}>{job.deliveryCount}</span>
+      <TableCell className={WIDE_COLUMN} numeric>
+        {job.deliveryCount}
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         {job.agent ? (
           isAdmin ? (
-            <Link
-              href={`/harnesses/${job.agent.id}`}
-              style={{ ...cellText, color: "var(--text-primary)", textDecoration: "none" }}
-            >
+            <Link href={`/harnesses/${job.agent.id}`} className="list-text list-text-primary">
               {job.agent.name}
             </Link>
           ) : (
-            <span style={cellText}>{job.agent.name}</span>
+            <span className="list-text">{job.agent.name}</span>
           )
         ) : (
           <Muted>—</Muted>
         )}
       </TableCell>
-      <TableCell>
-        <span style={cellText}>{formatDateTime(job.createdAt)}</span>
+      <TableCell className={WIDE_COLUMN}>
+        <Timestamp iso={job.createdAt} />
       </TableCell>
-      <TableCell>
-        {job.finishedAt ? (
-          <span style={cellText}>{formatDateTime(job.finishedAt)}</span>
-        ) : (
-          <Muted>—</Muted>
-        )}
+      <TableCell className={WIDE_COLUMN}>
+        {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <Muted>—</Muted>}
       </TableCell>
       {isAdmin && (
-        <TableCell style={{ textAlign: "right" }}>
+        <TableCell className="list-actions">
           {isCancelable(job) && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="ghost" disabled={pending}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending}
+                  aria-label={`Cancel job ${shortJobId(job.id)}`}
+                >
                   <IconX size={14} />
-                  Cancel
+                  <span className="list-label-wide">Cancel</span>
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -169,10 +202,44 @@ function JobTableRow({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
   );
 }
 
-export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
+const subscribeToHash = (onChange: () => void) => {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+};
+
+/** The job of the URL's `#job-<id>` fragment (null on the server). */
+function useHashJobId(): string | null {
+  return React.useSyncExternalStore(
+    subscribeToHash,
+    () => jobIdFromHash(window.location.hash),
+    () => null,
+  );
+}
+
+export function JobsView({
+  jobs,
+  status,
+  statuses,
+  page,
+  pageSize,
+  total,
+  targetJobId,
+}: JobsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const router = useRouter();
   const pathname = usePathname();
+  const hashJobId = useHashJobId();
+  const pageCount = totalPages(total, pageSize);
+  const { first, last } = pageRange(page, pageSize, jobs.length);
+  const targeted = targetJobId ?? hashJobId;
+
+  // A bare `/jobs#job-<id>` link (chat replies) whose job isn't on this page:
+  // reload with `?job=<id>`, which opens the page that holds it.
+  React.useEffect(() => {
+    if (!hashJobId || targetJobId || jobs.some((job) => job.id === hashJobId)) return;
+    if (new URLSearchParams(window.location.search).has("job")) return;
+    router.replace(jobPageHref(hashJobId));
+  }, [hashJobId, targetJobId, jobs, router]);
 
   return (
     <>
@@ -191,27 +258,20 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
 
         <Card>
           <CardHeader>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "var(--space-4)",
-              }}
-            >
+            <div className="list-card-header">
               <div>
-                <CardTitle as="h2">Recent jobs</CardTitle>
-                <CardDescription>The {limit} most recent jobs, newest first.</CardDescription>
+                <CardTitle as="h2">Jobs</CardTitle>
+                <CardDescription>
+                  {total === 0
+                    ? "Newest first."
+                    : `Newest first. Showing ${first}–${last} of ${total.toLocaleString()}.`}
+                </CardDescription>
               </div>
               <NativeSelect
                 aria-label="Filter by status"
                 value={status ?? ""}
                 onChange={(e) =>
-                  router.push(
-                    e.target.value
-                      ? `${pathname}?status=${encodeURIComponent(e.target.value)}`
-                      : pathname,
-                  )
+                  router.push(jobListHref(pathname, { status: e.target.value || null, page: 1 }))
                 }
               >
                 <option value="">All statuses</option>
@@ -223,35 +283,53 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
               </NativeSelect>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="list-card-content">
             {jobs.length === 0 ? (
               <Empty
                 icon={<IconListCheck size={24} />}
-                title={status ? `No ${status} jobs` : "No jobs yet"}
+                title={
+                  total > 0 ? "No jobs on this page" : status ? `No ${status} jobs` : "No jobs yet"
+                }
                 titleAs="h3"
-                description="Jobs appear here when reviews are triggered or repositories are pinned."
+                description={
+                  total > 0
+                    ? "The page is past the last one."
+                    : "Jobs appear here when reviews are triggered or repositories are pinned."
+                }
               />
             ) : (
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Task type</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Deliveries</TableHead>
-                    <TableHead>Harness</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Finished</TableHead>
+                    <TableHead>Job</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Type</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
+                    <TableHead className={WIDE_COLUMN} numeric>
+                      Deliveries
+                    </TableHead>
+                    <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Created</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Finished</TableHead>
                     {isAdmin && <TableHead aria-label="Actions" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {jobs.map((job) => (
-                    <JobTableRow key={job.id} job={job} isAdmin={isAdmin} />
+                    <JobTableRow
+                      key={job.id}
+                      job={job}
+                      isAdmin={isAdmin}
+                      targeted={job.id === targeted}
+                    />
                   ))}
                 </TableBody>
               </Table>
             )}
+            <ListPagination
+              page={page}
+              pageCount={pageCount}
+              hrefFor={(p) => jobListHref(pathname, { status, page: p })}
+            />
           </CardContent>
         </Card>
       </main>

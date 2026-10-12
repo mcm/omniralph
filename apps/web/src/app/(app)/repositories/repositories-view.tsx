@@ -31,6 +31,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Empty,
   Field,
   InlineCode,
@@ -47,17 +52,19 @@ import {
 import {
   IconBrandGithub,
   IconBrandGitlab,
+  IconDotsVertical,
   IconExternalLink,
+  IconGavel,
   IconGitPullRequest,
   IconPlugConnected,
   IconHistory,
-  IconListCheck,
   IconSettings,
   IconTrash,
   IconUnlink,
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
@@ -124,10 +131,6 @@ export function ProviderIcon({
       style={{ color: "var(--text-secondary)", flexShrink: 0 }}
     />
   );
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 // ── Connect GitLab ───────────────────────────────────────────────────────────
@@ -221,30 +224,106 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
 
 // ── Repository row ───────────────────────────────────────────────────────────
 
+function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: boolean }) {
+  const { pending, run } = useAction();
+  const host = repo.provider === "github" ? "GitHub" : "GitLab";
+  const [confirming, setConfirming] = React.useState(false);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={pending}
+            aria-label={`Actions for ${repo.fullPath}`}
+            title="Actions"
+          >
+            <IconDotsVertical size={14} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <Link href={`/repositories/${repo.id}/reviews`}>
+              <IconHistory size={14} />
+              Reviews
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={`/repositories/${repo.id}/rules`}>
+              <IconGavel size={14} />
+              Rules
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={`/repositories/${repo.id}/settings`}>
+              <IconSettings size={14} />
+              Settings
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <a href={repo.webUrl} target="_blank" rel="noreferrer">
+              <IconExternalLink size={14} />
+              Open on {host}
+            </a>
+          </DropdownMenuItem>
+          {isAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="danger" onSelect={() => setConfirming(true)}>
+                <IconUnlink size={14} />
+                Disconnect…
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {isAdmin && (
+        <AlertDialog open={confirming} onOpenChange={setConfirming}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Disconnect {repo.fullPath}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Reviews stop and its agent pins are removed
+                {repo.provider === "gitlab" ? ", and its GitLab webhook is deleted" : ""}. Its
+                review history is kept, and you can connect it again later.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="danger"
+                onClick={() =>
+                  run(() => disconnectRepository(repo.id), `Disconnected ${repo.fullPath}`)
+                }
+              >
+                Disconnect
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
+  );
+}
+
 function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: boolean }) {
   const { pending, run } = useAction();
+  const host = repo.provider === "github" ? "GitHub" : "GitLab";
   return (
     <TableRow>
-      <TableCell>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}>
-          <ProviderIcon provider={repo.provider} />
-          <a
-            href={repo.webUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--text-sm)",
-              color: "var(--text-primary)",
-              textDecoration: "none",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {repo.fullPath}
-          </a>
-        </div>
+      <TableCell className="list-col-main">
+        <Link href={`/repositories/${repo.id}/reviews`} className="list-title">
+          <ProviderIcon provider={repo.provider} size={14} />
+          <span className="list-title-text list-title-fill text-numeric">{repo.fullPath}</span>
+        </Link>
+        <PhoneMeta>
+          {repo.lastReviewAt ? (
+            <Timestamp iso={repo.lastReviewAt} />
+          ) : (
+            <span className="list-time">Never reviewed</span>
+          )}
+        </PhoneMeta>
       </TableCell>
       <TableCell>
         {isAdmin ? (
@@ -265,12 +344,12 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
           </Badge>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <Badge variant="neutral">{repo.profileName}</Badge>
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         {repo.pinnedHarnesses.length > 0 ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+          <div className="list-filters">
             {repo.pinnedHarnesses.map((agent) => (
               <Badge key={agent.id} variant="info">
                 {agent.name}
@@ -281,86 +360,18 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
           <Muted>Any agent</Muted>
         )}
       </TableCell>
-      <TableCell>
-        {repo.lastReviewAt ? (
-          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
-            {formatDateTime(repo.lastReviewAt)}
-          </span>
-        ) : (
-          <Muted>Never</Muted>
-        )}
+      <TableCell className={WIDE_COLUMN}>
+        {repo.lastReviewAt ? <Timestamp iso={repo.lastReviewAt} /> : <Muted>Never</Muted>}
       </TableCell>
-      <TableCell style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={`Reviews of ${repo.fullPath}`}
-          title={`Reviews of ${repo.fullPath}`}
-        >
-          <Link href={`/repositories/${repo.id}/reviews`}>
-            <IconHistory size={14} />
-          </Link>
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={`Rules of ${repo.fullPath}`}
-          title={`Rules of ${repo.fullPath}`}
-        >
-          <Link href={`/repositories/${repo.id}/rules`}>
-            <IconListCheck size={14} />
-          </Link>
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={`Settings for ${repo.fullPath}`}
-          title={`Settings for ${repo.fullPath}`}
-        >
-          <Link href={`/repositories/${repo.id}/settings`}>
-            <IconSettings size={14} />
-          </Link>
-        </Button>
-        {isAdmin && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={pending}
-                aria-label={`Disconnect ${repo.fullPath}`}
-                title={`Disconnect ${repo.fullPath}`}
-                style={{ color: "var(--danger-fg)" }}
-              >
-                <IconUnlink size={14} />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Disconnect {repo.fullPath}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Reviews stop and its agent pins are removed
-                  {repo.provider === "gitlab" ? ", and its GitLab webhook is deleted" : ""}. Its
-                  review history is kept, and you can connect it again later.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="danger"
-                  onClick={() =>
-                    run(() => disconnectRepository(repo.id), `Disconnected ${repo.fullPath}`)
-                  }
-                >
-                  Disconnect
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+      <TableCell className="list-actions">
+        <div className="list-actions-group">
+          <ExternalRowLink
+            href={repo.webUrl}
+            label={`Open ${repo.fullPath} on ${host}`}
+            className="list-label-wide"
+          />
+          <RepositoryActions repo={repo} isAdmin={isAdmin} />
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -583,14 +594,14 @@ export function RepositoriesView({
                 }
               />
             ) : (
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Repository</TableHead>
                     <TableHead>Reviews</TableHead>
-                    <TableHead>Profile</TableHead>
-                    <TableHead>Pinned harnesses</TableHead>
-                    <TableHead>Last review</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Profile</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Last review</TableHead>
                     <TableHead aria-label="Actions" />
                   </TableRow>
                 </TableHeader>

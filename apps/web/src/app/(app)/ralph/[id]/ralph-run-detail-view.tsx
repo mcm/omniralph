@@ -48,8 +48,8 @@ import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge, RalphStoryStatusBadge } from "@/components/ralph-badges";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
+import { jobPageHref, shortJobId } from "@/lib/jobs/list";
 import {
-  jobHref,
   linearIssueUrl,
   RALPH_MESSAGE_STATE_LABELS,
   roundsLabel,
@@ -243,10 +243,10 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
             <TableCell>
               {story.lastJobId ? (
                 <Link
-                  href={jobHref(story.lastJobId)}
+                  href={jobPageHref(story.lastJobId)}
                   style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
                 >
-                  {story.lastJobId.slice(0, 8)}
+                  {shortJobId(story.lastJobId)}
                 </Link>
               ) : (
                 <Muted>—</Muted>
@@ -385,7 +385,7 @@ const textCell: React.CSSProperties = {
 function JobLink({ id, label }: { id: string; label: string }) {
   return (
     <Link
-      href={jobHref(id)}
+      href={jobPageHref(id)}
       style={{ ...mono, color: "var(--text-accent)", textDecoration: "none" }}
     >
       {label}
@@ -570,7 +570,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                 <TableRow key={job.id}>
                   <TableCell>
                     <Link
-                      href={jobHref(job.id)}
+                      href={jobPageHref(job.id)}
                       style={{ ...mono, color: "var(--text-primary)", textDecoration: "none" }}
                     >
                       {job.type}

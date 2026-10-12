@@ -44,7 +44,7 @@ import {
   IconBulb,
   IconDeviceFloppy,
   IconExternalLink,
-  IconListCheck,
+  IconGavel,
   IconPencil,
   IconPlus,
   IconTrash,
@@ -432,7 +432,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
             {custom.length === 0 ? (
               <Empty
                 titleAs="h3"
-                icon={<IconListCheck size={24} />}
+                icon={<IconGavel size={24} />}
                 title="No custom rules"
                 description={
                   isAdmin
