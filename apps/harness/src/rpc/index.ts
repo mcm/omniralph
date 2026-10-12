@@ -1,5 +1,6 @@
 import type { JobPayload, SystemRpcName } from "@omniralph/shared";
 import type { JobContext, JobOutput } from "../capabilities/index.js";
+import { installRpc, type InstallRpcOptions } from "./install.js";
 import { repoSyncRpc } from "./repo-sync.js";
 import { worktreeCleanupRpc } from "./worktree-cleanup.js";
 import { worktreeExecRpc } from "./worktree-exec.js";
@@ -41,7 +42,16 @@ export class SystemRpcRegistry {
   }
 }
 
-/** The system RPCs this build of the harness ships. */
-export function defaultSystemRpcs(): SystemRpc[] {
-  return [repoSyncRpc, worktreeExecRpc, worktreeCleanupRpc];
+/**
+ * The system RPCs this build of the harness ships. `install` needs the local
+ * config and the installables prefix: without them it isn't registered (and
+ * an `install` job fails as an unknown RPC).
+ */
+export function defaultSystemRpcs(install?: InstallRpcOptions): SystemRpc[] {
+  return [
+    repoSyncRpc,
+    worktreeExecRpc,
+    worktreeCleanupRpc,
+    ...(install ? [installRpc(install)] : []),
+  ];
 }
