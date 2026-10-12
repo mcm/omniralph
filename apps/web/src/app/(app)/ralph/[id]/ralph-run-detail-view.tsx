@@ -280,7 +280,8 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
           {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : "—"}
           {" · "}
           {lane.repository.provider === "gitlab" ? "Merge request" : "Pull request"}{" "}
-          <PullRequestLink pullRequest={lane.pullRequest} />
+          {/* Not <PullRequestLink>: its empty state is a <p>, invalid inside this <p>. */}
+          {lane.pullRequest ? <PullRequestLink pullRequest={lane.pullRequest} /> : "—"}
           {" · "}
           {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
           {" · "}
