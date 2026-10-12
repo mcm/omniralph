@@ -6,12 +6,8 @@ import {
   type ChatTasks,
   type Database,
 } from "@omniralph/db";
-import {
-  BUILTIN_TASKS,
-  getBuiltinTask,
-  type TaskDefinition,
-  type TaskType,
-} from "@omniralph/tasks";
+import type { TaskDefinition, TaskType } from "@omniralph/tasks";
+import type { TaskDefinitionFilter } from "@/lib/definitions";
 
 /**
  * The tasks chat runs: "ask about code" (`askAboutCode`, a query task) and
@@ -32,6 +28,15 @@ export const CHAT_TASK_TYPES: Record<ChatTaskRole, TaskType> = {
   startWork: "coding",
 };
 
+/**
+ * What each chat task's pickers offer (`listTaskChoices`): the organization's
+ * tasks, built-in or its own, of the role's type accepting `chat.request`.
+ */
+export const CHAT_TASK_FILTERS: Record<ChatTaskRole, TaskDefinitionFilter> = {
+  askAboutCode: { taskType: CHAT_TASK_TYPES.askAboutCode, trigger: "chat.request" },
+  startWork: { taskType: CHAT_TASK_TYPES.startWork, trigger: "chat.request" },
+};
+
 export const CHAT_TASK_LABELS: Record<ChatTaskRole, string> = {
   askAboutCode: "Ask about code",
   startWork: "Start work",
@@ -47,11 +52,12 @@ export type ChatTaskChoiceResult =
 /**
  * Whether `taskId` can be the chat task `role` runs: a known task of the
  * role's type (`CHAT_TASK_TYPES`) whose triggers include `chat.request`.
+ * `getTask` resolves it, e.g. from the organization's definitions.
  */
 export function validateChatTaskChoice(
   role: ChatTaskRole,
   taskId: string,
-  getTask: (id: string) => TaskDefinition | null = getBuiltinTask,
+  getTask: (id: string) => TaskDefinition | null,
 ): ChatTaskChoiceResult {
   const task = getTask(taskId);
   const label = CHAT_TASK_LABELS[role];
@@ -72,14 +78,6 @@ export function validateChatTaskChoice(
     };
   }
   return { ok: true, task };
-}
-
-/** The tasks `role` can run: those passing `validateChatTaskChoice`. */
-export function chatTaskChoices(
-  role: ChatTaskRole,
-  tasks: readonly TaskDefinition[] = BUILTIN_TASKS,
-): TaskDefinition[] {
-  return tasks.filter((task) => validateChatTaskChoice(role, task.id, () => task).ok);
 }
 
 /**

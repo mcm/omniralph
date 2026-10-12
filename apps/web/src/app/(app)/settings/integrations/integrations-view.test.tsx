@@ -32,8 +32,8 @@ const SERVER: DiscordServer = {
 let chatTasks: ChatTasksSettings = {
   defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
   choices: {
-    askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code" }],
-    startWork: [{ id: "builtin:handle-request", name: "Handle a request" }],
+    askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code", builtin: true }],
+    startWork: [{ id: "builtin:handle-request", name: "Handle a request", builtin: true }],
   },
   connections: [],
 };
@@ -143,5 +143,73 @@ describe("IntegrationsView › Chat tasks", () => {
     expect(html).toContain("Slack channel ID");
     expect(html).toContain("Discord channel ID");
     expect(html).toContain("No channel runs different tasks.");
+  });
+});
+
+describe("IntegrationsView › Chat tasks › custom tasks", () => {
+  const QUERY = "11111111-1111-4111-8111-111111111111";
+  const CODING = "22222222-2222-4222-8222-222222222222";
+
+  /** The `<select>` with `id` and its options (up to its end). */
+  const select = (html: string, id: string) => {
+    const start = html.search(new RegExp(`<select[^>]*id="${id}"`));
+    expect(start).toBeGreaterThan(-1);
+    return html.slice(start, html.indexOf("</select>", start));
+  };
+
+  it("lists the organization's own tasks in every picker, selected where chosen", () => {
+    chatTasks = {
+      defaults: { askAboutCode: QUERY, startWork: "builtin:handle-request" },
+      choices: {
+        askAboutCode: [
+          { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
+          { id: QUERY, name: "Security Q and A", builtin: false },
+        ],
+        startWork: [
+          { id: "builtin:handle-request", name: "Handle a request", builtin: true },
+          { id: CODING, name: "Hotfix", builtin: false },
+        ],
+      },
+      connections: [
+        {
+          id: "conn-1",
+          name: "Acme Slack",
+          platform: "slack",
+          channels: [
+            { channelId: "slack:C0OPS", channel: "C0OPS", askAboutCode: null, startWork: CODING },
+          ],
+        },
+      ],
+    };
+    const html = chatTasksSection(render([], true));
+    const pickers = [
+      "chat-task-askAboutCode",
+      "chat-task-startWork",
+      "chat-channel-conn-1-C0OPS-askAboutCode",
+      "chat-channel-conn-1-C0OPS-startWork",
+      "chat-channel-conn-1-askAboutCode",
+      "chat-channel-conn-1-startWork",
+    ];
+    for (const id of pickers) {
+      const options = select(html, id);
+      if (id.endsWith("askAboutCode")) {
+        expect(options).toContain("Ask about code (built-in)");
+        expect(options).toContain(`value="${QUERY}"`);
+        expect(options).toContain(">Security Q and A<");
+        expect(options).not.toContain(CODING);
+      } else {
+        expect(options).toContain("Handle a request (built-in)");
+        expect(options).toContain(`value="${CODING}"`);
+        expect(options).toContain(">Hotfix<");
+        expect(options).not.toContain(QUERY);
+      }
+      expect(options).not.toContain("(unavailable)");
+    }
+    expect(select(html, "chat-task-askAboutCode")).toMatch(
+      new RegExp(`<option value="${QUERY}" selected="">`),
+    );
+    expect(select(html, "chat-channel-conn-1-C0OPS-startWork")).toMatch(
+      new RegExp(`<option value="${CODING}" selected="">`),
+    );
   });
 });

@@ -21,6 +21,7 @@ import {
   type ChatTaskRole,
 } from "@/lib/chat/tasks";
 import { getDb } from "@/lib/db";
+import { organizationDefinitions } from "@/lib/definitions";
 import { revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 
 /**
@@ -113,8 +114,16 @@ export async function disconnectDiscord(connectionId: string): Promise<ActionRes
 /** A chat task choice per role; null (for a channel) keeps the organization's. */
 type ChatTaskInput<T> = Record<ChatTaskRole, T>;
 
-/** Field errors of the chat task choices that don't pass `validateChatTaskChoice`. */
-function chatTaskErrors(input: unknown, optional: boolean): Record<string, string> {
+/**
+ * Field errors of the chat task choices that don't pass `validateChatTaskChoice`
+ * against the organization's tasks (built-in or its own).
+ */
+async function chatTaskErrors(
+  organizationId: string,
+  input: unknown,
+  optional: boolean,
+): Promise<Record<string, string>> {
+  const definitions = organizationDefinitions(getDb(), organizationId);
   const choices = (typeof input === "object" && input !== null ? input : {}) as Partial<
     ChatTaskInput<unknown>
   >;
@@ -126,7 +135,8 @@ function chatTaskErrors(input: unknown, optional: boolean): Record<string, strin
       errors[role] = "Choose a task.";
       continue;
     }
-    const result = validateChatTaskChoice(role, taskId);
+    const task = await definitions.getTask(taskId);
+    const result = validateChatTaskChoice(role, taskId, () => task);
     if (!result.ok) errors[role] = result.error;
   }
   return errors;
@@ -139,11 +149,11 @@ function invalidChatTasks(fieldErrors: Record<string, string>): ActionResult | n
 
 /**
  * Sets the tasks chat's "ask about code" and "start work" run for the active organization
- * (unless a channel overrides them); each must pass `validateChatTaskChoice`.
+ * (unless a channel overrides them); each must pass `validateChatTaskChoice` among its tasks.
  */
 export async function saveChatTaskDefaults(input: ChatTaskInput<string>): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
-    const invalid = invalidChatTasks(chatTaskErrors(input, false));
+    const invalid = invalidChatTasks(await chatTaskErrors(admin.organization.id, input, false));
     if (invalid) return invalid;
     await setChatTaskDefaults(
       getDb(),
@@ -158,7 +168,7 @@ export async function saveChatTaskDefaults(input: ChatTaskInput<string>): Promis
 /**
  * Sets the tasks a channel of one of the active organization's chat connections runs
  * (`channel`: the ID the platform shows), overriding the organization's; null keeps its
- * choice. Each chosen task must pass `validateChatTaskChoice`.
+ * choice. Each chosen task must pass `validateChatTaskChoice` among its tasks.
  */
 export async function saveChatChannelTasks(
   connectionId: string,
@@ -181,7 +191,7 @@ export async function saveChatChannelTasks(
           : "Enter a Discord channel ID, like 123456789012345678 (Copy Channel ID).";
       return { ok: false, error, fieldErrors: { channel: error } };
     }
-    const invalid = invalidChatTasks(chatTaskErrors(input, true));
+    const invalid = invalidChatTasks(await chatTaskErrors(organizationId, input, true));
     if (invalid) return invalid;
     if (input.askAboutCode === null && input.startWork === null) {
       return { ok: false, error: "Choose a task for the channel to run." };
