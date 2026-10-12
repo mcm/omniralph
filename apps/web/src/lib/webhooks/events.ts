@@ -113,25 +113,33 @@ export function parseGitLabEvent(
   };
 }
 
-/** A PR/MR that was merged (GitHub `pull_request` closed + merged, GitLab MR `merge`). */
-export interface MergeEvent {
+/**
+ * A PR/MR that was closed, merged or not (GitHub `pull_request` `closed`,
+ * GitLab MR `merge` or `close`).
+ */
+export interface ClosedEvent {
   number: number;
+  merged: boolean;
 }
 
-const GitHubMergedEvent = z.object({
+const GitHubClosedEvent = z.object({
   action: z.literal("closed"),
   pull_request: z.object({ number: z.number().int().positive(), merged: z.boolean().nullish() }),
 });
 
-/** The merge of a GitHub delivery (`X-GitHub-Event: pull_request`), or null. */
-export function parseGitHubMergeEvent(eventName: string | null, body: unknown): MergeEvent | null {
+/** The closing (or merge) of a GitHub delivery (`X-GitHub-Event: pull_request`), or null. */
+export function parseGitHubClosedEvent(
+  eventName: string | null,
+  body: unknown,
+): ClosedEvent | null {
   if (eventName !== "pull_request") return null;
-  const parsed = GitHubMergedEvent.safeParse(body);
-  if (!parsed.success || parsed.data.pull_request.merged !== true) return null;
-  return { number: parsed.data.pull_request.number };
+  const parsed = GitHubClosedEvent.safeParse(body);
+  if (!parsed.success) return null;
+  const pr = parsed.data.pull_request;
+  return { number: pr.number, merged: pr.merged === true };
 }
 
-const GitLabMergedEvent = z.object({
+const GitLabClosedEvent = z.object({
   object_kind: z.literal("merge_request"),
   object_attributes: z.object({
     iid: z.number().int().positive(),
@@ -140,14 +148,20 @@ const GitLabMergedEvent = z.object({
   }),
 });
 
-/** The merge of a GitLab delivery (`X-Gitlab-Event: Merge Request Hook`), or null. */
-export function parseGitLabMergeEvent(eventName: string | null, body: unknown): MergeEvent | null {
+/** The closing (or merge) of a GitLab delivery (`X-Gitlab-Event: Merge Request Hook`), or null. */
+export function parseGitLabClosedEvent(
+  eventName: string | null,
+  body: unknown,
+): ClosedEvent | null {
   if (eventName !== "Merge Request Hook") return null;
-  const parsed = GitLabMergedEvent.safeParse(body);
+  const parsed = GitLabClosedEvent.safeParse(body);
   if (!parsed.success) return null;
   const mr = parsed.data.object_attributes;
-  if (mr.action !== "merge" && !(mr.action === undefined && mr.state === "merged")) return null;
-  return { number: mr.iid };
+  // Older GitLab versions send no action: the state says it.
+  const action =
+    mr.action ?? (mr.state === "merged" ? "merge" : mr.state === "closed" ? "close" : undefined);
+  if (action !== "merge" && action !== "close") return null;
+  return { number: mr.iid, merged: action === "merge" };
 }
 
 /**

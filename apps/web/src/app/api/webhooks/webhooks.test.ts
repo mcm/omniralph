@@ -391,8 +391,10 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
 
     it("ignores other events and actions", async () => {
       const number = ++prCounter;
+      // A closed PR is only acted on when it's a ralph run's.
+      const closed = await github(githubRequest(githubPayload("closed", { number })));
+      expect(await closed.json()).toEqual({ status: "ignored", reason: "not_ralph" });
       for (const [event, action] of [
-        ["pull_request", "closed"],
         ["pull_request", "edited"],
         ["pull_request", "converted_to_draft"],
         ["issue_comment", "created"],

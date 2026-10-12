@@ -66,7 +66,7 @@ import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
-import { answerCleanup } from "./cleanup";
+import { answerCleanup, cleanUpStoppedRun, dropKeepBranchCleanups } from "./cleanup";
 import { applyGuidance, freshAttempts, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { answerPermission } from "./permissions";
@@ -370,6 +370,8 @@ export type StopRunResult =
  * (`JobDispatcher.cancel`; a running job through its heartbeat), its running
  * stories go back to pending and the open preparation question is dropped.
  * The session is told (by `authorName`, when given). Guidance resumes it later.
+ * Each lane's worktree is then cleaned up keeping its local branch
+ * (`cleanUpStoppedRun`), once the canceled jobs are through.
  */
 export async function stopRun(
   deps: RalphDeps,
@@ -432,17 +434,21 @@ export async function stopRun(
       .join(" "),
   };
   await postActivity(conversationFor(run, deps), content);
+  await cleanUpStoppedRun(deps, run.id);
   return { status: "stopped", canceled };
 }
 
 /**
  * A stopped run asked to work again becomes `pending` (advancing it decides
- * what's next). Not while another run of the issue (or chat thread) is
- * unfinished (it was delegated again): null.
+ * what's next; its next job recreates a removed worktree from the kept
+ * branch, and its keep-branch cleanups that haven't started are dropped).
+ * Not while another run of the issue (or chat thread) is unfinished (it was
+ * delegated again): null.
  */
 async function resume(tx: RalphTransaction, run: RalphRun): Promise<RalphRun | null> {
   const other = await getActiveRunOfSameOrigin(tx, run);
   if (other && other.id !== run.id) return null;
+  await dropKeepBranchCleanups(tx, run.id);
   return updateRun(tx, run.id, { status: "pending", error: null });
 }
 

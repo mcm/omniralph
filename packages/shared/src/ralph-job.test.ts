@@ -90,6 +90,18 @@ describe("ralph jobs", () => {
       RalphCleanupPayload.safeParse({ ...cleanup, action: { kind: "cleanup", mergedSha: "head" } })
         .success,
     ).toBe(false);
+    // The keep-branch form (a PR/MR closed unmerged, a stopped run) has no merged head.
+    expect(
+      RalphCleanupPayload.parse({ ...cleanup, action: { kind: "cleanup", keepBranch: true } })
+        .action,
+    ).toEqual({ kind: "cleanup", keepBranch: true, stashes: [] });
+    for (const action of [
+      { kind: "cleanup" },
+      { kind: "cleanup", keepBranch: true, mergedSha: sha },
+      { kind: "cleanup", keepBranch: false, mergedSha: sha },
+    ]) {
+      expect(RalphCleanupPayload.safeParse({ ...cleanup, action }).success).toBe(false);
+    }
     expect(RalphCleanupResult.parse({ durationMs: 1 })).toEqual({
       error: null,
       removedWorktree: false,

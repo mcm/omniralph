@@ -14,6 +14,7 @@ import {
   repositories,
   runMigrations,
   claimJob,
+  updateLane,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   webhookDeliveries,
@@ -437,10 +438,13 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
         adapterFor: () => scm.asAdapter(),
         linear: async () => linear,
       });
+    // A close event for a PR the code host still has open (e.g. reopened since) does nothing.
     expect(await (await webhook(closed(false))).json()).toEqual({
-      status: "ignored",
-      reason: "unsupported_event",
+      status: "accepted",
+      event: "closed",
     });
+    expect(await cleanupJobs(second.run.id)).toEqual([]);
+    expect((await lane(second.run)).prClosed).toBe(false);
     merge(number);
     const delivery = randomUUID();
     expect(await (await webhook(closed(true, delivery))).json()).toEqual({
@@ -456,10 +460,171 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(await cleanupJobs(second.run.id)).toHaveLength(1);
   });
 
-  it("keeps the worktree only when the PR was closed unmerged or the repository opted out", async () => {
+  /** The PR/MR's close (or merge) webhook from `provider` (the repository is moved to it). */
+  async function closedWebhook(
+    provider: "github" | "gitlab",
+    number: number,
+    merged: boolean,
+    delivery = randomUUID(),
+  ) {
+    const req =
+      provider === "github"
+        ? new Request("http://localhost/api/webhooks/github", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-github-event": "pull_request",
+              "x-github-delivery": delivery,
+            },
+            body: JSON.stringify({
+              action: "closed",
+              installation: { id: 1 },
+              repository: { id: 1, full_name: "acme/api" },
+              pull_request: { number, merged },
+            }),
+          })
+        : new Request("http://localhost/api/webhooks/gitlab", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-gitlab-event": "Merge Request Hook",
+              "x-gitlab-event-uuid": delivery,
+              "x-gitlab-token": "secret",
+            },
+            body: JSON.stringify({
+              object_kind: "merge_request",
+              project: { id: 1, path_with_namespace: "acme/api" },
+              object_attributes: {
+                iid: number,
+                action: merged ? "merge" : "close",
+                state: merged ? "merged" : "closed",
+              },
+            }),
+          });
+    const response = await handleWebhook(provider, req, {
+      db,
+      dispatcher,
+      adapterFor: () => scm.asAdapter(),
+      linear: async () => linear,
+    });
+    return response.json();
+  }
+
+  it.each(["github", "gitlab"] as const)(
+    "removes the worktree but keeps the branch once the PR/MR is closed unmerged (%s webhook)",
+    async (provider) => {
+      await db.update(repositories).set({ provider }).where(eq(repositories.id, repoId));
+      try {
+        const { run, branch, epicId } = await epicWithPullRequest();
+        const request = scm.changeRequests.at(-1)!;
+        request.state = "closed";
+        const delivery = randomUUID();
+        expect(await closedWebhook(provider, request.number, false, delivery)).toEqual({
+          status: "accepted",
+          event: "closed",
+        });
+        const [job, ...more] = await cleanupJobs(run.id);
+        expect(more).toEqual([]);
+        expect(job).toMatchObject({
+          type: "worktree.cleanup",
+          taskType: "system",
+          targetHarnessId: agentA,
+          dedupeKey: cleanupDedupeKey((await lane(run)).id),
+        });
+        expect(actionOf(job!)).toEqual({ kind: "cleanup", keepBranch: true, stashes: [] });
+        expect(await lane(run)).toMatchObject({
+          prClosed: true,
+          prMerged: false,
+          cleanup: { status: "running", keepBranch: "closed", mergedSha: null, jobId: job!.id },
+        });
+        expect(cleanupLabel((await lane(run)).cleanup)).toBe("Closed: cleaning up");
+        // A redelivery (or another close event) of a PR/MR known closed does nothing.
+        expect(await closedWebhook(provider, request.number, false, delivery)).toEqual({
+          status: "ignored",
+          reason: "not_ralph",
+        });
+
+        // Whatever the harness found, nothing is asked: the branch and the stash stay.
+        const stash = sha(90);
+        await finish(
+          await start(run.id, "worktree.cleanup"),
+          cleanupResult({
+            stashed: stash,
+            stashes: [{ sha: stash, label: "omniralph ralph x cleanup", date: "2026-10-11" }],
+          }),
+        );
+        const term = provider === "github" ? "pull request" : "merge request";
+        expect(responses(run).at(-1)).toBe(
+          `The ${term} ${request.url} was closed without merging, so I removed its worktree. The branch \`${branch}\` stays, here and on origin. Its uncommitted changes are stashed (\`${stash.slice(0, 10)}\`).`,
+        );
+        expect(selects(run)).toEqual([]);
+        expect(await lane(run)).toMatchObject({
+          cleanup: { status: "done", keepBranch: "closed", questions: [] },
+          stashes: [{ sha: stash, reason: "cleanup" }],
+        });
+        expect(cleanupLabel((await lane(run)).cleanup)).toBe("Closed: cleaned up (branch kept)");
+
+        // Another close event, the issue moving to done or the cron: nothing more.
+        await closedWebhook(provider, request.number, false);
+        await issueDone(epicId);
+        expect(await reconcileCleanup(deps())).toMatchObject({ started: 0, failed: 0 });
+        expect(await cleanupJobs(run.id)).toHaveLength(1);
+      } finally {
+        await db
+          .update(repositories)
+          .set({ provider: "github" })
+          .where(eq(repositories.id, repoId));
+      }
+    },
+  );
+
+  it("starts the keep-branch cleanup when the cron sees the PR closed, waits for an active job, and retries a failure", async () => {
+    const { run } = await epicWithPullRequest();
+    // A reply reopens the run: its request job may still use the worktree.
+    await reply(run, "Please also update the README");
+    scm.changeRequests.at(-1)!.state = "closed";
+    await reconcileCleanup(deps());
+    expect(await cleanupJobs(run.id)).toEqual([]);
+    expect((await lane(run)).cleanup).toMatchObject({ status: "pending", keepBranch: "closed" });
+    expect(cleanupLabel((await lane(run)).cleanup)).toBe(
+      "Closed: cleanup waits for the run's current job",
+    );
+
+    await finish(await start(run.id, "ralph.request"), requestResult());
+    expect(await cleanupJobs(run.id)).toHaveLength(1);
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ error: "disk full" }));
+    expect((await lane(run)).cleanup).toMatchObject({ status: "failed", keepBranch: "closed" });
+    await reconcileCleanup(deps());
+    const [, again] = await cleanupJobs(run.id);
+    expect(actionOf(again!)).toEqual({ kind: "cleanup", keepBranch: true, stashes: [] });
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
+    expect((await lane(run)).cleanup).toMatchObject({ status: "done", keepBranch: "closed" });
+  });
+
+  it("cleans up merged after a closed PR was reopened and merged", async () => {
+    const { run } = await epicWithPullRequest();
+    scm.changeRequests.at(-1)!.state = "closed";
+    await reconcileCleanup(deps());
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
+    expect((await lane(run)).cleanup).toMatchObject({ status: "done", keepBranch: "closed" });
+
+    // Reopened (followed up again) and merged: the merge cleanup deletes the branch.
+    await updateLane(db, (await lane(run)).id, { prClosed: false, prMerged: false });
+    merge();
+    await reconcileCleanup(deps());
+    const [, merged] = await cleanupJobs(run.id);
+    expect(actionOf(merged!)).toEqual({ kind: "cleanup", mergedSha: sha(1), stashes: [] });
+    await finish(await start(run.id, "worktree.cleanup"), cleanupResult());
+    expect((await lane(run)).cleanup).toMatchObject({ status: "done", mergedSha: sha(1) });
+    expect((await lane(run)).cleanup?.keepBranch).toBeUndefined();
+  });
+
+  it("keeps the worktree when the repository opted out, whether the PR merged or closed", async () => {
+    await ralphOn({ cleanupMergedWorktrees: false });
     const closed = await epicWithPullRequest();
     scm.changeRequests.at(-1)!.state = "closed";
     await reconcileCleanup(deps());
+    await closedWebhook("github", scm.changeRequests.at(-1)!.number, false);
     expect(await cleanupJobs(closed.run.id)).toEqual([]);
     expect(await lane(closed.run)).toMatchObject({
       prClosed: true,
@@ -467,7 +632,6 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       cleanup: null,
     });
 
-    await ralphOn({ cleanupMergedWorktrees: false });
     const off = await epicWithPullRequest();
     merge();
     await issueDone(off.epicId);
