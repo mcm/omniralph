@@ -27,6 +27,7 @@ import {
   IconRobot,
   IconServer,
   IconServerCog,
+  IconSubtask,
 } from "@tabler/icons-react";
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
@@ -44,6 +45,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   analytics: IconChartBar,
   organization: IconBuildingCommunity,
   agents: IconRobot,
+  tasks: IconSubtask,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
   harnessSettings: IconServerCog,

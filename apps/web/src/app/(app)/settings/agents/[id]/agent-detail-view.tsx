@@ -30,10 +30,14 @@ import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
 import {
   agentEditHref,
   BuiltinBadge,
+  Fact,
   ModelName,
   mono,
+  NameList,
   pageMain,
   pageTitle,
+  preBlock,
+  stack,
   TaskTypeBadges,
 } from "../agent-parts";
 
@@ -50,42 +54,6 @@ interface AgentDetailViewProps {
   builtin: boolean;
   tasks: AgentTask[];
   isAdmin: boolean;
-}
-
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;
-const factLabel = { fontSize: "var(--text-xs)", color: "var(--text-tertiary)" } as const;
-const preBlock = {
-  ...mono,
-  margin: 0,
-  padding: "var(--space-3)",
-  background: "var(--bg-raised)",
-  borderRadius: "var(--radius-sm)",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  maxHeight: 480,
-  overflowY: "auto",
-} as const;
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-      <span style={factLabel}>{label}</span>
-      <div style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>{children}</div>
-    </div>
-  );
-}
-
-function NameList({ names }: { names: string[] }) {
-  if (names.length === 0) return <Muted>None</Muted>;
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
-      {names.map((name) => (
-        <Badge key={name} variant="outline">
-          {name}
-        </Badge>
-      ))}
-    </div>
-  );
 }
 
 function Documents({ documents, empty }: { documents: NamedContent[]; empty: string }) {

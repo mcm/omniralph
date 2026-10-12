@@ -4,9 +4,15 @@
  * `@omniralph/tasks` schemas when it resolves one. Every helper is scoped to
  * one organization: a row of another organization is never read or written.
  */
-import { and, asc, eq } from "drizzle-orm";
+import { and, arrayContains, asc, eq, or } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { agentDefinitions, taskDefinitions } from "./schema.js";
+import {
+  agentDefinitions,
+  chatChannelTaskSettings,
+  chatConnections,
+  repositories,
+  taskDefinitions,
+} from "./schema.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -198,4 +204,92 @@ export async function deleteTaskDefinition(
     .where(and(eq(taskDefinitions.organizationId, organizationId), eq(taskDefinitions.id, id)))
     .returning({ id: taskDefinitions.id });
   return rows.length > 0;
+}
+
+/** A repository of the organization whose settings name a task. */
+export interface RepositoryTaskReference {
+  id: string;
+  fullPath: string;
+  /** The task is one of its review tasks. */
+  reviewTask: boolean;
+  /** The task is its correlation task. */
+  correlationTask: boolean;
+}
+
+/** The organization's repositories whose review tasks or correlation task include task `taskId`, by path. */
+export async function listRepositoryTaskReferences(
+  db: Queryable,
+  organizationId: string,
+  taskId: string,
+): Promise<RepositoryTaskReference[]> {
+  const rows = await db
+    .select({
+      id: repositories.id,
+      fullPath: repositories.fullPath,
+      reviewTaskIds: repositories.reviewTaskIds,
+      correlationTaskId: repositories.correlationTaskId,
+    })
+    .from(repositories)
+    .where(
+      and(
+        eq(repositories.organizationId, organizationId),
+        or(
+          arrayContains(repositories.reviewTaskIds, [taskId]),
+          eq(repositories.correlationTaskId, taskId),
+        ),
+      ),
+    )
+    .orderBy(asc(repositories.fullPath), asc(repositories.id));
+  return rows.map((row) => ({
+    id: row.id,
+    fullPath: row.fullPath,
+    reviewTask: row.reviewTaskIds.includes(taskId),
+    correlationTask: row.correlationTaskId === taskId,
+  }));
+}
+
+/** A chat channel override (`chat_channel_task_settings`) of the organization naming a task. */
+export interface ChatChannelTaskReference {
+  connectionId: string;
+  connectionName: string;
+  channelId: string;
+  /** The task is the channel's "ask about code" task. */
+  askAboutCode: boolean;
+  /** The task is the channel's "start work" task. */
+  startWork: boolean;
+}
+
+/** The organization's chat channel overrides that run task `taskId`, by connection then channel. */
+export async function listChatChannelTaskReferences(
+  db: Queryable,
+  organizationId: string,
+  taskId: string,
+): Promise<ChatChannelTaskReference[]> {
+  const rows = await db
+    .select({
+      connectionId: chatChannelTaskSettings.connectionId,
+      connectionName: chatConnections.name,
+      channelId: chatChannelTaskSettings.channelId,
+      askAboutCodeTaskId: chatChannelTaskSettings.askAboutCodeTaskId,
+      startWorkTaskId: chatChannelTaskSettings.startWorkTaskId,
+    })
+    .from(chatChannelTaskSettings)
+    .innerJoin(chatConnections, eq(chatConnections.id, chatChannelTaskSettings.connectionId))
+    .where(
+      and(
+        eq(chatChannelTaskSettings.organizationId, organizationId),
+        or(
+          eq(chatChannelTaskSettings.askAboutCodeTaskId, taskId),
+          eq(chatChannelTaskSettings.startWorkTaskId, taskId),
+        ),
+      ),
+    )
+    .orderBy(asc(chatConnections.name), asc(chatChannelTaskSettings.channelId));
+  return rows.map((row) => ({
+    connectionId: row.connectionId,
+    connectionName: row.connectionName,
+    channelId: row.channelId,
+    askAboutCode: row.askAboutCodeTaskId === taskId,
+    startWork: row.startWorkTaskId === taskId,
+  }));
 }
