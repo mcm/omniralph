@@ -39,6 +39,7 @@ import {
 import type { AnalyticsRepositoryRef } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
 import {
   ANALYTICS_RANGES,
@@ -191,6 +192,7 @@ function RalphSection({
       size="sm"
       icon={<IconRepeat size={20} />}
       title="No ralph runs"
+      titleAs="h4"
       description="No ralph runs started in this period."
     />
   );
@@ -246,7 +248,7 @@ function RalphSection({
       <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
         <Card ribbon style={{ minWidth: 0 }}>
           <CardHeader>
-            <CardTitle>Ralph tokens per day</CardTitle>
+            <CardTitle as="h3">Ralph tokens per day</CardTitle>
             <CardDescription>
               {period}, ralph jobs next to reviews (tokens in + out)
             </CardDescription>
@@ -272,7 +274,7 @@ function RalphSection({
         </Card>
         <Card style={{ minWidth: 0 }}>
           <CardHeader>
-            <CardTitle>Runs per day</CardTitle>
+            <CardTitle as="h3">Runs per day</CardTitle>
             <CardDescription>{period}, runs started by their status</CardDescription>
           </CardHeader>
           <CardContent>
@@ -300,7 +302,7 @@ function RalphSection({
 
       <Card style={{ minWidth: 0 }}>
         <CardHeader>
-          <CardTitle>Story outcomes per day</CardTitle>
+          <CardTitle as="h3">Story outcomes per day</CardTitle>
           <CardDescription>{period}, stories of the runs started each day</CardDescription>
         </CardHeader>
         <CardContent>
@@ -328,7 +330,7 @@ function RalphSection({
       <div style={grid("repeat(2, minmax(0, 1fr))")}>
         <Card style={{ minWidth: 0 }}>
           <CardHeader>
-            <CardTitle>Story outcomes</CardTitle>
+            <CardTitle as="h3">Story outcomes</CardTitle>
             <CardDescription>Stories of the runs started in the period</CardDescription>
           </CardHeader>
           <CardContent>
@@ -347,7 +349,7 @@ function RalphSection({
         </Card>
         <Card style={{ minWidth: 0 }}>
           <CardHeader>
-            <CardTitle>Runs by status</CardTitle>
+            <CardTitle as="h3">Runs by status</CardTitle>
             <CardDescription>{ralph.totals.runs.toLocaleString()} runs</CardDescription>
           </CardHeader>
           <CardContent>
@@ -406,59 +408,42 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           gap: "var(--space-6)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "var(--space-4)",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-              }}
-            >
-              Analytics
-            </h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Token usage, review quality and ralph runs for {scope}, by UTC day.
-            </Muted>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              aria-label="Time range"
-              value={String(params.days)}
-              onValueChange={(value) => {
-                if (value) setFilter({ days: Number(value) as AnalyticsParams["days"] });
-              }}
-            >
-              {ANALYTICS_RANGES.map((days) => (
-                <ToggleGroupItem key={days} value={String(days)} aria-label={`Last ${days} days`}>
-                  {days}d
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <NativeSelect
-              aria-label="Filter by repository"
-              value={params.repositoryId ?? ""}
-              onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
-            >
-              <option value="">All repositories</option>
-              {repositories.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.fullPath}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-        </div>
+        <PageHeader
+          title="Analytics"
+          description={`Token usage, review quality and ralph runs for ${scope}, by UTC day.`}
+          actions={
+            <>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                aria-label="Time range"
+                value={String(params.days)}
+                onValueChange={(value) => {
+                  if (value) setFilter({ days: Number(value) as AnalyticsParams["days"] });
+                }}
+              >
+                {ANALYTICS_RANGES.map((days) => (
+                  <ToggleGroupItem key={days} value={String(days)} aria-label={`Last ${days} days`}>
+                    {days}d
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              <NativeSelect
+                aria-label="Filter by repository"
+                value={params.repositoryId ?? ""}
+                onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
+              >
+                <option value="">All repositories</option>
+                {repositories.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.fullPath}
+                  </option>
+                ))}
+              </NativeSelect>
+            </>
+          }
+        />
 
         <div style={grid("repeat(4, minmax(0, 1fr))")}>
           <StatCard
@@ -490,7 +475,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
         <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
           <Card ribbon style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Tokens per day</CardTitle>
+              <CardTitle as="h2">Tokens per day</CardTitle>
               <CardDescription>{period}, input and output stacked</CardDescription>
             </CardHeader>
             <CardContent>
@@ -511,7 +496,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Reviews per day</CardTitle>
+              <CardTitle as="h2">Reviews per day</CardTitle>
               <CardDescription>{period}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -530,14 +515,19 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
         <div style={grid("repeat(3, minmax(0, 1fr))")}>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Average tokens per review</CardTitle>
+              <CardTitle as="h2">Average tokens per review</CardTitle>
               <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
             </CardHeader>
             <CardContent
               style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
             >
               {profiles.length === 0 ? (
-                <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" />
+                <Empty
+                  size="sm"
+                  icon={<IconChartBar size={20} />}
+                  title="No reviews"
+                  titleAs="h3"
+                />
               ) : (
                 <>
                   <ChartContainer>
@@ -587,7 +577,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Reviews by status</CardTitle>
+              <CardTitle as="h2">Reviews by status</CardTitle>
               <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
             </CardHeader>
             <CardContent>
@@ -602,7 +592,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Findings by severity</CardTitle>
+              <CardTitle as="h2">Findings by severity</CardTitle>
               <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
             </CardHeader>
             <CardContent>
@@ -620,7 +610,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
         <div style={grid("minmax(0, 3fr) minmax(0, 2fr)")}>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Dismissal rate per repository</CardTitle>
+              <CardTitle as="h2">Dismissal rate per repository</CardTitle>
               <CardDescription>
                 Dismissed findings out of all findings (superseded ones excluded). A high rate
                 points to a noisy repository: check its learned rules and profile.
@@ -632,6 +622,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                   size="sm"
                   icon={<IconThumbDown size={20} />}
                   title="No findings"
+                  titleAs="h3"
                   description={noReviews ? "No reviews in this period." : undefined}
                 />
               ) : (
@@ -688,12 +679,12 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
           <Card style={{ minWidth: 0 }}>
             <CardHeader>
-              <CardTitle>Jobs per agent</CardTitle>
+              <CardTitle as="h2">Jobs per agent</CardTitle>
               <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
             </CardHeader>
             <CardContent>
               {analytics.jobsByHarness.length === 0 ? (
-                <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" />
+                <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
               ) : (
                 <Table>
                   <TableHeader>

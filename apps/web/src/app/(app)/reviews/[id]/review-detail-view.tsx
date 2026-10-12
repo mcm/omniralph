@@ -33,6 +33,7 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import {
   FindingStatusBadge,
   ReviewStatusBadge,
@@ -158,6 +159,7 @@ function FileCard({ file }: { file: FileFindings }) {
     <Card>
       <CardHeader>
         <CardTitle
+          as="h3"
           style={{
             ...mono,
             fontSize: "var(--text-sm)",
@@ -219,31 +221,14 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontFamily: "var(--font-mono)" }}>{changeLabel}</span>
-              <span>{review.prTitle ?? "Untitled"}</span>
-            </h1>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                marginTop: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
+        <PageHeader
+          title={
+            <>
+              <span className="text-numeric">{changeLabel}</span> {review.prTitle ?? "Untitled"}
+            </>
+          }
+          meta={
+            <>
               <Link
                 href={`/repositories/${review.repository.id}/reviews`}
                 style={{
@@ -260,23 +245,25 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               </Link>
               <ReviewStatusBadge status={review.status} />
               <TriggerBadge trigger={review.trigger} />
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
-            <Button asChild variant="ghost">
-              <a href={review.prUrl} target="_blank" rel="noreferrer">
-                <IconExternalLink size={14} />
-                Open {review.repository.provider === "gitlab" ? "merge" : "pull"} request
-              </a>
-            </Button>
-            <RerunReviewDialog reviewId={review.id} changeLabel={changeLabel} />
-          </div>
-        </div>
+            </>
+          }
+          actions={
+            <>
+              <Button asChild variant="ghost">
+                <a href={review.prUrl} target="_blank" rel="noreferrer">
+                  <IconExternalLink size={14} />
+                  Open {review.repository.provider === "gitlab" ? "merge" : "pull"} request
+                </a>
+              </Button>
+              <RerunReviewDialog reviewId={review.id} changeLabel={changeLabel} />
+            </>
+          }
+        />
 
         {review.status === "failed" && (
           <Alert variant="danger">
             <IconAlertTriangle size={16} />
-            <AlertTitle>The review failed</AlertTitle>
+            <AlertTitle as="h2">The review failed</AlertTitle>
             <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {review.error ?? "No error was recorded."}
             </AlertDescription>
@@ -284,13 +271,13 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
         )}
         {review.status === "skipped" && review.error && (
           <Alert variant="info">
-            <AlertTitle>The review was skipped</AlertTitle>
+            <AlertTitle as="h2">The review was skipped</AlertTitle>
             <AlertDescription>{review.error}</AlertDescription>
           </Alert>
         )}
         {review.status === "budget_exhausted" && (
           <Alert variant="warning">
-            <AlertTitle>Token budget exhausted</AlertTitle>
+            <AlertTitle as="h2">Token budget exhausted</AlertTitle>
             <AlertDescription>
               The review stopped at its token cap; the findings below are partial.
             </AlertDescription>
@@ -299,7 +286,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Review</CardTitle>
+            <CardTitle as="h2">Review</CardTitle>
             <CardDescription>
               Started {formatDateTime(review.createdAt)}
               {active
@@ -375,7 +362,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
         {review.skippedFiles.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Skipped files</CardTitle>
+              <CardTitle as="h2">Skipped files</CardTitle>
               <CardDescription>
                 {review.skippedFiles.length} file
                 {review.skippedFiles.length === 1 ? " was" : "s were"} not reviewed.
@@ -432,6 +419,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
             <Card>
               <CardContent>
                 <Empty
+                  titleAs="h3"
                   icon={active ? <IconHistory size={24} /> : <IconChecks size={24} />}
                   title={active ? "Not finished yet" : "No findings"}
                   description={

@@ -26,13 +26,14 @@ import {
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import {
   createAgentDefinition,
   updateAgentDefinition,
   type AgentDefinitionFields,
 } from "./actions";
-import { agentHref, pageMain, pageTitle } from "./agent-parts";
+import { agentHref, pageMain } from "./agent-parts";
 import { Choices, errorFor, monoInput, splitNames } from "./form-parts";
 
 /** The agent being edited (its definition without the ID), or null to create one. */
@@ -214,18 +215,15 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
     <>
       <AppHeader breadcrumbs={breadcrumbs} />
       <main style={pageMain}>
-        <div>
-          <h1 style={pageTitle}>{title}</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            An agent is the persona tasks run on. Changes apply to the next run of every task using
-            it.
-          </Muted>
-        </div>
+        <PageHeader
+          title={title}
+          description="An agent is the persona tasks run on. Changes apply to the next run of every task using it."
+        />
         <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-6)" }}>
           {errors.form && <p style={{ margin: 0, color: "var(--danger-fg)" }}>{errors.form}</p>}
           <Card>
             <CardHeader>
-              <CardTitle>Overview</CardTitle>
+              <CardTitle as="h2">Overview</CardTitle>
             </CardHeader>
             <CardContent style={stack}>
               <Field label="Name" htmlFor="agent-name" error={errors.name} required>
@@ -302,7 +300,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>System prompt</CardTitle>
+              <CardTitle as="h2">System prompt</CardTitle>
             </CardHeader>
             <CardContent style={stack}>
               <Field
@@ -340,7 +338,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Tools</CardTitle>
+              <CardTitle as="h2">Tools</CardTitle>
               <CardDescription>
                 What the agent wants; a task&apos;s type and tool settings narrow it further.
               </CardDescription>
@@ -410,7 +408,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Skills</CardTitle>
+              <CardTitle as="h2">Skills</CardTitle>
               <CardDescription>
                 Instructions the agent loads when a task calls for them.
               </CardDescription>
@@ -429,7 +427,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Reference docs</CardTitle>
+              <CardTitle as="h2">Reference docs</CardTitle>
               <CardDescription>Documents the agent can read during a run.</CardDescription>
             </CardHeader>
             <CardContent>

@@ -127,7 +127,7 @@ export function EnrollHarnessDialog() {
             </DialogHeader>
             <DialogBody style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
               <Alert variant="warning">
-                <AlertTitle>Shown once</AlertTitle>
+                <AlertTitle as="h3">Shown once</AlertTitle>
                 <AlertDescription>
                   Copy it now: only its hash is stored, so it can&apos;t be shown again. Treat it
                   like a password.

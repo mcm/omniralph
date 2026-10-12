@@ -37,6 +37,7 @@ import type {
   TokenBudget,
 } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
 import { cloneTaskDefinition, deleteTaskDefinition } from "../actions";
@@ -47,7 +48,6 @@ import {
   mono,
   NameList,
   pageMain,
-  pageTitle,
   preBlock,
   stack,
 } from "../../agents/agent-parts";
@@ -199,7 +199,7 @@ function AdminActions({
   };
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+    <>
       <Button variant="outline" disabled={pending} onClick={clone}>
         <IconCopy size={14} />
         Clone
@@ -247,7 +247,7 @@ function AdminActions({
           </AlertDialog>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -266,38 +266,29 @@ export function TaskDetailView({
         breadcrumbs={[{ label: "Tasks", href: "/settings/tasks" }, { label: task.name }]}
       />
       <main style={pageMain}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: "var(--space-4)",
-          }}
-        >
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <h1 style={pageTitle}>{task.name}</h1>
+        <PageHeader
+          title={task.name}
+          description={task.description || undefined}
+          meta={
+            <>
               {builtin && <BuiltinBadge />}
-            </div>
-            <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
-            {task.description && (
-              <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-                {task.description}
-              </Muted>
-            )}
-          </div>
-          {isAdmin && (
-            <AdminActions
-              task={task}
-              builtin={builtin}
-              inUse={Object.values(referrers).some((list) => list.length > 0)}
-            />
-          )}
-        </div>
+              <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
+            </>
+          }
+          actions={
+            isAdmin && (
+              <AdminActions
+                task={task}
+                builtin={builtin}
+                inUse={Object.values(referrers).some((list) => list.length > 0)}
+              />
+            )
+          }
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle>Overview</CardTitle>
+            <CardTitle as="h2">Overview</CardTitle>
           </CardHeader>
           <CardContent style={factGrid}>
             <Fact label="Task type">{TASK_TYPE_LABELS[task.taskType]}</Fact>
@@ -326,7 +317,7 @@ export function TaskDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Prompt template</CardTitle>
+            <CardTitle as="h2">Prompt template</CardTitle>
             <CardDescription>
               Rendered with the trigger&apos;s variables for each run.
             </CardDescription>
@@ -352,7 +343,7 @@ export function TaskDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Commands</CardTitle>
+            <CardTitle as="h2">Commands</CardTitle>
             <CardDescription>
               Setup runs before the session (its output becomes setup.&lt;name&gt;); teardown runs
               after it, whatever happened.
@@ -370,7 +361,7 @@ export function TaskDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Tool settings</CardTitle>
+            <CardTitle as="h2">Tool settings</CardTitle>
             <CardDescription>Narrow the tools the agent wants.</CardDescription>
           </CardHeader>
           <CardContent style={factGrid}>
@@ -389,7 +380,7 @@ export function TaskDetailView({
         {task.taskType === "query" && (
           <Card>
             <CardHeader>
-              <CardTitle>Output schema</CardTitle>
+              <CardTitle as="h2">Output schema</CardTitle>
               <CardDescription>
                 The JSON schema the session&apos;s output must match.
               </CardDescription>
@@ -407,7 +398,7 @@ export function TaskDetailView({
         {task.taskType === "coding" && (
           <Card>
             <CardHeader>
-              <CardTitle>Coding</CardTitle>
+              <CardTitle as="h2">Coding</CardTitle>
               <CardDescription>How a coding run pushes, opens its PR and retries.</CardDescription>
             </CardHeader>
             <CardContent style={factGrid}>
@@ -444,7 +435,7 @@ export function TaskDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Requirements</CardTitle>
+            <CardTitle as="h2">Requirements</CardTitle>
             <CardDescription>
               What a run needs from the harness that claims it; only capable harnesses are offered
               it.
@@ -469,7 +460,7 @@ export function TaskDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Used by</CardTitle>
+            <CardTitle as="h2">Used by</CardTitle>
             <CardDescription>
               Repository and chat settings, and coding tasks writing their PR description with it.
             </CardDescription>

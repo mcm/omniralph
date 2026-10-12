@@ -109,6 +109,7 @@ export function HarnessHostTools({
       <Empty
         icon={<IconTool size={24} />}
         title="No host tools"
+        titleAs="h3"
         description="Add the tools harness owners install by hand in Settings › Harness defaults."
       />
     );

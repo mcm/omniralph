@@ -44,6 +44,7 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge, RalphStoryStatusBadge } from "@/components/ralph-badges";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
@@ -139,7 +140,7 @@ function WaitingOn({ run }: { run: RalphRunDetail }) {
   return (
     <Alert variant="warning">
       <IconClockPause size={16} />
-      <AlertTitle>Waiting</AlertTitle>
+      <AlertTitle as="h2">Waiting</AlertTitle>
       <AlertDescription style={stack}>
         {waitingOn.blockers.length > 0 && (
           <div style={stack}>
@@ -272,7 +273,7 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <ProviderIcon provider={lane.repository.provider} />
           <span style={{ ...mono, fontSize: "var(--text-sm)" }}>{lane.repository.fullPath}</span>
           {lane.main && run.lanes.length > 1 ? <Badge variant="neutral">Main</Badge> : null}
@@ -311,7 +312,7 @@ function ElsewhereCard({ run }: { run: RalphRunDetail }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Not in a repository here</CardTitle>
+        <CardTitle as="h2">Not in a repository here</CardTitle>
         <CardDescription>
           Treated like manual steps: nothing is run for them, and stories that depend on them wait
           until a person finishes them.
@@ -346,7 +347,7 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stories</CardTitle>
+        <CardTitle as="h2">Stories</CardTitle>
         <CardDescription>
           {run.storyCounts.completed} of {run.storyCounts.total} done, in sub-issue order.
         </CardDescription>
@@ -356,6 +357,7 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
           <Empty
             icon={<IconListCheck size={24} />}
             title="No stories yet"
+            titleAs="h3"
             description="Stories appear once the run has loaded the epic from Linear."
           />
         ) : (
@@ -397,7 +399,7 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Pending requests</CardTitle>
+        <CardTitle as="h2">Pending requests</CardTitle>
         <CardDescription>
           Requests from Linear, review findings, <InlineCode>@bot</InlineCode> comments and failed
           CI that the run hasn&apos;t handled yet. They run as request jobs when no story runs.
@@ -409,6 +411,7 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
             size="sm"
             icon={<IconInbox size={24} />}
             title="No pending requests"
+            titleAs="h3"
             description="Every request has been handled."
           />
         ) : (
@@ -459,7 +462,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Messages</CardTitle>
+        <CardTitle as="h2">Messages</CardTitle>
         <CardDescription>
           Replies passed to the agent that was working at the time, through its heartbeat, newest
           first (the latest {run.messageLimit}).
@@ -471,6 +474,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
             size="sm"
             icon={<IconMessages size={24} />}
             title="No messages"
+            titleAs="h3"
             description="Replies sent while a story or request runs appear here."
           />
         ) : (
@@ -538,7 +542,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Jobs</CardTitle>
+        <CardTitle as="h2">Jobs</CardTitle>
         <CardDescription>Every job of the run, newest first.</CardDescription>
       </CardHeader>
       <CardContent>
@@ -546,6 +550,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
           <Empty
             icon={<IconListCheck size={24} />}
             title="No jobs yet"
+            titleAs="h3"
             description="Jobs appear when the run enqueues a story, preparation or PR description."
           />
         ) : (
@@ -636,31 +641,15 @@ export function RalphRunDetailView({
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontFamily: "var(--font-mono)" }}>{runSourceLabel(run)}</span>
-              {run.linearTitle && <span>{run.linearTitle}</span>}
-            </h1>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                marginTop: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
+        <PageHeader
+          title={
+            <>
+              <span className="text-numeric">{runSourceLabel(run)}</span>
+              {run.linearTitle && <> {run.linearTitle}</>}
+            </>
+          }
+          meta={
+            <>
               <span
                 style={{
                   ...mono,
@@ -681,21 +670,19 @@ export function RalphRunDetailView({
               </span>
               <RalphRunStatusBadge status={run.status} />
               <Badge variant="neutral">{run.kind}</Badge>
-            </div>
-          </div>
-          {isAdmin && stoppable && (
-            <div style={{ flexShrink: 0 }}>
-              <StopRunButton run={run} />
-            </div>
-          )}
-        </div>
+            </>
+          }
+          actions={isAdmin && stoppable && <StopRunButton run={run} />}
+        />
 
         {!linearConnected && <LinearNotConnected isAdmin={isAdmin} />}
 
         {run.error && (
           <Alert variant="danger">
             <IconAlertTriangle size={16} />
-            <AlertTitle>{run.status === "waiting" ? "The PR/MR step failed" : "Error"}</AlertTitle>
+            <AlertTitle as="h2">
+              {run.status === "waiting" ? "The PR/MR step failed" : "Error"}
+            </AlertTitle>
             <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {run.error}
             </AlertDescription>
@@ -706,7 +693,7 @@ export function RalphRunDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Run</CardTitle>
+            <CardTitle as="h2">Run</CardTitle>
             <CardDescription>
               Started {formatDateTime(run.createdAt)}, last updated {formatDateTime(run.updatedAt)}.
             </CardDescription>
@@ -756,7 +743,7 @@ export function RalphRunDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Guidance</CardTitle>
+            <CardTitle as="h2">Guidance</CardTitle>
             <CardDescription>
               Replies in the agent session, applied to the next story attempts (the latest ten).
             </CardDescription>
@@ -767,6 +754,7 @@ export function RalphRunDetailView({
                 size="sm"
                 icon={<IconMessage size={24} />}
                 title="No guidance"
+                titleAs="h3"
                 description="Reply in the Linear agent session to steer the run."
               />
             ) : (
@@ -792,7 +780,7 @@ export function RalphRunDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Progress log</CardTitle>
+            <CardTitle as="h2">Progress log</CardTitle>
             <CardDescription>Appended to after every finished story.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -803,6 +791,7 @@ export function RalphRunDetailView({
                 size="sm"
                 icon={<IconNotes size={24} />}
                 title="Nothing logged yet"
+                titleAs="h3"
                 description="The log starts with the first finished story."
               />
             )}

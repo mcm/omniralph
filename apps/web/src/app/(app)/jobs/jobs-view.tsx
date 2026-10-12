@@ -32,6 +32,7 @@ import {
 import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { JobRow } from "@/lib/harnesses/rows";
 import { formatDateTime } from "@/lib/format-date";
@@ -186,12 +187,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Jobs</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Queued, running and finished jobs of every type.
-          </Muted>
-        </div>
+        <PageHeader title="Jobs" description="Queued, running and finished jobs of every type." />
 
         <Card>
           <CardHeader>
@@ -204,7 +200,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
               }}
             >
               <div>
-                <CardTitle>Recent jobs</CardTitle>
+                <CardTitle as="h2">Recent jobs</CardTitle>
                 <CardDescription>The {limit} most recent jobs, newest first.</CardDescription>
               </div>
               <NativeSelect
@@ -232,6 +228,7 @@ export function JobsView({ jobs, status, statuses, limit }: JobsViewProps) {
               <Empty
                 icon={<IconListCheck size={24} />}
                 title={status ? `No ${status} jobs` : "No jobs yet"}
+                titleAs="h3"
                 description="Jobs appear here when reviews are triggered or repositories are pinned."
               />
             ) : (

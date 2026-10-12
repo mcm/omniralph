@@ -20,6 +20,7 @@ import {
 import { IconServer } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { formatRelative } from "@/lib/format-date";
 import {
@@ -112,21 +113,21 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Harnesses</h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+        <PageHeader
+          title="Harnesses"
+          description={
+            <>
               Hosts running <InlineCode>omniralph-harness</InlineCode>. Their concurrency, accepted
               task types, pool limits and pinned repositories are configured here and reach them
               with their next heartbeat.
-            </Muted>
-          </div>
-          {isAdmin && <EnrollHarnessDialog />}
-        </div>
+            </>
+          }
+          actions={isAdmin && <EnrollHarnessDialog />}
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle>Fleet</CardTitle>
+            <CardTitle as="h2">Fleet</CardTitle>
             <CardDescription>
               A harness is online while its last heartbeat is less than 60 seconds old.
             </CardDescription>
@@ -136,6 +137,7 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
               <Empty
                 icon={<IconServer size={24} />}
                 title="No harnesses yet"
+                titleAs="h3"
                 description={
                   isAdmin
                     ? "Enroll a harness on a Coder instance to start running jobs."

@@ -25,6 +25,7 @@ import {
 import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
 import type { AgentDefinition, NamedContent, TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
 import {
@@ -35,7 +36,6 @@ import {
   mono,
   NameList,
   pageMain,
-  pageTitle,
   preBlock,
   stack,
   TaskTypeBadges,
@@ -91,7 +91,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
   };
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+    <>
       <Button variant="outline" disabled={pending} onClick={clone}>
         <IconCopy size={14} />
         Clone
@@ -139,7 +139,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
           </AlertDialog>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -150,32 +150,21 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
         breadcrumbs={[{ label: "Agents", href: "/settings/agents" }, { label: agent.name }]}
       />
       <main style={pageMain}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: "var(--space-4)",
-          }}
-        >
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <h1 style={pageTitle}>{agent.name}</h1>
+        <PageHeader
+          title={agent.name}
+          description={agent.description || undefined}
+          meta={
+            <>
               {builtin && <BuiltinBadge />}
-            </div>
-            <span style={{ ...mono, color: "var(--text-secondary)" }}>{agent.id}</span>
-            {agent.description && (
-              <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-                {agent.description}
-              </Muted>
-            )}
-          </div>
-          {isAdmin && <AdminActions agent={agent} builtin={builtin} tasks={tasks} />}
-        </div>
+              <span style={{ ...mono, color: "var(--text-secondary)" }}>{agent.id}</span>
+            </>
+          }
+          actions={isAdmin && <AdminActions agent={agent} builtin={builtin} tasks={tasks} />}
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle>Overview</CardTitle>
+            <CardTitle as="h2">Overview</CardTitle>
           </CardHeader>
           <CardContent
             style={{
@@ -202,7 +191,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
 
         <Card>
           <CardHeader>
-            <CardTitle>System prompt</CardTitle>
+            <CardTitle as="h2">System prompt</CardTitle>
             <CardDescription>
               {agent.systemPromptMode === "replace"
                 ? "Replaces the Claude Code system prompt."
@@ -220,7 +209,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
 
         <Card>
           <CardHeader>
-            <CardTitle>Tools</CardTitle>
+            <CardTitle as="h2">Tools</CardTitle>
             <CardDescription>
               What the agent wants; a task&apos;s type and tool settings narrow it further.
             </CardDescription>
@@ -243,7 +232,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
 
         <Card>
           <CardHeader>
-            <CardTitle>Skills</CardTitle>
+            <CardTitle as="h2">Skills</CardTitle>
           </CardHeader>
           <CardContent>
             <Documents documents={agent.skills} empty="No skills." />
@@ -252,7 +241,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
 
         <Card>
           <CardHeader>
-            <CardTitle>Reference docs</CardTitle>
+            <CardTitle as="h2">Reference docs</CardTitle>
           </CardHeader>
           <CardContent>
             <Documents documents={agent.referenceDocs} empty="No reference docs." />
@@ -261,7 +250,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
 
         <Card>
           <CardHeader>
-            <CardTitle>Used by</CardTitle>
+            <CardTitle as="h2">Used by</CardTitle>
             <CardDescription>Tasks that run on this agent.</CardDescription>
           </CardHeader>
           <CardContent style={stack}>

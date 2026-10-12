@@ -31,6 +31,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconDoorExit, IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { isRole, type Role } from "@/lib/auth/roles";
 import { formatDateTime } from "@/lib/format-date";
@@ -193,7 +194,7 @@ function GeneralCard({ name, isAdmin }: { name: string; isAdmin: boolean }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>General</CardTitle>
+        <CardTitle as="h2">General</CardTitle>
         <CardDescription>The organization&apos;s name, shown to its members.</CardDescription>
       </CardHeader>
       <CardContent>
@@ -313,7 +314,7 @@ function MembersCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Members</CardTitle>
+        <CardTitle as="h2">Members</CardTitle>
         <CardDescription>
           Everyone who belongs to {organizationName}. Admins manage repositories, agents and
           members; members have read access.
@@ -394,7 +395,7 @@ function InvitationsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Invitations</CardTitle>
+        <CardTitle as="h2">Invitations</CardTitle>
         <CardDescription>
           Invited people see the invitation after signing in with that email. Invitations expire
           after 14 days.
@@ -491,7 +492,7 @@ function DomainsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Email domains</CardTitle>
+        <CardTitle as="h2">Email domains</CardTitle>
         <CardDescription>
           With domains set, only emails in them can be invited or join. Existing members are kept
           when the domains change.
@@ -568,7 +569,7 @@ function LeaveCard({ organizationName }: { organizationName: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Leave organization</CardTitle>
+        <CardTitle as="h2">Leave organization</CardTitle>
         <CardDescription>
           You lose access to {organizationName}&apos;s repositories, agents and settings. The last
           admin can&apos;t leave.
@@ -624,16 +625,14 @@ export function OrganizationSettingsView({
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>
-            {organization.name}
-          </h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            {isAdmin
+        <PageHeader
+          title={organization.name}
+          description={
+            isAdmin
               ? "Manage the organization's name, members, invitations and email domains."
-              : "Only admins can change these settings."}
-          </Muted>
-        </div>
+              : "Only admins can change these settings."
+          }
+        />
 
         {/* Keyed by name so a rename elsewhere resets the field. */}
         <GeneralCard key={organization.name} name={organization.name} isAdmin={isAdmin} />

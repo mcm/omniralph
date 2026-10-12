@@ -25,6 +25,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import type { ActionResult } from "@/lib/action-result";
@@ -236,44 +237,36 @@ export function IntegrationsView({
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "var(--text-2xl)",
-              fontWeight: "var(--font-weight-semibold)",
-            }}
-          >
-            Integrations
-          </h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating
-            a Linear issue to the Omniralph app starts a ralph run.
-          </Muted>
-        </div>
+        <PageHeader
+          title="Integrations"
+          description="Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating a Linear issue to the Omniralph app starts a ralph run."
+        />
 
         {notice && (
           <Alert variant={linearNotices[notice].variant}>
-            <AlertTitle>{linearNotices[notice].title}</AlertTitle>
+            <AlertTitle as="h2">{linearNotices[notice].title}</AlertTitle>
             <AlertDescription>{linearNotices[notice].description}</AlertDescription>
           </Alert>
         )}
         {slackNotice && (
           <Alert variant={slackNotices[slackNotice].variant}>
-            <AlertTitle>{slackNotices[slackNotice].title}</AlertTitle>
+            <AlertTitle as="h2">{slackNotices[slackNotice].title}</AlertTitle>
             <AlertDescription>{slackNotices[slackNotice].description}</AlertDescription>
           </Alert>
         )}
         {discordNotice && (
           <Alert variant={discordNotices[discordNotice].variant}>
-            <AlertTitle>{discordNotices[discordNotice].title}</AlertTitle>
+            <AlertTitle as="h2">{discordNotices[discordNotice].title}</AlertTitle>
             <AlertDescription>{discordNotices[discordNotice].description}</AlertDescription>
           </Alert>
         )}
 
         <Card>
           <CardHeader>
-            <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <CardTitle
+              as="h2"
+              style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
+            >
               Linear
               {linear ? (
                 <Badge variant="success" size="sm">
@@ -299,7 +292,7 @@ export function IntegrationsView({
           <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
             {!linearConfigured && (
               <Alert variant="info">
-                <AlertTitle>Linear app not configured</AlertTitle>
+                <AlertTitle as="h3">Linear app not configured</AlertTitle>
                 <AlertDescription>
                   Set <InlineCode>LINEAR_CLIENT_ID</InlineCode>,{" "}
                   <InlineCode>LINEAR_CLIENT_SECRET</InlineCode> and{" "}
@@ -426,7 +419,7 @@ function ChatPlatformCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           {platform}
           {connections.length > 0 ? (
             <Badge variant="success" size="sm">
@@ -443,7 +436,7 @@ function ChatPlatformCard({
       <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         {!configured && (
           <Alert variant="info">
-            <AlertTitle>{platform} app not configured</AlertTitle>
+            <AlertTitle as="h3">{platform} app not configured</AlertTitle>
             <AlertDescription>
               Set{" "}
               {envVars.map((name, i) => (

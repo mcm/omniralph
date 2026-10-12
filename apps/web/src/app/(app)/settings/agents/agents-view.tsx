@@ -19,15 +19,8 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
-import {
-  agentHref,
-  BuiltinBadge,
-  ModelName,
-  mono,
-  pageMain,
-  pageTitle,
-  TaskTypeBadges,
-} from "./agent-parts";
+import { PageHeader } from "@/components/page-header";
+import { agentHref, BuiltinBadge, ModelName, mono, pageMain, TaskTypeBadges } from "./agent-parts";
 
 export interface AgentSummary {
   id: string;
@@ -48,36 +41,31 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
     <>
       <AppHeader breadcrumbs={[{ label: "Agents" }]} />
       <main style={pageMain}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: "var(--space-4)",
-          }}
-        >
-          <div>
-            <h1 style={pageTitle}>Agents</h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+        <PageHeader
+          title="Agents"
+          description={
+            <>
               The personas tasks run on: system prompt, tools, skills and model. Built-in agents are
               read-only
               {isAdmin
                 ? "; clone one or create a new agent to make your own."
                 : "; an admin can clone one to customize it."}
-            </Muted>
-          </div>
-          {isAdmin && (
-            <Button asChild variant="primary">
-              <Link href="/settings/agents/new">
-                <IconPlus size={14} />
-                New agent
-              </Link>
-            </Button>
-          )}
-        </div>
+            </>
+          }
+          actions={
+            isAdmin && (
+              <Button asChild variant="primary">
+                <Link href="/settings/agents/new">
+                  <IconPlus size={14} />
+                  New agent
+                </Link>
+              </Button>
+            )
+          }
+        />
         <Card>
           <CardHeader>
-            <CardTitle>Agent definitions</CardTitle>
+            <CardTitle as="h2">Agent definitions</CardTitle>
             <CardDescription>Built-in agents first, then your organization&apos;s.</CardDescription>
           </CardHeader>
           <CardContent>

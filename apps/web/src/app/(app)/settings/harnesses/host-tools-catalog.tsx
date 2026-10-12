@@ -138,6 +138,7 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
         <Empty
           icon={<IconTool size={24} />}
           title="No host tools"
+          titleAs="h3"
           description="Add the software harness owners install by hand that tasks rely on."
         />
       ) : (

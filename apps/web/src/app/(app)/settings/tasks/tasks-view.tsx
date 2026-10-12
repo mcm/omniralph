@@ -20,7 +20,8 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import { TASK_TYPES, type PoolName, type SinkKind, type TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
-import { BuiltinBadge, mono, pageMain, pageTitle } from "../agents/agent-parts";
+import { PageHeader } from "@/components/page-header";
+import { BuiltinBadge, mono, pageMain } from "../agents/agent-parts";
 import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "./task-parts";
 
 export interface TaskSummary {
@@ -108,37 +109,32 @@ export function TasksView({ tasks, isAdmin }: TasksViewProps) {
     <>
       <AppHeader breadcrumbs={[{ label: "Tasks" }]} />
       <main style={pageMain}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: "var(--space-4)",
-          }}
-        >
-          <div>
-            <h1 style={pageTitle}>Tasks</h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+        <PageHeader
+          title="Tasks"
+          description={
+            <>
               What runs on which trigger: each task runs one agent with its prompt template, tool
               settings and sink. Built-in tasks are read-only
               {isAdmin
                 ? "; clone one or create a new task to make your own."
                 : "; an admin can clone one to customize it."}
-            </Muted>
-          </div>
-          {isAdmin && (
-            <Button asChild variant="primary">
-              <Link href="/settings/tasks/new">
-                <IconPlus size={14} />
-                New task
-              </Link>
-            </Button>
-          )}
-        </div>
+            </>
+          }
+          actions={
+            isAdmin && (
+              <Button asChild variant="primary">
+                <Link href="/settings/tasks/new">
+                  <IconPlus size={14} />
+                  New task
+                </Link>
+              </Button>
+            )
+          }
+        />
         {TASK_TYPES.map((taskType) => (
           <Card key={taskType} aria-label={`${TASK_TYPE_LABELS[taskType]} tasks`}>
             <CardHeader>
-              <CardTitle>{TASK_TYPE_LABELS[taskType]}</CardTitle>
+              <CardTitle as="h2">{TASK_TYPE_LABELS[taskType]}</CardTitle>
               <CardDescription>{TASK_TYPE_DESCRIPTIONS[taskType]}</CardDescription>
             </CardHeader>
             <CardContent>

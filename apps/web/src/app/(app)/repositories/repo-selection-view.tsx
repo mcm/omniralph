@@ -22,6 +22,7 @@ import {
 import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { ListPagination } from "@/components/list-pagination";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { ActionResult } from "@/lib/action-result";
 import { pageRange, pageSlice, totalPages } from "@/lib/pagination";
@@ -113,26 +114,28 @@ export function RepoSelectionView({
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>{title}</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>{intro}</Muted>
-        </div>
+        <PageHeader title={title} description={intro} />
 
         {error && (
           <Alert variant="danger">
-            <AlertTitle>{errorTitle}</AlertTitle>
+            <AlertTitle as="h2">{errorTitle}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         <Card>
           <CardHeader>
-            <CardTitle>Repositories</CardTitle>
+            <CardTitle as="h2">Repositories</CardTitle>
             <CardDescription>{listedDescription}</CardDescription>
           </CardHeader>
           <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
             {repos.length === 0 ? (
-              <Empty icon={emptyIcon} title="No repositories" description={emptyDescription} />
+              <Empty
+                icon={emptyIcon}
+                title="No repositories"
+                titleAs="h3"
+                description={emptyDescription}
+              />
             ) : (
               <>
                 <div

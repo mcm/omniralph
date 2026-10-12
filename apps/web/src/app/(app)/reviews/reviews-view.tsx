@@ -24,6 +24,7 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ReviewStatusBadge, SeverityBadge, TriggerBadge } from "@/components/review-badges";
 import { ListPagination } from "@/components/list-pagination";
+import { PageHeader } from "@/components/page-header";
 import { formatDateTime } from "@/lib/format-date";
 import { totalPages } from "@/lib/pagination";
 import {
@@ -232,42 +233,33 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-              }}
-            >
-              {repository ? (
-                <>
-                  <ProviderIcon provider={repository.provider} size={20} />
-                  <span style={{ fontFamily: "var(--font-mono)" }}>{repository.fullPath}</span>
-                </>
-              ) : (
-                "Reviews"
-              )}
-            </h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              {repository
-                ? "Every review of this repository's pull and merge requests."
-                : "Every review across connected repositories."}
-            </Muted>
-          </div>
-          {repository && (
-            <Button asChild variant="ghost">
-              <a href={repository.webUrl} target="_blank" rel="noreferrer">
-                <IconExternalLink size={14} />
-                Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
-              </a>
-            </Button>
-          )}
-        </div>
+        <PageHeader
+          title={
+            repository ? (
+              <>
+                <ProviderIcon provider={repository.provider} size={20} />
+                <span className="text-numeric">{repository.fullPath}</span>
+              </>
+            ) : (
+              "Reviews"
+            )
+          }
+          description={
+            repository
+              ? "Every review of this repository's pull and merge requests."
+              : "Every review across connected repositories."
+          }
+          actions={
+            repository && (
+              <Button asChild variant="ghost">
+                <a href={repository.webUrl} target="_blank" rel="noreferrer">
+                  <IconExternalLink size={14} />
+                  Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
+                </a>
+              </Button>
+            )
+          }
+        />
 
         {repository?.connected && <RepositoryNav repositoryId={repository.id} current="reviews" />}
 
@@ -283,7 +275,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
               }}
             >
               <div>
-                <CardTitle>Review history</CardTitle>
+                <CardTitle as="h2">Review history</CardTitle>
                 <CardDescription>
                   {total === 0
                     ? "Newest first."
@@ -326,6 +318,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
             {reviews.length === 0 ? (
               <Empty
                 icon={<IconHistory size={24} />}
+                titleAs="h3"
                 title={
                   total > 0
                     ? "No reviews on this page"
