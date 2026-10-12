@@ -7,6 +7,7 @@ import { TasksView, type TaskSummary } from "./tasks-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("./actions", () => ({ cloneTaskDefinition: vi.fn(), deleteTaskDefinition: vi.fn() }));
 
 const CUSTOM_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -103,6 +104,13 @@ describe("TasksView", () => {
     expect(custom).not.toContain("Built-in");
     expect(custom).toContain(`href="/settings/agents/${AGENT_ID}"`);
     expect(custom).toContain(">Security reviewer<");
+  });
+
+  it("offers admins a new task", () => {
+    const admin = renderToStaticMarkup(<TasksView isAdmin tasks={[CUSTOM_REVIEW]} />);
+    expect(admin).toContain('href="/settings/tasks/new"');
+    const member = renderToStaticMarkup(<TasksView isAdmin={false} tasks={[CUSTOM_REVIEW]} />);
+    expect(member).not.toContain('href="/settings/tasks/new"');
   });
 
   it("shows the bare agent ID when the agent doesn't resolve", () => {
@@ -235,5 +243,29 @@ describe("TaskDetailView", () => {
     expect(html).toContain("Acme Slack › C0123ABCD");
     expect(html).toContain('href="/settings/tasks/builtin%3Aimplement-story"');
     expect(html).not.toContain("Clone");
+  });
+
+  it("shows admins Clone, Edit and Delete on a custom task", () => {
+    const task: TaskDefinition = { ...reviewPr, id: CUSTOM_ID, name: "Security review" };
+    const render = (isAdmin: boolean) =>
+      renderToStaticMarkup(
+        <TaskDetailView
+          isAdmin={isAdmin}
+          task={task}
+          builtin={false}
+          agentName="Reviewer"
+          prDescriptionTaskName={null}
+          requirements={{ minHarnessVersion: null, installables: [], hostTools: [] }}
+          referrers={NO_REFERRERS}
+        />,
+      );
+    const html = render(true);
+    expect(html).toContain("Clone");
+    expect(html).toContain(`href="/settings/tasks/${CUSTOM_ID}/edit"`);
+    expect(html).toContain("Delete");
+    const member = render(false);
+    expect(member).not.toContain("Clone");
+    expect(member).not.toContain("/edit");
+    expect(member).not.toContain("Delete");
   });
 });

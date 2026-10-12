@@ -9,10 +9,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Checkbox,
   Field,
   Input,
-  Label,
   Muted,
   NativeSelect,
   Textarea,
@@ -35,6 +33,7 @@ import {
   type AgentDefinitionFields,
 } from "./actions";
 import { agentHref, pageMain, pageTitle } from "./agent-parts";
+import { Choices, errorFor, monoInput } from "./form-parts";
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
@@ -49,7 +48,6 @@ const grid = {
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: "var(--space-4)",
 } as const;
-const monoInput = { fontFamily: "var(--font-mono)" } as const;
 
 /** Names from a comma- or newline-separated list. */
 function splitNames(value: string): string[] {
@@ -57,52 +55,6 @@ function splitNames(value: string): string[] {
     .split(/[,\n]/)
     .map((name) => name.trim())
     .filter(Boolean);
-}
-
-/** The error of `field` or of anything under it (`tools.builtin.2` for `tools.builtin`). */
-function errorFor(errors: FieldErrors, field: string): string | undefined {
-  if (errors[field]) return errors[field];
-  const nested = Object.keys(errors).find((key) => key.startsWith(`${field}.`));
-  return nested && errors[nested];
-}
-
-function toggled<T>(list: readonly T[], value: T, on: boolean): T[] {
-  return on
-    ? [...list.filter((item) => item !== value), value]
-    : list.filter((item) => item !== value);
-}
-
-/** Checkboxes choosing some of `options`. */
-function Choices<T extends string>({
-  id,
-  options,
-  value,
-  onChange,
-  disabled,
-}: {
-  id: string;
-  options: readonly T[];
-  value: readonly T[];
-  onChange: (value: T[]) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-4)" }}>
-      {options.map((option) => (
-        <div key={option} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <Checkbox
-            id={`${id}-${option}`}
-            checked={value.includes(option)}
-            disabled={disabled}
-            onCheckedChange={(checked) => onChange(toggled(value, option, checked === true))}
-          />
-          <Label htmlFor={`${id}-${option}`} style={monoInput}>
-            {option}
-          </Label>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 /** Editable named documents (skills or reference docs), errors keyed `<field>.<index>.<name|content>`. */

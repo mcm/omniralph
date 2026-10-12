@@ -59,6 +59,7 @@ vi.mock("@omniralph/db", async () => {
         ? [{ id: "repo-1", fullPath: "acme/app", reviewTask: true, correlationTask: false }]
         : [],
     listChatChannelTaskReferences: async () => [],
+    listPoolNames: async () => ["short", "long", "gpu"],
     getChatTaskDefaults: async () => ({
       askAboutCode: "builtin:ask-about-code",
       startWork: "builtin:handle-request",
@@ -67,9 +68,12 @@ vi.mock("@omniralph/db", async () => {
 });
 vi.mock("./tasks-view", () => ({ TasksView: () => null }));
 vi.mock("./[id]/task-detail-view", () => ({ TaskDetailView: () => null }));
+vi.mock("./task-form", () => ({ TaskForm: () => null }));
 
 const { default: TasksPage } = await import("./page");
 const { default: TaskPage } = await import("./[id]/page");
+const { default: NewTaskPage } = await import("./new/page");
+const { default: EditTaskPage } = await import("./[id]/edit/page");
 
 const user = (role: Role, organizationId = "org-1") => ({
   id: `${role}-1`,
@@ -163,5 +167,48 @@ describe("Settings › Tasks pages", () => {
     );
     await expect(TaskPage(params("builtin:nope"))).rejects.toThrow("NEXT_NOT_FOUND");
     await expect(TaskPage(params("%E0%A4%A"))).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("new and edit pages are admin-only", async () => {
+    state.user = user("member");
+    await expect(NewTaskPage()).rejects.toThrow();
+    await expect(EditTaskPage(params(CUSTOM_ID))).rejects.toThrow();
+  });
+
+  it("new page renders an empty form with the agents, sinks and pools to pick from", async () => {
+    state.user = user("admin");
+    const { props } = await NewTaskPage();
+    expect(props.task).toBeNull();
+    expect(props.agents).toContainEqual({
+      id: "builtin:reviewer",
+      name: "Reviewer",
+      taskTypes: ["query", "review"],
+      builtin: true,
+    });
+    expect(props.sinks).toContainEqual({ kind: "review", taskType: "review" });
+    expect(props.sinks).toContainEqual({ kind: "chat-thread", taskType: "query" });
+    // Only pools a definition can name.
+    expect(props.pools).toEqual(["short", "long"]);
+  });
+
+  it("edit page renders the organization's task in the form", async () => {
+    state.user = user("admin");
+    const { props } = await EditTaskPage(params(CUSTOM_ID));
+    expect(props.task).toMatchObject({
+      id: CUSTOM_ID,
+      name: "Security review",
+      taskType: "review",
+    });
+    expect(props.agents.length).toBeGreaterThan(0);
+  });
+
+  it("edit page doesn't find a built-in, another organization's task or an unknown ID", async () => {
+    state.user = user("admin");
+    await expect(EditTaskPage(params(encodeURIComponent("builtin:review-pr")))).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
+    await expect(EditTaskPage(params("builtin:nope"))).rejects.toThrow("NEXT_NOT_FOUND");
+    state.user = user("admin", "org-2");
+    await expect(EditTaskPage(params(CUSTOM_ID))).rejects.toThrow("NEXT_NOT_FOUND");
   });
 });

@@ -547,6 +547,7 @@ export {
   type RunPermissionRequest,
 } from "./runs.js";
 export {
+  countActiveTaskJobs,
   deleteAgentDefinition,
   deleteTaskDefinition,
   getStoredAgentDefinition,
