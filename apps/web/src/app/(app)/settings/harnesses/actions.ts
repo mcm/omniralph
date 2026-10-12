@@ -1,8 +1,14 @@
 "use server";
 
-import { setDesiredHarnessVersion, TRACK_LATEST_HARNESS_VERSION } from "@omniralph/db";
+import {
+  createHostTool,
+  deleteHostTool,
+  setDesiredHarnessVersion,
+  TRACK_LATEST_HARNESS_VERSION,
+} from "@omniralph/db";
 import { HarnessVersion } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { recordLatestHarnessVersion } from "@/lib/harnesses/desired-version";
 import { latestHarnessVersion, NpmRegistryError } from "@/lib/harnesses/npm";
@@ -63,4 +69,56 @@ export async function trackLatestHarnessVersion(): Promise<HarnessVersionResult>
     revalidate();
   });
   return result.ok ? { ...result, version } : result;
+}
+
+/** Longest host tool description accepted. */
+const MAX_HOST_TOOL_DESCRIPTION = 500;
+
+export type HostToolActionResult = ActionResult & { hostToolId?: string };
+
+/**
+ * Adds a host tool (software harness owners install by hand) to the organization's catalog.
+ * Harnesses get it with their next heartbeat and report where they find it.
+ */
+export async function addHostTool(input: {
+  name: string;
+  description?: string;
+}): Promise<HostToolActionResult> {
+  let hostToolId: string | undefined;
+  const result = await runAdminAction(async (admin) => {
+    const name = input.name.trim();
+    const description = input.description?.trim() || null;
+    if (description && description.length > MAX_HOST_TOOL_DESCRIPTION) {
+      return {
+        ok: false,
+        error: `Descriptions can be at most ${MAX_HOST_TOOL_DESCRIPTION} characters.`,
+      };
+    }
+    const created = await createHostTool(getDb(), admin.organization.id, { name, description });
+    if (!created.ok) {
+      return {
+        ok: false,
+        error:
+          created.error === "duplicate_name"
+            ? `There already is a host tool named ${name}.`
+            : "Names are the executable's name: lowercase letters, digits, dots, dashes and underscores (up to 64), starting with a letter or digit.",
+      };
+    }
+    hostToolId = created.hostTool.id;
+    revalidate();
+  });
+  return result.ok ? { ...result, hostToolId } : result;
+}
+
+/** Removes a host tool from the catalog, with every harness's configured path for it. */
+export async function removeHostTool(hostToolId: string): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    if (
+      !z.uuid().safeParse(hostToolId).success ||
+      !(await deleteHostTool(getDb(), admin.organization.id, hostToolId))
+    ) {
+      return { ok: false, error: "That host tool doesn't exist." };
+    }
+    revalidate();
+  });
 }

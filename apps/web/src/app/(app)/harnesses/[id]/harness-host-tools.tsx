@@ -1,0 +1,161 @@
+"use client";
+
+import * as React from "react";
+import {
+  Badge,
+  Button,
+  Empty,
+  Input,
+  Muted,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@iamthemcmaster/ui";
+import { IconDeviceFloppy, IconTool } from "@tabler/icons-react";
+import { useAction } from "@/components/use-action";
+import { setHostToolPath } from "../actions";
+
+/** Serializable catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
+export interface HostToolRow {
+  hostToolId: string;
+  name: string;
+  description: string | null;
+  configuredPath: string | null;
+  /** Whether the configured path exists, as last reported; null: not reported on it yet. */
+  configuredPathExists: boolean | null;
+  discoveredPath: string | null;
+  /** ISO timestamp of the harness's last report on the tool; null: never. */
+  reportedAt: string | null;
+  /** `effectiveHostToolPath()`: the path the harness runs the tool from; null: unavailable. */
+  effectivePath: string | null;
+}
+
+const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" } as const;
+
+function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
+  if (tool.configuredPath === null) return <Muted>Not configured</Muted>;
+  if (tool.configuredPathExists === null) return <Badge variant="neutral">Not checked yet</Badge>;
+  return tool.configuredPathExists ? (
+    <Badge variant="success">Exists</Badge>
+  ) : (
+    <Badge variant="danger">Missing</Badge>
+  );
+}
+
+function DiscoveredPath({ tool }: { tool: HostToolRow }) {
+  if (tool.discoveredPath) return <span style={mono}>{tool.discoveredPath}</span>;
+  return <Muted>{tool.reportedAt ? "Not found on PATH" : "Not reported yet"}</Muted>;
+}
+
+function EffectivePath({ tool }: { tool: HostToolRow }) {
+  if (tool.effectivePath) return <span style={mono}>{tool.effectivePath}</span>;
+  return <Badge variant="warning">unavailable</Badge>;
+}
+
+/** Sets or (blank) clears the tool's configured path on the harness. */
+function ConfiguredPathForm({ harnessId, tool }: { harnessId: string; tool: HostToolRow }) {
+  const { pending, run } = useAction();
+  const [path, setPath] = React.useState(tool.configuredPath ?? "");
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = path.trim();
+    run(
+      () => setHostToolPath(harnessId, tool.hostToolId, path),
+      trimmed
+        ? `${tool.name} will run from ${trimmed} once the harness finds it there.`
+        : `Cleared. The harness uses the ${tool.name} it finds on its PATH.`,
+    );
+  };
+
+  return (
+    <form onSubmit={save} style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+      <Input
+        id={`host-tool-path-${tool.hostToolId}`}
+        aria-label={`Configured path of ${tool.name}`}
+        name="path"
+        placeholder="Discover on PATH"
+        disabled={pending}
+        value={path}
+        onChange={(e) => setPath(e.target.value)}
+        style={{ fontFamily: "var(--font-mono)", minWidth: "14rem" }}
+      />
+      <Button type="submit" variant="secondary" size="sm" disabled={pending}>
+        <IconDeviceFloppy size={14} />
+        {pending ? "Saving…" : "Save"}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Every host tool of the organization's catalog on this harness: the configured path (editable
+ * unless the harness is revoked), what the harness last reported and the path it runs it from.
+ */
+export function HarnessHostTools({
+  harnessId,
+  revoked,
+  hostTools,
+}: {
+  harnessId: string;
+  revoked: boolean;
+  hostTools: HostToolRow[];
+}) {
+  if (hostTools.length === 0) {
+    return (
+      <Empty
+        icon={<IconTool size={24} />}
+        title="No host tools"
+        description="Add the tools harness owners install by hand in Settings › Harnesses."
+      />
+    );
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Tool</TableHead>
+          <TableHead>Configured path</TableHead>
+          <TableHead>Configured path exists</TableHead>
+          <TableHead>Discovered path</TableHead>
+          <TableHead>Effective path</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {hostTools.map((tool) => (
+          <TableRow key={tool.hostToolId} data-host-tool={tool.name}>
+            <TableCell>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                <span style={mono}>{tool.name}</span>
+                {tool.description && <Muted>{tool.description}</Muted>}
+              </div>
+            </TableCell>
+            <TableCell>
+              {revoked ? (
+                tool.configuredPath ? (
+                  <span style={mono}>{tool.configuredPath}</span>
+                ) : (
+                  <Muted>Not configured</Muted>
+                )
+              ) : (
+                <ConfiguredPathForm harnessId={harnessId} tool={tool} />
+              )}
+            </TableCell>
+            <TableCell>
+              <ConfiguredPathStatus tool={tool} />
+            </TableCell>
+            <TableCell>
+              <DiscoveredPath tool={tool} />
+            </TableCell>
+            <TableCell>
+              <EffectivePath tool={tool} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}

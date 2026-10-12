@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   getHarnessOverview,
+  listHarnessHostTools,
   listHarnessInstallJobs,
   listRecentHarnessAudit,
   listRepositoryOverview,
@@ -13,6 +14,7 @@ import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import type { AuditRow } from "./harness-audit-log";
 import { HarnessDetailView } from "./harness-detail-view";
+import type { HostToolRow } from "./harness-host-tools";
 import type { InstallJobRow } from "./harness-installables";
 
 export const metadata: Metadata = { title: "Harness · Omniralph" };
@@ -32,13 +34,15 @@ export default async function HarnessPage({ params }: { params: Promise<{ id: st
   const db = getDb();
   const now = new Date();
   const since = new Date(now.getTime() - INSTALL_JOBS_WINDOW_MS);
-  const [harness, audit, repositories, organizationVersion, installJobs] = await Promise.all([
-    getHarnessOverview(db, admin.organization.id, id),
-    listRecentHarnessAudit(db, id, AUDIT_LIMIT),
-    listRepositoryOverview(db, admin.organization.id),
-    organizationHarnessVersion(db, admin.organization.id),
-    listHarnessInstallJobs(db, admin.organization.id, id, since),
-  ]);
+  const [harness, audit, repositories, organizationVersion, installJobs, hostTools] =
+    await Promise.all([
+      getHarnessOverview(db, admin.organization.id, id),
+      listRecentHarnessAudit(db, id, AUDIT_LIMIT),
+      listRepositoryOverview(db, admin.organization.id),
+      organizationHarnessVersion(db, admin.organization.id),
+      listHarnessInstallJobs(db, admin.organization.id, id, since),
+      listHarnessHostTools(db, admin.organization.id, id),
+    ]);
   if (!harness) notFound();
 
   return (
@@ -76,6 +80,10 @@ export default async function HarnessPage({ params }: { params: Promise<{ id: st
         installedVersion: job.installedVersion,
         error: job.error,
         createdAt: job.createdAt.toISOString(),
+      }))}
+      hostTools={hostTools.map((tool): HostToolRow => ({
+        ...tool,
+        reportedAt: tool.reportedAt?.toISOString() ?? null,
       }))}
     />
   );

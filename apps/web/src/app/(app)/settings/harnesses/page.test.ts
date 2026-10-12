@@ -27,6 +27,19 @@ vi.mock("@omniralph/db", () => ({
     updatedAt: new Date("2026-10-01T00:00:00Z"),
   }),
   getDesiredHarnessVersion: async () => state.desired,
+  listHostTools: async (_db: unknown, organizationId: string) =>
+    organizationId === "org-1"
+      ? [
+          {
+            id: "tool-1",
+            organizationId,
+            name: "semgrep",
+            description: "SAST scanner",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ]
+      : [],
   getLatestHarnessVersionCheck: async () => ({
     version: "1.5.0",
     error: null,
@@ -61,6 +74,7 @@ describe("Settings › Harnesses page", () => {
       updatedAt: "2026-10-01T00:00:00.000Z",
       latest: null,
       packageName: "@omniralph/harness",
+      hostTools: [{ id: "tool-1", name: "semgrep", description: "SAST scanner" }],
     });
   });
 

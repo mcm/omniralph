@@ -6,10 +6,13 @@ import {
   connectRepository,
   createHarnessEnrollment,
   createDb,
+  createHostTool,
   createOrganization,
   enrollHarness,
   getHarnessOverview,
   getDesiredHarnessVersion,
+  listHarnessHostTools,
+  listHostTools,
   runMigrations,
   setDesiredHarnessVersion,
   upsertScmConnection,
@@ -81,10 +84,12 @@ const {
   pinRepository,
   revokeHarness,
   setHarnessDesiredVersion,
+  setHostToolPath,
   unpinRepository,
   updateHarnessConfig,
 } = await import("./actions");
-const { setGlobalHarnessVersion } = await import("../settings/harnesses/actions");
+const { addHostTool, removeHostTool, setGlobalHarnessVersion } =
+  await import("../settings/harnesses/actions");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -211,5 +216,45 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
     expect((await HarnessSettingsPage()).props.desiredVersion).toBeNull();
     await setDesiredHarnessVersion(db, b.orgId, "2.0.0", b.userId);
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
+  });
+
+  it("keeps host tools per organization and refuses paths on the other's harnesses and tools", async () => {
+    const theirs = await createHostTool(db, b.orgId, { name: "semgrep" });
+    if (!theirs.ok) throw new Error("setup");
+    state.userId = a.userId;
+    // The same name in another organization is no duplicate.
+    const ours = await addHostTool({ name: "semgrep", description: "ours" });
+    if (!ours.ok) throw new Error(ours.error);
+    expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toEqual([ours.hostToolId]);
+    expect((await HarnessSettingsPage()).props.hostTools).toEqual([
+      { id: ours.hostToolId, name: "semgrep", description: "ours" },
+    ]);
+    const detail = await HarnessPage(params(a.harnessId));
+    expect((detail.props.hostTools as { hostToolId: string }[]).map((t) => t.hostToolId)).toEqual([
+      ours.hostToolId,
+    ]);
+
+    // The other's harness, the other's tool, or both.
+    expect(await setHostToolPath(b.harnessId, ours.hostToolId!, "/opt/x")).toMatchObject({
+      ok: false,
+    });
+    expect(await setHostToolPath(a.harnessId, theirs.hostTool.id, "/opt/x")).toMatchObject({
+      ok: false,
+    });
+    expect(await setHostToolPath(b.harnessId, theirs.hostTool.id, "/opt/x")).toMatchObject({
+      ok: false,
+    });
+    expect(await removeHostTool(theirs.hostTool.id)).toMatchObject({ ok: false });
+    expect(await listHostTools(db, b.orgId)).toHaveLength(1);
+    expect(
+      (await listHarnessHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
+    ).toEqual([null]);
+
+    // Its own harness and tool still work.
+    expect(await setHostToolPath(a.harnessId, ours.hostToolId!, "/opt/x")).toEqual({ ok: true });
+    expect(
+      (await listHarnessHostTools(db, a.orgId, a.harnessId)).map((t) => t.configuredPath),
+    ).toEqual(["/opt/x"]);
+    expect(await removeHostTool(ours.hostToolId!)).toEqual({ ok: true });
   });
 });
