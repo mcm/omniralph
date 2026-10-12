@@ -266,23 +266,32 @@ export const BUILTIN_DEFINITIONS: DefinitionSource = {
 };
 
 /**
- * `runSpecJobInput` for `task` as `definitions` resolved it: a custom task's
- * job needs at least the harness version stored in its requirements, and
- * every job the installables and host tools derived from the task and its
- * agent as they are now (`deriveHarnessRequirements`: an agent edited since
- * the task was saved counts as edited).
+ * What runs of `task` need from a harness as `definitions` resolved it (the
+ * `requirements` of `runSpecJobInput`): a custom task's at least the harness
+ * version stored in its requirements, and every task the installables and
+ * host tools derived from the task and its agent as they are now
+ * (`deriveHarnessRequirements`: an agent edited since the task was saved
+ * counts as edited).
  */
+export async function taskRunRequirements(
+  definitions: DefinitionSource,
+  task: TaskDefinition,
+): Promise<TaskRequirements> {
+  const [stored, agent] = await Promise.all([
+    definitions.getTaskRequirements?.(task.id),
+    definitions.getAgent(task.agentId),
+  ]);
+  return {
+    minHarnessVersion: stored?.minHarnessVersion ?? null,
+    ...deriveHarnessRequirements(task, agent),
+  };
+}
+
+/** `runSpecJobInput` for `task` with the `taskRunRequirements` `definitions` resolve. */
 export async function taskJobInput(
   definitions: DefinitionSource,
   task: TaskDefinition,
   payload: RunSpecJobPayload,
 ): Promise<ReturnType<typeof runSpecJobInput>> {
-  const [stored, agent] = await Promise.all([
-    definitions.getTaskRequirements?.(task.id),
-    definitions.getAgent(task.agentId),
-  ]);
-  return runSpecJobInput(task, payload, {
-    minHarnessVersion: stored?.minHarnessVersion ?? null,
-    ...deriveHarnessRequirements(task, agent),
-  });
+  return runSpecJobInput(task, payload, await taskRunRequirements(definitions, task));
 }

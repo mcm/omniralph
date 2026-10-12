@@ -45,13 +45,14 @@ export function runSpecJobInput(
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
-    minHarnessVersion: minHarnessVersion(task, requirements?.minHarnessVersion ?? null),
+    minHarnessVersion: runSpecMinHarnessVersion(task, requirements?.minHarnessVersion ?? null),
     requiredInstallables: [...new Set(requirements?.installables ?? [])].sort(),
     requiredHostTools: [...new Set(requirements?.hostTools ?? [])].sort(),
   };
 }
 
-function minHarnessVersion(
+/** The `min_harness_version` of a run of `task` (see `runSpecJobInput`); `stored` is a custom task's. */
+export function runSpecMinHarnessVersion(
   task: Pick<TaskDefinition, "taskType"> &
     Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
   stored: string | null,

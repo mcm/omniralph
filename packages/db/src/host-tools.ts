@@ -124,6 +124,42 @@ export async function listHarnessHostTools(
   return rows.map((row) => ({ ...row, effectivePath: effectiveHostToolPath(row) }));
 }
 
+/**
+ * For each of the organization's harnesses with at least one, the names of the
+ * host tools it has an `effectiveHostToolPath` for, sorted: what `claimJob`
+ * checks a job's `required_host_tools` against.
+ */
+export async function listHarnessesUsableHostTools(
+  db: Database,
+  organizationId: string,
+): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({
+      harnessId: harnessHostTools.harnessId,
+      name: hostTools.name,
+      configuredPath: harnessHostTools.configuredPath,
+      configuredPathExists: harnessHostTools.configuredPathExists,
+      discoveredPath: harnessHostTools.discoveredPath,
+    })
+    .from(harnessHostTools)
+    .innerJoin(hostTools, eq(hostTools.id, harnessHostTools.hostToolId))
+    .innerJoin(
+      harnesses,
+      and(
+        eq(harnesses.id, harnessHostTools.harnessId),
+        eq(harnesses.organizationId, hostTools.organizationId),
+      ),
+    )
+    .where(eq(hostTools.organizationId, organizationId))
+    .orderBy(asc(hostTools.name));
+  const usable = new Map<string, string[]>();
+  for (const row of rows) {
+    if (effectiveHostToolPath(row) === null) continue;
+    usable.set(row.harnessId, [...(usable.get(row.harnessId) ?? []), row.name]);
+  }
+  return usable;
+}
+
 export type SetHarnessHostToolPathResult =
   { ok: true } | { ok: false; error: "invalid_path" | "not_found" };
 
