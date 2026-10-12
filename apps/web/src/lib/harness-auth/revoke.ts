@@ -118,16 +118,16 @@ export async function deleteHarness(
   return true;
 }
 
-/** Runs an outcome hook per job that has a handler; a failing hook (e.g. a code-host call) doesn't stop the rest. */
+/** Runs an outcome hook per job that has a handler; a failing hook or hook lookup (e.g. a code-host call or a DB read) doesn't stop the rest. */
 async function forEachJob(
   db: Database,
   jobs: Job[],
   hook: (handler: JobHooks, job: Job) => Promise<unknown> | undefined,
 ): Promise<void> {
   for (const job of jobs) {
-    const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
-    if (!handler) continue;
     try {
+      const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+      if (!handler) continue;
       await hook(handler, job);
     } catch (error) {
       console.error(`Job outcome hook failed for job ${job.id}`, error);
