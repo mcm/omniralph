@@ -5,6 +5,7 @@ import {
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
   listHarnessOverview,
+  mapThreadRun,
   type Database,
   type Repository,
   type ScmConnection,
@@ -228,6 +229,12 @@ export async function enqueueChatAsk(
       requireCheckout: true,
     }),
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
+  });
+  // The thread's query run: a follow-up's context, and the thread of the run's events.
+  await mapThreadRun(db, {
+    organizationId: input.organizationId,
+    chatThreadId: input.chatThreadId,
+    jobId: job.id,
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
 }

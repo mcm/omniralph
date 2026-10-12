@@ -771,6 +771,106 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("maps chat runs and code questions to their threads (0067)", async () => {
+    await db.execute(sql`create database thread_runs`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/thread_runs");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0067_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into chat_connections (organization_id, platform, external_id, name)
+           values ($1, 'slack', 'T1', 'Acme') returning id`,
+          [org],
+        );
+        const { rows: threads } = await client.query<{ id: string }>(
+          `insert into chat_threads (organization_id, connection_id, platform, external_thread_id, channel_id, started_by_external_user_id)
+           values ($1, $2, 'slack', 'slack:C1:1', 'slack:C1', 'U1'), ($1, $2, 'slack', 'slack:C1:2', 'slack:C1', 'U1')
+           returning id`,
+          [org, connections[0]!.id],
+        );
+        const [thread, other] = threads.map((t) => t.id) as [string, string];
+        const { rows: runs } = await client.query<{ id: string; linear_identifier: string | null }>(
+          `insert into ralph_runs (organization_id, origin, chat_thread_id, kind, mode, status,
+             linear_issue_id, linear_identifier, linear_agent_session_id)
+           values ($1, 'chat', $2, 'single', 'request', 'completed', null, null, null),
+                  ($1, 'chat', $2, 'single', 'request', 'running', null, null, null),
+                  ($1, 'chat', null, 'single', 'request', 'completed', null, null, null),
+                  ($1, 'linear', $3, 'single', 'epic', 'running', 'i-1', 'ENG-1', 's-1')
+           returning id, linear_identifier`,
+          [org, thread, other],
+        );
+        const [chatDone, chatActive] = runs.map((r) => r.id) as [string, string];
+        const { rows: jobRows } = await client.query<{ id: string; dedupe_key: string }>(
+          `insert into jobs (organization_id, type, task_type, pool, status, payload, dedupe_key) values
+             ($1, 'chat.ask', 'query', 'short', 'completed', $2, 'context'),
+             ($1, 'chat.ask', 'query', 'short', 'queued', $3, 'top-level'),
+             ($1, 'chat.ask', 'query', 'short', 'completed', $4, 'gone-thread'),
+             ($1, 'chat.ask', 'query', 'short', 'completed', $5, 'not-a-uuid'),
+             ($1, 'repo.sync', 'system', null, 'completed', '{}', 'no-thread')
+           returning id, dedupe_key`,
+          [
+            org,
+            JSON.stringify({
+              trigger: { kind: "chat.request", context: { chatThreadId: thread } },
+            }),
+            JSON.stringify({ chatThreadId: other }),
+            JSON.stringify({ chatThreadId: "00000000-0000-4000-8000-000000000000" }),
+            JSON.stringify({ chatThreadId: "nope" }),
+          ],
+        );
+        const jobId = (key: string) => jobRows.find((j) => j.dedupe_key === key)!.id;
+
+        await runMigrations(uri);
+        const { rows } = await client.query(
+          `select organization_id, chat_thread_id, kind, job_id, ralph_run_id from chat_thread_runs`,
+        );
+        const mapped = (
+          chatThreadId: string,
+          kind: string,
+          jobId: string | null,
+          ralphRunId: string | null,
+        ) => ({
+          organization_id: org,
+          chat_thread_id: chatThreadId,
+          kind,
+          job_id: jobId,
+          ralph_run_id: ralphRunId,
+        });
+        // Linear runs delegated from chat, threadless runs and jobs naming no thread aren't mapped.
+        expect(rows).toHaveLength(4);
+        expect(rows).toEqual(
+          expect.arrayContaining([
+            mapped(thread, "coding", null, chatDone),
+            mapped(thread, "coding", null, chatActive),
+            mapped(thread, "query", jobId("context"), null),
+            mapped(other, "query", jobId("top-level"), null),
+          ]),
+        );
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

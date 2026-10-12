@@ -120,6 +120,8 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 /** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
 export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
+/** A chat thread's run: a query task's job, or a coding run. */
+export const chatThreadRunKind = pgEnum("chat_thread_run_kind", ["query", "coding"]);
 /**
  * Where a request came from (the request run's trigger kind, one of
  * `REQUEST_TRIGGERS` in `@omniralph/tasks`).
@@ -1613,6 +1615,40 @@ export const ralphRuns = pgTable(
     index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),
     index("ralph_runs_repository_created_at_idx").on(t.repositoryId, t.createdAt),
     index("ralph_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
+  ],
+);
+
+/**
+ * A run started from a chat thread: a query run (its job) or a coding run
+ * (its ralph run). Finds a thread's runs, and a run's thread. Linear runs
+ * delegated from chat keep only `ralph_runs.chat_thread_id`.
+ */
+export const chatThreadRuns = pgTable(
+  "chat_thread_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    chatThreadId: uuid("chat_thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    kind: chatThreadRunKind("kind").notNull(),
+    /** A `query` run's job. */
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+    /** A `coding` run. */
+    ralphRunId: uuid("ralph_run_id").references(() => ralphRuns.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("chat_thread_runs_job_id_uq").on(t.jobId),
+    uniqueIndex("chat_thread_runs_ralph_run_id_uq").on(t.ralphRunId),
+    index("chat_thread_runs_chat_thread_id_created_at_idx").on(t.chatThreadId, t.createdAt),
+    check(
+      "chat_thread_runs_kind_check",
+      sql`(kind = 'query' and job_id is not null and ralph_run_id is null)
+        or (kind = 'coding' and ralph_run_id is not null and job_id is null)`,
+    ),
   ],
 );
 
