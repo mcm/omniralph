@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -140,6 +140,53 @@ describe("resolveRunExecutables", () => {
       allowedTools: ["mcp__omniralph_graph_graph"],
     });
     expect(executables.commands.get("graph-index")).toBe(path.join(dir, "bin/index.js"));
+  });
+
+  it("loads the skills of required installables only", async () => {
+    await placeInstallable(
+      dataDir,
+      { ...GRAPH, omniralph: { ...GRAPH.omniralph, skills: ["skills/graph-usage"] } },
+      { "skills/graph-usage/SKILL.md": "---\nname: graph-usage\n---\nUse the graph.\n" },
+    );
+    await placeInstallable(
+      dataDir,
+      { name: "@omniralph/other", version: "1.0.0", omniralph: { skills: ["other.md"] } },
+      { "other.md": "Other skill.\n" },
+    );
+    const executables = await resolveRunExecutables(
+      { task: task({ requires: { installables: ["@omniralph/graph"] } }), agent: agent() },
+      { dataDir },
+    );
+    expect(executables.skills?.skills).toEqual(["omniralph-graph:graph-usage"]);
+    expect(executables.skills?.plugins).toHaveLength(1);
+    const plugin = executables.skills!.plugins[0]!;
+    expect(plugin).toMatchObject({ type: "local", skipMcpDiscovery: true });
+    expect(plugin.path.startsWith(path.join(dataDir, "skill-plugins", "omniralph-graph-"))).toBe(
+      true,
+    );
+    expect(await readFile(path.join(plugin.path, "skills/graph-usage/SKILL.md"), "utf8")).toBe(
+      "---\nname: graph-usage\n---\nUse the graph.\n",
+    );
+
+    const withoutSkills = await resolveRunExecutables(
+      { task: task({ requires: { installables: [], hostTools: ["opengrep"] } }), agent: agent() },
+      { dataDir, hostToolPath: () => "/opt/opengrep" },
+    );
+    expect(withoutSkills.skills).toBeNull();
+  });
+
+  it("fails a run whose required installable declares a skill that isn't one", async () => {
+    await placeInstallable(
+      dataDir,
+      { ...GRAPH, omniralph: { ...GRAPH.omniralph, skills: ["skills/empty"] } },
+      { "skills/empty/README.md": "Not a skill.\n" },
+    );
+    await expect(
+      resolveRunExecutables(
+        { task: task({ requires: { installables: ["@omniralph/graph"] } }), agent: agent() },
+        { dataDir },
+      ),
+    ).rejects.toThrow(/skills\/empty of the installable @omniralph\/graph has no SKILL\.md/);
   });
 
   it("gives installable commands and MCP servers the repository cache", async () => {
@@ -385,6 +432,7 @@ describe("sessionMcpServers", () => {
   const installable = {
     commands: new Map(),
     commandEnv: new Map(),
+    skills: null,
     mcpServers: {
       servers: { semgrep_scan: { type: "stdio" as const, command: "/x/scan.js", args: [] } },
       allowedTools: ["mcp__semgrep_scan"],

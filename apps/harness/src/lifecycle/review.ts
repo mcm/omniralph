@@ -28,6 +28,7 @@ import { withoutJobEnv } from "../job-env.js";
 import { runSetupCommands, runTeardownCommands } from "./commands.js";
 import { NO_EXECUTABLES, resolveRunExecutables, type RunExecutables } from "./executables.js";
 import { queryToolPolicy } from "./tool-policy.js";
+import { withInstallableSkills } from "../installable-skills.js";
 
 export interface ReviewTaskOptions {
   /**
@@ -48,7 +49,8 @@ export interface ReviewTaskOptions {
  * The Claude provider of a review task's session: the agent's read-only
  * tools ∩ the task's tool settings (as a query session's), narrowed by the
  * repository's tool settings, with the session token only. A session with
- * tools also gets the installable MCP servers the agent lists.
+ * tools also gets the installable MCP servers the agent lists and the skills
+ * of the run's required installables.
  */
 export function reviewTaskProvider(
   spec: RunSpec,
@@ -61,7 +63,10 @@ export function reviewTaskProvider(
   return new ClaudeAgentProvider({
     logger,
     permissions: (scope) => {
-      const narrowed = narrowPermissions(permissions(scope), spec.tools);
+      const narrowed = withInstallableSkills(
+        narrowPermissions(permissions(scope), spec.tools),
+        scope.allowExploration ? executables.skills : null,
+      );
       if (!mcp || !scope.allowExploration) return narrowed;
       return {
         ...narrowed,

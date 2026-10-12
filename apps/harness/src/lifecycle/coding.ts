@@ -276,6 +276,7 @@ export async function runStoryRun(
         ...(spec.tokenBudget !== null && { tokenBudget: spec.tokenBudget }),
         ...(idleTimeoutMs !== undefined && { idleTimeoutMs }),
         ...(mcpServers && { mcpServers }),
+        ...(executables.skills && { skills: executables.skills }),
         // The session token only: the session's git credential helper reads it from its token file.
         env: ctx.repos.gitEnv(ctx.sessionEnv()),
       };
@@ -366,6 +367,7 @@ export async function runRequestRun(
           ...(spec.tokenBudget !== null && { tokenBudget: spec.tokenBudget }),
           ...(idleTimeoutMs !== undefined && { idleTimeoutMs }),
           ...(mcpServers && { mcpServers }),
+          ...(executables.skills && { skills: executables.skills }),
           // The session token only: its git credential helper gets a read-only credential with it.
           env: ctx.repos.gitEnv(ctx.sessionEnv()),
           // The repository's Claude Code settings may `ask` about calls (e.g. `git commit`).

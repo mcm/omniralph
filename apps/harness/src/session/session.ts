@@ -9,6 +9,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SessionPermissions, TokenUsage } from "@omniralph/engine";
 import type { ToolPolicy } from "../capabilities/index.js";
+import { withInstallableSkills, type InstallableSkills } from "../installable-skills.js";
 import {
   narrowPermissions,
   sdkPermissions,
@@ -90,6 +91,12 @@ export interface SessionRequest {
    * tools (`mcp__<server>__<tool>`, on top of the policy's).
    */
   mcpServers?: { servers: Record<string, McpServerConfig>; allowedTools: readonly string[] };
+  /**
+   * The run's installable skills (plugins the harness wrote), loaded even
+   * when the policy loads no settings, without loading any other settings
+   * (`withInstallableSkills`).
+   */
+  skills?: InstallableSkills;
   /** Directories outside `cwd` the session may use (e.g. the progress log's). */
   additionalDirectories?: string[];
   /** Environment of the Claude Code process. */
@@ -181,10 +188,31 @@ function resultUsage(message: Extract<SDKMessage, { type: "result" }>): TokenUsa
 export function sessionPermissions(
   request: Pick<
     SessionRequest,
-    "policy" | "cwd" | "allowExploration" | "tools" | "additionalDirectories" | "mcpServers"
+    | "policy"
+    | "cwd"
+    | "allowExploration"
+    | "tools"
+    | "additionalDirectories"
+    | "mcpServers"
+    | "skills"
   >,
 ): SessionPermissions {
-  const permissions = narrowPermissions(
+  const permissions = withInstallableSkills(sessionToolPermissions(request), request.skills);
+  if (!request.mcpServers) return permissions;
+  return {
+    ...permissions,
+    allowedTools: [...(permissions.allowedTools ?? []), ...request.mcpServers.allowedTools],
+    mcpServers: { ...permissions.mcpServers, ...request.mcpServers.servers },
+  };
+}
+
+function sessionToolPermissions(
+  request: Pick<
+    SessionRequest,
+    "policy" | "cwd" | "allowExploration" | "tools" | "additionalDirectories"
+  >,
+): SessionPermissions {
+  return narrowPermissions(
     sdkPermissions(request.policy)({
       cwd: request.cwd,
       allowExploration: request.allowExploration !== false,
@@ -194,12 +222,6 @@ export function sessionPermissions(
     }),
     request.tools,
   );
-  if (!request.mcpServers) return permissions;
-  return {
-    ...permissions,
-    allowedTools: [...(permissions.allowedTools ?? []), ...request.mcpServers.allowedTools],
-    mcpServers: { ...permissions.mcpServers, ...request.mcpServers.servers },
-  };
 }
 
 /** The SDK options of a session; exported for tests. */

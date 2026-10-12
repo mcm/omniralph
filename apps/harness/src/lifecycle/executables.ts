@@ -13,6 +13,7 @@ import {
   resolveInstallablePaths,
 } from "@omniralph/tasks";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
+import { installableSkillPlugin, type InstallableSkills } from "../installable-skills.js";
 import {
   installableCacheEnv,
   installablePackageDir,
@@ -44,6 +45,12 @@ export interface RunExecutables {
    * `SessionRequest.mcpServers`; null when it lists none.
    */
   mcpServers: { servers: Record<string, McpStdioServerConfig>; allowedTools: string[] } | null;
+  /**
+   * The skills of the required installables, as plugins the harness wrote
+   * (`installableSkillPlugin`), for `SessionRequest.skills`; null when they
+   * have none.
+   */
+  skills: InstallableSkills | null;
 }
 
 /** No host tools, installable commands or MCP servers. */
@@ -51,6 +58,7 @@ export const NO_EXECUTABLES: RunExecutables = {
   commands: new Map(),
   commandEnv: new Map(),
   mcpServers: null,
+  skills: null,
 };
 
 /** Triggers whose context carries the PR (`pr.number`) a run is about. */
@@ -95,6 +103,9 @@ export function installableMcpServerName(installable: string, server: string): s
  * `blockedExecPaths` cover (`ctx.execPathBlocked`) throw. Each installable's commands and
  * MCP servers get its cache directories for the run's repository
  * (`spec.repositoryId`) and, on a PR trigger, its PR (`installableCacheEnv`).
+ * The skills of every required installable are loaded into the run's
+ * sessions (`installableSkillPlugin`); an installable the run doesn't
+ * require never is.
  */
 export async function resolveRunExecutables(
   spec: Pick<RunSpec, "task" | "agent"> & Partial<Pick<RunSpec, "trigger" | "repositoryId">>,
@@ -131,6 +142,8 @@ export async function resolveRunExecutables(
   const commandOwners = new Map<string, string>();
   const servers: Record<string, McpStdioServerConfig> = {};
   const commandEnv = new Map<string, Record<string, string>>();
+  const skills: InstallableSkills = { plugins: [], skills: [] };
+  const pluginOwners = new Map<string, string>();
   if (installables.length > 0) {
     const missing = (name: string) =>
       new RetryableJobError(
@@ -152,6 +165,18 @@ export async function resolveRunExecutables(
       const { manifest } = parsed.installable;
       const paths = resolveInstallablePaths(installablePackageDir(prefix, name), manifest);
       const cacheEnv = await installableCacheEnv(ctx.dataDir, name, cacheRun);
+      const plugin = await installableSkillPlugin(ctx.dataDir, name, paths.skills);
+      if (plugin) {
+        const other = pluginOwners.get(plugin.name);
+        if (other !== undefined) {
+          throw new Error(
+            `the skills of the installables ${other} and ${name} both have the plugin name ${plugin.name}`,
+          );
+        }
+        pluginOwners.set(plugin.name, name);
+        skills.plugins.push({ type: "local", path: plugin.path, skipMcpDiscovery: true });
+        skills.skills.push(...plugin.skills);
+      }
       for (const [command, bin] of Object.entries(paths.commands)) {
         const owner = commandOwners.get(command);
         if (owner !== undefined) {
@@ -197,6 +222,7 @@ export async function resolveRunExecutables(
     commandEnv,
     mcpServers:
       names.length > 0 ? { servers, allowedTools: names.map((server) => `mcp__${server}`) } : null,
+    skills: skills.plugins.length > 0 ? skills : null,
   };
 }
 

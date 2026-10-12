@@ -536,10 +536,14 @@ ${diff}
       expect(allowList.tools).toEqual(["Read"]);
     });
 
-    it("attaches the run's installable MCP servers to sessions with tools only", () => {
+    it("attaches the run's installable MCP servers and skills to sessions with tools only", () => {
       const executables = {
         commands: new Map<string, string>(),
         commandEnv: new Map(),
+        skills: {
+          plugins: [{ type: "local" as const, path: "/d/skill-plugins/omniralph-graph-1" }],
+          skills: ["omniralph-graph:usage"],
+        },
         mcpServers: {
           servers: { omniralph_graph_graph: { type: "stdio" as const, command: "/d/server.js" } },
           allowedTools: ["mcp__omniralph_graph_graph"],
@@ -556,9 +560,12 @@ ${diff}
       const exploring = build(true);
       expect(exploring.mcpServers).toEqual(executables.mcpServers.servers);
       expect(exploring.allowedTools).toContain("mcp__omniralph_graph_graph");
+      expect(exploring.plugins).toEqual(executables.skills.plugins);
+      expect(exploring.skills).toEqual(["omniralph-graph:usage"]);
       const repair = build(false);
       expect(repair.mcpServers).toEqual({});
       expect(repair.allowedTools ?? []).not.toContain("mcp__omniralph_graph_graph");
+      expect(repair.plugins).toEqual([]);
     });
 
     it("gives no tools when the agent has none (a profile without exploration)", () => {

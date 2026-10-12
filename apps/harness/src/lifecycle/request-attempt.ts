@@ -116,6 +116,7 @@ export type RequestSessionSettings = Pick<
   | "tools"
   | "env"
   | "mcpServers"
+  | "skills"
   | "tokenBudget"
   | "maxTurns"
   | "idleTimeoutMs"

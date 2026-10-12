@@ -1008,6 +1008,66 @@ describe("runQueryTask", () => {
       await expectTornDown();
     });
 
+    it("loads a required installable's skills into the session, and no other settings or skills", async () => {
+      const dataDir = path.join(root, "data");
+      await placeInstallable(
+        dataDir,
+        {
+          name: "@omniralph/graph",
+          version: "1.0.0",
+          omniralph: { skills: ["skills/graph-usage"] },
+        },
+        { "skills/graph-usage/SKILL.md": "---\nname: graph-usage\n---\nQuery the graph.\n" },
+      );
+      await placeInstallable(
+        dataDir,
+        { name: "@omniralph/unused", version: "1.0.0", omniralph: { skills: ["unused.md"] } },
+        { "unused.md": "Not for this run.\n" },
+      );
+      const fake = answering();
+      await runQueryTask(
+        spec({
+          agent: agentFixture({ tools: { builtin: ["Read"] } }),
+          task: taskFixture({ requires: { installables: ["@omniralph/graph"], hostTools: [] } }),
+        }),
+        { ...context(), dataDir },
+        { runner: createSessionRunner(fake.query), tmpDir: tmp },
+      );
+      const options = fake.calls[0]?.options;
+      expect(options?.settingSources).toEqual([]);
+      expect(options?.strictMcpConfig).toBe(true);
+      expect(options?.skills).toEqual(["omniralph-graph:graph-usage"]);
+      expect(options?.tools).toContain("Skill");
+      expect(options?.plugins).toHaveLength(1);
+      const plugin = options!.plugins![0]!;
+      expect(plugin).toMatchObject({ type: "local", skipMcpDiscovery: true });
+      expect(await readFile(path.join(plugin.path, "skills/graph-usage/SKILL.md"), "utf8")).toBe(
+        "---\nname: graph-usage\n---\nQuery the graph.\n",
+      );
+      expect(JSON.stringify(options?.plugins)).not.toContain("unused");
+      await expectTornDown();
+    });
+
+    it("loads no installable skills into a session whose run requires none", async () => {
+      const dataDir = path.join(root, "data");
+      await placeInstallable(
+        dataDir,
+        { name: "@omniralph/unused", version: "1.0.0", omniralph: { skills: ["unused.md"] } },
+        { "unused.md": "Not for this run.\n" },
+      );
+      const fake = answering();
+      await runQueryTask(
+        spec({ agent: agentFixture({ tools: { builtin: ["Read"] } }) }),
+        { ...context(), dataDir },
+        { runner: createSessionRunner(fake.query), tmpDir: tmp },
+      );
+      const options = fake.calls[0]?.options;
+      expect(options?.plugins).toEqual([]);
+      expect(options?.skills).toEqual([]);
+      expect(options?.tools).not.toContain("Skill");
+      await expectTornDown();
+    });
+
     it("retries a run whose host tool isn't available, without running anything", async () => {
       const fake = answering();
       await expect(
