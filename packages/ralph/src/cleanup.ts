@@ -81,6 +81,23 @@ export function mergedCleanupMessage(args: {
     : `The ${args.term} ${args.prUrl} was merged, so I removed its worktree and the local branch \`${args.branch}\`.${stashedNote}`;
 }
 
+/**
+ * Says the worktree of a PR/MR closed without merging was removed; its local
+ * branch (and the one on origin) stays.
+ */
+export function closedCleanupMessage(args: {
+  term: string;
+  prUrl: string;
+  branch: string;
+  /** The worktree's uncommitted changes were stashed as this entry. */
+  stashed?: string | null;
+}): string {
+  const stashedNote = args.stashed
+    ? ` Its uncommitted changes are stashed (\`${args.stashed.slice(0, 10)}\`).`
+    : "";
+  return `The ${args.term} ${args.prUrl} was closed without merging, so I removed its worktree. The branch \`${args.branch}\` stays, here and on origin.${stashedNote}`;
+}
+
 /** The question about stash entries of the epic nobody applied. */
 export function stashQuestion(args: {
   epic: string;

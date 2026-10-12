@@ -22,7 +22,7 @@ import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { respondToCiEvent } from "@/lib/ralph/ci";
 import type { ChatSource } from "@/lib/ralph/conversation";
-import { cleanupMergedPullRequest } from "@/lib/ralph/cleanup";
+import { cleanupClosedPullRequest } from "@/lib/ralph/cleanup";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -31,16 +31,16 @@ import {
   parseGitHubCommentEvent,
   parseGitHubEvent,
   parseGitHubInstallationDeleted,
-  parseGitHubMergeEvent,
+  parseGitHubClosedEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
   parseGitLabEvent,
-  parseGitLabMergeEvent,
+  parseGitLabClosedEvent,
   webhookRepositoryId,
   type ChangeRequestEvent,
   type CiEvent,
   type CommentEvent,
-  type MergeEvent,
+  type ClosedEvent,
 } from "./events";
 
 /** Code-host lookups a handler may make stay well inside the 3s webhook budget. */
@@ -52,7 +52,7 @@ interface ProviderSpec {
   parse(eventName: string | null, body: unknown): ChangeRequestEvent | null;
   parseComment(eventName: string | null, body: unknown): CommentEvent | null;
   parseCi(eventName: string | null, body: unknown): CiEvent | null;
-  parseMerge(eventName: string | null, body: unknown): MergeEvent | null;
+  parseClosed(eventName: string | null, body: unknown): ClosedEvent | null;
 }
 
 const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
@@ -62,7 +62,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parse: parseGitHubEvent,
     parseComment: parseGitHubCommentEvent,
     parseCi: parseGitHubCiEvent,
-    parseMerge: parseGitHubMergeEvent,
+    parseClosed: parseGitHubClosedEvent,
   },
   gitlab: {
     eventHeader: "x-gitlab-event",
@@ -70,7 +70,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parse: parseGitLabEvent,
     parseComment: parseGitLabCommentEvent,
     parseCi: parseGitLabCiEvent,
-    parseMerge: parseGitLabMergeEvent,
+    parseClosed: parseGitLabClosedEvent,
   },
 };
 
@@ -96,7 +96,7 @@ type Outcome =
   | { status: "enqueued"; reviewId: string; jobId: string }
   | { status: "duplicate"; jobId?: string }
   | { status: "accepted"; command: string }
-  | { status: "accepted"; event: "ci_failure" | "merged" }
+  | { status: "accepted"; event: "ci_failure" | "merged" | "closed" }
   | { status: "removed"; connections: number }
   | { status: "ignored"; reason: string };
 
@@ -189,8 +189,8 @@ export async function handleWebhook(
   const delivery = deliveryId ? { provider, deliveryId } : null;
   const ci = spec.parseCi(eventName, body);
   if (ci) return handleCi({ ...deps, ...match, provider, delivery, ci });
-  const merge = spec.parseMerge(eventName, body);
-  if (merge) return handleMerge({ ...deps, ...match, provider, delivery, merge });
+  const closed = spec.parseClosed(eventName, body);
+  if (closed) return handleClosed({ ...deps, ...match, provider, delivery, closed });
   const event = spec.parse(eventName, body);
   if (!event) {
     const comment = spec.parseComment(eventName, body);
@@ -335,22 +335,23 @@ async function handleCi(
 }
 
 /**
- * A merged PR/MR: when it's a ralph lane's, the cleanup of its worktree and
- * branch starts (`cleanupMergedPullRequest`, via `defer`, since it confirms
- * the merge with the code host). Other PRs/MRs are ignored; a delivery ID
- * that was already acted on is a no-op.
+ * A closed PR/MR, merged or not: when it's a ralph lane's, it's recorded and
+ * the cleanup of its worktree starts (`cleanupClosedPullRequest`, via
+ * `defer`, since it confirms the state with the code host): merged, the
+ * local branch goes too; closed unmerged, it's kept. Other PRs/MRs are
+ * ignored; a delivery ID that was already acted on is a no-op.
  */
-async function handleMerge(
+async function handleClosed(
   input: WebhookDeps & {
     repository: Repository;
     connection: ScmConnection;
     provider: ScmProvider;
     delivery: WebhookDeliveryRef | null;
-    merge: MergeEvent;
+    closed: ClosedEvent;
   },
 ): Promise<Response> {
-  const { db, repository, delivery, merge } = input;
-  const found = await findLaneByPullRequest(db, repository.id, merge.number);
+  const { db, repository, delivery, closed } = input;
+  const found = await findLaneByPullRequest(db, repository.id, closed.number);
   if (!found) return ignored("not_ralph");
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
     return reply({ status: "duplicate" });
@@ -361,7 +362,7 @@ async function handleMerge(
       const linear = lazyLinearGateway(
         input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
       );
-      await cleanupMergedPullRequest(
+      await cleanupClosedPullRequest(
         {
           db,
           organizationId,
@@ -374,14 +375,14 @@ async function handleMerge(
       );
     } catch (error) {
       console.error(
-        `${input.provider} merge of ${repository.fullPath}#${merge.number} failed to clean up`,
+        `${input.provider} ${closed.merged ? "merge" : "closing"} of ${repository.fullPath}#${closed.number} failed to clean up`,
         error,
       );
     }
   };
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
-  return reply({ status: "accepted", event: "merged" });
+  return reply({ status: "accepted", event: closed.merged ? "merged" : "closed" });
 }
 
 /**

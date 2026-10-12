@@ -1019,7 +1019,9 @@ export async function listOpenPullRequestLanes(
  * Merged ralph PRs/MRs of the organization's runs whose cleanup isn't
  * through, each with the lane of its newest run: never cleaned up, waiting,
  * running or failed, or with an answer being carried out or questions still
- * open. Oldest lane first. Only runs of `origin` when given.
+ * open. Also every lane whose keep-branch cleanup (a PR/MR closed unmerged,
+ * a stopped run) waits, runs or failed. Oldest lane first. Only runs of
+ * `origin` when given.
  */
 export async function listLanesToCleanUp(
   db: Executor,
@@ -1034,18 +1036,28 @@ export async function listLanesToCleanUp(
       and(
         eq(ralphRuns.organizationId, organizationId),
         origin ? eq(ralphRuns.origin, origin) : undefined,
-        isNotNull(ralphLanes.prNumber),
-        eq(ralphLanes.prMerged, true),
-        sql`(${ralphLanes.cleanup} is null
-          or ${ralphLanes.cleanup}->>'status' <> 'done'
-          or ${ralphLanes.cleanup}->>'jobId' is not null
-          or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
+        or(
+          and(
+            isNotNull(ralphLanes.prNumber),
+            eq(ralphLanes.prMerged, true),
+            sql`(${ralphLanes.cleanup} is null
+              or ${ralphLanes.cleanup}->>'status' <> 'done'
+              or ${ralphLanes.cleanup}->>'jobId' is not null
+              or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
+          ),
+          sql`(${ralphLanes.cleanup}->>'keepBranch' is not null
+            and (${ralphLanes.cleanup}->>'status' <> 'done'
+              or ${ralphLanes.cleanup}->>'jobId' is not null))`,
+        ),
       ),
     )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
   const newest = new Map<string, { lane: RalphLane; run: RalphRun }>();
   for (const row of rows) {
-    const key = `${row.lane.repositoryId}#${row.lane.prNumber}`;
+    // A keep-branch cleanup is the lane's own; a merge's is the PR/MR's (its newest run).
+    const key = row.lane.cleanup?.keepBranch
+      ? row.lane.id
+      : `${row.lane.repositoryId}#${row.lane.prNumber}`;
     if (!newest.has(key)) newest.set(key, row);
   }
   return [...newest.values()].sort(

@@ -479,9 +479,11 @@ guardrail against mistakes, not a security boundary).
 
 After the run's PR/MR merges, a `worktree.cleanup` system RPC on the run's harness removes the branch worktree
 and deletes the local branch (keeping a branch with unmerged commits until someone answers in
-Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). Worktrees of PRs/MRs
-closed without merging, of repositories with **Clean up after the merge** off, and of a harness that
-was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch>` while
+Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). After a PR/MR closes
+without merging, or the run is stopped, the same RPC stashes uncommitted work and removes the
+worktree but keeps the local branch (a resumed run recreates the worktree from it; a local branch
+ahead of `origin` is never reset). Nothing deletes a branch on `origin`. Worktrees of repositories
+with **Clean up after the merge** off, and of a harness that was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch>` while
 the harness isn't running a job for it, then
 `git -C <workspaceRoot>/<provider>/<host>/<repo path> worktree prune`.
 

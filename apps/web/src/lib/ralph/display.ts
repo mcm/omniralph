@@ -141,7 +141,7 @@ export interface RalphLaneView {
   branch: string;
   baseBranch: string;
   pullRequest: RalphPullRequest | null;
-  /** After its PR/MR merged: where the cleanup of its worktree and branch is (`cleanupLabel`). */
+  /** After its PR/MR merged or closed, or the run stopped: where the cleanup of its worktree is (`cleanupLabel`). */
   cleanup: string | null;
   /** Review-response rounds so far, out of the repository's `maxReviewRounds` (null: turned off). */
   reviewRounds: RalphRounds;
@@ -300,18 +300,25 @@ export function linearIssueUrl(runUrl: string | null, identifier: string): strin
 /** A lane's cleanup for the run detail page. */
 export function cleanupLabel(cleanup: RalphLaneCleanup | null): string | null {
   if (!cleanup) return null;
+  const why =
+    cleanup.keepBranch === "closed"
+      ? "Closed"
+      : cleanup.keepBranch === "stopped"
+        ? "Stopped"
+        : "Merged";
   const open = cleanup.questions.length;
   const asking = open > 0 ? `, waiting for ${open === 1 ? "an answer" : `${open} answers`}` : "";
+  const kept = cleanup.keepBranch ? " (branch kept)" : "";
   switch (cleanup.status) {
     case "pending":
-      return "Merged: cleanup waits for the run's current job";
+      return `${why}: cleanup waits for the run's current job`;
     case "running":
-      return "Merged: cleaning up";
+      return `${why}: cleaning up`;
     case "failed":
-      return `Merged: cleanup failed (${cleanup.error ?? "unknown error"}), retried by the reconcile cron`;
+      return `${why}: cleanup failed (${cleanup.error ?? "unknown error"}), retried by the reconcile cron`;
     default:
       return cleanup.error
-        ? `Merged: not cleaned up (${cleanup.error})`
-        : `Merged: cleaned up${asking}`;
+        ? `${why}: not cleaned up (${cleanup.error})`
+        : `${why}: cleaned up${kept}${asking}`;
   }
 }

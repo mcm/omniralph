@@ -502,7 +502,7 @@ export function RalphSettingsSection({
         <Toggle
           id="ralph-cleanup"
           label="Clean up after the merge (cleanupMergedWorktrees)"
-          description="Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first."
+          description="Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first. A request closed without merging, or a stopped run, only has its worktree removed: the branch stays."
           checked={cleanupMergedWorktrees}
           disabled={pending}
           onChange={setCleanupMergedWorktrees}

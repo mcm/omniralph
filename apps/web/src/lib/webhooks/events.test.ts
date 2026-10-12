@@ -3,10 +3,10 @@ import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
   parseGitHubInstallationDeleted,
-  parseGitHubMergeEvent,
+  parseGitHubClosedEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
-  parseGitLabMergeEvent,
+  parseGitLabClosedEvent,
 } from "./events";
 
 const user = { login: "octocat", type: "User" };
@@ -180,36 +180,61 @@ describe("CI events", () => {
   });
 });
 
-describe("merge events", () => {
-  it("parses merged GitHub pull requests only", () => {
+describe("closed events", () => {
+  it("parses closed GitHub pull requests, merged or not", () => {
     const closed = (merged: boolean | null) => ({
       action: "closed",
       pull_request: { number: 4, merged, state: "closed" },
     });
-    expect(parseGitHubMergeEvent("pull_request", closed(true))).toEqual({ number: 4 });
-    expect(parseGitHubMergeEvent("pull_request", closed(false))).toBeNull();
-    expect(parseGitHubMergeEvent("pull_request", closed(null))).toBeNull();
+    expect(parseGitHubClosedEvent("pull_request", closed(true))).toEqual({
+      number: 4,
+      merged: true,
+    });
+    expect(parseGitHubClosedEvent("pull_request", closed(false))).toEqual({
+      number: 4,
+      merged: false,
+    });
+    expect(parseGitHubClosedEvent("pull_request", closed(null))).toEqual({
+      number: 4,
+      merged: false,
+    });
     expect(
-      parseGitHubMergeEvent("pull_request", { ...closed(true), action: "synchronize" }),
+      parseGitHubClosedEvent("pull_request", { ...closed(true), action: "synchronize" }),
     ).toBeNull();
-    expect(parseGitHubMergeEvent("issue_comment", closed(true))).toBeNull();
+    expect(
+      parseGitHubClosedEvent("pull_request", { ...closed(false), action: "reopened" }),
+    ).toBeNull();
+    expect(parseGitHubClosedEvent("issue_comment", closed(true))).toBeNull();
   });
 
-  it("parses merged GitLab merge requests only", () => {
+  it("parses merged and closed GitLab merge requests", () => {
     const mr = (action: string | undefined, state: string) => ({
       object_kind: "merge_request",
       object_attributes: { iid: 9, state, ...(action && { action }) },
     });
-    expect(parseGitLabMergeEvent("Merge Request Hook", mr("merge", "merged"))).toEqual({
+    const hook = "Merge Request Hook";
+    expect(parseGitLabClosedEvent(hook, mr("merge", "merged"))).toEqual({
       number: 9,
+      merged: true,
+    });
+    expect(parseGitLabClosedEvent(hook, mr("close", "closed"))).toEqual({
+      number: 9,
+      merged: false,
     });
     // Older GitLab versions send no action.
-    expect(parseGitLabMergeEvent("Merge Request Hook", mr(undefined, "merged"))).toEqual({
+    expect(parseGitLabClosedEvent(hook, mr(undefined, "merged"))).toEqual({
       number: 9,
+      merged: true,
     });
-    expect(parseGitLabMergeEvent("Merge Request Hook", mr("close", "closed"))).toBeNull();
-    expect(parseGitLabMergeEvent("Merge Request Hook", mr("update", "merged"))).toBeNull();
-    expect(parseGitLabMergeEvent("Pipeline Hook", mr("merge", "merged"))).toBeNull();
+    expect(parseGitLabClosedEvent(hook, mr(undefined, "closed"))).toEqual({
+      number: 9,
+      merged: false,
+    });
+    expect(parseGitLabClosedEvent(hook, mr(undefined, "opened"))).toBeNull();
+    expect(parseGitLabClosedEvent(hook, mr("update", "merged"))).toBeNull();
+    expect(parseGitLabClosedEvent(hook, mr("update", "closed"))).toBeNull();
+    expect(parseGitLabClosedEvent(hook, mr("reopen", "opened"))).toBeNull();
+    expect(parseGitLabClosedEvent("Pipeline Hook", mr("merge", "merged"))).toBeNull();
   });
 });
 

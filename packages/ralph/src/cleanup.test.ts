@@ -3,6 +3,7 @@ import {
   branchExpiredMessage,
   branchQuestion,
   matchCleanupAnswer,
+  closedCleanupMessage,
   mergedCleanupMessage,
   stashAnswerMessage,
   stashQuestion,
@@ -86,6 +87,21 @@ describe("cleanup messages", () => {
     );
     expect(branchExpiredMessage({ branch: "b", commits: 2, minutes: 1 })).toBe(
       "Nobody answered within 1 minute, so I deleted the local branch `b` with its 2 unmerged commits.",
+    );
+  });
+});
+
+describe("closedCleanupMessage", () => {
+  it("says the branch stays", () => {
+    expect(
+      closedCleanupMessage({
+        term: "merge request",
+        prUrl: "u",
+        branch: "b",
+        stashed: "0123456789abcdef0123456789abcdef01234567",
+      }),
+    ).toBe(
+      "The merge request u was closed without merging, so I removed its worktree. The branch `b` stays, here and on origin. Its uncommitted changes are stashed (`0123456789`).",
     );
   });
 });

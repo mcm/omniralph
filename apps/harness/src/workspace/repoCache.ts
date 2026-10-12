@@ -183,8 +183,12 @@ export interface BranchWorktree {
 
 export interface BranchCleanupOptions extends GitJobOptions {
   branch: string;
-  /** The merged PR/MR head: commits of the local branch it doesn't have keep the branch. */
-  mergedSha: string;
+  /**
+   * The merged PR/MR head: commits of the local branch it doesn't have keep
+   * the branch. Null: the branch is kept whatever it holds (a PR/MR closed
+   * unmerged, a stopped run).
+   */
+  mergedSha: string | null;
   /** Message of the stash entry holding the worktree's uncommitted changes. */
   stashLabel: string;
 }
@@ -399,7 +403,8 @@ export class RepoCache {
    * Cleanup after a branch's PR/MR merged (ported from cyralph's
    * `removeWorkspace`): the worktree's uncommitted changes are stashed, the
    * worktree is removed, and the local branch is deleted unless it has commits
-   * `mergedSha` doesn't (then it's kept, and they're counted). A repository
+   * `mergedSha` doesn't (then it's kept, and they're counted). Without
+   * `mergedSha` the local branch is always kept (nothing counted). A repository
    * this agent never cloned has nothing to clean up: it isn't cloned for it.
    */
   async cleanupBranchWorktree(
@@ -408,7 +413,8 @@ export class RepoCache {
   ): Promise<BranchCleanup> {
     const { branch, mergedSha } = options;
     await this.checkBranchName(branch);
-    if (!SHA.test(mergedSha)) throw new Error(`invalid commit SHA ${mergedSha}`);
+    if (mergedSha !== null && !SHA.test(mergedSha))
+      throw new Error(`invalid commit SHA ${mergedSha}`);
     const nothing: BranchCleanup = {
       removedWorktree: false,
       hadBranch: false,
@@ -430,7 +436,7 @@ export class RepoCache {
           await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).catch(() => "")
         ).trim();
         let unmerged = 0;
-        if (tip && tip !== mergedSha) {
+        if (mergedSha !== null && tip && tip !== mergedSha) {
           // The merged head may only be on the remote (e.g. pushed by someone else).
           if ((await this.missingCommits(repoDir, [mergedSha], job)).length > 0) {
             await this.fetch(repoDir, [mergedSha], job);
@@ -447,11 +453,13 @@ export class RepoCache {
         await rm(worktreePath, { recursive: true, force: true });
         await git(["worktree", "unlock", worktreePath]).catch(() => undefined);
         await git(["worktree", "prune"]);
-        if (tip && unmerged === 0) await git(["branch", "-D", branch]);
+        if (mergedSha !== null && tip && unmerged === 0) await git(["branch", "-D", branch]);
         if (hasWorktree || tip) {
           this.logger?.info(
             { path: worktreePath, branch, unmerged, stashed },
-            "cleaned up a merged branch worktree",
+            mergedSha === null
+              ? "removed a branch worktree, kept the branch"
+              : "cleaned up a merged branch worktree",
           );
         }
         return { removedWorktree: hasWorktree, hadBranch: !!tip, stashed, unmerged };
@@ -1018,13 +1026,20 @@ export class RepoCache {
     } else if (hidden && (await this.isAncestor(repoDir, start, hidden, job))) {
       start = hidden;
     }
+    // A local branch a cleanup kept (a closed PR/MR, a stopped run) may hold commits that were
+    // never pushed: a worktree recreated for the branch carries on from it when it's ahead.
+    const local = `refs/heads/${branch}`;
+    if ((await hasRef(local)) && (await this.isAncestor(repoDir, start, local, job))) {
+      start = (await git(["rev-parse", local])).trim();
+    }
     // Drops the bookkeeping of a worktree whose directory is gone, which would block the branch
     // (unlocked first: branch worktrees are locked).
     await git(["worktree", "unlock", worktreePath]).catch(() => undefined);
     await git(["worktree", "prune"]);
     await mkdir(path.dirname(worktreePath), { recursive: true });
     this.logger?.info({ path: worktreePath, branch, start }, "creating branch worktree");
-    // -B: a local branch left in the bare repository (e.g. by the clone) starts over from `start`.
+    // -B: a local branch left in the bare repository (e.g. by the clone) that isn't ahead of
+    // `start` starts over from it.
     // --lock: git never prunes a long-lived worktree's bookkeeping (e.g. while its disk is unmounted).
     await git(["worktree", "add", "--lock", "--no-checkout", "-B", branch, worktreePath, start]);
     await writeFile(await this.setupMarker(worktreePath, job), "");

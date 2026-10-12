@@ -6,6 +6,12 @@
  * - Triggers: the PR/MR's merge webhook, the Linear issue moving to completed,
  *   any follow-up check that finds it merged (`recordClosedPullRequest`), and
  *   the reconcile cron (`reconcileCleanup`) as the fallback.
+ * - A PR/MR closed without merging (its close webhook, or any check that
+ *   finds it closed) and a stopped run (`stopRun`) start a keep-branch
+ *   cleanup (`startKeepBranchCleanup`): it stashes uncommitted changes and
+ *   removes the worktree only, so a resumed run carries on from the local
+ *   branch, and asks nothing. Resuming a stopped run drops one that hasn't
+ *   started (`dropKeepBranchCleanups`). Nothing deletes a branch on origin.
  * - The work runs as a `worktree.cleanup` system RPC on the run's sticky
  *   harness (on both coding paths; a legacy `ralph.cleanup` job queued before
  *   that is still applied), which
@@ -46,6 +52,7 @@ import {
 } from "@omniralph/db";
 import {
   branchAnswerMessage,
+  closedCleanupMessage,
   branchExpiredMessage,
   branchQuestion,
   cleanupAnswerFailedMessage,
@@ -86,7 +93,14 @@ export function cleanupDedupeKey(laneId: string): string {
 export type CleanupStart =
   | {
       status: "ignored";
-      reason: "gone" | "not_merged" | "started" | "repository_unavailable" | "opted_out";
+      reason:
+        | "gone"
+        | "not_merged"
+        | "not_closed"
+        | "not_stopped"
+        | "started"
+        | "repository_unavailable"
+        | "opted_out";
     }
   /** None of the run's jobs ran on an agent: there's no worktree to remove. */
   | { status: "nothing" }
@@ -94,9 +108,30 @@ export type CleanupStart =
   | { status: "pending" }
   | { status: "enqueued"; jobId: string };
 
-/** The lane's cleanup, as stored or new. */
-function cleanupOf(lane: RalphLane, mergedSha: string): RalphLaneCleanup {
-  return lane.cleanup ?? { status: "pending", at: now(), mergedSha, questions: [] };
+/**
+ * What a cleanup is for: a PR/MR merged at `mergedSha` (its head), or a
+ * keep-branch cleanup after the PR/MR closed unmerged or the run stopped.
+ */
+export type CleanupTarget = { mergedSha: string } | { keepBranch: "closed" | "stopped" };
+
+/** The target a stored cleanup was started for. */
+function targetOf(cleanup: RalphLaneCleanup): CleanupTarget {
+  return cleanup.keepBranch
+    ? { keepBranch: cleanup.keepBranch }
+    : { mergedSha: cleanup.mergedSha ?? "" };
+}
+
+/** A new cleanup of `target`. */
+function newCleanup(target: CleanupTarget): RalphLaneCleanup {
+  return "keepBranch" in target
+    ? {
+        status: "pending",
+        at: now(),
+        mergedSha: null,
+        keepBranch: target.keepBranch,
+        questions: [],
+      }
+    : { status: "pending", at: now(), mergedSha: target.mergedSha, questions: [] };
 }
 
 const now = () => new Date().toISOString();
@@ -162,19 +197,63 @@ async function enqueueCleanupJob(
  * repository opted out (`cleanupMergedWorktrees`), or the run never ran a job
  * on an agent. Waits (`pending`) while one of the run's jobs is active.
  */
-export async function startCleanup(
+export function startCleanup(
   deps: RalphDeps,
   laneId: string,
   mergedSha: string,
+): Promise<CleanupStart> {
+  return beginCleanup(deps, laneId, { mergedSha });
+}
+
+/**
+ * Starts the keep-branch cleanup of a lane (stash, remove the worktree, keep
+ * the local branch) after its PR/MR closed unmerged or its run stopped, on
+ * the same terms as `startCleanup`. A lane whose PR/MR merged gets the merge
+ * cleanup instead; a stopped run's that resumed in the meantime gets none.
+ */
+export function startKeepBranchCleanup(
+  deps: RalphDeps,
+  laneId: string,
+  reason: "closed" | "stopped",
+): Promise<CleanupStart> {
+  return beginCleanup(deps, laneId, { keepBranch: reason });
+}
+
+async function beginCleanup(
+  deps: RalphDeps,
+  laneId: string,
+  target: CleanupTarget,
 ): Promise<CleanupStart> {
   const lane = await getLane(deps.db, laneId);
   if (!lane) return { status: "ignored", reason: "gone" };
   const result = await lockRun(deps.db, lane.runId, async (tx, run): Promise<CleanupStart> => {
     const current = await getLane(tx, laneId);
     if (!current) return { status: "ignored", reason: "gone" };
-    if (!current.prMerged) return { status: "ignored", reason: "not_merged" };
-    const state = cleanupOf(current, mergedSha);
-    if (current.cleanup && (state.status === "running" || state.status === "done")) {
+    const keep = "keepBranch" in target ? target.keepBranch : null;
+    if (!keep && !current.prMerged) return { status: "ignored", reason: "not_merged" };
+    const outdated =
+      keep === "closed" && (!current.prClosed || current.prMerged)
+        ? "not_closed"
+        : keep === "stopped" && (run.status !== "stopped" || current.prMerged)
+          ? "not_stopped"
+          : null;
+    if (outdated) {
+      // A waiting or failed keep-branch cleanup that no longer applies is dropped (a merged
+      // lane then gets the merge cleanup from the reconcile cron).
+      if (current.cleanup?.keepBranch && !current.cleanup.jobId) {
+        await updateLane(tx, laneId, { cleanup: null });
+      }
+      return { status: "ignored", reason: outdated };
+    }
+    let stored = current.cleanup;
+    if (stored?.keepBranch && !keep) {
+      // The PR/MR merged after a keep-branch cleanup: the merge's starts once that one is
+      // through (`applyCleanupJob` hands a merged lane over to the reconcile cron).
+      if (stored.jobId) return { status: "pending" };
+      stored = null;
+    }
+    const state = stored ?? newCleanup(target);
+    if (stored && (state.status === "running" || state.status === "done")) {
       return { status: "ignored", reason: "started" };
     }
     const found = await getRepositoryWithConnection(deps.db, current.repositoryId);
@@ -187,16 +266,20 @@ export async function startCleanup(
       return { status: "nothing" };
     }
     if ((await listActiveRunJobIds(tx, run.id)).length > 0) {
-      if (!current.cleanup || state.status !== "pending") {
+      if (!stored || state.status !== "pending") {
         await updateLane(tx, laneId, { cleanup: { ...state, status: "pending", at: now() } });
       }
       return { status: "pending" };
     }
-    const enqueued = await enqueueCleanupJob(deps, run, current, {
-      kind: "cleanup",
-      mergedSha: state.mergedSha,
-      stashes: current.stashes.map((s) => s.sha),
-    });
+    const stashes = current.stashes.map((s) => s.sha);
+    const enqueued = await enqueueCleanupJob(
+      deps,
+      run,
+      current,
+      state.keepBranch
+        ? { kind: "cleanup", keepBranch: true, stashes }
+        : { kind: "cleanup", mergedSha: state.mergedSha ?? undefined, stashes },
+    );
     if ("why" in enqueued) {
       console.warn(`Not cleaning up ${current.branch} of ralph run ${run.id}: ${enqueued.why}`);
       await updateLane(tx, laneId, {
@@ -213,10 +296,40 @@ export async function startCleanup(
 }
 
 /**
+ * Starts a keep-branch cleanup of every lane of a run that was just stopped
+ * (`stopRun`): pending until its canceled jobs are through. Failures are
+ * logged: the reconcile cron retries a cleanup that waits or failed.
+ */
+export async function cleanUpStoppedRun(deps: RalphDeps, runId: string): Promise<void> {
+  for (const lane of await listLanes(deps.db, runId)) {
+    try {
+      await startKeepBranchCleanup(deps, lane.id, "stopped");
+    } catch (error) {
+      console.error(`Starting the cleanup of ${lane.branch} (ralph lane ${lane.id}) failed`, error);
+    }
+  }
+}
+
+/**
+ * A stopped run resumes: its lanes' keep-branch cleanups that aren't running
+ * are dropped (a running one just removes the worktree, which the next job
+ * recreates from the kept branch), so they neither remove the worktree under
+ * the resumed run nor stop a later stop or close from cleaning up again.
+ */
+export async function dropKeepBranchCleanups(tx: RalphTransaction, runId: string): Promise<void> {
+  for (const lane of await listLanes(tx, runId)) {
+    if (lane.cleanup?.keepBranch && !lane.cleanup.jobId) {
+      await updateLane(tx, lane.id, { cleanup: null });
+    }
+  }
+}
+
+/**
  * Records a PR/MR seen closed or merged (it's no longer followed up), and
- * starts the cleanup when it merged. The single place every check that finds
- * a ralph PR/MR closed goes through. A cleanup that fails to start is logged:
- * the reconcile cron tries again.
+ * starts the cleanup: when it merged, the merge cleanup; closed unmerged, the
+ * keep-branch one. The single place every check that finds a ralph PR/MR
+ * closed goes through. A cleanup that fails to start is logged: the
+ * reconcile cron tries again.
  */
 export async function recordClosedPullRequest(
   deps: RalphDeps,
@@ -228,16 +341,16 @@ export async function recordClosedPullRequest(
     prMerged: state.state === "merged",
     mergeSha: state.mergeSha,
   });
-  if (state.state !== "merged") return;
   try {
-    await startCleanup(deps, lane.id, state.headSha);
+    if (state.state === "merged") await startCleanup(deps, lane.id, state.headSha);
+    else await startKeepBranchCleanup(deps, lane.id, "closed");
   } catch (error) {
     console.error(`Starting the cleanup of ${lane.branch} (ralph lane ${lane.id}) failed`, error);
   }
 }
 
 /**
- * Checks whether the lane's PR/MR closed and records it (merged: starts the
+ * Checks whether the lane's PR/MR closed and records it (starts the
  * cleanup). Returns the state, or null when the repository is unavailable.
  */
 async function checkPullRequest(
@@ -258,8 +371,8 @@ async function checkPullRequest(
   return state;
 }
 
-/** A merge webhook for a ralph PR/MR: checks it with the code host and cleans up. */
-export async function cleanupMergedPullRequest(
+/** A close or merge webhook for a ralph PR/MR: checks it with the code host and cleans up. */
+export async function cleanupClosedPullRequest(
   deps: RalphDeps,
   lane: RalphLane,
 ): Promise<ChangeRequestStatus | null> {
@@ -372,9 +485,32 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
             at: e.date,
           },
       );
-      let questions = rest.questions;
       const target = await getRepositoryWithConnection(deps.db, lane.repositoryId);
       const repository = target?.repository;
+      if (rest.keepBranch) {
+        // Asks nothing: the branch stays, and so do the stash entries (a resumed run is offered
+        // its own). A PR/MR that merged meanwhile is handed to the cron's merge cleanup; a
+        // stopped run that resumed meanwhile can be cleaned up again when it stops again.
+        if (rest.keepBranch === "closed" && result.removedWorktree && !lane.prMerged) {
+          await notify(
+            deps,
+            run,
+            closedCleanupMessage({
+              term: changeRequestTerm(repository?.provider ?? "github"),
+              prUrl: lane.prUrl ?? `#${lane.prNumber}`,
+              branch: lane.branch,
+              stashed: result.stashed,
+            }),
+          );
+        }
+        const over = lane.prMerged || (rest.keepBranch === "stopped" && run.status !== "stopped");
+        await updateLane(tx, lane.id, {
+          stashes,
+          cleanup: over ? null : { ...rest, status: "done", at: now(), error: undefined },
+        });
+        return true;
+      }
+      let questions = rest.questions;
       const settings = parseRalphSettings(repository?.ralphSettings);
       if (result.removedWorktree || result.hadBranch) {
         await notify(
@@ -517,7 +653,7 @@ export async function onCleanupJobFinished(deps: RalphDeps, job: Job): Promise<v
 export async function startPendingCleanups(deps: RalphDeps, runId: string): Promise<void> {
   for (const lane of await listLanes(deps.db, runId)) {
     if (lane.cleanup?.status !== "pending") continue;
-    await startCleanup(deps, lane.id, lane.cleanup.mergedSha);
+    await beginCleanup(deps, lane.id, targetOf(lane.cleanup));
   }
 }
 
@@ -688,7 +824,7 @@ export async function reconcileCleanup(
         return;
       }
       if (cleanup.status === "pending" || cleanup.status === "failed") {
-        const started = await startCleanup(deps, lane.id, cleanup.mergedSha);
+        const started = await beginCleanup(deps, lane.id, targetOf(cleanup));
         if (started.status === "enqueued") counts.started += 1;
         return;
       }

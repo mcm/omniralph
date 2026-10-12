@@ -1614,7 +1614,11 @@ export type RalphCleanupQuestion =
       deadline: string;
     };
 
-/** Cleanup of a lane after its PR/MR merged (cyralph's merged-worktree cleanup). */
+/**
+ * Cleanup of a lane after its PR/MR merged (cyralph's merged-worktree
+ * cleanup), or its keep-branch form after the PR/MR closed unmerged or the
+ * run stopped (`keepBranch`).
+ */
 export interface RalphLaneCleanup {
   /**
    * `pending`: waits until none of the run's jobs is active; `running`: its
@@ -1624,8 +1628,14 @@ export interface RalphLaneCleanup {
   status: "pending" | "running" | "done" | "failed";
   /** ISO timestamp of the last change. */
   at: string;
-  /** The merged PR/MR head. */
-  mergedSha: string;
+  /** The merged PR/MR head; null for a keep-branch cleanup. */
+  mergedSha: string | null;
+  /**
+   * Set for a keep-branch cleanup, with why: the PR/MR closed unmerged, or
+   * the run stopped (it may resume). It stashes and removes the worktree and
+   * keeps the local branch; it asks no questions.
+   */
+  keepBranch?: "closed" | "stopped";
   /** The cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) doing the cleanup or carrying out an answer, until its outcome is applied. */
   jobId?: string;
   /** The answer that job carries out (`expired`: the branch question timed out). */

@@ -19,7 +19,9 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
  * - `cleanup`: the worktree's uncommitted changes are stashed, the worktree
  *   is removed, and the local branch deleted unless it has commits the merged
  *   head doesn't. Returns the run's stash entries (and those recorded on the
- *   lane) still in the repository's stash list, for the stash question.
+ *   lane) still in the repository's stash list, for the stash question. Its
+ *   keep-branch form (a PR/MR closed unmerged, a stopped run) keeps the local
+ *   branch: a resumed run recreates the worktree from it.
  * - `stashes`: pushes the entries to `ralph/stash/<epic>` on `origin` (one
  *   commit each) and drops them, or just drops them.
  * - `branch`: pushes the kept branch to `origin` and deletes it, or deletes it.
@@ -55,14 +57,17 @@ export async function cleanUpWorktree(
       const removed = await ctx.repos.cleanupBranchWorktree(repository, {
         ...git,
         branch,
-        mergedSha: action.mergedSha,
+        mergedSha: action.keepBranch ? null : (action.mergedSha ?? null),
         stashLabel: `${prefix}cleanup`,
       });
       const recorded = new Set([...action.stashes, ...(removed.stashed ? [removed.stashed] : [])]);
       const stashes = (await ctx.repos.listRepoStashes(repository, git)).filter(
         (e) => recorded.has(e.sha) || e.label.startsWith(prefix),
       );
-      log.info({ ...removed, stashes: stashes.length }, "cleaned up after the merge");
+      log.info(
+        { ...removed, stashes: stashes.length, keepBranch: !!action.keepBranch },
+        action.keepBranch ? "removed the worktree, kept the branch" : "cleaned up after the merge",
+      );
       return result({ ...removed, stashes });
     }
     if (action.kind === "stashes") {

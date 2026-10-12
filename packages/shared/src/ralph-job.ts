@@ -457,14 +457,22 @@ export const RalphCleanupAction = z.discriminatedUnion("kind", [
    * The lane's PR/MR merged: stash what the worktree has uncommitted, remove
    * the worktree, and delete the local branch unless it has commits the
    * merged head doesn't. Lists the run's stash entries still in the stash list.
+   * The keep-branch form (`keepBranch: true`, no `mergedSha`: the PR/MR closed
+   * unmerged or the run stopped) only stashes and removes the worktree.
    */
-  z.object({
-    kind: z.literal("cleanup"),
-    /** The PR/MR head that was merged. */
-    mergedSha: CommitSha,
-    /** Stash entries recorded on the lane (e.g. by earlier runs of the issue). */
-    stashes: z.array(CommitSha).max(200).default([]),
-  }),
+  z
+    .object({
+      kind: z.literal("cleanup"),
+      /** The PR/MR head that was merged. */
+      mergedSha: CommitSha.optional(),
+      /** Keep the local branch whatever it holds (a stopped run may resume from it). */
+      keepBranch: z.literal(true).optional(),
+      /** Stash entries recorded on the lane (e.g. by earlier runs of the issue). */
+      stashes: z.array(CommitSha).max(200).default([]),
+    })
+    .refine((action) => !!action.mergedSha !== !!action.keepBranch, {
+      message: "Give either mergedSha or keepBranch",
+    }),
   /** Answer to the stash question: push them (one commit each) to `ralphStashBranch`, then drop them; or drop them. */
   z.object({
     kind: z.literal("stashes"),

@@ -313,4 +313,66 @@ describe.each(["worktree.cleanup", "ralph.cleanup"] as const)("%s", { timeout: 6
     expect(await cleanup(head)).toMatchObject({ error: null });
     expect(onRemote()).toBe(tip);
   });
+
+  describe("keep-branch cleanup (a PR/MR closed unmerged, a stopped run)", () => {
+    const keep = (recorded: string[] = []) =>
+      run(job({ kind: "cleanup", keepBranch: true, stashes: recorded }));
+
+    it("stashes uncommitted work, removes the worktree and keeps the local and remote branch", async () => {
+      const head = await mergedEpic();
+      // An unpushed commit on top, and uncommitted work.
+      await writeFile(path.join(worktree(), "more.txt"), "more\n");
+      git(worktree(), "add", ".");
+      git(worktree(), "commit", "--quiet", "-m", "not pushed");
+      const tip = git(worktree(), "rev-parse", "HEAD");
+      await writeFile(path.join(worktree(), "notes.txt"), "wip\n");
+
+      const result = await keep();
+      expect(result).toMatchObject({
+        error: null,
+        removedWorktree: true,
+        hadBranch: true,
+        unmerged: 0,
+      });
+      expect(result.stashed).toMatch(/^[0-9a-f]{40}$/);
+      expect(result.stashes.map((e) => e.label)).toEqual([`omniralph ralph ${runId} cleanup`]);
+      expect(await exists(worktree())).toBe(false);
+      expect(git(bareDir(), "worktree", "list")).not.toContain(worktree());
+      expect(git(bareDir(), "rev-parse", `refs/heads/${branch}`)).toBe(tip);
+      expect(git(remote.bare, "rev-parse", "--verify", `refs/heads/${branch}`)).toBe(head);
+      // Again: nothing left to remove, the branch stays.
+      expect(await keep()).toMatchObject({ error: null, removedWorktree: false, hadBranch: true });
+      expect(branchExists()).toBe(true);
+    });
+
+    it("lets a resumed run recreate the worktree from the kept local branch", async () => {
+      await mergedEpic();
+      await writeFile(path.join(worktree(), "more.txt"), "more\n");
+      git(worktree(), "add", ".");
+      git(worktree(), "commit", "--quiet", "-m", "not pushed");
+      const tip = git(worktree(), "rev-parse", "HEAD");
+      await keep();
+      expect(await exists(worktree())).toBe(false);
+
+      const resumed = await repos.withBranchWorktree(
+        repo,
+        { branch, baseBranch: "main", env: ENV },
+        async (wt) => ({
+          head: git(wt.path, "rev-parse", "HEAD"),
+          more: await readFile(path.join(wt.path, "more.txt"), "utf8"),
+        }),
+      );
+      expect(resumed).toEqual({ head: tip, more: "more\n" });
+    });
+
+    it("rejects a cleanup with both or neither of mergedSha and keepBranch", async () => {
+      const head = await mergedEpic();
+      const invalid = [
+        { kind: "cleanup", mergedSha: head, keepBranch: true, stashes: [] },
+        { kind: "cleanup", stashes: [] },
+      ] as unknown as RalphCleanupAction[];
+      for (const action of invalid) await expect(run(job(action))).rejects.toThrow(/payload/);
+      expect(await exists(worktree())).toBe(true);
+    });
+  });
 });

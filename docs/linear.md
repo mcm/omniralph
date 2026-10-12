@@ -347,8 +347,13 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   one question is open, or a short reply with a unique first word ("drop", "delete"). A reply
   that isn't an answer is handled as usual. When an answer can't be carried out the session says
   "I couldn't do that (…): … Answer again to retry." Turn **Clean up after the merge**
-  (`cleanupMergedWorktrees`) off to keep worktrees and branches; a PR/MR closed without merging is
-  left alone. The lane's cleanup state is shown on the run's page.
+  (`cleanupMergedWorktrees`) off to keep worktrees and branches. A PR/MR closed without merging
+  (its close webhook, or any check that finds it closed) and a stopped run (once its canceled job
+  is through) get a cleanup that keeps the branch: uncommitted work is stashed and the worktree
+  removed, nothing is asked, and the local branch (and the one on origin) stays, so a resumed run
+  carries on from it. A closed PR/MR says "The pull request `<url>` was closed without merging, so
+  I removed its worktree. The branch `b` stays, here and on origin."; a stop says nothing more.
+  The lane's cleanup state is shown on the run's page.
 
 ### Attachments
 

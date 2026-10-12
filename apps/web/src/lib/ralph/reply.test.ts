@@ -33,7 +33,9 @@ import {
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
+  WorktreeCleanupPayload,
   WorktreeExecPayload,
+  type RalphCleanupResult,
   type RalphStoryResult,
   type WorktreeExecResult,
 } from "@omniralph/shared";
@@ -46,7 +48,7 @@ import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
-import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
@@ -322,6 +324,49 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
     );
 
+  /** Plays the run's queued `worktree.cleanup` system RPC (no start hook: it runs on a stopped run). */
+  async function cleanUp(
+    runId: string,
+    result: Partial<RalphCleanupResult> = {},
+  ): Promise<WorktreeCleanupPayload> {
+    const job = await activeJob(runId);
+    expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system", pool: null });
+    const started = await claimJob(db, {
+      organizationId: orgId,
+      harnessId: agentA,
+      acceptedTaskTypes: ["coding"],
+      pools: ["short", "long"],
+      harnessVersion: null,
+      maxDeliveries: MAX_JOB_DELIVERIES,
+    });
+    expect(started.claim?.job.id).toBe(job.id);
+    await completeJob(db, {
+      jobId: job.id,
+      harnessId: agentA,
+      result: {
+        error: null,
+        removedWorktree: true,
+        hadBranch: true,
+        stashed: null,
+        unmerged: 0,
+        stashes: [],
+        handled: 0,
+        durationMs: 5,
+        ...result,
+      },
+    });
+    await onRalphCleanupJobFinished(db, (await getJob(db, job.id))!, deps());
+    return WorktreeCleanupPayload.parse(job.payload);
+  }
+
+  const stashEntry = (n: number) => ({
+    sha: sha(n),
+    label: "omniralph ralph x cleanup",
+    date: "2026-10-11T10:00:00Z",
+  });
+
+  const laneCleanup = async (run: LinearRun) => (await getMainLane(db, run))!.cleanup;
+
   describe("stop", () => {
     it("stops the run and cancels its running job; guidance resumes it", async () => {
       const { alpha } = twoStoryEpic();
@@ -338,20 +383,113 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect(last(run, "response")).toMatch(/^Stopped\. I canceled the job that was running\./);
       expect(linear.plan(run.linearAgentSessionId)?.[0]).toMatchObject({ status: "pending" });
 
-      // The agent notices the cancel: the stopped run isn't advanced.
+      // The worktree is cleaned up keeping the branch, once the canceled job is through.
+      expect(await laneCleanup(run)).toMatchObject({
+        status: "pending",
+        keepBranch: "stopped",
+        mergedSha: null,
+      });
+      expect(await activeJobs(run.id)).toEqual([await getJob(db, job.id)]);
+
+      // The agent notices the cancel: the stopped run isn't advanced, its worktree is cleaned up.
       await finish(job, { jobError: "canceled" });
       expect((await getJob(db, job.id))?.status).toBe("canceled");
+      expect((await getRun(db, run.id))?.status).toBe("stopped");
+      const branch = await branchOf(run);
+      const cleanup = await activeJob(run.id);
+      expect(cleanup.targetHarnessId).toBe(agentA);
+      const responses = linear.bodies(run.linearAgentSessionId, "response").length;
+      const cleaned = await cleanUp(run.id, { stashed: sha(7), stashes: [stashEntry(7)] });
+      expect(cleaned).toMatchObject({
+        branch,
+        action: { kind: "cleanup", keepBranch: true, stashes: [] },
+      });
+      expect(cleaned.action).not.toHaveProperty("mergedSha");
       expect(await activeJobs(run.id)).toEqual([]);
+      expect(await laneCleanup(run)).toMatchObject({ status: "done", keepBranch: "stopped" });
+      // It asks nothing and says nothing; the stash is recorded on the lane.
+      expect(selects(run)).toEqual([]);
+      expect(linear.bodies(run.linearAgentSessionId, "response")).toHaveLength(responses);
+      expect((await getMainLane(db, run))!.stashes).toMatchObject([
+        { sha: sha(7), reason: "cleanup" },
+      ]);
       expect((await getRun(db, run.id))?.status).toBe("stopped");
 
-      // Guidance resumes it with a fresh attempt.
+      // Guidance resumes it with a fresh attempt, on the same branch and the sticky agent (which
+      // recreates the worktree from the kept local branch).
       const resumed = await reply(run, "Use the v2 API.");
       expect(resumed?.kind).toBe("guidance");
       expect(resumed?.advanced?.action).toBe("enqueued");
+      expect(await laneCleanup(run)).toBeNull();
+      expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
       const payload = await work(run.id);
-      expect(payload).toMatchObject({ attempt: 1, guidance: ["Use the v2 API."] });
+      expect(payload).toMatchObject({ attempt: 1, guidance: ["Use the v2 API."], branch });
       expect(payload.story.linearIssueId).toBe(alpha.id);
       expect((await getRun(db, run.id))?.status).toBe("running");
+
+      // Stopped again: cleaned up again.
+      await reply(run, "stop");
+      expect(await laneCleanup(run)).toMatchObject({ status: "running", keepBranch: "stopped" });
+      await cleanUp(run.id);
+      expect(await laneCleanup(run)).toMatchObject({ status: "done", keepBranch: "stopped" });
+    });
+
+    it("cleans up at once when no job is active, never on a run that ran no job, and honours the opt-out", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      await work(run.id);
+      // The next story's job went away (as if it ended): nothing is active.
+      await db
+        .update(jobs)
+        .set({ status: "canceled" })
+        .where(eq(jobs.id, (await activeJob(run.id)).id));
+      await reply(run, "stop");
+      expect(await laneCleanup(run)).toMatchObject({ status: "running", keepBranch: "stopped" });
+      await cleanUp(run.id);
+
+      // Never started on an agent: there's no worktree.
+      const fresh = await delegate(linear.add({ identifier: "ENG-9", title: "One" }).id);
+      await reply(fresh, "stop");
+      expect(await activeJobs(fresh.id)).toEqual([]);
+      expect(await laneCleanup(fresh)).toMatchObject({ status: "done", keepBranch: "stopped" });
+
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, cleanupMergedWorktrees: false },
+      });
+      try {
+        const kept = await delegate(linear.add({ identifier: "ENG-20", title: "Two" }).id);
+        const job = await start(kept.id);
+        await reply(kept, "stop");
+        await finish(job, { jobError: "canceled" });
+        expect(await activeJobs(kept.id)).toEqual([]);
+        expect(await laneCleanup(kept)).toBeNull();
+      } finally {
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+        });
+      }
+    });
+
+    it("drops a cleanup that still waits when the run resumes", async () => {
+      twoStoryEpic();
+      const run = await delegate("issue-1");
+      const job = await start(run.id);
+      await reply(run, "stop");
+      expect(await laneCleanup(run)).toMatchObject({ status: "pending", keepBranch: "stopped" });
+      // Resumed before the canceled job is through.
+      await reply(run, "Carry on.");
+      expect(await laneCleanup(run)).toBeNull();
+      await finish(job, { jobError: "canceled" });
+      const next = await activeJob(run.id);
+      expect(next.type).toBe("ralph.story");
     });
 
     it("stops on the stop text, canceling a queued job at once", async () => {
@@ -944,6 +1082,8 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       // Stop beats an open question, and drops it.
       expect((await reply(run, "stop"))?.kind).toBe("stop");
       expect((await getRun(db, run.id))?.preparation?.request).toBeNull();
+      // Nothing was active: the stopped run's worktree is cleaned up at once.
+      await cleanUp(run.id);
       // On a stopped run, an option is guidance (which resumes it and asks again).
       expect((await reply(run, "Not yet"))?.kind).toBe("guidance");
       await request(run.id);

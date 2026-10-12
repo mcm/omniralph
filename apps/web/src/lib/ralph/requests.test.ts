@@ -43,7 +43,7 @@ import { revokeHarness } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
-import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import {
   DELIVERED_NOTE,
   exchangeJobMessages,
@@ -803,6 +803,23 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect((await listPendingRequests(db, run!.id)).map((r) => r.text)).toEqual([
         "rebase onto main",
       ]);
+      // The stopped run's worktree is cleaned up, keeping its branch.
+      const cleanup = await activeJob(run!.id);
+      expect(cleanup.type).toBe("worktree.cleanup");
+      await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentA,
+        acceptedTaskTypes: ["coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      await completeJob(db, {
+        jobId: cleanup.id,
+        harnessId: agentA,
+        result: { removedWorktree: true, hadBranch: true, durationMs: 1 },
+      });
+      await onRalphCleanupJobFinished(db, (await getJob(db, cleanup.id))!, deps());
 
       await reply(run!, "go on");
       expect((await listPendingRequests(db, run!.id)).map((r) => r.trigger)).toEqual([
