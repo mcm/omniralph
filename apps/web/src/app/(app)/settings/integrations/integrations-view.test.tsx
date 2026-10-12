@@ -87,6 +87,36 @@ describe("IntegrationsView › Slack", () => {
   });
 });
 
+describe("IntegrationsView › connected but not configured", () => {
+  it("explains a saved Slack connection whose app credentials are missing", () => {
+    const html = slackSection(render([WORKSPACE], false));
+    expect(html).toContain("Connected, but the Slack app isn&#x27;t configured");
+    expect(html).toContain("mentions in Slack are ignored");
+    expect(html).not.toContain("Slack app not configured");
+  });
+
+  it("explains a connected Linear workspace without the Linear app credentials", () => {
+    const html = renderToStaticMarkup(
+      <IntegrationsView
+        linear={{ name: "Acme", workspaceId: "W01", connectedAt: "2026-10-01T00:00:00.000Z" }}
+        linearConfigured={false}
+        notice={null}
+        slack={[]}
+        slackConfigured
+        slackNotice={null}
+        discord={[]}
+        discordConfigured
+        discordNotice={null}
+        chatTasks={chatTasks}
+      />,
+    );
+    const linear = html.slice(0, html.indexOf(">Slack<"));
+    expect(linear).toContain("Connected, but the Linear app isn&#x27;t configured");
+    expect(linear).toContain("delegations from Linear are rejected");
+    expect(linear).not.toContain("Linear app not configured");
+  });
+});
+
 describe("IntegrationsView › Discord", () => {
   it("lists connected servers with their installer, a Disconnect button and Connect", () => {
     const html = discordSection(render([], true, [SERVER], true));

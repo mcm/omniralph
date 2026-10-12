@@ -11,7 +11,7 @@ import {
 } from "@omniralph/db";
 import { parseRalphSettings } from "@omniralph/shared";
 import type { DefinitionSource } from "@/lib/definitions";
-import { roundLimits } from "./coding";
+import { roundLimits, storyLimits } from "./coding";
 import {
   cleanupLabel,
   ralphMessageState,
@@ -86,6 +86,7 @@ export async function ralphRunDetailView(
     }),
   );
   const main = detail.lanes.find((l) => l.main);
+  const { maxAttemptsPerStory } = await storyLimits(main?.coding, definitions);
   const ref = ({ identifier, title }: { identifier: string; title: string }) => ({
     identifier,
     title,
@@ -117,6 +118,7 @@ export async function ralphRunDetailView(
     guidance: run.guidance.map(({ text, at }) => ({ text, at })),
     progress: run.progress,
     iterations: run.iterations,
+    maxAttemptsPerStory,
     storyCounts: {
       total: detail.stories.length,
       completed: detail.stories.filter((s) => s.status === "completed").length,

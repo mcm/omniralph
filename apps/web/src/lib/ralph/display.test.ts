@@ -4,11 +4,14 @@ import {
   linearIssueUrl,
   parseRalphRunListParams,
   ralphMessageState,
+  ralphRunFailure,
   ralphRunListHref,
   roundsLabel,
   runSourceLabel,
   shortSha,
   truncate,
+  type RalphJobView,
+  type RalphStoryView,
 } from "./display";
 
 const REPO = "0b7c2a7e-6f43-4c0a-9a43-2f1c3e0d5a11";
@@ -90,5 +93,71 @@ describe("run detail follow-up", () => {
     expect(
       ralphMessageState({ ...message, kind: "request", consumedAt: at, jobStatus: "running" }),
     ).toBe("undelivered");
+  });
+});
+
+describe("ralphRunFailure", () => {
+  const story = (over: Partial<RalphStoryView> = {}): RalphStoryView => ({
+    id: "s1",
+    identifier: "FIX-131",
+    title: "Upgrade the client",
+    status: "exhausted",
+    attempts: 3,
+    lastFeedback: null,
+    commitSha: null,
+    lastJobId: "job-2",
+    laneId: null,
+    elsewhere: null,
+    ...over,
+  });
+  const job = (id: string, status: RalphJobView["status"]): RalphJobView => ({
+    id,
+    type: "ralph.story",
+    status,
+    cancelRequested: false,
+    deliveryCount: 1,
+    error: null,
+    agent: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    finishedAt: null,
+  });
+  const base = {
+    status: "failed" as const,
+    origin: "linear" as const,
+    linearIdentifier: "FIX-130",
+    repository: { id: "r1", provider: "gitlab" as const, fullPath: "acme/api" },
+    stories: [story()],
+    jobs: [job("job-3", "completed"), job("job-2", "failed"), job("job-1", "failed")],
+    maxAttemptsPerStory: 3,
+  };
+
+  it("names the story that ran out of attempts and links its last job", () => {
+    const failure = ralphRunFailure(base);
+    expect(failure.title).toBe("FIX-131 ran out of attempts (3/3)");
+    expect(failure.job?.id).toBe("job-2");
+    expect(failure.resume).toContain("delegate FIX-130 to Omniralph again in Linear");
+  });
+
+  it("falls back to the newest failed job without an exhausted story", () => {
+    const failure = ralphRunFailure({
+      ...base,
+      stories: [story({ status: "completed" })],
+      jobs: [job("job-3", "expired"), job("job-2", "failed")],
+    });
+    expect(failure.title).toBe("The ralph.story job expired");
+    expect(failure.job?.id).toBe("job-3");
+  });
+
+  it("says how to retry a waiting run's PR/MR step", () => {
+    const failure = ralphRunFailure({ ...base, status: "waiting", stories: [] });
+    expect(failure.title).toBe("The MR step failed");
+    expect(failure.resume).toContain("reply in the Linear agent session to retry the MR step");
+  });
+
+  it("tells a chat run to start again from the thread", () => {
+    const failure = ralphRunFailure({ ...base, origin: "chat", jobs: [], stories: [] });
+    expect(failure.title).toBe("The run failed");
+    expect(failure.job).toBeNull();
+    expect(failure.resume).toContain("ask Omniralph again in the chat thread");
   });
 });

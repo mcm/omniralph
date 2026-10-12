@@ -55,6 +55,7 @@ export function GitHubReposView({
       emptyIcon={<IconBrandGithub size={24} />}
       emptyDescription="The installation can't access any repositories."
       errorTitle="Couldn't load the installation"
+      errorCause="Omniralph couldn't get the installation's repositories from GitHub. Usually the GitHub App was uninstalled or suspended on the account, its private key or app ID on the server is wrong, or GitHub can't be reached. Check the installation on GitHub, then retry."
       repos={repos}
       error={error}
       save={(selectedIds) => saveGitHubRepositories(connectionId, selectedIds)}

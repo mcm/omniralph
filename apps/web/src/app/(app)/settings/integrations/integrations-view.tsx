@@ -291,15 +291,12 @@ export function IntegrationsView({
           </CardHeader>
           <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
             {!linearConfigured && (
-              <Alert variant="info">
-                <AlertTitle as="h3">Linear app not configured</AlertTitle>
-                <AlertDescription>
-                  Set <InlineCode>LINEAR_CLIENT_ID</InlineCode>,{" "}
-                  <InlineCode>LINEAR_CLIENT_SECRET</InlineCode> and{" "}
-                  <InlineCode>LINEAR_WEBHOOK_SECRET</InlineCode> to connect Linear (see
-                  docs/env.md).
-                </AlertDescription>
-              </Alert>
+              <AppNotConfiguredAlert
+                platform="Linear"
+                envVars={["LINEAR_CLIENT_ID", "LINEAR_CLIENT_SECRET", "LINEAR_WEBHOOK_SECRET"]}
+                connectedName={linear?.name ?? null}
+                ignored="delegations from Linear are rejected"
+              />
             )}
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
               {linearConfigured &&
@@ -435,19 +432,18 @@ function ChatPlatformCard({
       </CardHeader>
       <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         {!configured && (
-          <Alert variant="info">
-            <AlertTitle as="h3">{platform} app not configured</AlertTitle>
-            <AlertDescription>
-              Set{" "}
-              {envVars.map((name, i) => (
-                <span key={name}>
-                  {i > 0 && (i === envVars.length - 1 ? " and " : ", ")}
-                  <InlineCode>{name}</InlineCode>
-                </span>
-              ))}{" "}
-              to connect {platform} (see docs/env.md).
-            </AlertDescription>
-          </Alert>
+          <AppNotConfiguredAlert
+            platform={platform}
+            envVars={envVars}
+            connectedName={
+              connections.length === 0
+                ? null
+                : connections.length === 1
+                  ? connections[0]!.name
+                  : `${connections.length} connections`
+            }
+            ignored={`mentions in ${platform} are ignored`}
+          />
         )}
         {connections.map((connection) => (
           <div
@@ -511,5 +507,50 @@ function ChatPlatformCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The platform's app credentials are missing on this server. With a connection
+ * still saved, it says how the two relate: the connection is kept, but nothing
+ * from the platform reaches Omniralph until the credentials are set.
+ */
+function AppNotConfiguredAlert({
+  platform,
+  envVars,
+  connectedName,
+  ignored,
+}: {
+  platform: string;
+  envVars: string[];
+  /** The saved connection(s), or null when there are none. */
+  connectedName: string | null;
+  /** What happens to the platform's events meanwhile, e.g. "mentions in Slack are ignored". */
+  ignored: string;
+}) {
+  const vars = envVars.map((name, i) => (
+    <span key={name}>
+      {i > 0 && (i === envVars.length - 1 ? " and " : ", ")}
+      <InlineCode>{name}</InlineCode>
+    </span>
+  ));
+  if (connectedName) {
+    return (
+      <Alert variant="warning">
+        <AlertTitle as="h3">Connected, but the {platform} app isn&apos;t configured</AlertTitle>
+        <AlertDescription>
+          The connection to <strong>{connectedName}</strong> is saved, but this server is missing{" "}
+          {vars}, so {ignored} until they&apos;re set (see docs/env.md).
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return (
+    <Alert variant="info">
+      <AlertTitle as="h3">{platform} app not configured</AlertTitle>
+      <AlertDescription>
+        Set {vars} to connect {platform} (see docs/env.md).
+      </AlertDescription>
+    </Alert>
   );
 }
