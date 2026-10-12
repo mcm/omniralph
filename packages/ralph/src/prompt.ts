@@ -204,7 +204,8 @@ Your session ends with a structured result (the JSON schema you were given). It 
 
 ## Follow-up Work
 If you find work this story needs that is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epicIdentifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
-- If {{storyId}} can't be completed until they are fixed, don't report it complete. They will block {{storyId}}, be worked first, and then {{storyId}} runs again.
+- If {{storyId}} can't be completed until they are fixed, report it \`blocked\`, not complete. They will block {{storyId}}, be worked first, and then {{storyId}} runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
+- If {{storyId}} measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as \`metric\`: a \`name\`, the \`value\`, its \`direction\` (\`higher\` or \`lower\` is better) and, if it has one, the \`target\`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave \`metric\` out.
 - If {{storyId}} is complete anyway, report it complete, and they join the epic as new stories.
 - If an item is work only a person can do (granting access, changing settings in an outside service, a decision), set \`manual: true\`. It is filed for a person and never attempted by an agent; stories it blocks wait until a person marks it done.
 {{else}}

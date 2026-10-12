@@ -179,6 +179,8 @@ describe("TaskDefinition", () => {
       const parsed = TaskDefinition.parse(coding);
       expect(parsed).toMatchObject({
         maxAttemptsPerStory: 3,
+        maxRoundsPerStory: 8,
+        stallRounds: 3,
         maxIterationsPerRun: 50,
         maxReviewRounds: CODING_MAX_FIX_ROUNDS,
         maxFixRounds: CODING_MAX_FIX_ROUNDS,
@@ -193,6 +195,8 @@ describe("TaskDefinition", () => {
       const set = {
         ...coding,
         maxAttemptsPerStory: 5,
+        maxRoundsPerStory: 12,
+        stallRounds: 4,
         maxIterationsPerRun: 10,
         maxReviewRounds: 1,
         maxFixRounds: 0,
@@ -209,6 +213,8 @@ describe("TaskDefinition", () => {
     it("rejects them on other task types, and out-of-range values", () => {
       const fields = {
         maxAttemptsPerStory: 3,
+        maxRoundsPerStory: 8,
+        stallRounds: 3,
         maxIterationsPerRun: 50,
         maxReviewRounds: 2,
         maxFixRounds: 2,
@@ -222,6 +228,8 @@ describe("TaskDefinition", () => {
       expect(TaskDefinition.parse(task)).not.toHaveProperty("pushTiming");
       for (const [field, value] of [
         ["maxAttemptsPerStory", 0],
+        ["maxRoundsPerStory", 0],
+        ["stallRounds", 0],
         ["maxIterationsPerRun", 0],
         ["maxReviewRounds", CODING_MAX_FIX_ROUNDS + 1],
         ["maxFixRounds", -1],

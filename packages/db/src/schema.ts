@@ -1810,6 +1810,16 @@ export const chatRunEvents = pgTable(
   ],
 );
 
+/** The history of the progress metric a story reported in its rounds (`ralph_stories.round_metrics`). */
+export interface RalphRoundMetrics {
+  name: string;
+  /** Whether a higher or a lower value is better. */
+  direction: "higher" | "lower";
+  target?: number;
+  /** Oldest first; `at` is an ISO timestamp. */
+  values: { round: number; value: number; at: string }[];
+}
+
 /** Uncommitted work ralph stashed in a lane's repository and hasn't dropped or pushed yet. */
 export interface RalphStash {
   sha: string;
@@ -1985,6 +1995,10 @@ export const ralphStories = pgTable(
     status: ralphStoryStatus("status").notNull().default("pending"),
     /** Finished attempts (redeliveries don't count). */
     attempts: integer("attempts").notNull().default(0),
+    /** Rounds: blocked results that filed follow-ups (a review loop), which don't use attempts. */
+    rounds: integer("rounds").notNull().default(0),
+    /** The progress metric the story reported in its rounds; null until it reports one. */
+    roundMetrics: jsonb("round_metrics").$type<RalphRoundMetrics>(),
     /** Why the last attempt didn't complete, passed to the next one. */
     lastFeedback: text("last_feedback"),
     commitSha: text("commit_sha"),

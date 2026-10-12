@@ -560,6 +560,25 @@ describe("structured results", () => {
     });
   });
 
+  it("keeps a round's metric, dropping one without a name or a finite value", () => {
+    const base = { status: "blocked", summary: "Score 26.", followUps: [] };
+    const metric = { name: " critique  score ", value: 26, direction: "higher", target: 34 };
+    expect(readStoryOutcome({ ...base, metric })).toMatchObject({
+      outcome: { metric: { name: "critique score", value: 26, direction: "higher", target: 34 } },
+    });
+    const unnamed = readStoryOutcome({ ...base, metric: { ...metric, name: " " } });
+    expect("outcome" in unnamed && unnamed.outcome).not.toHaveProperty("metric");
+    // Results of older sessions have none.
+    const without = readStoryOutcome(base);
+    expect("outcome" in without && without.outcome).not.toHaveProperty("metric");
+    expect(readStoryOutcome({ ...base, metric: { ...metric, direction: "up" } })).toMatchObject({
+      problem: expect.stringContaining("`metric.direction`"),
+    });
+    expect((STORY_OUTPUT_SCHEMA.properties as Record<string, unknown>).metric).toMatchObject({
+      type: "object",
+    });
+  });
+
   it("says what's wrong with a missing or invalid result", () => {
     expect(readStoryOutcome(undefined)).toEqual({ problem: "no structured result" });
     expect(readStoryOutcome({ status: "done", summary: "x", followUps: [] })).toMatchObject({

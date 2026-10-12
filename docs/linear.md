@@ -225,7 +225,17 @@ How the run behaves:
   until someone replies); independent stories still run. If it left changes and the story's quality
   gates pass, they are committed as `wip(<STORY-ID>): <summary>` and pushed, recorded on the story
   and in the progress log; otherwise they are stashed and offered to its next attempt. A blocked
-  story that files blocking follow-ups waits for them instead.
+  story that files follow-ups isn't set aside: it waits for them and then runs again (see
+  **Rounds**).
+- **Rounds.** A blocked result that files follow-ups is a **round**, as in a review loop (a
+  validation story that critiques the work and files a round of fixes until a bar is cleared). A
+  round doesn't use one of the story's attempts. A story gets 8 rounds (a coding task's
+  `maxRoundsPerStory`); at the cap it is marked exhausted with an error naming the cap. A story may
+  report a progress `metric` each round (a name, a value, whether higher or lower is better, and
+  an optional target). When its best value hasn't improved in 3 rounds in a row (`stallRounds`; the
+  first value is the baseline), it is marked exhausted with an error showing the trend, e.g.
+  `critique score (higher is better): 23 → 26 → 26`. A story that reports no metric is only limited
+  by the round cap. `/continue` or a guidance reply gives exhausted stories fresh rounds.
 - **Manual stories.** Sub-issues labelled with one of the repository's **Manual labels** (`manual`
   by default) are for a person: the run waits for them to be
   completed. A manual story's description may contain a ` ```cyralph-prepare ` block of shell
@@ -234,7 +244,9 @@ How the run behaves:
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
-  **Manual label** when they need a person).
+  **Manual label** when they need a person). An unfinished story's follow-ups block it; when it
+  reported blocked, that's a round (above), not a used attempt. A completed story's follow-ups
+  block the stories it blocks.
 - **The end.** When every story is done, an agent writes the PR/MR title and body, the control panel
   opens it (or updates the open one) and marks it ready, links it to the agent session and posts a
   final response.
@@ -247,9 +259,9 @@ Reply in the agent session to steer a run:
 | An answer to the preparation question | `Run it` / `I'll do it myself` / `Not yet` (or `1`–`3`). |
 | `rerun preparation` | Asks the preparation question again. |
 | `start anyway` | Ignores the open blockers and continues. |
-| `/continue` | Resets the per-run iteration cap (50 story attempts), so the run keeps going. On its own, it continues without guidance (unfinished stories get fresh attempts); anything after `/continue` is handled as a reply of its own (usually guidance). |
+| `/continue` | Resets the per-run iteration cap (50 story attempts), so the run keeps going. On its own, it continues without guidance (unfinished stories get fresh attempts and rounds, and their metric history is cleared); anything after `/continue` is handled as a reply of its own (usually guidance). |
 | Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
-| Anything else | Stored as guidance for the next story attempts (exhausted stories get fresh attempts) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
+| Anything else | Stored as guidance for the next story attempts (unfinished stories get fresh attempts and rounds) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
 | `/ralph` | Switches a mention's run (request mode) to the story loop; its requests become guidance. |
 | `/ship [notes]` | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
 | `Allow` / `Deny` (or `yes` / `no`) | Answers a request session's permission question (below). |

@@ -69,6 +69,19 @@ export const StoryAgentOutput = z.object({
     .describe(
       "Work outside this story's scope for the orchestrator to file as new stories. Empty when there is none.",
     ),
+  metric: z
+    .object({
+      name: z.string().describe("What is measured, e.g. `critique score`."),
+      value: z.number().describe("This round's value."),
+      direction: z
+        .enum(["higher", "lower"])
+        .describe("Whether a higher or a lower value is better."),
+      target: z.number().optional().describe("The value the story aims for, if it has one."),
+    })
+    .optional()
+    .describe(
+      "Only when the story measures its progress across rounds (e.g. a review loop that files fixes and runs again): this round's value. A loop whose best value stops improving is set aside.",
+    ),
 });
 export type StoryAgentOutput = z.infer<typeof StoryAgentOutput>;
 
@@ -101,7 +114,27 @@ export function readStoryOutcome(
   const commit = parsed.data.commit?.summary.trim()
     ? { summary: parsed.data.commit.summary.replace(/\s+/g, " ").trim() }
     : undefined;
-  return { outcome: { ...parsed.data, commit, followUps: followUps.slice(0, MAX_FOLLOW_UPS) } };
+  // A metric without a name or a finite value is dropped, not an invalid result.
+  const { metric: reported, ...rest } = parsed.data;
+  const name = reported?.name.replace(/\s+/g, " ").trim().slice(0, 200);
+  const metric =
+    reported && name && Number.isFinite(reported.value)
+      ? {
+          name,
+          value: reported.value,
+          direction: reported.direction,
+          ...(reported.target !== undefined &&
+            Number.isFinite(reported.target) && { target: reported.target }),
+        }
+      : undefined;
+  return {
+    outcome: {
+      ...rest,
+      commit,
+      followUps: followUps.slice(0, MAX_FOLLOW_UPS),
+      ...(metric && { metric }),
+    },
+  };
 }
 
 /** The structured result of the session that writes a PR/MR title and description. */

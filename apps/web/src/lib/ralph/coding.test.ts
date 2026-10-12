@@ -1,8 +1,10 @@
 import { DEFAULT_RALPH_SETTINGS } from "@omniralph/db";
 import {
   MAX_ATTEMPTS_PER_STORY,
+  MAX_ROUNDS_PER_STORY,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   RalphDescribePrPayload,
+  STALL_ROUNDS,
   ralphHiddenRef,
   type RalphPushPayload,
   type RalphStoryPayload,
@@ -18,7 +20,7 @@ const {
   describePrPayload,
   describePrText,
   prDescriptionTaskFor,
-  jobMaxAttempts,
+  jobStoryCaps,
   opensPullRequestEarly,
   pushJobInput,
   pushResult,
@@ -37,6 +39,8 @@ const strict: TaskDefinition = {
   ...story,
   id: "custom:strict-story",
   maxAttemptsPerStory: 1,
+  maxRoundsPerStory: 4,
+  stallRounds: 2,
   maxIterationsPerRun: 7,
 };
 const cautious: TaskDefinition = {
@@ -94,7 +98,12 @@ const repository = (
 
 describe("storyLimits", () => {
   it("are the legacy loop's on the legacy path, whatever the story task", async () => {
-    const legacy = { maxAttemptsPerStory: MAX_ATTEMPTS_PER_STORY, maxIterationsPerRun: 50 };
+    const legacy = {
+      maxAttemptsPerStory: MAX_ATTEMPTS_PER_STORY,
+      maxRoundsPerStory: MAX_ROUNDS_PER_STORY,
+      stallRounds: STALL_ROUNDS,
+      maxIterationsPerRun: 50,
+    };
     expect(MAX_ITERATIONS_PER_RUN).toBe(50);
     expect(await storyLimits(null, DEFINITIONS)).toEqual(legacy);
     expect(
@@ -105,21 +114,34 @@ describe("storyLimits", () => {
   it("come from the story task on the tasks path (the built-in's are the legacy ones)", async () => {
     expect(await storyLimits(repository(), DEFINITIONS)).toEqual({
       maxAttemptsPerStory: 3,
+      maxRoundsPerStory: 8,
+      stallRounds: 3,
       maxIterationsPerRun: 50,
     });
     expect(await storyLimits(repository({ storyTaskId: strict.id }), DEFINITIONS)).toEqual({
       maxAttemptsPerStory: 1,
+      maxRoundsPerStory: 4,
+      stallRounds: 2,
       maxIterationsPerRun: 7,
     });
   });
 });
 
-describe("jobMaxAttempts", () => {
-  it("is the attempts of the coding task that ran, else the legacy cap", async () => {
-    expect(await jobMaxAttempts(null, DEFINITIONS)).toBe(MAX_ATTEMPTS_PER_STORY);
-    expect(await jobMaxAttempts({ taskId: null }, DEFINITIONS)).toBe(MAX_ATTEMPTS_PER_STORY);
-    expect(await jobMaxAttempts({ taskId: story.id }, DEFINITIONS)).toBe(3);
-    expect(await jobMaxAttempts({ taskId: strict.id }, DEFINITIONS)).toBe(1);
+describe("jobStoryCaps", () => {
+  it("are the attempts and rounds of the coding task that ran, else the legacy caps", async () => {
+    const legacy = {
+      maxAttemptsPerStory: MAX_ATTEMPTS_PER_STORY,
+      maxRoundsPerStory: MAX_ROUNDS_PER_STORY,
+      stallRounds: STALL_ROUNDS,
+    };
+    expect(await jobStoryCaps(null, DEFINITIONS)).toEqual(legacy);
+    expect(await jobStoryCaps({ taskId: null }, DEFINITIONS)).toEqual(legacy);
+    expect(await jobStoryCaps({ taskId: story.id }, DEFINITIONS)).toEqual(legacy);
+    expect(await jobStoryCaps({ taskId: strict.id }, DEFINITIONS)).toEqual({
+      maxAttemptsPerStory: 1,
+      maxRoundsPerStory: 4,
+      stallRounds: 2,
+    });
   });
 });
 
