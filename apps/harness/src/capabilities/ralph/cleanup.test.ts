@@ -69,7 +69,7 @@ describe.each(["worktree.cleanup", "ralph.cleanup"] as const)("%s", { timeout: 6
   }
 
   function job(
-    action: RalphCleanupAction,
+    action: RalphCleanupAction | undefined,
     overrides: Partial<RalphCleanupPayload> = {},
   ): JobPayload {
     const payload: RalphCleanupPayload = {
@@ -373,6 +373,85 @@ describe.each(["worktree.cleanup", "ralph.cleanup"] as const)("%s", { timeout: 6
       ] as unknown as RalphCleanupAction[];
       for (const action of invalid) await expect(run(job(action))).rejects.toThrow(/payload/);
       expect(await exists(worktree())).toBe(true);
+    });
+  });
+
+  describe("hidden refs of finished runs", () => {
+    const hiddenRef = () => `refs/omniralph/runs/${runId}`;
+    const onRemote = (ref: string) => {
+      try {
+        return git(remote.bare, "rev-parse", "--verify", "--quiet", ref);
+      } catch {
+        return null;
+      }
+    };
+    const remoteRefs = () => git(remote.bare, "for-each-ref", "--format=%(refname)").split("\n");
+
+    it("deletes the run's hidden ref on origin without cloning, and leaves every branch in place", async () => {
+      const head = await mergedEpic();
+      const other = `refs/omniralph/runs/${randomUUID()}`;
+      git(remote.bare, "update-ref", hiddenRef(), head);
+      git(remote.bare, "update-ref", other, head);
+      // Another harness, which never had the repository.
+      repos = new RepoCache({
+        workspaceRoot: path.join(root, "other-workspace"),
+        credentialHelper: "!true",
+        lockRetryMs: 20,
+      });
+      const before = remoteRefs().filter((r) => r.startsWith("refs/heads/"));
+
+      const result = await run(job(undefined, { hiddenRefs: [hiddenRef()] }));
+
+      expect(result).toMatchObject({ error: null, deletedRefs: [hiddenRef()] });
+      expect(onRemote(hiddenRef())).toBeNull();
+      expect(onRemote(other)).toBe(head);
+      expect(remoteRefs().filter((r) => r.startsWith("refs/heads/"))).toEqual(before);
+      expect(before).toEqual(expect.arrayContaining(["refs/heads/main", `refs/heads/${branch}`]));
+      expect(await exists(bareDir())).toBe(false);
+    });
+
+    it("deletes the hidden ref and its cached copy after the action, and counts a gone one as deleted", async () => {
+      const head = await mergedEpic();
+      await repos.withBranchWorktree(repo, { branch, baseBranch: "main", env: ENV }, (wt) =>
+        wt.pushHiddenRef(hiddenRef()),
+      );
+      git(bareDir(), "update-ref", hiddenRef(), head);
+      const gone = `refs/omniralph/runs/${randomUUID()}`;
+
+      const result = await run(
+        job({ kind: "cleanup", mergedSha: head, stashes: [] }, { hiddenRefs: [hiddenRef(), gone] }),
+      );
+
+      expect(result).toMatchObject({ error: null, removedWorktree: true });
+      expect(result.deletedRefs).toEqual([hiddenRef(), gone]);
+      expect(onRemote(hiddenRef())).toBeNull();
+      expect(() => git(bareDir(), "rev-parse", "--verify", "--quiet", hiddenRef())).toThrow();
+      expect(git(remote.bare, "rev-parse", branch)).toBe(head);
+      expect(git(remote.bare, "rev-parse", "main")).not.toBe("");
+    });
+
+    it("refuses anything but a run's hidden ref, and deletes nothing", async () => {
+      const head = await mergedEpic();
+      git(remote.bare, "update-ref", hiddenRef(), head);
+      for (const ref of [
+        `refs/heads/${branch}`,
+        "refs/heads/main",
+        "refs/omniralph/other",
+        `refs/omniralph/runs/${runId}/../../heads/main`,
+      ]) {
+        await expect(run(job(undefined, { hiddenRefs: [hiddenRef(), ref] }))).rejects.toThrow(
+          /payload/,
+        );
+      }
+      await expect(run(job(undefined, { hiddenRefs: [] }))).rejects.toThrow(/payload/);
+      expect(onRemote(hiddenRef())).toBe(head);
+      expect(onRemote(`refs/heads/${branch}`)).toBe(head);
+      expect(onRemote("refs/heads/main")).not.toBeNull();
+      // The harness's own check, should a bad ref get past the payload.
+      await expect(
+        repos.deleteHiddenRef(repo, `refs/heads/${branch}`, { env: ENV }),
+      ).rejects.toThrow(/invalid hidden ref/);
+      expect(onRemote(`refs/heads/${branch}`)).toBe(head);
     });
   });
 });

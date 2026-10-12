@@ -5,6 +5,12 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ensureChatThread, saveChatConnection } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
+import {
+  listHiddenRefsToDelete,
+  listRunHiddenRefs,
+  markHiddenRefsDeleted,
+  recordHiddenRef,
+} from "./hidden-refs.js";
 import { insertJob } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
 import {
@@ -48,6 +54,7 @@ import {
   updateMessage,
   RUN_DETAIL_MESSAGE_LIMIT,
   type NewChatRalphRunInput,
+  type RalphRun,
   type NewLinearRalphRunInput,
 } from "./ralph.js";
 import {
@@ -58,6 +65,7 @@ import {
 } from "./repositories.js";
 import {
   harnesses,
+  hiddenRefs,
   chatConnections,
   DEFAULT_RALPH_SETTINGS,
   jobs,
@@ -147,6 +155,65 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
       ...overrides,
     };
   };
+
+  it("records hidden refs from story outcomes and selects ended or old ones for deletion", async () => {
+    const sha = (n: number) => String(n).repeat(40).slice(0, 40);
+    const at = (status: RalphRun["status"]) => async () => {
+      const { run } = await createRun(db, runInput());
+      return (await updateRun(db, run.id, { status }))!;
+    };
+    const completed = await at("completed")();
+    const ref = `refs/omniralph/runs/${completed.id}`;
+    await recordHiddenRef(db, { repositoryId: repoA, runId: completed.id, ref, sha: sha(1) });
+    // A later story's push moves it; the same ref in another repository is its own row.
+    await recordHiddenRef(db, { repositoryId: repoA, runId: completed.id, ref, sha: sha(2) });
+    await recordHiddenRef(db, { repositoryId: repoB, runId: completed.id, ref, sha: sha(3) });
+    expect(
+      (await listRunHiddenRefs(db, completed.id)).map((r) => [r.repositoryId, r.ref, r.sha]),
+    ).toEqual([
+      [repoA, ref, sha(2)],
+      [repoB, ref, sha(3)],
+    ]);
+
+    const old = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const refOf = async (status: RalphRun["status"], createdAt = new Date()) => {
+      const run = await at(status)();
+      const row = await recordHiddenRef(db, {
+        repositoryId: repoA,
+        runId: run.id,
+        ref: `refs/omniralph/runs/${run.id}`,
+        sha: sha(4),
+      });
+      await db.update(hiddenRefs).set({ createdAt }).where(eq(hiddenRefs.id, row.id));
+      return row.id;
+    };
+    const failed = await refOf("failed");
+    const oldStopped = await refOf("stopped", old);
+    const oldPending = await refOf("pending", old);
+    await refOf("stopped");
+    await refOf("waiting");
+    await refOf("running", old);
+    const selected = (await listHiddenRefsToDelete(db, cutoff)).map((r) => r.hiddenRef.id);
+    const completedIds = (await listRunHiddenRefs(db, completed.id)).map((r) => r.id);
+    expect(selected.sort()).toEqual([...completedIds, failed, oldStopped, oldPending].sort());
+    expect(
+      (await listHiddenRefsToDelete(db, cutoff)).find((r) => r.hiddenRef.id === failed)?.run.id,
+    ).toBeDefined();
+
+    // Marked deleted per repository: only the listed refs there.
+    expect(await markHiddenRefsDeleted(db, repoA, [ref])).toBe(1);
+    expect(await markHiddenRefsDeleted(db, repoA, [ref])).toBe(0);
+    expect((await listRunHiddenRefs(db, completed.id)).map((r) => r.repositoryId)).toEqual([repoB]);
+    expect((await listHiddenRefsToDelete(db, cutoff)).map((r) => r.hiddenRef.id)).not.toContain(
+      completedIds[0],
+    );
+    // Pushed again (a resumed run): live again.
+    await recordHiddenRef(db, { repositoryId: repoA, runId: completed.id, ref, sha: sha(5) });
+    expect((await listRunHiddenRefs(db, completed.id)).map((r) => r.repositoryId).sort()).toEqual(
+      [repoA, repoB].sort(),
+    );
+  });
 
   it("adds ralph settings and Linear routing to repositories, with defaults", async () => {
     expect(await getRepository(db, repoA)).toMatchObject({

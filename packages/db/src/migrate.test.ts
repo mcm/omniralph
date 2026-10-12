@@ -147,6 +147,26 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     await expect(db.$client.query(`select 'other'::repository_coding_path`)).rejects.toThrow();
   });
 
+  it("adds hidden refs, unique per repository and ref (0065)", async () => {
+    const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
+      `select column_name, is_nullable from information_schema.columns
+       where table_schema = 'public' and table_name = 'hidden_refs' order by column_name`,
+    );
+    expect(rows).toEqual([
+      { column_name: "created_at", is_nullable: "NO" },
+      { column_name: "deleted_at", is_nullable: "YES" },
+      { column_name: "id", is_nullable: "NO" },
+      { column_name: "ref", is_nullable: "NO" },
+      { column_name: "repository_id", is_nullable: "NO" },
+      { column_name: "run_id", is_nullable: "NO" },
+      { column_name: "sha", is_nullable: "NO" },
+    ]);
+    const { rows: indexes } = await db.$client.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where tablename = 'hidden_refs' and indexname = 'hidden_refs_repository_ref_uq'`,
+    );
+    expect(indexes[0]?.indexdef).toMatch(/UNIQUE INDEX .*\(repository_id, ref\)/);
+  });
+
   it("creates the organization tables (0029)", async () => {
     const { rows } = await db.$client.query<{ table_name: string }>(
       `select table_name from information_schema.tables

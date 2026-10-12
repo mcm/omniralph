@@ -213,6 +213,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     unmerged: 0,
     stashes: [],
     handled: 0,
+    deletedRefs: [],
     durationMs: 5,
     ...overrides,
   });

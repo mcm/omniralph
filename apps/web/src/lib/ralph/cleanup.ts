@@ -426,12 +426,16 @@ async function jobLane(
   tx: RalphTransaction,
   run: RalphRun,
   job: Job,
-): Promise<{ lane: RalphLane; payload: WorktreeCleanupPayload } | null> {
+): Promise<{
+  lane: RalphLane;
+  payload: WorktreeCleanupPayload & { action: RalphCleanupAction };
+} | null> {
   const payload = WorktreeCleanupPayload.safeParse(job.payload);
-  if (!payload.success) return null;
+  // One deleting hidden refs only isn't a lane's cleanup (`applyHiddenRefsJob`).
+  if (!payload.success || !payload.data.action) return null;
   const lane = await getLaneByRepository(tx, run.id, payload.data.repositoryId);
   if (!lane?.cleanup || lane.cleanup.jobId !== job.id) return null;
-  return { lane, payload: payload.data };
+  return { lane, payload: { ...payload.data, action: payload.data.action } };
 }
 
 /** Replaces the open question of the same kind (cyralph's `ask`). */

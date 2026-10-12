@@ -76,6 +76,7 @@ import { notifyRunThread } from "./chat-notify";
 import { conversationFor, type ChatSource, type RunConversation } from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
+import { deleteRunHiddenRefs } from "./hidden-refs";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
 import { postActivity, quietly, tail } from "./notify";
 import { settleStrandedMessages } from "./messages";
@@ -264,6 +265,10 @@ export async function advanceRun(runId: string, deps: RalphDeps): Promise<Advanc
   });
   if (!applied) return { action: "gone" };
   const result = await lockRun(deps.db, runId, (tx, run) => step(deps, tx, run));
+  // A run that's over no longer needs its hidden refs (a stopped one may resume from them).
+  if (result?.action === "completed" || result?.action === "failed") {
+    await deleteRunHiddenRefs(deps, result.run);
+  }
   return result ?? { action: "gone" };
 }
 

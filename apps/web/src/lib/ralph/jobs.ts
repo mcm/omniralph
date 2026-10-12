@@ -14,6 +14,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { onCleanupJobFinished, startPendingCleanups } from "./cleanup";
+import { applyHiddenRefsJob } from "./hidden-refs";
 import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
@@ -94,6 +95,11 @@ export async function onRalphCleanupJobFinished(
   job: Job,
   deps?: RalphDeps,
 ): Promise<void> {
+  try {
+    await applyHiddenRefsJob(db, job);
+  } catch (error) {
+    console.error(`Marking the hidden refs of cleanup job ${job.id} deleted failed`, error);
+  }
   if (!job.ralphRunId) return;
   try {
     let ralph = deps;
