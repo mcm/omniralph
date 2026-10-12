@@ -1,8 +1,10 @@
 import {
   classifyHarnessRunningJobs,
+  listHarnessHostTools,
   listHarnessPinnedRepositoryIds,
   listPoolNames,
   recordHarnessHeartbeat,
+  recordHarnessHostTools,
   renewJobLeases,
 } from "@omniralph/db";
 import {
@@ -32,8 +34,9 @@ const NPM_TIMEOUT_MS = 5_000;
  * the running jobs the harness must cancel, fresh job tokens and undelivered
  * messages (`jobMessages`) for the ones it keeps running, and the version it
  * should run (its override, else its organization's setting, with `latest`
- * resolved) and an admin's pending "Update now" (cleared once the harness reports
- * it handled).
+ * resolved), an admin's pending "Update now" (cleared once the harness reports
+ * it handled) and the organization's host tools with this harness's configured
+ * paths. The harness's report on those host tools is stored first.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
@@ -52,13 +55,15 @@ export async function POST(req: Request): Promise<Response> {
     installables: body.data.installables,
   });
   if (!agent) return badRequest("unknown_agent");
-  const [pinnedRepoIds, poolNames, running, organizationVersion] = await Promise.all([
+  await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
+  const [pinnedRepoIds, poolNames, running, organizationVersion, hostTools] = await Promise.all([
     listHarnessPinnedRepositoryIds(db, harnessId),
     listPoolNames(db, agent.organizationId),
     classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
     agent.desiredVersion
       ? null
       : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    listHarnessHostTools(db, agent.organizationId, harnessId),
   ]);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.
@@ -104,5 +109,6 @@ export async function POST(req: Request): Promise<Response> {
       agent.updateRequestId && agent.updateRequestVersion
         ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
         : null,
+    hostTools: hostTools.map(({ name, configuredPath }) => ({ name, configuredPath })),
   } satisfies HeartbeatResponse);
 }

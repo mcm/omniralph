@@ -6,6 +6,7 @@ import {
   effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
+  HostToolName,
   InstallPayload,
   JobFailure,
   JobStartResponse,
@@ -40,6 +41,37 @@ describe("protocol", () => {
     expect(
       Heartbeat.safeParse({ ...base, installables: [{ name: "", version: "1.0.0" }] }).success,
     ).toBe(false);
+  });
+
+  it("defaults a heartbeat's host tools to none and validates them", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.parse(base).hostTools).toEqual([]);
+    const hostTools = [
+      { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
+      { name: "semgrep", configuredPathExists: false, discoveredPath: null },
+    ];
+    expect(Heartbeat.parse({ ...base, hostTools }).hostTools).toEqual(hostTools);
+    const tooMany = Array.from({ length: 101 }, (_, i) => ({
+      name: `t${i}`,
+      configuredPathExists: null,
+      discoveredPath: null,
+    }));
+    expect(Heartbeat.safeParse({ ...base, hostTools: tooMany }).success).toBe(false);
+    expect(
+      Heartbeat.safeParse({
+        ...base,
+        hostTools: [{ name: "opengrep", configuredPathExists: null, discoveredPath: "bin/x" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts host tool names of lowercase letters, digits, dots, dashes and underscores", () => {
+    for (const ok of ["opengrep", "a", "code-graph", "tool_1.2", "9lives", "a".repeat(64)]) {
+      expect(HostToolName.safeParse(ok).success).toBe(true);
+    }
+    for (const bad of ["", "-x", ".x", "_x", "Opengrep", "a/b", "a b", "a".repeat(65)]) {
+      expect(HostToolName.safeParse(bad).success).toBe(false);
+    }
   });
 
   it("discriminates start responses", () => {
@@ -174,6 +206,7 @@ describe("self-update protocol", () => {
       jobTokens: [],
     });
     expect(response.desiredVersion).toBeNull();
+    expect(response.hostTools).toEqual([]);
   });
 
   it("compares agent versions by major, minor and patch", () => {

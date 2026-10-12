@@ -111,7 +111,10 @@ function withinPrefix(file: string, prefix: string): boolean {
  * checked too, so neither a link into a blocked prefix nor a blocked link
  * escapes.
  */
-export async function execPathBlocked(config: HarnessConfig, file: string): Promise<boolean> {
+export async function execPathBlocked(
+  config: Pick<HarnessConfig, "blockedExecPaths">,
+  file: string,
+): Promise<boolean> {
   const blocked = config.blockedExecPaths ?? [];
   if (blocked.length === 0) return false;
   const candidates = [path.resolve(file), await resolveReal(file)];

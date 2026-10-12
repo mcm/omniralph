@@ -405,6 +405,52 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     ).rejects.toThrow(/not-null/);
   });
 
+  it("adds host_tools and harness_host_tools, cascading on delete (0072)", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Host tools" }).returning();
+    const q = db.$client;
+    const {
+      rows: [tool],
+    } = await q.query<{ id: string }>(
+      `insert into host_tools (organization_id, name) values ($1, 'opengrep') returning id`,
+      [org!.id],
+    );
+    await expect(
+      q.query(`insert into host_tools (organization_id, name) values ($1, 'opengrep')`, [org!.id]),
+    ).rejects.toThrow(/host_tools_organization_name_uq/);
+    const {
+      rows: [harness],
+    } = await q.query<{ id: string }>(
+      `insert into harnesses (organization_id, name) values ($1, 'h') returning id`,
+      [org!.id],
+    );
+    const { rows } = await q.query(
+      `insert into harness_host_tools (harness_id, host_tool_id) values ($1, $2)
+       returning configured_path, configured_path_exists, discovered_path, reported_at`,
+      [harness!.id, tool!.id],
+    );
+    expect(rows).toEqual([
+      {
+        configured_path: null,
+        configured_path_exists: null,
+        discovered_path: null,
+        reported_at: null,
+      },
+    ]);
+    await expect(
+      q.query(`insert into harness_host_tools (harness_id, host_tool_id) values ($1, $2)`, [
+        harness!.id,
+        tool!.id,
+      ]),
+    ).rejects.toThrow(/harness_host_tools_harness_id_host_tool_id_pk/);
+    await q.query(`delete from organizations where id = $1`, [org!.id]);
+    const { rows: left } = await q.query(
+      `select (select count(*) from host_tools where id = $1)::int as tools,
+              (select count(*) from harness_host_tools where host_tool_id = $1)::int as rows`,
+      [tool!.id],
+    );
+    expect(left).toEqual([{ tools: 0, rows: 0 }]);
+  });
+
   it("drops the capability columns from jobs and harnesses (0057)", async () => {
     const { rows } = await db.$client.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns

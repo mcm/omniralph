@@ -318,6 +318,7 @@ async function runStart(
     ),
     logger,
     dataDir: harnessDataDir,
+    localConfig: config,
     updater,
   });
   running.daemon = daemon;

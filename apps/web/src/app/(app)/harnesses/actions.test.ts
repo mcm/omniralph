@@ -7,13 +7,16 @@ import {
   claimJob,
   closeDb,
   createDb,
+  createHostTool,
   getHarnessOverview,
   jobs,
   listHarnessAudit,
+  listHarnessHostTools,
   listHarnessOverview,
   listRecentHarnessAudit,
   runMigrations,
   setDesiredHarnessVersion,
+  setHarnessHostToolPath,
   upsertScmConnection,
   users,
   writeHarnessAudit,
@@ -600,6 +603,61 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
         (await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: tooMany })).status,
       ).toBe(400);
       expect(await reported()).toEqual([hello]);
+    });
+
+    it("negotiates host tool paths: sends the catalog with configured paths, stores the reports", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
+      const configured = await createHostTool(db, orgId, { name: "hb-configured" });
+      const discovered = await createHostTool(db, orgId, { name: "hb-discovered" });
+      if (!configured.ok || !discovered.ok) throw new Error("setup");
+      expect(
+        await setHarnessHostToolPath(db, orgId, harnessId, configured.hostTool.id, "/opt/c/bin/c"),
+      ).toEqual({ ok: true });
+
+      const response = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(response.hostTools).toEqual(
+        expect.arrayContaining([
+          { name: "hb-configured", configuredPath: "/opt/c/bin/c" },
+          { name: "hb-discovered", configuredPath: null },
+        ]),
+      );
+
+      const hostTools = [
+        {
+          name: "hb-configured",
+          configuredPath: "/opt/c/bin/c",
+          configuredPathExists: true,
+          discoveredPath: "/usr/bin/hb-configured",
+        },
+        { name: "hb-discovered", configuredPathExists: null, discoveredPath: "/usr/bin/hb-d" },
+        { name: "hb-not-in-catalog", configuredPathExists: null, discoveredPath: "/usr/bin/x" },
+      ];
+      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools })).status).toBe(200);
+      const stored = await listHarnessHostTools(db, orgId, harnessId);
+      expect(stored.filter((tool) => tool.name.startsWith("hb-"))).toEqual([
+        expect.objectContaining({
+          name: "hb-configured",
+          configuredPathExists: true,
+          discoveredPath: "/usr/bin/hb-configured",
+          effectivePath: "/opt/c/bin/c",
+          reportedAt: expect.any(Date),
+        }),
+        expect.objectContaining({
+          name: "hb-discovered",
+          configuredPathExists: null,
+          discoveredPath: "/usr/bin/hb-d",
+          effectivePath: "/usr/bin/hb-d",
+        }),
+      ]);
+
+      const tooMany = Array.from({ length: 101 }, (_, i) => ({
+        name: `t${i}`,
+        configuredPathExists: null,
+        discoveredPath: null,
+      }));
+      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: tooMany })).status).toBe(
+        400,
+      );
     });
 
     it("defaults to the latest version", async () => {

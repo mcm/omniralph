@@ -234,6 +234,43 @@ export const ReportedInstallable = z.object({
 });
 export type ReportedInstallable = z.infer<typeof ReportedInstallable>;
 
+/**
+ * A host tool's name: software a harness owner installs by hand (e.g.
+ * `opengrep`), in the organization's catalog and looked up on the harness's `PATH`.
+ */
+export const HOST_TOOL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const HostToolName = z.string().regex(HOST_TOOL_NAME_PATTERN);
+
+/** An absolute path to a host tool's executable on a harness. */
+export const HostToolPath = z
+  .string()
+  .max(4096)
+  .refine((path) => path.startsWith("/"), "must be an absolute path");
+
+/**
+ * What a harness found for a host tool of the last heartbeat response's
+ * `hostTools`: whether the configured path is a usable executable (null when
+ * none is configured; false when it's missing, not executable or blocked by
+ * the local `blockedExecPaths`) and the first match on the harness's own
+ * `PATH` that isn't blocked.
+ */
+export const ReportedHostTool = z.object({
+  name: HostToolName,
+  /** The configured path checked: a check of a path no longer configured is ignored. */
+  configuredPath: HostToolPath.nullable().optional(),
+  configuredPathExists: z.boolean().nullable(),
+  discoveredPath: HostToolPath.nullable(),
+});
+export type ReportedHostTool = z.infer<typeof ReportedHostTool>;
+
+/** A host tool of the organization's catalog, with the path configured for this harness. */
+export const KnownHostTool = z.object({
+  name: HostToolName,
+  /** Null when none is configured: the harness then uses the path it discovers. */
+  configuredPath: HostToolPath.nullable(),
+});
+export type KnownHostTool = z.infer<typeof KnownHostTool>;
+
 /** `POST /api/harness/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
@@ -254,6 +291,8 @@ export const Heartbeat = z.object({
   handledUpdateRequestId: z.uuid().nullable().optional(),
   /** The installables installed on the harness (absent from older harnesses). */
   installables: z.array(ReportedInstallable).max(100).default([]),
+  /** The host tools of the last response's `hostTools`, as the harness found them. */
+  hostTools: z.array(ReportedHostTool).max(100).default([]),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -310,6 +349,12 @@ export const HeartbeatResponse = z.object({
   desiredVersion: HarnessVersion.nullable().default(null),
   /** An update an admin asked for and the agent hasn't acted on yet. */
   updateRequest: HarnessUpdateRequest.nullable().default(null),
+  /**
+   * The organization's host tools with this harness's configured paths: the
+   * harness reports on each in its next heartbeat. A configured path wins;
+   * when it isn't usable the tool is unavailable (no fallback to `PATH`).
+   */
+  hostTools: z.array(KnownHostTool).default([]),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

@@ -60,6 +60,7 @@ const HEARTBEAT: HeartbeatResponse = {
   jobMessages: [],
   desiredVersion: null,
   updateRequest: null,
+  hostTools: [],
 };
 
 describe("omniralph-harness CLI", () => {
