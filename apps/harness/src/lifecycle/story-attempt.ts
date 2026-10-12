@@ -164,6 +164,8 @@ export interface StoryAttemptPrepared {
   /** The progress log the session may update (in `progressDir`). */
   progressFile: string;
   progressDir: string;
+  /** The branch worktree the session runs in. */
+  cwd: string;
 }
 
 /** The session settings that differ between the legacy `ralph.story` job and a coding run. */
@@ -190,7 +192,12 @@ export interface StoryAttemptArgs {
   ctx: JobContext;
   options: StoryOptions;
   /** The session's prompt and settings, from what the attempt prepared. */
-  session(prepared: StoryAttemptPrepared): StorySessionSettings;
+  session(prepared: StoryAttemptPrepared): StorySessionSettings | Promise<StorySessionSettings>;
+  /**
+   * Runs in the branch worktree after the attempt, whatever happened (a
+   * coding task's teardown commands); it must not throw.
+   */
+  teardown?(cwd: string): Promise<void>;
   /**
    * A run that pushes only at the end (`pushTiming: end`): the hidden ref
    * (`ralphHiddenRef`) story commits are force-pushed to instead of the
@@ -285,11 +292,12 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
         const progressFile = path.join(progressDir, "progress.md");
         try {
           await writeFile(progressFile, payload.progress);
-          const settings = args.session({
+          const settings = await args.session({
             offered,
             ...(attachments.prompt && { attachments: attachments.prompt }),
             progressFile,
             progressDir,
+            cwd: worktree.path,
           });
           const session = await runSession({
             ...settings,
@@ -455,6 +463,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           throw error;
         } finally {
           await rm(progressDir, { recursive: true, force: true });
+          await args.teardown?.(worktree.path);
         }
       },
     );

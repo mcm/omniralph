@@ -716,6 +716,137 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     });
   });
 
+  describe("the task's setup and teardown commands", () => {
+    const command = (name: string, line: string, extra: { optional?: boolean } = {}) => ({
+      name,
+      command: line,
+      timeoutSeconds: 30,
+      maxOutputBytes: 20_000,
+      fence: "",
+      optional: false,
+      ...extra,
+    });
+    // What a command saw: its directory, the branch it's on and any token or credential helper override.
+    const probe = (file: string) =>
+      `{ pwd; git rev-parse --abbrev-ref HEAD; env | grep -E '^(OMNIRALPH_|GIT_CONFIG_(COUNT|KEY_|VALUE_))' | cut -d= -f1 | sort; } > '${file}'`;
+
+    function withCommands(setup: unknown[], teardown: unknown[], trigger = payload()): RunSpec {
+      return spec(trigger, {
+        task: {
+          ...storyTask,
+          promptTemplate: `${storyTask.promptTemplate}\n\nThe branch: {{setup.branch}}\n\nThe lint: {{setup.lint}}`,
+          setupCommands: setup,
+          teardownCommands: teardown,
+        } as RunSpec["task"],
+      });
+    }
+
+    it("runs the setup commands in the branch worktree without a token before rendering the prompt, and passes their output as setup.<name>", async () => {
+      const seen = path.join(root, "setup-env");
+      const { query, calls } = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const run = withCommands(
+        [
+          command(
+            "branch",
+            `test -f '${root}/repo-setup-ran' || exit 9; ${probe(seen)}; echo "on $(git rev-parse --abbrev-ref HEAD)"`,
+          ),
+          command("lint", "echo nope >&2; exit 2", { optional: true }),
+        ],
+        [],
+        // The repository's setup command runs first, when the worktree is created.
+        payload({
+          settings: { ...payload().settings, setupCommand: `touch '${root}/repo-setup-ran'` },
+        }),
+      );
+      const out = await runStoryCoding(run, context(), options(query));
+      expect(out.status).toBe("complete");
+
+      // The worktree, on the run's branch, after the repository's setup command; no token, no credential helper.
+      expect(await readFile(seen, "utf8")).toBe(`${worktreePath()}\n${branch}\n`);
+      const [call] = calls;
+      expect(call!.prompt).toContain(`on ${branch}`);
+      expect(call!.prompt).toContain("(The setup command lint failed: it exited with code 2.)");
+      expect(call!.prompt).toBe(
+        storyRunPrompt(
+          run,
+          run.trigger.context as RalphStoryPayload,
+          { offered: [], progressFile: progressFileOf(call!) },
+          undefined,
+          {
+            branch: `on ${branch}\n`,
+            lint: "(The setup command lint failed: it exited with code 2.)",
+          },
+        ),
+      );
+    });
+
+    it("fails the run without a session when a required setup command fails, and still runs the teardown commands", async () => {
+      const tornDown = path.join(root, "torn-down");
+      const { query, calls } = fakeQuery(async function* () {
+        yield result({ status: "complete", summary: "x", followUps: [] });
+      });
+      const run = withCommands(
+        [command("branch", "echo 'no database' >&2; exit 4"), command("lint", "true")],
+        [command("stop_db", probe(tornDown))],
+      );
+      await expect(runStoryCoding(run, context(), options(query))).rejects.toThrow(
+        "setup command branch failed: it exited with code 4: no database",
+      );
+      expect(calls).toEqual([]);
+      expect(await readFile(tornDown, "utf8")).toBe(`${worktreePath()}\n${branch}\n`);
+    });
+
+    it("runs the teardown commands in the worktree after the attempt, whatever happened, a failing one not stopping the next", async () => {
+      const log = path.join(root, "teardown-log");
+      const teardown = [
+        command("first", `echo first >> '${log}'; exit 1`),
+        command("second", `${probe(path.join(root, "teardown-env"))}; echo second >> '${log}'`),
+      ];
+      const setup = [command("branch", "true"), command("lint", "true")];
+
+      // A completed story: after the commit and the push.
+      const done = fakeQuery(async function* (call) {
+        await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+        yield result({ status: "complete", summary: "Built it.", followUps: [] });
+      });
+      const out = await runStoryCoding(
+        withCommands(setup, teardown),
+        context(),
+        options(done.query),
+      );
+      expect(out.status).toBe("complete");
+      expect(await readFile(log, "utf8")).toBe("first\nsecond\n");
+      expect(await readFile(path.join(root, "teardown-env"), "utf8")).toBe(
+        `${worktreePath()}\n${branch}\n`,
+      );
+
+      // A failed attempt.
+      const failed = fakeQuery(async function* () {
+        yield result({ status: "incomplete", summary: "Not yet.", followUps: [] });
+      });
+      const notDone = await runStoryCoding(
+        withCommands(setup, teardown),
+        context(),
+        options(failed.query),
+      );
+      expect(notDone.status).toBe("incomplete");
+      expect(await readFile(log, "utf8")).toBe("first\nsecond\n".repeat(2));
+
+      // A stopped run: the teardown commands still run to the end.
+      const stopped = fakeQuery(async function* () {
+        controller.abort(new Error("canceled"));
+        yield result({ status: "complete", summary: "x", followUps: [] });
+      });
+      await expect(
+        runStoryCoding(withCommands(setup, teardown), context(), options(stopped.query)),
+      ).rejects.toThrow("canceled");
+      expect(await readFile(log, "utf8")).toBe("first\nsecond\n".repeat(3));
+    });
+  });
+
   it("rejects a run whose trigger context is neither a story, a request nor a push", async () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ status: "complete", summary: "x", followUps: [] });

@@ -233,9 +233,14 @@ retries missed ones and deletes refs older than 14 days of runs that aren't runn
 ralph run (`RunInvoker { kind: "ralph-run" }`) on a checkout of the branch, whose fixed
 `{ title, body }` output the `run-result` sink hands to the run's publish step.
 
-Coding runs don't run the task's own setup and teardown commands yet, carry no
-`min_harness_version`, and their PR description run doesn't use the repository's ralph model;
-open stories of TOOL-304 cover these.
+Story and request runs run the task's own setup commands in the branch worktree (after the
+repository's **Setup command**, which runs only when the worktree is created, and after leftover
+work is stashed) just before the prompt is rendered, and pass their output as `setup.<name>`;
+the teardown commands run in the worktree after the attempt, whatever happened. Whatever setup
+commands leave in the worktree is part of it: the story's commit or the next attempt's stash, so
+write outside it or to ignored paths. Push runs have no prompt and run neither. Coding runs carry
+no `min_harness_version` yet, and their PR description run doesn't use the repository's ralph
+model; open stories of TOOL-304 cover these.
 
 ### Setup and teardown commands
 

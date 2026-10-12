@@ -91,6 +91,8 @@ export interface RequestAttemptPrepared {
   /** The progress log the session may read (in `progressDir`). */
   progressFile: string;
   progressDir: string;
+  /** The branch worktree the session runs in. */
+  cwd: string;
   /** What the prompt says about the downloaded attachments; undefined without any. */
   attachments?: string;
   /** `/ship`: the run's request stash entries offered to the session, newest first. */
@@ -129,7 +131,14 @@ export interface RequestAttemptArgs {
   /** The environment of the lifecycle's git commands: the worktree, and `/ship`'s and `ship`'s pushes. */
   gitEnv: NodeJS.ProcessEnv;
   /** The session's prompt and settings, from what the attempt prepared. */
-  session(prepared: RequestAttemptPrepared): RequestSessionSettings;
+  session(
+    prepared: RequestAttemptPrepared,
+  ): RequestSessionSettings | Promise<RequestSessionSettings>;
+  /**
+   * Runs in the branch worktree after the attempt, whatever happened (a
+   * coding task's teardown commands); it must not throw.
+   */
+  teardown?(cwd: string): Promise<void>;
 }
 
 /** Why a session failed, in cyralph's words. */
@@ -241,9 +250,10 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
         try {
           await writeFile(progressFile, payload.progress);
           const shipStashes = payload.ship ? await requestStashes(worktree, payload) : [];
-          const settings = args.session({
+          const settings = await args.session({
             progressFile,
             progressDir,
+            cwd: worktree.path,
             ...(attachments.prompt && { attachments: attachments.prompt }),
             shipStashes,
             ship: shipTool,
@@ -369,6 +379,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
           throw error;
         } finally {
           await rm(progressDir, { recursive: true, force: true });
+          await args.teardown?.(worktree.path);
         }
       },
     );

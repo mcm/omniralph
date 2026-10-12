@@ -21,6 +21,8 @@ import {
   type OmniralphServerOptions,
 } from "../tools/omniralph-server.js";
 import { PermissionRelay } from "../tools/permissions.js";
+import { withoutJobEnv } from "../job-env.js";
+import { runSetupCommands, runTeardownCommands } from "./commands.js";
 import { querySystemPrompt } from "./query.js";
 import { requestEpic, runRequestAttempt, type RequestAttemptPrepared } from "./request-attempt.js";
 import {
@@ -40,13 +42,15 @@ export interface CodingTaskOptions extends StoryOptions {
  * The prompt of a story run: the task's template rendered over the trigger
  * context (the run's `RalphStoryPayload`, as `storyTemplateContext` lays it
  * out for `builtin:implement-story`) and the task-type variables (`progress`,
- * `stashes`, `feedback`, `attempt`, …) of what the attempt prepared.
+ * `stashes`, `feedback`, `attempt`, …) of what the attempt prepared, plus
+ * the task's `setup.<name>` variables (`setup`, from `taskCommands`).
  */
 export function storyRunPrompt(
   spec: Pick<RunSpec, "task">,
   payload: RalphStoryPayload,
   prepared: Pick<StoryAttemptPrepared, "offered" | "attachments" | "progressFile">,
   now?: Date,
+  setup: Record<string, string> = {},
 ): string {
   const { epic, story } = promptEpic(payload);
   const context = storyTemplateContext({
@@ -69,7 +73,7 @@ export function storyRunPrompt(
   });
   return renderTemplate(
     spec.task.promptTemplate,
-    { ...context },
+    { ...context, setup },
     taskCatalog(spec.task),
     spec.task.variableLimits,
   );
@@ -79,12 +83,14 @@ export function storyRunPrompt(
  * The prompt of a request run: the task's template rendered over the trigger
  * context (the run's `RalphRequestPayload`, as `requestTemplateContext` lays
  * it out for `builtin:handle-request`) and what the attempt prepared (the
- * progress file, attachments and `/ship`'s stashes).
+ * progress file, attachments and `/ship`'s stashes), plus the task's
+ * `setup.<name>` variables (`setup`, from `taskCommands`).
  */
 export function requestRunPrompt(
   spec: Pick<RunSpec, "task">,
   payload: RalphRequestPayload,
   prepared: Pick<RequestAttemptPrepared, "attachments" | "progressFile" | "shipStashes">,
+  setup: Record<string, string> = {},
 ): string {
   const context = requestTemplateContext({
     epic: requestEpic(payload),
@@ -106,10 +112,33 @@ export function requestRunPrompt(
   });
   return renderTemplate(
     spec.task.promptTemplate,
-    { ...context },
+    { ...context, setup },
     taskCatalog(spec.task),
     spec.task.variableLimits,
   );
+}
+
+/**
+ * A coding run's own setup and teardown commands (the task's
+ * `setupCommands`/`teardownCommands`, not the repository's setup command,
+ * which runs when the branch worktree is created). Both run in the branch
+ * worktree without either job token or the git credential helper in their
+ * environment. `setup` runs before the prompt is rendered and returns the
+ * `setup.<name>` variables (a failing required one fails the run, see
+ * `runSetupCommands`); `teardown` runs after the attempt, whatever happened,
+ * and only logs failures.
+ */
+export function taskCommands(
+  spec: Pick<RunSpec, "task">,
+  ctx: JobContext,
+  log: JobContext["logger"],
+) {
+  const commandOptions = (cwd: string) => ({ cwd, env: withoutJobEnv(ctx.env()), logger: log });
+  return {
+    setup: (cwd: string) =>
+      runSetupCommands(spec.task.setupCommands, { ...commandOptions(cwd), signal: ctx.signal }),
+    teardown: (cwd: string) => runTeardownCommands(spec.task.teardownCommands, commandOptions(cwd)),
+  };
 }
 
 /**
@@ -140,7 +169,8 @@ export async function runCodingTask(
  * does (the repository's setup command when it creates it, the `pre-push`
  * guard), starting from or fast-forwarding to the run's hidden ref when
  * `origin` has it, then pushes the branch with `-u` with the lifecycle token.
- * Uncommitted changes are left alone. The result is a `RalphPushResult`.
+ * Uncommitted changes are left alone, and the task's own setup and teardown
+ * commands don't run (there is no prompt). The result is a `RalphPushResult`.
  */
 export async function runPushRun(
   payload: RalphPushPayload,
@@ -177,7 +207,8 @@ export async function runPushRun(
  * trigger context parses as `RalphStoryPayload`, e.g. `builtin:implement-story`)
  * is one attempt at one story, as a `ralph.story` job (`runStoryAttempt`):
  * the lane's branch worktree with the repository's setup command and the
- * `pre-push` guard, the run's stashes, attachments and progress file; then a
+ * `pre-push` guard, the run's stashes, attachments and progress file, and the
+ * task's setup commands (`taskCommands`); then a
  * session with the task's rendered prompt (`storyRunPrompt`), the agent's
  * system prompt, ralph's tool policy narrowed by the repository's tool
  * settings, the story outcome schema and `sessionEnv()` (the session token
@@ -185,7 +216,8 @@ export async function runPushRun(
  * commit and the push with `-u`, with the lifecycle token (with the task's
  * `pushTiming: end`, a force-push of HEAD to the run's hidden ref
  * `refs/omniralph/runs/<runId>` instead, the branch left alone). The result
- * is a `RalphStoryResult`.
+ * is a `RalphStoryResult`. The task's teardown commands run after the
+ * attempt, whatever happened.
  */
 export async function runStoryRun(
   spec: RunSpec,
@@ -194,6 +226,7 @@ export async function runStoryRun(
   options: CodingTaskOptions = {},
 ): Promise<RalphStoryResult> {
   const log = ctx.logger.child({ taskId: spec.task.id, agentId: spec.agent.id });
+  const commands = taskCommands(spec, ctx, log);
   return runStoryAttempt({
     payload,
     jobId: spec.jobId,
@@ -201,7 +234,9 @@ export async function runStoryRun(
     options,
     // Pushing only at the end keeps the story commits on the run's hidden ref meanwhile.
     ...(spec.task.pushTiming === "end" && { hiddenRef: ralphHiddenRef(payload.runId) }),
-    session: (prepared) => {
+    teardown: commands.teardown,
+    session: async (prepared) => {
+      const setup = await commands.setup(prepared.cwd);
       // `get_attachment` saves next to the progress log, a directory the session may use.
       const harness = createOmniralphServer({
         server: ctx.server,
@@ -218,7 +253,7 @@ export async function runStoryRun(
       const fallbackModel = payload.settings.fallbackModel ?? spec.fallbackModel;
       const idleTimeoutMs = options.idleTimeoutMs ?? spec.task.idleTimeoutMs;
       return {
-        prompt: storyRunPrompt(spec, payload, prepared, options.now?.()),
+        prompt: storyRunPrompt(spec, payload, prepared, options.now?.(), setup),
         policy: RALPH_TOOL_POLICY,
         ...querySystemPrompt(spec),
         model,
@@ -243,7 +278,9 @@ export async function runStoryRun(
 /**
  * A request run (its trigger context parses as `RalphRequestPayload`, e.g.
  * `builtin:handle-request`) is one request session, as a `ralph.request` job
- * (`runRequestAttempt`): the lane's branch worktree, resuming the lane's last
+ * (`runRequestAttempt`): the lane's branch worktree and the task's setup
+ * commands (`taskCommands`; its teardown commands run after the attempt,
+ * whatever happened), resuming the lane's last
  * request session when set (fresh when that fails), with the task's rendered
  * prompt (`requestRunPrompt`), the agent's system prompt, ralph's tool policy
  * narrowed by the repository's tool settings, follow-up messages delivered to
@@ -279,6 +316,7 @@ export async function runRequestRun(
         }),
       })
     : null;
+  const commands = taskCommands(spec, ctx, log);
   // The lifecycle's own git commands (fetches, `ship`'s pushes) read the lifecycle token from a file.
   const git = await jobGitAccess(ctx, { refreshMs: options.tokenRefreshMs });
   try {
@@ -288,7 +326,9 @@ export async function runRequestRun(
       ctx,
       options,
       gitEnv: git.env,
-      session: (prepared) => {
+      teardown: commands.teardown,
+      session: async (prepared) => {
+        const setup = await commands.setup(prepared.cwd);
         const harness: OmniralphServer | null = createOmniralphServer({
           server: ctx.server,
           jobId: spec.jobId,
@@ -306,7 +346,7 @@ export async function runRequestRun(
         const fallbackModel = payload.settings.fallbackModel ?? spec.fallbackModel;
         const idleTimeoutMs = options.idleTimeoutMs ?? spec.task.idleTimeoutMs;
         return {
-          prompt: requestRunPrompt(spec, payload, prepared),
+          prompt: requestRunPrompt(spec, payload, prepared, setup),
           policy: RALPH_TOOL_POLICY,
           ...querySystemPrompt(spec),
           model,
