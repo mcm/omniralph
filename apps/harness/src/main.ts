@@ -55,6 +55,13 @@ Options:
   --config <file> Harness config (default: ~/.config/omniralph/harness.json, or $OMNIRALPH_HARNESS_CONFIG)
   -h, --help      Show this help
   -v, --version   Print the harness version
+
+Local config keys (set by hand in the config file; enroll writes only the first four):
+  server, agentId, refreshToken, workspaceRoot
+  installables.allow  npm package patterns the install RPC accepts (default: ["@omniralph/*"];
+                      [] allows none; * matches anything but /)
+  blockedExecPaths    Absolute path prefixes never executed, symlinks resolved (default: [])
+  dataDir             Installables and caches directory (default: ~/.omniralph)
 `;
 
 export interface Io {

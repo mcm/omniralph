@@ -5,10 +5,10 @@ import type { TokenResponse } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api.js";
 import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
-import { writeConfig, type AgentConfig } from "./config.js";
+import { writeConfig, type HarnessConfig } from "./config.js";
 import { silentLogger } from "./logger.js";
 
-const CONFIG: AgentConfig = {
+const CONFIG: HarnessConfig = {
   server: "https://omniralph.example",
   agentId: "0b6f5e0e-8a52-4a4b-9a43-6e8e0c1f9b10",
   refreshToken: "refresh-0",
@@ -78,7 +78,7 @@ describe("TokenManager", () => {
   it("persists the rotated refresh token before handing out the new access token", async () => {
     const log: string[] = [];
     let release!: () => void;
-    const persist = vi.fn(async (config: AgentConfig) => {
+    const persist = vi.fn(async (config: HarnessConfig) => {
       log.push(`persist ${config.refreshToken}`);
       await new Promise<void>((resolve) => (release = resolve));
       log.push("persisted");
@@ -100,7 +100,7 @@ describe("TokenManager", () => {
   it("doesn't use the new access token if persisting fails, and retries with the new refresh token", async () => {
     const exchange = rotatingExchange();
     const persist = vi
-      .fn<(config: AgentConfig) => Promise<void>>()
+      .fn<(config: HarnessConfig) => Promise<void>>()
       .mockRejectedValueOnce(new Error("ENOSPC"))
       .mockResolvedValue();
     const tokens = manager({ exchange, persist, retryDelayMs: () => 1_000 });

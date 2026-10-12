@@ -1,6 +1,6 @@
 import type { TokenResponse } from "@omniralph/shared";
 import { ApiError } from "./api.js";
-import type { AgentConfig } from "./config.js";
+import type { HarnessConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 
 /** The control panel rejected the refresh token: the agent was revoked or a reuse was detected. */
@@ -12,11 +12,11 @@ export class ReenrollmentRequiredError extends Error {
 }
 
 export interface TokenManagerOptions {
-  config: AgentConfig;
+  config: HarnessConfig;
   /** `POST /api/harness/token`. */
   exchange: (refreshToken: string) => Promise<TokenResponse>;
   /** Persists the config atomically (see `writeConfig`). */
-  persist: (config: AgentConfig) => Promise<void>;
+  persist: (config: HarnessConfig) => Promise<void>;
   logger: Logger;
   /** Called once when the refresh token is rejected (401); the daemon stops and exits non-zero. */
   onFatal?: (error: ReenrollmentRequiredError) => void;
@@ -40,7 +40,7 @@ const defaultRetryDelayMs = (failures: number) => Math.min(60_000, 5_000 * 2 ** 
  * token (see `job-env.ts`).
  */
 export class TokenManager {
-  private config: AgentConfig;
+  private config: HarnessConfig;
   private accessToken: string | null = null;
   private expiresAt = 0;
   private timer: NodeJS.Timeout | null = null;
@@ -63,7 +63,7 @@ export class TokenManager {
   }
 
   /** The current config, including the latest refresh token. */
-  get currentConfig(): AgentConfig {
+  get currentConfig(): HarnessConfig {
     return this.config;
   }
 

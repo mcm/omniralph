@@ -4,7 +4,7 @@ import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FetchFn } from "./api.js";
-import { writeConfig, type AgentConfig } from "./config.js";
+import { writeConfig, type HarnessConfig } from "./config.js";
 import { silentLogger } from "./logger.js";
 import { main, USAGE, type MainDeps } from "./main.js";
 import packageJson from "../package.json" with { type: "json" };
@@ -135,7 +135,7 @@ describe("omniralph-harness CLI", () => {
         agentId: AGENT_ID,
         refreshToken: "refresh-0",
         workspaceRoot: path.join(dir, ".omniralph", "repos"),
-      } satisfies AgentConfig);
+      } satisfies HarnessConfig);
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
       expect(out.stdout).toContain(AGENT_ID);
       expect(out.stdout).not.toContain("refresh-0");
@@ -161,7 +161,7 @@ describe("omniralph-harness CLI", () => {
         { io: capture().io, fetch: server.fetch, homeDir: dir },
       );
       expect(code).toBe(0);
-      const config = JSON.parse(await readFile(configPath, "utf8")) as AgentConfig;
+      const config = JSON.parse(await readFile(configPath, "utf8")) as HarnessConfig;
       expect(config.workspaceRoot).toBe(path.join(dir, "cache"));
       expect(config.server).toBe("http://localhost:3000");
     });
@@ -232,7 +232,7 @@ describe("omniralph-harness CLI", () => {
   });
 
   describe("start", () => {
-    const config: AgentConfig = {
+    const config: HarnessConfig = {
       server: "https://omniralph.example",
       agentId: AGENT_ID,
       refreshToken: "refresh-0",

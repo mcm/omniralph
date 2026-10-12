@@ -157,8 +157,32 @@ omniralph-harness enroll --server https://omniralph.example.com --token <enrollm
 `--name` defaults to the hostname and `--workspace-root` to `~/.omniralph/repos`.
 
 This writes `~/.config/omniralph/harness.json` (mode 0600, directory 0700) with the server URL, harness
-ID, refresh token and `workspaceRoot`. That's the harness's entire local configuration. `--config
-<file>` or `OMNIRALPH_HARNESS_CONFIG` choose another path, for `enroll` and `start` alike.
+ID, refresh token and `workspaceRoot`. `--config <file>` or `OMNIRALPH_HARNESS_CONFIG` choose
+another path, for `enroll` and `start` alike.
+
+You can add these optional keys by hand. Token rotation keeps them, and they stay out of the file
+when unset:
+
+| Key | Default | Meaning |
+| -- | -- | -- |
+| `installables.allow` | `["@omniralph/*"]` | npm package patterns the harness accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The harness enforces this itself, whatever the control panel asks. |
+| `blockedExecPaths` | `[]` | Absolute path prefixes the harness never executes, whether a host tool's path was configured in the control panel or discovered on `PATH`. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
+| `dataDir` | `~/.omniralph` | Absolute directory for the harness's installables and their caches. |
+
+```json
+{
+  "server": "https://omniralph.example.com",
+  "agentId": "…",
+  "refreshToken": "…",
+  "workspaceRoot": "/home/coder/.omniralph/repos",
+  "installables": { "allow": ["@omniralph/*", "@acme/*"] },
+  "blockedExecPaths": ["/opt/untrusted"]
+}
+```
+
+An invalid value stops the harness at startup with an error naming the key. Edit the file while the
+harness is stopped: it rewrites the file when it rotates its refresh token, and a re-enrollment
+replaces it.
 
 The refresh token rotates every ~15 minutes and is rewritten atomically. **Never copy the file to
 another host or restore an old backup of it**: presenting an old refresh token looks like token
