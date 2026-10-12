@@ -29,6 +29,7 @@ import {
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
@@ -213,40 +214,30 @@ export function RepositorySettingsView({
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-              }}
-            >
+        <PageHeader
+          title={
+            <>
               <ProviderIcon provider={repository.provider} size={20} />
-              <span style={{ fontFamily: "var(--font-mono)" }}>{repository.fullPath}</span>
-            </h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              How this repository is reviewed. Changes apply to the next review; queued and running
-              reviews keep the settings they started with.
-            </Muted>
-          </div>
-          <Button asChild variant="ghost">
-            <a href={repository.webUrl} target="_blank" rel="noreferrer">
-              <IconExternalLink size={14} />
-              Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
-            </a>
-          </Button>
-        </div>
+              <span className="text-numeric">{repository.fullPath}</span>
+            </>
+          }
+          description="How this repository is reviewed. Changes apply to the next review; queued and running reviews keep the settings they started with."
+          actions={
+            <Button asChild variant="ghost">
+              <a href={repository.webUrl} target="_blank" rel="noreferrer">
+                <IconExternalLink size={14} />
+                Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
+              </a>
+            </Button>
+          }
+        />
 
         <RepositoryNav repositoryId={repository.id} current="settings" />
 
         <form onSubmit={save} noValidate style={{ display: "contents" }}>
           <Card>
             <CardHeader>
-              <CardTitle>Review profile</CardTitle>
+              <CardTitle as="h2">Review profile</CardTitle>
               <CardDescription>
                 Trade review depth against token usage.
                 {isAdmin && (
@@ -317,7 +308,7 @@ export function RepositorySettingsView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Review tasks</CardTitle>
+              <CardTitle as="h2">Review tasks</CardTitle>
               <CardDescription>
                 Which reviewers run on each pull or merge request. They run in parallel and their
                 findings are posted as one review.
@@ -363,7 +354,7 @@ export function RepositorySettingsView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Triggers</CardTitle>
+              <CardTitle as="h2">Triggers</CardTitle>
               <CardDescription>
                 When pull and merge requests are reviewed automatically.
               </CardDescription>
@@ -398,7 +389,7 @@ export function RepositorySettingsView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Files and instructions</CardTitle>
+              <CardTitle as="h2">Files and instructions</CardTitle>
               <CardDescription>
                 Skip files that don&apos;t need review, and tell the reviewer about this
                 repository&apos;s conventions.
@@ -447,7 +438,7 @@ export function RepositorySettingsView({
 
           <Card>
             <CardHeader>
-              <CardTitle>Harness pinning</CardTitle>
+              <CardTitle as="h2">Harness pinning</CardTitle>
               <CardDescription>
                 Only the selected harnesses run this repository&apos;s jobs. Leave all unselected to
                 let any harness run them. Newly pinned harnesses pre-clone the repository.

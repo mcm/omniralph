@@ -22,6 +22,7 @@ import {
 import { IconUnlink } from "@tabler/icons-react";
 import type { ChatPlatform } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { unlinkChatAccount } from "./actions";
@@ -54,24 +55,13 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "var(--text-2xl)",
-              fontWeight: "var(--font-weight-semibold)",
-            }}
-          >
-            Chat accounts
-          </h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Slack and Discord accounts linked to you. The Omniralph bot answers a linked account as
-            you, with your access in that organization.
-          </Muted>
-        </div>
+        <PageHeader
+          title="Chat accounts"
+          description="Slack and Discord accounts linked to you. The Omniralph bot answers a linked account as you, with your access in that organization."
+        />
         <Card>
           <CardHeader>
-            <CardTitle>Linked accounts</CardTitle>
+            <CardTitle as="h2">Linked accounts</CardTitle>
             <CardDescription>
               To link an account, mention the Omniralph bot in Slack or Discord and follow the link
               it sends you. A Slack account with your sign-in email is linked automatically.

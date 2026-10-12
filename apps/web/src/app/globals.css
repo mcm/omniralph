@@ -184,3 +184,49 @@ body {
     display: inline-flex;
   }
 }
+
+/* Page header (components/page-header.tsx): the title block takes the row and the actions
+   sit to its right; when the row is narrower than the title block's basis (phones, long
+   titles), the actions wrap below the title instead of squeezing it. */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+.page-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1 1 28rem;
+  min-width: 0;
+}
+.page-header-title {
+  overflow-wrap: anywhere;
+}
+/* A provider icon leading the title stays on the title's first line. */
+.page-header-title > svg {
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: -0.125em;
+}
+.page-header-description {
+  max-width: 75ch;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.page-header-meta {
+  min-width: 0;
+}
+.page-header-actions {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+@media (max-width: 639.98px) {
+  .page-header-title {
+    font-size: var(--text-headline-sm);
+    line-height: 1.25;
+  }
+}

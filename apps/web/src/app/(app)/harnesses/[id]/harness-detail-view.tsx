@@ -40,6 +40,7 @@ import {
 import { defaultPoolLimit } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
@@ -149,7 +150,7 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Configuration</CardTitle>
+        <CardTitle as="h2">Configuration</CardTitle>
         <CardDescription>
           Central settings, returned to the harness in every heartbeat response (every 20 seconds).
         </CardDescription>
@@ -292,7 +293,7 @@ function VersionCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Version</CardTitle>
+        <CardTitle as="h2">Version</CardTitle>
         <CardDescription>
           {harness.selfUpdate === "supported"
             ? "This harness runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
@@ -345,7 +346,7 @@ function PinsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Pinned repositories</CardTitle>
+        <CardTitle as="h2">Pinned repositories</CardTitle>
         <CardDescription>
           Jobs for a pinned repository only go to the harnesses it&apos;s pinned to. Pinning makes
           this harness pre-clone the repository.
@@ -458,7 +459,7 @@ export function InstallablesCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Installables</CardTitle>
+        <CardTitle as="h2">Installables</CardTitle>
         <CardDescription>
           npm packages that add commands, MCP servers and skills to this host, as reported in its
           last heartbeat. Installing or updating one runs on the harness, which refuses packages its
@@ -489,7 +490,7 @@ export function HostToolsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Host tools</CardTitle>
+        <CardTitle as="h2">Host tools</CardTitle>
         <CardDescription>
           Software installed on this host by hand. A configured path wins over the one the harness
           discovers on its <InlineCode>PATH</InlineCode>, even when it doesn&apos;t exist: the tool
@@ -512,7 +513,7 @@ function RevokeCard({ harness }: { harness: HarnessRow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Revoke</CardTitle>
+        <CardTitle as="h2">Revoke</CardTitle>
         <CardDescription>
           Revoking is immediate: the harness&apos;s access, refresh and job tokens stop working on
           its next request, its running jobs are redelivered to other harnesses and its pins are
@@ -561,7 +562,7 @@ function DeleteCard({ harness }: { harness: HarnessRow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Delete</CardTitle>
+        <CardTitle as="h2">Delete</CardTitle>
         <CardDescription>
           Deleting removes the harness from the Harnesses pages for good
           {harness.revoked ? "." : ", revoking it first."}
@@ -636,17 +637,12 @@ export function HarnessDetailView({
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>
-            {harness.name}
-          </h1>
-          <HarnessStatusBadge harness={harness} />
-        </div>
+        <PageHeader title={harness.name} meta={<HarnessStatusBadge harness={harness} />} />
 
         <TokenTheftAlert audit={audit} />
         {harness.revoked && harness.revokedAt && (
           <Alert variant="warning">
-            <AlertTitle>Revoked</AlertTitle>
+            <AlertTitle as="h2">Revoked</AlertTitle>
             <AlertDescription>
               This harness was revoked {formatDateTime(harness.revokedAt)}. Its configuration can no
               longer be changed.
@@ -656,7 +652,7 @@ export function HarnessDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Status</CardTitle>
+            <CardTitle as="h2">Status</CardTitle>
           </CardHeader>
           <CardContent>
             <div
@@ -717,7 +713,7 @@ export function HarnessDetailView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Audit log</CardTitle>
+            <CardTitle as="h2">Audit log</CardTitle>
             <CardDescription>The 50 most recent security events for this harness.</CardDescription>
           </CardHeader>
           <CardContent>

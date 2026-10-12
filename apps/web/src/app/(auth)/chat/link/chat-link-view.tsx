@@ -42,7 +42,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
         <AuthBrand />
         <Card>
           <CardHeader>
-            <CardTitle>Can&apos;t link this chat account</CardTitle>
+            <CardTitle as="h1">Can&apos;t link this chat account</CardTitle>
             <CardDescription>{problem}</CardDescription>
           </CardHeader>
           <CardFooter>
@@ -63,7 +63,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
         <CardHeader>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <IconLink size={18} />
-            <CardTitle>
+            <CardTitle as="h1">
               {linked ? `${platform} account linked` : `Link ${platform} account`}
             </CardTitle>
           </div>

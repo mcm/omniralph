@@ -11,10 +11,10 @@ import {
   Field,
   InlineCode,
   Input,
-  Muted,
 } from "@iamthemcmaster/ui";
 import { IconCloudDownload, IconDeviceFloppy } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { setGlobalHarnessVersion, trackLatestHarnessVersion } from "./actions";
@@ -75,24 +75,14 @@ export function HarnessSettingsView({
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "var(--text-2xl)",
-              fontWeight: "var(--font-weight-semibold)",
-            }}
-          >
-            Harness defaults
-          </h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Settings every harness of this organization gets with its heartbeat.
-          </Muted>
-        </div>
+        <PageHeader
+          title="Harness defaults"
+          description="Settings every harness of this organization gets with its heartbeat."
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle>Harness version</CardTitle>
+            <CardTitle as="h2">Harness version</CardTitle>
             <CardDescription>
               The version of <InlineCode>{packageName}</InlineCode> harnesses should run, or{" "}
               <InlineCode>latest</InlineCode> to update them with each release. Harnesses under pm2
@@ -144,7 +134,7 @@ export function HarnessSettingsView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Host tools</CardTitle>
+            <CardTitle as="h2">Host tools</CardTitle>
             <CardDescription>
               Software harness owners install by hand, such as Semgrep, that tasks can require.
               Harnesses get this list with their heartbeat and report where they find each tool; set

@@ -23,6 +23,7 @@ import {
   type FieldErrors,
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { updateReviewProfile } from "./actions";
@@ -70,7 +71,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           {profile.name}
           <Badge variant="neutral" size="sm">
             Built-in
@@ -190,21 +191,10 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "var(--text-2xl)",
-              fontWeight: "var(--font-weight-semibold)",
-            }}
-          >
-            Review profiles
-          </h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Each repository uses one of these profiles. Changes apply to the next review of every
-            repository using the profile. Built-in profiles can be edited but not deleted.
-          </Muted>
-        </div>
+        <PageHeader
+          title="Review profiles"
+          description="Each repository uses one of these profiles. Changes apply to the next review of every repository using the profile. Built-in profiles can be edited but not deleted."
+        />
         {profiles.map((profile) => (
           <ProfileCard key={`${profile.id}-${profile.updatedAt}`} profile={profile} />
         ))}

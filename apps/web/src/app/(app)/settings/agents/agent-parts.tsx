@@ -44,12 +44,6 @@ export const pageMain = {
   gap: "var(--space-6)",
 } as const;
 
-export const pageTitle = {
-  margin: 0,
-  fontSize: "var(--text-2xl)",
-  fontWeight: "var(--font-weight-semibold)",
-} as const;
-
 export const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 
 export const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;

@@ -106,7 +106,7 @@ function CreateOrganizationCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create an organization</CardTitle>
+        <CardTitle as="h2">Create an organization</CardTitle>
         <CardDescription>
           Organizations share repositories, agents and integrations between their members. You
           become its admin and can invite others.
@@ -228,7 +228,7 @@ function ListCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle as="h2">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>

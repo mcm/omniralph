@@ -61,7 +61,7 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
       <AuthBrand />
       <Card>
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle as="h1">Sign in</CardTitle>
           <CardDescription>
             Use your GitHub or GitLab account. Access is limited to approved team members.
           </CardDescription>
@@ -70,14 +70,14 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
           {error && (
             <Alert variant="danger">
               <IconAlertTriangle size={16} />
-              <AlertTitle>Couldn&apos;t sign you in</AlertTitle>
+              <AlertTitle as="h2">Couldn&apos;t sign you in</AlertTitle>
               <AlertDescription>{errorMessage(error)}</AlertDescription>
             </Alert>
           )}
           {providers.length === 0 && !devSignIn && (
             <Alert variant="warning">
               <IconAlertTriangle size={16} />
-              <AlertTitle>No sign-in providers configured</AlertTitle>
+              <AlertTitle as="h2">No sign-in providers configured</AlertTitle>
               <AlertDescription>
                 Set AUTH_GITHUB_ID/AUTH_GITHUB_SECRET or AUTH_GITLAB_ID/AUTH_GITLAB_SECRET.
               </AlertDescription>

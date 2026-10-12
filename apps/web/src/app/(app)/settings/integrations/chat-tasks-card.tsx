@@ -82,7 +82,7 @@ export function ChatTasksCard({ defaults, choices, connections }: ChatTasksSetti
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Chat tasks</CardTitle>
+        <CardTitle as="h2">Chat tasks</CardTitle>
         <CardDescription>
           The tasks a question about code and a request to start work run when asked in Slack or
           Discord. A channel can run different ones.

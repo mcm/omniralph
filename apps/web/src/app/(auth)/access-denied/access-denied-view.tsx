@@ -34,7 +34,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
             }}
           >
             <IconLock size={18} />
-            <CardTitle>Access denied</CardTitle>
+            <CardTitle as="h1">Access denied</CardTitle>
           </div>
           <CardDescription>
             {forbidden

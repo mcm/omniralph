@@ -95,7 +95,7 @@ function Group({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle as="h2">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent style={stack}>{children}</CardContent>
@@ -292,7 +292,7 @@ export function RalphSettingsSection({
     <form onSubmit={save} noValidate style={{ display: "contents" }}>
       <Card>
         <CardHeader>
-          <CardTitle>Ralph</CardTitle>
+          <CardTitle as="h2">Ralph</CardTitle>
           <CardDescription>
             Let Linear issues delegated to the Omniralph app be built here, story by story. A
             delegation goes to the first enabled repository that matches its{" "}

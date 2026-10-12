@@ -51,6 +51,7 @@ import {
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import type { RuleView } from "@/lib/rules/display";
@@ -148,7 +149,7 @@ function AddRuleCard({ repositoryId }: { repositoryId: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Add a custom rule</CardTitle>
+        <CardTitle as="h2">Add a custom rule</CardTitle>
         <CardDescription>
           Tell the reviewer what to flag or leave alone in this repository. Rules apply to the next
           review.
@@ -386,33 +387,23 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "var(--text-2xl)",
-                fontWeight: "var(--font-weight-semibold)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-              }}
-            >
+        <PageHeader
+          title={
+            <>
               <ProviderIcon provider={repository.provider} size={20} />
-              <span style={{ fontFamily: "var(--font-mono)" }}>{repository.fullPath}</span>
-            </h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Enabled rules are added to every review of this repository, after the review rubric.
-              Dismissing a finding as a false positive teaches the reviewer a new rule.
-            </Muted>
-          </div>
-          <Button asChild variant="ghost">
-            <a href={repository.webUrl} target="_blank" rel="noreferrer">
-              <IconExternalLink size={14} />
-              Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
-            </a>
-          </Button>
-        </div>
+              <span className="text-numeric">{repository.fullPath}</span>
+            </>
+          }
+          description="Enabled rules are added to every review of this repository, after the review rubric. Dismissing a finding as a false positive teaches the reviewer a new rule."
+          actions={
+            <Button asChild variant="ghost">
+              <a href={repository.webUrl} target="_blank" rel="noreferrer">
+                <IconExternalLink size={14} />
+                Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
+              </a>
+            </Button>
+          }
+        />
 
         <RepositoryNav repositoryId={repository.id} current="rules" />
 
@@ -420,7 +411,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>
+            <CardTitle as="h2">
               Custom rules <Badge variant="neutral">{custom.length}</Badge>
             </CardTitle>
             <CardDescription>Written by admins.</CardDescription>
@@ -428,6 +419,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           <CardContent>
             {custom.length === 0 ? (
               <Empty
+                titleAs="h3"
                 icon={<IconListCheck size={24} />}
                 title="No custom rules"
                 description={
@@ -449,7 +441,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>
+            <CardTitle as="h2">
               Learned rules <Badge variant="neutral">{learned.length}</Badge>
             </CardTitle>
             <CardDescription>
@@ -460,6 +452,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           <CardContent>
             {learned.length === 0 ? (
               <Empty
+                titleAs="h3"
                 icon={<IconBulb size={24} />}
                 title="No learned rules yet"
                 description="Dismiss a finding as a false positive to teach the reviewer a rule."

@@ -86,7 +86,7 @@ export function ConnectionHealth({
       </Muted>
       {health.problems.length > 0 && (
         <Alert variant="warning">
-          <AlertTitle>
+          <AlertTitle as="h3">
             {health.problems.length === 1
               ? "1 problem with this connection"
               : `${health.problems.length} problems with this connection`}

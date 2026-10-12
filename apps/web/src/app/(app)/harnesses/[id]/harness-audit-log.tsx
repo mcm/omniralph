@@ -41,7 +41,7 @@ export function TokenTheftAlert({ audit }: { audit: AuditRow[] }) {
   return (
     <Alert variant="danger" role="alert">
       <IconAlertTriangle size={16} />
-      <AlertTitle>Possible token theft</AlertTitle>
+      <AlertTitle as="h2">Possible token theft</AlertTitle>
       <AlertDescription>
         An already used refresh token for this harness was presented again on{" "}
         {formatDateTime(reuse.createdAt)}
@@ -60,6 +60,7 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
       <Empty
         icon={<IconHistory size={24} />}
         title="No events yet"
+        titleAs="h3"
         description="Nothing recorded."
       />
     );

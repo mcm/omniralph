@@ -59,6 +59,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { pageRange, totalPages } from "@/lib/pagination";
 import {
@@ -507,45 +508,40 @@ export function RepositoriesView({
           gap: "var(--space-6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>
-              Repositories
-            </h1>
-            <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-              Pull and merge requests in enabled repositories are reviewed automatically when
-              they&apos;re opened or pushed to.
-            </Muted>
-          </div>
-          {isAdmin && (
-            <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              {githubInstallUrl ? (
-                <Button asChild variant="secondary">
-                  <a href={githubInstallUrl}>
+        <PageHeader
+          title="Repositories"
+          description="Pull and merge requests in enabled repositories are reviewed automatically when they're opened or pushed to."
+          actions={
+            isAdmin && (
+              <>
+                {githubInstallUrl ? (
+                  <Button asChild variant="secondary">
+                    <a href={githubInstallUrl}>
+                      <IconBrandGithub size={14} />
+                      Connect GitHub
+                    </a>
+                  </Button>
+                ) : (
+                  <Button variant="secondary" disabled title="The GitHub App isn't configured">
                     <IconBrandGithub size={14} />
                     Connect GitHub
-                  </a>
-                </Button>
-              ) : (
-                <Button variant="secondary" disabled title="The GitHub App isn't configured">
-                  <IconBrandGithub size={14} />
-                  Connect GitHub
-                </Button>
-              )}
-              <ConnectGitLabDialog defaultUrl={defaultGitLabUrl} />
-            </div>
-          )}
-        </div>
+                  </Button>
+                )}
+                <ConnectGitLabDialog defaultUrl={defaultGitLabUrl} />
+              </>
+            )
+          }
+        />
 
         {isAdmin && githubNotice && (
           <Alert variant={githubNotices[githubNotice].variant}>
-            <AlertTitle>{githubNotices[githubNotice].title}</AlertTitle>
+            <AlertTitle as="h2">{githubNotices[githubNotice].title}</AlertTitle>
             <AlertDescription>{githubNotices[githubNotice].description}</AlertDescription>
           </Alert>
         )}
         {isAdmin && !githubInstallUrl && (
           <Alert variant="info">
-            <AlertTitle>GitHub App not configured</AlertTitle>
+            <AlertTitle as="h2">GitHub App not configured</AlertTitle>
             <AlertDescription>
               Set <InlineCode>GITHUB_APP_ID</InlineCode>, a signing key (
               <InlineCode>GITHUB_APP_KMS_ISSUER_ID</InlineCode> or{" "}
@@ -559,7 +555,7 @@ export function RepositoriesView({
 
         <Card>
           <CardHeader>
-            <CardTitle>Connected repositories</CardTitle>
+            <CardTitle as="h2">Connected repositories</CardTitle>
             <CardDescription>
               {isAdmin
                 ? "Turn reviews on or off per repository. Disconnecting keeps a repository's review history."
@@ -612,7 +608,7 @@ export function RepositoriesView({
         {isAdmin && connections.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Code-host connections</CardTitle>
+              <CardTitle as="h2">Code-host connections</CardTitle>
               <CardDescription>
                 Choose which repositories of each GitHub installation and projects of each GitLab
                 connection are reviewed. Removing a connection deletes its repositories and their

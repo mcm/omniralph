@@ -52,6 +52,7 @@ export function InstalledInstallables({ installables }: { installables: Installa
       <Empty
         icon={<IconPackage size={24} />}
         title="No installables"
+        titleAs="h3"
         description="The harness reports none installed."
       />
     );

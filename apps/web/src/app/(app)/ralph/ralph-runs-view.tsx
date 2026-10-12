@@ -33,6 +33,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
+import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
 import { formatDateTime } from "@/lib/format-date";
 import { totalPages } from "@/lib/pagination";
@@ -162,7 +163,7 @@ export function LinearNotConnected({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Alert variant="warning">
       <IconPlugConnected size={16} />
-      <AlertTitle>Linear isn&apos;t connected</AlertTitle>
+      <AlertTitle as="h2">Linear isn&apos;t connected</AlertTitle>
       <AlertDescription>
         Ralph runs start when a Linear issue is delegated to the Omniralph app.{" "}
         {isAdmin ? (
@@ -283,12 +284,10 @@ export function RalphRunsView({
           gap: "var(--space-6)",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "var(--text-2xl)", fontWeight: 600 }}>Ralph runs</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            Linear epics and issues delegated to Omniralph, built story by story.
-          </Muted>
-        </div>
+        <PageHeader
+          title="Ralph runs"
+          description="Linear epics and issues delegated to Omniralph, built story by story."
+        />
 
         {!linearConnected && total > 0 && <LinearNotConnected isAdmin={isAdmin} />}
 
@@ -304,7 +303,7 @@ export function RalphRunsView({
               }}
             >
               <div>
-                <CardTitle>Runs</CardTitle>
+                <CardTitle as="h2">Runs</CardTitle>
                 <CardDescription>
                   {total === 0
                     ? "Newest first."
@@ -346,6 +345,7 @@ export function RalphRunsView({
               <Empty
                 icon={<IconPlugConnected size={24} />}
                 title="Connect Linear to start ralph runs"
+                titleAs="h3"
                 description={
                   isAdmin
                     ? "Runs start when a Linear issue is delegated to the Omniralph app. Connect your Linear workspace first."
@@ -372,6 +372,7 @@ export function RalphRunsView({
                       ? "No runs match these filters"
                       : "No ralph runs yet"
                 }
+                titleAs="h3"
                 description={
                   total > 0
                     ? "The page is past the last one."

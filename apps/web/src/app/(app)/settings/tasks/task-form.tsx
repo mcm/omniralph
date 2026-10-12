@@ -11,7 +11,6 @@ import {
   CardTitle,
   Field,
   Input,
-  Muted,
   NativeSelect,
   Textarea,
 } from "@iamthemcmaster/ui";
@@ -31,8 +30,9 @@ import {
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
+import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
-import { pageMain, pageTitle } from "../agents/agent-parts";
+import { pageMain } from "../agents/agent-parts";
 import { Choices, errorFor, monoInput, splitNames } from "../agents/form-parts";
 import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
 import {
@@ -251,18 +251,15 @@ export function TaskForm({
     <>
       <AppHeader breadcrumbs={breadcrumbs} />
       <main style={pageMain}>
-        <div>
-          <h1 style={pageTitle}>{title}</h1>
-          <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
-            A task runs an agent with its prompt on the triggers it accepts and hands the output to
-            its sink. Changes apply to the next run.
-          </Muted>
-        </div>
+        <PageHeader
+          title={title}
+          description="A task runs an agent with its prompt on the triggers it accepts and hands the output to its sink. Changes apply to the next run."
+        />
         <form onSubmit={save} noValidate style={{ ...stack, gap: "var(--space-6)" }}>
           {errors.form && <p style={{ margin: 0, color: "var(--danger-fg)" }}>{errors.form}</p>}
           <Card>
             <CardHeader>
-              <CardTitle>Overview</CardTitle>
+              <CardTitle as="h2">Overview</CardTitle>
             </CardHeader>
             <CardContent style={stack}>
               <Field label="Name" htmlFor="task-name" error={errors.name} required>
@@ -350,7 +347,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Prompt template</CardTitle>
+              <CardTitle as="h2">Prompt template</CardTitle>
               <CardDescription>
                 Rendered with the trigger&apos;s variables for each run: every variable it uses must
                 be available for every trigger.
@@ -379,7 +376,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Setup commands</CardTitle>
+              <CardTitle as="h2">Setup commands</CardTitle>
               <CardDescription>
                 Run in order in the working directory before the session. Each one&apos;s output is
                 the template variable {"{{setup.<name>}}"}.
@@ -398,7 +395,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Teardown commands</CardTitle>
+              <CardTitle as="h2">Teardown commands</CardTitle>
               <CardDescription>
                 Run in order after the session, whatever happened; their output is logged and a
                 failure never fails the run.
@@ -417,7 +414,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Tool settings</CardTitle>
+              <CardTitle as="h2">Tool settings</CardTitle>
               <CardDescription>Narrow the agent&apos;s tools for this task.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -433,7 +430,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Requirements</CardTitle>
+              <CardTitle as="h2">Requirements</CardTitle>
               <CardDescription>
                 Only harnesses that have these claim the task&apos;s runs (besides the installables
                 of MCP servers its agent lists).
@@ -478,7 +475,7 @@ export function TaskForm({
           {taskType === "query" && (
             <Card>
               <CardHeader>
-                <CardTitle>Output schema</CardTitle>
+                <CardTitle as="h2">Output schema</CardTitle>
                 <CardDescription>
                   A JSON schema (an object) the run&apos;s structured output must match. Empty for a
                   Markdown answer.
@@ -507,7 +504,7 @@ export function TaskForm({
           {taskType === "coding" && (
             <Card>
               <CardHeader>
-                <CardTitle>Coding</CardTitle>
+                <CardTitle as="h2">Coding</CardTitle>
                 <CardDescription>
                   How the run publishes its work and how far it may go.
                 </CardDescription>
@@ -526,7 +523,7 @@ export function TaskForm({
 
           <Card>
             <CardHeader>
-              <CardTitle>Running</CardTitle>
+              <CardTitle as="h2">Running</CardTitle>
               <CardDescription>Where the output goes and what a run may use.</CardDescription>
             </CardHeader>
             <CardContent style={grid}>
