@@ -142,11 +142,16 @@ describe("validateTaskDefinition", () => {
       expect.arrayContaining(["builtin:review-pr", "builtin:describe-pr"]),
     );
     for (const task of BUILTIN_TASKS) {
+      const agent = getBuiltinAgent(task.agentId);
+      const requirements = deriveTaskRequirements(task, undefined, agent);
       expect(validateTaskDefinition(task, context), task.id).toEqual({
         ok: true,
         definition: task,
-        requirements: deriveTaskRequirements(task),
+        requirements,
       });
+      // No built-in task or agent needs an installable or a host tool.
+      expect(requirements.installables, task.id).toEqual([]);
+      expect(requirements.hostTools, task.id).toEqual([]);
     }
   });
 

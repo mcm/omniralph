@@ -262,6 +262,53 @@ describe.skipIf(!dockerAvailable)("host tools", () => {
     ).toEqual([]);
   });
 
+  it("stores a tool left out of a report (or an empty report) as not found, keeping its configured path", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Omitted" }).returning();
+    const orgId = org!.id;
+    const h = await harness(orgId);
+    const other = await harness(orgId, "other");
+    const configured = await createHostTool(db, orgId, { name: "configured" });
+    await createHostTool(db, orgId, { name: "discovered" });
+    if (!configured.ok) throw new Error("setup");
+    await setHarnessHostToolPath(db, orgId, h, configured.hostTool.id, "/opt/c");
+    const report = [
+      { name: "configured", configuredPathExists: true, discoveredPath: "/usr/bin/configured" },
+      { name: "discovered", configuredPathExists: null, discoveredPath: "/usr/bin/discovered" },
+    ];
+    await recordHarnessHostTools(db, orgId, h, report);
+    await recordHarnessHostTools(db, orgId, other, report);
+
+    const later = new Date("2026-10-12T13:00:00Z");
+    await recordHarnessHostTools(db, orgId, h, [report[1]!], later);
+    expect(await listHarnessHostTools(db, orgId, h)).toEqual([
+      expect.objectContaining({
+        name: "configured",
+        configuredPath: "/opt/c",
+        configuredPathExists: null,
+        discoveredPath: null,
+        reportedAt: later,
+        effectivePath: null,
+      }),
+      expect.objectContaining({ name: "discovered", effectivePath: "/usr/bin/discovered" }),
+    ]);
+
+    const latest = new Date("2026-10-12T14:00:00Z");
+    await recordHarnessHostTools(db, orgId, h, [], latest);
+    expect(await listHarnessHostTools(db, orgId, h)).toEqual([
+      expect.objectContaining({
+        configuredPath: "/opt/c",
+        reportedAt: latest,
+        effectivePath: null,
+      }),
+      expect.objectContaining({ discoveredPath: null, reportedAt: latest, effectivePath: null }),
+    ]);
+
+    // Another harness's rows aren't touched.
+    expect(
+      (await listHarnessHostTools(db, orgId, other)).map((tool) => tool.effectivePath),
+    ).toEqual(["/usr/bin/configured", "/usr/bin/discovered"]);
+  });
+
   it("cascades harness and tool deletion to the harness rows", async () => {
     const [org] = await db.insert(organizations).values({ name: "Cascade" }).returning();
     const h1 = await harness(org!.id, "h1");

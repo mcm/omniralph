@@ -9,6 +9,8 @@ import {
 } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RetryableJobError } from "../capabilities/index.js";
+import { execPathBlocked } from "../config.js";
+import { installableCacheDir, installablePrCacheDir } from "../installables.js";
 import { placeInstallable } from "../test/installables.js";
 import { resolveCommand } from "./commands.js";
 import {
@@ -179,6 +181,8 @@ describe("resolveRunExecutables", () => {
     expect(executables.commandEnv.get("graph-index")).toEqual(env);
     expect(executables.mcpServers?.servers.omniralph_graph_graph?.env).toEqual(env);
     expect(path.relative(cacheDir, prCacheDir).startsWith("..")).toBe(true);
+    expect(prCacheDir.startsWith(cacheDir + path.sep)).toBe(false);
+    expect(cacheDir.startsWith(prCacheDir + path.sep)).toBe(false);
     expect((await stat(prCacheDir)).isDirectory()).toBe(true);
     // The host tool keeps its name and gets no installable cache.
     expect(executables.commandEnv.has("opengrep")).toBe(false);
@@ -233,6 +237,113 @@ describe("resolveRunExecutables", () => {
         { dataDir },
       ),
     ).rejects.toThrow("the installable @omniralph/graph 2.1.0 has no MCP server search");
+  });
+
+  it("fails a run whose required installables provide the same command", async () => {
+    await placeInstallable(dataDir, GRAPH);
+    await placeInstallable(dataDir, {
+      name: "@omniralph/other",
+      version: "1.0.0",
+      omniralph: { commands: [{ name: "graph-index", bin: "bin/index.js" }] },
+    });
+    await expect(
+      resolveRunExecutables(
+        {
+          task: task({
+            requires: { installables: ["@omniralph/graph", "@omniralph/other"], hostTools: [] },
+          }),
+          agent: agent(),
+        },
+        { dataDir },
+      ),
+    ).rejects.toThrow(
+      "the installables @omniralph/graph and @omniralph/other both provide the command graph-index",
+    );
+  });
+
+  it("fails a run whose MCP servers share a session name", async () => {
+    await placeInstallable(dataDir, {
+      name: "@acme/a.b",
+      version: "1.0.0",
+      omniralph: { mcpServers: [{ name: "srv", command: "bin/a.js" }] },
+    });
+    await placeInstallable(dataDir, {
+      name: "@acme/a_b",
+      version: "1.0.0",
+      omniralph: { mcpServers: [{ name: "srv", command: "bin/b.js" }] },
+    });
+    await expect(
+      resolveRunExecutables(
+        {
+          task: task(),
+          agent: agent({ tools: { mcpServers: ["@acme/a.b:srv", "@acme/a_b:srv"] } }),
+        },
+        { dataDir },
+      ),
+    ).rejects.toThrow(
+      "the MCP servers @acme/a.b:srv and @acme/a_b:srv both have the session name acme_a_b_srv",
+    );
+  });
+
+  it("refuses host tools, installable commands and MCP servers under blockedExecPaths", async () => {
+    const dir = await placeInstallable(dataDir, GRAPH);
+    const blockedIn = (prefix: string) => ({
+      dataDir,
+      hostToolPath: () => "/opt/opengrep/bin/opengrep",
+      execPathBlocked: (file: string) => execPathBlocked({ blockedExecPaths: [prefix] }, file),
+    });
+    const hostTool = {
+      task: task({ requires: { installables: [], hostTools: ["opengrep"] } }),
+      agent: agent(),
+    };
+    await expect(resolveRunExecutables(hostTool, blockedIn("/opt/opengrep"))).rejects.toThrow(
+      "/opt/opengrep/bin/opengrep (the host tool opengrep) is blocked by blockedExecPaths",
+    );
+    await expect(
+      resolveRunExecutables(hostTool, blockedIn("/opt/opengrep2")),
+    ).resolves.toBeTruthy();
+
+    const command = {
+      task: task({ requires: { installables: ["@omniralph/graph"], hostTools: [] } }),
+      agent: agent(),
+    };
+    await expect(resolveRunExecutables(command, blockedIn(path.join(dir, "bin")))).rejects.toThrow(
+      `${path.join(dir, "bin/index.js")} (the command graph-index of @omniralph/graph) is blocked`,
+    );
+
+    const server = {
+      task: task(),
+      agent: agent({ tools: { mcpServers: ["@omniralph/graph:graph"] } }),
+    };
+    await expect(
+      resolveRunExecutables(server, blockedIn(path.join(dir, "bin/server.js"))),
+    ).rejects.toThrow(
+      `${path.join(dir, "bin/server.js")} (the MCP server @omniralph/graph:graph) is blocked`,
+    );
+    await expect(resolveRunExecutables(server, blockedIn(dataDir))).rejects.toThrow("is blocked");
+  });
+});
+
+describe("installable cache directories", () => {
+  it("rejects a repository ID or PR number that isn't valid in a path", () => {
+    expect(installableCacheDir("/data", "@omniralph/graph", REPO_ID)).toBe(
+      path.join("/data/cache/@omniralph/graph", REPO_ID),
+    );
+    expect(() => installableCacheDir("/data", "@omniralph/graph", "../../etc")).toThrow(
+      "invalid repository ID",
+    );
+    expect(() => installableCacheDir("/data", "../x", REPO_ID)).toThrow("invalid installable name");
+    expect(installablePrCacheDir("/data", "graph", REPO_ID, 3)).toBe(
+      path.join("/data/pr-cache/graph", REPO_ID, "3"),
+    );
+    for (const pr of [0, -1, 1.5, Number.NaN]) {
+      expect(() => installablePrCacheDir("/data", "graph", REPO_ID, pr)).toThrow(
+        "invalid PR number",
+      );
+    }
+    expect(() => installablePrCacheDir("/data", "graph", "not-a-uuid", 3)).toThrow(
+      "invalid repository ID",
+    );
   });
 });
 

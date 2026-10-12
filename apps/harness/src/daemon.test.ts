@@ -1043,21 +1043,35 @@ describe("AgentDaemon", () => {
       dataDir: c.dataDir,
       // The daemon's negotiated host tool paths (none negotiated in this test).
       hostTool: c.hostToolPath?.("opengrep"),
+      // The local config's blockedExecPaths.
+      blocked: [
+        await c.execPathBlocked?.("/opt/blocked/bin/tool"),
+        await c.execPathBlocked?.("/opt/fine/bin/tool"),
+      ],
     }));
     const { api, claims, daemon } = setup({
       run: capabilityRun,
       runQueryTask,
       dataDir: "/data/omniralph",
+      localConfig: { blockedExecPaths: ["/opt/blocked"] },
     });
     // A run-spec job of a legacy type: dispatched by its run spec, not its type.
     claims.push(job(runId, { taskType: "query", taskId: "builtin:test-task" }));
     claims.push(job(legacyId));
     void daemon.run();
     await settle();
+    // execPathBlocked does real fs I/O (realpath).
+    await vi.waitFor(() => expect(api.submitResult).toHaveBeenCalledTimes(2));
     expect(runQueryTask).toHaveBeenCalledTimes(1);
     expect(runQueryTask.mock.calls[0]?.[0]).toMatchObject({ jobId: runId, taskType: "query" });
     expect(api.submitResult).toHaveBeenCalledWith(runId, {
-      result: { query: runId, sameSpec: true, dataDir: "/data/omniralph", hostTool: null },
+      result: {
+        query: runId,
+        sameSpec: true,
+        dataDir: "/data/omniralph",
+        hostTool: null,
+        blocked: [true, false],
+      },
     });
     expect(capabilityRun).toHaveBeenCalledTimes(1);
     expect(capabilityRun.mock.calls[0]?.[0]).toMatchObject({ id: legacyId });

@@ -533,7 +533,8 @@ installable authors, admins and harness owners is [docs/installables.md](../inst
   its own `PATH`. The effective path is the configured one if it exists, else, with none
   configured, the discovered one: a configured but missing path makes the tool unavailable rather
   than falling back to `PATH`. Paths under the local `blockedExecPaths` (compared after resolving
-  symlinks) are never reported usable or run.
+  symlinks) are never reported usable, and each run checks its host tools, installable commands
+  and MCP servers against them again before it starts.
 - **Claims** filter on `jobs.required_installables` and `jobs.required_host_tools` (see
   [Organization definitions](#organization-definitions)): a harness claims a run only if its last
   heartbeat reported every installable and it has an effective path for every host tool.

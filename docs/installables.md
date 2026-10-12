@@ -68,13 +68,15 @@ picked instead:
   task requires runs that command's `bin`. `code-graph index --base main` runs
   `<dataDir>/installables/node_modules/@omniralph/code-graph/bin/code-graph.js index --base main`.
   The first word ends at whitespace or one of `;&|<>()`; only the first word is replaced, so
-  `make && code-graph index` runs `make` as written and `code-graph` from `PATH`.
+  `make && code-graph index` runs `make` as written and `code-graph` from `PATH`. A host tool the
+  task requires keeps its name over an installable command of the same name; two required
+  installables providing the same command name fail the run.
 - An agent lists an installable's MCP server in **Tools › MCP servers** as `<package>:<server>`
   (`@omniralph/code-graph:graph`). The server is attached to the agent's sessions and its tools
   are allowed. They are named `mcp__<package>_<server>__<tool>`, every character other than
   letters, digits, `_` and `-` replaced by `_` and leading `_` dropped:
   `mcp__omniralph_code-graph_graph__<tool>`. Review tasks attach it only to sessions that may
-  explore the repository.
+  explore the repository. Two listed servers that end up with the same session name fail the run.
 
 ### Caches
 
@@ -162,7 +164,8 @@ Every harness heartbeat negotiates where each host tool is:
 2. On its next heartbeat the harness reports, per tool, whether the configured path is an
    executable file it may run (**Exists**/**Missing**) and the first executable of that name it
    discovered on its own `PATH` (the harness process's `PATH`, never a run's; relative entries are
-   skipped).
+   skipped). Each report is complete: a tool it leaves out is stored as not found, so a harness
+   that stops reporting a tool stops claiming runs that need it.
 3. The **effective path** is the configured path when one is configured, and only if it exists;
    with none configured, the discovered path. A configured path that is missing makes the tool
    unavailable rather than falling back to whatever is on `PATH`.
@@ -203,12 +206,16 @@ the file.
   every install. A refused install fails its job with "_name_ isn't allowed on this harness".
   The allowlist only gates new installs: an installable installed before you narrowed it stays
   installed and usable until you remove it.
-- **`blockedExecPaths`** (default `[]`): absolute path prefixes the harness never runs a host tool
-  from, whether an admin configured the path or the harness discovered it on `PATH`. Prefixes match
+- **`blockedExecPaths`** (default `[]`): absolute path prefixes the harness never runs a host tool,
+  installable command or installable MCP server from, whether an admin configured a host tool's
+  path or the harness discovered it on `PATH`. Prefixes match
   whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`), after resolving
   symlinks on both sides, so a link into a blocked directory is blocked too. A blocked configured
   path is reported **Missing** (and logged once as a warning), which makes the tool unavailable; a
-  blocked discovered candidate is skipped and the search goes on along `PATH`.
+  blocked discovered candidate is skipped and the search goes on along `PATH`. Every run checks
+  its host tools, installable commands and MCP servers again before it starts and fails, naming the
+  path, if one is blocked (e.g. a symlink changed since the last heartbeat, or `dataDir` is under a
+  blocked prefix).
 - **`dataDir`** (default `~/.omniralph`): where installables and their caches live. It holds code
   the harness runs, so keep it writable only by the harness's user.
 

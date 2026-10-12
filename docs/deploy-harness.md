@@ -166,7 +166,7 @@ when unset:
 | Key | Default | Meaning |
 | -- | -- | -- |
 | `installables.allow` | `["@omniralph/*"]` | npm package patterns the harness accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The harness enforces this itself, whatever the control panel asks. |
-| `blockedExecPaths` | `[]` | Absolute path prefixes the harness never executes, whether a host tool's path was configured in the control panel or discovered on `PATH`. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
+| `blockedExecPaths` | `[]` | Absolute path prefixes the harness never executes: host tools (whether their path was configured in the control panel or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
 | `dataDir` | `~/.omniralph` | Absolute directory for the harness's installables and their caches. |
 
 ```json

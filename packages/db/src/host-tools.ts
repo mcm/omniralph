@@ -5,7 +5,7 @@
  * another organization is never read or written.
  */
 import { HOST_TOOL_NAME_PATTERN, type ReportedHostTool } from "@omniralph/shared";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { harnessHostTools, harnesses, hostTools } from "./schema.js";
 
@@ -175,7 +175,9 @@ export async function setHarnessHostToolPath(
  * configured paths are left as they are. `configuredPathExists` is only kept
  * when it's about the configured path stored now: null when none is
  * configured, or when the harness says it checked another one (the path
- * changed since its last heartbeat response).
+ * changed since its last heartbeat response). The report is the harness's
+ * whole state: a tool it has a row for but left out (an empty report included)
+ * is stored as not found, its configured path kept.
  */
 export async function recordHarnessHostTools(
   db: Database,
@@ -184,7 +186,6 @@ export async function recordHarnessHostTools(
   reported: readonly ReportedHostTool[],
   now: Date = new Date(),
 ): Promise<void> {
-  if (reported.length === 0) return;
   const known = await db
     .select({
       id: hostTools.id,
@@ -221,6 +222,15 @@ export async function recordHarnessHostTools(
       reportedAt: now,
     });
   }
+  await db
+    .update(harnessHostTools)
+    .set({ configuredPathExists: null, discoveredPath: null, reportedAt: now })
+    .where(
+      and(
+        eq(harnessHostTools.harnessId, harnessId),
+        notInArray(harnessHostTools.hostToolId, [...values.keys()]),
+      ),
+    );
   if (values.size === 0) return;
   await db
     .insert(harnessHostTools)

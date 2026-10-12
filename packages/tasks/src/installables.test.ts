@@ -97,6 +97,7 @@ describe("parseInstallablePackage", () => {
       [{ version: "1.0.0", omniralph }, ["name"]],
       [{ name: "Upper", version: "1.0.0", omniralph }, ["name"]],
       [{ name: "@scope/", version: "1.0.0", omniralph }, ["name"]],
+      [{ name: "-x", version: "1.0.0", omniralph }, ["name"]],
       [{ name: "a".repeat(215), version: "1.0.0", omniralph }, ["name"]],
       [{ name: "ok", version: "1.0", omniralph }, ["version"]],
       [{ name: "ok", version: "v1.0.0", omniralph }, ["version"]],
@@ -144,18 +145,16 @@ describe("InstallableManifest", () => {
     }
   });
 
-  it("rejects duplicate MCP server names but allows a command of the same name", () => {
-    expect(
-      issues(
-        InstallableManifest.safeParse({
-          commands: [{ name: "graph", bin: "a" }],
-          mcpServers: [
-            { name: "graph", command: "a" },
-            { name: "graph", command: "b" },
-          ],
-        }),
-      ),
-    ).toEqual(["mcpServers.1.name"]);
+  it("rejects duplicate MCP server names, naming the duplicate, but allows a command of the same name", () => {
+    const result = InstallableManifest.safeParse({
+      commands: [{ name: "graph", bin: "a" }],
+      mcpServers: [
+        { name: "graph", command: "a" },
+        { name: "graph", command: "b" },
+      ],
+    });
+    expect(issues(result)).toEqual(["mcpServers.1.name"]);
+    expect(result.error?.issues[0]?.message).toBe("MCP server name graph is used twice");
   });
 
   it("rejects paths that aren't inside the package", () => {

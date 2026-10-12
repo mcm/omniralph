@@ -202,11 +202,7 @@ export function parseInstallablePackage(packageJson: unknown): InstallablePackag
   const pkg = packageJson as Record<string, unknown>;
   const packageErrors: Record<string, string> = {};
   const { name, version } = pkg;
-  if (
-    typeof name !== "string" ||
-    name.length > NPM_NAME_MAX_LENGTH ||
-    !NPM_NAME_PATTERN.test(name)
-  ) {
+  if (!InstallablePackageName.safeParse(name).success) {
     packageErrors.name = "Expected a valid npm package name";
   }
   if (typeof version !== "string" || !SEMVER_PATTERN.test(version)) {

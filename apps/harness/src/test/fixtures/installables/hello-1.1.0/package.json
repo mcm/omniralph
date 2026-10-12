@@ -1,0 +1,25 @@
+{
+  "name": "@omniralph/hello",
+  "version": "1.1.0",
+  "description": "Test installable for the install RPC (an update)",
+  "bin": {
+    "omniralph-hello": "bin/hello.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "omniralph": {
+    "commands": [
+      {
+        "name": "hello",
+        "bin": "bin/hello.js"
+      }
+    ],
+    "mcpServers": [
+      {
+        "name": "hello",
+        "command": "bin/hello.js"
+      }
+    ]
+  }
+}
