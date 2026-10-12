@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   ClaimRequest,
   HeartbeatResponse,
@@ -26,6 +27,10 @@ import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
 import type { RepoCache } from "./workspace/repoCache.js";
 import { SelfUpdater, readUpdateState } from "./update.js";
+
+const HELLO_FIXTURE = fileURLToPath(
+  new URL("./test/fixtures/installables/hello/package.json", import.meta.url),
+);
 
 const ORG_ID = randomUUID();
 
@@ -228,6 +233,7 @@ function setup(options: {
   config?: HeartbeatResponse;
   repos?: RepoCache;
   updater?: SelfUpdater;
+  dataDir?: string;
 }) {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
@@ -251,6 +257,7 @@ function setup(options: {
       options.runCodingTask ?? (() => Promise.reject(new Error("this test runs no coding tasks"))),
     logger: silentLogger(),
     reportRetryDelayMs: 10,
+    dataDir: options.dataDir,
     updater: options.updater,
   });
   return { api, state, claims, tokens, daemon };
@@ -270,6 +277,51 @@ afterEach(() => {
 });
 
 describe("AgentDaemon", () => {
+  it("reports the installables in its data directory's prefix in every heartbeat", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-data-"));
+    try {
+      const prefix = path.join(dataDir, "installables");
+      const place = async (name: string, packageJson: Record<string, unknown>) => {
+        const dir = path.join(prefix, "node_modules", ...name.split("/"));
+        await mkdir(dir, { recursive: true });
+        await writeFile(path.join(dir, "package.json"), JSON.stringify(packageJson));
+      };
+      await place("@omniralph/hello", JSON.parse(await readFile(HELLO_FIXTURE, "utf8")));
+      // A dependency of an installable: in node_modules but not installed itself.
+      await place("@omniralph/transitive", {
+        name: "@omniralph/transitive",
+        version: "3.0.0",
+        omniralph: {},
+      });
+      // Installed, but not (or no longer) a valid installable.
+      await place("left-pad", { name: "left-pad", version: "1.3.0" });
+      await writeFile(
+        path.join(prefix, "package.json"),
+        JSON.stringify({
+          name: "omniralph-installables",
+          private: true,
+          dependencies: {
+            "left-pad": "1.3.0",
+            "@omniralph/hello": "1.0.0",
+            "@omniralph/gone": "1.0.0",
+          },
+        }),
+      );
+
+      const { api, daemon } = setup({ dataDir });
+      await daemon.heartbeat();
+      expect(api.heartbeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({ installables: [{ name: "@omniralph/hello", version: "1.0.0" }] }),
+      );
+
+      await rm(prefix, { recursive: true });
+      await daemon.heartbeat();
+      expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ installables: [] }));
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("heartbeats every 20s with its version, running jobs and free slots", async () => {
     const { api, daemon } = setup({});
     void daemon.run();
@@ -282,6 +334,7 @@ describe("AgentDaemon", () => {
       deliveredMessageIds: [],
       rejectedMessageIds: [],
       failedVersions: [],
+      installables: [],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);

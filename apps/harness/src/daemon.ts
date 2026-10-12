@@ -1,6 +1,7 @@
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   effectivePoolLimit,
+  type Heartbeat,
   type HeartbeatResponse,
   type JobFailure,
   type JobOutcomeResponse,
@@ -15,6 +16,7 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
+import { listInstalledInstallables } from "./installables.js";
 import { runCodingTask } from "./lifecycle/coding.js";
 import { runQueryTask } from "./lifecycle/query.js";
 import { runReviewTask } from "./lifecycle/review.js";
@@ -73,6 +75,11 @@ export interface DaemonOptions {
   shutdownGraceMs?: number;
   /** Delay between attempts to report a job's outcome. */
   reportRetryDelayMs?: number;
+  /**
+   * The harness's data directory: the installables in its prefix are reported
+   * in every heartbeat (none when unset).
+   */
+  dataDir?: string;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
 }
@@ -292,6 +299,7 @@ export class AgentDaemon implements DrainableDaemon {
         .slice(0, MAX_ACKS_PER_HEARTBEAT);
     const deliveredMessageIds = ids(true);
     const rejectedMessageIds = ids(false);
+    const installables = await this.installedInstallables();
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
@@ -300,6 +308,7 @@ export class AgentDaemon implements DrainableDaemon {
         deliveredMessageIds,
         rejectedMessageIds,
         failedVersions: [],
+        installables,
         ...this.options.updater?.report(),
       });
       this.lastHeartbeatAt = new Date();
@@ -316,6 +325,17 @@ export class AgentDaemon implements DrainableDaemon {
     } catch (error) {
       this.onApiError(error, "heartbeat failed");
       this.notifyUpdater(null);
+    }
+  }
+
+  /** The installables to report; none when they can't be listed (the heartbeat still goes out). */
+  private async installedInstallables(): Promise<Heartbeat["installables"]> {
+    if (this.options.dataDir === undefined) return [];
+    try {
+      return await listInstalledInstallables(this.options.dataDir);
+    } catch (error) {
+      this.options.logger.warn({ err: error }, "cannot list installed installables");
+      return [];
     }
   }
 

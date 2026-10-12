@@ -30,6 +30,18 @@ describe("protocol", () => {
     ).toBe(false);
   });
 
+  it("defaults a heartbeat's installables to none, so older harnesses validate", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.parse(base).installables).toEqual([]);
+    const installables = [{ name: "@omniralph/hello", version: "1.0.0" }];
+    expect(Heartbeat.parse({ ...base, installables }).installables).toEqual(installables);
+    const tooMany = Array.from({ length: 101 }, (_, i) => ({ name: `p${i}`, version: "1.0.0" }));
+    expect(Heartbeat.safeParse({ ...base, installables: tooMany }).success).toBe(false);
+    expect(
+      Heartbeat.safeParse({ ...base, installables: [{ name: "", version: "1.0.0" }] }).success,
+    ).toBe(false);
+  });
+
   it("discriminates start responses", () => {
     const skip = JobStartResponse.parse({ action: "skip", reason: "canceled" });
     expect(skip.action).toBe("skip");

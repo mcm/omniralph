@@ -61,6 +61,13 @@ import {
 } from "../harness-parts";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit-log";
+import {
+  InstallForm,
+  InstallJobs,
+  InstalledInstallables,
+  type InstallJobRow,
+  type InstallableRow,
+} from "./harness-installables";
 
 interface HarnessDetailViewProps {
   harness: HarnessRow;
@@ -68,6 +75,10 @@ interface HarnessDetailViewProps {
   /** Connected repositories (for pinning). */
   repositories: { id: string; provider: "github" | "gitlab"; fullPath: string }[];
   audit: AuditRow[];
+  /** The installables the harness reported in its last heartbeat. */
+  installables: InstallableRow[];
+  /** `install` jobs targeted at the harness in the last 24 hours, newest first. */
+  installJobs: InstallJobRow[];
   /** Settings › Harnesses version (described when it tracks npm's latest), used when the harness has no override. */
   globalDesiredVersion: string | null;
 }
@@ -430,6 +441,39 @@ function PinsCard({
   );
 }
 
+// ── Installables ─────────────────────────────────────────────────────────────
+
+export function InstallablesCard({
+  harness,
+  installables,
+  installJobs,
+}: {
+  harness: HarnessRow;
+  installables: InstallableRow[];
+  installJobs: InstallJobRow[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Installables</CardTitle>
+        <CardDescription>
+          npm packages that add commands, MCP servers and skills to this host, as reported in its
+          last heartbeat. Installing or updating one runs on the harness, which refuses packages its
+          local allowlist doesn&apos;t allow.
+        </CardDescription>
+      </CardHeader>
+      <CardContent style={stack}>
+        <InstalledInstallables installables={installables} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+          <span style={factLabel}>Installs in the last 24 hours</span>
+          <InstallJobs jobs={installJobs} />
+        </div>
+        {!harness.revoked && <InstallForm harnessId={harness.id} />}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Revoke ────────────────────────────────────────────────────────────────────
 
 function RevokeCard({ harness }: { harness: HarnessRow }) {
@@ -539,6 +583,8 @@ export function HarnessDetailView({
   now,
   repositories,
   audit,
+  installables,
+  installJobs,
   globalDesiredVersion,
 }: HarnessDetailViewProps) {
   return (
@@ -632,6 +678,7 @@ export function HarnessDetailView({
         <ConfigCard harness={harness} />
         <VersionCard harness={harness} globalDesiredVersion={globalDesiredVersion} />
         <PinsCard harness={harness} repositories={repositories} />
+        <InstallablesCard harness={harness} installables={installables} installJobs={installJobs} />
 
         <Card>
           <CardHeader>

@@ -498,6 +498,13 @@
       "when": 1791780845816,
       "tag": "0070_agent_task_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791811487798,
+      "tag": "0071_harness_reported_installables",
+      "breakpoints": true
     }
   ]
 }

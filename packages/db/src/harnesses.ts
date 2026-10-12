@@ -2,7 +2,8 @@
  * Harnesses and Jobs pages: the fleet overview, central harness configuration
  * (returned to the harness in its next heartbeat), the audit log and the job list.
  */
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { INSTALL_JOB_TYPE } from "@omniralph/shared";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -272,6 +273,62 @@ export async function listRecentHarnessAudit(
     .where(eq(harnessAudit.harnessId, harnessId))
     .orderBy(desc(harnessAudit.createdAt), desc(harnessAudit.id))
     .limit(limit);
+}
+
+/** An `install` job targeted at a harness, for its detail page. */
+export interface HarnessInstallJob {
+  id: string;
+  status: JobStatus;
+  /** The payload's package name and version (null: `latest`). */
+  name: string | null;
+  version: string | null;
+  /** The version the harness installed, from the job's result. */
+  installedVersion: string | null;
+  error: string | null;
+  createdAt: Date;
+  finishedAt: Date | null;
+}
+
+/** The `install` jobs targeted at a harness of the organization since `since`, newest first. */
+export async function listHarnessInstallJobs(
+  db: Database,
+  organizationId: string,
+  harnessId: string,
+  since: Date,
+  limit = 50,
+): Promise<HarnessInstallJob[]> {
+  const rows = await db
+    .select({
+      id: jobs.id,
+      status: jobs.status,
+      payload: jobs.payload,
+      result: jobs.result,
+      error: jobs.error,
+      createdAt: jobs.createdAt,
+      finishedAt: jobs.finishedAt,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.targetHarnessId, harnessId),
+        eq(jobs.type, INSTALL_JOB_TYPE),
+        gte(jobs.createdAt, since),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt), desc(jobs.id))
+    .limit(limit);
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    name: text(row.payload.name),
+    version: text(row.payload.version),
+    installedVersion: text(row.result?.version),
+    error: row.error,
+    createdAt: row.createdAt,
+    finishedAt: row.finishedAt,
+  }));
 }
 
 export interface JobListEntry {

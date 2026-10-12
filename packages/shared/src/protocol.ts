@@ -227,6 +227,13 @@ export const HarnessUpdateRequest = z.object({
 });
 export type HarnessUpdateRequest = z.infer<typeof HarnessUpdateRequest>;
 
+/** An installable installed on a harness, as its heartbeat reports it. */
+export const ReportedInstallable = z.object({
+  name: z.string().min(1).max(214),
+  version: z.string().min(1).max(64),
+});
+export type ReportedInstallable = z.infer<typeof ReportedInstallable>;
+
 /** `POST /api/harness/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
@@ -245,6 +252,8 @@ export const Heartbeat = z.object({
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
   /** The last `updateRequest` the agent acted on; the control panel then clears it. */
   handledUpdateRequestId: z.uuid().nullable().optional(),
+  /** The installables installed on the harness (absent from older harnesses). */
+  installables: z.array(ReportedInstallable).max(100).default([]),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 

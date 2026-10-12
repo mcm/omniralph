@@ -131,6 +131,7 @@ export {
 } from "./harness-auth.js";
 export {
   getHarnessOverview,
+  listHarnessInstallJobs,
   listHarnessOverview,
   listQueuedJobsTargetingHarness,
   listRecentHarnessAudit,
@@ -140,6 +141,7 @@ export {
   setHarnessDesiredVersion,
   updateHarnessConfig,
   type HarnessConfigInput,
+  type HarnessInstallJob,
   type HarnessJobSummary,
   type HarnessOverview,
   type JobListEntry,

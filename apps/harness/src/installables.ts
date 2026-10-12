@@ -7,7 +7,11 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parseInstallablePackage, type InstallablePackageParse } from "@omniralph/tasks";
+import {
+  InstallablePackageName,
+  parseInstallablePackage,
+  type InstallablePackageParse,
+} from "@omniralph/tasks";
 
 export const INSTALLABLES_DIR = "installables";
 /** Longest one `npm install` or `npm uninstall` may take. */
@@ -60,6 +64,42 @@ export async function readInstalledPackage(
     json = null;
   }
   return parseInstallablePackage(json);
+}
+
+/** An installed installable, as reported in the heartbeat. */
+export interface InstalledInstallable {
+  name: string;
+  version: string;
+}
+
+/** Most installables one heartbeat reports. */
+export const MAX_REPORTED_INSTALLABLES = 100;
+
+/**
+ * The installables installed in `<dataDir>/installables`, sorted by name: the
+ * prefix's own dependencies (not their dependencies) whose installed
+ * package.json is a valid installable. Empty when nothing was installed yet.
+ */
+export async function listInstalledInstallables(dataDir: string): Promise<InstalledInstallable[]> {
+  const prefix = installablesPrefix(dataDir);
+  let dependencies: unknown;
+  try {
+    const json: unknown = JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8"));
+    dependencies = (json as { dependencies?: unknown } | null)?.dependencies;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  if (typeof dependencies !== "object" || dependencies === null) return [];
+  const installed: InstalledInstallable[] = [];
+  for (const name of Object.keys(dependencies).sort()) {
+    if (!InstallablePackageName.safeParse(name).success) continue;
+    const parsed = await readInstalledPackage(prefix, name);
+    if (!parsed?.ok || parsed.installable.name !== name) continue;
+    installed.push({ name, version: parsed.installable.version });
+    if (installed.length === MAX_REPORTED_INSTALLABLES) break;
+  }
+  return installed;
 }
 
 /** Installs packages into an npm prefix (injectable for tests, as `Installer` for self-update). */

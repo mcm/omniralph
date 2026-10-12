@@ -24,7 +24,7 @@ import {
 import { recordLatestHarnessVersion } from "@/lib/harnesses/desired-version";
 import { enrollCommand } from "@/lib/harnesses/display";
 import { latestHarnessVersion, NpmRegistryError } from "@/lib/harnesses/npm";
-import { installInstallable as installInstallableOnHarness } from "@/lib/harnesses/installables";
+import { enqueueInstall } from "@/lib/harnesses/installables";
 import { pinRepository as pinRepositoryWithSync } from "@/lib/harnesses/pins";
 import { getAppUrl } from "@/lib/app-url";
 import { runAdminAction } from "@/lib/auth/admin-action";
@@ -297,7 +297,7 @@ export async function installInstallable(
       const field = parsed.error.issues[0]?.path[0] === "version" ? "version" : "package name";
       return { ok: false, error: `That isn't a valid ${field}.` };
     }
-    const enqueued = await installInstallableOnHarness(getDb(), getDispatcher(), {
+    const enqueued = await enqueueInstall(getDb(), getDispatcher(), {
       organizationId: admin.organization.id,
       harnessId,
       ...parsed.data,
