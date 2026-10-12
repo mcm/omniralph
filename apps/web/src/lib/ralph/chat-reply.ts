@@ -5,29 +5,27 @@
  * gets it in its next heartbeat (`queueLiveReply`); otherwise it becomes a
  * pending request (`addInstruction`) and the run is advanced, so it runs as
  * soon as the current job finishes. Chat runs stay in request mode: there is
- * no `/ralph`, stop or preparation handling here. An "Allow"/"Deny" answers a
- * live session's open permission question first (`permissions.ts`), and
- * `/ship [notes]` is always a pending ship request (`reply.ts` step 4a).
+ * no `/ralph`, stop or preparation handling here, and permission answers come
+ * from the chat assistant's `answer_run_permission` tool (`answerPermission`)
+ * rather than from matching the text. `/ship [notes]` is always a pending ship
+ * request (`reply.ts` step 4a).
  */
 import {
   getActiveRunByChatThread,
   getActiveRunJob,
   getRun,
-  getRunByChatThread,
   isLinearRun,
   listActiveRunJobIds,
-  listLanes,
   lockRun,
   type Database,
   type Job,
   type RalphRun,
 } from "@omniralph/db";
-import { matchPermissionAnswer, parseShipRequest, SHIP_REQUEST_TEXT } from "@omniralph/ralph";
+import { parseShipRequest, SHIP_REQUEST_TEXT } from "@omniralph/ralph";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
 import { conversationFor } from "./conversation";
 import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quote } from "./notify";
-import { answerPermission } from "./permissions";
 import { addInstruction } from "./requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
@@ -38,8 +36,8 @@ export interface ChatRunSession {
 }
 
 /**
- * The thread's unfinished run with a queued or running request job (plain
- * replies in the thread then go to that session), or null.
+ * The thread's unfinished run with a queued or running request job (its
+ * session works right now), or null.
  */
 export async function chatRunSession(
   db: Database,
@@ -51,28 +49,11 @@ export async function chatRunSession(
   return job ? { run, job } : null;
 }
 
-/**
- * The thread's latest run when one of its lanes has an open cleanup question
- * (asked after its PR/MR merged), else null: a plain reply may answer it
- * (`answerCleanup`), as a reply in a Linear session does.
- */
-export async function chatRunAskingCleanup(
-  db: Database,
-  chatThreadId: string,
-): Promise<RalphRun | null> {
-  const run = await getRunByChatThread(db, chatThreadId);
-  if (!run) return null;
-  const lanes = await listLanes(db, run.id);
-  return lanes.some((lane) => (lane.cleanup?.questions.length ?? 0) > 0) ? run : null;
-}
-
 export type ChatRunMessageOutcome =
   /** The thread has no unfinished run (of this organization). */
   | { status: "no_run" }
   /** Stored for the running job's live session: the agent gets it in its next heartbeat. */
   | { status: "live"; run: RalphRun }
-  /** An answer to the live session's permission question; the agent reads it. */
-  | { status: "answered"; run: RalphRun }
   /** A pending request: it runs once the current job finishes (or right away when none runs). */
   | { status: "queued"; run: RalphRun };
 
@@ -95,21 +76,6 @@ export async function sendToChatRun(
   const run = await getActiveRunByChatThread(deps.db, input.chatThreadId);
   if (!run || run.organizationId !== deps.organizationId || !withFiles(text)) {
     return { status: "no_run" };
-  }
-  // Only a message without files can be an answer to the permission question.
-  const permission =
-    run.permission && !run.permission.answer && !input.attachments?.trim()
-      ? matchPermissionAnswer(text)
-      : undefined;
-  if (permission) {
-    const note = await lockRun(deps.db, run.id, (tx, current) =>
-      answerPermission(tx, deps.db, current, permission, input.author ?? undefined),
-    );
-    if (note) {
-      // A new message in the thread, not an edit of the status message far up.
-      await postActivity(conversationFor(run, deps), note, { notice: true });
-      return { status: "answered", run };
-    }
   }
   const ship = parseShipRequest(text) ?? (input.ship ? text : null);
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {

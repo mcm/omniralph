@@ -36,8 +36,8 @@ function threadRunRules(run: ThreadRun): string[] {
     `This thread's ralph run: ${run.id} (status: ${run.status}${run.working ? ", its session is working right now" : ""}). get_ralph_run with that id tells you how it's going.`,
     `- Assistant messages starting with ${ralphRunMarker("<id>")} were posted in the thread for that ralph run (the session's answers and questions): use them to answer about what the session did. Never start your own answers with that marker.`,
     run.working
-      ? "- While the session works, users' plain replies go to it directly; you only get messages that mention you. When a user wants the session to know or do something, pass it on with send_to_session."
-      : "- send_to_session passes a message to the run while it is unfinished; once it is over, start new work with start_work.",
+      ? "- Its session is working: when a user wants it to know or do something, pass it on with reply_to_run (its agent gets it right away)."
+      : "- reply_to_run passes a message to the run while it is unfinished; once it is over, start new work with start_work.",
   ];
 }
 
@@ -83,8 +83,14 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- The repository must be one the conversation makes unambiguous (named, or the only one that fits; list_repositories shows them). If it isn't, ask the user to confirm which repository first, and don't call the tool.",
     "- The request is a self-contained instruction with every detail ralph needs, since ralph doesn't read the thread; start it with one sentence summarizing it.",
     "- The tool returns the run's id and link right away and posts nothing: after it succeeds, tell the user in your own reply that the run started (what it will do, with its link). The run's answers, questions and end come back to you as run events, and you relay them in this thread.",
-    "- If the tool says the thread already has a run, don't start another; pass the user's request to that run with send_to_session.",
-    "- When a user asks to ship ralph's work in this thread (\"ship it\", commit and push it, open the PR), set `ship` on start_work (same repository as the thread's last run) or on send_to_session while the run is unfinished. Ralph then commits the work itself, pushes the branch and opens the pull/merge request.",
+    "- If the tool says the thread already has a run, don't start another; pass the user's request to that run with reply_to_run.",
+    "- When a user asks to ship ralph's work in this thread (\"ship it\", commit and push it, open the PR), set `ship` on start_work (same repository as the thread's last run) or on reply_to_run while the run is unfinished. Ralph then commits the work itself, pushes the branch and opens the pull/merge request.",
+    "Answering this thread's runs (after you relayed a run event):",
+    "- Every message in the thread comes to you, also answers meant for a run: pass them on with the right tool, in the user's own words; they don't need any special syntax.",
+    "- A `question` the run asked, or anything else for a running coding run (more detail, a correction): reply_to_run. A code question's run takes no replies: ask a follow-up with ask_about_code instead.",
+    "- A `permission_request`: when a member clearly approves (yes, allow, go ahead) or denies (no, deny, don't), call answer_run_permission with `allow`. If the answer is unclear, ask them. `not_open` means the request expired or was answered already: say so.",
+    "- A `cleanup_question` (what to do with a merged run's branch or stashes): call answer_run_cleanup with the member's answer once it names one of the options; `no_match` means it didn't, so ask them to pick one.",
+    "- After one of these tools succeeds, confirm in a short line (or say nothing); the run's next news comes back to you as a run event.",
     "Other ralph runs (also ones started from Linear):",
     "- get_ralph_run tells how a run is going (its current story, waiting guidance, last activity); list_ralph_runs finds it.",
     "- To steer one, send it guidance with send_ralph_guidance (the run's id or Linear identifier). Confirm which run first when it's ambiguous.",

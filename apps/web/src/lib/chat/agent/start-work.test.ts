@@ -16,6 +16,7 @@ import {
   jobs,
   listMessages,
   listRunEvents,
+  mapThreadRun,
   organizations,
   ralphRuns,
   runMigrations,
@@ -57,6 +58,9 @@ import type { ChatActor } from "../identity";
 vi.mock("server-only", () => ({}));
 
 const { createChatAgentHandler } = await import("./handler");
+const { processThreadRunEvents } = await import("./wake");
+const { LINK_REQUIRED_RESULT } = await import("./tools");
+const { askPermission } = await import("@/lib/ralph/permissions");
 const { onRalphJobFinished, onRalphJobStarted } = await import("@/lib/ralph/jobs");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -173,9 +177,17 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
    * Records `text` as Ada's message (as the bot does) and runs the agent's
    * turn. It mentions the bot when it starts with `@omniralph`.
    */
-  async function turn(model: MockLanguageModelV2, text: string, actor: ChatActor = member) {
+  async function turn(
+    model: MockLanguageModelV2,
+    text: string,
+    actor: ChatActor = member,
+    /** Another thread, or a message seen as another organization's. */
+    where: { chatThread?: ChatThread; organizationId?: string } = {},
+  ) {
+    const target = where.chatThread ?? chatThread;
+    const organizationId = where.organizationId ?? orgId;
     await appendChatMessage(db, {
-      threadId: chatThread.id,
+      threadId: target.id,
       role: "user",
       externalUserId: "D1",
       authorName: "Ada Lovelace",
@@ -189,9 +201,9 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       author: { userId: "D1", userName: "ada", fullName: "Ada Lovelace" },
     } as Message;
     const context: ChatConversationContext = {
-      organizationId: orgId,
+      organizationId,
       connection,
-      chatThread,
+      chatThread: target,
       skipped: [],
       thread: t,
       message: m,
@@ -204,7 +216,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       model,
       env: ENV,
       logger,
-      ralph: async () => ralph(),
+      ralph: async (id) => ({ ...ralph(), organizationId: id }),
       // Every test's turns count against the same user and organization.
       rateLimits: {
         perOrganization: () => ({ key: `test:org:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
@@ -508,7 +520,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       error: "run_active",
       run: { id: first.id, status: "running" },
     });
-    expect(String(toolOutput(calls[1]!).message)).toContain("send_to_session");
+    expect(String(toolOutput(calls[1]!).message)).toContain("reply_to_run");
     expect((await threadRun())!.id).toBe(first.id);
     expect(await queuedJobs()).toHaveLength(1);
     // The agent's empty answer after a refusal still says something.
@@ -666,8 +678,6 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
   });
 
   describe("thread replies", () => {
-    const noModel = () => scriptedModel(textResult("I shouldn't be asked."));
-
     /** Hands off and returns the run with its queued request job. */
     async function handedOff() {
       await handOff({ repository: "acme/app", request: REQUEST });
@@ -677,92 +687,106 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       return { run, job: job! };
     }
 
-    it("passes a member's plain reply to the running session and reacts to it", async () => {
-      const { run, job } = await handedOff();
-      await startRequestJob(job);
-      const { model, calls } = noModel();
-
-      const m = await turn(model, "Also fix the one in CONTRIBUTING.md");
-
-      expect(calls).toEqual([]);
-      expect(posts).toEqual([]);
-      expect(reactions).toEqual([{ threadId: THREAD_ID, messageId: m.id, emoji: "eyes" }]);
-      const messages = await listMessages(db, run.id);
-      expect(messages.at(-1)).toMatchObject({
-        kind: "request",
-        jobId: job.id,
-        text: "Also fix the one in CONTRIBUTING.md",
-        author: "Ada Lovelace",
-      });
-      // No new job: the live session gets it in its next heartbeat.
-      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
-    });
-
-    it("keeps a plain reply as the next request while the job is queued", async () => {
-      const { run, job } = await handedOff();
-      const { model, calls } = noModel();
-
-      const m = await turn(model, "Also fix the one in CONTRIBUTING.md");
-
-      expect(calls).toEqual([]);
-      expect(posts).toEqual([]);
-      expect(reactions).toEqual([{ threadId: THREAD_ID, messageId: m.id, emoji: "eyes" }]);
-      const pending = (await listMessages(db, run.id)).at(-1)!;
-      expect(pending).toMatchObject({ kind: "request", jobId: null });
-      expect(pending.text).toBe("Also fix the one in CONTRIBUTING.md");
-      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
-    });
-
-    it("sends a plain reply from a user who isn't a linked member the link prompt", async () => {
-      const { run } = await handedOff();
-      const before = await listMessages(db, run.id);
-      const { model, calls } = noModel();
-
-      await turn(model, "Also fix the one in CONTRIBUTING.md", domain);
-
-      expect(calls).toEqual([]);
-      expect(reactions).toEqual([]);
-      expect(ephemerals).toHaveLength(1);
-      expect(ephemerals[0]).toContain(`${APP_URL}/chat/link?state=s`);
-      expect(await listMessages(db, run.id)).toEqual(before);
-    });
-
-    it("gives a mention to the agent, which can check on the run and pass a message on", async () => {
+    it("passes a member's plain reply to the running session through reply_to_run, as a live message", async () => {
       const { run, job } = await handedOff();
       await startRequestJob(job);
       const { model, calls } = scriptedModel(
-        toolCallResult("send_to_session", { text: "Use British spelling." }),
+        toolCallResult("reply_to_run", { text: "Also fix the one in CONTRIBUTING.md" }),
         textResult("Passed that on."),
       );
 
-      await turn(model, "@omniralph tell it to use British spelling");
+      await turn(model, "Also fix the one in CONTRIBUTING.md");
 
       const system = systemOf(calls[0]!);
       expect(system).toContain(`This thread's ralph run: ${run.id}`);
       expect(system).toContain("its session is working right now");
       const tools = calls[0]!.tools?.map((t) => t.name);
-      expect(tools).toEqual(expect.arrayContaining(["get_ralph_run", "send_to_session"]));
-      expect(toolOutput(calls[1]!)).toMatchObject({ status: "delivered", run: { id: run.id } });
+      expect(tools).toEqual(
+        expect.arrayContaining([
+          "get_ralph_run",
+          "reply_to_run",
+          "answer_run_permission",
+          "answer_run_cleanup",
+        ]),
+      );
+      expect(tools).not.toContain("send_to_session");
+      expect(toolOutput(calls[1]!)).toMatchObject({ status: "live", run: { id: run.id } });
       expect((await listMessages(db, run.id)).at(-1)).toMatchObject({
         kind: "request",
         jobId: job.id,
-        text: "Use British spelling.",
+        text: "Also fix the one in CONTRIBUTING.md",
+        author: "Ada",
       });
+      // No new job: the live session gets it in its next heartbeat.
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
       expect(reactions).toEqual([]);
       expect(posts).toEqual(["Passed that on."]);
     });
 
-    it("refuses send_to_session to a user who isn't a linked member", async () => {
+    it("keeps a reply as the next request while the job is queued", async () => {
+      const { run, job } = await handedOff();
+      const { model, calls } = scriptedModel(
+        toolCallResult("reply_to_run", { text: "Also fix the one in CONTRIBUTING.md" }),
+        textResult("It'll do that next."),
+      );
+
+      await turn(model, "@omniralph also fix the one in CONTRIBUTING.md");
+
+      expect(toolOutput(calls[1]!)).toMatchObject({ status: "queued", run: { id: run.id } });
+      const pending = (await listMessages(db, run.id)).at(-1)!;
+      expect(pending).toMatchObject({ kind: "request", jobId: null });
+      expect(pending.text).toBe("Also fix the one in CONTRIBUTING.md");
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
+      expect(posts).toEqual(["It'll do that next."]);
+    });
+
+    it("refuses reply_to_run to a user who isn't a linked member", async () => {
       const { run } = await handedOff();
       const before = await listMessages(db, run.id);
       const { model, calls } = scriptedModel(
-        toolCallResult("send_to_session", { text: "Use British spelling." }),
+        toolCallResult("reply_to_run", { text: "Use British spelling." }),
         textResult("You need to link your account first."),
       );
 
-      await turn(model, "@omniralph tell it to use British spelling", domain);
+      await turn(model, "Tell it to use British spelling", domain);
 
       expect(toolOutput(calls[1]!)).toMatchObject({ error: "link_required" });
+      expect(await listMessages(db, run.id)).toEqual(before);
+      expect(ephemerals).toHaveLength(1);
+      expect(ephemerals[0]).toContain(`${APP_URL}/chat/link?state=s`);
+    });
+
+    it("tells the agent to ask a follow-up with ask_about_code when the latest run is a code question", async () => {
+      const { run } = await handedOff();
+      const before = await listMessages(db, run.id);
+      const [query] = await db
+        .insert(jobs)
+        .values({
+          organizationId: orgId,
+          repositoryId: appRepoId,
+          type: "chat.ask",
+          taskType: "query",
+          pool: "short",
+          status: "completed",
+          payload: {},
+        })
+        .returning();
+      expect(
+        await mapThreadRun(db, {
+          organizationId: orgId,
+          chatThreadId: chatThread.id,
+          jobId: query!.id,
+        }),
+      ).not.toBeNull();
+      const { model, calls } = scriptedModel(
+        toolCallResult("reply_to_run", { text: "And where is it rendered?" }),
+        textResult("Let me ask that."),
+      );
+
+      await turn(model, "And where is it rendered?");
+
+      expect(toolOutput(calls[1]!)).toMatchObject({ error: "query_run" });
+      expect(String(toolOutput(calls[1]!).message)).toContain("ask_about_code");
       expect(await listMessages(db, run.id)).toEqual(before);
     });
 
@@ -773,7 +797,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       const messages = await listMessages(db, run.id);
       posts = [];
       const { model, calls } = scriptedModel(
-        toolCallResult("send_to_session", { text: "One more thing." }),
+        toolCallResult("reply_to_run", { text: "One more thing." }),
         textResult("It fixed the typo in the README."),
       );
 
@@ -784,7 +808,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       expect(systemOf(calls[0]!)).toContain(
         `This thread's ralph run: ${run.id} (status: completed)`,
       );
-      // A finished run takes no messages: the agent is told to start a new request.
+      // A finished run takes no messages: the agent is told to start new work.
       expect(toolOutput(calls[1]!)).toMatchObject({ error: "no_active_run" });
       expect(await listMessages(db, run.id)).toEqual(messages);
       expect(posts).toEqual(["It fixed the typo in the README."]);
@@ -815,6 +839,177 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       expect(systemOf(calls[0]!)).not.toContain("its session is working right now");
       expect(reactions).toEqual([]);
       expect(posts).toEqual(["It hasn't started yet."]);
+    });
+  });
+  describe("answers to the thread's run", () => {
+    const REQUEST_ID = "4f7c4e6e-9d1a-4c43-9d5e-1a2b3c4d5e6f";
+
+    /** Starts the thread's run, starts its job and has its session ask about a Bash call. */
+    async function askedPermission() {
+      await handOff({ repository: "acme/app", request: REQUEST });
+      const run = (await threadRun())!;
+      const [job] = await queuedJobs();
+      await startRequestJob(job!);
+      const deps = ralph();
+      expect(
+        await askPermission({ db, linear: async () => deps.linear, chat: deps.chat }, job!, {
+          requestId: REQUEST_ID,
+          tool: "Bash",
+          detail: "git commit -m 'Fix the typo'",
+          timeoutSeconds: 1800,
+        }),
+      ).toEqual({ status: "asked" });
+      posts = [];
+      return { run, job: job! };
+    }
+
+    /** A turn whose model calls `tool` with `input`, then answers "Done.". */
+    async function toolTurn(
+      tool: string,
+      input: unknown,
+      actor: ChatActor = member,
+      where: Parameters<typeof turn>[3] = {},
+    ) {
+      const { model, calls } = scriptedModel(toolCallResult(tool, input), textResult("Done."));
+      await turn(model, "yes", actor, where);
+      return { calls, output: toolOutput(calls[1]!) };
+    }
+
+    const permissionOf = async (run: RalphRun) => (await getRun(db, run.id))!.permission;
+
+    it("relays a permission request once, and a member's yes reaches the run through answer_run_permission", async () => {
+      const { run } = await askedPermission();
+      const relay = "Ralph wants to run `git commit` (Bash). Approve or deny?";
+      const wake = scriptedModel(textResult(relay));
+      expect(
+        await processThreadRunEvents(
+          {
+            db,
+            model: wake.model,
+            channel: ralph().chat!,
+            logger,
+            rateLimits: {
+              wakePerOrganization: () => ({
+                key: `test:wake:${randomUUID()}`,
+                limit: 10,
+                windowSeconds: 60,
+              }),
+            },
+          },
+          chatThread.id,
+        ),
+      ).toMatchObject({ status: "processed", posted: 1 });
+      expect(vi.mocked(adapter.postMessage)).toHaveBeenCalledTimes(1);
+
+      const { model, calls } = scriptedModel(
+        toolCallResult("answer_run_permission", { allow: true }),
+        textResult("Approved: it carries on."),
+      );
+      await turn(model, "yes");
+
+      expect(systemOf(calls[0]!)).toContain("answer_run_permission");
+      expect(toolOutput(calls[1]!)).toMatchObject({
+        status: "answered",
+        answer: "allowed",
+        tool: "Bash",
+        run: { id: run.id },
+      });
+      expect(await permissionOf(run)).toMatchObject({
+        requestId: REQUEST_ID,
+        answer: "allowed",
+        answeredBy: "Ada",
+      });
+      expect(posts).toEqual(["Approved: it carries on."]);
+      // The run's note is a run event for the responder, not a post.
+      const note = (await listRunEvents(db, orgId, chatThread.id)).at(-1)!;
+      expect(note).toMatchObject({
+        kind: "response",
+        idempotencyKey: expect.stringContaining(`:permission:${REQUEST_ID}:answer`),
+      });
+      expect((note.body as { text: string }).text).toBe("Allowed **Bash**. Carrying on.");
+      expect(vi.mocked(adapter.postMessage)).toHaveBeenCalledTimes(1);
+
+      // A second answer finds the question answered already.
+      const again = await toolTurn("answer_run_permission", { allow: false });
+      expect(again.output).toMatchObject({ error: "not_open" });
+      expect(await permissionOf(run)).toMatchObject({ answer: "allowed", answeredBy: "Ada" });
+    });
+
+    it("denies the call when the member says no", async () => {
+      const { run } = await askedPermission();
+      const { output } = await toolTurn("answer_run_permission", { allow: false });
+      expect(output).toMatchObject({ status: "answered", answer: "denied" });
+      expect(await permissionOf(run)).toMatchObject({ answer: "denied", answeredBy: "Ada" });
+    });
+
+    it("says not_open when the session that asked has ended, and no_question without a request", async () => {
+      const { model: noRequest, calls } = scriptedModel(
+        toolCallResult("answer_run_permission", { allow: true }),
+        textResult("Nothing was waiting."),
+      );
+      await handOff({ repository: "acme/app", request: REQUEST });
+      const [job] = await queuedJobs();
+      await turn(noRequest, "yes");
+      expect(toolOutput(calls[1]!)).toMatchObject({ error: "no_question" });
+
+      await startRequestJob(job!);
+      const deps = ralph();
+      await askPermission({ db, linear: async () => deps.linear, chat: deps.chat }, job!, {
+        requestId: REQUEST_ID,
+        tool: "Bash",
+        detail: "git push",
+        timeoutSeconds: 1800,
+      });
+      await db.update(jobs).set({ status: "canceled" }).where(eq(jobs.id, job!.id));
+      const { output } = await toolTurn("answer_run_permission", { allow: true });
+      expect(output).toMatchObject({ error: "not_open" });
+      expect((await permissionOf((await threadRun())!))?.answer).toBe("expired");
+    });
+
+    it("never answers a run of another thread or another organization", async () => {
+      const { run, job } = await askedPermission();
+      const before = await listMessages(db, run.id);
+      const otherThread = (await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: "discord:G1:CH1:TH2",
+        channelId: "discord:G1:CH1",
+        startedByExternalUserId: "D1",
+      }))!;
+      const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
+
+      for (const where of [{ chatThread: otherThread }, { organizationId: otherOrg!.id }]) {
+        expect(
+          (await toolTurn("answer_run_permission", { allow: true }, member, where)).output,
+        ).toMatchObject({ error: "no_question" });
+        expect(
+          (await toolTurn("reply_to_run", { text: "Use British spelling." }, member, where)).output,
+        ).toMatchObject({ error: "no_active_run" });
+        expect(
+          (await toolTurn("answer_run_cleanup", { answer: "Delete" }, member, where)).output,
+        ).toMatchObject({ error: "no_match" });
+      }
+
+      expect((await permissionOf(run))?.answer).toBeUndefined();
+      expect(await listMessages(db, run.id)).toEqual(before);
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
+      await db.delete(organizations).where(eq(organizations.id, otherOrg!.id));
+    });
+
+    it("gives a user who isn't a linked member link_required from every answer tool", async () => {
+      const { run, job } = await askedPermission();
+      const before = await listMessages(db, run.id);
+
+      for (const [tool, input] of [
+        ["reply_to_run", { text: "Use British spelling." }],
+        ["answer_run_permission", { allow: true }],
+        ["answer_run_cleanup", { answer: "Delete" }],
+      ] as const) {
+        expect((await toolTurn(tool, input, domain)).output).toEqual(LINK_REQUIRED_RESULT);
+      }
+
+      expect((await permissionOf(run))?.answer).toBeUndefined();
+      expect(await listMessages(db, run.id)).toEqual(before);
+      expect((await queuedJobs()).map((j) => j.id)).toEqual([job.id]);
     });
   });
 });

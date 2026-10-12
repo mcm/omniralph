@@ -1,16 +1,24 @@
 import "server-only";
 import {
   createChatLinearIssueDraft,
+  getRun,
+  latestThreadRun,
+  lockRun,
   setChatLinearIssueDraftMessage,
   type ChatMessageAttachment,
   type RalphRun,
 } from "@omniralph/db";
+import { PERMISSION_ALLOW, PERMISSION_DENY } from "@omniralph/ralph";
 import { z } from "zod";
 import { LinearNotConnectedError } from "@/lib/linear/client";
 import type { IssueSummary, Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
-import { attachmentName } from "../attachments";
+import { answerCleanup } from "@/lib/ralph/cleanup";
+import { conversationFor } from "@/lib/ralph/conversation";
+import { postActivity } from "@/lib/ralph/notify";
+import { answerPermission } from "@/lib/ralph/permissions";
+import { attachmentName, sessionAttachmentNote, type ThreadAttachment } from "../attachments";
 import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
 import { chatTaskOf, findRalphRunId } from "./read-tools";
 import {
@@ -23,7 +31,9 @@ import {
 /**
  * `action` tools: what the control-panel agent does for a linked member. A
  * ralph run started here belongs to the thread (`chat_thread_runs`): its
- * progress and answer are posted in it (`ChatConversation`).
+ * answers, questions and end come back to the agent as run events, and the
+ * person's answers go back to it through `reply_to_run`,
+ * `answer_run_permission` and `answer_run_cleanup`.
  */
 
 const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/ralph/${run.id}`;
@@ -31,7 +41,7 @@ const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/ralph/$
 export const startWork = defineChatTool({
   tier: "action",
   description:
-    "Starts work on a change request: a ralph run of this channel's \"start work\" coding task in one of the organization's ralph-enabled repositories, bound to this thread. Ralph works on its own branch, reports its progress and answer in this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous. It returns the run's id right away and posts nothing: tell the user in your reply that the run started.",
+    "Starts work on a change request: a ralph run of this channel's \"start work\" coding task in one of the organization's ralph-enabled repositories, bound to this thread. Ralph works on its own branch, its answers and questions come back to you as run events for this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous. It returns the run's id right away and posts nothing: tell the user in your reply that the run started.",
   inputSchema: z.object({
     repository: z
       .string()
@@ -79,7 +89,7 @@ export const startWork = defineChatTool({
         return {
           error: "run_active",
           message:
-            "This thread already has a ralph run in progress. Don't start another one: pass the user's request to that run with send_to_session instead.",
+            "This thread already has a ralph run in progress. Don't start another one: pass the user's request to that run with reply_to_run instead.",
           run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
         };
       case "failed":
@@ -98,24 +108,78 @@ export const startWork = defineChatTool({
           repository: outcome.repository.fullPath,
           followUp: outcome.followUp,
           message: outcome.followUp
-            ? "The run started, continuing the previous run's branch and pull request; ralph reports its progress and answer in this thread. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request)."
-            : "The run started; ralph reports its progress and answer in this thread. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request).",
+            ? "The run started, continuing the previous run's branch and pull request; its answers, questions and end come back to you as run events. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request)."
+            : "The run started; its answers, questions and end come back to you as run events. Tell the user in your reply that it started (with the run's link and a one-sentence summary of the request).",
         };
     }
   },
 });
 
-export const sendToSession = defineChatTool({
+/** Most attached files a reply to the thread's run includes. */
+const MAX_RUN_REPLY_ATTACHMENTS = 5;
+
+/**
+ * The thread's latest coding run, found through its mapping
+ * (`chat_thread_runs`) for this thread and the connection's organization, or
+ * null.
+ */
+async function threadCodingRun(context: ChatToolContext): Promise<RalphRun | null> {
+  const { db, organizationId, chatThread } = context;
+  const mapping = await latestThreadRun(db, organizationId, chatThread.id, "coding");
+  if (!mapping?.ralphRunId) return null;
+  const run = await getRun(db, mapping.ralphRunId);
+  return run?.organizationId === organizationId ? run : null;
+}
+
+/** The author an answer is passed on as: the member, else the message's author. */
+const answerAuthor = (context: ChatToolContext) =>
+  (context.actor.kind === "member" ? context.actor.name : null) ??
+  context.turnMessages.at(-1)?.author ??
+  null;
+
+/** The note on the thread's attachments with these refs for the run's session (an error result for an unknown ref). */
+async function runReplyAttachments(
+  context: ChatToolContext,
+  refs: readonly string[],
+): Promise<{ note: string | null } | { error: "unknown_attachment"; message: string }> {
+  const known = [...(context.attachments?.values() ?? [])];
+  const files: ThreadAttachment[] = [];
+  for (const ref of new Set(refs.map((r) => r.trim()))) {
+    const attachment = context.attachments?.get(ref);
+    if (!attachment) {
+      return {
+        error: "unknown_attachment",
+        message:
+          known.length > 0
+            ? `"${ref}" isn't a file attached in this thread. The thread's attachments: ${known.map((a) => `${a.ref} (${attachmentName(a.meta)})`).join(", ")}.`
+            : "No files are attached in this thread: reply without attachments.",
+      };
+    }
+    files.push(attachment);
+  }
+  // Reuses what the turn fetched already.
+  const note = await sessionAttachmentNote(
+    files.map((f) => f.meta),
+    async (meta) => {
+      const content = await files.find((f) => f.meta === meta)!.load();
+      if (content.status !== "loaded") throw new Error(content.reason);
+      return content.data;
+    },
+  );
+  return { note };
+}
+
+export const replyToRun = defineChatTool({
   tier: "action",
   description:
-    "Passes a message to the ralph run of this thread, as if the user had replied to its session: while it works, its agent gets the message right away; otherwise it runs as the run's next request once the current step finishes. Use it when a user mentions you to steer the running session (more detail, a correction, a question for it). It answers in this thread itself.",
+    "Passes a message to this thread's coding run (one started with start_work), as if the user had replied to its session: while its session works, its agent gets the message right away (`live`); otherwise it runs as the run's next request once the current step finishes (`queued`). Use it for an answer to a question the run asked in the thread, or when a user wants to steer the run (more detail, a correction, a question for it). Its answer comes back to you as a run event. Not for approval requests (answer_run_permission) or cleanup questions (answer_run_cleanup).",
   inputSchema: z.object({
     text: z
       .string()
       .min(1)
       .max(10_000)
       .describe(
-        "The message for the session: self-contained, with what the user asked for (quote them when it helps).",
+        "The message for the run: self-contained, with what the user said (quote them when it helps).",
       ),
     ship: z
       .boolean()
@@ -123,12 +187,31 @@ export const sendToSession = defineChatTool({
       .describe(
         'True when the user asks to ship the run\'s work ("ship it", commit and push it, open the PR): after its current step, ralph commits the work, pushes the branch and opens the pull/merge request. `text` may add last notes.',
       ),
+    attachments: z
+      .array(z.string().min(1).max(40))
+      .max(MAX_RUN_REPLY_ATTACHMENTS)
+      .optional()
+      .describe(
+        "Refs of files attached in the thread (`[attachment <ref>: …]`) the run should get with the message, e.g. a pasted log. It gets text files' content; it can't see images, so describe what a screenshot shows in `text`.",
+      ),
   }),
   async execute(input, context: ChatToolContext) {
+    const { db, organizationId, chatThread, appUrl } = context;
+    const latest = await latestThreadRun(db, organizationId, chatThread.id);
+    if (latest?.kind === "query") {
+      return {
+        error: "query_run",
+        message:
+          "This thread's latest run answered a code question, and those take no replies. For a follow-up question about the code, call ask_about_code again: it gets the previous question and its answer.",
+      };
+    }
+    const attachments = await runReplyAttachments(context, input.attachments ?? []);
+    if ("error" in attachments) return attachments;
     const outcome = await sendToChatRun(await context.ralph(), {
-      chatThreadId: context.chatThread.id,
+      chatThreadId: chatThread.id,
       text: input.text,
-      author: context.turnMessages.at(-1)?.author ?? null,
+      author: answerAuthor(context),
+      attachments: attachments.note,
       ...(input.ship && { ship: true }),
     });
     switch (outcome.status) {
@@ -136,29 +219,121 @@ export const sendToSession = defineChatTool({
         return {
           error: "no_active_run",
           message:
-            "This thread has no ralph run in progress. To have ralph do more, start new work with start_work.",
+            "This thread has no coding run in progress. To have ralph do more, start new work with start_work.",
         };
       case "live":
         return {
-          status: "delivered",
-          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          status: "live",
+          run: { id: outcome.run.id, url: runUrl(appUrl, outcome.run) },
           message:
-            "Passed to the session that is working right now; it answers in this thread. Tell the user briefly.",
+            "Passed to the session that is working right now; its answer comes back to you as a run event. Tell the user briefly.",
         };
       case "queued":
         return {
           status: "queued",
-          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          run: { id: outcome.run.id, url: runUrl(appUrl, outcome.run) },
           message:
-            "The run takes this as its next request once its current step finishes, and answers in this thread. Tell the user briefly.",
+            "The run takes this as its next request once its current step finishes; its answer comes back to you as a run event. Tell the user briefly.",
         };
-      case "answered":
+    }
+  },
+});
+
+export const answerRunPermission = defineChatTool({
+  tier: "action",
+  description:
+    "Answers the open approval request (`permission_request`) of this thread's coding run: allows or denies the tool call its session asked about. Use it when a member answers the request relayed in the thread (yes/approve/go ahead, or no/deny), in any wording. Only call it when the member's answer is clear; ask them otherwise.",
+  inputSchema: z.object({
+    allow: z.boolean().describe("True to allow the tool call, false to deny it."),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, appUrl } = context;
+    const run = await threadCodingRun(context);
+    const asked = run?.permission;
+    if (!run || !asked) {
+      return {
+        error: "no_question",
+        message: "This thread's run has no approval request. Tell the user nothing was waiting.",
+      };
+    }
+    const ralph = await context.ralph();
+    const note = asked.answer
+      ? null
+      : await lockRun(db, run.id, async (tx, current) =>
+          current.permission?.requestId === asked.requestId
+            ? answerPermission(
+                tx,
+                db,
+                current,
+                input.allow ? PERMISSION_ALLOW : PERMISSION_DENY,
+                answerAuthor(context) ?? undefined,
+              )
+            : null,
+        );
+    const answered = (await getRun(db, run.id))?.permission;
+    if (
+      !note ||
+      answered?.requestId !== asked.requestId ||
+      (answered.answer !== "allowed" && answered.answer !== "denied")
+    ) {
+      return {
+        error: "not_open",
+        message: `The approval request about ${asked.tool} isn't open anymore (it expired, was answered already, or the session that asked ended), so the answer did nothing. Tell the user.`,
+      };
+    }
+    await postActivity(conversationFor(run, ralph), note, {
+      notice: true,
+      event: { kind: "response", key: `permission:${asked.requestId}:answer` },
+    });
+    return {
+      status: "answered",
+      answer: answered.answer,
+      tool: asked.tool,
+      run: { id: run.id, url: runUrl(appUrl, run) },
+      message:
+        "The session got the answer and carries on. Tell the user briefly, or end your turn with no text.",
+    };
+  },
+});
+
+export const answerRunCleanup = defineChatTool({
+  tier: "action",
+  description:
+    "Answers a cleanup question (`cleanup_question`) of this thread's coding run, asked after its pull/merge request merged: what to do with a branch's unmerged commits or leftover stashes. Pass the member's answer; it must name one of the options the question listed (or its number).",
+  inputSchema: z.object({
+    answer: z
+      .string()
+      .min(1)
+      .max(1_000)
+      .describe("The member's answer: one of the options the question offered, as they said it."),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const run = await threadCodingRun(context);
+    const outcome = run ? await answerCleanup(await context.ralph(), run.id, input.answer) : null;
+    if (!run || !outcome) {
+      return {
+        error: "no_match",
+        message: run
+          ? "That answer doesn't match an open cleanup question of this thread's run. Ask the user to pick one of the options the question listed."
+          : "This thread has no coding run with a cleanup question.",
+      };
+    }
+    const result = { status: outcome.status, option: outcome.option };
+    switch (outcome.status) {
+      case "enqueued":
         return {
-          status: "answered",
-          run: { id: outcome.run.id, url: runUrl(context.appUrl, outcome.run) },
+          ...result,
           message:
-            "That answered the session's open permission question; the answer is posted in the thread. End your turn with no text.",
+            "The run carries out the answer now and reports back as a run event. Tell the user briefly.",
         };
+      case "busy":
+        return {
+          ...result,
+          message:
+            "The run is still carrying out the previous answer about this branch (the thread is told). Ask the user to answer again once it's done.",
+        };
+      case "failed":
+        return { ...result, error: outcome.error, message: "Carrying out the answer failed." };
     }
   },
 });
@@ -166,7 +341,7 @@ export const sendToSession = defineChatTool({
 export const sendRalphGuidance = defineChatTool({
   tier: "action",
   description:
-    "Sends guidance to any unfinished ralph run of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): ralph applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the ralph run of this thread, prefer send_to_session, which reaches a working session right away.",
+    "Sends guidance to any unfinished ralph run of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): ralph applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the ralph run of this thread, prefer reply_to_run, which reaches a working session right away.",
   inputSchema: z.object({
     run: z.string().min(1).max(100).describe("Run id or Linear issue identifier (e.g. `ENG-42`)."),
     text: z
@@ -396,7 +571,9 @@ export const delegateLinearIssue = defineChatTool({
 
 export const actionTools: ChatToolRegistry = {
   start_work: startWork,
-  send_to_session: sendToSession,
+  reply_to_run: replyToRun,
+  answer_run_permission: answerRunPermission,
+  answer_run_cleanup: answerRunCleanup,
   send_ralph_guidance: sendRalphGuidance,
   draft_linear_issue: draftLinearIssue,
   delegate_linear_issue: delegateLinearIssue,
