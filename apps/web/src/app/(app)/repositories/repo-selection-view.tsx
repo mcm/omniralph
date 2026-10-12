@@ -16,10 +16,16 @@ import {
   Checkbox,
   Badge,
   Empty,
+  InlineCode,
   Label,
   Muted,
 } from "@iamthemcmaster/ui";
-import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconArrowLeft,
+  IconDeviceFloppy,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
@@ -51,6 +57,8 @@ interface RepoSelectionViewProps {
   emptyIcon: React.ReactNode;
   emptyDescription: string;
   errorTitle: string;
+  /** What usually makes the listing fail, and what to check. */
+  errorCause: React.ReactNode;
   repos: SelectableRepoRow[];
   error: string | null;
   /** Saves the selected repository IDs. */
@@ -67,12 +75,14 @@ export function RepoSelectionView({
   emptyIcon,
   emptyDescription,
   errorTitle,
+  errorCause,
   repos,
   error,
   save,
   savedMessage,
 }: RepoSelectionViewProps) {
   const router = useRouter();
+  const [retrying, startRetry] = React.useTransition();
   const { pending, run } = useAction();
   const [selected, setSelected] = React.useState(
     () => new Set(repos.filter((repo) => repo.enabled).map((repo) => repo.id)),
@@ -104,118 +114,136 @@ export function RepoSelectionView({
       <AppHeader
         breadcrumbs={[{ label: "Repositories", href: "/repositories" }, { label: breadcrumb }]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader title={title} description={intro} />
 
-        {error && (
+        {error ? (
+          // Only the error: an empty list here would blame the wrong thing.
           <Alert variant="danger">
+            <IconAlertTriangle size={16} />
             <AlertTitle as="h2">{errorTitle}</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Repositories</CardTitle>
-            <CardDescription>{listedDescription}</CardDescription>
-          </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            {repos.length === 0 ? (
-              <Empty
-                icon={emptyIcon}
-                title="No repositories"
-                titleAs="h3"
-                description={emptyDescription}
-              />
-            ) : (
-              <>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-2)",
-                    padding: "var(--space-2) 0",
-                  }}
+            <AlertDescription className="repo-selection-error">
+              <span>{errorCause}</span>
+              <span>
+                Error: <InlineCode className="repo-selection-error-detail">{error}</InlineCode>
+              </span>
+              <span className="repo-selection-error-actions">
+                <Button
+                  variant="secondary"
+                  disabled={retrying}
+                  onClick={() => startRetry(() => router.refresh())}
                 >
-                  <Checkbox
-                    id="select-all"
-                    checked={allSelected}
-                    onCheckedChange={(checked) =>
-                      setSelected(
-                        checked === true ? new Set(repos.map((repo) => repo.id)) : new Set(),
-                      )
-                    }
+                  <IconRefresh size={14} />
+                  {retrying ? "Retrying…" : "Retry"}
+                </Button>
+                <Button asChild variant="ghost">
+                  <Link href="/repositories">
+                    <IconArrowLeft size={14} />
+                    Back to repositories
+                  </Link>
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Repositories</CardTitle>
+                <CardDescription>{listedDescription}</CardDescription>
+              </CardHeader>
+              <CardContent
+                style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}
+              >
+                {repos.length === 0 ? (
+                  <Empty
+                    icon={emptyIcon}
+                    title="No repositories"
+                    titleAs="h3"
+                    description={emptyDescription}
                   />
-                  <Label htmlFor="select-all">Select all ({repos.length})</Label>
-                  <Muted style={{ marginLeft: "auto" }}>
-                    {selected.size} selected
-                    {pageCount > 1 && ` · showing ${first}–${last} of ${repos.length}`}
-                  </Muted>
-                </div>
-                {shown.map((repo) => (
-                  <div
-                    key={repo.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-3)",
-                      padding: "var(--space-3) var(--space-4)",
-                      background: "var(--bg-raised)",
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border-subtle)",
-                    }}
-                  >
-                    <Checkbox
-                      id={`repo-${repo.id}`}
-                      checked={selected.has(repo.id)}
-                      onCheckedChange={(checked) => toggle(repo.id, checked === true)}
-                    />
-                    <Label
-                      htmlFor={`repo-${repo.id}`}
+                ) : (
+                  <>
+                    <div
                       style={{
-                        flex: 1,
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "var(--text-sm)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "var(--space-2)",
+                        padding: "var(--space-2) 0",
                       }}
                     >
-                      {repo.fullPath}
-                    </Label>
-                    {repo.private && <Badge variant="neutral">Private</Badge>}
-                    {repo.enabled && <Badge variant="success">Enabled</Badge>}
-                  </div>
-                ))}
-                <ListPagination
-                  page={currentPage}
-                  pageCount={pageCount}
-                  hrefFor={(p) => `#page-${p}`}
-                  onSelect={setPage}
-                />
-              </>
-            )}
-          </CardContent>
-        </Card>
+                      <Checkbox
+                        id="select-all"
+                        checked={allSelected}
+                        onCheckedChange={(checked) =>
+                          setSelected(
+                            checked === true ? new Set(repos.map((repo) => repo.id)) : new Set(),
+                          )
+                        }
+                      />
+                      <Label htmlFor="select-all">Select all ({repos.length})</Label>
+                      <Muted style={{ marginLeft: "auto" }}>
+                        {selected.size} selected
+                        {pageCount > 1 && ` · showing ${first}–${last} of ${repos.length}`}
+                      </Muted>
+                    </div>
+                    {shown.map((repo) => (
+                      <div
+                        key={repo.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "var(--space-3)",
+                          padding: "var(--space-3) var(--space-4)",
+                          background: "var(--bg-raised)",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--border-subtle)",
+                        }}
+                      >
+                        <Checkbox
+                          id={`repo-${repo.id}`}
+                          checked={selected.has(repo.id)}
+                          onCheckedChange={(checked) => toggle(repo.id, checked === true)}
+                        />
+                        <Label
+                          htmlFor={`repo-${repo.id}`}
+                          style={{
+                            flex: 1,
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "var(--text-sm)",
+                          }}
+                        >
+                          {repo.fullPath}
+                        </Label>
+                        {repo.private && <Badge variant="neutral">Private</Badge>}
+                        {repo.enabled && <Badge variant="success">Enabled</Badge>}
+                      </div>
+                    ))}
+                    <ListPagination
+                      page={currentPage}
+                      pageCount={pageCount}
+                      hrefFor={(p) => `#page-${p}`}
+                      onSelect={setPage}
+                    />
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
-        <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
-          <Button asChild variant="ghost">
-            <Link href="/repositories">
-              <IconArrowLeft size={14} />
-              Back
-            </Link>
-          </Button>
-          <Button variant="primary" onClick={submit} disabled={pending || Boolean(error)}>
-            <IconDeviceFloppy size={14} />
-            {pending ? "Saving…" : "Save"}
-          </Button>
-        </div>
+            <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+              <Button asChild variant="ghost">
+                <Link href="/repositories">
+                  <IconArrowLeft size={14} />
+                  Back
+                </Link>
+              </Button>
+              <Button variant="primary" onClick={submit} disabled={pending}>
+                <IconDeviceFloppy size={14} />
+                {pending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </>
+        )}
       </main>
     </>
   );

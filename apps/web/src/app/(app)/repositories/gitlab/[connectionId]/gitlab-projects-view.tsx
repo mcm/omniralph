@@ -33,13 +33,13 @@ export function GitLabProjectsView({
           Projects where the bot token&apos;s user has the Maintainer role (or Owner) are listed;
           archived projects aren&apos;t. To add a project, make the bot a Maintainer of it on
           GitLab.
-          {truncated &&
-            ` Only the first ${projects.length} projects are shown.`}
+          {truncated && ` Only the first ${projects.length} projects are shown.`}
         </>
       }
       emptyIcon={<IconBrandGitlab size={24} />}
       emptyDescription="The bot token's user isn't a Maintainer of any project."
       errorTitle="Couldn't load the GitLab projects"
+      errorCause="Omniralph couldn't get the project list from GitLab. Usually the GitLab host can't be reached from the server (a wrong URL, DNS or a firewall), or the bot's access token has expired or was revoked. Check the host and the token, then retry."
       repos={projects}
       error={error}
       save={(selectedIds) => saveGitLabProjects(connectionId, selectedIds)}

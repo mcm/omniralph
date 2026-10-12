@@ -22,7 +22,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
   InlineCode,
   Muted,
   Table,
@@ -35,15 +34,13 @@ import {
 import {
   IconAlertTriangle,
   IconClockPause,
-  IconInbox,
-  IconListCheck,
-  IconMessage,
-  IconMessages,
-  IconNotes,
+  IconExternalLink,
   IconPlayerStop,
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Fact, FactStrip } from "@/components/fact-strip";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge, RalphStoryStatusBadge } from "@/components/ralph-badges";
 import { useAction } from "@/components/use-action";
@@ -51,6 +48,9 @@ import { formatDateTime } from "@/lib/format-date";
 import { jobPageHref, shortJobId } from "@/lib/jobs/list";
 import {
   linearIssueUrl,
+  ralphRunFailure,
+  RUN_KIND_DESCRIPTIONS,
+  RUN_KIND_LABELS,
   RALPH_MESSAGE_STATE_LABELS,
   roundsLabel,
   runSourceLabel,
@@ -67,43 +67,15 @@ import {
   LinearIssueLink,
   LinearNotConnected,
   PullRequestLink,
-  RunSource,
 } from "../ralph-runs-view";
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
 const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;
-const codeBlock: React.CSSProperties = {
-  margin: 0,
-  padding: "var(--space-3)",
-  borderRadius: "var(--radius-md)",
-  border: "1px solid var(--border-subtle)",
-  background: "var(--bg-raised)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--text-xs)",
-  color: "var(--text-primary)",
-  overflowX: "auto",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  maxHeight: "calc(var(--space-8) * 20)",
-  overflowY: "auto",
-};
-
 /** Characters of a story's last feedback shown in the table (all of it on hover). */
 const FEEDBACK_PREVIEW = 120;
 /** Characters of a request or message shown in the tables (all of it on hover). */
 const MESSAGE_PREVIEW = 240;
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0 }}>
-      <Muted style={{ fontSize: "var(--text-xs)" }}>{label}</Muted>
-      <div style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)", minWidth: 0 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function IssueRef({
   identifier,
@@ -198,15 +170,15 @@ type RalphLane = RalphRunDetail["lanes"][number];
 
 function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphStoryRow[] }) {
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
           <TableHead>Story</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Attempts</TableHead>
-          <TableHead>Commit</TableHead>
-          <TableHead>Last feedback</TableHead>
-          <TableHead>Last job</TableHead>
+          <TableHead className={WIDE_COLUMN}>Status</TableHead>
+          <TableHead className={WIDE_COLUMN}>Attempts</TableHead>
+          <TableHead className={WIDE_COLUMN}>Commit</TableHead>
+          <TableHead className={WIDE_COLUMN}>Last feedback</TableHead>
+          <TableHead className={WIDE_COLUMN}>Last job</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -214,21 +186,30 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
           <TableRow key={story.id}>
             <TableCell>
               <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />
+              <PhoneMeta>
+                <RalphStoryStatusBadge status={story.status} />
+                <span className="list-time text-numeric">
+                  {story.attempts} {story.attempts === 1 ? "attempt" : "attempts"}
+                </span>
+                {story.lastJobId && (
+                  <JobLink id={story.lastJobId} label={shortJobId(story.lastJobId)} />
+                )}
+              </PhoneMeta>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <RalphStoryStatusBadge status={story.status} />
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <span style={cellText}>{story.attempts}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               {story.commitSha ? (
                 <InlineCode title={story.commitSha}>{shortSha(story.commitSha)}</InlineCode>
               ) : (
                 <Muted>—</Muted>
               )}
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               {story.lastFeedback ? (
                 <Muted
                   title={story.lastFeedback}
@@ -240,7 +221,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
                 <Muted>—</Muted>
               )}
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               {story.lastJobId ? (
                 <Link
                   href={jobPageHref(story.lastJobId)}
@@ -270,28 +251,43 @@ function laneStories(run: RalphRunDetail, lane: RalphLane): RalphStoryRow[] {
 function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
   const stories = laneStories(run, lane);
   const done = stories.filter((s) => s.status === "completed").length;
+  // With one repository the fact strip already shows it, its branch and its PR/MR.
+  const single = run.lanes.length === 1;
+  const rounds = (
+    <>
+      {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
+      {" · "}
+      Review rounds {roundsLabel(lane.reviewRounds)}
+      {" · "}
+      CI fix rounds {roundsLabel(lane.ciFixRounds)}
+      {lane.cleanup ? ` · ${lane.cleanup}` : null}
+    </>
+  );
   return (
     <Card>
       <CardHeader>
-        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <ProviderIcon provider={lane.repository.provider} />
-          <span style={{ ...mono, fontSize: "var(--text-sm)" }}>{lane.repository.fullPath}</span>
-          {lane.main && run.lanes.length > 1 ? <Badge variant="neutral">Main</Badge> : null}
-        </CardTitle>
+        {single ? (
+          <CardTitle as="h2">Stories</CardTitle>
+        ) : (
+          <CardTitle as="h2" className="run-lane-title">
+            <ProviderIcon provider={lane.repository.provider} />
+            <span className="fact-mono">{lane.repository.fullPath}</span>
+            {lane.main ? <Badge variant="neutral">Main</Badge> : null}
+          </CardTitle>
+        )}
         <CardDescription>
-          <InlineCode>{lane.branch}</InlineCode> based on{" "}
-          {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : "—"}
-          {" · "}
-          {lane.repository.provider === "gitlab" ? "Merge request" : "Pull request"}{" "}
-          {/* Not <PullRequestLink>: its empty state is a <p>, invalid inside this <p>. */}
-          {lane.pullRequest ? <PullRequestLink pullRequest={lane.pullRequest} /> : "—"}
-          {" · "}
-          {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
-          {" · "}
-          Review rounds {roundsLabel(lane.reviewRounds)}
-          {" · "}
-          CI fix rounds {roundsLabel(lane.ciFixRounds)}
-          {lane.cleanup ? ` · ${lane.cleanup}` : null}
+          {!single && (
+            <>
+              <InlineCode>{lane.branch}</InlineCode> from{" "}
+              {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : "—"}
+              {" · "}
+              {lane.repository.provider === "gitlab" ? "Merge request" : "Pull request"}{" "}
+              {/* Not <PullRequestLink>: its empty state is a <p>, invalid inside this <p>. */}
+              {lane.pullRequest ? <PullRequestLink pullRequest={lane.pullRequest} /> : "—"}
+              {" · "}
+            </>
+          )}
+          {rounds}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -344,6 +340,8 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
       </>
     );
   }
+  // Without stories, the page's line of empty sections says so.
+  if (run.stories.length === 0) return null;
   return (
     <Card>
       <CardHeader>
@@ -353,16 +351,7 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {run.stories.length === 0 ? (
-          <Empty
-            icon={<IconListCheck size={24} />}
-            title="No stories yet"
-            titleAs="h3"
-            description="Stories appear once the run has loaded the epic from Linear."
-          />
-        ) : (
-          <StoriesTable run={run} stories={run.stories} />
-        )}
+        <StoriesTable run={run} stories={run.stories} />
       </CardContent>
     </Card>
   );
@@ -406,52 +395,46 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {run.pendingRequests.length === 0 ? (
-          <Empty
-            size="sm"
-            icon={<IconInbox size={24} />}
-            title="No pending requests"
-            titleAs="h3"
-            description="Every request has been handled."
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {multiLane && <TableHead>Repository</TableHead>}
-                <TableHead>Request</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {run.pendingRequests.map((request) => (
-                <TableRow key={request.id}>
-                  {multiLane && (
-                    <TableCell>
-                      <span style={mono}>{laneRepository(run, request.laneId) ?? "—"}</span>
-                    </TableCell>
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              {multiLane && <TableHead className={WIDE_COLUMN}>Repository</TableHead>}
+              <TableHead>Request</TableHead>
+              <TableHead className={WIDE_COLUMN}>Author</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {run.pendingRequests.map((request) => (
+              <TableRow key={request.id}>
+                {multiLane && (
+                  <TableCell className={WIDE_COLUMN}>
+                    <span style={mono}>{laneRepository(run, request.laneId) ?? "—"}</span>
+                  </TableCell>
+                )}
+                <TableCell>
+                  <span style={textCell} title={request.text}>
+                    {truncate(request.text, MESSAGE_PREVIEW)}
+                  </span>
+                  <PhoneMeta>
+                    {request.author && <span className="list-time">{request.author}</span>}
+                    <Timestamp iso={request.createdAt} />
+                  </PhoneMeta>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  {request.author ? (
+                    <span style={cellText}>{request.author}</span>
+                  ) : (
+                    <Muted>—</Muted>
                   )}
-                  <TableCell>
-                    <span style={textCell} title={request.text}>
-                      {truncate(request.text, MESSAGE_PREVIEW)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {request.author ? (
-                      <span style={cellText}>{request.author}</span>
-                    ) : (
-                      <Muted>—</Muted>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span style={cellText}>{formatDateTime(request.createdAt)}</span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <span style={cellText}>{formatDateTime(request.createdAt)}</span>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   );
@@ -469,70 +452,66 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {run.messages.length === 0 ? (
-          <Empty
-            size="sm"
-            icon={<IconMessages size={24} />}
-            title="No messages"
-            titleAs="h3"
-            description="Replies sent while a story or request runs appear here."
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Kind</TableHead>
-                <TableHead>Message</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Job</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {run.messages.map((message) => {
-                const settledAt = message.deliveredAt ?? message.consumedAt;
-                return (
-                  <TableRow key={message.id}>
-                    <TableCell>
-                      <Badge variant="neutral">{message.kind}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span style={textCell} title={message.text}>
-                        {truncate(message.text, MESSAGE_PREVIEW)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {message.author ? (
-                        <span style={cellText}>{message.author}</span>
-                      ) : (
-                        <Muted>—</Muted>
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className={WIDE_COLUMN}>Kind</TableHead>
+              <TableHead>Message</TableHead>
+              <TableHead className={WIDE_COLUMN}>Author</TableHead>
+              <TableHead className={WIDE_COLUMN}>Job</TableHead>
+              <TableHead className={WIDE_COLUMN}>State</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {run.messages.map((message) => {
+              const settledAt = message.deliveredAt ?? message.consumedAt;
+              return (
+                <TableRow key={message.id}>
+                  <TableCell className={WIDE_COLUMN}>
+                    <Badge variant="neutral">{message.kind}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span style={textCell} title={message.text}>
+                      {truncate(message.text, MESSAGE_PREVIEW)}
+                    </span>
+                    <PhoneMeta>
+                      <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
+                        {RALPH_MESSAGE_STATE_LABELS[message.state]}
+                      </Badge>
+                      <Timestamp iso={message.createdAt} />
+                    </PhoneMeta>
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    {message.author ? (
+                      <span style={cellText}>{message.author}</span>
+                    ) : (
+                      <Muted>—</Muted>
+                    )}
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <JobLink id={message.job.id} label={message.job.type} />
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <div className="list-cell-stack">
+                      <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
+                        {RALPH_MESSAGE_STATE_LABELS[message.state]}
+                      </Badge>
+                      {settledAt && (
+                        <Muted style={{ fontSize: "var(--text-xs)" }}>
+                          {formatDateTime(settledAt)}
+                        </Muted>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <JobLink id={message.job.id} label={message.job.type} />
-                    </TableCell>
-                    <TableCell>
-                      <div style={{ ...stack, gap: "var(--space-1)" }}>
-                        <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
-                          {RALPH_MESSAGE_STATE_LABELS[message.state]}
-                        </Badge>
-                        {settledAt && (
-                          <Muted style={{ fontSize: "var(--text-xs)" }}>
-                            {formatDateTime(settledAt)}
-                          </Muted>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span style={cellText}>{formatDateTime(message.createdAt)}</span>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
+                    </div>
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <span style={cellText}>{formatDateTime(message.createdAt)}</span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   );
@@ -546,72 +525,190 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
         <CardDescription>Every job of the run, newest first.</CardDescription>
       </CardHeader>
       <CardContent>
-        {run.jobs.length === 0 ? (
-          <Empty
-            icon={<IconListCheck size={24} />}
-            title="No jobs yet"
-            titleAs="h3"
-            description="Jobs appear when the run enqueues a story, preparation or PR description."
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Deliveries</TableHead>
-                <TableHead>Harness</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Finished</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {run.jobs.map((job) => (
-                <TableRow key={job.id}>
-                  <TableCell>
-                    <Link
-                      href={jobPageHref(job.id)}
-                      style={{ ...mono, color: "var(--text-primary)", textDecoration: "none" }}
-                    >
-                      {job.type}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ ...stack, gap: "var(--space-1)" }}>
-                      <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
-                        {job.status}
-                        {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
-                      </Badge>
-                      {job.error && (
-                        <Muted title={job.error} style={{ maxWidth: "calc(var(--space-8) * 10)" }}>
-                          {truncate(job.error, 80)}
-                        </Muted>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span style={cellText}>{job.deliveryCount}</span>
-                  </TableCell>
-                  <TableCell>
-                    <AgentName agent={job.agent} isAdmin={isAdmin} />
-                  </TableCell>
-                  <TableCell>
-                    <span style={cellText}>{formatDateTime(job.createdAt)}</span>
-                  </TableCell>
-                  <TableCell>
-                    {job.finishedAt ? (
-                      <span style={cellText}>{formatDateTime(job.finishedAt)}</span>
-                    ) : (
-                      <Muted>—</Muted>
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Type</TableHead>
+              <TableHead className={WIDE_COLUMN}>Status</TableHead>
+              <TableHead className={WIDE_COLUMN}>Deliveries</TableHead>
+              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created</TableHead>
+              <TableHead className={WIDE_COLUMN}>Finished</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {run.jobs.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell>
+                  <Link
+                    href={jobPageHref(job.id)}
+                    style={{ ...mono, color: "var(--text-primary)", textDecoration: "none" }}
+                  >
+                    {job.type}
+                  </Link>
+                  <PhoneMeta>
+                    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
+                      {job.status}
+                    </Badge>
+                    <Timestamp iso={job.finishedAt ?? job.createdAt} />
+                  </PhoneMeta>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <div className="list-cell-stack">
+                    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
+                      {job.status}
+                      {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
+                    </Badge>
+                    {job.error && (
+                      <Muted title={job.error} className="list-error">
+                        {truncate(job.error, 80)}
+                      </Muted>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                  </div>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <span style={cellText}>{job.deliveryCount}</span>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <AgentName agent={job.agent} isAdmin={isAdmin} />
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <span style={cellText}>{formatDateTime(job.createdAt)}</span>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  {job.finishedAt ? (
+                    <span style={cellText}>{formatDateTime(job.finishedAt)}</span>
+                  ) : (
+                    <Muted>—</Muted>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
+  );
+}
+
+/** The run's empty sections, named for the one muted line that stands in for their cards. */
+function emptySections(run: RalphRunDetail): string[] {
+  return [
+    run.lanes.length === 0 && run.stories.length === 0 && "stories",
+    run.pendingRequests.length === 0 && "pending requests",
+    run.messages.length === 0 && "messages",
+    run.guidance.length === 0 && "guidance",
+    !run.progress.trim() && "progress log",
+    run.jobs.length === 0 && "jobs",
+  ].filter((name): name is string => Boolean(name));
+}
+
+const EMPTY_SECTION_HINTS: Record<string, string> = {
+  stories: "Stories appear once the run has loaded the epic from Linear.",
+  "pending requests": "Requests from Linear, review findings, @bot comments and failed CI.",
+  messages: "Replies passed to the agent working at the time.",
+  guidance: "Replies in the agent session, applied to the next story attempts.",
+  "progress log": "Appended to after every finished story.",
+  jobs: "Every job the run enqueues.",
+};
+
+function EmptySections({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  const list = new Intl.ListFormat("en", { type: "conjunction" }).format(names);
+  return (
+    <Muted
+      className="run-empty-sections"
+      title={names.map((name) => `${name}: ${EMPTY_SECTION_HINTS[name]}`).join("\n")}
+    >
+      Nothing yet in {list}.
+    </Muted>
+  );
+}
+
+/** What failed, the job to look at, and how to go on. */
+function RunErrorAlert({ run }: { run: RalphRunDetail }) {
+  if (!run.error) return null;
+  const failure = ralphRunFailure(run);
+  return (
+    <Alert variant="danger">
+      <IconAlertTriangle size={16} />
+      <AlertTitle as="h2">{failure.title}</AlertTitle>
+      <AlertDescription className="run-error">
+        <span className="run-error-text">{run.error}</span>
+        {failure.job && (
+          <span>
+            Last failing job:{" "}
+            <Link href={jobPageHref(failure.job.id)} className="run-job-link">
+              {failure.job.type} {shortJobId(failure.job.id)}
+            </Link>
+            {failure.job.finishedAt && <> · {formatDateTime(failure.job.finishedAt)}</>}
+          </span>
+        )}
+        <span>{failure.resume}</span>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** The run's key facts, each once: the lane cards below carry the rest. */
+function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
+  const singleRepository = run.lanes.length <= 1;
+  return (
+    <FactStrip label="Run facts">
+      {singleRepository ? (
+        <>
+          <Fact label="Repository" wide>
+            {run.repository ? (
+              <span className="fact-mono fact-repo">
+                <ProviderIcon provider={run.repository.provider} size={14} />
+                <span>{run.repository.fullPath}</span>
+              </span>
+            ) : (
+              <Muted>Not chosen yet</Muted>
+            )}
+          </Fact>
+          <Fact label="Branch" wide>
+            {run.branch ? (
+              <span className="fact-inline">
+                <InlineCode>{run.branch}</InlineCode>
+                {run.baseBranch && (
+                  <>
+                    <span className="fact-secondary">from</span>
+                    <InlineCode>{run.baseBranch}</InlineCode>
+                  </>
+                )}
+              </span>
+            ) : (
+              <Muted>—</Muted>
+            )}
+          </Fact>
+          <Fact label={run.repository?.provider === "gitlab" ? "Merge request" : "Pull request"}>
+            <PullRequestLink pullRequest={run.pullRequest} />
+          </Fact>
+        </>
+      ) : (
+        <Fact label="Repositories">
+          <span className="text-numeric">{run.lanes.length}</span>
+        </Fact>
+      )}
+      <Fact label="Harness">
+        <AgentName agent={run.agent} isAdmin={isAdmin} />
+      </Fact>
+      <Fact label="Stories done">
+        <span className="text-numeric">
+          {run.storyCounts.completed} / {run.storyCounts.total}
+        </span>
+      </Fact>
+      <Fact label="Jobs enqueued">
+        <span className="text-numeric">{run.iterations}</span>
+      </Fact>
+      <Fact label="Started">
+        <Timestamp iso={run.createdAt} />
+      </Fact>
+      <Fact label="Last updated">
+        <Timestamp iso={run.updatedAt} />
+      </Fact>
+    </FactStrip>
   );
 }
 
@@ -625,22 +722,14 @@ export function RalphRunDetailView({
 }) {
   const isAdmin = useCurrentUser().role === "admin";
   const stoppable = STOPPABLE_RALPH_RUN_STATUSES.includes(run.status);
+  const empty = emptySections(run);
 
   return (
     <>
       <AppHeader
         breadcrumbs={[{ label: "Ralph runs", href: "/ralph" }, { label: runSourceLabel(run) }]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={
             <>
@@ -650,155 +739,77 @@ export function RalphRunDetailView({
           }
           meta={
             <>
-              <span
-                style={{
-                  ...mono,
-                  color: "var(--text-secondary)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "var(--space-1)",
-                }}
-              >
-                {run.repository ? (
-                  <>
-                    <ProviderIcon provider={run.repository.provider} size={14} />
-                    {run.repository.fullPath}
-                  </>
-                ) : (
-                  "Repository not chosen yet"
-                )}
-              </span>
               <RalphRunStatusBadge status={run.status} />
-              <Badge variant="neutral">{run.kind}</Badge>
+              <Badge variant="neutral" title={RUN_KIND_DESCRIPTIONS[run.kind]}>
+                {RUN_KIND_LABELS[run.kind]}
+              </Badge>
             </>
           }
-          actions={isAdmin && stoppable && <StopRunButton run={run} />}
+          actions={
+            <>
+              {run.origin === "linear" && run.linearUrl && (
+                <Button asChild variant="ghost">
+                  <a href={run.linearUrl} target="_blank" rel="noreferrer">
+                    <IconExternalLink size={14} />
+                    Open in Linear
+                  </a>
+                </Button>
+              )}
+              {isAdmin && stoppable && <StopRunButton run={run} />}
+            </>
+          }
         />
 
         {!linearConnected && <LinearNotConnected isAdmin={isAdmin} />}
 
-        {run.error && (
-          <Alert variant="danger">
-            <IconAlertTriangle size={16} />
-            <AlertTitle as="h2">
-              {run.status === "waiting" ? "The PR/MR step failed" : "Error"}
-            </AlertTitle>
-            <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {run.error}
-            </AlertDescription>
-          </Alert>
-        )}
+        <RunErrorAlert run={run} />
 
         <WaitingOn run={run} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Run</CardTitle>
-            <CardDescription>
-              Started {formatDateTime(run.createdAt)}, last updated {formatDateTime(run.updatedAt)}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "var(--space-4)",
-              }}
-            >
-              <Fact label="Status">
-                <RalphRunStatusBadge status={run.status} />
-              </Fact>
-              <Fact label={run.origin === "chat" ? "Chat" : "Linear"}>
-                <RunSource run={run} showTitle={false} />
-              </Fact>
-              <Fact label="Repository">
-                <span style={mono}>{run.repository?.fullPath ?? "Not chosen yet"}</span>
-              </Fact>
-              <Fact label="Branch">{run.branch ? <InlineCode>{run.branch}</InlineCode> : "—"}</Fact>
-              <Fact label="Base">
-                {run.baseBranch ? <InlineCode>{run.baseBranch}</InlineCode> : "—"}
-              </Fact>
-              <Fact label="Harness">
-                <AgentName agent={run.agent} isAdmin={isAdmin} />
-              </Fact>
-              <Fact
-                label={run.repository?.provider === "gitlab" ? "Merge request" : "Pull request"}
-              >
-                <PullRequestLink pullRequest={run.pullRequest} />
-              </Fact>
-              <Fact label="Stories">
-                {run.storyCounts.completed} / {run.storyCounts.total}
-              </Fact>
-              <Fact label="Jobs enqueued">{run.iterations}</Fact>
-            </div>
-          </CardContent>
-        </Card>
+        <RunFacts run={run} isAdmin={isAdmin} />
 
         <StoriesCard run={run} />
 
-        <PendingRequestsCard run={run} />
+        <EmptySections names={empty} />
 
-        <MessagesCard run={run} />
+        {run.pendingRequests.length > 0 && <PendingRequestsCard run={run} />}
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Guidance</CardTitle>
-            <CardDescription>
-              Replies in the agent session, applied to the next story attempts (the latest ten).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {run.guidance.length === 0 ? (
-              <Empty
-                size="sm"
-                icon={<IconMessage size={24} />}
-                title="No guidance"
-                titleAs="h3"
-                description="Reply in the Linear agent session to steer the run."
-              />
-            ) : (
-              <ol style={{ margin: 0, paddingLeft: "var(--space-6)", ...stack }}>
+        {run.messages.length > 0 && <MessagesCard run={run} />}
+
+        {run.guidance.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle as="h2">Guidance</CardTitle>
+              <CardDescription>
+                Replies in the agent session, applied to the next story attempts (the latest ten).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ol className="run-guidance">
                 {run.guidance.map((g, i) => (
-                  <li key={`${g.at}-${i}`} style={{ ...stack, gap: "var(--space-1)" }}>
-                    <Muted style={{ fontSize: "var(--text-xs)" }}>{formatDateTime(g.at)}</Muted>
-                    <span
-                      style={{
-                        fontSize: "var(--text-sm)",
-                        whiteSpace: "pre-wrap",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {g.text}
-                    </span>
+                  <li key={`${g.at}-${i}`} className="run-guidance-item">
+                    <Timestamp iso={g.at} />
+                    <span className="run-guidance-text">{g.text}</span>
                   </li>
                 ))}
               </ol>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Progress log</CardTitle>
-            <CardDescription>Appended to after every finished story.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {run.progress.trim() ? (
-              <pre style={codeBlock}>{run.progress}</pre>
-            ) : (
-              <Empty
-                size="sm"
-                icon={<IconNotes size={24} />}
-                title="Nothing logged yet"
-                titleAs="h3"
-                description="The log starts with the first finished story."
-              />
-            )}
-          </CardContent>
-        </Card>
+        {run.progress.trim() && (
+          <Card>
+            <CardHeader>
+              <CardTitle as="h2">Progress log</CardTitle>
+              <CardDescription>Appended to after every finished story.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="run-code-block">{run.progress}</pre>
+            </CardContent>
+          </Card>
+        )}
 
-        <JobsCard run={run} isAdmin={isAdmin} />
+        {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} />}
       </main>
     </>
   );

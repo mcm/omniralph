@@ -33,6 +33,8 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Fact, FactStrip } from "@/components/fact-strip";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import {
   FindingStatusBadge,
@@ -40,7 +42,6 @@ import {
   SeverityBadge,
   TriggerBadge,
 } from "@/components/review-badges";
-import { formatDateTime } from "@/lib/format-date";
 import {
   FINDING_SEVERITIES,
   formatDuration,
@@ -54,98 +55,50 @@ import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 
 const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-3)" } as const;
-const prose: React.CSSProperties = {
-  margin: 0,
-  fontSize: "var(--text-sm)",
-  color: "var(--text-secondary)",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-};
-const codeBlock: React.CSSProperties = {
-  margin: 0,
-  padding: "var(--space-3)",
-  borderRadius: "var(--radius-md)",
-  border: "1px solid var(--border-subtle)",
-  background: "var(--bg-raised)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--text-xs)",
-  color: "var(--text-primary)",
-  overflowX: "auto",
-  whiteSpace: "pre",
-};
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0 }}>
-      <Muted style={{ fontSize: "var(--text-xs)" }}>{label}</Muted>
-      <div style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)", minWidth: 0 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
 }
 
 function FindingItem({ finding }: { finding: FindingView }) {
-  // Dismissed and resolved findings are marked by their status badge, a dashed border and a
+  // Dismissed and resolved findings are marked by their status badge, a dashed rule and a
   // secondary title, never by opacity: dimming the item would also dim its Restore control.
   const inactive = finding.status !== "open";
   return (
-    <div
+    <li
       // Target of the source-finding links on Repository › Rules.
       id={`finding-${finding.id}`}
-      style={{
-        ...stack,
-        padding: "var(--space-4)",
-        borderRadius: "var(--radius-md)",
-        border: `1px ${inactive ? "dashed" : "solid"} var(--border-subtle)`,
-      }}
+      className="review-finding"
+      data-inactive={inactive || undefined}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-2)",
-          flexWrap: "wrap",
-        }}
-      >
-        <SeverityBadge severity={finding.severity} />
-        <span style={{ ...mono, color: "var(--text-secondary)" }}>{lineRange(finding)}</span>
-        <span
-          style={{
-            fontSize: "var(--text-sm)",
-            fontWeight: "var(--font-weight-semibold)",
-            color: inactive ? "var(--text-secondary)" : "var(--text-primary)",
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
-          {finding.title}
-        </span>
-        <FindingStatusBadge status={finding.status} />
-        {finding.status === "open" && <DismissFindingDialog finding={finding} />}
-        {finding.status === "dismissed" && <RestoreFindingButton finding={finding} />}
+      {/* The title takes the row; status and actions wrap below it on a narrow screen. */}
+      <div className="review-finding-head">
+        <h4 className="review-finding-title">{finding.title}</h4>
+        <div className="review-finding-actions">
+          <FindingStatusBadge status={finding.status} />
+          {finding.status === "open" && <DismissFindingDialog finding={finding} />}
+          {finding.status === "dismissed" && <RestoreFindingButton finding={finding} />}
+        </div>
       </div>
-      <p style={prose}>{finding.body}</p>
+      <div className="review-finding-meta">
+        <SeverityBadge severity={finding.severity} />
+        <span className="fact-mono">{lineRange(finding)}</span>
+        <span>
+          {finding.category} · confidence {Math.round(finding.confidence * 100)}%
+        </span>
+      </div>
+      <p className="review-finding-body">{finding.body}</p>
       {finding.suggestion !== null && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-          <Muted style={{ fontSize: "var(--text-xs)" }}>Suggested change</Muted>
-          <pre style={codeBlock}>{finding.suggestion}</pre>
+        <div className="review-finding-suggestion">
+          <Muted className="fact-label">Suggested change</Muted>
+          <pre className="review-code-block">{finding.suggestion}</pre>
         </div>
       )}
-      <Muted style={{ fontSize: "var(--text-xs)" }}>
-        {finding.category} · confidence {Math.round(finding.confidence * 100)}%
-      </Muted>
       {finding.supersededBy && (
-        <Muted style={{ fontSize: "var(--text-xs)" }}>
+        <Muted className="fact-label">
           Superseded by{" "}
           <Link
             href={`/reviews/${finding.supersededBy.reviewId}#finding-${finding.supersededBy.findingId}`}
-            style={{ color: "var(--text-accent)", textDecoration: "none" }}
+            className="review-link"
           >
             a finding of a fresh review
           </Link>
@@ -153,38 +106,27 @@ function FindingItem({ finding }: { finding: FindingView }) {
         </Muted>
       )}
       <FeedbackHistory feedback={finding.feedback} />
-    </div>
+    </li>
   );
 }
 
-function FileCard({ file }: { file: FileFindings }) {
+/** A file's findings under its path: one section of the Findings card, no card of its own. */
+function FileFindingsSection({ file }: { file: FileFindings }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle
-          as="h3"
-          style={{
-            ...mono,
-            fontSize: "var(--text-sm)",
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-            overflowWrap: "anywhere",
-          }}
-        >
-          <IconFileCode size={16} style={{ flexShrink: 0, color: "var(--text-secondary)" }} />
-          {file.path}
-        </CardTitle>
-        <CardDescription>
+    <section className="review-file">
+      <h3 className="review-file-header">
+        <IconFileCode size={16} className="review-file-icon" />
+        <span className="review-file-path">{file.path}</span>
+        <span className="review-file-count">
           {file.findings.length} finding{file.findings.length === 1 ? "" : "s"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent style={stack}>
+        </span>
+      </h3>
+      <ul className="review-findings">
         {file.findings.map((finding) => (
           <FindingItem key={finding.id} finding={finding} />
         ))}
-      </CardContent>
-    </Card>
+      </ul>
+    </section>
   );
 }
 
@@ -214,16 +156,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           { label: `Review of ${changeLabel}` },
         ]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={
             <>
@@ -287,80 +220,52 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Review</CardTitle>
-            <CardDescription>
-              Started {formatDateTime(review.createdAt)}
-              {active
-                ? "; still in progress."
-                : `, last updated ${formatDateTime(review.updatedAt)}.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent style={{ ...stack, gap: "var(--space-6)" }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "var(--space-4)",
-              }}
-            >
-              <Fact label="Head SHA">
-                <InlineCode title={review.headSha}>{review.headSha.slice(0, 12)}</InlineCode>
-              </Fact>
-              <Fact label="Base SHA">
-                <InlineCode title={review.baseSha}>{review.baseSha.slice(0, 12)}</InlineCode>
-              </Fact>
-              <Fact label="Profile">{review.profileName ?? "—"}</Fact>
-              <Fact label="Model">
-                {review.model ? <span style={mono}>{review.model}</span> : "—"}
-              </Fact>
-              <Fact label="Harness">
-                {review.agent ? (
-                  isAdmin ? (
-                    <Link
-                      href={`/harnesses/${review.agent.id}`}
-                      style={{ color: "var(--text-accent)", textDecoration: "none" }}
-                    >
-                      {review.agent.name}
-                    </Link>
-                  ) : (
-                    review.agent.name
-                  )
-                ) : (
-                  <Muted>Not picked up yet</Muted>
-                )}
-              </Fact>
-              <Fact label="Duration">{formatDuration(review.durationMs) ?? "—"}</Fact>
-              <Fact label="Stop reason">{review.stopReason ?? <Muted>In progress</Muted>}</Fact>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "var(--space-4)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span style={{ fontSize: "var(--text-sm)" }}>
-                  Tokens: {review.tokensIn.toLocaleString()} in ·{" "}
-                  {review.tokensOut.toLocaleString()} out
-                </span>
-                <span style={{ ...mono, color: "var(--text-secondary)" }}>
-                  {formatTokens(tokensUsed)} of {formatTokens(review.budget)} budget (
-                  {Math.round(budgetShare)}%)
-                </span>
-              </div>
+        <FactStrip label="Review facts">
+          <Fact label="Head SHA">
+            <InlineCode title={review.headSha}>{review.headSha.slice(0, 12)}</InlineCode>
+          </Fact>
+          <Fact label="Base SHA">
+            <InlineCode title={review.baseSha}>{review.baseSha.slice(0, 12)}</InlineCode>
+          </Fact>
+          <Fact label="Profile">{review.profileName ?? "—"}</Fact>
+          <Fact label="Model">
+            {review.model ? <span className="fact-mono">{review.model}</span> : "—"}
+          </Fact>
+          <Fact label="Harness">
+            {review.agent ? (
+              isAdmin ? (
+                <Link href={`/harnesses/${review.agent.id}`} className="review-link">
+                  {review.agent.name}
+                </Link>
+              ) : (
+                review.agent.name
+              )
+            ) : (
+              <Muted>Not picked up yet</Muted>
+            )}
+          </Fact>
+          <Fact label="Started">
+            <Timestamp iso={review.createdAt} />
+          </Fact>
+          <Fact label="Duration">
+            {active ? <Muted>In progress</Muted> : (formatDuration(review.durationMs) ?? "—")}
+          </Fact>
+          <Fact label="Stop reason">{review.stopReason ?? <Muted>In progress</Muted>}</Fact>
+          <Fact label="Tokens" wide>
+            <div className="review-tokens">
+              <span className="fact-mono">
+                {formatTokens(tokensUsed)} of {formatTokens(review.budget)} (
+                {Math.round(budgetShare)}%) · {review.tokensIn.toLocaleString()} in ·{" "}
+                {review.tokensOut.toLocaleString()} out
+              </span>
               <Progress
                 value={budgetShare}
                 variant={budgetShare >= 100 ? "danger" : budgetShare >= 80 ? "warning" : "accent"}
                 aria-label="Tokens used of the budget"
               />
             </div>
-          </CardContent>
-        </Card>
+          </Fact>
+        </FactStrip>
 
         {review.skippedFiles.length > 0 && (
           <Card>
@@ -396,49 +301,45 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           </Card>
         )}
 
-        <div style={{ ...stack, gap: "var(--space-4)" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              flexWrap: "wrap",
-            }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "var(--text-lg)",
-                fontWeight: "var(--font-weight-semibold)",
-              }}
-            >
-              Findings ({review.findingCount})
-            </h2>
-            {severityCounts.map(({ severity, count }) => (
-              <SeverityBadge key={severity} severity={severity} count={count} />
-            ))}
-          </div>
-          {review.files.length === 0 ? (
-            <Card>
-              <CardContent>
-                <Empty
-                  titleAs="h3"
-                  icon={active ? <IconHistory size={24} /> : <IconChecks size={24} />}
-                  title={active ? "Not finished yet" : "No findings"}
-                  description={
-                    active
-                      ? "Findings appear here when the review completes."
-                      : review.status === "completed" || review.status === "budget_exhausted"
-                        ? "The reviewer found nothing to report."
-                        : "This review produced no findings."
-                  }
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            review.files.map((file) => <FileCard key={file.path} file={file} />)
-          )}
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">
+              Findings <span className="text-numeric">({review.findingCount})</span>
+            </CardTitle>
+            {review.files.length > 0 && (
+              <CardDescription>
+                Grouped by file, in {review.files.length} file
+                {review.files.length === 1 ? "" : "s"}.
+              </CardDescription>
+            )}
+            {severityCounts.length > 0 && (
+              <div className="review-severity-counts">
+                {severityCounts.map(({ severity, count }) => (
+                  <SeverityBadge key={severity} severity={severity} count={count} />
+                ))}
+              </div>
+            )}
+          </CardHeader>
+          <CardContent className="review-files">
+            {review.files.length === 0 ? (
+              <Empty
+                size="sm"
+                titleAs="h3"
+                icon={active ? <IconHistory size={24} /> : <IconChecks size={24} />}
+                title={active ? "Not finished yet" : "No findings"}
+                description={
+                  active
+                    ? "Findings appear here when the review completes."
+                    : review.status === "completed" || review.status === "budget_exhausted"
+                      ? "The reviewer found nothing to report."
+                      : "This review produced no findings."
+                }
+              />
+            ) : (
+              review.files.map((file) => <FileFindingsSection key={file.path} file={file} />)
+            )}
+          </CardContent>
+        </Card>
       </main>
     </>
   );

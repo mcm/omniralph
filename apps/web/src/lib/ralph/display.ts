@@ -227,6 +227,19 @@ export interface RalphJobView {
   finishedAt: string | null;
 }
 
+/** How a run's epic was built from its Linear issue, in words. */
+export const RUN_KIND_LABELS: Record<RalphRunDetailView["kind"], string> = {
+  children: "Sub-issues",
+  prd: "PRD",
+  single: "Single issue",
+};
+
+export const RUN_KIND_DESCRIPTIONS: Record<RalphRunDetailView["kind"], string> = {
+  children: "Each sub-issue of the issue is a story.",
+  prd: "The stories come from the PRD in the issue's description.",
+  single: "The issue itself is the only story.",
+};
+
 export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   kind: "children" | "prd" | "single";
   baseBranch: string | null;
@@ -241,6 +254,8 @@ export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   guidance: { text: string; at: string }[];
   progress: string;
   iterations: number;
+  /** The attempts a story of the run gets (its main repository's story task, else the legacy cap). */
+  maxAttemptsPerStory: number;
   storyCounts: { total: number; completed: number };
   stories: RalphStoryView[];
   /** Newest first. */
@@ -321,4 +336,67 @@ export function cleanupLabel(cleanup: RalphLaneCleanup | null): string | null {
         ? `${why}: not cleaned up (${cleanup.error})`
         : `${why}: cleaned up${kept}${asking}`;
   }
+}
+
+/** What a run's error alert says: what failed, the job to look at, and how to go on. */
+export interface RalphRunFailure {
+  title: string;
+  /** The story that failed (ran out of attempts), if one did. */
+  story: RalphStoryView | null;
+  /** The last failing job: the failed story's last job, else the newest failed or expired job. */
+  job: RalphJobView | null;
+  /** How to resume, with existing actions only. */
+  resume: string;
+}
+
+export function ralphRunFailure(
+  run: Pick<
+    RalphRunDetailView,
+    | "status"
+    | "origin"
+    | "linearIdentifier"
+    | "repository"
+    | "stories"
+    | "jobs"
+    | "maxAttemptsPerStory"
+  >,
+): RalphRunFailure {
+  const change = run.repository?.provider === "gitlab" ? "MR" : "PR";
+  const failedJob = run.jobs.find((job) => job.status === "failed" || job.status === "expired");
+  if (run.status === "waiting") {
+    return {
+      title: `The ${change} step failed`,
+      story: null,
+      job: failedJob ?? null,
+      resume: `Fix the cause, then reply in the ${
+        run.origin === "chat" ? "chat thread" : "Linear agent session"
+      } to retry the ${change} step.`,
+    };
+  }
+  const story = run.stories.find((s) => s.status === "exhausted") ?? null;
+  const job = (story?.lastJobId && run.jobs.find((j) => j.id === story.lastJobId)) || failedJob;
+  const title = story
+    ? `${story.identifier} ran out of attempts (${story.attempts}/${Math.max(
+        story.attempts,
+        run.maxAttemptsPerStory,
+      )})`
+    : job
+      ? `The ${job.type} job ${job.status}`
+      : run.status === "failed"
+        ? "The run failed"
+        : "The run hit an error";
+  const fix = story
+    ? "Check the story's last feedback and the job, fix what blocked it"
+    : "Fix the cause";
+  const restart =
+    run.origin === "chat"
+      ? "ask Omniralph again in the chat thread to start a new run"
+      : `delegate ${run.linearIdentifier ?? "the issue"} to Omniralph again in Linear to start a new run`;
+  const resume =
+    run.status === "failed"
+      ? `A failed run can't be resumed. ${fix}, then ${restart}: it picks up this run's branches, ${change}s, guidance and progress.`
+      : run.status === "stopped"
+        ? `${fix}, then reply in the ${run.origin === "chat" ? "chat thread" : "Linear agent session"} to resume the run.`
+        : `${fix}; the run goes on by itself.`;
+  return { title, story, job: job ?? null, resume };
 }
