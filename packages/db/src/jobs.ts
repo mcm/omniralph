@@ -10,6 +10,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
 import type { Database } from "./client.js";
 import {
+  chatThreadRuns,
   harnessRepoPins,
   harnesses,
   jobs,
@@ -505,29 +506,31 @@ export async function listActiveJobsByDedupePrefix(db: Database, prefix: string)
 }
 
 /**
- * The organization's latest completed run-spec job of `type` whose trigger
- * context names chat thread `chatThreadId`
- * (`payload.trigger.context.chatThreadId`), e.g. a thread's last answered
- * code question. Null when there is none.
+ * The organization's latest completed job of `type` mapped to chat thread
+ * `chatThreadId` as a query run (`chat_thread_runs`), e.g. a thread's last
+ * answered code question. Null when there is none.
  */
 export async function latestCompletedChatThreadJob(
   db: Database,
   input: { organizationId: string; type: string; chatThreadId: string },
 ): Promise<Job | null> {
   const [row] = await db
-    .select()
-    .from(jobs)
+    .select({ job: jobs })
+    .from(chatThreadRuns)
+    .innerJoin(jobs, eq(jobs.id, chatThreadRuns.jobId))
     .where(
       and(
+        eq(chatThreadRuns.organizationId, input.organizationId),
+        eq(chatThreadRuns.chatThreadId, input.chatThreadId),
+        eq(chatThreadRuns.kind, "query"),
         eq(jobs.organizationId, input.organizationId),
         eq(jobs.type, input.type),
         eq(jobs.status, "completed"),
-        sql`${jobs.payload}->'trigger'->'context'->>'chatThreadId' = ${input.chatThreadId}`,
       ),
     )
     .orderBy(sql`${jobs.finishedAt} desc nulls last`, desc(jobs.createdAt))
     .limit(1);
-  return row ?? null;
+  return row?.job ?? null;
 }
 
 /** Marks jobs still `queued` that were created before `createdBefore` as `expired`. */

@@ -16,9 +16,12 @@ import {
   chatLinearIssueDrafts,
   chatLinkStateUses,
   chatMessages,
+  chatThreadRuns,
   chatThreads,
   chatUserProfiles,
+  jobs,
   organizations,
+  ralphRuns,
   type ChatMessageAttachment,
 } from "./schema.js";
 
@@ -56,6 +59,10 @@ export type ChatIdentity = typeof chatIdentities.$inferSelect;
 export type ChatUserProfile = typeof chatUserProfiles.$inferSelect;
 export type ChatThread = typeof chatThreads.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type ChatThreadRun = typeof chatThreadRuns.$inferSelect;
+export type ChatThreadRunKind = ChatThreadRun["kind"];
+/** A thread's run: a query run's job, or a coding run. */
+export type ThreadRunRef = { jobId: string } | { ralphRunId: string };
 
 export interface LinkChatIdentityInput {
   organizationId: string;
@@ -676,6 +683,121 @@ export async function listChatMessages(
     .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
     .limit(limit);
   return rows.reverse();
+}
+
+// ── Thread runs ──────────────────────────────────────────────────────────────
+
+const runCondition = (ref: ThreadRunRef) =>
+  "jobId" in ref
+    ? eq(chatThreadRuns.jobId, ref.jobId)
+    : eq(chatThreadRuns.ralphRunId, ref.ralphRunId);
+
+/**
+ * Records that a run (a query run's job, or a coding run) belongs to a
+ * thread. Idempotent: a run already mapped keeps its thread, and that row is
+ * returned. Null when the thread or the run isn't the organization's.
+ */
+export async function mapThreadRun(
+  db: ChatExecutor,
+  input: { organizationId: string; chatThreadId: string } & ThreadRunRef,
+): Promise<ChatThreadRun | null> {
+  const { organizationId, chatThreadId } = input;
+  const [thread] = await db
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(and(eq(chatThreads.id, chatThreadId), eq(chatThreads.organizationId, organizationId)))
+    .limit(1);
+  if (!thread) return null;
+  const [run] =
+    "jobId" in input
+      ? await db
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.id, input.jobId), eq(jobs.organizationId, organizationId)))
+          .limit(1)
+      : await db
+          .select({ id: ralphRuns.id })
+          .from(ralphRuns)
+          .where(
+            and(eq(ralphRuns.id, input.ralphRunId), eq(ralphRuns.organizationId, organizationId)),
+          )
+          .limit(1);
+  if (!run) return null;
+  const ref: ThreadRunRef =
+    "jobId" in input ? { jobId: input.jobId } : { ralphRunId: input.ralphRunId };
+  const [row] = await db
+    .insert(chatThreadRuns)
+    .values({
+      organizationId,
+      chatThreadId,
+      ...("jobId" in ref
+        ? { kind: "query" as const, jobId: ref.jobId }
+        : { kind: "coding" as const, ralphRunId: ref.ralphRunId }),
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (row) return row;
+  const [existing] = await db
+    .select()
+    .from(chatThreadRuns)
+    .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
+    .limit(1);
+  return existing ?? null;
+}
+
+/** The organization's thread's runs, oldest first. */
+export async function listThreadRuns(
+  db: ChatExecutor,
+  organizationId: string,
+  threadId: string,
+): Promise<ChatThreadRun[]> {
+  return db
+    .select()
+    .from(chatThreadRuns)
+    .where(
+      and(
+        eq(chatThreadRuns.organizationId, organizationId),
+        eq(chatThreadRuns.chatThreadId, threadId),
+      ),
+    )
+    .orderBy(asc(chatThreadRuns.createdAt), asc(chatThreadRuns.id));
+}
+
+/** The organization's thread's latest run (of `kind`, if given), or null. */
+export async function latestThreadRun(
+  db: ChatExecutor,
+  organizationId: string,
+  threadId: string,
+  kind?: ChatThreadRunKind,
+): Promise<ChatThreadRun | null> {
+  const [row] = await db
+    .select()
+    .from(chatThreadRuns)
+    .where(
+      and(
+        eq(chatThreadRuns.organizationId, organizationId),
+        eq(chatThreadRuns.chatThreadId, threadId),
+        kind ? eq(chatThreadRuns.kind, kind) : undefined,
+      ),
+    )
+    .orderBy(desc(chatThreadRuns.createdAt), desc(chatThreadRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The organization's thread a run belongs to, or null. */
+export async function threadOfRun(
+  db: ChatExecutor,
+  organizationId: string,
+  ref: ThreadRunRef,
+): Promise<ChatThread | null> {
+  const [row] = await db
+    .select({ thread: chatThreads })
+    .from(chatThreadRuns)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatThreadRuns.chatThreadId))
+    .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
+    .limit(1);
+  return row?.thread ?? null;
 }
 
 // ── Linear issue drafts ──────────────────────────────────────────────────────

@@ -470,6 +470,13 @@
       "when": 1791771243600,
       "tag": "0066_chat_channel_task_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791772090688,
+      "tag": "0067_chat_thread_runs",
+      "breakpoints": true
     }
   ]
 }

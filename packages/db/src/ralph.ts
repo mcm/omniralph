@@ -27,6 +27,7 @@ import type { Job } from "./jobs.js";
 import type { Repository, RepositoryCodingPath, ScmProvider } from "./repositories.js";
 import {
   harnesses,
+  chatThreadRuns,
   chatThreads,
   jobs,
   ralphLanes,
@@ -218,18 +219,28 @@ export async function createRun(
       : { ...input, origin: "linear", focusStoryId: input.focusStoryId ?? null };
   // A conflicting run can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const [row] = await db.insert(ralphRuns).values(values).onConflictDoNothing().returning();
-    if (row) {
+    const row = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(ralphRuns).values(values).onConflictDoNothing().returning();
+      if (!row) return null;
+      if (input.origin === "chat") {
+        await tx.insert(chatThreadRuns).values({
+          organizationId: row.organizationId,
+          chatThreadId: input.chatThreadId,
+          kind: "coding",
+          ralphRunId: row.id,
+        });
+      }
       if (row.repositoryId && branch !== undefined) {
-        await ensureLane(db, {
+        await ensureLane(tx, {
           runId: row.id,
           repositoryId: row.repositoryId,
           branch,
           baseBranch: baseBranch ?? "",
         });
       }
-      return { run: row, created: true };
-    }
+      return row;
+    });
+    if (row) return { run: row, created: true };
 
     const existing =
       input.origin === "chat"
@@ -291,8 +302,8 @@ export async function getRunByIssue(
 }
 
 /**
- * A chat thread's latest run (only an unfinished one with `activeOnly`), or
- * null.
+ * A chat thread's latest coding run (only an unfinished one with
+ * `activeOnly`), from `chat_thread_runs`, or null.
  */
 export async function getRunByChatThread(
   db: Executor,
@@ -300,18 +311,19 @@ export async function getRunByChatThread(
   options: { activeOnly?: boolean } = {},
 ): Promise<RalphRun | null> {
   const [row] = await db
-    .select()
-    .from(ralphRuns)
+    .select({ run: ralphRuns })
+    .from(chatThreadRuns)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, chatThreadRuns.ralphRunId))
     .where(
       and(
-        eq(ralphRuns.origin, "chat"),
-        eq(ralphRuns.chatThreadId, chatThreadId),
+        eq(chatThreadRuns.chatThreadId, chatThreadId),
+        eq(chatThreadRuns.kind, "coding"),
         options.activeOnly ? inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES) : undefined,
       ),
     )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
     .limit(1);
-  return row ?? null;
+  return row?.run ?? null;
 }
 
 /** A chat thread's unfinished run (at most one), or null. */

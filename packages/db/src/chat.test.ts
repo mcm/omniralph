@@ -27,14 +27,18 @@ import {
   getChatUserProfile,
   hasChatIdentityOptOut,
   isChatLinkStateUsed,
+  latestThreadRun,
   linkChatIdentity,
   linkChatIdentityWithState,
   listChatChannelTaskSettings,
   listChatConnections,
   listChatIdentities,
   listChatMessages,
+  listThreadRuns,
+  mapThreadRun,
   saveChatConnection,
   saveChatUserProfile,
+  threadOfRun,
   unlinkChatIdentity,
   upsertChatChannelTaskSetting,
   type ChatConnection,
@@ -49,9 +53,12 @@ import {
   chatIdentities,
   chatLinkStateUses,
   chatMessages,
+  chatThreadRuns,
   chatThreads,
   chatUserProfiles,
+  jobs,
   organizations,
+  ralphRuns,
   users,
 } from "./schema.js";
 
@@ -526,6 +533,169 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
       "tool",
       "assistant",
     ]);
+  });
+
+  describe("thread runs", () => {
+    const newThread = async (organizationId = orgId, externalId = "T1") => {
+      const slack = await connect("slack", externalId, { botToken: "t" }, organizationId);
+      return (await ensureChatThread(db, {
+        connectionId: slack.id,
+        externalThreadId: `slack:C1:${Math.random()}`,
+        channelId: "slack:C1",
+        startedByExternalUserId: "U1",
+      }))!;
+    };
+    const newJob = async (organizationId = orgId) =>
+      (
+        await db
+          .insert(jobs)
+          .values({ organizationId, type: "chat.ask", taskType: "query", pool: "short" })
+          .returning()
+      )[0]!;
+    const newRalphRun = async (organizationId = orgId) =>
+      (
+        await db
+          .insert(ralphRuns)
+          .values({
+            organizationId,
+            origin: "chat",
+            kind: "single",
+            mode: "request",
+            repositoryId: null,
+            status: "completed",
+          })
+          .returning()
+      )[0]!;
+
+    it("maps query and coding runs to a thread, both ways", async () => {
+      const thread = await newThread();
+      const first = await newJob();
+      const coding = await newRalphRun();
+      const second = await newJob();
+
+      const query = await mapThreadRun(db, {
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        jobId: first.id,
+      });
+      expect(query).toMatchObject({
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        kind: "query",
+        jobId: first.id,
+        ralphRunId: null,
+      });
+      // Idempotent: mapping it again returns the same row.
+      expect(
+        await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: first.id }),
+      ).toEqual(query);
+      await mapThreadRun(db, {
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        ralphRunId: coding.id,
+      });
+      await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: second.id });
+
+      expect(
+        (await listThreadRuns(db, orgId, thread.id)).map((r) => [r.kind, r.jobId ?? r.ralphRunId]),
+      ).toEqual([
+        ["query", first.id],
+        ["coding", coding.id],
+        ["query", second.id],
+      ]);
+      expect((await latestThreadRun(db, orgId, thread.id))?.jobId).toBe(second.id);
+      expect((await latestThreadRun(db, orgId, thread.id, "coding"))?.ralphRunId).toBe(coding.id);
+      expect((await latestThreadRun(db, orgId, thread.id, "query"))?.jobId).toBe(second.id);
+      expect((await threadOfRun(db, orgId, { jobId: first.id }))?.id).toBe(thread.id);
+      expect((await threadOfRun(db, orgId, { ralphRunId: coding.id }))?.id).toBe(thread.id);
+      // A run nobody mapped has no thread; a thread without runs has none.
+      expect(await threadOfRun(db, orgId, { jobId: (await newJob()).id })).toBeNull();
+      const empty = await newThread(orgId, "T2");
+      expect(await listThreadRuns(db, orgId, empty.id)).toEqual([]);
+      expect(await latestThreadRun(db, orgId, empty.id)).toBeNull();
+    });
+
+    it("is scoped to the organization", async () => {
+      const thread = await newThread();
+      const job = await newJob();
+      await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: job.id });
+      const otherThread = await newThread(otherOrgId, "T-other");
+      const otherJob = await newJob(otherOrgId);
+      const otherRun = await newRalphRun(otherOrgId);
+
+      // Another organization sees none of it.
+      expect(await listThreadRuns(db, otherOrgId, thread.id)).toEqual([]);
+      expect(await latestThreadRun(db, otherOrgId, thread.id)).toBeNull();
+      expect(await threadOfRun(db, otherOrgId, { jobId: job.id })).toBeNull();
+      // Nor can it map runs to another organization's thread, or another organization's runs.
+      expect(
+        await mapThreadRun(db, {
+          organizationId: otherOrgId,
+          chatThreadId: thread.id,
+          jobId: otherJob.id,
+        }),
+      ).toBeNull();
+      expect(
+        await mapThreadRun(db, {
+          organizationId: orgId,
+          chatThreadId: thread.id,
+          jobId: otherJob.id,
+        }),
+      ).toBeNull();
+      expect(
+        await mapThreadRun(db, {
+          organizationId: orgId,
+          chatThreadId: thread.id,
+          ralphRunId: otherRun.id,
+        }),
+      ).toBeNull();
+      // An already mapped run keeps its thread.
+      expect(
+        await mapThreadRun(db, {
+          organizationId: otherOrgId,
+          chatThreadId: otherThread.id,
+          jobId: job.id,
+        }),
+      ).toBeNull();
+      expect(await listThreadRuns(db, otherOrgId, otherThread.id)).toEqual([]);
+      expect((await listThreadRuns(db, orgId, thread.id)).map((r) => r.jobId)).toEqual([job.id]);
+    });
+
+    it("checks a row's kind against its run and keeps one row per run", async () => {
+      const thread = await newThread();
+      const job = await newJob();
+      const run = await newRalphRun();
+      const row = { organizationId: orgId, chatThreadId: thread.id };
+      const violated = (values: typeof chatThreadRuns.$inferInsert) =>
+        db
+          .insert(chatThreadRuns)
+          .values(values)
+          .then(
+            () => null,
+            (error: { cause?: { constraint?: string } }) => error.cause?.constraint ?? "unknown",
+          );
+      expect(await violated({ ...row, kind: "query", ralphRunId: run.id })).toBe(
+        "chat_thread_runs_kind_check",
+      );
+      expect(await violated({ ...row, kind: "coding", jobId: job.id })).toBe(
+        "chat_thread_runs_kind_check",
+      );
+      expect(await violated({ ...row, kind: "coding", jobId: job.id, ralphRunId: run.id })).toBe(
+        "chat_thread_runs_kind_check",
+      );
+      expect(await violated({ ...row, kind: "query", jobId: job.id })).toBeNull();
+      expect(await violated({ ...row, kind: "query", jobId: job.id })).toBe(
+        "chat_thread_runs_job_id_uq",
+      );
+      expect(await violated({ ...row, kind: "coding", ralphRunId: run.id })).toBeNull();
+      expect(await violated({ ...row, kind: "coding", ralphRunId: run.id })).toBe(
+        "chat_thread_runs_ralph_run_id_uq",
+      );
+
+      // Rows go with their thread.
+      await db.delete(chatThreads).where(eq(chatThreads.id, thread.id));
+      expect(await db.select().from(chatThreadRuns)).toEqual([]);
+    });
   });
 
   it("removes everything chat when the organization is deleted", async () => {

@@ -3,7 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ensureChatThread, saveChatConnection } from "./chat.js";
+import { ensureChatThread, listThreadRuns, saveChatConnection } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
   listHiddenRefsToDelete,
@@ -392,6 +392,10 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         status: "pending",
       });
       expect(await getMainLane(db, run)).toMatchObject({ repositoryId: repoA, baseBranch: "main" });
+      // The thread's coding run, which finds it.
+      expect(await listThreadRuns(db, orgId, threadId)).toMatchObject([
+        { kind: "coding", ralphRunId: run.id, jobId: null },
+      ]);
       expect(await getRunByChatThread(db, threadId)).toEqual(run);
       expect(await getActiveRunByChatThread(db, threadId)).toEqual(run);
       expect(await getActiveRunOfSameOrigin(db, run)).toEqual(run);

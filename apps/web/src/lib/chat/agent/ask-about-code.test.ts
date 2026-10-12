@@ -4,6 +4,7 @@ import {
   appendChatMessage,
   harnesses,
   closeDb,
+  listThreadRuns,
   connectRepository,
   createDb,
   ensureChatThread,
@@ -327,6 +328,10 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       ref: "develop",
       requireCheckout: true,
     });
+    // The thread's query run.
+    expect(await listThreadRuns(db, orgId, h.chatThread.id)).toMatchObject([
+      { kind: "query", jobId: job!.id, ralphRunId: null },
+    ]);
     expect(h.thread.post).toHaveBeenCalledWith({ markdown: "Looking into `acme/api`…" });
     expect(h.handedOff).toHaveBeenCalled();
     expect((await listChatMessages(db, h.chatThread.id, 10)).at(-1)).toMatchObject({
