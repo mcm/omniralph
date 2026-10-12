@@ -40,6 +40,7 @@ import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
 import { cloneTaskDefinition, deleteTaskDefinition } from "../actions";
+import { repositoryTaskRoles } from "../repository-roles";
 import {
   BuiltinBadge,
   Fact,
@@ -130,9 +131,7 @@ function ReferrerList({ referrers }: { referrers: TaskReferrers }) {
     ...referrers.repositories.map((repo) => ({
       key: `repo:${repo.id}`,
       label: <Link href={`/repositories/${repo.id}`}>{repo.fullPath}</Link>,
-      detail: [repo.reviewTask && "review task", repo.correlationTask && "correlation task"]
-        .filter(Boolean)
-        .join(", "),
+      detail: repositoryTaskRoles(repo),
     })),
     ...referrers.chatTasks.map((role) => ({
       key: `chat:${role}`,

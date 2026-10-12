@@ -12,11 +12,12 @@ import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { saveRepositorySettings } from "@/lib/repositories/settings";
+import { ralphTaskErrors, saveRepositorySettings } from "@/lib/repositories/settings";
 
 /**
  * Saves a repository's review settings, including which review tasks its
- * review runs fan out to. Newly pinned harnesses get a `repo.sync`
+ * review runs fan out to and the task correlating their findings (built-in or
+ * the organization's own). Newly pinned harnesses get a `repo.sync`
  * job; the next review job enqueued for the repository uses the new settings.
  */
 export async function updateRepositorySettings(
@@ -60,6 +61,15 @@ export async function updateRepositorySettings(
           error: "Some selected review tasks don't exist.",
           fieldErrors: { reviewTaskIds: "Some selected review tasks don't exist." },
         };
+      case "unknown_correlation_task":
+        return {
+          ok: false,
+          error: "That correlation task doesn't exist.",
+          fieldErrors: {
+            correlationTaskId:
+              "Choose a query task of this organization that outputs the correlation's findings and summary.",
+          },
+        };
     }
     revalidatePath(`/repositories/${repositoryId}/settings`);
     revalidatePath("/repositories");
@@ -70,7 +80,8 @@ export async function updateRepositorySettings(
 /**
  * Saves a repository's Ralph section: whether Linear delegations may build in
  * it, which Linear issues route to it, whether its runs use the legacy jobs or
- * coding tasks (`coding_path`), and how its runs work (cyralph's
+ * coding tasks (`coding_path`) and which story and request tasks (built-in
+ * or the organization's own), and how its runs work (cyralph's
  * per-repository settings). The next job and decision of every run pick it up.
  */
 export async function updateRalphSettings(
@@ -86,11 +97,22 @@ export async function updateRalphSettings(
         fieldErrors: fieldErrors(parsed.error),
       };
     }
-    const { ralphEnabled, linearTeamKeys, linearProjectNames, linearLabels, codingPath } =
-      parsed.data;
+    const {
+      ralphEnabled,
+      linearTeamKeys,
+      linearProjectNames,
+      linearLabels,
+      codingPath,
+      storyTaskId,
+      requestTaskId,
+    } = parsed.data;
     const db = getDb();
     if (!(await getRepository(db, repositoryId, admin.organization.id))) {
       return { ok: false, error: "That repository isn't connected." };
+    }
+    const taskErrors = await ralphTaskErrors(db, admin.organization.id, parsed.data);
+    if (Object.keys(taskErrors).length > 0) {
+      return { ok: false, error: "Fix the highlighted fields.", fieldErrors: taskErrors };
     }
     const saved = await updateRepositoryRalphSettings(db, repositoryId, {
       ralphEnabled,
@@ -99,6 +121,8 @@ export async function updateRalphSettings(
       linearLabels,
       ralphSettings: ralphSettingsFromInput(parsed.data),
       codingPath,
+      storyTaskId,
+      requestTaskId,
     });
     if (!saved) return { ok: false, error: "That repository isn't connected." };
     revalidatePath(`/repositories/${repositoryId}/settings`);

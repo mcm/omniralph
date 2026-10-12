@@ -56,7 +56,16 @@ vi.mock("@omniralph/db", async () => {
       own(organizationId) ? [task] : [],
     listRepositoryTaskReferences: async (_db: unknown, organizationId: string, taskId: string) =>
       own(organizationId) && taskId === task.id
-        ? [{ id: "repo-1", fullPath: "acme/app", reviewTask: true, correlationTask: false }]
+        ? [
+            {
+              id: "repo-1",
+              fullPath: "acme/app",
+              reviewTask: true,
+              correlationTask: false,
+              storyTask: false,
+              requestTask: false,
+            },
+          ]
         : [],
     listChatChannelTaskReferences: async () => [],
     listPoolNames: async () => ["short", "long", "gpu"],
@@ -155,7 +164,14 @@ describe("Settings › Tasks pages", () => {
       hostTools: ["git"],
     });
     expect(props.referrers.repositories).toEqual([
-      { id: "repo-1", fullPath: "acme/app", reviewTask: true, correlationTask: false },
+      {
+        id: "repo-1",
+        fullPath: "acme/app",
+        reviewTask: true,
+        correlationTask: false,
+        storyTask: false,
+        requestTask: false,
+      },
     ]);
   });
 

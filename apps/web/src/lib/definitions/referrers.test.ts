@@ -152,6 +152,8 @@ describe.skipIf(!dockerAvailable)("findTaskReferrers", () => {
         fullPath: "acme/correlate",
         reviewTask: false,
         correlationTask: true,
+        storyTask: false,
+        requestTask: false,
       }),
       expect.objectContaining({
         fullPath: "acme/review",
@@ -176,6 +178,35 @@ describe.skipIf(!dockerAvailable)("findTaskReferrers", () => {
 
     // The other organization's task is unused in this organization.
     expect(hasNoReferrers(await findTaskReferrers(db, orgId, otherDescribe.id))).toBe(true);
+  });
+
+  it("returns repositories using a task as their story or request task", async () => {
+    const coder = await insertTaskDefinition(db, orgId, {
+      name: "Coder",
+      definition: stored("builtin:handle-request"),
+      requirements: {},
+      createdBy: null,
+    });
+    await repository(orgId, "acme/stories", { storyTaskId: coder.id });
+    await repository(orgId, "acme/requests", { requestTaskId: coder.id });
+    await repository(otherOrgId, "other/stories", { storyTaskId: coder.id });
+
+    const referrers = await findTaskReferrers(db, orgId, coder.id);
+    expect(referrers.repositories).toEqual([
+      expect.objectContaining({
+        fullPath: "acme/requests",
+        reviewTask: false,
+        correlationTask: false,
+        storyTask: false,
+        requestTask: true,
+      }),
+      expect.objectContaining({
+        fullPath: "acme/stories",
+        storyTask: true,
+        requestTask: false,
+      }),
+    ]);
+    expect(hasNoReferrers(referrers)).toBe(false);
   });
 
   it("counts built-in defaults: chat's default tasks and coding tasks' default PR description task", async () => {

@@ -19,7 +19,7 @@ export interface CodingTaskReference {
 
 /** What runs a task: settings and other definitions of the organization naming it. */
 export interface TaskReferrers {
-  /** Repositories with it among their review tasks or as their correlation task. */
+  /** Repositories with it among their review tasks or as their correlation, story or request task. */
   repositories: RepositoryTaskReference[];
   /** The organization's chat tasks (`chat.tasks`, or the built-in defaults) it is. */
   chatTasks: (keyof ChatTasks)[];

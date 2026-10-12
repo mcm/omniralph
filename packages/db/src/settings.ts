@@ -147,6 +147,8 @@ export interface RepositorySettingsUpdate {
   customInstructions: string | null;
   /** Review tasks of the repository's review runs; unchanged when left out. */
   reviewTaskIds?: string[];
+  /** Correlation task of the repository's review runs; unchanged when left out. */
+  correlationTaskId?: string;
 }
 
 /**
@@ -168,6 +170,7 @@ export async function updateRepositorySettings(
       pathExcludes: input.pathExcludes,
       customInstructions: input.customInstructions?.trim() || null,
       ...(input.reviewTaskIds ? { reviewTaskIds: input.reviewTaskIds } : {}),
+      ...(input.correlationTaskId ? { correlationTaskId: input.correlationTaskId } : {}),
     })
     .where(
       and(

@@ -28,11 +28,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const {
+  CORRELATION_TASKS,
   getAgentDefinition,
+  getTaskChoice,
   getTaskDefinition,
   listAgentDefinitions,
   listTaskDefinitions,
   organizationDefinitions,
+  REQUEST_TASKS,
+  REVIEW_TASKS,
+  STORY_TASKS,
   taskJobInput,
 } = await import("./index");
 const { enqueueReview } = await import("@/lib/review/enqueue");
@@ -194,6 +199,37 @@ describe.skipIf(!dockerAvailable)("definition resolver", () => {
       );
       expect(await ids({ taskType: "review", trigger: "pr.updated" })).toContain(task.id);
       expect(await ids({ taskType: "review", trigger: "finding.mention" })).not.toContain(task.id);
+    });
+
+    it("offers repository pickers their built-ins and the organization's matching tasks", async () => {
+      const [org] = await db.insert(organizations).values({ name: "Picker" }).returning();
+      const review = await customTask(org!.id);
+      const correlation = await customTask(org!.id, getBuiltinTask("builtin:correlate-findings")!);
+      const story = await customTask(org!.id, getBuiltinTask("builtin:implement-story")!);
+      const request = await customTask(org!.id, getBuiltinTask("builtin:handle-request")!);
+      const chatOnly = await customTask(org!.id, {
+        ...getBuiltinTask("builtin:handle-request")!,
+        triggers: ["chat.request"],
+      });
+      const ids = async (filter: Parameters<typeof listTaskDefinitions>[2]) =>
+        (await listTaskDefinitions(db, org!.id, filter)).map((t) => t.definition.id);
+
+      expect(await ids(REVIEW_TASKS)).toEqual([
+        "builtin:review-pr",
+        "builtin:summarize-pr",
+        review.id,
+      ]);
+      expect(await ids(CORRELATION_TASKS)).toEqual(["builtin:correlate-findings", correlation.id]);
+      expect(await ids(STORY_TASKS)).toEqual(["builtin:implement-story", story.id]);
+      expect(await ids(REQUEST_TASKS)).toEqual(["builtin:handle-request", request.id]);
+      expect(await ids(REQUEST_TASKS)).not.toContain(chatOnly.id);
+
+      expect((await getTaskChoice(db, org!.id, story.id, STORY_TASKS))?.definition.id).toBe(
+        story.id,
+      );
+      expect(await getTaskChoice(db, org!.id, story.id, REQUEST_TASKS)).toBeNull();
+      expect(await getTaskChoice(db, orgId, story.id, STORY_TASKS)).toBeNull();
+      expect(await getTaskChoice(db, org!.id, "builtin:nope", STORY_TASKS)).toBeNull();
     });
   });
 

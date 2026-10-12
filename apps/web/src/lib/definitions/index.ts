@@ -19,10 +19,12 @@ import {
   AgentDefinition,
   BUILTIN_AGENTS,
   BUILTIN_TASKS,
+  correlationProblem,
   getBuiltinAgent,
   getBuiltinTask,
   isBuiltinId,
   prDescriptionProblem,
+  REQUEST_TRIGGERS,
   TaskDefinition,
   TaskRequirements,
   type TaskType,
@@ -179,6 +181,45 @@ export const PR_DESCRIPTION_TASKS: TaskDefinitionFilter = {
   trigger: "run.invoked",
   accepts: (task) => prDescriptionProblem(task) === null,
 };
+
+/** A repository's review tasks: review tasks accepting `pr.updated`. */
+export const REVIEW_TASKS: TaskDefinitionFilter = { taskType: "review", trigger: "pr.updated" };
+
+/**
+ * A repository's correlation task: query tasks accepting `run.invoked` whose
+ * output is the fixed correlation output (`correlationProblem`).
+ */
+export const CORRELATION_TASKS: TaskDefinitionFilter = {
+  taskType: "query",
+  trigger: "run.invoked",
+  accepts: (task) => correlationProblem(task) === null,
+};
+
+/** A repository's story task: coding tasks accepting `linear.delegated`. */
+export const STORY_TASKS: TaskDefinitionFilter = {
+  taskType: "coding",
+  trigger: "linear.delegated",
+};
+
+/** A repository's request task: coding tasks accepting every request trigger (`REQUEST_TRIGGERS`). */
+export const REQUEST_TASKS: TaskDefinitionFilter = {
+  taskType: "coding",
+  accepts: (task) => REQUEST_TRIGGERS.every((trigger) => task.triggers.includes(trigger)),
+};
+
+/**
+ * Task `id` of the organization when it passes `filter`; null when it is
+ * unknown, unresolvable or doesn't pass (a settings picker's server check).
+ */
+export async function getTaskChoice(
+  db: Queryable,
+  organizationId: string,
+  id: string,
+  filter: TaskDefinitionFilter,
+): Promise<ResolvedTask | null> {
+  const task = await getTaskDefinition(db, organizationId, id);
+  return task && matchesTaskFilter(task.definition, filter) ? task : null;
+}
 
 /**
  * Where the run plumbing (run specs, sinks, ralph's coding runs) looks

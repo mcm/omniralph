@@ -215,9 +215,16 @@ export interface RepositoryTaskReference {
   reviewTask: boolean;
   /** The task is its correlation task. */
   correlationTask: boolean;
+  /** The task is its story task (`story_task_id`). */
+  storyTask: boolean;
+  /** The task is its request task (`request_task_id`). */
+  requestTask: boolean;
 }
 
-/** The organization's repositories whose review tasks or correlation task include task `taskId`, by path. */
+/**
+ * The organization's repositories whose review tasks, correlation task, story
+ * task or request task include task `taskId`, by path.
+ */
 export async function listRepositoryTaskReferences(
   db: Queryable,
   organizationId: string,
@@ -229,6 +236,8 @@ export async function listRepositoryTaskReferences(
       fullPath: repositories.fullPath,
       reviewTaskIds: repositories.reviewTaskIds,
       correlationTaskId: repositories.correlationTaskId,
+      storyTaskId: repositories.storyTaskId,
+      requestTaskId: repositories.requestTaskId,
     })
     .from(repositories)
     .where(
@@ -237,6 +246,8 @@ export async function listRepositoryTaskReferences(
         or(
           arrayContains(repositories.reviewTaskIds, [taskId]),
           eq(repositories.correlationTaskId, taskId),
+          eq(repositories.storyTaskId, taskId),
+          eq(repositories.requestTaskId, taskId),
         ),
       ),
     )
@@ -246,6 +257,8 @@ export async function listRepositoryTaskReferences(
     fullPath: row.fullPath,
     reviewTask: row.reviewTaskIds.includes(taskId),
     correlationTask: row.correlationTaskId === taskId,
+    storyTask: row.storyTaskId === taskId,
+    requestTask: row.requestTaskId === taskId,
   }));
 }
 

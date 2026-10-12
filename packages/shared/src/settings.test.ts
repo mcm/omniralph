@@ -22,6 +22,7 @@ const validSettings: RepositorySettingsInput = {
   customInstructions: "Prefer early returns.",
   pinnedHarnessIds: [],
   reviewTaskIds: ["builtin:review-pr"],
+  correlationTaskId: "builtin:correlate-findings",
 };
 
 const validProfile: ReviewProfileInput = {
@@ -125,6 +126,11 @@ describe("RepositorySettingsInput", () => {
       reviewTaskIds: "At most 20 review tasks.",
     });
   });
+
+  it("requires a correlation task", () => {
+    const result = RepositorySettingsInput.safeParse({ ...validSettings, correlationTaskId: "" });
+    expect(fieldErrors(result.error!)).toEqual({ correlationTaskId: "Choose a correlation task." });
+  });
 });
 
 describe("ReviewProfileInput", () => {
@@ -163,6 +169,8 @@ const validRalph: RalphSettingsInput = {
   linearProjectNames: ["Omniralph v2"],
   linearLabels: ["backend", "needs: api"],
   codingPath: "tasks",
+  storyTaskId: "builtin:implement-story",
+  requestTaskId: "builtin:handle-request",
   verifyCommands: ["pnpm typecheck", "pnpm test"],
   runPrdQualityGates: true,
   setupCommand: "pnpm install --frozen-lockfile",
