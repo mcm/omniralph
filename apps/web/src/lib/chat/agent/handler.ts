@@ -99,6 +99,33 @@ function withPostedText(message: ModelMessage, text: string): ModelMessage["cont
   return [...withoutText(message), { type: "text", text }] as ModelMessage["content"];
 }
 
+/**
+ * Records a turn's response messages in the thread's conversation: the last
+ * assistant message with the text that was posted, or, when the turn posted
+ * nothing (`posted` null), without its text (models reject empty assistant
+ * messages).
+ */
+export async function recordTurn(
+  record: (role: ChatMessageRole, content: unknown) => Promise<unknown>,
+  responses: readonly ModelMessage[],
+  posted: string | null,
+): Promise<void> {
+  const last = responses.at(-1);
+  for (const m of responses) {
+    if (posted === null && m === last && m.role === "assistant") {
+      const parts = withoutText(m);
+      if (parts.length > 0) await record("assistant", parts);
+      continue;
+    }
+    const content =
+      posted !== null && m === last && m.role === "assistant"
+        ? withPostedText(m, posted)
+        : m.content;
+    await record(m.role === "tool" ? "tool" : "assistant", content);
+  }
+  if (last?.role !== "assistant" && posted !== null) await record("assistant", posted);
+}
+
 export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHandler {
   const { db } = deps;
   const logger = deps.logger ?? new ConsoleLogger("info", "chat-agent");
@@ -292,20 +319,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               MAX_BODY_CHARS,
             );
         if (!quiet) await thread.post({ markdown: text });
-        const responses = result.response.messages;
-        const last = responses.at(-1);
-        for (const m of responses) {
-          if (quiet && m === last && m.role === "assistant") {
-            // Its empty text isn't kept: models reject empty assistant messages.
-            const parts = withoutText(m);
-            if (parts.length > 0) await record("assistant", parts);
-            continue;
-          }
-          const content =
-            m === last && m.role === "assistant" ? withPostedText(m, text) : m.content;
-          await record(m.role === "tool" ? "tool" : "assistant", content);
-        }
-        if (last?.role !== "assistant" && !quiet) await record("assistant", text);
+        await recordTurn(record, result.response.messages, quiet ? null : text);
       } catch (error) {
         logger.error("Chat agent turn failed", { organizationId, threadId: thread.id, error });
         await reply(ERROR_REPLY).catch((postError: unknown) =>

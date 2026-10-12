@@ -181,6 +181,15 @@ export function withSlackRequestScope<T>(fn: () => T): T {
   return slackRequestScope.run({}, fn);
 }
 
+/**
+ * Runs `fn` as if a webhook of `connection` was being handled, so the bot's
+ * handlers find the connection (Slack) outside a webhook: a wake-up handing
+ * back messages queued while it held the thread's lock.
+ */
+export function withChatConnection<T>(connection: ChatConnection, fn: () => T): T {
+  return slackRequestScope.run({ connection }, fn);
+}
+
 /** The Discord guild of a Chat SDK thread ID (`discord:{guildId}:{channelId}[:{threadId}]`). */
 function discordGuildId(threadId: string): string | null {
   const [prefix, guildId] = threadId.split(":");

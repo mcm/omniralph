@@ -4,7 +4,7 @@
  * agent's threads and their messages. Connection credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, desc, eq, gt, isNull, lte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, lt, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -638,6 +638,12 @@ export async function ensureChatThread(
   return row ?? null;
 }
 
+/** A thread by ID (of any organization: callers scope by its connection), or null. */
+export async function getChatThread(db: ChatExecutor, id: string): Promise<ChatThread | null> {
+  const [row] = await db.select().from(chatThreads).where(eq(chatThreads.id, id)).limit(1);
+  return row ?? null;
+}
+
 /** A thread with its connection and the connection's decrypted credentials, or null. */
 export async function getChatThreadWithConnection<C>(
   db: Database,
@@ -874,6 +880,114 @@ export async function listRunEvents(
       ),
     )
     .orderBy(asc(chatRunEvents.createdAt), asc(chatRunEvents.id));
+}
+
+/**
+ * Marks the organization's run events processed (relayed by the chat
+ * responder, or deliberately left unsaid). Events processed already keep
+ * their time; returns the number marked.
+ */
+export async function markRunEventsProcessed(
+  db: ChatExecutor,
+  organizationId: string,
+  ids: readonly string[],
+  at: Date = new Date(),
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db
+    .update(chatRunEvents)
+    .set({ processedAt: at })
+    .where(
+      and(
+        eq(chatRunEvents.organizationId, organizationId),
+        inArray(chatRunEvents.id, [...ids]),
+        isNull(chatRunEvents.processedAt),
+      ),
+    )
+    .returning({ id: chatRunEvents.id });
+  return rows.length;
+}
+
+/** Counts a failed attempt at relaying the organization's (still pending) run events. */
+export async function recordRunEventAttempt(
+  db: ChatExecutor,
+  organizationId: string,
+  ids: readonly string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(chatRunEvents)
+    .set({ attempts: sql`${chatRunEvents.attempts} + 1` })
+    .where(
+      and(
+        eq(chatRunEvents.organizationId, organizationId),
+        inArray(chatRunEvents.id, [...ids]),
+        isNull(chatRunEvents.processedAt),
+      ),
+    );
+}
+
+/**
+ * The threads (of every organization) with a pending run event recorded
+ * before `createdBefore` that was tried fewer than `maxAttempts` times: the
+ * wake-ups the cron catches up on.
+ */
+export async function listThreadsWithPendingRunEvents(
+  db: ChatExecutor,
+  options: { createdBefore: Date; maxAttempts: number },
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ chatThreadId: chatRunEvents.chatThreadId })
+    .from(chatRunEvents)
+    .where(
+      and(
+        isNull(chatRunEvents.processedAt),
+        lt(chatRunEvents.createdAt, options.createdBefore),
+        lt(chatRunEvents.attempts, options.maxAttempts),
+      ),
+    );
+  return rows.map((r) => r.chatThreadId);
+}
+
+/**
+ * Who asked for a mapped run: the author of the thread's last user message
+ * before the run was mapped (the message the responder answered by starting
+ * it), or else whoever started the thread. Null when the mapping isn't the
+ * organization's.
+ */
+export async function runRequester(
+  db: ChatExecutor,
+  organizationId: string,
+  threadRun: Pick<ChatThreadRun, "chatThreadId" | "createdAt">,
+): Promise<{ externalUserId: string; authorName: string | null } | null> {
+  const [thread] = await db
+    .select({ startedBy: chatThreads.startedByExternalUserId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, threadRun.chatThreadId),
+        eq(chatThreads.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  if (!thread) return null;
+  const [message] = await db
+    .select({ externalUserId: chatMessages.externalUserId, authorName: chatMessages.authorName })
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.threadId, threadRun.chatThreadId),
+        eq(chatMessages.role, "user"),
+        lte(chatMessages.createdAt, threadRun.createdAt),
+        sql`${chatMessages.externalUserId} is not null`,
+      ),
+    )
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(1);
+  if (message?.externalUserId) {
+    return { externalUserId: message.externalUserId, authorName: message.authorName };
+  }
+  return thread.startedBy ? { externalUserId: thread.startedBy, authorName: null } : null;
 }
 
 // ── Linear issue drafts ──────────────────────────────────────────────────────

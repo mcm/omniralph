@@ -3,6 +3,7 @@
   "buildCommand": "turbo run build",
   "git": { "deploymentEnabled": false },
   "crons": [
+    { "path": "/api/cron/chat-run-events", "schedule": "* * * * *" },
     { "path": "/api/cron/discord-gateway", "schedule": "*/9 * * * *" },
     { "path": "/api/cron/expire-jobs", "schedule": "0 * * * *" },
     { "path": "/api/cron/gitlab-maintenance", "schedule": "45 4 * * *" },
