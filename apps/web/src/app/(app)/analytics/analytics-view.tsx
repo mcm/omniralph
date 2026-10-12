@@ -13,6 +13,7 @@ import {
   CardTitle,
   ChartContainer,
   Empty,
+  Metric,
   Muted,
   NativeSelect,
   Progress,
@@ -25,25 +26,17 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@iamthemcmaster/ui";
-import {
-  IconArrowDownLeft,
-  IconArrowUpRight,
-  IconChartBar,
-  IconCoins,
-  IconHistory,
-  IconListCheck,
-  IconRepeat,
-  IconServer,
-  IconThumbDown,
-} from "@tabler/icons-react";
+import { IconChartBar, IconRepeat, IconServer, IconThumbDown } from "@tabler/icons-react";
 import type { AnalyticsRepositoryRef } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
 import {
   ANALYTICS_RANGES,
   analyticsHref,
+  countTick,
   dayLabel,
   formatRate,
   overallAverageTokens,
@@ -68,105 +61,38 @@ interface AnalyticsViewProps {
   params: AnalyticsParams;
 }
 
-/** Series intents: the headline series in accent, the comparison in info. */
-const SERIES = { primary: "accent", secondary: "info" } as const;
+/**
+ * Series intents: the headline series in accent, the comparison in neutral, so the two
+ * differ in lightness and not just hue (accent and info are both blue).
+ */
+const SERIES = { primary: "accent", comparison: "neutral" } as const;
 
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const grid = (columns: string) =>
-  ({ display: "grid", gridTemplateColumns: columns, gap: "var(--space-4)", minWidth: 0 }) as const;
-
-function StatCard({
-  label,
-  value,
-  detail,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: React.ElementType;
-}) {
-  return (
-    <Card style={{ minWidth: 0 }}>
-      <CardHeader style={{ paddingBottom: "var(--space-2)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <CardDescription>{label}</CardDescription>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "var(--radius-md)",
-              background: "var(--bg-raised)",
-              border: "1px solid var(--border-subtle)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--text-accent)",
-            }}
-          >
-            <Icon size={16} />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div
-          style={{
-            fontSize: "var(--text-2xl)",
-            fontWeight: 300,
-            color: "var(--text-primary)",
-            lineHeight: 1.1,
-            marginBottom: "var(--space-1)",
-          }}
-        >
-          {value}
-        </div>
-        <Muted style={{ ...mono, color: "var(--text-tertiary)" }}>{detail}</Muted>
-      </CardContent>
-    </Card>
-  );
+/** KPI tiles: the library `Metric`, mono value, reflowing by min width. */
+function Metrics({ children }: { children: React.ReactNode }) {
+  return <div className="analytics-metrics">{children}</div>;
 }
 
 /** A label, a bar proportional to the largest count, and the count. */
 function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; count: number }[] }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+    <ul className="analytics-count-rows">
       {rows.map((row) => (
-        <div key={row.key} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-          <div style={{ width: "calc(var(--space-16) * 3)", flexShrink: 0 }}>{row.label}</div>
-          <Progress value={(row.count / max) * 100} style={{ flex: 1 }} />
-          <span
-            style={{
-              ...mono,
-              color: "var(--text-primary)",
-              width: "var(--space-16)",
-              textAlign: "right",
-            }}
-          >
-            {row.count.toLocaleString()}
-          </span>
-        </div>
+        <li key={row.key} className="analytics-count-row">
+          <span className="analytics-count-label">{row.label}</span>
+          <Progress value={(row.count / max) * 100} />
+          <span className="analytics-num text-numeric">{row.count.toLocaleString()}</span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
 function RepositoryLink({ repository }: { repository: AnalyticsRepositoryRef }) {
   return (
-    <Link
-      href={`/repositories/${repository.id}/reviews`}
-      style={{
-        ...mono,
-        color: "var(--text-primary)",
-        textDecoration: "none",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--space-1)",
-      }}
-    >
+    <Link href={`/repositories/${repository.id}/reviews`} className="analytics-repo-link">
       <ProviderIcon provider={repository.provider} size={12} />
-      {repository.fullPath}
+      <span className="text-numeric">{repository.fullPath}</span>
     </Link>
   );
 }
@@ -198,59 +124,44 @@ function RalphSection({
   );
 
   return (
-    <section
-      aria-label="Ralph"
-      style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 }}
-    >
+    <section aria-labelledby="analytics-ralph" className="analytics-section">
       <div>
-        <h2
-          style={{
-            margin: 0,
-            fontSize: "var(--text-lg)",
-            fontWeight: "var(--font-weight-semibold)",
-          }}
-        >
+        <h2 id="analytics-ralph" className="analytics-section-title">
           Ralph
         </h2>
-        <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
+        <Muted>
           Token usage of ralph jobs, the runs started in the period and their stories&apos;
           outcomes.
         </Muted>
       </div>
 
-      <div style={grid("repeat(4, minmax(0, 1fr))")}>
-        <StatCard
-          label="Runs started"
-          value={ralph.totals.runs.toLocaleString()}
-          detail={period}
-          icon={IconRepeat}
-        />
-        <StatCard
+      <Metrics>
+        <Metric label="Runs started" value={ralph.totals.runs.toLocaleString()} />
+        <Metric
           label="Ralph tokens"
           value={formatTokens(tokens)}
-          detail={`${formatTokens(ralph.totals.tokensIn)} in, ${formatTokens(ralph.totals.tokensOut)} out, ${ralph.totals.jobs.toLocaleString()} jobs`}
-          icon={IconCoins}
+          title={`${tokens.toLocaleString()} tokens`}
         />
-        <StatCard
+        <Metric
           label="Stories completed"
           value={completed.toLocaleString()}
-          detail={`Of ${stories.toLocaleString()} finished stories`}
-          icon={IconListCheck}
+          unit={`of ${stories.toLocaleString()}`}
         />
-        <StatCard
-          label="Average attempts"
+        <Metric
+          label="Attempts per story"
           value={completed === 0 ? "—" : ralph.averageAttempts.toLocaleString()}
-          detail="Per completed story"
-          icon={IconHistory}
+          title="Average attempts per completed story"
         />
-      </div>
+      </Metrics>
 
-      <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
-        <Card ribbon style={{ minWidth: 0 }}>
+      <div className="analytics-split">
+        <Card ribbon>
           <CardHeader>
             <CardTitle as="h3">Ralph tokens per day</CardTitle>
             <CardDescription>
-              {period}, ralph jobs next to reviews (tokens in + out)
+              {period}: {formatTokens(ralph.totals.tokensIn)} in,{" "}
+              {formatTokens(ralph.totals.tokensOut)} out over {ralph.totals.jobs.toLocaleString()}{" "}
+              jobs. Ralph jobs next to reviews (in + out).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -259,20 +170,22 @@ function RalphSection({
             ) : (
               <ChartContainer>
                 <AreaChart
+                  aria-label="Ralph tokens per day"
                   height={240}
                   data={daily}
                   xKey="day"
                   showLegend
+                  tickFormatter={formatTokens}
                   areas={[
                     { key: "ralphTokens", label: "Ralph", variant: SERIES.primary },
-                    { key: "reviewTokens", label: "Reviews", variant: SERIES.secondary },
+                    { key: "reviewTokens", label: "Reviews", variant: SERIES.comparison },
                   ]}
                 />
               </ChartContainer>
             )}
           </CardContent>
         </Card>
-        <Card style={{ minWidth: 0 }}>
+        <Card>
           <CardHeader>
             <CardTitle as="h3">Runs per day</CardTitle>
             <CardDescription>{period}, runs started by their status</CardDescription>
@@ -283,11 +196,13 @@ function RalphSection({
             ) : (
               <ChartContainer>
                 <BarChart
+                  aria-label="Runs per day"
                   height={240}
                   data={daily}
                   xKey="day"
                   stacked
                   showLegend
+                  tickFormatter={countTick}
                   bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
                     key: outcome,
                     label: RALPH_RUN_OUTCOME_LABELS[outcome],
@@ -300,7 +215,7 @@ function RalphSection({
         </Card>
       </div>
 
-      <Card style={{ minWidth: 0 }}>
+      <Card>
         <CardHeader>
           <CardTitle as="h3">Story outcomes per day</CardTitle>
           <CardDescription>{period}, stories of the runs started each day</CardDescription>
@@ -311,11 +226,13 @@ function RalphSection({
           ) : (
             <ChartContainer>
               <BarChart
+                aria-label="Story outcomes per day"
                 height={240}
                 data={daily}
                 xKey="day"
                 stacked
                 showLegend
+                tickFormatter={countTick}
                 bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
                   key: outcome,
                   label: RALPH_STORY_OUTCOME_LABELS[outcome],
@@ -327,8 +244,8 @@ function RalphSection({
         </CardContent>
       </Card>
 
-      <div style={grid("repeat(2, minmax(0, 1fr))")}>
-        <Card style={{ minWidth: 0 }}>
+      <div className="analytics-cards">
+        <Card>
           <CardHeader>
             <CardTitle as="h3">Story outcomes</CardTitle>
             <CardDescription>Stories of the runs started in the period</CardDescription>
@@ -340,14 +257,14 @@ function RalphSection({
               <CountRows
                 rows={RALPH_STORY_OUTCOMES.map((outcome) => ({
                   key: outcome,
-                  label: <span style={cellText}>{RALPH_STORY_OUTCOME_LABELS[outcome]}</span>,
+                  label: RALPH_STORY_OUTCOME_LABELS[outcome],
                   count: outcomes[outcome],
                 }))}
               />
             )}
           </CardContent>
         </Card>
-        <Card style={{ minWidth: 0 }}>
+        <Card>
           <CardHeader>
             <CardTitle as="h3">Runs by status</CardTitle>
             <CardDescription>{ralph.totals.runs.toLocaleString()} runs</CardDescription>
@@ -359,7 +276,7 @@ function RalphSection({
               <CountRows
                 rows={RALPH_RUN_OUTCOMES.map((outcome) => ({
                   key: outcome,
-                  label: <span style={cellText}>{RALPH_RUN_OUTCOME_LABELS[outcome]}</span>,
+                  label: RALPH_RUN_OUTCOME_LABELS[outcome],
                   count: ralph.runsByOutcome[outcome],
                 }))}
               />
@@ -394,23 +311,15 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
   }));
   const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
   const noReviews = totals.reviews === 0;
+  const averageTokens = overallAverageTokens(analytics.byProfile);
 
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Analytics" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Analytics"
-          description={`Token usage, review quality and ralph runs for ${scope}, by UTC day.`}
+          description={`Token usage, review quality and ralph runs for ${scope}, last ${params.days} days by UTC day.`}
           actions={
             <>
               <ToggleGroup
@@ -445,35 +354,27 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           }
         />
 
-        <div style={grid("repeat(4, minmax(0, 1fr))")}>
-          <StatCard
-            label="Reviews"
-            value={totals.reviews.toLocaleString()}
-            detail={period}
-            icon={IconHistory}
-          />
-          <StatCard
+        <Metrics>
+          <Metric label="Reviews" value={totals.reviews.toLocaleString()} />
+          <Metric
             label="Tokens in"
             value={formatTokens(totals.tokensIn)}
-            detail={`${totals.tokensIn.toLocaleString()} tokens`}
-            icon={IconArrowDownLeft}
+            title={`${totals.tokensIn.toLocaleString()} tokens`}
           />
-          <StatCard
+          <Metric
             label="Tokens out"
             value={formatTokens(totals.tokensOut)}
-            detail={`${totals.tokensOut.toLocaleString()} tokens`}
-            icon={IconArrowUpRight}
+            title={`${totals.tokensOut.toLocaleString()} tokens`}
           />
-          <StatCard
-            label="Average per review"
-            value={formatTokens(overallAverageTokens(analytics.byProfile))}
-            detail="Tokens in + out, finished reviews"
-            icon={IconCoins}
+          <Metric
+            label="Tokens per review"
+            value={formatTokens(averageTokens)}
+            title={`${averageTokens.toLocaleString()} tokens in + out on average, finished reviews`}
           />
-        </div>
+        </Metrics>
 
-        <div style={grid("minmax(0, 2fr) minmax(0, 1fr)")}>
-          <Card ribbon style={{ minWidth: 0 }}>
+        <div className="analytics-split">
+          <Card ribbon>
             <CardHeader>
               <CardTitle as="h2">Tokens per day</CardTitle>
               <CardDescription>{period}, input and output stacked</CardDescription>
@@ -481,20 +382,22 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
             <CardContent>
               <ChartContainer>
                 <AreaChart
+                  aria-label="Tokens per day"
                   height={240}
                   data={daily}
                   xKey="day"
                   stacked
                   showLegend
+                  tickFormatter={formatTokens}
                   areas={[
                     { key: "tokensIn", label: "Tokens in", variant: SERIES.primary },
-                    { key: "tokensOut", label: "Tokens out", variant: SERIES.secondary },
+                    { key: "tokensOut", label: "Tokens out", variant: SERIES.comparison },
                   ]}
                 />
               </ChartContainer>
             </CardContent>
           </Card>
-          <Card style={{ minWidth: 0 }}>
+          <Card>
             <CardHeader>
               <CardTitle as="h2">Reviews per day</CardTitle>
               <CardDescription>{period}</CardDescription>
@@ -502,9 +405,11 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
             <CardContent>
               <ChartContainer>
                 <BarChart
+                  aria-label="Reviews per day"
                   height={240}
                   data={daily}
                   xKey="day"
+                  tickFormatter={countTick}
                   bars={[{ key: "reviews", label: "Reviews", variant: SERIES.primary }]}
                 />
               </ChartContainer>
@@ -512,15 +417,13 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
         </div>
 
-        <div style={grid("repeat(3, minmax(0, 1fr))")}>
-          <Card style={{ minWidth: 0 }}>
+        <div className="analytics-cards">
+          <Card>
             <CardHeader>
               <CardTitle as="h2">Average tokens per review</CardTitle>
               <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
             </CardHeader>
-            <CardContent
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
-            >
+            <CardContent className="analytics-card-stack">
               {profiles.length === 0 ? (
                 <Empty
                   size="sm"
@@ -532,9 +435,11 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 <>
                   <ChartContainer>
                     <BarChart
+                      aria-label="Average tokens per review by profile"
                       height={160}
                       data={profiles}
                       xKey="profile"
+                      tickFormatter={formatTokens}
                       bars={[
                         {
                           key: "averageTokens",
@@ -544,25 +449,25 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                       ]}
                     />
                   </ChartContainer>
-                  <Table>
+                  <Table className="list-table">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Profile</TableHead>
-                        <TableHead style={{ textAlign: "right" }}>Reviews</TableHead>
-                        <TableHead style={{ textAlign: "right" }}>Average</TableHead>
+                        <TableHead className="analytics-num">Reviews</TableHead>
+                        <TableHead className="analytics-num">Average</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {analytics.byProfile.map((p) => (
                         <TableRow key={p.profileId ?? "deleted"}>
-                          <TableCell style={cellText}>
+                          <TableCell className="analytics-cell-text">
                             {p.profileName ?? "Deleted profile"}
                           </TableCell>
-                          <TableCell style={{ ...mono, textAlign: "right" }}>
+                          <TableCell className="analytics-num text-numeric">
                             {p.reviews.toLocaleString()}
                           </TableCell>
                           <TableCell
-                            style={{ ...mono, textAlign: "right" }}
+                            className="analytics-num text-numeric"
                             title={`${p.averageTokens.toLocaleString()} tokens`}
                           >
                             {formatTokens(p.averageTokens)}
@@ -575,7 +480,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               )}
             </CardContent>
           </Card>
-          <Card style={{ minWidth: 0 }}>
+          <Card>
             <CardHeader>
               <CardTitle as="h2">Reviews by status</CardTitle>
               <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
@@ -590,7 +495,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               />
             </CardContent>
           </Card>
-          <Card style={{ minWidth: 0 }}>
+          <Card>
             <CardHeader>
               <CardTitle as="h2">Findings by severity</CardTitle>
               <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
@@ -607,132 +512,130 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           </Card>
         </div>
 
-        <div style={grid("minmax(0, 3fr) minmax(0, 2fr)")}>
-          <Card style={{ minWidth: 0 }}>
-            <CardHeader>
-              <CardTitle as="h2">Dismissal rate per repository</CardTitle>
-              <CardDescription>
-                Dismissed findings out of all findings (superseded ones excluded). A high rate
-                points to a noisy repository: check its learned rules and profile.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {analytics.dismissalsByRepository.length === 0 ? (
-                <Empty
-                  size="sm"
-                  icon={<IconThumbDown size={20} />}
-                  title="No findings"
-                  titleAs="h3"
-                  description={noReviews ? "No reviews in this period." : undefined}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Repository</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>Findings</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>Dismissed</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>False positives</TableHead>
-                      <TableHead>Rate</TableHead>
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Dismissal rate per repository</CardTitle>
+            <CardDescription>
+              Dismissed findings out of all findings (superseded ones excluded). A high rate points
+              to a noisy repository: check its learned rules and profile.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {analytics.dismissalsByRepository.length === 0 ? (
+              <Empty
+                size="sm"
+                icon={<IconThumbDown size={20} />}
+                title="No findings"
+                titleAs="h3"
+                description={noReviews ? "No reviews in this period." : undefined}
+              />
+            ) : (
+              <Table className="list-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Repository</TableHead>
+                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Findings</TableHead>
+                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Dismissed</TableHead>
+                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>
+                      False positives
+                    </TableHead>
+                    <TableHead className="analytics-rate-col">Rate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.dismissalsByRepository.map((d) => (
+                    <TableRow key={d.repository.id}>
+                      <TableCell>
+                        <RepositoryLink repository={d.repository} />
+                        <PhoneMeta>
+                          <span className="analytics-phone-detail text-numeric">
+                            {d.dismissed.toLocaleString()} of {d.findings.toLocaleString()}{" "}
+                            dismissed, {d.falsePositives.toLocaleString()} false positives
+                          </span>
+                        </PhoneMeta>
+                      </TableCell>
+                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                        {d.findings.toLocaleString()}
+                      </TableCell>
+                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                        {d.dismissed.toLocaleString()}
+                      </TableCell>
+                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                        {d.falsePositives.toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="analytics-rate">
+                          <Progress
+                            value={d.dismissalRate * 100}
+                            variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
+                          />
+                          <span className="analytics-num text-numeric">
+                            {formatRate(d.dismissalRate)}
+                          </span>
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {analytics.dismissalsByRepository.map((d) => (
-                      <TableRow key={d.repository.id}>
-                        <TableCell>
-                          <RepositoryLink repository={d.repository} />
-                        </TableCell>
-                        <TableCell style={{ ...mono, textAlign: "right" }}>
-                          {d.findings.toLocaleString()}
-                        </TableCell>
-                        <TableCell style={{ ...mono, textAlign: "right" }}>
-                          {d.dismissed.toLocaleString()}
-                        </TableCell>
-                        <TableCell style={{ ...mono, textAlign: "right" }}>
-                          {d.falsePositives.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "var(--space-2)",
-                              minWidth: "calc(var(--space-16) * 3)",
-                            }}
-                          >
-                            <Progress
-                              value={d.dismissalRate * 100}
-                              variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
-                              style={{ flex: 1 }}
-                            />
-                            <span style={{ ...mono, color: "var(--text-primary)" }}>
-                              {formatRate(d.dismissalRate)}
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-          <Card style={{ minWidth: 0 }}>
-            <CardHeader>
-              <CardTitle as="h2">Jobs per agent</CardTitle>
-              <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {analytics.jobsByHarness.length === 0 ? (
-                <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Harness</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>Jobs</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>Completed</TableHead>
-                      <TableHead style={{ textAlign: "right" }}>Failed</TableHead>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Jobs per agent</CardTitle>
+            <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {analytics.jobsByHarness.length === 0 ? (
+              <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
+            ) : (
+              <Table className="list-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Harness</TableHead>
+                    <TableHead className="analytics-num">Jobs</TableHead>
+                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Completed</TableHead>
+                    <TableHead className="analytics-num">Failed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.jobsByHarness.map((a) => (
+                    <TableRow key={a.agent.id}>
+                      <TableCell className="analytics-cell-text">
+                        {isAdmin ? (
+                          <Link href={`/harnesses/${a.agent.id}`} className="analytics-link">
+                            {a.agent.name}
+                          </Link>
+                        ) : (
+                          a.agent.name
+                        )}
+                        <PhoneMeta>
+                          <span className="analytics-phone-detail text-numeric">
+                            {a.completed.toLocaleString()} completed
+                          </span>
+                        </PhoneMeta>
+                      </TableCell>
+                      <TableCell className="analytics-num text-numeric">
+                        {a.total.toLocaleString()}
+                      </TableCell>
+                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                        {a.completed.toLocaleString()}
+                      </TableCell>
+                      <TableCell
+                        className="analytics-num text-numeric"
+                        data-failed={a.failed > 0 || undefined}
+                      >
+                        {a.failed.toLocaleString()}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {analytics.jobsByHarness.map((a) => (
-                      <TableRow key={a.agent.id}>
-                        <TableCell>
-                          {isAdmin ? (
-                            <Link
-                              href={`/harnesses/${a.agent.id}`}
-                              style={{ ...cellText, textDecoration: "none" }}
-                            >
-                              {a.agent.name}
-                            </Link>
-                          ) : (
-                            <span style={cellText}>{a.agent.name}</span>
-                          )}
-                        </TableCell>
-                        <TableCell style={{ ...mono, textAlign: "right" }}>
-                          {a.total.toLocaleString()}
-                        </TableCell>
-                        <TableCell style={{ ...mono, textAlign: "right" }}>
-                          {a.completed.toLocaleString()}
-                        </TableCell>
-                        <TableCell
-                          style={{
-                            ...mono,
-                            textAlign: "right",
-                            color: a.failed > 0 ? "var(--danger-fg)" : undefined,
-                          }}
-                        >
-                          {a.failed.toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
         <RalphSection ralph={ralph} analytics={analytics} period={period} />
       </main>
