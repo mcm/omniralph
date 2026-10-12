@@ -6,7 +6,7 @@ import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { HarnessSettingsView } from "./harness-settings-view";
 
-export const metadata: Metadata = { title: "Harness settings · Omniralph" };
+export const metadata: Metadata = { title: "Harness defaults · Omniralph" };
 
 export default async function HarnessSettingsPage() {
   const admin = await requirePageUser("admin");

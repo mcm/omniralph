@@ -82,7 +82,7 @@ interface HarnessDetailViewProps {
   installJobs: InstallJobRow[];
   /** Every host tool of the organization's catalog with this harness's path and report, by name. */
   hostTools: HostToolRow[];
-  /** Settings › Harnesses version (described when it tracks npm's latest), used when the harness has no override. */
+  /** Settings › Harness defaults version (described when it tracks npm's latest), used when the harness has no override. */
   globalDesiredVersion: string | null;
 }
 
@@ -304,7 +304,7 @@ function VersionCard({
           <Field
             label="Desired version override"
             htmlFor="desired-version"
-            description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harnesses).`}
+            description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults).`}
           >
             <Input
               id="desired-version"

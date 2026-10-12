@@ -225,7 +225,7 @@ export function IntegrationsView({
 
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Integrations" }]} />
+      <AppHeader breadcrumbs={[{ label: "Integrations" }]} />
       <main
         style={{
           flex: 1,

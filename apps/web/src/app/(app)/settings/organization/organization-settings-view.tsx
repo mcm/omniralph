@@ -613,7 +613,7 @@ export function OrganizationSettingsView({
 }: OrganizationSettingsViewProps) {
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Organization" }]} />
+      <AppHeader breadcrumbs={[{ label: "Organization" }]} />
       <main
         style={{
           flex: 1,

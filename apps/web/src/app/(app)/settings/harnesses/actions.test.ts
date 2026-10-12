@@ -111,7 +111,7 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Harnesses actions", () => {
+describe("Settings › Harness defaults actions", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.organizationId = null;

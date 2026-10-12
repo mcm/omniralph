@@ -201,7 +201,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
     <>
       <AppHeader
         breadcrumbs={[
-          { label: "Repositories", href: "/repositories" },
+          { label: "Reviews", href: "/reviews" },
           {
             label: review.repository.fullPath,
             href: `/repositories/${review.repository.id}/reviews`,

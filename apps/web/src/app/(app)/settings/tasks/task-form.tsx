@@ -241,7 +241,6 @@ export function TaskForm({
 
   const title = task ? `Edit ${task.name}` : "New task";
   const breadcrumbs = [
-    { label: "Settings" },
     { label: "Tasks", href: "/settings/tasks" },
     ...(task ? [{ label: task.name, href: taskHref(task.id) }] : []),
     { label: task ? "Edit" : "New" },
@@ -460,7 +459,7 @@ export function TaskForm({
               <Field
                 label="Host tools"
                 htmlFor="task-requires-host-tools"
-                description="Comma-separated names from Settings › Harnesses › Host tools, e.g. opengrep."
+                description="Comma-separated names from Settings › Harness defaults › Host tools, e.g. opengrep."
                 error={errorFor(errors, "requires.hostTools")}
               >
                 <Input

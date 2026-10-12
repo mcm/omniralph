@@ -133,6 +133,6 @@ describe("HostToolsCard", () => {
   it("points to the catalog when there are no host tools", () => {
     const html = renderToStaticMarkup(<HostToolsCard harness={harness} hostTools={[]} />);
     expect(html).toContain("No host tools");
-    expect(html).toContain("Settings › Harnesses");
+    expect(html).toContain("Settings › Harness defaults");
   });
 });

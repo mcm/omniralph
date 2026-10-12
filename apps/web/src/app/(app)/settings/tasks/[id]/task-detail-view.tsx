@@ -263,11 +263,7 @@ export function TaskDetailView({
   return (
     <>
       <AppHeader
-        breadcrumbs={[
-          { label: "Settings" },
-          { label: "Tasks", href: "/settings/tasks" },
-          { label: task.name },
-        ]}
+        breadcrumbs={[{ label: "Tasks", href: "/settings/tasks" }, { label: task.name }]}
       />
       <main style={pageMain}>
         <div

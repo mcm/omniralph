@@ -67,3 +67,120 @@ body {
 .legal-document a {
   color: var(--text-accent);
 }
+
+/* App header (components/app-header.tsx): one line at every width. It grows rather than
+   clips if its content ever needs more room, and the breadcrumbs truncate instead of wrapping. */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-6);
+  background: color-mix(in srgb, var(--bg-page) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.app-header-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+.app-header-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.app-header-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--space-1);
+  background: var(--border-subtle);
+}
+.app-header-user {
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+.app-header-avatar {
+  width: 24px;
+  height: 24px;
+}
+.app-header-user-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.app-header-chevron {
+  color: var(--text-tertiary);
+}
+.app-header-menu {
+  min-width: 200px;
+}
+.app-header-menu-name {
+  color: var(--text-primary);
+}
+.app-header-menu-email {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: normal;
+  color: var(--text-tertiary);
+}
+
+.app-crumbs {
+  min-width: 0;
+}
+.app-crumbs-list {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+/* Parents keep their (capped) width; the current page takes what is left and truncates. */
+.app-crumb {
+  flex-shrink: 0;
+  min-width: 0;
+}
+.app-crumb:last-child {
+  flex-shrink: 1;
+}
+.app-crumb-label {
+  display: block;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-crumb-ellipsis {
+  display: none;
+}
+.app-crumb-ellipsis-icon {
+  width: auto;
+  height: auto;
+}
+
+/* Phone: avatar-only user menu, and only the first and current crumbs. */
+@media (max-width: 767.98px) {
+  .app-header {
+    padding: var(--space-2) var(--space-3);
+  }
+  .app-header-user-name {
+    display: none;
+  }
+  .app-crumb-middle {
+    display: none;
+  }
+  .app-crumb:not(:last-child) .app-crumb-label {
+    max-width: 14ch;
+  }
+  .app-crumb-ellipsis {
+    display: inline-flex;
+  }
+}

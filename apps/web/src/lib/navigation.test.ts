@@ -16,7 +16,7 @@ describe("navGroups", () => {
       "Tasks",
       "Profiles",
       "Integrations",
-      "Harnesses",
+      "Harness defaults",
       "Chat accounts",
     ]);
   });
@@ -27,8 +27,19 @@ describe("navGroups", () => {
       expect.objectContaining({ href: "/harnesses", label: "Harnesses" }),
     );
     expect(items).toContainEqual(
-      expect.objectContaining({ href: "/settings/harnesses", label: "Harnesses", adminOnly: true }),
+      expect.objectContaining({
+        href: "/settings/harnesses",
+        label: "Harness defaults",
+        adminOnly: true,
+      }),
     );
+  });
+
+  it("gives every destination one entry with a distinct label", () => {
+    const items = navGroups.flatMap((group) => group.items);
+    expect(new Set(items.map((item) => item.href)).size).toBe(items.length);
+    expect(new Set(items.map((item) => item.label)).size).toBe(items.length);
+    expect(new Set(items.map((item) => item.icon)).size).toBe(items.length);
   });
 
   it("links the agent definitions for every member", () => {
@@ -50,7 +61,7 @@ describe("navGroupsForRole", () => {
 
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
-      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
+      ["Operations", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
       [
         "Settings",
         [
@@ -59,7 +70,7 @@ describe("navGroupsForRole", () => {
           "Tasks",
           "Profiles",
           "Integrations",
-          "Harnesses",
+          "Harness defaults",
           "Chat accounts",
         ],
       ],
@@ -68,7 +79,7 @@ describe("navGroupsForRole", () => {
 
   it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
-      ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
+      ["Operations", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
       ["Settings", ["Organization", "Agents", "Tasks", "Chat accounts"]],
     ]);
   });

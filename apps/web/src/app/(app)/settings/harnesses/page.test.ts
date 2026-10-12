@@ -59,7 +59,7 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Harnesses page", () => {
+describe("Settings › Harness defaults page", () => {
   it("is for admins only", async () => {
     state.user = null;
     await expect(HarnessSettingsPage()).rejects.toThrow();

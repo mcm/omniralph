@@ -50,7 +50,7 @@ export interface HarnessRow {
 }
 
 /**
- * `globalDesiredVersion` is the Settings › Harnesses version, used by harnesses
+ * `globalDesiredVersion` is the Settings › Harness defaults version, used by harnesses
  * without their own override (`globalTracksLatest`: it's the latest on npm).
  */
 export function harnessRow(

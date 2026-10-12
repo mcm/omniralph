@@ -64,7 +64,7 @@ export function HarnessSettingsView({
 
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Harnesses" }]} />
+      <AppHeader breadcrumbs={[{ label: "Harness defaults" }]} />
       <main
         style={{
           flex: 1,
@@ -83,7 +83,7 @@ export function HarnessSettingsView({
               fontWeight: "var(--font-weight-semibold)",
             }}
           >
-            Harness settings
+            Harness defaults
           </h1>
           <Muted style={{ display: "block", marginTop: "var(--space-1)" }}>
             Settings every harness of this organization gets with its heartbeat.
