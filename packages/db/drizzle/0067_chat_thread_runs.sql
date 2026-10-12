@@ -29,4 +29,5 @@ FROM "jobs" j
 JOIN "chat_threads" t ON t."id"::text = coalesce(
   j."payload"->>'chatThreadId',
   j."payload"->'trigger'->'context'->>'chatThreadId'
-) AND t."organization_id" = j."organization_id";
+) AND t."organization_id" = j."organization_id"
+WHERE j."type" = 'chat.ask';

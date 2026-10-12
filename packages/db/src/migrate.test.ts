@@ -823,7 +823,8 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
              ($1, 'chat.ask', 'query', 'short', 'queued', $3, 'top-level'),
              ($1, 'chat.ask', 'query', 'short', 'completed', $4, 'gone-thread'),
              ($1, 'chat.ask', 'query', 'short', 'completed', $5, 'not-a-uuid'),
-             ($1, 'repo.sync', 'system', null, 'completed', '{}', 'no-thread')
+             ($1, 'repo.sync', 'system', null, 'completed', '{}', 'no-thread'),
+             ($1, 'ralph.request', 'coding', 'long', 'completed', $2, 'not-a-question')
            returning id, dedupe_key`,
           [
             org,
@@ -853,7 +854,8 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
           job_id: jobId,
           ralph_run_id: ralphRunId,
         });
-        // Linear runs delegated from chat, threadless runs and jobs naming no thread aren't mapped.
+        // Linear runs delegated from chat, threadless runs, jobs naming no thread and
+        // jobs other than code questions aren't mapped.
         expect(rows).toHaveLength(4);
         expect(rows).toEqual(
           expect.arrayContaining([
