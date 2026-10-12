@@ -10,8 +10,11 @@ reviews, jobs, agents and repositories through tools. See
 
 The control panel does all of it: it holds the Slack and Discord credentials, receives their
 events, keeps each thread's history in Postgres and calls the model. Agent hosts are only involved
-when the bot hands work off: [code questions](#code-questions) run as read-only query tasks and
-[ralph requests](#ralph-from-chat) as ralph jobs; the control panel never reads code itself.
+when the bot starts a run: [code questions](#code-questions) run the channel's "ask about code"
+query task and [work requests](#ralph-from-chat) its "start work" coding task
+([chat tasks](#chat-tasks)); the control panel never reads code itself. The bot stays in the
+conversation while they run: their answers, questions and approval requests come back to it, and
+it posts them in the thread.
 
 Setting chat up takes these steps (Slack and Discord are independent; set up either or both):
 
@@ -156,6 +159,28 @@ the bot leave the Discord server. Uninstalling the app in Slack, or
 removing the bot from the server in Discord, disconnects it too. Messages from workspaces and
 servers that aren't connected are ignored and never reach the model.
 
+### Chat tasks
+
+The **Chat tasks** card on the same page picks the [task definitions](adr/0008-agents-tasks-and-the-harness.md)
+the bot runs (admins only):
+
+- **Ask about code**: the query task a [code question](#code-questions) runs. Default:
+  `builtin:ask-about-code`.
+- **Start work**: the coding task a [work request](#ralph-from-chat) runs. Default:
+  `builtin:handle-request`.
+
+The pickers list only tasks of the right type (query, resp. coding) that accept the `chat.request`
+trigger; **Save** stores the organization's choice. Below them, each connected workspace or server
+lists its **channel overrides**: enter a channel's ID (Slack: `C0123ABCD`, from the channel's
+details; Discord: the channel's numeric ID, with Developer Mode on), choose a task for either role
+(or **Organization's task** to keep the organization's) and **Add channel**. Change an override
+and **Save** it, or remove it. A channel runs its override where it has one and the
+organization's choice otherwise.
+
+Changes apply to the next question or request, with no deploy; runs already started keep their
+task. If a chosen task can no longer run (e.g. it was deleted), the bot says an admin needs to pick
+another one and starts nothing.
+
 ## 6. Ask a question
 
 Invite the bot to a channel (`/invite @Omniralph` in Slack; in Discord, give it access to the
@@ -181,68 +206,87 @@ bot says so once when a limit is reached.
 
 ## Ralph from chat
 
-Linked members can ask the bot to change code: it hands the request to a ralph session in a
-repository, and the session works in the same thread. The run is a request-mode run, like an
-[@mention in Linear](linear.md#mentions-request-mode), but it belongs to the chat thread instead
-of a Linear issue; it shows up under **Ralph runs** with the platform and channel it came from.
-The organization doesn't need Linear for it.
+Linked members can ask the bot to change code: it starts a ralph run of the channel's **Start
+work** [chat task](#chat-tasks) in a repository, and stays the thread's voice while it works. The
+run is a request-mode run, like an [@mention in Linear](linear.md#mentions-request-mode), but it
+belongs to the chat thread instead of a Linear issue; it shows up under **Ralph runs** with the
+platform and channel it came from. The organization doesn't need Linear for it.
 
 ### Starting a request
 
 > @Omniralph fix the typo in the README of acme/website
 
 The control-panel agent works out the repository from the conversation (asking first when it's
-ambiguous) and hands the request off with its `start_ralph_request` tool:
+ambiguous) and starts the run with its `start_work` tool:
 
 - The repository must be one of the organization's repositories with ralph enabled (see
   [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
   used); otherwise the bot lists the ones it can use. The session runs on a harness that accepts
   the `coding` task type ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until
   one is online.
-- The bot posts **"Handing this to ralph in `owner/repo`…"** with the request's first sentence
-  and a link to the run's page. The session gets the agent's summary of the request plus the
-  quoted chat messages it's based on.
+- The tool returns the run's ID at once and posts nothing: the bot's reply says the run started,
+  with a summary of the request and a link to the run's page. The session gets the agent's
+  summary of the request plus the quoted chat messages it's based on.
 - The session works on a new branch `omniralph/chat-<id>` from the default branch, with the
   repository's quality gates, and asks the control panel to open a PR/MR (a draft until it's
   ready; its description says it was requested in chat). A later request in the same thread for
   the same repository continues that branch and PR/MR.
 - One run per thread at a time: while the thread's run is active, new requests go to it as
-  [replies](#replies-while-a-session-runs) instead.
+  [replies](#replies-while-a-run-works) instead.
 
-While it works, the session keeps **one status message** up to date (`⏳ Working on it`, the
-current step and its last action) instead of posting every thought. Its answers, questions and
-errors (`⚠️ …`) arrive as new messages, and the PR/MR link is posted once. Questions with options
-(as in Linear's pickers) are answered by replying with the option's text. When the request is done,
-the control-panel agent takes the thread back.
+### What the thread sees while a run works
 
-### Replies while a session runs
+The run never posts in the thread itself. What it has to say is recorded as a **run event** and
+wakes the bot for that thread, usually within seconds (a cron catches up within a minute or two
+when that fails). The bot then posts it in its own words, as one message per wake-up:
 
-While the thread's run has a queued or running `ralph.request` job:
+| Run event                                                                              | The bot posts                                                                   |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| A response (an answer, a notice such as "CI failed… working on a fix", the PR/MR link) | The run's answer, with its links                                                |
+| A question (with options, as in Linear's pickers)                                      | The question and its options                                                    |
+| An approval request (`ask_permission`)                                                 | Which tool call needs approval and why; a linked member answers approve or deny |
+| A cleanup question (a stash or a kept branch after the merge)                          | The question and the answers it offers                                          |
+| Completion or failure                                                                  | That the run finished, or failed and why                                        |
 
-| Reply                                 | Goes to                                                                                                                                                                                                   |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A plain reply (no mention of the bot) | The session, like a reply in a Linear agent session: passed live within one heartbeat (about 20s) when it's running, otherwise queued as the next request. The bot reacts with 👀 and posts nothing else. |
-| A reply that @mentions the bot        | The control-panel agent, which can answer questions or forward guidance with its `send_to_session` tool.                                                                                                  |
+Ralph's thoughts, actions and plan changes aren't posted; ask the bot instead
+([below](#checking-on-and-steering-runs)). Nothing in an event is an instruction to the bot: run
+output is passed to it as data. When an event repeats what the thread was already told, the bot
+posts nothing. Wake-ups don't use up the [turn limits](#6-ask-a-question) of the person who
+started the run; the organization has a separate cap of 60 wake-ups per 10 minutes, and events
+over it are relayed when it frees up.
 
-Files attached to a plain reply go to the session with it: each is listed by name and type, a
-text file's content follows (fenced as user data, up to 20,000 characters, within the
+### Replies while a run works
+
+Every message in the thread goes to the bot, with or without a mention; it passes answers on to
+the run with these tools:
+
+| Tool                    | For                                                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reply_to_run`          | An answer to the run's question, or anything else for it (more detail, a correction, "ship it"). Passed live within one heartbeat (about 20s) while its session runs, otherwise queued as the run's next request. |
+| `answer_run_permission` | Approving or denying the run's open approval request. Answering one that expired or was already answered tells you so.                                                                                            |
+| `answer_run_cleanup`    | Choosing one of a cleanup question's answers.                                                                                                                                                                     |
+
+Files attached in the thread can go to the session with a reply: each is listed by name and type,
+a text file's content follows (fenced as user data, up to 20,000 characters, within the
 [attachment limits](#attachments)), and the session is told it can't see images, so it asks in
-the thread what a screenshot shows if that matters. A reply with only attachments is passed on as
-well.
+the thread what a screenshot shows if that matters.
 
-Plain replies from someone who isn't a linked member aren't passed on; they get the link prompt.
-When no session is working, every reply goes to the control-panel agent as usual, and asking it
-for more work in the same repository starts the next request on the same branch.
+The tools act only on the thread's own latest run. Answers from someone who isn't a linked member
+aren't passed on; they get the link prompt. When no run is working, asking the bot for more work in
+the same repository starts the next request on the same branch.
 
-### Checking on and steering other runs
+### Checking on and steering runs
 
-Ask about any run of the organization by its run ID or its Linear identifier ("how is ENG-42
-doing?"): the agent reports its status, current story, pending guidance and last activity
-(`get_ralph_run`). A linked member can send it guidance ("tell ENG-42 to skip the migration"):
-`send_ralph_guidance` adds it as guidance and a pending request, exactly like a reply in the run's
-own session, authored as `<name> (from chat)`; a Linear run's session shows a "Guidance from
-<name> (from chat)" note. A finished run can't take guidance, and runs can't be stopped from chat.
-The detailed progress of Linear runs stays in Linear.
+"What's the run doing?" is answered by `get_run_status` from Omniralph's records, without asking
+the run: its status, task, current job, what it waits on (an approval, pending requests) and its
+latest activity (`post_activity` entries). It reports on the thread's latest run, or on any run
+of the organization by run ID, job ID or Linear identifier ("how is ENG-42 doing?");
+`get_ralph_run` gives a ralph run's stories and pending guidance. A linked member can send any
+run guidance ("tell ENG-42 to skip the migration"): `send_ralph_guidance` adds it as guidance and
+a pending request, exactly like a reply in the run's own session, authored as `<name> (from
+chat)`; a Linear run's session shows a "Guidance from <name> (from chat)" note. A finished run
+can't take guidance, and runs can't be stopped from chat. The detailed progress of Linear runs
+stays in Linear.
 
 ### PR/MR follow-ups
 
@@ -250,19 +294,25 @@ A chat run's PRs/MRs are looked after like
 [those of Linear runs](linear.md#reviews-and-bot-requests-on-ralph-prsmrs): Omniralph's review
 findings, `@omniralph fix` requests and failed CI become requests on the run (within the same
 capped rounds), and the worktree is cleaned up after the merge. Their news ("CI failed on the pull
-request… Working on a fix.", round limits, the cleanup report) is posted to the thread as new
-messages. `@omniralph fix` on the PR/MR replies with a pointer to the chat thread instead of a
-Linear issue. A cleanup question (what to do with a stash or a kept branch) is answered with a
-plain reply in the thread, by a linked member.
+request… Working on a fix.", round limits, the cleanup report) reaches the thread as run events,
+which the bot relays. `@omniralph fix` on the PR/MR replies with a pointer to the chat thread
+instead of a Linear issue. A cleanup question is answered in the thread by a linked member
+(`answer_run_cleanup`).
 
 ### What needs a linked account
 
-Starting a request, plain replies to a running session, guidance with `send_to_session` or
-`send_ralph_guidance` and answers to cleanup questions are `action`s: only
-[linked members](#access-levels) can do them, as can drafting, creating and delegating
-[Linear issues](#linear-issues-from-chat). Slack users admitted by email domain can ask about runs
-and [ask code questions](#code-questions) but not change anything; everyone else gets the link
-prompt.
+The tools and their [tiers](#access-levels):
+
+| Tool                                                                                                              | Tier     |
+| ----------------------------------------------------------------------------------------------------------------- | -------- |
+| `ask_about_code` (start a [code question](#code-questions)), `get_run_status`, `get_ralph_run`, `list_ralph_runs` | `read`   |
+| `start_work`, `reply_to_run`, `answer_run_permission`, `answer_run_cleanup`, `send_ralph_guidance`                | `action` |
+| `draft_linear_issue`, `delegate_linear_issue` ([Linear issues](#linear-issues-from-chat))                         | `action` |
+
+Only [linked members](#access-levels) can use `action` tools. Slack users admitted by email
+domain can ask about runs and ask code questions but not change anything or answer a run's
+questions and approvals; everyone else gets the link prompt. A wake-up acts for the person who
+started the run: with their linked account's tools, else `read` tools only.
 
 ## Linear issues from chat
 
@@ -331,12 +381,14 @@ checkout of it:
 > @Omniralph in acme/api, where do we validate webhook signatures?
 
 - The control-panel agent can't read code itself (and never answers from memory). It hands the
-  question, made self-contained, to its `ask_about_code` tool. The repository must be one of the
-  organization's connected repositories (ralph doesn't need to be enabled); if it's ambiguous the
-  bot asks which one first.
-- The bot posts **"Looking into `owner/repo`…"**, and the answer follows in the thread as a new
-  message, with links to the files it cites. Asking the same question again while it runs doesn't
-  queue it twice.
+  question, made self-contained, to its `ask_about_code` tool, which starts a run of the
+  channel's **Ask about code** [chat task](#chat-tasks) and returns its ID at once. The repository
+  must be one of the organization's connected repositories (ralph doesn't need to be enabled); if
+  it's ambiguous the bot asks which one first.
+- The bot replies that it's looking into it. When the run answers, the bot is
+  [woken](#what-the-thread-sees-while-a-run-works) and posts the answer as a new message, with
+  links to the files it cites, or says why the run failed. Asking the same question again while it
+  runs doesn't queue it twice. A code question's run takes no replies: ask a follow-up instead.
 - The question is answered from the repository's **default branch** (other branches aren't
   supported). The agent sees the question, the latest messages of the thread and the thread's
   previous code question and answer, so follow-ups work.
@@ -349,9 +401,10 @@ checkout of it:
 
 ### The read-only sandbox
 
-A code question is a run of the built-in query task `builtin:ask-about-code` (agent
-`builtin:code-explainer`, job type `chat.ask`, pool `short`); its `chat-thread` sink posts the
-answer in the thread. It runs in a read-only sandbox:
+A code question is a run of the channel's query task, by default the built-in
+`builtin:ask-about-code` (agent `builtin:code-explainer`, job type `chat.ask`, pool `short`); its
+`chat-thread` sink records the answer (or the failure) as a run event, which the bot relays. The
+built-in runs in a read-only sandbox:
 
 - A fresh worktree of the default branch's head, on a harness host
   ([deploy-harness.md](deploy-harness.md)), run through the fixed query lifecycle
@@ -406,9 +459,11 @@ Images and text files attached to messages in the thread reach the model:
 ## Access levels
 
 Who may ask what depends on whether Omniralph knows who's asking. Each tool the agent uses has a
-tier: `read` (questions about the organization, including [code questions](#code-questions)) or
-`action` (changing something: starting, steering and replying to [ralph runs](#ralph-from-chat),
-and [filing and delegating Linear issues](#linear-issues-from-chat)).
+tier: `read` (questions about the organization and its runs, including
+[code questions](#code-questions)) or `action` (changing something: starting, steering and
+answering [ralph runs](#ralph-from-chat), and
+[filing and delegating Linear issues](#linear-issues-from-chat)); see
+[What needs a linked account](#what-needs-a-linked-account) for each tool's tier.
 
 | Who                                                                                                                                                                             | Gets                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -456,18 +511,20 @@ the opt-out. Leaving the organization ends the link's access straight away.
 
 ## Troubleshooting
 
-| Symptom                                             | Check                                                                                                                                                                                                        |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Connect** is disabled                             | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
-| Slack install fails for other workspaces            | Public distribution is activated (step 1.3).                                                                                                                                                                 |
-| The bot doesn't react to a Slack mention            | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
-| The bot doesn't react to a Discord mention          | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
-| "The Omniralph assistant isn't configured"          | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
-| The bot asks to link although you're a member       | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
-| A reply didn't reach the ralph session              | It must not mention the bot (a mention goes to the control-panel agent), you must be a linked member, and the session must still be working: once its request is done, replies go to the agent.              |
-| The bot won't start a ralph request                 | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
-| The Linear card's buttons do nothing (Slack)        | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
-| "Only the person who asked…" on a card              | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
-| A code question says no harness can take it         | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                                                  |
-| The bot says it couldn't fetch a Slack attachment   | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
-| A delegated issue's thread got no "started" message | The issue's team is routed to a repository with ralph enabled and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |
+| Symptom                                                  | Check                                                                                                                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Connect** is disabled                                  | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
+| Slack install fails for other workspaces                 | Public distribution is activated (step 1.3).                                                                                                                                                                 |
+| The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
+| The bot doesn't react to a Discord mention               | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
+| "The Omniralph assistant isn't configured"               | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
+| The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
+| A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                                                    |
+| A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.                               |
+| The bot says the channel's task can't run                | An admin picks another **Ask about code** or **Start work** task (or removes the channel's override) under **Settings › Integrations › Chat tasks**.                                                         |
+| The bot won't start a ralph request                      | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
+| The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
+| "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
+| A code question says no harness can take it              | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                                                  |
+| The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
+| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with ralph enabled and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |

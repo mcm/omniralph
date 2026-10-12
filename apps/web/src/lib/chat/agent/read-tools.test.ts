@@ -234,7 +234,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect(Object.keys(chatTools)).toEqual([
       "list_ralph_runs",
       "get_ralph_run",
-      "run_status",
+      "get_run_status",
       "list_reviews",
       "get_review",
       "list_jobs",

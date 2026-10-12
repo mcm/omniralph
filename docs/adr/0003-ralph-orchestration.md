@@ -336,6 +336,24 @@ PR follow-up bookkeeping that already hang off `ralph_runs`); mirroring every th
 Linear does (too noisy for a channel); and posting from a background job per message (the
 conversation call is cheap and already runs where the activity arrives).
 
+**Update (TOOL-305, 2026-10-12).** The chat responder now fronts chat-origin runs
+([ADR 0005's addendum](0005-chat-front-door.md#addendum-the-responder-runs-harness-tasks)), which
+changes two points above:
+
+- `ChatConversation` records events instead of posting for chat-origin runs: responses, notices
+  and links become `response` events, elicitations `question`, errors `failure`
+  (`recordChatRunEvent` into `chat_run_events`); permission requests, cleanup questions and the
+  run's completion and failure are recorded the same way. Thoughts, actions and plan changes record
+  nothing, and the status message is gone. The responder relays the events in wake-up turns.
+  `start_ralph_request` became the responder's `start_work`, which runs the channel's "start work"
+  coding task (`ralph_runs.coding_task_id`).
+- Reply routing moved into the responder: the handler sends every message to the model, which
+  passes replies and answers on with `reply_to_run`, `answer_run_permission` and
+  `answer_run_cleanup`.
+
+Linear-delegated runs started from chat are Linear runs and are unchanged: they keep their
+`chat-notify.ts` notices (`apps/web/src/lib/ralph/chat-notify.ts`) in the thread.
+
 ## Addendum: coding runs and the cutover switch
 
 TOOL-304 (2026-10-12) moves the loop's sessions onto the `coding` task type of
