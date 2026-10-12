@@ -111,6 +111,7 @@ export async function resolveRunSpec(
     task,
     trigger: payload.trigger,
     repository,
+    repositoryId: repositoryId || null,
     ref: payload.ref ?? null,
     requireCheckout: payload.requireCheckout ?? false,
     tools,

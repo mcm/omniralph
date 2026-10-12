@@ -5,14 +5,16 @@
  * worked on or reviewed may put its own binary in front of).
  */
 import type { McpServerConfig, McpStdioServerConfig } from "@anthropic-ai/claude-agent-sdk";
-import type { RunSpec } from "@omniralph/shared";
+import type { RunSpec, RunTrigger } from "@omniralph/shared";
 import {
   deriveHarnessRequirements,
+  type TriggerKind,
   parseInstallableMcpServerRef,
   resolveInstallablePaths,
 } from "@omniralph/tasks";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import {
+  installableCacheEnv,
   installablePackageDir,
   installablesPrefix,
   listInstalledInstallables,
@@ -31,6 +33,12 @@ export interface RunExecutables {
    */
   commands: ReadonlyMap<string, string>;
   /**
+   * Extra environment by command name, for the installable commands in
+   * `commands`: their installable's cache directories
+   * (`OMNIRALPH_CACHE_DIR`, `OMNIRALPH_PR_CACHE_DIR`).
+   */
+  commandEnv: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /**
    * The installable MCP servers the agent lists (`<package>:<server>`), for
    * `SessionRequest.mcpServers`; null when it lists none.
    */
@@ -38,7 +46,30 @@ export interface RunExecutables {
 }
 
 /** No host tools, installable commands or MCP servers. */
-export const NO_EXECUTABLES: RunExecutables = { commands: new Map(), mcpServers: null };
+export const NO_EXECUTABLES: RunExecutables = {
+  commands: new Map(),
+  commandEnv: new Map(),
+  mcpServers: null,
+};
+
+/** Triggers whose context carries the PR (`pr.number`) a run is about. */
+const PR_CACHE_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
+  "pr.updated",
+  "pr.mention",
+  "review.rerun",
+  "finding.mention",
+  "pr.review-findings",
+  "pr.ci-failed",
+  "pr.fix-command",
+]);
+
+/** The PR a run of a PR trigger is about (`context.pr.number`); null for other triggers. */
+export function runPrNumber(trigger: RunTrigger | undefined): number | null {
+  if (!trigger || !PR_CACHE_TRIGGERS.has(trigger.kind)) return null;
+  const pr = trigger.context.pr;
+  const number = pr && typeof pr === "object" ? (pr as { number?: unknown }).number : undefined;
+  return typeof number === "number" && Number.isSafeInteger(number) && number > 0 ? number : null;
+}
 
 /**
  * The session's server name for an installable's MCP server: `<package>_<server>`
@@ -58,10 +89,12 @@ export function installableMcpServerName(installable: string, server: string): s
  * harness's installables prefix under `ctx.dataDir`. A missing host tool or
  * installable throws `RetryableJobError` (the claim saw it, so it went away
  * since, or isn't negotiated yet after a restart); an MCP server the
- * installed version doesn't provide throws.
+ * installed version doesn't provide throws. Each installable's commands and
+ * MCP servers get its cache directories for the run's repository
+ * (`spec.repositoryId`) and, on a PR trigger, its PR (`installableCacheEnv`).
  */
 export async function resolveRunExecutables(
-  spec: Pick<RunSpec, "task" | "agent">,
+  spec: Pick<RunSpec, "task" | "agent"> & Partial<Pick<RunSpec, "trigger" | "repositoryId">>,
   ctx: Pick<JobContext, "hostToolPath" | "dataDir">,
 ): Promise<RunExecutables> {
   const { installables, hostTools } = deriveHarnessRequirements(spec.task, spec.agent);
@@ -84,6 +117,7 @@ export async function resolveRunExecutables(
     return ref ? [ref] : [];
   });
   const servers: Record<string, McpStdioServerConfig> = {};
+  const commandEnv = new Map<string, Record<string, string>>();
   if (installables.length > 0) {
     const missing = (name: string) =>
       new RetryableJobError(
@@ -93,13 +127,20 @@ export async function resolveRunExecutables(
     if (ctx.dataDir === undefined) throw missing(installables[0]!);
     const installed = new Set((await listInstalledInstallables(ctx.dataDir)).map((i) => i.name));
     const prefix = installablesPrefix(ctx.dataDir);
+    const cacheRun = {
+      repositoryId: spec.repositoryId ?? null,
+      prNumber: runPrNumber(spec.trigger),
+    };
     for (const name of installables) {
       const parsed = installed.has(name) ? await readInstalledPackage(prefix, name) : null;
       if (!parsed?.ok) throw missing(name);
       const { manifest } = parsed.installable;
       const paths = resolveInstallablePaths(installablePackageDir(prefix, name), manifest);
+      const cacheEnv = await installableCacheEnv(ctx.dataDir, name, cacheRun);
       for (const [command, bin] of Object.entries(paths.commands)) {
-        if (!commands.has(command)) commands.set(command, bin);
+        if (commands.has(command)) continue;
+        commands.set(command, bin);
+        commandEnv.set(command, cacheEnv);
       }
       for (const ref of mcpRefs.filter((r) => r.installable === name)) {
         const server = manifest.mcpServers.find((s) => s.name === ref.server);
@@ -112,6 +153,7 @@ export async function resolveRunExecutables(
           type: "stdio",
           command: paths.mcpServers[server.name]!,
           args: [...server.args],
+          ...(Object.keys(cacheEnv).length > 0 && { env: { ...cacheEnv } }),
         };
       }
     }
@@ -119,6 +161,7 @@ export async function resolveRunExecutables(
   const names = Object.keys(servers);
   return {
     commands,
+    commandEnv,
     mcpServers:
       names.length > 0 ? { servers, allowedTools: names.map((server) => `mcp__${server}`) } : null,
   };

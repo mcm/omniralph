@@ -27,6 +27,56 @@ export function installablePackageDir(prefix: string, name: string): string {
   return path.join(prefix, "node_modules", ...name.split("/"));
 }
 
+/** Env var naming an installable's cache directory for the run's repository. */
+export const CACHE_DIR_ENV = "OMNIRALPH_CACHE_DIR";
+/** Env var naming an installable's cache directory for the run's PR (PR triggers only). */
+export const PR_CACHE_DIR_ENV = "OMNIRALPH_PR_CACHE_DIR";
+
+/**
+ * An installable's cache for a repository: `<dataDir>/cache/<name>/<repository id>`.
+ * The installable owns its contents (and keying, e.g. by commit); it only
+ * ever holds data derived from the repository's trusted branches.
+ */
+export function installableCacheDir(dataDir: string, name: string, repositoryId: string): string {
+  return path.join(dataDir, "cache", ...name.split("/"), repositoryId);
+}
+
+/**
+ * An installable's cache for a PR:
+ * `<dataDir>/pr-cache/<name>/<repository id>/<number>`, a sibling tree of the
+ * repository caches (never inside one), so what an untrusted PR leaves there
+ * is never read by runs of other PRs or of the repository.
+ */
+export function installablePrCacheDir(
+  dataDir: string,
+  name: string,
+  repositoryId: string,
+  prNumber: number,
+): string {
+  return path.join(dataDir, "pr-cache", ...name.split("/"), repositoryId, String(prNumber));
+}
+
+/**
+ * Creates the installable's cache directories for a run (private to the
+ * harness user) and returns their env vars: `OMNIRALPH_CACHE_DIR` when the
+ * run has a repository, plus `OMNIRALPH_PR_CACHE_DIR` when it also has a PR.
+ */
+export async function installableCacheEnv(
+  dataDir: string,
+  name: string,
+  run: { repositoryId: string | null; prNumber: number | null },
+): Promise<Record<string, string>> {
+  if (run.repositoryId === null) return {};
+  const env: Record<string, string> = {
+    [CACHE_DIR_ENV]: installableCacheDir(dataDir, name, run.repositoryId),
+  };
+  if (run.prNumber !== null) {
+    env[PR_CACHE_DIR_ENV] = installablePrCacheDir(dataDir, name, run.repositoryId, run.prNumber);
+  }
+  for (const dir of Object.values(env)) await mkdir(dir, { recursive: true, mode: 0o700 });
+  return env;
+}
+
 /**
  * Creates the prefix with its own private package.json, so npm keeps the
  * installables' dependencies there and never looks for a project above it.

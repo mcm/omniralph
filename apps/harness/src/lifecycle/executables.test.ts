@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -15,8 +15,11 @@ import {
   installableMcpServerName,
   NO_EXECUTABLES,
   resolveRunExecutables,
+  runPrNumber,
   sessionMcpServers,
 } from "./executables.js";
+
+const REPO_ID = "6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b";
 
 const GRAPH = {
   name: "@omniralph/graph",
@@ -137,6 +140,66 @@ describe("resolveRunExecutables", () => {
     expect(executables.commands.get("graph-index")).toBe(path.join(dir, "bin/index.js"));
   });
 
+  it("gives installable commands and MCP servers the repository cache", async () => {
+    await placeInstallable(dataDir, GRAPH);
+    const executables = await resolveRunExecutables(
+      {
+        task: task({ requires: { installables: ["@omniralph/graph"], hostTools: [] } }),
+        agent: agent({ tools: { mcpServers: ["@omniralph/graph:graph"] } }),
+        trigger: { kind: "chat.request", context: { pr: { number: 7 } } },
+        repositoryId: REPO_ID,
+      },
+      { dataDir },
+    );
+    const cacheDir = path.join(dataDir, "cache", "@omniralph", "graph", REPO_ID);
+    const env = { OMNIRALPH_CACHE_DIR: cacheDir };
+    expect(executables.commandEnv.get("graph-index")).toEqual(env);
+    expect(executables.commandEnv.get("opengrep")).toEqual(env);
+    expect(executables.mcpServers?.servers.omniralph_graph_graph?.env).toEqual(env);
+    const created = await stat(cacheDir);
+    expect(created.isDirectory()).toBe(true);
+    expect(created.mode & 0o777).toBe(0o700);
+    await expect(stat(path.join(dataDir, "pr-cache"))).rejects.toThrow();
+  });
+
+  it("gives a PR run's installables a PR cache outside the repository cache", async () => {
+    await placeInstallable(dataDir, GRAPH);
+    const executables = await resolveRunExecutables(
+      {
+        task: task({ requires: { installables: ["@omniralph/graph"], hostTools: ["opengrep"] } }),
+        agent: agent({ tools: { mcpServers: ["@omniralph/graph:graph"] } }),
+        trigger: { kind: "pr.updated", context: { pr: { number: 42 } } },
+        repositoryId: REPO_ID,
+      },
+      { dataDir, hostToolPath: () => "/opt/opengrep/bin/opengrep" },
+    );
+    const cacheDir = path.join(dataDir, "cache", "@omniralph", "graph", REPO_ID);
+    const prCacheDir = path.join(dataDir, "pr-cache", "@omniralph", "graph", REPO_ID, "42");
+    const env = { OMNIRALPH_CACHE_DIR: cacheDir, OMNIRALPH_PR_CACHE_DIR: prCacheDir };
+    expect(executables.commandEnv.get("graph-index")).toEqual(env);
+    expect(executables.mcpServers?.servers.omniralph_graph_graph?.env).toEqual(env);
+    expect(path.relative(cacheDir, prCacheDir).startsWith("..")).toBe(true);
+    expect((await stat(prCacheDir)).isDirectory()).toBe(true);
+    // The host tool keeps its name and gets no installable cache.
+    expect(executables.commandEnv.has("opengrep")).toBe(false);
+  });
+
+  it("gives no cache to a run without a repository", async () => {
+    await placeInstallable(dataDir, GRAPH);
+    const executables = await resolveRunExecutables(
+      {
+        task: task(),
+        agent: agent({ tools: { mcpServers: ["@omniralph/graph:graph"] } }),
+        trigger: { kind: "pr.updated", context: { pr: { number: 42 } } },
+        repositoryId: null,
+      },
+      { dataDir },
+    );
+    expect(executables.commandEnv.get("graph-index")).toEqual({});
+    expect(executables.mcpServers?.servers.omniralph_graph_graph).not.toHaveProperty("env");
+    await expect(stat(path.join(dataDir, "cache"))).rejects.toThrow();
+  });
+
   it("retries a run whose host tool is unavailable", async () => {
     const spec = {
       task: task({ requires: { installables: [], hostTools: ["opengrep"] } }),
@@ -173,6 +236,31 @@ describe("resolveRunExecutables", () => {
   });
 });
 
+describe("runPrNumber", () => {
+  it("reads pr.number of the PR triggers", () => {
+    for (const kind of [
+      "pr.updated",
+      "pr.mention",
+      "review.rerun",
+      "finding.mention",
+      "pr.review-findings",
+      "pr.ci-failed",
+      "pr.fix-command",
+    ] as const) {
+      expect(runPrNumber({ kind, context: { pr: { number: 12 } } })).toBe(12);
+    }
+  });
+
+  it("is null for other triggers and invalid numbers", () => {
+    expect(runPrNumber(undefined)).toBeNull();
+    expect(runPrNumber({ kind: "chat.request", context: { pr: { number: 12 } } })).toBeNull();
+    expect(runPrNumber({ kind: "run.invoked", context: { pr: { number: 12 } } })).toBeNull();
+    for (const pr of [undefined, null, 12, { number: "12" }, { number: 0 }, { number: 1.5 }]) {
+      expect(runPrNumber({ kind: "pr.updated", context: { pr } })).toBeNull();
+    }
+  });
+});
+
 describe("installableMcpServerName", () => {
   it("keeps letters, digits, _ and -", () => {
     expect(installableMcpServerName("@omniralph/code-graph", "graph.v2")).toBe(
@@ -185,6 +273,7 @@ describe("installableMcpServerName", () => {
 describe("sessionMcpServers", () => {
   const installable = {
     commands: new Map(),
+    commandEnv: new Map(),
     mcpServers: {
       servers: { semgrep_scan: { type: "stdio" as const, command: "/x/scan.js", args: [] } },
       allowedTools: ["mcp__semgrep_scan"],

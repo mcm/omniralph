@@ -181,6 +181,7 @@ export async function runQueryTask(
     env: withoutJobEnv(ctx.env()),
     logger: log,
     executables: executables.commands,
+    executableEnv: executables.commandEnv,
   });
 
   const run = async (workspace: Workspace): Promise<QueryRunResult> => {

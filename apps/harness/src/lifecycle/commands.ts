@@ -19,6 +19,12 @@ export interface CommandOptions {
    * one runs that path instead (`resolveCommand`).
    */
   executables?: ReadonlyMap<string, string>;
+  /**
+   * Extra environment by command name (an installable command's cache
+   * directories), added after `OMNIRALPH_*` is stripped for a command whose
+   * first word names one.
+   */
+  executableEnv?: ReadonlyMap<string, Readonly<Record<string, string>>>;
 }
 
 /** What one command did. */
@@ -84,6 +90,16 @@ export function resolveCommand(
   const resolved = match ? commands.get(match[2]!) : undefined;
   if (!match || resolved === undefined) return command;
   return `${match[1]}${shellQuote(resolved)}${command.slice(match[0].length)}`;
+}
+
+/**
+ * A setup or teardown command's environment: `commandEnv(options.env)` plus
+ * the extra environment of the executable its first word names, if any.
+ */
+function commandEnvFor(command: string, options: CommandOptions): NodeJS.ProcessEnv {
+  const name = FIRST_WORD.exec(command)?.[2];
+  const extra = name === undefined ? undefined : options.executableEnv?.get(name);
+  return { ...commandEnv(options.env), ...extra };
 }
 
 function tail(text: string, max: number): string {
@@ -220,7 +236,7 @@ export async function runSetupCommands(
     const timeoutMs = command.timeoutSeconds * 1000;
     const outcome = await runCommand(resolveCommand(command.command, options.executables), {
       cwd: options.cwd,
-      env: commandEnv(options.env),
+      env: commandEnvFor(command.command, options),
       timeoutMs,
       maxStdoutBytes: command.maxOutputBytes,
       signal: options.signal,
@@ -270,7 +286,7 @@ export async function runTeardownCommands(
     const timeoutMs = command.timeoutSeconds * 1000;
     const outcome = await runCommand(resolveCommand(command.command, options.executables), {
       cwd: options.cwd,
-      env: commandEnv(options.env),
+      env: commandEnvFor(command.command, options),
       timeoutMs,
       maxStdoutBytes: command.maxOutputBytes,
     });
