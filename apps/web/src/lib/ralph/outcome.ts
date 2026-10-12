@@ -22,6 +22,7 @@ import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@o
 import { jobMaxAttempts } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
+import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
 import type { RalphDeps } from "./run";
@@ -109,6 +110,11 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
     // A coding run's story gets its task's attempts.
     const maxAttempts = jobMaxAttempts(job);
+    if (parsed?.success && parsed.data.hiddenRef) {
+      // The story commits sit on the run's hidden ref: deleted once the run is over.
+      const repositoryId = (await storyLane(ctx.tx, ctx.run, story))?.repositoryId;
+      if (repositoryId) await recordStoryHiddenRef(ctx.tx, ctx.run, repositoryId, parsed.data);
+    }
     if (parsed?.success) await applyStoryResult(ctx, story, parsed.data, maxAttempts);
     else {
       const why = parsed ? "the agent sent an invalid result" : jobFailure(job);

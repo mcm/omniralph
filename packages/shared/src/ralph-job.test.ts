@@ -110,8 +110,26 @@ describe("ralph jobs", () => {
       unmerged: 0,
       stashes: [],
       handled: 0,
+      deletedRefs: [],
       durationMs: 1,
     });
+    // Deleting a finished run's hidden refs needs no action; nothing but hidden refs is accepted.
+    const hiddenRef = ralphHiddenRef("8b0b4a2e-7a0b-4f5e-9c43-2f1a5d1f2e3c");
+    expect(RalphCleanupPayload.parse({ ...cleanup, hiddenRefs: [hiddenRef] })).toMatchObject({
+      hiddenRefs: [hiddenRef],
+    });
+    expect(
+      RalphCleanupPayload.parse({ ...cleanup, hiddenRefs: [hiddenRef] }).action,
+    ).toBeUndefined();
+    for (const hiddenRefs of [
+      undefined,
+      [],
+      ["refs/heads/main"],
+      ["refs/omniralph/runs/not-a-run"],
+      [`${hiddenRef}/../../heads/main`],
+    ]) {
+      expect(RalphCleanupPayload.safeParse({ ...cleanup, hiddenRefs }).success).toBe(false);
+    }
     expect(ralphStashPrefix("r")).toBe("omniralph ralph r ");
     expect(ralphHiddenRef("r")).toBe("refs/omniralph/runs/r");
     expect(ralphStashBranch("ENG-1")).toBe("ralph/stash/eng-1");

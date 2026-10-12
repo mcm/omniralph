@@ -484,11 +484,25 @@ export const RalphCleanupAction = z.discriminatedUnion("kind", [
 ]);
 export type RalphCleanupAction = z.infer<typeof RalphCleanupAction>;
 
-/** Payload of a `ralph.cleanup` job, on the run's sticky agent (it holds the worktree). */
+/** Most hidden refs one cleanup deletes. */
+export const MAX_CLEANUP_HIDDEN_REFS = 50;
+
+/**
+ * Payload of a `ralph.cleanup` job (and a `worktree.cleanup` RPC), on the
+ * run's sticky agent when it has an `action` (it holds the worktree).
+ */
 export const RalphCleanupPayload = RalphJobBase.extend({
   /** The epic, which names the stash branch. */
   epic: RalphIssue.pick({ identifier: true }),
-  action: RalphCleanupAction,
+  /** Absent: only `hiddenRefs` are deleted (on any harness). */
+  action: RalphCleanupAction.optional(),
+  /**
+   * Hidden refs (`ralphHiddenRef`) of finished runs to delete on `origin`
+   * after the action; nothing else may be listed (no branch is ever deleted).
+   */
+  hiddenRefs: z.array(RalphHiddenRef).max(MAX_CLEANUP_HIDDEN_REFS).optional(),
+}).refine((payload) => !!payload.action || (payload.hiddenRefs?.length ?? 0) > 0, {
+  message: "Give an action or hidden refs to delete",
 });
 export type RalphCleanupPayload = z.infer<typeof RalphCleanupPayload>;
 
@@ -518,6 +532,8 @@ export const RalphCleanupResult = z.object({
   stashes: z.array(RalphCleanupStash).max(200).default([]),
   /** `stashes`: how many entries were pushed or dropped. */
   handled: z.int().min(0).default(0),
+  /** The payload's `hiddenRefs` no longer on `origin` (deleted now, or already gone). */
+  deletedRefs: z.array(z.string().min(1).max(255)).max(MAX_CLEANUP_HIDDEN_REFS).default([]),
   durationMs: z.int().min(0),
 });
 export type RalphCleanupResult = z.infer<typeof RalphCleanupResult>;

@@ -1712,6 +1712,36 @@ export const ralphLanes = pgTable(
   ],
 );
 
+/**
+ * A run's hidden ref (`refs/omniralph/runs/<run>`, outside `refs/heads/`) on
+ * a repository's `origin`: a run whose story task pushes only at the end
+ * keeps its story commits there. Recorded from story outcomes; a
+ * `worktree.cleanup` RPC deletes it on `origin` once the run is over (or the
+ * age sweep finds it), which sets `deleted_at`.
+ */
+export const hiddenRefs = pgTable(
+  "hidden_refs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    runId: uuid("run_id")
+      .notNull()
+      .references((): AnyPgColumn => ralphRuns.id, { onDelete: "cascade" }),
+    ref: text("ref").notNull(),
+    /** The SHA last pushed to it. */
+    sha: text("sha").notNull(),
+    createdAt: createdAt(),
+    /** When it was deleted on `origin` (null: still there, as far as we know). */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("hidden_refs_repository_ref_uq").on(t.repositoryId, t.ref),
+    index("hidden_refs_run_idx").on(t.runId),
+  ],
+);
+
 /** One story (Linear sub-issue, or the single issue) of a run. */
 export const ralphStories = pgTable(
   "ralph_stories",

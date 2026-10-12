@@ -294,6 +294,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     unmerged: 0,
     stashes: [],
     handled: 0,
+    deletedRefs: [],
     durationMs: 5,
     ...overrides,
   });

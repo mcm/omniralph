@@ -572,6 +572,45 @@ export class RepoCache {
     );
   }
 
+  /**
+   * Deletes the hidden ref `ref` (`refs/omniralph/runs/<run>`, nothing else)
+   * on `origin`, and the cached copy. Returns false when `origin` didn't have
+   * it (that's fine). A repository not cloned here isn't cloned for it: the
+   * push runs from an empty scratch repository.
+   */
+  async deleteHiddenRef(
+    repo: JobRepository,
+    ref: string,
+    options: GitJobOptions,
+  ): Promise<boolean> {
+    await this.checkHiddenRef(ref);
+    const remove = async (cwd: string, remote: string) => {
+      const git = (args: string[]) => this.runGit(args, { ...options, cwd });
+      const listed = (await git(["ls-remote", "--refs", remote, ref])).trim();
+      if (!listed.split("\n").some((line) => line.split(/\s+/)[1] === ref)) return false;
+      await git(["push", "--quiet", remote, `:${ref}`]);
+      return true;
+    };
+    const repoDir = this.repoDir(repo);
+    if (await exists(path.join(repoDir, "HEAD"))) {
+      return this.withRepoLock(repo, options.signal, async () => {
+        const existed = await remove(repoDir, "origin");
+        await this.runGit(["update-ref", "-d", ref], { ...options, cwd: repoDir }).catch(
+          () => undefined,
+        );
+        return existed;
+      });
+    }
+    const scratch = path.join(this.workspaceRoot, TMP_DIR, randomUUID());
+    await mkdir(scratch, { recursive: true });
+    try {
+      await this.runGit(["init", "--quiet", "--bare", scratch], options);
+      return await remove(scratch, repo.cloneUrl);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
   /** Deletes the local `branch`; one that's already gone is fine. */
   async deleteBranch(repo: JobRepository, branch: string, options: GitJobOptions): Promise<void> {
     await this.checkBranchName(branch);

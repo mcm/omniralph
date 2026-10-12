@@ -8,6 +8,7 @@ import {
   ensureChatThread,
   saveChatConnection,
   harnesses,
+  hiddenRefs,
   completeJob,
   connectRepository,
   closeDb,
@@ -47,6 +48,8 @@ import {
   type RalphDescribePrPayload,
   type RalphPushResult,
   RalphStoryPayload,
+  WorktreeCleanupPayload,
+  type WorktreeCleanupResult,
   type RalphDescribePrResult,
   type RalphRequestResult,
   type RalphStoryResult,
@@ -62,7 +65,7 @@ import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { taskSink } from "@/lib/sinks";
 import { describePrPayload, ralphJobPayload } from "./coding";
-import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
 import type { Adapter } from "chat";
@@ -1013,7 +1016,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
     afterEach(async () => {
       vi.restoreAllMocks();
-      await db.update(repositories).set({ codingPath: "legacy" });
+      await db
+        .update(repositories)
+        .set({ codingPath: "legacy", storyTaskId: "builtin:implement-story" });
       await setEarly(false);
     });
 
@@ -1070,6 +1075,56 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expectRalphHooks(job);
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
       return payload;
+    }
+
+    /** The run's recorded hidden refs: ref, SHA, deleted. */
+    const recordedHiddenRefs = async (runId: string) =>
+      (await db.select().from(hiddenRefs).where(eq(hiddenRefs.runId, runId))).map((r) => ({
+        repositoryId: r.repositoryId,
+        ref: r.ref,
+        sha: r.sha,
+        deleted: r.deletedAt !== null,
+      }));
+
+    /**
+     * Plays a harness's part for the queued deletion of the run's hidden refs
+     * (a `worktree.cleanup` RPC with only `hiddenRefs`, on any harness): claimed
+     * by `agentB`, which never held the run, and reporting `deletedRefs`.
+     */
+    async function deleteHiddenRefs(runId: string, deletedRefs: string[]): Promise<Job> {
+      const job = await activeJob(runId);
+      expect(job).toMatchObject({
+        type: "worktree.cleanup",
+        taskType: "system",
+        pool: null,
+        targetHarnessId: null,
+        repositoryId: repoId,
+      });
+      const payload = WorktreeCleanupPayload.parse(job.payload);
+      expect(payload.action).toBeUndefined();
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentB,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: null,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      const result: WorktreeCleanupResult = {
+        error: null,
+        removedWorktree: false,
+        hadBranch: false,
+        stashed: null,
+        unmerged: 0,
+        stashes: [],
+        handled: 0,
+        deletedRefs,
+        durationMs: 10,
+      };
+      await completeJob(db, { jobId: job.id, harnessId: agentB, result });
+      await onRalphCleanupJobFinished(db, (await getJob(db, job.id))!, deps());
+      return job;
     }
 
     /** Story results of a run pushing only at the end: the commit is on the hidden ref. */
@@ -1150,7 +1205,69 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         prNumber: 1,
         prJobId: null,
       });
-      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
+
+      // The stories' hidden ref was recorded (at the last story's commit) and, the run being
+      // over, is deleted on origin by any harness.
+      const ref = ralphHiddenRef(run.id);
+      expect(await recordedHiddenRefs(run.id)).toEqual([
+        { repositoryId: repoId, ref, sha: sha(172), deleted: false },
+      ]);
+      const deletion = await deleteHiddenRefs(run.id, [ref]);
+      expect(WorktreeCleanupPayload.parse(deletion.payload)).toMatchObject({
+        runId: run.id,
+        repositoryId: repoId,
+        branch: "feat/widgets",
+        hiddenRefs: [ref],
+      });
+      expect(await recordedHiddenRefs(run.id)).toEqual([
+        { repositoryId: repoId, ref, sha: sha(172), deleted: true },
+      ]);
+      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(5);
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+    });
+
+    it("deletes the hidden ref of a run that failed, and keeps one the result doesn't report", async () => {
+      storyTaskWith({ pushTiming: "end" });
+      const epic = linear.add({
+        identifier: "ENG-180",
+        title: "Gears",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/gears`,
+      });
+      linear.add({ identifier: "ENG-181", title: "First", parentId: epic.id, priority: 1 });
+      linear.add({ identifier: "ENG-182", title: "Second", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+      // The next story can't be enqueued: the repository's story task isn't a coding task.
+      await db.update(repositories).set({ storyTaskId: "builtin:describe-pr" });
+      await work(run.id, onHiddenRef(run.id, sha(181)));
+      expect(await getRun(db, run.id)).toMatchObject({ status: "failed" });
+
+      const ref = ralphHiddenRef(run.id);
+      expect(await recordedHiddenRefs(run.id)).toEqual([
+        { repositoryId: repoId, ref, sha: sha(181), deleted: false },
+      ]);
+      await deleteHiddenRefs(run.id, []);
+      expect(await recordedHiddenRefs(run.id)).toEqual([
+        { repositoryId: repoId, ref, sha: sha(181), deleted: false },
+      ]);
+    });
+
+    it("keeps the hidden ref of a waiting or stopped run", async () => {
+      storyTaskWith({ pushTiming: "end" });
+      const epic = linear.add({
+        identifier: "ENG-185",
+        title: "Cogs",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/cogs`,
+      });
+      linear.add({ identifier: "ENG-186", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      await work(run.id, onHiddenRef(run.id, sha(186)));
+      await push(run.id, { jobError: "the remote rejected the push" });
+      expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await recordedHiddenRefs(run.id)).toEqual([
+        { repositoryId: repoId, ref: ralphHiddenRef(run.id), sha: sha(186), deleted: false },
+      ]);
     });
 
     it("waits when the push fails, and a reply retries it", async () => {

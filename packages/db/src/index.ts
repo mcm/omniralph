@@ -189,6 +189,13 @@ export {
 } from "./jobs.js";
 export { listPoolNames, seedPools } from "./pools.js";
 export {
+  listHiddenRefsToDelete,
+  listRunHiddenRefs,
+  markHiddenRefsDeleted,
+  recordHiddenRef,
+  type HiddenRef,
+} from "./hidden-refs.js";
+export {
   CANCELED_REVIEW_ERROR,
   createReview,
   createReviewRun,

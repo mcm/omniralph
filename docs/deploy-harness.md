@@ -482,7 +482,11 @@ and deletes the local branch (keeping a branch with unmerged commits until someo
 Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). After a PR/MR closes
 without merging, or the run is stopped, the same RPC stashes uncommitted work and removes the
 worktree but keeps the local branch (a resumed run recreates the worktree from it; a local branch
-ahead of `origin` is never reset). Nothing deletes a branch on `origin`. Worktrees of repositories
+ahead of `origin` is never reset). Nothing deletes a branch on `origin`. A run whose story task
+pushes only at the end keeps its story commits on a hidden ref (`refs/omniralph/runs/<run>`); once
+the run completes or fails, a `worktree.cleanup` RPC with only those refs (on any harness, no repository
+clone needed) deletes them on `origin` with git. The daily `prune-hidden-refs` cron catches missed
+ones and deletes refs older than 14 days whose run isn't running (a stopped run keeps its ref until then). Worktrees of repositories
 with **Clean up after the merge** off, and of a harness that was revoked stay: delete `<workspaceRoot>/.branches/<provider>/<host>/<repo path>/<branch>` while
 the harness isn't running a job for it, then
 `git -C <workspaceRoot>/<provider>/<host>/<repo path> worktree prune`.
