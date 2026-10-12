@@ -241,6 +241,17 @@ are `mcp__<package>_<server>__<tool>`, with every character but letters, digits,
 replaced by `_` and no leading `_`, e.g. `mcp__omniralph_code-graph_graph__<tool>`). A run whose
 host tool or installable is missing on the harness that claimed it is retried after a minute.
 
+Each installable gets cache directories on the harness, passed to its commands (as setup or
+teardown commands) and MCP servers: `OMNIRALPH_CACHE_DIR`, the run's repository cache
+(`<dataDir>/cache/<package>/<repository id>/`), and on a PR trigger (`pr.updated`, `pr.mention`,
+`review.rerun`, `finding.mention`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`)
+`OMNIRALPH_PR_CACHE_DIR`, the PR's cache (`<dataDir>/pr-cache/<package>/<repository id>/<number>/`).
+The PR caches are a separate tree, never inside a repository cache, so data derived from an
+untrusted PR must only go to the PR cache, which other runs never read. The installable owns
+what's inside (including keying by commit, e.g. an index per base commit). Caches are
+best-effort: nothing is stored in the control panel, and a run on another harness starts cold.
+A run without a repository gets neither variable.
+
 ## Delete refusals
 
 **Delete** (custom definitions only, after a confirmation) is refused, with nothing deleted, when:

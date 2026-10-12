@@ -164,6 +164,7 @@ export async function runReviewTask(
       env: withoutJobEnv(ctx.env()),
       logger: log,
       executables: executables.commands,
+      executableEnv: executables.commandEnv,
       signal: ctx.signal,
     });
     const input: RunReviewInput = {
@@ -294,6 +295,7 @@ export async function runReviewTask(
           env: withoutJobEnv(ctx.env()),
           logger: log,
           executables: executables.commands,
+          executableEnv: executables.commandEnv,
         });
       }
     },

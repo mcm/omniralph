@@ -957,6 +957,57 @@ describe("runQueryTask", () => {
       await expectTornDown();
     });
 
+    it("gives installable commands and MCP servers their repository and PR caches", async () => {
+      const dataDir = path.join(root, "data");
+      await placeInstallable(
+        dataDir,
+        {
+          name: "@omniralph/graph",
+          version: "1.0.0",
+          omniralph: {
+            commands: [{ name: "graph-index", bin: "bin/index.sh" }],
+            mcpServers: [{ name: "graph", command: "bin/server.sh" }],
+          },
+        },
+        {
+          "bin/index.sh":
+            '#!/bin/sh\necho "$OMNIRALPH_CACHE_DIR|$OMNIRALPH_PR_CACHE_DIR|${OMNIRALPH_JOB_TOKEN:-none}"\n',
+          "bin/server.sh": "#!/bin/sh\n",
+        },
+      );
+      const repositoryId = "0b6f3c7e-2a1d-4c5b-9e8f-7a6b5c4d3e2f";
+      const fake = answering();
+      await runQueryTask(
+        spec({
+          agent: agentFixture({
+            tools: { builtin: ["Read"], mcpServers: ["@omniralph/graph:graph"] },
+          }),
+          task: taskFixture({
+            promptTemplate: "{{setup.index}}|{{setup.plain}}",
+            setupCommands: [
+              { name: "index", command: "graph-index" },
+              { name: "plain", command: 'echo "${OMNIRALPH_CACHE_DIR:-none}"' },
+            ],
+          }),
+          trigger: { kind: "pr.mention", context: { repository: "acme/app", pr: { number: 9 } } },
+          repositoryId,
+        }),
+        { ...context(), dataDir },
+        { runner: createSessionRunner(fake.query), tmpDir: tmp },
+      );
+      const cacheDir = path.join(dataDir, "cache", "@omniralph", "graph", repositoryId);
+      const prCacheDir = path.join(dataDir, "pr-cache", "@omniralph", "graph", repositoryId, "9");
+      expect(fake.calls[0]?.prompt).toBe(
+        [fence(`${cacheDir}|${prCacheDir}|none`), fence("none")].join("|"),
+      );
+      expect(fake.calls[0]?.options.mcpServers).toMatchObject({
+        omniralph_graph_graph: {
+          env: { OMNIRALPH_CACHE_DIR: cacheDir, OMNIRALPH_PR_CACHE_DIR: prCacheDir },
+        },
+      });
+      await expectTornDown();
+    });
+
     it("retries a run whose host tool isn't available, without running anything", async () => {
       const fake = answering();
       await expect(

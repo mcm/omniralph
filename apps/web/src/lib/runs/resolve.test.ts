@@ -127,6 +127,7 @@ describe("resolveRunSpec", () => {
         fullPath: "acme/app",
         cloneUrl: "https://github.com/acme/app.git",
       },
+      repositoryId: REPO_ID,
       ref: "abc123",
       requireCheckout: true,
       tools: { allowedTools: [], disallowedTools: [] },
@@ -152,7 +153,12 @@ describe("resolveRunSpec", () => {
         tokens,
         definitions({ tokenBudget: null }),
       );
-      expect(spec).toMatchObject({ model: "haiku", repository: null, ref: null });
+      expect(spec).toMatchObject({
+        model: "haiku",
+        repository: null,
+        repositoryId: null,
+        ref: null,
+      });
       expect(spec.requireCheckout).toBe(false);
     });
 

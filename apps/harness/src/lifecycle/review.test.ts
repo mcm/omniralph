@@ -539,6 +539,7 @@ ${diff}
     it("attaches the run's installable MCP servers to sessions with tools only", () => {
       const executables = {
         commands: new Map<string, string>(),
+        commandEnv: new Map(),
         mcpServers: {
           servers: { omniralph_graph_graph: { type: "stdio" as const, command: "/d/server.js" } },
           allowedTools: ["mcp__omniralph_graph_graph"],

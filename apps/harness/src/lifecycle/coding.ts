@@ -140,7 +140,10 @@ export function taskCommands(
     cwd,
     env: withoutJobEnv(ctx.env()),
     logger: log,
-    ...(executables && { executables: executables.commands }),
+    ...(executables && {
+      executables: executables.commands,
+      executableEnv: executables.commandEnv,
+    }),
   });
   return {
     setup: (cwd: string) =>

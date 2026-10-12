@@ -80,6 +80,11 @@ export const RunSpec = z.object({
   task: TaskDefinition,
   trigger: RunTrigger,
   repository: JobRepository.nullable(),
+  /**
+   * The ID of `repository` (null with none), keying the harness's installable
+   * caches; absent from control panels before it was added.
+   */
+  repositoryId: z.uuid().nullable().optional(),
   /** Commit or branch to check out; null for none. */
   ref: z.string().min(1).nullable(),
   /** Finish without a session when `ref` is missing. */
