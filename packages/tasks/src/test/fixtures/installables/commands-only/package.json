@@ -1,0 +1,12 @@
+{
+  "name": "omniralph-test-commands",
+  "version": "0.1.0-beta.1",
+  "omniralph": {
+    "commands": [
+      {
+        "name": "sast",
+        "bin": "dist/sast.js"
+      }
+    ]
+  }
+}
