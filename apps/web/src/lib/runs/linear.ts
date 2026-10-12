@@ -18,21 +18,21 @@ import type {
   LinearDocument,
   LinearGateway,
 } from "@/lib/linear/gateway";
-import { BUILTIN_DEFINITIONS, type DefinitionSource } from "./resolve";
+import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
 
 /**
  * The Linear tools a job's run may call: those its task's agent lists, when
  * the task turns on `toolSettings.linearRead`. None for a legacy job or an
  * unknown task.
  */
-export function runLinearTools(
+export async function runLinearTools(
   job: Pick<Job, "taskId">,
-  definitions: DefinitionSource = BUILTIN_DEFINITIONS,
-): LinearTool[] {
+  definitions: DefinitionSource,
+): Promise<LinearTool[]> {
   if (job.taskId === null) return [];
-  const task = definitions.getTask(job.taskId);
+  const task = await definitions.getTask(job.taskId);
   if (!task?.toolSettings.linearRead) return [];
-  return definitions.getAgent(task.agentId)?.tools.linear ?? [];
+  return (await definitions.getAgent(task.agentId))?.tools.linear ?? [];
 }
 
 export function runLinearIssue(issue: IssueSummary): RunLinearIssue {
@@ -100,7 +100,8 @@ export async function serveRunLinearTool(
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  if (!runLinearTools(job).includes(tool)) {
+  const tools = await runLinearTools(job, organizationDefinitions(db, job.organizationId));
+  if (!tools.includes(tool)) {
     return Response.json({ error: "linear_tool_not_allowed" }, { status: 403 });
   }
 

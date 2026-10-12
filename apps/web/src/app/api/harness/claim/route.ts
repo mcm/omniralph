@@ -10,6 +10,7 @@ import { requireHarness } from "@/lib/harness-auth/verify";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
 /** Room above `MAX_CLAIM_WAIT_SECONDS` for the last claim and the response. */
@@ -96,7 +97,10 @@ async function claimNext(
     for (const job of settled) await onSettled(db, job);
     if (!claim || !tokens) return null;
 
-    const handler = jobHooks(claim.job);
+    const handler = await jobHooks(
+      claim.job,
+      organizationDefinitions(db, claim.job.organizationId),
+    );
     if (handler?.onStarted) {
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
@@ -112,7 +116,7 @@ async function claimNext(
 }
 
 async function onSettled(db: Database, { outcome, job }: SettledJob): Promise<void> {
-  const handler = jobHooks(job);
+  const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
   if (outcome === "failed") {
     await handler?.onFailed?.(db, job, job.error ?? "Gave up after too many deliveries");
   } else {

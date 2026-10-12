@@ -728,6 +728,55 @@ export const reviewProfiles = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.id] })],
 );
 
+// ── Agent and task definitions ───────────────────────────────────────────────
+
+/**
+ * An organization's own agent definition (`@omniralph/tasks`
+ * `AgentDefinition`, validated by the control panel when read). Built-in
+ * agents stay in code under `builtin:<name>` IDs, so they never clash with
+ * these UUIDs.
+ */
+export const agentDefinitions = pgTable(
+  "agent_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("agent_definitions_organization_id_idx").on(t.organizationId)],
+);
+
+/**
+ * An organization's own task definition (`@omniralph/tasks`
+ * `TaskDefinition`) with the run requirements derived from it when it was
+ * saved (`TaskRequirements`: installables, host tools, minimum harness
+ * version), so enqueueing and claiming don't derive them again.
+ */
+export const taskDefinitions = pgTable(
+  "task_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    requirements: jsonb("requirements").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("task_definitions_organization_id_idx").on(t.organizationId)],
+);
+
 export interface RepositoryTriggers {
   onOpen: boolean;
   onPush: boolean;

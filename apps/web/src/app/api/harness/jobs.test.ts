@@ -8,7 +8,9 @@ import {
   feedback,
   findings,
   jobs,
+  insertAgentDefinition,
   insertMessage,
+  insertTaskDefinition,
   listHarnessAudit,
   listMessages,
   ralphRuns,
@@ -610,6 +612,66 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       expect(await jobRow(jobId)).toMatchObject({
         status: "failed",
         error: "Task builtin:learn-rule can't be triggered by chat.request",
+      });
+    });
+
+    /** A custom query task of `organizationId` on `agentId`, like the fixture built-ins. */
+    async function customTask(organizationId: string, agentId: string) {
+      return insertTaskDefinition(db, organizationId, {
+        name: "Custom rule writer",
+        definition: {
+          taskType: "query",
+          agentId,
+          triggers: ["finding.dismissed"],
+          promptTemplate: "{{finding.title}}",
+          sink: "learned-rule",
+          pool: "short",
+          tokenBudget: { tokens: 7000 },
+        },
+        requirements: {},
+        createdBy: null,
+      });
+    }
+
+    it("resolves the run spec of the organization's custom task, on a built-in or custom agent", async () => {
+      const { organizationId, agent, job } = await claimOrg();
+      const customAgent = await insertAgentDefinition(db, organizationId, {
+        name: "Custom agent",
+        definition: {
+          systemPrompt: "You write rules.",
+          taskTypes: ["query"],
+          tools: { builtin: ["Read"] },
+        },
+        createdBy: null,
+      });
+      for (const agentId of ["builtin:test-agent", customAgent.id]) {
+        const task = await customTask(organizationId, agentId);
+        const jobId = await job("claim.run", { taskId: task.id, payload: RUN_PAYLOAD });
+        const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
+        if (body.action !== "run") throw new Error("expected run");
+        expect(JobStartResponse.safeParse(body).success).toBe(true);
+        expect(body.runSpec).toMatchObject({
+          jobId,
+          taskType: "query",
+          pool: "short",
+          agent: { id: agentId },
+          task: { id: task.id, name: "Custom rule writer", agentId },
+          trigger: RUN_PAYLOAD.trigger,
+          tokenBudget: 7000,
+        });
+      }
+      expect((await claimAs(agent.accessToken)).status).toBe(204);
+    });
+
+    it("fails a run-spec job whose task belongs to another organization", async () => {
+      const { agent, job } = await claimOrg();
+      const theirs = await customTask(orgId, "builtin:test-agent");
+      const jobId = await job("claim.run", { taskId: theirs.id, payload: RUN_PAYLOAD });
+      expect((await claimAs(agent.accessToken)).status).toBe(204);
+      expect(await jobRow(jobId)).toMatchObject({
+        status: "failed",
+        error: `Unknown task ${theirs.id}`,
+        deliveryCount: 0,
       });
     });
 

@@ -61,6 +61,7 @@ const { pinRepository } = await import("@/lib/harnesses/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
 const { ralphJobInput } = await import("@/lib/ralph/coding");
+const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("@/lib/runs/job");
 const { signJobTokens } = await import("@/lib/harness-api/jobs");
 
@@ -517,17 +518,19 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
           const runId = randomUUID();
           const routed =
             type === "ralph.story"
-              ? ralphJobInput(
+              ? await ralphJobInput(
                   type,
                   { codingPath },
                   { taskId: "builtin:implement-story", trigger: "linear.delegated" },
                   storyPayload(runId),
+                  BUILTIN_DEFINITIONS,
                 )
-              : ralphJobInput(
+              : await ralphJobInput(
                   type,
                   { codingPath },
                   { taskId: "builtin:handle-request", trigger: "linear.mention" },
                   requestPayload(runId),
+                  BUILTIN_DEFINITIONS,
                 );
           if (!routed) throw new Error("expected a coding task");
           return claimEnqueued({

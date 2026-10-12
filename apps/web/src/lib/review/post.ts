@@ -12,8 +12,8 @@ import type { ReviewResult } from "@omniralph/engine";
 import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
 import { REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
 import { getAppUrl } from "@/lib/app-url";
+import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
 import { connectionBotHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -54,9 +54,14 @@ export async function repositoryTarget(
   };
 }
 
-/** A review task's name (its ID when it isn't a known task). */
-export function reviewTaskName(taskId: string): string {
-  return getBuiltinTask(taskId)?.name ?? taskId;
+/** Review task names by ID, looked up once: a task's name, or its ID when it isn't a known task. */
+export async function reviewTaskNames(
+  definitions: DefinitionSource,
+  taskIds: Iterable<string>,
+): Promise<(taskId: string) => string> {
+  const names = new Map<string, string>();
+  for (const id of new Set(taskIds)) names.set(id, (await definitions.getTask(id))?.name ?? id);
+  return (taskId) => names.get(taskId) ?? taskId;
 }
 
 /**
@@ -66,6 +71,7 @@ export function reviewTaskName(taskId: string): string {
 function inlineComment(
   row: FindingRow,
   ctx: SanitizeContext,
+  taskName: (taskId: string) => string,
   taskOrder: readonly (string | null)[] = [],
 ): InlineComment {
   const { title, body, suggestion } = sanitizeFinding(row, ctx);
@@ -78,7 +84,7 @@ function inlineComment(
   const footer = [
     row.category,
     `confidence ${confidence}%`,
-    ...(tasks.length > 0 ? [sanitizeTitle(tasks.map(reviewTaskName).join(", "), ctx)] : []),
+    ...(tasks.length > 0 ? [sanitizeTitle(tasks.map(taskName).join(", "), ctx)] : []),
   ].join(" · ");
   return {
     path: row.path,
@@ -109,8 +115,21 @@ function finishedReview(review: Review): boolean {
 }
 
 /** The task name of a review of a review run. */
-function reviewTaskLabel(review: Review): string {
-  return review.taskId ? reviewTaskName(review.taskId) : "Review";
+function reviewTaskLabel(review: Review, taskName: (taskId: string) => string): string {
+  return review.taskId ? taskName(review.taskId) : "Review";
+}
+
+/** Names of the tasks of a review run's reviews and of the tasks that reported `rows`. */
+function runTaskNames(
+  db: Database,
+  run: Pick<ReviewRun, "organizationId">,
+  reviews: readonly Review[],
+  rows: readonly FindingRow[] = [],
+): Promise<(taskId: string) => string> {
+  return reviewTaskNames(organizationDefinitions(db, run.organizationId), [
+    ...reviews.flatMap((r) => (r.taskId ? [r.taskId] : [])),
+    ...rows.flatMap((row) => row.sourceTaskIds),
+  ]);
 }
 
 /**
@@ -187,13 +206,14 @@ export async function postReviewRun(db: Database, reviewRunId: string): Promise<
     const finishedIds = new Set(finished.map((r) => r.id));
     const open = rows.filter((f) => f.status === "open" && finishedIds.has(f.reviewId));
     const { adapter, handle, repo, sanitize } = await repositoryTarget(db, run, run.prAuthor);
+    const taskName = await runTaskNames(db, run, reviews, open);
 
     const failed = reviews.filter((r) => r.status === "failed");
     const preamble = [
       ...(run.summary ? [sanitizeCapped(run.summary, sanitize, MAX_BODY_CHARS)] : []),
       ...(failed.length > 0
         ? [
-            `> [!CAUTION]\n> ${failed.length === 1 ? "This review task" : "These review tasks"} failed, so ${failed.length === 1 ? "its" : "their"} findings are missing: ${sanitizeTitle(failed.map(reviewTaskLabel).join(", "), sanitize)}.`,
+            `> [!CAUTION]\n> ${failed.length === 1 ? "This review task" : "These review tasks"} failed, so ${failed.length === 1 ? "its" : "their"} findings are missing: ${sanitizeTitle(failed.map((r) => reviewTaskLabel(r, taskName)).join(", "), sanitize)}.`,
           ]
         : []),
     ].join("\n\n");
@@ -207,6 +227,7 @@ export async function postReviewRun(db: Database, reviewRunId: string): Promise<
         inlineComment(
           row,
           sanitize,
+          taskName,
           reviews.map((r) => r.taskId),
         ),
       ),
@@ -233,9 +254,10 @@ async function postRunFailureNote(
   const failed = reviews.filter(
     (r) => r.status === "failed" || (r.status === "skipped" && r.error === CANCELED_REVIEW_ERROR),
   );
+  const taskName = await runTaskNames(db, run, failed);
   const errors = failed.map((r) => {
     const error = (r.error ?? "unknown error").replace(/\s+/g, " ").trim();
-    return failed.length === 1 ? error : `${reviewTaskLabel(r)}: ${error}`;
+    return failed.length === 1 ? error : `${reviewTaskLabel(r, taskName)}: ${error}`;
   });
   const error = sanitizeCapped(
     errors.join("; ") || (run.error ?? "unknown error"),

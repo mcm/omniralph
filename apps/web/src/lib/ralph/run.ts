@@ -70,6 +70,7 @@ import {
   storyTaskFor,
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
+import { organizationDefinitions } from "@/lib/definitions";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { notifyRunThread } from "./chat-notify";
@@ -346,7 +347,9 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
       const main = run.repositoryId
         ? await getRepositoryWithConnection(deps.db, run.repositoryId)
         : null;
-      const cap = storyLimits(main?.repository).maxIterationsPerRun;
+      const cap = (
+        await storyLimits(main?.repository, organizationDefinitions(deps.db, run.organizationId))
+      ).maxIterationsPerRun;
       if (run.iterations >= cap) {
         return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: cap });
       }
@@ -528,11 +531,12 @@ async function enqueueStory(
     attachments: payloadAttachments(attachments, story.key),
   });
   const taskId = storyTaskFor(found.repository);
-  const routed = ralphJobInput(
+  const routed = await ralphJobInput(
     RALPH_STORY_JOB_TYPE,
     found.repository,
     { taskId, trigger: "linear.delegated" },
     payload,
+    organizationDefinitions(deps.db, run.organizationId),
   );
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, found.repository, "stories"));
   const { job, created } = await deps.dispatcher.createAndPublish({
@@ -566,7 +570,7 @@ async function enqueueStory(
   await publishPlan(conversationFor(run, deps), await listStories(tx, run.id));
   await postActivity(conversationFor(run, deps), {
     type: "thought",
-    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${storyLimits(found.repository).maxAttemptsPerStory})`,
+    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${(await storyLimits(found.repository, organizationDefinitions(deps.db, run.organizationId))).maxAttemptsPerStory})`,
   });
   return { action: "enqueued", run: updated, story: running, jobId: job.id };
 }
@@ -600,7 +604,11 @@ async function publishLanes(
       const described =
         typeof found === "string"
           ? found
-          : push && pushTimingFor(found.repository) === "end"
+          : push &&
+              (await pushTimingFor(
+                found.repository,
+                organizationDefinitions(deps.db, run.organizationId),
+              )) === "end"
             ? await pushLane(deps, tx, run, { ...input, ...found, lanes })
             : await describeLane(deps, tx, run, { ...input, ...found, lanes });
       if (typeof described !== "string") return described;
@@ -668,9 +676,10 @@ async function pushLane(
   },
 ): Promise<AdvanceResult | string> {
   const { lane, repository, connection } = input;
-  const routing = pushJobInput(
+  const routing = await pushJobInput(
     repository,
     buildPushPayload({ run, lane, repository, connection, hiddenRef: ralphHiddenRef(run.id) }),
+    organizationDefinitions(deps.db, run.organizationId),
   );
   if (!routing) {
     return `I couldn't push \`${lane.branch}\`: ${notACodingTask(storyTaskFor(repository), repository, "stories")}`;
@@ -726,7 +735,7 @@ async function describeLane(
   const { lane, repository, connection } = input;
   const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
   const term = changeRequestTerm(repository.provider);
-  const routing = describePrJobInput(
+  const routing = await describePrJobInput(
     repository,
     buildDescribePrPayload({
       run,
@@ -736,6 +745,7 @@ async function describeLane(
       epic: input.epic,
       rows: laneRows(input.rows, lane, main),
     }),
+    organizationDefinitions(deps.db, run.organizationId),
   );
   if (typeof routing === "string") {
     return `I couldn't open the ${term}: writing its description failed: ${routing}.`;
@@ -851,14 +861,18 @@ async function enqueueRequest(
     resumeSessionId: resume,
     attachments: payloadAttachments(attachments),
     // Story commits may only be on the run's hidden ref yet: the request starts from them.
-    ...(pushTimingFor(repository) === "end" && { hiddenRef: ralphHiddenRef(run.id) }),
+    ...((await pushTimingFor(repository, organizationDefinitions(deps.db, run.organizationId))) ===
+      "end" && {
+      hiddenRef: ralphHiddenRef(run.id),
+    }),
   });
   const taskId = requestTaskFor(run, repository);
-  const routed = ralphJobInput(
+  const routed = await ralphJobInput(
     RALPH_REQUEST_JOB_TYPE,
     repository,
     { taskId, trigger: requestTrigger(input.requests) },
     payload,
+    organizationDefinitions(deps.db, run.organizationId),
   );
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, repository, "requests"));
   const { job, created } = await deps.dispatcher.createAndPublish({

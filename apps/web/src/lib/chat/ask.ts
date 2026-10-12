@@ -21,11 +21,11 @@ import {
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
+import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { queryClaimableHarnesses, type QueryHarnessStatus } from "@/lib/harnesses/claimable";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
-import { runSpecJobInput } from "@/lib/runs/job";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
@@ -224,13 +224,13 @@ export async function enqueueChatAsk(
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,
     type: CHAT_ASK_JOB_TYPE,
-    ...runSpecJobInput(task, {
+    ...(await taskJobInput(organizationDefinitions(db, input.organizationId), task, {
       trigger: { kind: "chat.request", context: trigger },
       repositoryId: repository.id,
       // A missing default branch (e.g. an empty repository) finishes with `no_checkout`.
       ref: defaultBranch,
       requireCheckout: true,
-    }),
+    })),
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
   });
   // The thread's query run: a follow-up's context, and the thread of the run's events.

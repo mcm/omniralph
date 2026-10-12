@@ -12,6 +12,7 @@ import {
 import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks, type JobHooks } from "@/lib/sinks";
 
 const REVOKED = "Harness revoked";
@@ -57,9 +58,9 @@ export async function revokeHarness(
     },
   });
 
-  await forEachJob(revoked.requeuedJobs, (h, job) => h.onRetry?.(db, job, REVOKED));
-  await forEachJob(revoked.canceledJobs, (h, job) => h.onCanceled?.(db, job));
-  await forEachJob(revoked.failedJobs, (h, job) => h.onFailed?.(db, job, REVOKED));
+  await forEachJob(db, revoked.requeuedJobs, (h, job) => h.onRetry?.(db, job, REVOKED));
+  await forEachJob(db, revoked.canceledJobs, (h, job) => h.onCanceled?.(db, job));
+  await forEachJob(db, revoked.failedJobs, (h, job) => h.onFailed?.(db, job, REVOKED));
 
   const dispatcher = options.dispatcher ?? getDispatcher();
   for (const job of await listQueuedJobsTargetingHarness(db, harnessId)) {
@@ -119,11 +120,12 @@ export async function deleteHarness(
 
 /** Runs an outcome hook per job that has a handler; a failing hook (e.g. a code-host call) doesn't stop the rest. */
 async function forEachJob(
+  db: Database,
   jobs: Job[],
   hook: (handler: JobHooks, job: Job) => Promise<unknown> | undefined,
 ): Promise<void> {
   for (const job of jobs) {
-    const handler = jobHooks(job);
+    const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
     if (!handler) continue;
     try {
       await hook(handler, job);

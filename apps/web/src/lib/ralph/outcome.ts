@@ -19,6 +19,7 @@ import {
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import { MAX_ATTEMPTS_PER_STORY, RalphStoryResult, type RalphFollowUp } from "@omniralph/shared";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobMaxAttempts } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
@@ -109,7 +110,10 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
     // A coding run's story gets its task's attempts.
-    const maxAttempts = jobMaxAttempts(job);
+    const maxAttempts = await jobMaxAttempts(
+      job,
+      organizationDefinitions(ctx.db, ctx.run.organizationId),
+    );
     if (parsed?.success && parsed.data.hiddenRef) {
       // The story commits sit on the run's hidden ref: deleted once the run is over.
       const repositoryId = (await storyLane(ctx.tx, ctx.run, story))?.repositoryId;

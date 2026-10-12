@@ -25,14 +25,13 @@ import {
   type TriageOutcome,
   type TriageRepository,
 } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
 import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { describeRoute, routeIssue } from "@/lib/ralph/routing";
 import type { RalphDeps } from "@/lib/ralph/run";
-import { runSpecJobInput } from "@/lib/runs/job";
+import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
 
@@ -247,7 +246,8 @@ export async function enqueueTriage(
   const { issue, children, repository } = context;
   const sessionId = run.linearAgentSessionId;
   const reply = options.reply?.trim();
-  const task = getBuiltinTask(TRIAGE_TASK_ID);
+  const definitions = organizationDefinitions(db, deps.organizationId);
+  const task = await definitions.getTask(TRIAGE_TASK_ID);
   if (!task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
   const trigger = {
     triageRunId: run.id,
@@ -285,7 +285,7 @@ export async function enqueueTriage(
     const { job } = await deps.dispatcher.createAndPublish({
       organizationId: deps.organizationId,
       type: TRIAGE_RUN_JOB_TYPE,
-      ...runSpecJobInput(task, {
+      ...(await taskJobInput(definitions, task, {
         trigger: { kind: "linear.triage", context: trigger },
         // Without a routed repository the run has no checkout; a default branch that doesn't
         // exist yet (an empty repository) runs without one too.
@@ -293,7 +293,7 @@ export async function enqueueTriage(
           repositoryId: repository.payload.repositoryId,
           ref: repository.payload.defaultBranch,
         }),
-      }),
+      })),
       dedupeKey: `triage:${run.id}`,
     });
     jobId = job.id;

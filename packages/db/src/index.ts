@@ -546,3 +546,21 @@ export {
   type RunActivity,
   type RunPermissionRequest,
 } from "./runs.js";
+export {
+  deleteAgentDefinition,
+  deleteTaskDefinition,
+  getStoredAgentDefinition,
+  getStoredTaskDefinition,
+  insertAgentDefinition,
+  insertTaskDefinition,
+  listStoredAgentDefinitions,
+  listStoredTaskDefinitions,
+  updateAgentDefinition,
+  updateTaskDefinition,
+  type AgentDefinitionUpdate,
+  type NewAgentDefinitionInput,
+  type NewTaskDefinitionInput,
+  type StoredAgentDefinition,
+  type StoredTaskDefinition,
+  type TaskDefinitionUpdate,
+} from "./definitions.js";

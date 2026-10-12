@@ -9,6 +9,7 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
 /**
@@ -35,7 +36,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  const handler = jobHooks(job);
+  const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {

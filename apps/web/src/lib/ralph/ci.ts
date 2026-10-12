@@ -31,6 +31,7 @@ import {
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
 import { parseRalphSettings } from "@omniralph/shared";
+import { organizationDefinitions } from "@/lib/definitions";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
@@ -112,7 +113,11 @@ export async function respondToCi(
   const term = changeRequestTerm(repository.provider) as ChangeRequestWord;
   const sha = ci.headSha.slice(0, 7);
   const prUrl = found.lane.prUrl ?? "";
-  const { maxFixRounds } = roundLimits(found.run, repository);
+  const { maxFixRounds } = await roundLimits(
+    found.run,
+    repository,
+    organizationDefinitions(deps.db, found.run.organizationId),
+  );
   const overLimit = found.lane.ciFixRounds >= maxFixRounds;
   // Read outside the run lock: the logs come from the code host.
   const jobs = overLimit

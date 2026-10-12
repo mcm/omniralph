@@ -10,6 +10,7 @@ import {
   type ScmProvider,
 } from "@omniralph/db";
 import { parseRalphSettings } from "@omniralph/shared";
+import type { DefinitionSource } from "@/lib/definitions";
 import { roundLimits } from "./coding";
 import {
   cleanupLabel,
@@ -52,8 +53,38 @@ export function ralphRunRow(entry: RalphRunListEntry): RalphRunRow {
   };
 }
 
-export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
+export async function ralphRunDetailView(
+  detail: RalphRunDetail,
+  definitions: DefinitionSource,
+): Promise<RalphRunDetailView> {
   const { run, repository } = detail;
+  const lanes = await Promise.all(
+    detail.lanes.map(async ({ lane, repository: laneRepository, main: isMain, ...repo }) => {
+      const settings = parseRalphSettings(repo.ralphSettings);
+      const limits = await roundLimits(
+        run,
+        { ...repo.coding, ralphSettings: repo.ralphSettings },
+        definitions,
+      );
+      return {
+        id: lane.id,
+        repository: laneRepository,
+        main: isMain,
+        branch: lane.branch,
+        baseBranch: lane.baseBranch,
+        pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
+        cleanup: cleanupLabel(lane.cleanup),
+        reviewRounds: {
+          done: lane.reviewRounds,
+          max: settings.respondToReviews ? limits.maxReviewRounds : null,
+        },
+        ciFixRounds: {
+          done: lane.ciFixRounds,
+          max: settings.respondToCiFailures ? limits.maxFixRounds : null,
+        },
+      };
+    }),
+  );
   const main = detail.lanes.find((l) => l.main);
   const ref = ({ identifier, title }: { identifier: string; title: string }) => ({
     identifier,
@@ -76,27 +107,7 @@ export function ralphRunDetailView(detail: RalphRunDetail): RalphRunDetailView {
       main?.lane.prNumber ?? null,
       main?.lane.prUrl ?? null,
     ),
-    lanes: detail.lanes.map(({ lane, repository: laneRepository, main: isMain, ...repo }) => {
-      const settings = parseRalphSettings(repo.ralphSettings);
-      const limits = roundLimits(run, { ...repo.coding, ralphSettings: repo.ralphSettings });
-      return {
-        id: lane.id,
-        repository: laneRepository,
-        main: isMain,
-        branch: lane.branch,
-        baseBranch: lane.baseBranch,
-        pullRequest: pullRequest(laneRepository.provider, lane.prNumber, lane.prUrl),
-        cleanup: cleanupLabel(lane.cleanup),
-        reviewRounds: {
-          done: lane.reviewRounds,
-          max: settings.respondToReviews ? limits.maxReviewRounds : null,
-        },
-        ciFixRounds: {
-          done: lane.ciFixRounds,
-          max: settings.respondToCiFailures ? limits.maxFixRounds : null,
-        },
-      };
-    }),
+    lanes,
     agent: detail.agent,
     error: run.error,
     waitingOn:

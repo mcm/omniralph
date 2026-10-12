@@ -35,6 +35,7 @@ import {
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { organizationDefinitions } from "@/lib/definitions";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
@@ -199,7 +200,12 @@ export async function respondToReview(
       return { status: "no_findings" } as const;
     }
     const rounds = lane.reviewRounds;
-    if (rounds >= roundLimits(run, repository).maxReviewRounds) {
+    const { maxReviewRounds } = await roundLimits(
+      run,
+      repository,
+      organizationDefinitions(deps.db, run.organizationId),
+    );
+    if (rounds >= maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });
       const busy = (await listActiveRunJobIds(tx, run.id)).length > 0;
       await postActivity(

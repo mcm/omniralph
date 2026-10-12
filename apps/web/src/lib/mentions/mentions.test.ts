@@ -144,10 +144,11 @@ const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { onReviewJobStarted } = await import("@/lib/review/jobs");
 const { jobHooks } = await import("@/lib/sinks");
+const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 
 /** The thread-reply sink's hooks for a `review.reply` job. */
-function replyHooks(job: Job) {
-  const hooks = jobHooks(job);
+async function replyHooks(job: Job) {
+  const hooks = await jobHooks(job, BUILTIN_DEFINITIONS);
   if (!hooks?.onCompleted || !hooks.onFailed || !hooks.isValidResult)
     throw new Error("review.reply jobs have the finding-thread sink's hooks");
   return hooks as Required<Pick<typeof hooks, "onCompleted" | "onFailed" | "isValidResult">>;
@@ -577,7 +578,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const [job] = (await replyJobs()).filter(
         (j) => replyContext(j).threadCommentId === commentId,
       );
-      const hooks = replyHooks(job!);
+      const hooks = await replyHooks(job!);
       const result: QueryRunResult = {
         outcome: "answered",
         answer: "It is, see [this](https://evil.example/x). cc @someone and @dev",
@@ -638,7 +639,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         })
         .where(eq(jobs.id, job!.id))
         .returning();
-      await replyHooks(completed!).onCompleted(db, completed!);
+      await (await replyHooks(completed!)).onCompleted(db, completed!);
       expect(state.scm.calls.replyToComment[0]!.body).toContain("reply budget (20,000 tokens)");
     });
 
@@ -663,7 +664,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
         })
         .where(eq(jobs.id, job!.id))
         .returning();
-      await replyHooks(completed!).onCompleted(db, completed!);
+      await (await replyHooks(completed!)).onCompleted(db, completed!);
       const answer = state.scm.calls.replyToComment[0]!.body.split("\n\n_Omniralph · ")[0]!;
       expect(answer.length).toBeLessThanOrEqual(MAX_REPLY_ANSWER_LENGTH);
       expect(answer).toMatch(/^word word/);

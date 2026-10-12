@@ -2,6 +2,7 @@ import { expireQueuedJobs, getJob } from "@omniralph/db";
 import { JOB_RETENTION_SECONDS } from "@omniralph/shared";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
+import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
 /**
@@ -21,7 +22,7 @@ export async function GET(req: Request): Promise<Response> {
   );
   for (const jobId of expired) {
     const job = await getJob(db, jobId);
-    const handler = job && jobHooks(job);
+    const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
     if (job && handler?.onFailed) {
       await handler
         .onFailed(db, job, "No agent picked up the job within 24 hours")

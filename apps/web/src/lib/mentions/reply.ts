@@ -7,9 +7,8 @@ import {
   type Review,
 } from "@omniralph/db";
 import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
-import { getBuiltinTask } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { runSpecJobInput } from "@/lib/runs/job";
+import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import type { FindingThreadContext } from "@/lib/sinks/finding-thread";
 
@@ -92,7 +91,8 @@ export async function enqueueReply(
   if (!found || !settings || !found.repository.enabled || found.repository.disconnectedAt) {
     return { status: "repository_unavailable" };
   }
-  const task = getBuiltinTask(REPLY_TASK_ID);
+  const definitions = organizationDefinitions(db, found.repository.organizationId);
+  const task = await definitions.getTask(REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);
   const context = replyContext({
     finding,
@@ -106,12 +106,12 @@ export async function enqueueReply(
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,
     type: REVIEW_REPLY_JOB_TYPE,
-    ...runSpecJobInput(task, {
+    ...(await taskJobInput(definitions, task, {
       trigger: { kind: "finding.mention", context },
       repositoryId: review.repositoryId,
       // The review's head; when it can't be fetched the session runs without the checkout.
       ref: review.headSha,
-    }),
+    })),
     dedupeKey: `${REVIEW_REPLY_JOB_TYPE}:${review.repositoryId}:${input.commentId}`,
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id };
