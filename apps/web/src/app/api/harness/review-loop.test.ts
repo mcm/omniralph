@@ -23,6 +23,7 @@ import {
   type Database,
   organizations,
   seedReviewProfiles,
+  users,
 } from "@omniralph/db";
 import { runReview, type ReviewProvider } from "@omniralph/engine";
 import { GitHubAdapter } from "@omniralph/scm";
@@ -44,12 +45,20 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertRole, type Role } from "@/lib/auth/roles";
+import type { OrgUser } from "@/lib/auth/session";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
+  /** The signed-in user of the settings server actions. */
+  user: null as OrgUser | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({
+  requireUser: async (role: Role = "member") => assertRole(state.user, role),
+}));
 // A second review task, as a repository could enable next to builtin:review-pr.
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
@@ -92,6 +101,12 @@ const { enqueueReview } = await import("@/lib/review/enqueue");
 const { POST: claim } = await import("./claim/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
+const { cloneAgentDefinition, updateAgentDefinition } =
+  await import("@/app/(app)/settings/agents/actions");
+const { cloneTaskDefinition, updateTaskDefinition } =
+  await import("@/app/(app)/settings/tasks/actions");
+const { getAgentDefinition, getTaskDefinition } = await import("@/lib/definitions");
+const { saveRepositorySettings } = await import("@/lib/repositories/settings");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -1025,6 +1040,117 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
       expect(note.body).toContain("Review a pull request: boom; Security review: boom");
     });
   });
+  describe("an organization's own review task", () => {
+    const RUBRIC =
+      "You are a security reviewer. Report only vulnerabilities: injection, secrets, authz.";
+
+    /** Signs an admin of the organization in for the settings server actions. */
+    async function signInAdmin() {
+      const [row] = await db
+        .insert(users)
+        .values({ email: `admin-${randomBytes(4).toString("hex")}@acme.test`, name: "Admin" })
+        .returning();
+      state.user = {
+        id: row!.id,
+        name: row!.name,
+        email: row!.email,
+        image: null,
+        theme: null,
+        organization: { id: orgId, name: "Acme" },
+        role: "admin",
+      };
+    }
+
+    afterEach(() => {
+      state.user = null;
+    });
+
+    it("clones builtin:review-pr with its own rubric, enabled on the repository, into the next review run", async () => {
+      await signInAdmin();
+
+      // Clone the built-in reviewer and give the copy its own rubric.
+      const agentClone = await cloneAgentDefinition("builtin:reviewer");
+      if (!("id" in agentClone)) throw new Error(JSON.stringify(agentClone));
+      const agent = (await getAgentDefinition(db, orgId, agentClone.id))!.definition;
+      const { id: _agentId, ...agentFields } = agent;
+      expect(
+        await updateAgentDefinition(agentClone.id, {
+          ...agentFields,
+          name: "Security reviewer",
+          systemPrompt: RUBRIC,
+        }),
+      ).toEqual({ ok: true });
+
+      // Clone the built-in review task onto it.
+      const taskClone = await cloneTaskDefinition("builtin:review-pr");
+      if (!("id" in taskClone)) throw new Error(JSON.stringify(taskClone));
+      const stored = (await getTaskDefinition(db, orgId, taskClone.id))!;
+      expect(stored).toMatchObject({ builtin: false, definition: { agentId: "builtin:reviewer" } });
+      const { id: _taskId, ...taskFields } = stored.definition;
+      expect(
+        await updateTaskDefinition(taskClone.id, {
+          ...taskFields,
+          name: "Security review",
+          agentId: agentClone.id,
+        }),
+      ).toEqual({ ok: true });
+
+      // Enable it on the repository next to the built-in, through the settings save.
+      const [current] = await db
+        .select()
+        .from(repositories)
+        .where(eq(repositories.id, repositoryId));
+      expect(
+        await saveRepositorySettings(db, dispatcher(), orgId, repositoryId, {
+          profileId: current!.profileId as "standard",
+          triggers: current!.triggers,
+          pathExcludes: current!.pathExcludes,
+          customInstructions: current!.customInstructions ?? "",
+          pinnedHarnessIds: [],
+          reviewTaskIds: ["builtin:review-pr", taskClone.id],
+          correlationTaskId: current!.correlationTaskId,
+        }),
+      ).toMatchObject({ status: "saved" });
+
+      // The next review run fans out to both tasks.
+      const prNumber = ++prCounter;
+      const { accessToken } = await newAgent();
+      const enqueued = await enqueue(prNumber, head1);
+      if (enqueued.status !== "enqueued") throw new Error(enqueued.status);
+      expect(enqueued.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", taskClone.id]);
+      const [builtinRun, customRun] = enqueued.runs;
+      expect(await jobRow(customRun!.jobId)).toMatchObject({ taskId: taskClone.id });
+
+      // The harness gets the custom task and its agent with the new rubric.
+      const started = await startAs(customRun!.jobId, accessToken);
+      if (started?.action !== "run") throw new Error("expected run");
+      expect(started.runSpec).toMatchObject({
+        taskType: "review",
+        task: { id: taskClone.id, name: "Security review", agentId: agentClone.id, sink: "review" },
+        agent: { id: agentClone.id, name: "Security reviewer", systemPrompt: RUBRIC },
+      });
+      expect(
+        (await submit(customRun!.jobId, accessToken, await agentRun(started.job.payload))).body,
+      ).toEqual({ status: "completed" });
+      expect(await reviewRow(customRun!.reviewId)).toMatchObject({
+        status: "completed",
+        taskId: taskClone.id,
+      });
+      await startAs(builtinRun!.jobId, accessToken);
+      await failFinal(builtinRun!.jobId, accessToken);
+
+      // Its findings are stored for the run and posted, attributed to the task.
+      const runFindings = await listReviewRunFindings(db, enqueued.reviewRunId);
+      expect(runFindings.map((f) => [f.reviewId, f.path])).toEqual([
+        [customRun!.reviewId, "src/app.ts"],
+      ]);
+      expect(await reviewRunRow(enqueued.reviewRunId)).toMatchObject({ status: "completed" });
+      const posted = github.reviews.at(-1)!.body as { comments: { body: string }[] };
+      expect(posted.comments).toHaveLength(1);
+      expect(posted.comments[0]!.body).toContain("· Security review_");
+    });
+  });
+
   describe("sticky comments", () => {
     const SUMMARY_TASK_ID = "builtin:summarize-pr";
 
