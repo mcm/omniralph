@@ -15,7 +15,7 @@ import {
   type NewJobInput,
 } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
-import { harnesses, jobs, organizations } from "./schema.js";
+import { harnessHostTools, harnesses, hostTools, jobs, organizations } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -187,6 +187,82 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     expect((await claim(agentA, at(1), { harnessVersion: "1.10.0-beta.1" })).claim?.job.id).toBe(
       newer,
     );
+  });
+
+  it("only claims jobs whose installables the harness reported", async () => {
+    await db
+      .update(harnesses)
+      .set({ reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }] })
+      .where(eq(harnesses.id, agentA));
+    try {
+      const both = await enqueue({
+        requiredInstallables: ["@omniralph/code-graph", "@omniralph/sast"],
+        createdAt: at(-30),
+      });
+      const graph = await enqueue({
+        requiredInstallables: ["@omniralph/code-graph"],
+        createdAt: at(-20),
+      });
+      const any = await enqueue({ createdAt: at(-10) });
+      // The other harness has none: it only gets the job that needs none.
+      expect((await claim(agentA2, at(1))).claim?.job.id).toBe(any);
+      expect((await claim(agentA2, at(1))).claim).toBeNull();
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(graph);
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      expect((await getJob(db, both))?.status).toBe("queued");
+    } finally {
+      await db.update(harnesses).set({ reportedInstallables: [] }).where(eq(harnesses.id, agentA));
+    }
+  });
+
+  it("only claims jobs whose host tools have an effective path on the harness", async () => {
+    const tools = await db
+      .insert(hostTools)
+      .values([
+        { organizationId: orgA, name: "opengrep" },
+        { organizationId: orgA, name: "semgrep" },
+        { organizationId: orgA, name: "missing" },
+        { organizationId: orgB, name: "other-org" },
+      ])
+      .returning();
+    const [opengrep, semgrep, missing, otherOrg] = tools.map((tool) => tool.id) as string[];
+    await db.insert(harnessHostTools).values([
+      // Discovered on PATH, nothing configured: usable.
+      { harnessId: agentA, hostToolId: opengrep!, discoveredPath: "/usr/bin/opengrep" },
+      // Configured and found: usable.
+      {
+        harnessId: agentA,
+        hostToolId: semgrep!,
+        configuredPath: "/opt/semgrep",
+        configuredPathExists: true,
+      },
+      // Configured but missing: the discovered path is no fallback.
+      {
+        harnessId: agentA,
+        hostToolId: missing!,
+        configuredPath: "/opt/missing",
+        configuredPathExists: false,
+        discoveredPath: "/usr/bin/missing",
+      },
+      { harnessId: agentA2, hostToolId: opengrep! },
+      { harnessId: agentB, hostToolId: otherOrg!, discoveredPath: "/usr/bin/other-org" },
+    ]);
+    try {
+      const needsMissing = await enqueue({ requiredHostTools: ["missing"], createdAt: at(-40) });
+      const needsBoth = await enqueue({
+        requiredHostTools: ["opengrep", "semgrep"],
+        createdAt: at(-30),
+      });
+      const needsOther = await enqueue({ requiredHostTools: ["other-org"], createdAt: at(-20) });
+      // The second harness hasn't found opengrep.
+      expect((await claim(agentA2, at(1))).claim).toBeNull();
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(needsBoth);
+      expect((await claim(agentA, at(1))).claim).toBeNull();
+      expect((await getJob(db, needsMissing))?.status).toBe("queued");
+      expect((await getJob(db, needsOther))?.status).toBe("queued");
+    } finally {
+      await db.delete(hostTools);
+    }
   });
 
   it("doesn't claim a job before it is available", async () => {

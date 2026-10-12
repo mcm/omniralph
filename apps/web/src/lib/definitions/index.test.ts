@@ -1,6 +1,10 @@
 import {
+  claimJob,
   closeDb,
   createDb,
+  harnessHostTools,
+  harnesses,
+  hostTools,
   insertAgentDefinition,
   insertTaskDefinition,
   jobs,
@@ -316,5 +320,100 @@ describe.skipIf(!dockerAvailable)("definition resolver", () => {
       { taskId: "builtin:review-pr", minHarnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION },
       { taskId: task.id, minHarnessVersion: STORED_MIN_VERSION },
     ]);
+  });
+  it("gives a run's job the installables and host tools its task and agent need, so only a harness with them claims it", async () => {
+    const agent = await customAgent(orgId, {
+      ...securityAgent,
+      tools: { ...securityAgent.tools, mcpServers: ["@omniralph/code-graph:graph"] },
+    });
+    const task = await customTask(
+      orgId,
+      { ...securityReview, agentId: agent.id, requires: { hostTools: ["opengrep"] } },
+      // Stored when the task was saved; the job follows the definitions as they are now.
+      { minHarnessVersion: null, installables: ["@omniralph/stale"], hostTools: [] },
+    );
+    const [connection] = await db
+      .insert(scmConnections)
+      .values({
+        organizationId: orgId,
+        provider: "github",
+        name: "acme-requirements",
+        baseUrl: "https://api.github.com",
+        externalId: "2",
+        encryptedCredentials: "unused",
+      })
+      .returning();
+    const [repo] = await db
+      .insert(repositories)
+      .values({
+        organizationId: orgId,
+        provider: "github",
+        externalId: "200",
+        fullPath: "acme/graph",
+        connectionId: connection!.id,
+        reviewTaskIds: [task.id],
+      })
+      .returning();
+
+    const result = await enqueueReview(db, new PostgresDispatcher({ db }), {
+      repositoryId: repo!.id,
+      prNumber: 8,
+      baseSha: "c".repeat(40),
+      headSha: "d".repeat(40),
+      title: "Add search",
+      description: null,
+      author: "octocat",
+      trigger: "webhook",
+    });
+    if (result.status !== "enqueued") throw new Error(`expected enqueued, got ${result.status}`);
+    const [run] = result.runs;
+    const [row] = await db.select().from(jobs).where(eq(jobs.id, run!.jobId));
+    expect(row).toMatchObject({
+      requiredInstallables: ["@omniralph/code-graph"],
+      requiredHostTools: ["opengrep"],
+    });
+
+    const [tool] = await db
+      .insert(hostTools)
+      .values({ organizationId: orgId, name: "opengrep" })
+      .returning();
+    const [bare, graphOnly, capable] = await db
+      .insert(harnesses)
+      .values(
+        ["bare", "graph-only", "capable"].map((name) => ({
+          organizationId: orgId,
+          name,
+          acceptedTaskTypes: ["review"],
+          reportedVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+          reportedInstallables:
+            name === "bare" ? [] : [{ name: "@omniralph/code-graph", version: "1.0.0" }],
+        })),
+      )
+      .returning();
+    await db.insert(harnessHostTools).values({
+      harnessId: capable!.id,
+      hostToolId: tool!.id,
+      discoveredPath: "/usr/bin/opengrep",
+    });
+    const claim = (harnessId: string) =>
+      claimJob(db, {
+        harnessId,
+        organizationId: orgId,
+        acceptedTaskTypes: ["review"],
+        pools: ["short", "long"],
+        harnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+        maxDeliveries: 3,
+      });
+    // Drain what the other harnesses can claim: never this run.
+    for (const harness of [bare!, graphOnly!]) {
+      for (let next = await claim(harness.id); next.claim; next = await claim(harness.id)) {
+        expect(next.claim.job.id).not.toBe(row!.id);
+      }
+    }
+    const claimed: string[] = [];
+    for (let next = await claim(capable!.id); next.claim; next = await claim(capable!.id)) {
+      claimed.push(next.claim.job.id);
+    }
+    expect(claimed).toContain(row!.id);
   });
 });

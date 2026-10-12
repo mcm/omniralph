@@ -4,6 +4,14 @@ import type { FieldErrors } from "@omniralph/shared";
 
 export const monoInput = { fontFamily: "var(--font-mono)" } as const;
 
+/** Names from a comma- or newline-separated list. */
+export function splitNames(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 /** The error of `field` or of anything under it (`tools.builtin.2` for `tools.builtin`). */
 export function errorFor(errors: FieldErrors, field: string): string | undefined {
   if (errors[field]) return errors[field];

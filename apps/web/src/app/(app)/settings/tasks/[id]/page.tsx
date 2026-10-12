@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { deriveTaskRequirements } from "@omniralph/tasks";
+import { deriveHarnessRequirements, deriveTaskRequirements } from "@omniralph/tasks";
 import { hasRole } from "@/lib/auth/roles";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -40,8 +40,12 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
       builtin={task.builtin}
       agentName={agent?.definition.name ?? null}
       prDescriptionTaskName={prDescriptionTask?.definition.name ?? null}
-      // Stored with a custom task when it was saved; a built-in's are derived from the code.
-      requirements={task.requirements ?? deriveTaskRequirements(definition)}
+      // The version is stored with a custom task when it was saved (a built-in's is derived from
+      // the code); installables and host tools follow the agent as it is now, as its runs' jobs do.
+      requirements={{
+        ...(task.requirements ?? deriveTaskRequirements(definition)),
+        ...deriveHarnessRequirements(definition, agent?.definition),
+      }}
       referrers={referrers}
     />
   );

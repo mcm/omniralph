@@ -201,6 +201,26 @@ describe("TaskForm", () => {
     expect(html).not.toContain('id="task-pr-description-task"');
   });
 
+  it("shows the required installables and host tools, and their errors next to them", () => {
+    const html = render(
+      {
+        ...TASK,
+        requires: { installables: ["@omniralph/sast", "@omniralph/x"], hostTools: ["opengrep"] },
+      },
+      {
+        "requires.installables.1": "Expected a valid npm package name",
+        "requires.hostTools.0": "Invalid string",
+      },
+    );
+    expect(html).toMatch(
+      /id="task-requires-installables"[^>]*value="@omniralph\/sast, @omniralph\/x"/,
+    );
+    expect(html).toMatch(/id="task-requires-host-tools"[^>]*value="opengrep"/);
+    expect(fieldOf(html, "Expected a valid npm package name")).toBe("task-requires-installables");
+    expect(fieldOf(html, "Invalid string")).toBe("task-requires-host-tools");
+    expect(render(TASK)).toMatch(/id="task-requires-installables"[^>]*value=""/);
+  });
+
   it("shows neither shell, output schema nor coding settings on a review task", () => {
     const html = render(TASK);
     expect(html).toContain("Setup commands");

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   InstallableManifest,
   normalizePackagePath,
+  parseInstallableMcpServerRef,
   parseInstallablePackage,
   resolveInstallablePaths,
 } from "./index.js";
@@ -168,6 +169,33 @@ describe("InstallableManifest", () => {
           }),
         ),
       ).toEqual(["commands.0.bin", "mcpServers.0.command", "skills.0"]);
+    }
+  });
+});
+
+describe("parseInstallableMcpServerRef", () => {
+  it("splits <package>:<server>", () => {
+    expect(parseInstallableMcpServerRef("@omniralph/code-graph:graph")).toEqual({
+      installable: "@omniralph/code-graph",
+      server: "graph",
+    });
+    expect(parseInstallableMcpServerRef("sast:scan.v2")).toEqual({
+      installable: "sast",
+      server: "scan.v2",
+    });
+  });
+
+  it("is null for a configured MCP server's name or an invalid reference", () => {
+    for (const entry of [
+      "github",
+      ":graph",
+      "pkg:",
+      "Pkg:graph",
+      "-pkg:graph",
+      "pkg:Graph",
+      "a:b:c",
+    ]) {
+      expect(parseInstallableMcpServerRef(entry), entry).toBeNull();
     }
   });
 });

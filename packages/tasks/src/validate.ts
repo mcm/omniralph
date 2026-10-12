@@ -127,7 +127,11 @@ export function validateTaskDefinition(
 
   return Object.keys(errors).length > 0
     ? { ok: false, fieldErrors: errors }
-    : { ok: true, definition: task, requirements: deriveTaskRequirements(task) };
+    : {
+        ok: true,
+        definition: task,
+        requirements: deriveTaskRequirements(task, undefined, agent),
+      };
 }
 
 /**

@@ -451,6 +451,16 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     expect(left).toEqual([{ tools: 0, rows: 0 }]);
   });
 
+  it("adds required installables and host tools to jobs, empty by default (0073)", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Job requirements" }).returning();
+    const { rows } = await db.$client.query(
+      `insert into jobs (organization_id, type, task_type, pool) values ($1, 'review.run', 'review', 'short')
+       returning required_installables, required_host_tools`,
+      [org!.id],
+    );
+    expect(rows).toEqual([{ required_installables: [], required_host_tools: [] }]);
+  });
+
   it("drops the capability columns from jobs and harnesses (0057)", async () => {
     const { rows } = await db.$client.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns

@@ -20,6 +20,7 @@ import {
   BUILTIN_AGENTS,
   BUILTIN_TASKS,
   correlationProblem,
+  deriveHarnessRequirements,
   getBuiltinAgent,
   getBuiltinTask,
   isBuiltinId,
@@ -266,12 +267,22 @@ export const BUILTIN_DEFINITIONS: DefinitionSource = {
 
 /**
  * `runSpecJobInput` for `task` as `definitions` resolved it: a custom task's
- * job needs at least the harness version stored in its requirements.
+ * job needs at least the harness version stored in its requirements, and
+ * every job the installables and host tools derived from the task and its
+ * agent as they are now (`deriveHarnessRequirements`: an agent edited since
+ * the task was saved counts as edited).
  */
 export async function taskJobInput(
   definitions: DefinitionSource,
   task: TaskDefinition,
   payload: RunSpecJobPayload,
 ): Promise<ReturnType<typeof runSpecJobInput>> {
-  return runSpecJobInput(task, payload, await definitions.getTaskRequirements?.(task.id));
+  const [stored, agent] = await Promise.all([
+    definitions.getTaskRequirements?.(task.id),
+    definitions.getAgent(task.agentId),
+  ]);
+  return runSpecJobInput(task, payload, {
+    minHarnessVersion: stored?.minHarnessVersion ?? null,
+    ...deriveHarnessRequirements(task, agent),
+  });
 }

@@ -5,7 +5,13 @@
  * template, tool settings, sink, pool).
  */
 import { z } from "zod";
+import { HostToolName } from "./host-tools.js";
 import { DefinitionId } from "./ids.js";
+import {
+  INSTALLABLE_MCP_SERVER_SEPARATOR,
+  InstallablePackageName,
+  parseInstallableMcpServerRef,
+} from "./installables.js";
 import {
   HARNESS_TOOLS,
   HARNESS_TOOLS_BY_TASK_TYPE,
@@ -42,8 +48,25 @@ export const AgentTools = z.object({
   harness: z.array(HarnessToolSchema).default([]),
   /** Read-only Linear tools (need the task's `toolSettings.linearRead`). */
   linear: z.array(LinearToolSchema).default([]),
-  /** Names of configured MCP servers. */
-  mcpServers: z.array(z.string().min(1).max(100)).default([]),
+  /**
+   * Names of configured MCP servers, or of an installable's MCP servers as
+   * `<package>:<server>` (`@omniralph/code-graph:graph`): its tasks then
+   * require that installable.
+   */
+  mcpServers: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(300)
+        .refine(
+          (name) =>
+            !name.includes(INSTALLABLE_MCP_SERVER_SEPARATOR) ||
+            parseInstallableMcpServerRef(name) !== null,
+          "Name an installable's MCP server as <package>:<server>",
+        ),
+    )
+    .default([]),
 });
 export type AgentTools = z.infer<typeof AgentTools>;
 
@@ -153,6 +176,20 @@ export const TeardownCommand = z.object({
 });
 export type TeardownCommand = z.infer<typeof TeardownCommand>;
 
+/** Most installables or host tools a task may require. */
+export const MAX_TASK_REQUIRES = 20;
+
+/**
+ * What a task's runs need on the harness beyond its agent's tools: installables
+ * (npm package names) and host tools (names in the organization's catalog).
+ * Only harnesses reporting all of them claim its runs.
+ */
+export const TaskRequires = z.object({
+  installables: z.array(InstallablePackageName).max(MAX_TASK_REQUIRES).default([]),
+  hostTools: z.array(HostToolName).max(MAX_TASK_REQUIRES).default([]),
+});
+export type TaskRequires = z.infer<typeof TaskRequires>;
+
 /** Attempts a story gets before it is marked exhausted (`MAX_ATTEMPTS_PER_STORY` in `@omniralph/shared`). */
 export const DEFAULT_MAX_ATTEMPTS_PER_STORY = 3;
 /** Story attempts a run makes before it stops and asks (`MAX_ITERATIONS_PER_RUN` of the control panel). */
@@ -219,6 +256,8 @@ export const TaskDefinition = z
     /** Run in the working directory, in order, after finish, whatever happened. */
     teardownCommands: z.array(TeardownCommand).max(MAX_SETUP_COMMANDS).default([]),
     toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
+    /** Installables and host tools the task's runs need (its agent's installable MCP servers add theirs). */
+    requires: TaskRequires.optional(),
     /** JSON schema the session's output must match; query tasks only. */
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     sink: SinkKindSchema,

@@ -33,7 +33,7 @@ import {
   type AgentDefinitionFields,
 } from "./actions";
 import { agentHref, pageMain, pageTitle } from "./agent-parts";
-import { Choices, errorFor, monoInput } from "./form-parts";
+import { Choices, errorFor, monoInput, splitNames } from "./form-parts";
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
@@ -48,14 +48,6 @@ const grid = {
   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
   gap: "var(--space-4)",
 } as const;
-
-/** Names from a comma- or newline-separated list. */
-function splitNames(value: string): string[] {
-  return value
-    .split(/[,\n]/)
-    .map((name) => name.trim())
-    .filter(Boolean);
-}
 
 /** Editable named documents (skills or reference docs), errors keyed `<field>.<index>.<name|content>`. */
 function Documents({
@@ -401,7 +393,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
               <Field
                 label="MCP servers"
                 htmlFor="agent-tools-mcp"
-                hint="Comma-separated names of configured MCP servers."
+                hint="Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable)."
                 error={errorFor(errors, "tools.mcpServers")}
               >
                 <Input
