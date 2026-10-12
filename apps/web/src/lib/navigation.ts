@@ -8,6 +8,7 @@ export type NavIcon =
   | "jobs"
   | "analytics"
   | "organization"
+  | "agents"
   | "profiles"
   | "integrations"
   | "chatAccounts"
@@ -43,6 +44,7 @@ export const navGroups: NavGroup[] = [
     label: "Settings",
     items: [
       { href: "/settings/organization", label: "Organization", icon: "organization" },
+      { href: "/settings/agents", label: "Agents", icon: "agents" },
       { href: "/settings/profiles", label: "Profiles", icon: "profiles", adminOnly: true },
       {
         href: "/settings/integrations",

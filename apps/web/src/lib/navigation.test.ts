@@ -12,6 +12,7 @@ describe("navGroups", () => {
       "Jobs",
       "Analytics",
       "Organization",
+      "Agents",
       "Profiles",
       "Integrations",
       "Harnesses",
@@ -28,6 +29,12 @@ describe("navGroups", () => {
       expect.objectContaining({ href: "/settings/harnesses", label: "Harnesses", adminOnly: true }),
     );
   });
+
+  it("links the agent definitions for every member", () => {
+    const items = navGroups.flatMap((group) => group.items);
+    const agents = items.find((item) => item.href === "/settings/agents");
+    expect(agents).toEqual({ href: "/settings/agents", label: "Agents", icon: "agents" });
+  });
 });
 
 describe("navGroupsForRole", () => {
@@ -37,14 +44,17 @@ describe("navGroupsForRole", () => {
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
-      ["Settings", ["Organization", "Profiles", "Integrations", "Harnesses", "Chat accounts"]],
+      [
+        "Settings",
+        ["Organization", "Agents", "Profiles", "Integrations", "Harnesses", "Chat accounts"],
+      ],
     ]);
   });
 
   it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
-      ["Settings", ["Organization", "Chat accounts"]],
+      ["Settings", ["Organization", "Agents", "Chat accounts"]],
     ]);
   });
 });
