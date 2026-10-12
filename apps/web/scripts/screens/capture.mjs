@@ -89,6 +89,20 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.status = response?.status() ?? null;
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
     await page.addStyleTag({ content: HIDE_DEV_UI });
+    for (const step of route.steps ?? []) {
+      const target = page.locator(step.selector).first();
+      // Typing before React hydrates the element is lost or doubled: wait for its props.
+      await target.waitFor();
+      await page
+        .waitForFunction(
+          (element) => Object.keys(element).some((key) => key.startsWith("__reactProps")),
+          await target.elementHandle(),
+          { timeout: 15_000 },
+        )
+        .catch(() => {});
+      if (step.action === "fill") await target.fill(step.value);
+      else await target.click();
+    }
     // The signed-in user's saved theme wins over the emulated OS preference.
     result.themeForced = await page.evaluate((wanted) => {
       const root = document.documentElement;
@@ -106,7 +120,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.screenshot = `${base}.png`;
     await page.screenshot({
       path: join(outDir, result.screenshot),
-      fullPage: true,
+      fullPage: !route.viewportOnly,
       animations: "disabled",
     });
     result.html = `${base}.html`;

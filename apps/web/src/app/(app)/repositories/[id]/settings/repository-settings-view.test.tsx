@@ -131,3 +131,29 @@ describe("RepositorySettingsView task pickers", () => {
     expect(select(html, "ralph-story-task")).toContain(`<option value="${gone}" selected="">`);
   });
 });
+
+describe("RepositorySettingsView cards", () => {
+  it("gives every card its own save action", () => {
+    const html = render();
+    // 5 review cards and 6 Ralph cards.
+    expect(html.match(/type="submit"/g)).toHaveLength(11);
+    expect(html).not.toContain("Save settings");
+    expect(html).not.toContain("Save Ralph settings");
+  });
+
+  it("labels settings in plain words, not by their config keys", () => {
+    const labels = [...render().matchAll(/<label[^>]*>(.*?)<\/label>/g)].map((m) =>
+      m[1]!.replace(/<[^>]+>/g, ""),
+    );
+    expect(labels.length).toBeGreaterThan(20);
+    for (const label of labels) expect(label).not.toMatch(/\b[a-z]+[A-Z][a-zA-Z]*\b/);
+  });
+
+  it("states each setting's default", () => {
+    const html = render();
+    expect(html).toContain("Default: Off.");
+    expect(html).toContain("Default: opus.");
+    expect(html).toContain("Default: Legacy jobs.");
+    expect(html).toContain("Default: Correlate findings.");
+  });
+});

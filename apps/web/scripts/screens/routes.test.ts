@@ -130,3 +130,14 @@ describe("parseScreensOptions", () => {
     expect(() => parseScreensOptions(["--nope"])).toThrow();
   });
 });
+
+describe("SCREEN_ROUTES steps", () => {
+  it("only fills or clicks", () => {
+    for (const route of SCREEN_ROUTES) {
+      for (const step of route.steps ?? []) {
+        expect(["fill", "click"], route.name).toContain(step.action);
+        expect(step.selector, route.name).not.toBe("");
+      }
+    }
+  });
+});

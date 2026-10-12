@@ -12,13 +12,23 @@ import {
   InlineCode,
   Input,
 } from "@iamthemcmaster/ui";
-import { IconCloudDownload, IconDeviceFloppy } from "@tabler/icons-react";
+import { IconCloudDownload } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
+import { SettingsCard } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
+import { formatSettingValue, settingChanges, type SettingSpec } from "@/lib/settings/changes";
 import { formatDateTime } from "@/lib/format-date";
 import { setGlobalHarnessVersion, trackLatestHarnessVersion } from "./actions";
 import { HostToolsCatalog, type HostToolCatalogRow } from "./host-tools-catalog";
+
+const VERSION_SPECS: SettingSpec[] = [
+  {
+    key: "version",
+    label: "Desired version",
+    format: (value) => (value === "" ? "Not set" : formatSettingValue(value)),
+  },
+];
 
 export function HarnessSettingsView({
   desiredVersion,
@@ -40,21 +50,8 @@ export function HarnessSettingsView({
   const { pending, run } = useAction();
   const [version, setVersion] = React.useState(desiredVersion ?? "");
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = version.trim();
-    run(
-      () => setGlobalHarnessVersion(version),
-      trimmed.toLowerCase() === "latest"
-        ? "Harnesses will follow the latest version on npm."
-        : trimmed
-          ? `Harnesses will update to ${trimmed} with their next heartbeat.`
-          : "Cleared. Harnesses keep the version they run.",
-    );
-  };
-
   const changed = updatedAt ? ` Last changed ${formatDateTime(updatedAt)}.` : "";
-  let hint = `Semver, e.g. 1.4.0, or latest to follow the latest on npm. Leave blank to not manage versions.${changed}`;
+  let hint = `Semver, e.g. 1.4.0, or latest to follow the latest on npm. Leave blank to not manage versions. Default: blank.${changed}`;
   if (latest) {
     const read = latest.checkedAt ? ` (read ${formatDateTime(latest.checkedAt)})` : "";
     hint = latest.error
@@ -80,57 +77,68 @@ export function HarnessSettingsView({
           description="Settings every harness of this organization gets with its heartbeat."
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Harness version</CardTitle>
-            <CardDescription>
+        <SettingsCard
+          title="Harness version"
+          description={
+            <>
               The version of <InlineCode>{packageName}</InlineCode> harnesses should run, or{" "}
               <InlineCode>latest</InlineCode> to update them with each release. Harnesses under pm2
               stop taking jobs, let running ones finish (up to 2 hours), install it and restart; a
               version that doesn&apos;t stay up is rolled back and not tried again on that harness
               unless you use &quot;Update now&quot; on its page. Other harnesses show &quot;Update
               manually&quot;. A harness&apos;s own override (on its page) wins over this one.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form
-              onSubmit={save}
-              style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
+            </>
+          }
+          changes={settingChanges(
+            VERSION_SPECS,
+            { version: (desiredVersion ?? "").trim() },
+            { version: version.trim() },
+          )}
+          prepare={() => {
+            const trimmed = version.trim();
+            return {
+              action: () => setGlobalHarnessVersion(version),
+              success:
+                trimmed.toLowerCase() === "latest"
+                  ? "Harnesses will follow the latest version on npm."
+                  : trimmed
+                    ? `Harnesses will update to ${trimmed} with their next heartbeat.`
+                    : "Cleared. Harnesses keep the version they run.",
+            };
+          }}
+          onDiscard={() => setVersion(desiredVersion ?? "")}
+          confirm={{
+            consequence:
+              "Every harness without its own override updates to this version with its next heartbeat.",
+          }}
+          actions={
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pending || (desiredVersion ?? "").trim().toLowerCase() === "latest"}
+              onClick={() =>
+                run(async () => {
+                  const result = await trackLatestHarnessVersion();
+                  if (result.ok) setVersion("latest");
+                  return result;
+                }, "Harnesses will follow the latest version on npm.")
+              }
             >
-              <Field label="Desired version" htmlFor="desired-version" description={hint}>
-                <Input
-                  id="desired-version"
-                  placeholder="Not set"
-                  disabled={pending}
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value)}
-                  style={{ fontFamily: "var(--font-mono)" }}
-                />
-              </Field>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <Button type="submit" variant="primary" disabled={pending}>
-                  <IconDeviceFloppy size={14} />
-                  {pending ? "Saving…" : "Save"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={pending}
-                  onClick={() =>
-                    run(async () => {
-                      const result = await trackLatestHarnessVersion();
-                      if (result.ok) setVersion("latest");
-                      return result;
-                    }, "Harnesses will follow the latest version on npm.")
-                  }
-                >
-                  <IconCloudDownload size={14} />
-                  Track latest on npm
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+              <IconCloudDownload size={14} />
+              Track latest on npm
+            </Button>
+          }
+        >
+          <Field label="Desired version" htmlFor="desired-version" description={hint}>
+            <Input
+              id="desired-version"
+              placeholder="Not set"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              className="settings-mono"
+            />
+          </Field>
+        </SettingsCard>
 
         <Card>
           <CardHeader>

@@ -29,19 +29,21 @@ import {
   Muted,
   NativeSelect,
 } from "@iamthemcmaster/ui";
-import {
-  IconBan,
-  IconCloudDownload,
-  IconDeviceFloppy,
-  IconPin,
-  IconPinnedOff,
-  IconTrash,
-} from "@tabler/icons-react";
+import { IconBan, IconCloudDownload, IconPin, IconPinnedOff, IconTrash } from "@tabler/icons-react";
 import { defaultPoolLimit } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
+import { SettingsCard } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
+import {
+  formatSettingValue,
+  settingChanges,
+  withDefault,
+  type SettingSpec,
+  type SettingValue,
+} from "@/lib/settings/changes";
+import { typedNumber } from "@/lib/settings/forms";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { formatDateTime, formatRelative } from "@/lib/format-date";
 import {
@@ -109,165 +111,232 @@ const TASK_TYPE_HINTS: Record<(typeof TASK_TYPES)[number], string> = {
   coding: "Ralph runs that change code and push it.",
 };
 
-function ConfigCard({ harness }: { harness: HarnessRow }) {
-  const { pending, run } = useAction();
-  const [maxConcurrency, setMaxConcurrency] = React.useState(String(harness.maxConcurrency));
-  const [taskTypes, setTaskTypes] = React.useState<string[]>(
-    harness.acceptedTaskTypes.filter((t) => (TASK_TYPES as readonly string[]).includes(t)),
-  );
-  const [limits, setLimits] = React.useState<Record<string, string>>(() =>
-    Object.fromEntries(
+const TASK_TYPE_LABELS: Record<(typeof TASK_TYPES)[number], string> = {
+  query: "Query",
+  review: "Review",
+  coding: "Coding",
+};
+
+/** A new harness's configuration (the `harnesses` column defaults in `@omniralph/db`). */
+export const HARNESS_CONFIG_DEFAULTS = {
+  maxConcurrency: 1,
+  acceptedTaskTypes: ["query", "review"],
+};
+
+interface ConfigDraft {
+  maxConcurrency: string;
+  taskTypes: readonly string[];
+  /** Blank for the pool's default. */
+  limits: Readonly<Record<string, string>>;
+}
+
+function configDraft(harness: HarnessRow): ConfigDraft {
+  return {
+    maxConcurrency: String(harness.maxConcurrency),
+    taskTypes: harness.acceptedTaskTypes.filter((t) =>
+      (TASK_TYPES as readonly string[]).includes(t),
+    ),
+    limits: Object.fromEntries(
       Object.entries(harness.poolLimits).map(([name, limit]) => [name, String(limit)]),
     ),
-  );
+  };
+}
+
+/** The draft as compared and saved: task types in their listed order, blank limits null. */
+function configValues(draft: ConfigDraft): Record<string, SettingValue> {
+  return {
+    maxConcurrency: typedNumber(draft.maxConcurrency),
+    acceptedTaskTypes: TASK_TYPES.filter((t) => draft.taskTypes.includes(t)),
+    ...Object.fromEntries(
+      POOLS.map((pool) => [pool, draft.limits[pool]?.trim() ? Number(draft.limits[pool]) : null]),
+    ),
+  };
+}
+
+const poolLimitFormat = (value: SettingValue) =>
+  value === null ? "Default" : formatSettingValue(value);
+
+const CONFIG_SPECS: SettingSpec[] = [
+  { key: "maxConcurrency", label: "Max concurrency" },
+  {
+    key: "acceptedTaskTypes",
+    label: "Accepted task types",
+    format: (value) =>
+      formatSettingValue(
+        Array.isArray(value)
+          ? value.map((t: string) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]] ?? t)
+          : value,
+      ),
+  },
+  ...POOLS.map((pool) => ({
+    key: pool,
+    label: `${pool[0]!.toUpperCase()}${pool.slice(1)} pool limit`,
+    format: poolLimitFormat,
+  })),
+];
+
+function ConfigCard({ harness }: { harness: HarnessRow }) {
+  const { pending, run } = useAction();
+  const saved = React.useMemo(() => configDraft(harness), [harness]);
+  const [draft, setDraft] = React.useState(saved);
   const disabled = harness.revoked || pending;
-  const slots = Number(maxConcurrency) >= 1 ? Math.floor(Number(maxConcurrency)) : 1;
+  const slots = Number(draft.maxConcurrency) >= 1 ? Math.floor(Number(draft.maxConcurrency)) : 1;
+  const values = configValues(draft);
 
   const toggle = (taskType: string, on: boolean) =>
-    setTaskTypes((current) =>
-      TASK_TYPES.filter((t) => (t === taskType ? on : current.includes(t))),
-    );
+    setDraft((d) => ({
+      ...d,
+      taskTypes: TASK_TYPES.filter((t) => (t === taskType ? on : d.taskTypes.includes(t))),
+    }));
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    run(
-      () =>
-        updateHarnessConfig(harness.id, {
-          maxConcurrency: Number(maxConcurrency),
-          acceptedTaskTypes: taskTypes,
-          // Blank limits use the default.
-          poolLimits: Object.fromEntries(
-            POOLS.filter((pool) => limits[pool]?.trim()).map((pool) => [
-              pool,
-              Number(limits[pool]),
-            ]),
-          ),
-        }),
-      "Saved. The harness picks it up with its next heartbeat.",
-    );
-  };
+  const prepare = () => ({
+    action: () =>
+      updateHarnessConfig(harness.id, {
+        maxConcurrency: Number(draft.maxConcurrency),
+        acceptedTaskTypes: [...(values.acceptedTaskTypes as string[])],
+        // Blank limits use the default.
+        poolLimits: Object.fromEntries(
+          POOLS.filter((pool) => values[pool] !== null).map((pool) => [
+            pool,
+            values[pool] as number,
+          ]),
+        ),
+      }),
+    success: "Saved. The harness picks it up with its next heartbeat.",
+  });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Configuration</CardTitle>
-        <CardDescription>
-          Central settings, returned to the harness in every heartbeat response (every 20 seconds).
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={save} style={stack}>
-          <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+    <SettingsCard
+      title="Configuration"
+      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds)."
+      changes={settingChanges(CONFIG_SPECS, configValues(saved), values)}
+      prepare={prepare}
+      onDiscard={() => setDraft(saved)}
+      confirm={{
+        consequence:
+          "The harness picks these up with its next heartbeat (within 20 seconds). Running jobs aren't cancelled; it takes new jobs by the new limits.",
+      }}
+      readOnly={harness.revoked}
+      actions={
+        harness.selfUpdate === "supported" && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={disabled}
+            title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
+            onClick={() =>
+              run(
+                () => requestHarnessUpdate(harness.id),
+                `${harness.name} will update with its next heartbeat.`,
+              )
+            }
+          >
+            <IconCloudDownload size={14} />
+            Update now
+          </Button>
+        )
+      }
+    >
+      <div className="settings-row">
+        <Field
+          label="Max concurrency"
+          htmlFor="max-concurrency"
+          description={withDefault(
+            "Jobs the harness runs at once (1–32).",
+            String(HARNESS_CONFIG_DEFAULTS.maxConcurrency),
+          )}
+        >
+          <Input
+            id="max-concurrency"
+            type="number"
+            min={1}
+            max={32}
+            required
+            disabled={harness.revoked}
+            value={draft.maxConcurrency}
+            onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
+          />
+        </Field>
+      </div>
+      <div className="settings-group" role="group" aria-labelledby="task-types-label">
+        <span id="task-types-label" className="settings-group-label">
+          Accepted task types
+        </span>
+        <Muted>
+          Which tasks this host may run. Housekeeping jobs (repository syncs) always run. Default:{" "}
+          {HARNESS_CONFIG_DEFAULTS.acceptedTaskTypes
+            .map((t) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]])
+            .join(" and ")}
+          .
+        </Muted>
+        {TASK_TYPES.map((taskType) => (
+          <div key={taskType} className="settings-check settings-check-center">
+            <Checkbox
+              id={`task-type-${taskType}`}
+              checked={draft.taskTypes.includes(taskType)}
+              disabled={harness.revoked}
+              onCheckedChange={(checked) => toggle(taskType, checked === true)}
+            />
+            <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
+            <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
+          </div>
+        ))}
+      </div>
+      <div className="settings-group" role="group" aria-labelledby="pool-limits-label">
+        <span id="pool-limits-label" className="settings-group-label">
+          Concurrency per pool
+        </span>
+        <Muted>
+          Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
+          concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
+          <InlineCode>long</InlineCode> coding tasks. Leave blank for the default: long leaves one
+          slot free for other work; short may use every slot. Lowering a limit doesn&apos;t cancel
+          running jobs; the harness takes no new ones until it is under the limit.
+        </Muted>
+        <div className="settings-row">
+          {POOLS.map((pool) => (
             <Field
-              label="Max concurrency"
-              htmlFor="max-concurrency"
-              description="Jobs the harness runs at once (1–32)."
+              key={pool}
+              label={`${pool[0]!.toUpperCase()}${pool.slice(1)} pool`}
+              htmlFor={`limit-${pool}`}
+              description={`Default: ${defaultPoolLimit(pool, slots)}. Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
             >
               <Input
-                id="max-concurrency"
+                id={`limit-${pool}`}
                 type="number"
                 min={1}
-                max={32}
-                required
-                disabled={disabled}
-                value={maxConcurrency}
-                onChange={(e) => setMaxConcurrency(e.target.value)}
+                max={slots}
+                placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
+                disabled={harness.revoked}
+                value={draft.limits[pool] ?? ""}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, limits: { ...d.limits, [pool]: e.target.value } }))
+                }
               />
             </Field>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <span style={factLabel}>Accepted task types</span>
-            <Muted>
-              Which tasks this host may run. Housekeeping jobs (repository syncs) always run.
-            </Muted>
-            {TASK_TYPES.map((taskType) => (
-              <div
-                key={taskType}
-                style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-              >
-                <Checkbox
-                  id={`task-type-${taskType}`}
-                  checked={taskTypes.includes(taskType)}
-                  disabled={disabled}
-                  onCheckedChange={(checked) => toggle(taskType, checked === true)}
-                />
-                <Label htmlFor={`task-type-${taskType}`}>{taskType}</Label>
-                <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <span style={factLabel}>Concurrency per pool</span>
-            <Muted>
-              Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
-              concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
-              <InlineCode>long</InlineCode> coding tasks. Leave blank for the default: long leaves
-              one slot free for other work; short may use every slot. Lowering a limit doesn&apos;t
-              cancel running jobs; the harness takes no new ones until it is under the limit.
-            </Muted>
-            <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-              {POOLS.map((pool) => (
-                <Field
-                  key={pool}
-                  label={pool}
-                  htmlFor={`limit-${pool}`}
-                  description={`Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
-                  // Fields size to their hint; keep room for the "Default (n)" placeholder.
-                  style={{ minWidth: "12rem" }}
-                >
-                  <Input
-                    id={`limit-${pool}`}
-                    type="number"
-                    min={1}
-                    max={slots}
-                    placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
-                    disabled={disabled}
-                    value={limits[pool] ?? ""}
-                    onChange={(e) =>
-                      setLimits((current) => ({ ...current, [pool]: e.target.value }))
-                    }
-                  />
-                </Field>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <Button type="submit" variant="primary" disabled={disabled}>
-              <IconDeviceFloppy size={14} />
-              {pending ? "Saving…" : "Save"}
-            </Button>
-            {harness.selfUpdate === "supported" && (
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={disabled}
-                title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
-                onClick={() =>
-                  run(
-                    () => requestHarnessUpdate(harness.id),
-                    `${harness.name} will update with its next heartbeat.`,
-                  )
-                }
-              >
-                <IconCloudDownload size={14} />
-                Update now
-              </Button>
-            )}
-          </div>
-          {harness.updateRequest && (
-            <Muted>
-              Update to {harness.updateRequest.version} requested{" "}
-              {formatDateTime(harness.updateRequest.requestedAt)}; the harness starts it with its
-              next heartbeat.
-            </Muted>
-          )}
-        </form>
-      </CardContent>
-    </Card>
+          ))}
+        </div>
+      </div>
+      {harness.updateRequest && (
+        <Muted>
+          Update to {harness.updateRequest.version} requested{" "}
+          {formatDateTime(harness.updateRequest.requestedAt)}; the harness starts it with its next
+          heartbeat.
+        </Muted>
+      )}
+    </SettingsCard>
   );
 }
 
 // ── Version ──────────────────────────────────────────────────────────────────
+
+const VERSION_SPECS: SettingSpec[] = [
+  {
+    key: "override",
+    label: "Desired version override",
+    format: (value) => (value === "" ? "None (organization's version)" : formatSettingValue(value)),
+  },
+];
 
 function VersionCard({
   harness,
@@ -276,55 +345,46 @@ function VersionCard({
   harness: HarnessRow;
   globalDesiredVersion: string | null;
 }) {
-  const { pending, run } = useAction();
-  const [override, setOverride] = React.useState(harness.desiredVersionOverride ?? "");
-  const disabled = harness.revoked || pending;
-
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    run(
-      () => setHarnessDesiredVersion(harness.id, override),
-      override.trim()
-        ? `${harness.name} will update to ${override.trim()} with its next heartbeat.`
-        : `${harness.name} follows the organization's version again.`,
-    );
-  };
+  const savedOverride = harness.desiredVersionOverride ?? "";
+  const [override, setOverride] = React.useState(savedOverride);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Version</CardTitle>
-        <CardDescription>
-          {harness.selfUpdate === "supported"
-            ? "This harness runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
-            : "This harness can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={save} style={stack}>
-          <Field
-            label="Desired version override"
-            htmlFor="desired-version"
-            description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults).`}
-          >
-            <Input
-              id="desired-version"
-              placeholder={globalDesiredVersion ?? "Not set"}
-              disabled={disabled}
-              value={override}
-              onChange={(e) => setOverride(e.target.value)}
-              style={{ fontFamily: "var(--font-mono)" }}
-            />
-          </Field>
-          <div>
-            <Button type="submit" variant="primary" disabled={disabled}>
-              <IconDeviceFloppy size={14} />
-              {pending ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+    <SettingsCard
+      title="Version"
+      description={
+        harness.selfUpdate === "supported"
+          ? "This harness runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
+          : "This harness can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."
+      }
+      changes={settingChanges(
+        VERSION_SPECS,
+        { override: savedOverride.trim() },
+        { override: override.trim() },
+      )}
+      prepare={() => ({
+        action: () => setHarnessDesiredVersion(harness.id, override),
+        success: override.trim()
+          ? `${harness.name} will update to ${override.trim()} with its next heartbeat.`
+          : `${harness.name} follows the organization's version again.`,
+      })}
+      onDiscard={() => setOverride(savedOverride)}
+      readOnly={harness.revoked}
+    >
+      <Field
+        label="Desired version override"
+        htmlFor="desired-version"
+        description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: blank.`}
+      >
+        <Input
+          id="desired-version"
+          placeholder={globalDesiredVersion ?? "Not set"}
+          disabled={harness.revoked}
+          value={override}
+          onChange={(e) => setOverride(e.target.value)}
+          className="settings-mono"
+        />
+      </Field>
+    </SettingsCard>
   );
 }
 

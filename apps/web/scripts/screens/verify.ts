@@ -98,7 +98,13 @@ async function main(): Promise<number> {
     config: {
       baseUrl,
       signInPath: `/sign-in/dev?email=${encodeURIComponent(FIXTURE_EMAILS.admin)}&callbackUrl=/`,
-      routes: routes.map(({ name, path, auth }) => ({ name, path, auth })),
+      routes: routes.map(({ name, path, auth, steps, viewportOnly }) => ({
+        name,
+        path,
+        auth,
+        steps,
+        viewportOnly,
+      })),
       themes: options.themes,
       viewports: Object.fromEntries(options.viewports.map((name) => [name, VIEWPORTS[name]])),
       outDir: "/work/out",

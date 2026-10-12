@@ -5,32 +5,43 @@ import Link from "next/link";
 import {
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   Checkbox,
   Field,
   Label,
   Muted,
   RadioGroup,
   RadioGroupItem,
-  Switch,
+  Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
-import { IconAdjustments, IconDeviceFloppy, IconExternalLink } from "@tabler/icons-react";
+import { IconAdjustments, IconExternalLink } from "@tabler/icons-react";
 import {
   fieldErrors as toFieldErrors,
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
-  parsePathExcludes,
   RepositorySettingsInput,
   type FieldErrors,
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
+import { SettingsCard, SwitchField } from "@/components/settings-card";
+import {
+  formatSettingValue,
+  settingChanges,
+  withDefault,
+  withoutFieldErrors,
+} from "@/lib/settings/changes";
+import {
+  pickKeys,
+  REPOSITORY_CARDS,
+  REPOSITORY_SETTING_DEFAULTS,
+  repositoryDraft,
+  repositoryInput,
+  repositorySpecs,
+  repositoryValues,
+  type RepositoryDraft,
+  type RepositoryValues,
+} from "@/lib/settings/forms";
 import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
 import { ProfileFacts, type ProfileSummary } from "../../../settings/profiles/profile-facts";
@@ -67,22 +78,10 @@ interface RepositorySettingsViewProps {
   codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
 }
 
-const stack: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-3)",
-};
-
-const errorText: React.CSSProperties = {
-  margin: 0,
-  fontSize: "var(--text-sm)",
-  color: "var(--danger-fg)",
-};
-
 function InlineError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p role="alert" style={errorText}>
+    <p role="alert" className="settings-inline-error">
       {message}
     </p>
   );
@@ -102,31 +101,12 @@ function pathExcludeErrors(text: string, errors: FieldErrors): string[] {
   });
 }
 
-function TriggerToggle({
-  id,
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-3)" }}>
-      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-        <Label htmlFor={id}>{label}</Label>
-        <Muted>{description}</Muted>
-      </div>
-    </div>
-  );
+/** The repository-level key of a form setting (the trigger switches are saved as `triggers`). */
+function inputKey(key: keyof RepositoryValues): string {
+  return key === "onOpen" || key === "onPush" || key === "drafts" ? "triggers" : key;
 }
+
+const onOff = (value: boolean) => formatSettingValue(value);
 
 export function RepositorySettingsView({
   repository,
@@ -139,61 +119,74 @@ export function RepositorySettingsView({
   codingTasks,
 }: RepositorySettingsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
-  const { pending, run } = useAction();
-  const disabled = !isAdmin || pending;
+  const disabled = !isAdmin;
 
-  const [profileId, setProfileId] = React.useState(settings.profileId);
-  const [triggers, setTriggers] = React.useState(settings.triggers);
-  const [pathExcludes, setPathExcludes] = React.useState(settings.pathExcludes.join("\n"));
-  const [customInstructions, setCustomInstructions] = React.useState(settings.customInstructions);
-  const [pinnedHarnessIds, setPinnedHarnessIds] = React.useState(settings.pinnedHarnessIds);
-  const [reviewTaskIds, setReviewTaskIds] = React.useState(settings.reviewTaskIds);
-  const [correlationTaskId, setCorrelationTaskId] = React.useState(settings.correlationTaskId);
+  const context = React.useMemo(
+    () => ({ reviewTaskIds: reviewTasks.map((t) => t.id), harnessIds: agents.map((a) => a.id) }),
+    [reviewTasks, agents],
+  );
+  const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
+  const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
+  const set = <K extends keyof RepositoryDraft>(key: K, value: RepositoryDraft[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
 
-  // Pinned harnesses that were revoked since are dropped from the selection on save.
-  const knownHarnessIds = new Set(agents.map((a) => a.id));
+  const savedValues = repositoryValues(saved, context);
+  const draftValues = repositoryValues(draft, context);
+  const specs = React.useMemo(
+    () =>
+      repositorySpecs({
+        profiles: new Map(profiles.map((p) => [p.id, p.name])),
+        tasks: new Map([...reviewTasks, ...correlationTasks].map((t) => [t.id, t.name])),
+        harnesses: new Map(agents.map((a) => [a.id, a.name])),
+      }),
+    [profiles, reviewTasks, correlationTasks, agents],
+  );
+  const taskName = (id: string) =>
+    [...reviewTasks, ...correlationTasks].find((t) => t.id === id)?.name ?? id;
 
-  const togglePin = (harnessId: string, checked: boolean) =>
-    setPinnedHarnessIds((ids) =>
-      checked ? [...ids, harnessId] : ids.filter((id) => id !== harnessId),
-    );
+  /** The props of the settings card saving `keys`. */
+  const card = (
+    keys: readonly (keyof RepositoryValues)[],
+    success: (input: RepositorySettingsInput) => string,
+  ) => ({
+    readOnly: !isAdmin,
+    changes: settingChanges(
+      keys.map((key) => specs[key]),
+      savedValues,
+      draftValues,
+    ),
+    onDiscard: () => {
+      setDraft((d) => ({ ...d, ...pickKeys(saved, keys as (keyof RepositoryDraft)[]) }));
+      setErrors((e) => withoutFieldErrors(e, keys.map(inputKey)));
+    },
+    prepare: () => {
+      // The saved settings with this card's changes only.
+      const parsed = RepositorySettingsInput.safeParse(
+        repositoryInput({ ...savedValues, ...pickKeys(draftValues, keys) }),
+      );
+      if (!parsed.success) {
+        setErrors((e) => ({
+          ...withoutFieldErrors(e, keys.map(inputKey)),
+          ...toFieldErrors(parsed.error),
+        }));
+        return null;
+      }
+      return {
+        action: () => updateRepositorySettings(repository.id, parsed.data),
+        success: success(parsed.data),
+        onSuccess: () => setErrors((e) => withoutFieldErrors(e, keys.map(inputKey))),
+        onError: (result: { fieldErrors?: FieldErrors }) =>
+          setErrors((e) => ({ ...e, ...result.fieldErrors })),
+      };
+    },
+  });
+  const appliesNext = () => "Saved; it applies to the next review";
 
-  const toggleReviewTask = (taskId: string, checked: boolean) =>
-    setReviewTaskIds((ids) => (checked ? [...ids, taskId] : ids.filter((id) => id !== taskId)));
-
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const input: RepositorySettingsInput = {
-      profileId: profileId as RepositorySettingsInput["profileId"],
-      triggers,
-      pathExcludes: parsePathExcludes(pathExcludes),
-      customInstructions,
-      pinnedHarnessIds: pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)),
-      // In the listed order; review tasks that no longer exist are dropped.
-      reviewTaskIds: reviewTasks.map((t) => t.id).filter((id) => reviewTaskIds.includes(id)),
-      correlationTaskId,
-    };
-    const parsed = RepositorySettingsInput.safeParse(input);
-    if (!parsed.success) {
-      setErrors(toFieldErrors(parsed.error));
-      return;
-    }
-    const newlyPinned = parsed.data.pinnedHarnessIds.filter(
-      (id) => !settings.pinnedHarnessIds.includes(id),
-    ).length;
-    run(
-      () => updateRepositorySettings(repository.id, parsed.data),
-      newlyPinned > 0
-        ? "Settings saved; newly pinned harnesses will pre-clone the repository"
-        : "Settings saved; they apply to the next review",
-      () => setErrors({}),
-      (result) => setErrors(result.fieldErrors ?? {}),
-    );
-  };
-
-  const excludeErrors = pathExcludeErrors(pathExcludes, errors);
-  const instructionsLength = customInstructions.length;
+  const excludeErrors = pathExcludeErrors(draft.pathExcludes, errors);
+  const instructionsLength = draft.customInstructions.length;
+  const defaultProfile =
+    profiles.find((p) => p.id === REPOSITORY_SETTING_DEFAULTS.profileId)?.name ?? "Standard";
 
   return (
     <>
@@ -234,262 +227,238 @@ export function RepositorySettingsView({
 
         <RepositoryNav repositoryId={repository.id} current="settings" />
 
-        <form onSubmit={save} noValidate style={{ display: "contents" }}>
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Review profile</CardTitle>
-              <CardDescription>
-                Trade review depth against token usage.
-                {isAdmin && (
-                  <>
-                    {" "}
-                    Edit the profiles themselves in{" "}
-                    <Link href="/settings/profiles" style={{ color: "var(--text-accent)" }}>
-                      Settings › Profiles
-                    </Link>
-                    .
-                  </>
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent style={stack}>
-              <RadioGroup
-                value={profileId}
-                onValueChange={setProfileId}
-                disabled={disabled}
-                aria-label="Review profile"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "var(--space-3)",
-                }}
-              >
-                {profiles.map((profile) => {
-                  const selected = profile.id === profileId;
-                  return (
-                    <label
-                      key={profile.id}
-                      htmlFor={`profile-${profile.id}`}
-                      style={{
-                        display: "flex",
-                        gap: "var(--space-3)",
-                        alignItems: "flex-start",
-                        padding: "var(--space-4)",
-                        borderRadius: "var(--radius-md)",
-                        border: `1px solid ${selected ? "var(--accent)" : "var(--border-subtle)"}`,
-                        cursor: disabled ? "default" : "pointer",
-                      }}
-                    >
-                      <RadioGroupItem id={`profile-${profile.id}`} value={profile.id} />
-                      <div style={{ ...stack, gap: "var(--space-2)", minWidth: 0 }}>
-                        <span
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "var(--space-2)",
-                            fontWeight: "var(--font-weight-semibold)",
-                            color: "var(--text-primary)",
-                          }}
-                        >
-                          <IconAdjustments size={14} />
-                          {profile.name}
-                        </span>
-                        {profile.description && <Muted>{profile.description}</Muted>}
-                        <ProfileFacts profile={profile} />
-                      </div>
-                    </label>
-                  );
-                })}
-              </RadioGroup>
-              <InlineError message={errors.profileId} />
-            </CardContent>
-          </Card>
+        {!isAdmin && <Muted>Only admins can change repository settings.</Muted>}
 
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Review tasks</CardTitle>
-              <CardDescription>
-                Which reviewers run on each pull or merge request. They run in parallel and their
-                findings are posted as one review.
-              </CardDescription>
-            </CardHeader>
-            <CardContent style={stack}>
-              <div role="group" aria-label="Review tasks" style={stack}>
-                {reviewTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}
-                  >
-                    <Checkbox
-                      id={`review-task-${task.id}`}
-                      checked={reviewTaskIds.includes(task.id)}
-                      disabled={disabled}
-                      onCheckedChange={(checked) => toggleReviewTask(task.id, checked === true)}
-                    />
-                    <div
-                      style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}
-                    >
-                      <Label htmlFor={`review-task-${task.id}`}>
-                        {task.name} {task.builtin && <Badge variant="neutral">Built-in</Badge>}
-                      </Label>
-                      {task.description && <Muted>{task.description}</Muted>}
-                    </div>
-                  </div>
-                ))}
+        <SettingsCard
+          title="Review profile"
+          description={
+            <>
+              Trade review depth against token usage. Default: {defaultProfile}.
+              {isAdmin && (
+                <>
+                  {" "}
+                  Edit the profiles themselves in{" "}
+                  <Link href="/settings/profiles" className="settings-link">
+                    Settings › Profiles
+                  </Link>
+                  .
+                </>
+              )}
+            </>
+          }
+          confirm={{
+            consequence:
+              "The next review of this repository uses the new profile's model, token cap and file limit. Queued and running reviews keep the profile they started with.",
+          }}
+          {...card(REPOSITORY_CARDS.profile, appliesNext)}
+        >
+          <RadioGroup
+            value={draft.profileId}
+            onValueChange={(value) => set("profileId", value)}
+            disabled={disabled}
+            aria-label="Review profile"
+            className="settings-profile-choices"
+          >
+            {profiles.map((profile) => (
+              <label
+                key={profile.id}
+                htmlFor={`profile-${profile.id}`}
+                className="settings-profile-choice"
+                data-selected={profile.id === draft.profileId ? "" : undefined}
+              >
+                <RadioGroupItem id={`profile-${profile.id}`} value={profile.id} />
+                <Stack gap={2} className="settings-profile-text">
+                  <span className="settings-profile-name">
+                    <IconAdjustments size={14} />
+                    {profile.name}
+                  </span>
+                  {profile.description && <Muted>{profile.description}</Muted>}
+                  <ProfileFacts profile={profile} />
+                </Stack>
+              </label>
+            ))}
+          </RadioGroup>
+          <InlineError message={errors.profileId} />
+        </SettingsCard>
+
+        <SettingsCard
+          title="Review tasks"
+          description="Which reviewers run on each pull or merge request. They run in parallel and their findings are posted as one review."
+          {...card(REPOSITORY_CARDS.tasks, appliesNext)}
+        >
+          <div className="settings-group" role="group" aria-labelledby="review-tasks-label">
+            <span id="review-tasks-label" className="settings-group-label">
+              Reviewers
+            </span>
+            <Muted>Default: {taskName(REPOSITORY_SETTING_DEFAULTS.reviewTaskIds[0])} only.</Muted>
+            {reviewTasks.map((task) => (
+              <div key={task.id} className="settings-check">
+                <Checkbox
+                  id={`review-task-${task.id}`}
+                  checked={draft.reviewTaskIds.includes(task.id)}
+                  disabled={disabled}
+                  onCheckedChange={(checked) =>
+                    set(
+                      "reviewTaskIds",
+                      checked === true
+                        ? [...draft.reviewTaskIds, task.id]
+                        : draft.reviewTaskIds.filter((id) => id !== task.id),
+                    )
+                  }
+                />
+                <Stack gap={1}>
+                  <Label htmlFor={`review-task-${task.id}`}>
+                    {task.name} {task.builtin && <Badge variant="neutral">Built-in</Badge>}
+                  </Label>
+                  {task.description && <Muted>{task.description}</Muted>}
+                </Stack>
               </div>
-              <InlineError message={errors.reviewTaskIds} />
-              <TaskPicker
-                id="correlation-task"
-                label="Correlation task"
-                hint="Merges the review tasks' findings that describe the same issue and writes the combined summary."
-                value={correlationTaskId}
-                choices={correlationTasks}
-                disabled={disabled}
-                error={errors.correlationTaskId}
-                onChange={setCorrelationTaskId}
-              />
-            </CardContent>
-          </Card>
+            ))}
+          </div>
+          <InlineError message={errors.reviewTaskIds} />
+          <TaskPicker
+            id="correlation-task"
+            label="Correlation task"
+            hint={withDefault(
+              "Merges the review tasks' findings that describe the same issue and writes the combined summary.",
+              taskName(REPOSITORY_SETTING_DEFAULTS.correlationTaskId),
+            )}
+            value={draft.correlationTaskId}
+            choices={correlationTasks}
+            disabled={disabled}
+            error={errors.correlationTaskId}
+            onChange={(value) => set("correlationTaskId", value)}
+          />
+        </SettingsCard>
 
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Triggers</CardTitle>
-              <CardDescription>
-                When pull and merge requests are reviewed automatically.
-              </CardDescription>
-            </CardHeader>
-            <CardContent style={{ ...stack, gap: "var(--space-4)" }}>
-              <TriggerToggle
-                id="trigger-on-open"
-                label="On open (onOpen)"
-                description="Review a pull or merge request when it's opened or marked ready for review."
-                checked={triggers.onOpen}
-                disabled={disabled}
-                onChange={(onOpen) => setTriggers((t) => ({ ...t, onOpen }))}
-              />
-              <TriggerToggle
-                id="trigger-on-push"
-                label="On push (onPush)"
-                description="Review the new commits when it's pushed to."
-                checked={triggers.onPush}
-                disabled={disabled}
-                onChange={(onPush) => setTriggers((t) => ({ ...t, onPush }))}
-              />
-              <TriggerToggle
-                id="trigger-drafts"
-                label="Include drafts (includeDrafts)"
-                description="Also review draft pull requests and merge requests."
-                checked={triggers.drafts}
-                disabled={disabled}
-                onChange={(drafts) => setTriggers((t) => ({ ...t, drafts }))}
-              />
-            </CardContent>
-          </Card>
+        <SettingsCard
+          title="Triggers"
+          description="When pull and merge requests are reviewed automatically."
+          {...card(REPOSITORY_CARDS.triggers, appliesNext)}
+        >
+          <SwitchField
+            id="trigger-on-open"
+            label="Review when opened"
+            description={withDefault(
+              "Review a pull or merge request when it's opened or marked ready for review.",
+              onOff(REPOSITORY_SETTING_DEFAULTS.triggers.onOpen),
+            )}
+            checked={draft.onOpen}
+            disabled={disabled}
+            onChange={(value) => set("onOpen", value)}
+          />
+          <SwitchField
+            id="trigger-on-push"
+            label="Review when pushed to"
+            description={withDefault(
+              "Review the new commits when it's pushed to.",
+              onOff(REPOSITORY_SETTING_DEFAULTS.triggers.onPush),
+            )}
+            checked={draft.onPush}
+            disabled={disabled}
+            onChange={(value) => set("onPush", value)}
+          />
+          <SwitchField
+            id="trigger-drafts"
+            label="Include drafts"
+            description={withDefault(
+              "Also review draft pull requests and merge requests.",
+              onOff(REPOSITORY_SETTING_DEFAULTS.triggers.drafts),
+            )}
+            checked={draft.drafts}
+            disabled={disabled}
+            onChange={(value) => set("drafts", value)}
+          />
+        </SettingsCard>
 
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Files and instructions</CardTitle>
-              <CardDescription>
-                Skip files that don&apos;t need review, and tell the reviewer about this
-                repository&apos;s conventions.
-              </CardDescription>
-            </CardHeader>
-            <CardContent style={{ ...stack, gap: "var(--space-4)" }}>
-              <Field
-                label="Path excludes"
-                htmlFor="path-excludes"
-                description="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped."
-              >
-                <Textarea
-                  id="path-excludes"
-                  rows={5}
-                  disabled={disabled}
-                  error={excludeErrors.length > 0}
-                  aria-invalid={excludeErrors.length > 0}
-                  value={pathExcludes}
-                  onChange={(e) => setPathExcludes(e.target.value)}
-                  placeholder={"*.snap\n/docs/**\nsrc/**/*.generated.ts"}
-                  style={{ fontFamily: "var(--font-mono)" }}
-                />
-              </Field>
-              {excludeErrors.map((message) => (
-                <InlineError key={message} message={message} />
-              ))}
-              <Field
-                label="Custom instructions"
-                htmlFor="custom-instructions"
-                description={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`}
-                error={errors.customInstructions}
-              >
-                <Textarea
-                  id="custom-instructions"
-                  rows={6}
-                  disabled={disabled}
-                  error={Boolean(errors.customInstructions)}
-                  aria-invalid={Boolean(errors.customInstructions)}
-                  value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
-                  placeholder="e.g. We use Result types instead of exceptions; flag thrown errors in src/core."
-                />
-              </Field>
-            </CardContent>
-          </Card>
+        <SettingsCard
+          title="Files and instructions"
+          description="Skip files that don't need review, and tell the reviewer about this repository's conventions."
+          {...card(REPOSITORY_CARDS.files, appliesNext)}
+        >
+          <Field
+            label="Path excludes"
+            htmlFor="path-excludes"
+            description="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped. Default: none."
+          >
+            <Textarea
+              id="path-excludes"
+              rows={5}
+              disabled={disabled}
+              error={excludeErrors.length > 0}
+              aria-invalid={excludeErrors.length > 0}
+              value={draft.pathExcludes}
+              onChange={(e) => set("pathExcludes", e.target.value)}
+              placeholder={"*.snap\n/docs/**\nsrc/**/*.generated.ts"}
+              className="settings-mono"
+            />
+          </Field>
+          {excludeErrors.map((message) => (
+            <InlineError key={message} message={message} />
+          ))}
+          <Field
+            label="Custom instructions"
+            htmlFor="custom-instructions"
+            description={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters. Default: none.`}
+            error={errors.customInstructions}
+          >
+            <Textarea
+              id="custom-instructions"
+              rows={6}
+              disabled={disabled}
+              error={Boolean(errors.customInstructions)}
+              aria-invalid={Boolean(errors.customInstructions)}
+              value={draft.customInstructions}
+              onChange={(e) => set("customInstructions", e.target.value)}
+              placeholder="e.g. We use Result types instead of exceptions; flag thrown errors in src/core."
+            />
+          </Field>
+        </SettingsCard>
 
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Harness pinning</CardTitle>
-              <CardDescription>
-                Only the selected harnesses run this repository&apos;s jobs. Leave all unselected to
-                let any harness run them. Newly pinned harnesses pre-clone the repository.
-              </CardDescription>
-            </CardHeader>
-            <CardContent style={stack}>
-              {agents.length === 0 ? (
-                <Muted>
-                  No harnesses are enrolled yet; any harness that enrolls can run reviews.
-                </Muted>
-              ) : (
-                <div role="group" aria-label="Pinned harnesses" style={stack}>
-                  {agents.map((agent) => (
-                    <div
-                      key={agent.id}
-                      style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-                    >
-                      <Checkbox
-                        id={`pin-${agent.id}`}
-                        checked={pinnedHarnessIds.includes(agent.id)}
-                        disabled={disabled}
-                        onCheckedChange={(checked) => togglePin(agent.id, checked === true)}
-                      />
-                      <Label htmlFor={`pin-${agent.id}`}>{agent.name}</Label>
-                      {!agent.lastHeartbeatAt && <Badge variant="neutral">Never seen</Badge>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {pinnedHarnessIds.filter((id) => knownHarnessIds.has(id)).length === 0 && (
-                <Muted>Any harness can run this repository&apos;s jobs.</Muted>
-              )}
-              <InlineError
-                message={
-                  errors.pinnedHarnessIds ??
-                  Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1]
-                }
-              />
-            </CardContent>
-          </Card>
-
-          {isAdmin ? (
-            <div>
-              <Button type="submit" variant="primary" disabled={disabled}>
-                <IconDeviceFloppy size={14} />
-                {pending ? "Saving…" : "Save settings"}
-              </Button>
-            </div>
-          ) : (
-            <Muted>Only admins can change repository settings.</Muted>
+        <SettingsCard
+          title="Harness pinning"
+          description="Only the selected harnesses run this repository's jobs. Leave all unselected to let any harness run them. Newly pinned harnesses pre-clone the repository. Default: none selected."
+          {...card(REPOSITORY_CARDS.pinning, (input) =>
+            input.pinnedHarnessIds.some((id) => !settings.pinnedHarnessIds.includes(id))
+              ? "Saved; newly pinned harnesses will pre-clone the repository"
+              : "Saved; it applies to the next review",
           )}
-        </form>
+        >
+          {agents.length === 0 ? (
+            <Muted>No harnesses are enrolled yet; any harness that enrolls can run reviews.</Muted>
+          ) : (
+            <Stack gap={3} role="group" aria-label="Pinned harnesses">
+              {agents.map((agent) => (
+                <div key={agent.id} className="settings-check settings-check-center">
+                  <Checkbox
+                    id={`pin-${agent.id}`}
+                    checked={draft.pinnedHarnessIds.includes(agent.id)}
+                    disabled={disabled}
+                    onCheckedChange={(checked) =>
+                      set(
+                        "pinnedHarnessIds",
+                        checked === true
+                          ? [...draft.pinnedHarnessIds, agent.id]
+                          : draft.pinnedHarnessIds.filter((id) => id !== agent.id),
+                      )
+                    }
+                  />
+                  <Label htmlFor={`pin-${agent.id}`}>{agent.name}</Label>
+                  {!agent.lastHeartbeatAt && <Badge variant="neutral">Never seen</Badge>}
+                </div>
+              ))}
+            </Stack>
+          )}
+          {draftValues.pinnedHarnessIds.length === 0 && (
+            <Muted>Any harness can run this repository&apos;s jobs.</Muted>
+          )}
+          <InlineError
+            message={
+              errors.pinnedHarnessIds ??
+              Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1]
+            }
+          />
+        </SettingsCard>
 
         {isAdmin && ralph && (
           <RalphSettingsSection

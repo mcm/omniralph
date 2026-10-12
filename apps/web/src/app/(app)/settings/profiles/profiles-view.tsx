@@ -1,21 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Field,
-  Input,
-  Label,
-  Muted,
-  Switch,
-} from "@iamthemcmaster/ui";
-import { IconDeviceFloppy } from "@tabler/icons-react";
+import { Badge, Field, Input } from "@iamthemcmaster/ui";
 import {
   fieldErrors as toFieldErrors,
   MIN_PROFILE_TOKEN_CAP,
@@ -24,156 +10,182 @@ import {
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
+import { SettingsCard, SwitchField } from "@/components/settings-card";
 import { formatDateTime } from "@/lib/format-date";
+import { formatSettingValue, settingChanges, withDefault } from "@/lib/settings/changes";
+import {
+  PROFILE_SPECS,
+  profileDraft,
+  profileValues,
+  type ProfileDraft,
+} from "@/lib/settings/forms";
 import { updateReviewProfile } from "./actions";
 import type { ProfileSummary } from "./profile-facts";
 
 interface ProfileRow extends ProfileSummary {
   /** ISO timestamp. */
   updatedAt: string;
+  builtIn: boolean;
+  /** A built-in profile's original limits; null for others. */
+  defaults: ReviewProfileInput | null;
+  /** The connected repositories using the profile, by path. */
+  repositories: { id: string; fullPath: string }[];
 }
 
-/** A number input's value as a number (NaN when it isn't one, so validation reports it). */
-function toNumber(value: string): number {
-  return value.trim() === "" ? Number.NaN : Number(value);
+/** Repositories listed by name in the confirmation; the rest are counted. */
+const AFFECTED_LISTED = 8;
+
+function repositoryCount(count: number): string {
+  return count === 1 ? "1 repository" : `${count.toLocaleString("en-US")} repositories`;
+}
+
+/** The repositories a profile change affects, for its confirmation. */
+export function AffectedRepositories({
+  repositories,
+}: {
+  repositories: ProfileRow["repositories"];
+}) {
+  if (repositories.length === 0) {
+    return (
+      <div className="settings-affected">
+        No repository uses this profile, so no review changes.
+      </div>
+    );
+  }
+  const rest = repositories.length - AFFECTED_LISTED;
+  return (
+    <div className="settings-affected">
+      <span>Affects the next review of {repositoryCount(repositories.length)}:</span>
+      <ul>
+        {repositories.slice(0, AFFECTED_LISTED).map((repository) => (
+          <li key={repository.id}>{repository.fullPath}</li>
+        ))}
+        {rest > 0 && <li>and {repositoryCount(rest)} more</li>}
+      </ul>
+    </div>
+  );
 }
 
 function ProfileCard({ profile }: { profile: ProfileRow }) {
-  const { pending, run } = useAction();
-  const [model, setModel] = React.useState(profile.model);
-  const [maxTokens, setMaxTokens] = React.useState(String(profile.maxTokensPerReview));
-  const [maxFiles, setMaxFiles] = React.useState(String(profile.maxFiles));
-  const [exploration, setExploration] = React.useState(profile.allowRepoExploration);
+  const saved = React.useMemo(() => profileDraft(profile), [profile]);
+  const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const idPrefix = `profile-${profile.id}`;
+  const set = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
+  const defaults = profile.defaults;
+  const describe = (text: string, key: keyof ReviewProfileInput) =>
+    defaults ? withDefault(text, formatSettingValue(defaults[key])) : text;
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = ReviewProfileInput.safeParse({
-      model,
-      maxTokensPerReview: toNumber(maxTokens),
-      maxFiles: toNumber(maxFiles),
-      allowRepoExploration: exploration,
-    });
+  const prepare = () => {
+    const parsed = ReviewProfileInput.safeParse(profileValues(draft));
     if (!parsed.success) {
       setErrors(toFieldErrors(parsed.error));
-      return;
+      return null;
     }
-    run(
-      () => updateReviewProfile(profile.id, parsed.data),
-      `${profile.name} profile saved; it applies to the next review`,
-      () => setErrors({}),
-      (result) => setErrors(result.fieldErrors ?? {}),
-    );
+    return {
+      action: () => updateReviewProfile(profile.id, parsed.data),
+      success: `${profile.name} profile saved; it applies to the next review`,
+      onSuccess: () => setErrors({}),
+      onError: (result: { fieldErrors?: FieldErrors }) => setErrors(result.fieldErrors ?? {}),
+    };
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          {profile.name}
+    <SettingsCard
+      title={profile.name}
+      titleExtra={
+        profile.builtIn && (
           <Badge variant="neutral" size="sm">
             Built-in
           </Badge>
-        </CardTitle>
-        <CardDescription>
-          {profile.description ?? "Review profile."} Last changed{" "}
-          {formatDateTime(profile.updatedAt)}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={save}
-          noValidate
-          style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
+        )
+      }
+      description={`${profile.description ?? "Review profile."} Used by ${repositoryCount(profile.repositories.length)}. Last changed ${formatDateTime(profile.updatedAt)}.`}
+      changes={settingChanges(PROFILE_SPECS, profileValues(saved), profileValues(draft))}
+      prepare={prepare}
+      onDiscard={() => {
+        setDraft(saved);
+        setErrors({});
+      }}
+      confirm={{
+        consequence: `The next review of every repository using ${profile.name} uses the new limits. Queued and running reviews keep the ones they started with.`,
+        affected: <AffectedRepositories repositories={profile.repositories} />,
+      }}
+    >
+      <div className="settings-row">
+        <Field
+          label="Model"
+          htmlFor={`${idPrefix}-model`}
+          description={describe("Claude model ID.", "model")}
+          error={errors.model}
+          required
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "var(--space-4)",
-            }}
-          >
-            <Field
-              label="Model"
-              htmlFor={`${idPrefix}-model`}
-              description="Claude model ID."
-              error={errors.model}
-              required
-            >
-              <Input
-                id={`${idPrefix}-model`}
-                disabled={pending}
-                error={Boolean(errors.model)}
-                aria-invalid={Boolean(errors.model)}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                style={{ fontFamily: "var(--font-mono)" }}
-              />
-            </Field>
-            <Field
-              label="Token cap per review"
-              htmlFor={`${idPrefix}-max-tokens`}
-              description={`At least ${MIN_PROFILE_TOKEN_CAP.toLocaleString()}. Reviews stop at the cap and keep partial findings.`}
-              error={errors.maxTokensPerReview}
-              required
-            >
-              <Input
-                id={`${idPrefix}-max-tokens`}
-                type="number"
-                min={MIN_PROFILE_TOKEN_CAP}
-                step={1000}
-                disabled={pending}
-                error={Boolean(errors.maxTokensPerReview)}
-                aria-invalid={Boolean(errors.maxTokensPerReview)}
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(e.target.value)}
-              />
-            </Field>
-            <Field
-              label="Max files"
-              htmlFor={`${idPrefix}-max-files`}
-              description="Files reviewed at most; the lowest-risk ones are skipped first."
-              error={errors.maxFiles}
-              required
-            >
-              <Input
-                id={`${idPrefix}-max-files`}
-                type="number"
-                min={1}
-                disabled={pending}
-                error={Boolean(errors.maxFiles)}
-                aria-invalid={Boolean(errors.maxFiles)}
-                value={maxFiles}
-                onChange={(e) => setMaxFiles(e.target.value)}
-              />
-            </Field>
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-3)" }}>
-            <Switch
-              id={`${idPrefix}-exploration`}
-              checked={exploration}
-              disabled={pending}
-              onCheckedChange={setExploration}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-              <Label htmlFor={`${idPrefix}-exploration`}>Allow repository exploration</Label>
-              <Muted>
-                Let the reviewer read files outside the diff (read-only) for context. Off reviews
-                only the diff.
-              </Muted>
-            </div>
-          </div>
-          <div>
-            <Button type="submit" variant="primary" disabled={pending}>
-              <IconDeviceFloppy size={14} />
-              {pending ? "Saving…" : `Save ${profile.name}`}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          <Input
+            id={`${idPrefix}-model`}
+            error={Boolean(errors.model)}
+            aria-invalid={Boolean(errors.model)}
+            value={draft.model}
+            onChange={(e) => set("model", e.target.value)}
+            className="settings-mono"
+          />
+        </Field>
+        <Field
+          label="Token cap per review"
+          htmlFor={`${idPrefix}-max-tokens`}
+          description={describe(
+            `At least ${MIN_PROFILE_TOKEN_CAP.toLocaleString("en-US")}. Reviews stop at the cap and keep partial findings.`,
+            "maxTokensPerReview",
+          )}
+          error={errors.maxTokensPerReview}
+          required
+        >
+          <Input
+            id={`${idPrefix}-max-tokens`}
+            type="number"
+            min={MIN_PROFILE_TOKEN_CAP}
+            step={1000}
+            error={Boolean(errors.maxTokensPerReview)}
+            aria-invalid={Boolean(errors.maxTokensPerReview)}
+            value={draft.maxTokensPerReview}
+            onChange={(e) => set("maxTokensPerReview", e.target.value)}
+            className="text-numeric"
+          />
+        </Field>
+        <Field
+          label="Max files"
+          htmlFor={`${idPrefix}-max-files`}
+          description={describe(
+            "Files reviewed at most; the lowest-risk ones are skipped first.",
+            "maxFiles",
+          )}
+          error={errors.maxFiles}
+          required
+        >
+          <Input
+            id={`${idPrefix}-max-files`}
+            type="number"
+            min={1}
+            error={Boolean(errors.maxFiles)}
+            aria-invalid={Boolean(errors.maxFiles)}
+            value={draft.maxFiles}
+            onChange={(e) => set("maxFiles", e.target.value)}
+            className="text-numeric"
+          />
+        </Field>
+      </div>
+      <SwitchField
+        id={`${idPrefix}-exploration`}
+        label="Allow repository exploration"
+        description={describe(
+          "Let the reviewer read files outside the diff (read-only) for context. Off reviews only the diff.",
+          "allowRepoExploration",
+        )}
+        checked={draft.allowRepoExploration}
+        disabled={false}
+        onChange={(value) => set("allowRepoExploration", value)}
+      />
+    </SettingsCard>
   );
 }
 
