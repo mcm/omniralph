@@ -73,9 +73,11 @@ const {
   requestHarnessUpdate,
   revokeHarness,
   setHarnessDesiredVersion,
+  setHostToolPath,
   unpinRepository,
   updateHarnessConfig,
 } = await import("./actions");
+const { addHostTool, removeHostTool } = await import("../settings/harnesses/actions");
 const { harnessRow } = await import("@/lib/harnesses/rows");
 const { cancelJob } = await import("../jobs/actions");
 const { POST: enroll } = await import("@/app/api/harness/enroll/route");
@@ -694,6 +696,102 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(
         none.every((j) => j.targetHarnessId !== harnessId && j.targetHarnessId !== fresh.harnessId),
       ).toBe(true);
+    });
+  });
+
+  describe("host tools", () => {
+    async function knownTools(accessToken: string) {
+      const response = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      return response.hostTools.filter((tool) => tool.name.startsWith("ui-"));
+    }
+
+    it("the catalog and configured paths set by admins reach the harness's next heartbeat", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
+      const added = await addHostTool({ name: "ui-semgrep", description: "SAST" });
+      if (!added.ok) throw new Error(added.error);
+      const id = added.hostToolId!;
+      expect(await knownTools(accessToken)).toEqual([{ name: "ui-semgrep", configuredPath: null }]);
+
+      expect(await setHostToolPath(harnessId, id, " /opt/semgrep/bin/semgrep ")).toEqual({
+        ok: true,
+      });
+      expect(await knownTools(accessToken)).toEqual([
+        { name: "ui-semgrep", configuredPath: "/opt/semgrep/bin/semgrep" },
+      ]);
+      await sendHeartbeat(accessToken, {
+        ...HEARTBEAT,
+        hostTools: [
+          {
+            name: "ui-semgrep",
+            configuredPath: "/opt/semgrep/bin/semgrep",
+            configuredPathExists: true,
+            discoveredPath: "/usr/bin/semgrep",
+          },
+        ],
+      });
+      const [stored] = (await listHarnessHostTools(db, orgId, harnessId)).filter(
+        (tool) => tool.name === "ui-semgrep",
+      );
+      expect(stored).toMatchObject({
+        configuredPath: "/opt/semgrep/bin/semgrep",
+        configuredPathExists: true,
+        effectivePath: "/opt/semgrep/bin/semgrep",
+      });
+
+      // Clearing it: the harness falls back to the path it discovers.
+      expect(await setHostToolPath(harnessId, id, "  ")).toEqual({ ok: true });
+      expect(await knownTools(accessToken)).toEqual([{ name: "ui-semgrep", configuredPath: null }]);
+
+      // Deleted from the catalog: the harness no longer hears of it.
+      expect(await removeHostTool(id)).toEqual({ ok: true });
+      expect(await knownTools(accessToken)).toEqual([]);
+    });
+
+    it("rejects relative paths, unknown harnesses and tools, revoked harnesses and members", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
+      const added = await addHostTool({ name: "ui-ruff" });
+      if (!added.ok) throw new Error(added.error);
+      const id = added.hostToolId!;
+      expect(await addHostTool({ name: "ui-ruff" })).toEqual({
+        ok: false,
+        error: "There already is a host tool named ui-ruff.",
+      });
+      for (const relative of ["bin/ruff", "./ruff", "ruff", "~/bin/ruff"]) {
+        expect(await setHostToolPath(harnessId, id, relative)).toEqual({
+          ok: false,
+          error: "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank.",
+        });
+      }
+      expect(await setHostToolPath(harnessId, id, `/${"x".repeat(4096)}`)).toMatchObject({
+        ok: false,
+      });
+      const missing = "That harness or host tool doesn't exist, or the harness was revoked.";
+      expect(await setHostToolPath(randomUUID(), id, "/usr/bin/ruff")).toEqual({
+        ok: false,
+        error: missing,
+      });
+      expect(await setHostToolPath(harnessId, randomUUID(), "/usr/bin/ruff")).toEqual({
+        ok: false,
+        error: missing,
+      });
+      expect(await setHostToolPath("not-a-uuid", id, "/usr/bin/ruff")).toEqual({
+        ok: false,
+        error: missing,
+      });
+
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await setHostToolPath(harnessId, id, "/usr/bin/ruff")).toMatchObject({ ok: false });
+      expect(await addHostTool({ name: "ui-member" })).toMatchObject({ ok: false });
+      expect(await removeHostTool(id)).toMatchObject({ ok: false });
+      expect(await knownTools(accessToken)).toEqual([{ name: "ui-ruff", configuredPath: null }]);
+
+      state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
+      await revokeHarness(harnessId);
+      expect(await setHostToolPath(harnessId, id, "/usr/bin/ruff")).toEqual({
+        ok: false,
+        error: missing,
+      });
+      expect(await removeHostTool(id)).toEqual({ ok: true });
     });
   });
 

@@ -18,12 +18,14 @@ import { AppHeader } from "@/components/app-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { setGlobalHarnessVersion, trackLatestHarnessVersion } from "./actions";
+import { HostToolsCatalog, type HostToolCatalogRow } from "./host-tools-catalog";
 
 export function HarnessSettingsView({
   desiredVersion,
   updatedAt,
   latest,
   packageName,
+  hostTools,
 }: {
   /** A version, `latest` or null. */
   desiredVersion: string | null;
@@ -32,6 +34,8 @@ export function HarnessSettingsView({
   /** Tracking `latest`: the version last read from npm (`checkedAt` is ISO), or why reading failed. */
   latest: { version: string | null; error: string | null; checkedAt: string | null } | null;
   packageName: string;
+  /** The organization's host tools, by name. */
+  hostTools: HostToolCatalogRow[];
 }) {
   const { pending, run } = useAction();
   const [version, setVersion] = React.useState(desiredVersion ?? "");
@@ -135,6 +139,20 @@ export function HarnessSettingsView({
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Host tools</CardTitle>
+            <CardDescription>
+              Software harness owners install by hand, such as Semgrep, that tasks can require.
+              Harnesses get this list with their heartbeat and report where they find each tool; set
+              a harness&apos;s path to one on its page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <HostToolsCatalog hostTools={hostTools} />
           </CardContent>
         </Card>
       </main>

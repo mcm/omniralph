@@ -7,11 +7,12 @@ import {
   getRepository,
   TRACK_LATEST_HARNESS_VERSION,
   requestHarnessUpdate as requestHarnessUpdateRow,
+  setHarnessHostToolPath,
   setHarnessDesiredVersion as setHarnessDesiredVersionRow,
   unpinRepositoryFromHarness,
   updateHarnessConfig as updateHarnessConfigRow,
 } from "@omniralph/db";
-import { HarnessVersion, InstallPayload } from "@omniralph/shared";
+import { HarnessVersion, HostToolPath, InstallPayload } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -307,6 +308,47 @@ export async function installInstallable(
     }
     revalidate(harnessId);
     revalidatePath("/jobs");
+  });
+}
+
+const INVALID_HOST_TOOL_PATH =
+  "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank.";
+
+/**
+ * Sets the path a harness runs a host tool from (an absolute path on the harness host); blank
+ * clears it, and the harness then uses the path it discovers on its `PATH`. The harness gets it
+ * with its next heartbeat response and reports whether it exists with the heartbeat after.
+ */
+export async function setHostToolPath(
+  harnessId: string,
+  hostToolId: string,
+  path: string,
+): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const trimmed = path.trim();
+    const parsed = trimmed ? HostToolPath.safeParse(trimmed) : null;
+    if (parsed && !parsed.success) return { ok: false, error: INVALID_HOST_TOOL_PATH };
+    const ids = z.uuid();
+    const result =
+      ids.safeParse(harnessId).success && ids.safeParse(hostToolId).success
+        ? await setHarnessHostToolPath(
+            getDb(),
+            admin.organization.id,
+            harnessId,
+            hostToolId,
+            parsed?.data ?? null,
+          )
+        : ({ ok: false, error: "not_found" } as const);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.error === "invalid_path"
+            ? INVALID_HOST_TOOL_PATH
+            : "That harness or host tool doesn't exist, or the harness was revoked.",
+      };
+    }
+    revalidate(harnessId);
   });
 }
 

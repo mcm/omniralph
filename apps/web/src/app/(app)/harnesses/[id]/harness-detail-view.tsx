@@ -61,6 +61,7 @@ import {
 } from "../harness-parts";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit-log";
+import { HarnessHostTools, type HostToolRow } from "./harness-host-tools";
 import {
   InstallForm,
   InstallJobs,
@@ -79,6 +80,8 @@ interface HarnessDetailViewProps {
   installables: InstallableRow[];
   /** `install` jobs targeted at the harness in the last 24 hours, newest first. */
   installJobs: InstallJobRow[];
+  /** Every host tool of the organization's catalog with this harness's path and report, by name. */
+  hostTools: HostToolRow[];
   /** Settings › Harnesses version (described when it tracks npm's latest), used when the harness has no override. */
   globalDesiredVersion: string | null;
 }
@@ -474,6 +477,34 @@ export function InstallablesCard({
   );
 }
 
+// ── Host tools ───────────────────────────────────────────────────────────────
+
+export function HostToolsCard({
+  harness,
+  hostTools,
+}: {
+  harness: HarnessRow;
+  hostTools: HostToolRow[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Host tools</CardTitle>
+        <CardDescription>
+          Software installed on this host by hand. A configured path wins over the one the harness
+          discovers on its <InlineCode>PATH</InlineCode>, even when it doesn&apos;t exist: the tool
+          is then unavailable. Leave it blank to use the discovered one. The harness gets a new path
+          with its next heartbeat and reports on it with the one after; it refuses paths its local{" "}
+          <InlineCode>blockedExecPaths</InlineCode> covers.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <HarnessHostTools harnessId={harness.id} revoked={harness.revoked} hostTools={hostTools} />
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Revoke ────────────────────────────────────────────────────────────────────
 
 function RevokeCard({ harness }: { harness: HarnessRow }) {
@@ -585,6 +616,7 @@ export function HarnessDetailView({
   audit,
   installables,
   installJobs,
+  hostTools,
   globalDesiredVersion,
 }: HarnessDetailViewProps) {
   return (
@@ -679,6 +711,7 @@ export function HarnessDetailView({
         <VersionCard harness={harness} globalDesiredVersion={globalDesiredVersion} />
         <PinsCard harness={harness} repositories={repositories} />
         <InstallablesCard harness={harness} installables={installables} installJobs={installJobs} />
+        <HostToolsCard harness={harness} hostTools={hostTools} />
 
         <Card>
           <CardHeader>
