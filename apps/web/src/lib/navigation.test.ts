@@ -13,6 +13,7 @@ describe("navGroups", () => {
       "Analytics",
       "Organization",
       "Agents",
+      "Tasks",
       "Profiles",
       "Integrations",
       "Harnesses",
@@ -35,6 +36,12 @@ describe("navGroups", () => {
     const agents = items.find((item) => item.href === "/settings/agents");
     expect(agents).toEqual({ href: "/settings/agents", label: "Agents", icon: "agents" });
   });
+
+  it("links the task definitions for every member", () => {
+    const items = navGroups.flatMap((group) => group.items);
+    const tasks = items.find((item) => item.href === "/settings/tasks");
+    expect(tasks).toEqual({ href: "/settings/tasks", label: "Tasks", icon: "tasks" });
+  });
 });
 
 describe("navGroupsForRole", () => {
@@ -46,7 +53,15 @@ describe("navGroupsForRole", () => {
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
       [
         "Settings",
-        ["Organization", "Agents", "Profiles", "Integrations", "Harnesses", "Chat accounts"],
+        [
+          "Organization",
+          "Agents",
+          "Tasks",
+          "Profiles",
+          "Integrations",
+          "Harnesses",
+          "Chat accounts",
+        ],
       ],
     ]);
   });
@@ -54,7 +69,7 @@ describe("navGroupsForRole", () => {
   it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
       ["Navigation", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
-      ["Settings", ["Organization", "Agents", "Chat accounts"]],
+      ["Settings", ["Organization", "Agents", "Tasks", "Chat accounts"]],
     ]);
   });
 });
