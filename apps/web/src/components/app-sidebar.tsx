@@ -27,7 +27,7 @@ import {
   IconRepeat,
   IconRobot,
   IconServer,
-  IconServerCog,
+  IconSettingsAutomation,
   IconSubtask,
 } from "@tabler/icons-react";
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
@@ -49,7 +49,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   tasks: IconSubtask,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
-  harnessSettings: IconServerCog,
+  harnessSettings: IconSettingsAutomation,
   chatAccounts: IconMessageCircleUser,
 };
 

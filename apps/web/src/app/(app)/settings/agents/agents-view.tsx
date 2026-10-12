@@ -46,7 +46,7 @@ interface AgentsViewProps {
 export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Agents" }]} />
+      <AppHeader breadcrumbs={[{ label: "Agents" }]} />
       <main style={pageMain}>
         <div
           style={{

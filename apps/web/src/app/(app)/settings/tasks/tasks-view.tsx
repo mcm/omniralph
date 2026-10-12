@@ -106,7 +106,7 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
 export function TasksView({ tasks, isAdmin }: TasksViewProps) {
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Tasks" }]} />
+      <AppHeader breadcrumbs={[{ label: "Tasks" }]} />
       <main style={pageMain}>
         <div
           style={{

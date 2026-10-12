@@ -28,10 +28,14 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Sidebar navigation. Harnesses and Jobs serve every task type. */
+/**
+ * Sidebar navigation: what the fleet works on and did, then how it is configured. Harnesses and
+ * Jobs serve every task type. Every label is unique, and a page's breadcrumbs start with the
+ * label of the entry that is active for it, so each page names where it sits in the sidebar.
+ */
 export const navGroups: NavGroup[] = [
   {
-    label: "Navigation",
+    label: "Operations",
     items: [
       { href: "/repositories", label: "Repositories", icon: "repositories" },
       { href: "/reviews", label: "Reviews", icon: "reviews" },
@@ -56,7 +60,7 @@ export const navGroups: NavGroup[] = [
       },
       {
         href: "/settings/harnesses",
-        label: "Harnesses",
+        label: "Harness defaults",
         icon: "harnessSettings",
         adminOnly: true,
       },

@@ -139,7 +139,7 @@ export async function updateHarnessConfig(
 }
 
 /**
- * Sets the version this harness should run, overriding Settings › Harnesses; blank
+ * Sets the version this harness should run, overriding Settings › Harness defaults; blank
  * clears the override. Harnesses under pm2 update themselves to it.
  */
 export async function setHarnessDesiredVersion(

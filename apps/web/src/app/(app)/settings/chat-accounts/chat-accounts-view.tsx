@@ -43,7 +43,7 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
 
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Chat accounts" }]} />
+      <AppHeader breadcrumbs={[{ label: "Chat accounts" }]} />
       <main
         style={{
           flex: 1,

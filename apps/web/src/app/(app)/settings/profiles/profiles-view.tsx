@@ -179,7 +179,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
 export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Settings" }, { label: "Profiles" }]} />
+      <AppHeader breadcrumbs={[{ label: "Profiles" }]} />
       <main
         style={{
           flex: 1,

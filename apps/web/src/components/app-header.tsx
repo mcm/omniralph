@@ -3,13 +3,13 @@
 import * as React from "react";
 import {
   Breadcrumb,
+  BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
   Button,
-  Cluster,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -30,8 +30,15 @@ import { saveThemePreference } from "@/lib/theme-actions";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
 
+/** A breadcrumb; `href` only when the crumb has a page of its own. */
+export interface Crumb {
+  label: string;
+  href?: string;
+}
+
 interface AppHeaderProps {
-  breadcrumbs?: { label: string; href?: string }[];
+  /** Starts with the sidebar entry that is active for this page. */
+  breadcrumbs?: Crumb[];
 }
 
 // The theme lives on <html data-theme> (rendered from the user's saved theme,
@@ -74,50 +81,16 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   const user = useCurrentUser();
   const { isMobile } = useSidebar();
   const [signingOut, startSignOut] = React.useTransition();
+  const name = userDisplayName(user);
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: "var(--z-sticky)",
-        height: 52,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 var(--space-6)",
-        background: "color-mix(in srgb, var(--bg-page) 88%, transparent)",
-        backdropFilter: "blur(12px)",
-        borderBottom: "1px solid var(--border-subtle)",
-        flexShrink: 0,
-      }}
-    >
-      <Cluster gap={2} className="min-w-0">
+    <header className="app-header">
+      <div className="app-header-start">
         {/* Below 768px the sidebar is a sheet; this opens it. */}
-        {isMobile && <SidebarTrigger />}
-        {breadcrumbs.length > 0 && (
-          <Breadcrumb>
-            <BreadcrumbList>
-              {breadcrumbs.map((crumb, i) => (
-                <React.Fragment key={i}>
-                  <BreadcrumbItem>
-                    {i < breadcrumbs.length - 1 ? (
-                      <BreadcrumbLink href={crumb.href ?? "#"}>{crumb.label}</BreadcrumbLink>
-                    ) : (
-                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                    )}
-                  </BreadcrumbItem>
-                  {i < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-                </React.Fragment>
-              ))}
-            </BreadcrumbList>
-          </Breadcrumb>
-        )}
-      </Cluster>
+        {isMobile && <SidebarTrigger className="shrink-0" />}
+        {breadcrumbs.length > 0 && <HeaderBreadcrumbs crumbs={breadcrumbs} />}
+      </div>
 
-      {/* Right controls */}
-      <div
-        style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginLeft: "auto" }}
-      >
+      <div className="app-header-end">
         <Button
           variant="ghost"
           size="icon"
@@ -128,56 +101,29 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
           {theme === "light" ? <IconMoon size={16} /> : <IconSun size={16} />}
         </Button>
 
-        <div
-          style={{
-            width: 1,
-            height: 20,
-            background: "var(--border-subtle)",
-            margin: "0 var(--space-1)",
-          }}
-        />
+        <div className="app-header-divider" aria-hidden="true" />
 
-        {/* User menu */}
+        {/* User menu. Below 768px the name is hidden and the avatar alone opens it. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              style={{ gap: "var(--space-2)", paddingRight: "var(--space-2)" }}
+              className="app-header-user"
+              aria-label={`Account menu for ${name}`}
             >
-              <Avatar style={{ width: 24, height: 24 }}>
+              <Avatar className="app-header-avatar">
                 {user.image && <AvatarImage src={user.image} alt="" />}
-                <AvatarFallback
-                  style={{
-                    fontSize: 10,
-                    background: "var(--bg-raised)",
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  {userInitials(user)}
-                </AvatarFallback>
+                <AvatarFallback>{userInitials(user)}</AvatarFallback>
               </Avatar>
-              <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
-                {userDisplayName(user)}
-              </span>
-              <IconChevronDown size={12} style={{ color: "var(--text-tertiary)" }} />
+              <span className="app-header-user-name">{name}</span>
+              <IconChevronDown size={12} className="app-header-chevron" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" style={{ minWidth: 200 }}>
+          <DropdownMenuContent align="end" className="app-header-menu">
             <DropdownMenuLabel>
-              <div style={{ color: "var(--text-primary)" }}>{userDisplayName(user)}</div>
-              {user.email && (
-                <div
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-tertiary)",
-                    fontFamily: "var(--font-mono)",
-                    fontWeight: "normal",
-                  }}
-                >
-                  {user.email}
-                </div>
-              )}
+              <div className="app-header-menu-name">{name}</div>
+              {user.email && <div className="app-header-menu-email">{user.email}</div>}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -191,5 +137,48 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
         </DropdownMenu>
       </div>
     </header>
+  );
+}
+
+/**
+ * One line of crumbs that never wraps: every label truncates, and below 768px the middle
+ * crumbs collapse into an ellipsis (globals.css). Parents without a page are plain text.
+ */
+function HeaderBreadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
+  const last = crumbs.length - 1;
+  return (
+    <Breadcrumb className="app-crumbs">
+      <BreadcrumbList className="app-crumbs-list">
+        {crumbs.map((crumb, i) => {
+          const middle = i > 0 && i < last;
+          return (
+            <React.Fragment key={i}>
+              {i === 1 && last > 1 && (
+                <>
+                  <BreadcrumbItem className="app-crumb-ellipsis">
+                    <BreadcrumbEllipsis className="app-crumb-ellipsis-icon" />
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="app-crumb-ellipsis" />
+                </>
+              )}
+              <BreadcrumbItem className={middle ? "app-crumb app-crumb-middle" : "app-crumb"}>
+                {i === last ? (
+                  <BreadcrumbPage className="app-crumb-label">{crumb.label}</BreadcrumbPage>
+                ) : crumb.href ? (
+                  <BreadcrumbLink href={crumb.href} className="app-crumb-label">
+                    {crumb.label}
+                  </BreadcrumbLink>
+                ) : (
+                  <span className="app-crumb-label">{crumb.label}</span>
+                )}
+              </BreadcrumbItem>
+              {i < last && (
+                <BreadcrumbSeparator className={middle ? "app-crumb-middle" : undefined} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
   );
 }

@@ -147,11 +147,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
   return (
     <>
       <AppHeader
-        breadcrumbs={[
-          { label: "Settings" },
-          { label: "Agents", href: "/settings/agents" },
-          { label: agent.name },
-        ]}
+        breadcrumbs={[{ label: "Agents", href: "/settings/agents" }, { label: agent.name }]}
       />
       <main style={pageMain}>
         <div

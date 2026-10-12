@@ -205,7 +205,6 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
 
   const title = agent ? `Edit ${agent.name}` : "New agent";
   const breadcrumbs = [
-    { label: "Settings" },
     { label: "Agents", href: "/settings/agents" },
     ...(agent ? [{ label: agent.name, href: agentHref(agent.id) }] : []),
     { label: agent ? "Edit" : "New" },
