@@ -180,6 +180,7 @@ export type StorySessionSettings = Pick<
   | "tools"
   | "env"
   | "mcpServers"
+  | "skills"
   | "tokenBudget"
   | "maxTurns"
   | "idleTimeoutMs"

@@ -255,6 +255,7 @@ export async function runQueryTask(
       ...(spec.fallbackModel !== null && { fallbackModel: spec.fallbackModel }),
       ...(spec.task.idleTimeoutMs !== undefined && { idleTimeoutMs: spec.task.idleTimeoutMs }),
       ...(mcpServers && { mcpServers }),
+      ...(executables.skills && { skills: executables.skills }),
       ...(runTmpDir !== workspace.cwd && { additionalDirectories: [runTmpDir] }),
       env: ctx.sessionEnv(),
       signal: ctx.signal,

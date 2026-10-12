@@ -238,7 +238,10 @@ installable runs that command's `bin` inside the installed package, never an exe
 same name the checkout puts on the run's `PATH`. Other commands run as written. The installable
 MCP servers the agent lists are attached to its sessions from the installed packages (their tools
 are `mcp__<package>_<server>__<tool>`, with every character but letters, digits, `_` and `-`
-replaced by `_` and no leading `_`, e.g. `mcp__omniralph_code-graph_graph__<tool>`). A run whose
+replaced by `_` and no leading `_`, e.g. `mcp__omniralph_code-graph_graph__<tool>`). The skills
+of every required installable are loaded into the run's sessions as a harness-written plugin
+(`<package>` lowercased with other characters as `-`, e.g. `omniralph-code-graph:<skill>`); an
+installed installable the run doesn't require adds none. A run whose
 host tool or installable is missing on the harness that claimed it is retried after a minute.
 
 Each installable gets cache directories on the harness, passed to its commands (as setup or

@@ -39,7 +39,7 @@ makes it an installable is an `omniralph` field in its `package.json`:
 | -- | -- |
 | `commands` | Executables setup and teardown commands can run by `name`. `bin` is the file to run. |
 | `mcpServers` | stdio MCP servers agents can use. `command` is the server's executable, started with `args` (default none). |
-| `skills` | Skill files or directories. Declared and validated, but not loaded into sessions yet. |
+| `skills` | Claude Code skills: directories with a `SKILL.md`, or single Markdown files. Loaded into the sessions of runs that require the installable (see below). |
 
 Every field is optional (an empty list by default), so `"omniralph": {}` is a valid, if useless,
 manifest. The rules:
@@ -77,6 +77,33 @@ picked instead:
   letters, digits, `_` and `-` replaced by `_` and leading `_` dropped:
   `mcp__omniralph_code-graph_graph__<tool>`. Review tasks attach it only to sessions that may
   explore the repository. Two listed servers that end up with the same session name fail the run.
+- The skills of every installable a run requires (the task's **Requirements** installables, and the
+  installables whose MCP servers the agent lists) are loaded into the run's sessions; an
+  installable the run doesn't require never adds skills, even when it's installed. See
+  [Skills](#skills).
+
+### Skills
+
+A `skills` entry is either a directory with a `SKILL.md` (Claude Code's skill format; the skill is
+named after the directory and every file in it comes along, e.g. scripts the skill mentions) or a
+single Markdown file (named after the file without `.md`, or after its directory for a
+`SKILL.md`). Names are letters, digits, `.`, `_` and `-`, unique within the installable; keep a
+`name` in the skill's front matter, if any, equal to it.
+
+Claude Code only loads skills from settings or plugins, and most sessions load no settings at all,
+so the harness wraps each required installable's skills in a plugin of its own: it copies them
+into `<dataDir>/skill-plugins/<plugin>-<hash>/skills/<skill>/` next to a generated
+`.claude-plugin/plugin.json`, and passes that directory to the session as a local plugin. Nothing
+else from the package comes in (no hooks, agents, commands or MCP config), and no user, project or
+local settings are loaded that the session wouldn't load anyway. The plugin is named after the
+package (lowercase, every run of characters other than letters and digits replaced by `-`), so
+`@omniralph/code-graph`'s skill `code-graph` is `omniralph-code-graph:code-graph`. Sessions that
+load no settings enable exactly these skills and get the `Skill` tool; a session without tools
+(e.g. a review's repair turn) gets none. The directory is keyed by a hash of the skills' contents,
+so it's written once per version of them; old ones aren't pruned.
+
+A required installable whose skill path is missing or isn't a skill, or with two skills of one
+name, fails the run, as do two required installables whose plugin names collide.
 
 ### Caches
 

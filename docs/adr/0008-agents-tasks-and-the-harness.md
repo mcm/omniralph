@@ -549,8 +549,15 @@ installable authors, admins and harness owners is [docs/installables.md](../inst
   (`<dataDir>/pr-cache/<package>/<repository id>/<number>/`, a separate tree, so data derived from
   an untrusted PR can't poison the repository's shared cache). Caches are best-effort and local:
   nothing is stored in the control panel, and a run on another harness starts cold.
-- **Not built:** loading an installable's skills into sessions, an uninstall RPC, and pruning
-  caches.
+- **Skills** (TOOL-420). A run opts into an installable's skills by requiring the installable (the
+  task's `requires.installables`, or an MCP server of it the agent lists): no separate per-agent
+  skill list, since a task that needs an installable's tools needs its instructions too. Claude Code
+  loads skills only from settings or plugins, and most sessions load no settings, so the harness
+  copies each required installable's skills into a plugin it writes itself
+  (`apps/harness/src/installable-skills.ts`: `<dataDir>/skill-plugins/<plugin>-<content hash>/`,
+  skills only) and passes it as a local plugin with MCP discovery off; sessions without settings
+  enable exactly those skills. No other settings are loaded.
+- **Not built:** an uninstall RPC, and pruning caches and skill plugins.
 
 ### What later epics add
 
