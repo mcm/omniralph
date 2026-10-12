@@ -186,7 +186,8 @@ const CODING_FIELDS = {
   /** Query task (accepting `run.invoked`) that writes the PR title and description. */
   prDescriptionTaskId: DefinitionId.optional(),
 };
-const CODING_FIELD_NAMES = Object.keys(CODING_FIELDS) as (keyof typeof CODING_FIELDS)[];
+/** The coding-only fields, which other task types must leave unset. */
+export const CODING_FIELD_NAMES = Object.keys(CODING_FIELDS) as (keyof typeof CODING_FIELDS)[];
 
 /** What a coding task's unset coding-only fields become. */
 export const CODING_DEFAULTS = {

@@ -2,7 +2,17 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   Badge,
   Button,
   Card,
@@ -18,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@iamthemcmaster/ui";
-import { IconCopy } from "@tabler/icons-react";
+import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
 import type {
   SetupCommand,
   TaskDefinition,
@@ -27,7 +37,9 @@ import type {
   TokenBudget,
 } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { useAction } from "@/components/use-action";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
+import { cloneTaskDefinition, deleteTaskDefinition } from "../actions";
 import {
   BuiltinBadge,
   Fact,
@@ -38,7 +50,7 @@ import {
   preBlock,
   stack,
 } from "../../agents/agent-parts";
-import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "../task-parts";
+import { AgentLink, TASK_TYPE_LABELS, taskEditHref, taskHref, TriggerBadges } from "../task-parts";
 
 interface TaskDetailViewProps {
   task: TaskDefinition;
@@ -159,6 +171,86 @@ function ReferrerList({ referrers }: { referrers: TaskReferrers }) {
   );
 }
 
+/** Clone (any task), and Edit and Delete (the organization's own). */
+function AdminActions({
+  task,
+  builtin,
+  inUse,
+}: {
+  task: TaskDefinition;
+  builtin: boolean;
+  inUse: boolean;
+}) {
+  const router = useRouter();
+  const { pending, run } = useAction();
+
+  const clone = () => {
+    let cloneId: string | undefined;
+    run(
+      async () => {
+        const result = await cloneTaskDefinition(task.id);
+        if (result.ok && "id" in result) cloneId = result.id;
+        return result;
+      },
+      `Cloned ${task.name}`,
+      () => {
+        if (cloneId) router.push(taskEditHref(cloneId));
+      },
+    );
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+      <Button variant="outline" disabled={pending} onClick={clone}>
+        <IconCopy size={14} />
+        Clone
+      </Button>
+      {!builtin && (
+        <>
+          <Button asChild variant="outline">
+            <Link href={taskEditHref(task.id)}>
+              <IconPencil size={14} />
+              Edit
+            </Link>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={pending}>
+                <IconTrash size={14} />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {task.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {inUse
+                    ? "It can't be deleted while the settings and tasks under Used by use it."
+                    : "This can't be undone. It can't be deleted while one of its runs is queued or running."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() =>
+                    run(
+                      () => deleteTaskDefinition(task.id),
+                      `Deleted ${task.name}`,
+                      () => router.push("/settings/tasks"),
+                    )
+                  }
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TaskDetailView({
   task,
   builtin,
@@ -199,11 +291,11 @@ export function TaskDetailView({
             )}
           </div>
           {isAdmin && (
-            // Cloning tasks arrives with the task save actions.
-            <Button variant="outline" disabled>
-              <IconCopy size={14} />
-              Clone
-            </Button>
+            <AdminActions
+              task={task}
+              builtin={builtin}
+              inUse={Object.values(referrers).some((list) => list.length > 0)}
+            />
           )}
         </div>
 

@@ -4,12 +4,13 @@
  * `@omniralph/tasks` schemas when it resolves one. Every helper is scoped to
  * one organization: a row of another organization is never read or written.
  */
-import { and, arrayContains, asc, eq, or } from "drizzle-orm";
+import { and, arrayContains, asc, count, eq, inArray, or } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   agentDefinitions,
   chatChannelTaskSettings,
   chatConnections,
+  jobs,
   repositories,
   taskDefinitions,
 } from "./schema.js";
@@ -292,4 +293,23 @@ export async function listChatChannelTaskReferences(
     askAboutCode: row.askAboutCodeTaskId === taskId,
     startWork: row.startWorkTaskId === taskId,
   }));
+}
+
+/** How many of the organization's jobs running task `taskId` are queued or running. */
+export async function countActiveTaskJobs(
+  db: Queryable,
+  organizationId: string,
+  taskId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: count() })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.taskId, taskId),
+        inArray(jobs.status, ["queued", "running"]),
+      ),
+    );
+  return row?.count ?? 0;
 }

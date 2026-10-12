@@ -4,6 +4,7 @@ import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
+  countActiveTaskJobs,
   deleteAgentDefinition,
   deleteTaskDefinition,
   getStoredAgentDefinition,
@@ -16,7 +17,7 @@ import {
   updateTaskDefinition,
 } from "./definitions.js";
 import { runMigrations } from "./migrate.js";
-import { agentDefinitions, organizations, taskDefinitions, users } from "./schema.js";
+import { agentDefinitions, jobs, organizations, taskDefinitions, users } from "./schema.js";
 
 const dockerAvailable = await getContainerRuntimeClient().then(
   () => true,
@@ -205,6 +206,35 @@ describe.skipIf(!dockerAvailable)("definition queries", () => {
           .from(taskDefinitions)
           .where(eq(taskDefinitions.organizationId, doomed!.id)),
       ).toEqual([]);
+    });
+  });
+  describe("countActiveTaskJobs", () => {
+    it("counts the organization's queued and running jobs of a task", async () => {
+      const taskId = "44444444-4444-4444-8444-444444444444";
+      const job = (
+        organizationId: string,
+        status: "queued" | "running" | "completed",
+        id = taskId,
+      ) => ({
+        organizationId,
+        type: "chat.ask",
+        taskType: "query" as const,
+        pool: "short",
+        taskId: id,
+        status,
+      });
+      expect(await countActiveTaskJobs(db, orgA, taskId)).toBe(0);
+      await db
+        .insert(jobs)
+        .values([
+          job(orgA, "queued"),
+          job(orgA, "running"),
+          job(orgA, "completed"),
+          job(orgA, "queued", "builtin:chat-ask"),
+          job(orgB, "queued"),
+        ]);
+      expect(await countActiveTaskJobs(db, orgA, taskId)).toBe(2);
+      expect(await countActiveTaskJobs(db, orgB, taskId)).toBe(1);
     });
   });
 });

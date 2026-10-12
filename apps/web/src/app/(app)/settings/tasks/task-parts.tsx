@@ -8,6 +8,11 @@ export function taskHref(id: string): string {
   return `/settings/tasks/${encodeURIComponent(id)}`;
 }
 
+/** The path of a custom task's edit page. */
+export function taskEditHref(id: string): string {
+  return `${taskHref(id)}/edit`;
+}
+
 /** How the list groups task types, in order. */
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {
   query: "Query",
