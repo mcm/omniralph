@@ -1,7 +1,18 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   Badge,
   Button,
   Card,
@@ -11,10 +22,20 @@ import {
   CardTitle,
   Muted,
 } from "@iamthemcmaster/ui";
-import { IconCopy } from "@tabler/icons-react";
+import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
 import type { AgentDefinition, NamedContent, TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
-import { BuiltinBadge, ModelName, mono, pageMain, pageTitle, TaskTypeBadges } from "../agent-parts";
+import { useAction } from "@/components/use-action";
+import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
+import {
+  agentEditHref,
+  BuiltinBadge,
+  ModelName,
+  mono,
+  pageMain,
+  pageTitle,
+  TaskTypeBadges,
+} from "../agent-parts";
 
 /** A task running on the agent. */
 export interface AgentTask {
@@ -81,6 +102,78 @@ function Documents({ documents, empty }: { documents: NamedContent[]; empty: str
   );
 }
 
+/** Clone (any agent), and Edit and Delete (the organization's own). */
+function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isAdmin">) {
+  const router = useRouter();
+  const { pending, run } = useAction();
+
+  const clone = () => {
+    let cloneId: string | undefined;
+    run(
+      async () => {
+        const result = await cloneAgentDefinition(agent.id);
+        if (result.ok && "id" in result) cloneId = result.id;
+        return result;
+      },
+      `Cloned ${agent.name}`,
+      () => {
+        if (cloneId) router.push(agentEditHref(cloneId));
+      },
+    );
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "var(--space-2)" }}>
+      <Button variant="outline" disabled={pending} onClick={clone}>
+        <IconCopy size={14} />
+        Clone
+      </Button>
+      {!builtin && (
+        <>
+          <Button asChild variant="outline">
+            <Link href={agentEditHref(agent.id)}>
+              <IconPencil size={14} />
+              Edit
+            </Link>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={pending}>
+                <IconTrash size={14} />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {tasks.length > 0
+                    ? `It can't be deleted while tasks use it: ${tasks.map((task) => task.name).join(", ")}.`
+                    : "This can't be undone."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() =>
+                    run(
+                      () => deleteAgentDefinition(agent.id),
+                      `Deleted ${agent.name}`,
+                      () => router.push("/settings/agents"),
+                    )
+                  }
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailViewProps) {
   return (
     <>
@@ -112,13 +205,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
               </Muted>
             )}
           </div>
-          {builtin && isAdmin && (
-            // Cloning is wired with agent editing; until then the button only shows where it goes.
-            <Button variant="outline" disabled title="Cloning arrives with agent editing">
-              <IconCopy size={14} />
-              Clone
-            </Button>
-          )}
+          {isAdmin && <AdminActions agent={agent} builtin={builtin} tasks={tasks} />}
         </div>
 
         <Card>

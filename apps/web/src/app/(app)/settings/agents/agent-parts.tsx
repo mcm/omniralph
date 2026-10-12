@@ -5,6 +5,11 @@ export function agentHref(id: string): string {
   return `/settings/agents/${encodeURIComponent(id)}`;
 }
 
+/** The path of a custom agent's edit page. */
+export function agentEditHref(id: string): string {
+  return `${agentHref(id)}/edit`;
+}
+
 export function TaskTypeBadges({ taskTypes }: { taskTypes: readonly string[] }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>

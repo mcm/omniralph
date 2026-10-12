@@ -5,17 +5,9 @@ import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { getAgentDefinition, listTaskDefinitions } from "@/lib/definitions";
 import { AgentDetailView } from "./agent-detail-view";
+import { decodeId } from "./decode-id";
 
 export const metadata: Metadata = { title: "Agent · Omniralph" };
-
-/** The route segment as an ID (links encode the colon of `builtin:` IDs); malformed escapes match nothing. */
-function decodeId(segment: string): string {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
-}
 
 /**
  * One agent definition of the organization (a built-in or one of its rows)
