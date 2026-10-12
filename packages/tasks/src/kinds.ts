@@ -82,3 +82,15 @@ export const HARNESS_TOOLS_BY_TASK_TYPE: Record<TaskType, readonly HarnessTool[]
   review: ["post_activity", "ask_permission", "get_attachment"],
   coding: HARNESS_TOOLS,
 };
+
+/**
+ * The trigger kinds each task type accepts: the events the control panel
+ * starts a run of that type for. Review runs start on PR/MR events; coding
+ * runs on story and request triggers; query runs on everything else they
+ * answer (finding threads, chat, triage, a run that invokes them).
+ */
+export const TRIGGERS_BY_TASK_TYPE: Record<TaskType, readonly TriggerKind[]> = {
+  query: ["finding.mention", "finding.dismissed", "chat.request", "linear.triage", "run.invoked"],
+  review: ["pr.updated", "pr.mention", "review.rerun"],
+  coding: [...STORY_TRIGGERS, ...REQUEST_TRIGGERS],
+};

@@ -32,6 +32,7 @@ import type { Sink } from "./index";
  */
 export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
   kind: "sticky-comment",
+  taskType: "review",
   outputSchema: null,
   parseResult(result) {
     const parsed = ReviewTaskResult.safeParse(result);

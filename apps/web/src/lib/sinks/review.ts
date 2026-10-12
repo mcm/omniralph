@@ -20,6 +20,7 @@ import type { Sink } from "./index";
  */
 export const reviewSink: Sink<never, ReviewTaskResult> = {
   kind: "review",
+  taskType: "review",
   outputSchema: null,
   parseResult(result) {
     const parsed = ReviewTaskResult.safeParse(result);

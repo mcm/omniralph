@@ -6,3 +6,5 @@ export * from "./template.js";
 export * from "./builtins.js";
 export * from "./coding.js";
 export * from "./requirements.js";
+export * from "./output-schema.js";
+export * from "./validate.js";

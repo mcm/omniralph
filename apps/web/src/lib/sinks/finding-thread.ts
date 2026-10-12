@@ -104,6 +104,7 @@ export async function onThreadReplyFailed(db: Database, job: ThreadJob): Promise
 /** `finding-thread`: posts a run's Markdown answer in a review finding's thread. */
 export const findingThreadSink: Sink<null> = {
   kind: "finding-thread",
+  taskType: "query",
   outputSchema: null,
   apply: applyThreadReply,
   onFailed: (db, job) => onThreadReplyFailed(db, job),

@@ -197,6 +197,47 @@ export function parseTemplate(template: string): ParseResult {
 }
 
 /**
+ * Walks parsed nodes resolving each variable and section name against
+ * `availableVariables`: `found` gets each resolved catalog name, `missing`
+ * each name that resolves to nothing. Inside a section, a name may also
+ * resolve against the section item (`{{#finding}}{{title}}{{/finding}}` uses
+ * `finding.title`). A section name is available if it is a variable or the
+ * prefix of one.
+ */
+function resolveNames(
+  nodes: readonly TemplateNode[],
+  availableVariables: readonly string[],
+  found: (name: string) => void,
+  missing: (node: Exclude<TemplateNode, { type: "text" }>) => void,
+): void {
+  const available = new Set(availableVariables);
+  const isPrefix = (name: string) => availableVariables.some((v) => v.startsWith(`${name}.`));
+
+  // `scopes` are the full names of the enclosing sections, innermost last.
+  const visit = (nodes: readonly TemplateNode[], scopes: readonly string[]) => {
+    for (const node of nodes) {
+      if (node.type === "text") continue;
+      if (node.name === ".") {
+        if (scopes.length === 0) missing(node);
+        continue;
+      }
+      const candidates = [...scopes.map((scope) => `${scope}.${node.name}`).reverse(), node.name];
+      if (node.type === "variable") {
+        const resolved = candidates.find((c) => available.has(c));
+        if (resolved) found(resolved);
+        else missing(node);
+        continue;
+      }
+      const resolved = candidates.find((c) => available.has(c) || isPrefix(c));
+      if (!resolved) missing(node);
+      else if (available.has(resolved)) found(resolved);
+      visit(node.children, resolved ? [...scopes, resolved] : scopes);
+    }
+  };
+  visit(nodes, []);
+}
+
+/**
  * Every problem with a template: its parse error, or each variable that isn't
  * available. Inside a section, a name may also resolve against the section
  * item (`{{#finding}}{{title}}{{/finding}}` uses `finding.title`). A section
@@ -209,35 +250,35 @@ export function validateTemplate(
 ): TemplateProblem[] {
   const parsed = parseTemplate(template);
   if (!parsed.ok) return [{ kind: "parse", ...parsed.error }];
-
-  const available = new Set(availableVariables);
-  const isPrefix = (name: string) => availableVariables.some((v) => v.startsWith(`${name}.`));
   const problems: TemplateProblem[] = [];
-
-  // `scopes` are the full names of the enclosing sections, innermost last.
-  const visit = (nodes: readonly TemplateNode[], scopes: readonly string[]) => {
-    for (const node of nodes) {
-      if (node.type === "text") continue;
-      const { line, column } = node;
-      if (node.name === ".") {
-        if (scopes.length === 0)
-          problems.push({ kind: "unknown-variable", name: ".", line, column });
-        continue;
-      }
-      const candidates = [...scopes.map((scope) => `${scope}.${node.name}`).reverse(), node.name];
-      if (node.type === "variable") {
-        if (!candidates.some((c) => available.has(c))) {
-          problems.push({ kind: "unknown-variable", name: node.name, line, column });
-        }
-        continue;
-      }
-      const resolved = candidates.find((c) => available.has(c) || isPrefix(c));
-      if (!resolved) problems.push({ kind: "unknown-variable", name: node.name, line, column });
-      visit(node.children, resolved ? [...scopes, resolved] : scopes);
-    }
-  };
-  visit(parsed.nodes, []);
+  resolveNames(
+    parsed.nodes,
+    availableVariables,
+    () => {},
+    ({ name, line, column }) => problems.push({ kind: "unknown-variable", name, line, column }),
+  );
   return problems;
+}
+
+/**
+ * The names in `availableVariables` a template uses (as a variable or a
+ * section name, resolved against enclosing sections), in order of first use; names that
+ * resolve to nothing are left out. Empty when the template doesn't parse.
+ */
+export function templateVariables(
+  template: string,
+  availableVariables: readonly string[],
+): string[] {
+  const parsed = parseTemplate(template);
+  if (!parsed.ok) return [];
+  const used = new Set<string>();
+  resolveNames(
+    parsed.nodes,
+    availableVariables,
+    (name) => used.add(name),
+    () => {},
+  );
+  return [...used];
 }
 
 /**

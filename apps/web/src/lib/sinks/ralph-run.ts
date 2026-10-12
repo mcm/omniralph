@@ -14,6 +14,7 @@ import type { Sink } from "./index";
  */
 export const ralphRunSink: Sink<never, RalphStoryResult | RalphRequestResult | RalphPushResult> = {
   kind: "ralph-run",
+  taskType: "coding",
   outputSchema: null,
   parseResult(result) {
     const story = RalphStoryResult.safeParse(result);

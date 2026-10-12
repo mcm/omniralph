@@ -32,6 +32,8 @@ const byRalphRun = (job: Pick<Job, "payload">) => invokerKind(job) === "ralph-ru
  */
 export const runResultSink: Sink<never, QueryRunResult> = {
   kind: "run-result",
+  taskType: "query",
+  anyOutput: true,
   outputSchema: null,
   parseResult(result) {
     const parsed = QueryRunResult.safeParse(result);
