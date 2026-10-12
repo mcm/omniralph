@@ -241,7 +241,9 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       "list_repositories",
       "ask_about_code",
       "start_work",
-      "send_to_session",
+      "reply_to_run",
+      "answer_run_permission",
+      "answer_run_cleanup",
       "send_ralph_guidance",
       "draft_linear_issue",
       "delegate_linear_issue",
@@ -249,7 +251,10 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
     expect(chatTools.start_work?.tier).toBe("action");
     expect(chatTools.start_ralph_request).toBeUndefined();
-    expect(chatTools.send_to_session?.tier).toBe("action");
+    expect(chatTools.send_to_session).toBeUndefined();
+    for (const name of ["reply_to_run", "answer_run_permission", "answer_run_cleanup"]) {
+      expect(chatTools[name]?.tier).toBe("action");
+    }
     expect(chatTools.draft_linear_issue?.tier).toBe("action");
     expect(chatTools.delegate_linear_issue?.tier).toBe("action");
   });

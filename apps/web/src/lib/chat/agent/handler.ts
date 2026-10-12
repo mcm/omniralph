@@ -11,17 +11,11 @@ import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from
 import { ConsoleLogger, type Logger, type Message } from "chat";
 import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
-import { chatRunAskingCleanup, chatRunSession, sendToChatRun } from "@/lib/ralph/chat-reply";
-import { answerCleanup } from "@/lib/ralph/cleanup";
+import { chatRunSession } from "@/lib/ralph/chat-reply";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
-import {
-  adapterFetcher,
-  attachmentMetadata,
-  sessionAttachmentNote,
-  threadAttachments,
-} from "../attachments";
+import { adapterFetcher, threadAttachments } from "../attachments";
 import type { TaskLookup } from "../tasks";
 import {
   CHAT_AGENT_HISTORY_LIMIT,
@@ -79,9 +73,6 @@ async function defaultRalphDeps(db: Database, organizationId: string): Promise<R
   const { defaultDeps } = await import("@/lib/ralph/jobs");
   return defaultDeps(db, organizationId);
 }
-
-/** How a message passed to the running session is acknowledged (no extra message). */
-export const SESSION_REACTION = "eyes";
 
 /** A chat message's author as the session sees it. */
 const authorName = (m: Message) =>
@@ -144,81 +135,6 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
         await thread.post(text);
         await record("assistant", text);
       };
-
-      /** Marks a message the run took (no extra message). */
-      const acknowledge = () =>
-        thread.adapter
-          .addReaction(thread.id, message.id, SESSION_REACTION)
-          .catch((error: unknown) =>
-            logger.warn("Couldn't react to a message passed to the session", {
-              threadId: thread.id,
-              error,
-            }),
-          );
-
-      // While the thread's session works, a plain reply is for it; a mention is for the agent.
-      if (!message.isMention && (await chatRunSession(db, chatThread.id))) {
-        if (actor.kind !== "member") {
-          await requireMember(context);
-          return;
-        }
-        try {
-          const ralph = await ralphDeps(organizationId);
-          let passed = false;
-          for (const m of [...context.skipped.filter((s) => !s.isMention), message]) {
-            const outcome = await sendToChatRun(ralph, {
-              chatThreadId: chatThread.id,
-              text: m.text,
-              author: authorName(m),
-              attachments: await sessionAttachmentNote(
-                attachmentMetadata(m.attachments),
-                adapterFetcher(thread.adapter, m.attachments),
-                deps.attachmentLimits ?? CHAT_ATTACHMENT_LIMITS,
-              ),
-            });
-            if (outcome.status !== "no_run") passed = true;
-          }
-          if (passed) {
-            await acknowledge();
-            return;
-          }
-          // The run ended meanwhile: the agent answers instead.
-        } catch (error) {
-          logger.error("Passing a chat reply to the ralph session failed", {
-            organizationId,
-            threadId: thread.id,
-            error,
-          });
-          await reply(ERROR_REPLY).catch(() => undefined);
-          return;
-        }
-      }
-
-      // After the run's PR/MR merged, a member's plain reply may answer its cleanup question.
-      if (!message.isMention && actor.kind === "member") {
-        const asking = await chatRunAskingCleanup(db, chatThread.id);
-        if (asking) {
-          try {
-            const answer = await answerCleanup(
-              await ralphDeps(organizationId),
-              asking.id,
-              message.text,
-            );
-            if (answer) {
-              await acknowledge();
-              return;
-            }
-          } catch (error) {
-            logger.error("Answering a ralph cleanup question from chat failed", {
-              organizationId,
-              threadId: thread.id,
-              error,
-            });
-            await reply(ERROR_REPLY).catch(() => undefined);
-            return;
-          }
-        }
-      }
 
       if (!deps.model) {
         const state = (await thread.state) as AgentThreadState | null;
