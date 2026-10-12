@@ -43,3 +43,6 @@ evals/reports/
 
 # packed npm tarballs
 *.tgz
+
+# verify:screens output
+apps/web/.screens/

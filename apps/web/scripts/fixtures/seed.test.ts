@@ -1,4 +1,5 @@
 import {
+  agentDefinitions,
   closeDb,
   createDb,
   decrypt,
@@ -16,10 +17,12 @@ import {
   rules,
   runMigrations,
   scmConnections,
+  taskDefinitions,
   users,
   type Database,
 } from "@omniralph/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { AgentDefinition, TaskDefinition, TaskRequirements } from "@omniralph/tasks";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FIXTURE_IDS } from "./ids";
@@ -128,6 +131,19 @@ describe("seedFixtures", () => {
       .from(reviewProfiles)
       .where(eq(reviewProfiles.organizationId, FIXTURE_IDS.organizations.main));
     expect(profiles.some((p) => !p.builtIn)).toBe(true);
+  });
+
+  it("has a custom agent and task that resolve like the panel's", async () => {
+    const [agent] = await db.select().from(agentDefinitions);
+    const [task] = await db.select().from(taskDefinitions);
+    expect(agent?.id).toBe(FIXTURE_IDS.definitions.agent);
+    expect(task?.id).toBe(FIXTURE_IDS.definitions.task);
+    const stored = (row: typeof agent) => ({ ...row!.definition, id: row!.id, name: row!.name });
+    expect(AgentDefinition.safeParse(stored(agent)).success).toBe(true);
+    const parsedTask = TaskDefinition.safeParse(stored(task));
+    expect(parsedTask.success).toBe(true);
+    expect(parsedTask.data?.agentId).toBe(FIXTURE_IDS.definitions.agent);
+    expect(TaskRequirements.safeParse(task!.requirements).success).toBe(true);
   });
 
   it("has jobs in every state", async () => {

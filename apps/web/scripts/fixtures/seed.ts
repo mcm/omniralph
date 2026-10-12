@@ -8,6 +8,7 @@
  * to refresh them. Seeding replaces the previous fixture rows (by their fixed IDs).
  */
 import {
+  agentDefinitions,
   appSettings,
   DEFAULT_RALPH_SETTINGS,
   DESIRED_HARNESS_VERSION_KEY,
@@ -36,10 +37,12 @@ import {
   rules,
   scmConnections,
   seedPools,
+  taskDefinitions,
   seedReviewProfiles,
   users,
   type Database,
 } from "@omniralph/db";
+import { deriveTaskRequirements, getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
 import { inArray, sql } from "drizzle-orm";
 import { FIXTURE_EMAILS, FIXTURE_IDS, fixtureId } from "./ids";
 
@@ -135,6 +138,27 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       maxTokensPerReview: 400_000,
       maxFiles: 60,
       allowRepoExploration: true,
+    });
+    // A custom agent and a task on it (built-ins can't be edited), copied from built-ins.
+    const { id: _agentId, name: _agentName, ...agent } = getBuiltinAgent("builtin:reviewer")!;
+    const { id: _taskId, name: _taskName, ...task } = getBuiltinTask("builtin:review-pr")!;
+    const customTask = { ...task, agentId: FIXTURE_IDS.definitions.agent };
+    await tx.insert(agentDefinitions).values({
+      id: FIXTURE_IDS.definitions.agent,
+      organizationId: O.main,
+      name: "Strict reviewer",
+      definition: agent,
+      createdBy: U.admin,
+      updatedBy: U.admin,
+    });
+    await tx.insert(taskDefinitions).values({
+      id: FIXTURE_IDS.definitions.task,
+      organizationId: O.main,
+      name: "Strict review",
+      definition: customTask,
+      requirements: { ...deriveTaskRequirements(customTask, undefined, agent) },
+      createdBy: U.admin,
+      updatedBy: U.admin,
     });
     await tx.insert(appSettings).values({
       organizationId: O.main,
