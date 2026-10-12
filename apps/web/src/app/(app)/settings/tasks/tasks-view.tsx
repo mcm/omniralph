@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -21,7 +22,7 @@ import { IconPlus } from "@tabler/icons-react";
 import { TASK_TYPES, type PoolName, type SinkKind, type TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
-import { BuiltinBadge, mono, pageMain } from "../agents/agent-parts";
+import { BuiltinBadge } from "../agents/agent-parts";
 import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "./task-parts";
 
 export interface TaskSummary {
@@ -67,23 +68,18 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
         {tasks.map((task) => (
           <TableRow key={task.id}>
             <TableCell>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                  <Link
-                    href={taskHref(task.id)}
-                    style={{ color: "var(--text-primary)", fontSize: "var(--text-sm)" }}
-                  >
+              <Stack gap={1}>
+                <div className="definition-name-row">
+                  <Link href={taskHref(task.id)} className="text-sm text-text-primary">
                     {task.name}
                   </Link>
                   {task.builtin && <BuiltinBadge />}
                 </div>
-                {task.description && (
-                  <Muted style={{ fontSize: "var(--text-xs)" }}>{task.description}</Muted>
-                )}
-              </div>
+                {task.description && <Muted className="text-xs">{task.description}</Muted>}
+              </Stack>
             </TableCell>
             <TableCell>
-              <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
+              <span className="font-mono text-xs text-text-secondary">{task.id}</span>
             </TableCell>
             <TableCell>
               <AgentLink id={task.agentId} name={task.agentName} />
@@ -92,7 +88,7 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
               <TriggerBadges triggers={task.triggers} />
             </TableCell>
             <TableCell>
-              <span style={mono}>{task.sink}</span>
+              <span className="font-mono text-xs">{task.sink}</span>
             </TableCell>
             <TableCell>
               <Badge variant="neutral">{task.pool}</Badge>
@@ -108,7 +104,7 @@ export function TasksView({ tasks, isAdmin }: TasksViewProps) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Tasks" }]} />
-      <main style={pageMain}>
+      <main className="detail-main">
         <PageHeader
           title="Tasks"
           description={

@@ -26,17 +26,16 @@ const config = [
     // Styling stays inside the design system (DESIGN.md): tokens and library primitives, not
     // raw colors, literal inline styles or arbitrary Tailwind values. An inline style that is
     // really dynamic is allowed with `// dynamic-style: <reason>` on the line before it.
-    // At `warn` while the panel is migrated. Warnings per rule (TOOL-398, 2026-10-12):
-    //   design-system/no-raw-color: 0
-    //   design-system/no-inline-layout-style: 630
-    //   design-system/no-arbitrary-tailwind: 0
+    // Baseline when the rules were added at `warn` (TOOL-398, 2026-10-12): no-raw-color 0,
+    // no-inline-layout-style 630, no-arbitrary-tailwind 0. Migrated to 0 and raised to `error`
+    // (TOOL-432, 2026-10-12): 0 warnings per rule, so any new literal style fails `pnpm lint`.
     files: ["src/**/*.tsx"],
     ignores: ["src/**/*.test.tsx"],
     plugins: { "design-system": designSystem },
     rules: {
-      "design-system/no-raw-color": "warn",
-      "design-system/no-inline-layout-style": "warn",
-      "design-system/no-arbitrary-tailwind": "warn",
+      "design-system/no-raw-color": "error",
+      "design-system/no-inline-layout-style": "error",
+      "design-system/no-arbitrary-tailwind": "error",
     },
   },
 ];

@@ -33,18 +33,7 @@ export function GitHubReposView({
           {manageUrl && (
             <>
               {" "}
-              <a
-                href={manageUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  color: "var(--text-accent)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "var(--space-1)",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <a href={manageUrl} target="_blank" rel="noreferrer" className="repo-external-link">
                 Change them on GitHub
                 <IconExternalLink size={12} />
               </a>

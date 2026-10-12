@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -20,7 +21,7 @@ import { IconPlus } from "@tabler/icons-react";
 import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
-import { agentHref, BuiltinBadge, ModelName, mono, pageMain, TaskTypeBadges } from "./agent-parts";
+import { agentHref, BuiltinBadge, ModelName, TaskTypeBadges } from "./agent-parts";
 
 export interface AgentSummary {
   id: string;
@@ -40,7 +41,7 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Agents" }]} />
-      <main style={pageMain}>
+      <main className="detail-main">
         <PageHeader
           title="Agents"
           description={
@@ -82,27 +83,20 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
                 {agents.map((agent) => (
                   <TableRow key={agent.id}>
                     <TableCell>
-                      <div
-                        style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}
-                      >
-                        <div
-                          style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-                        >
-                          <Link
-                            href={agentHref(agent.id)}
-                            style={{ color: "var(--text-primary)", fontSize: "var(--text-sm)" }}
-                          >
+                      <Stack gap={1}>
+                        <div className="definition-name-row">
+                          <Link href={agentHref(agent.id)} className="text-sm text-text-primary">
                             {agent.name}
                           </Link>
                           {agent.builtin && <BuiltinBadge />}
                         </div>
                         {agent.description && (
-                          <Muted style={{ fontSize: "var(--text-xs)" }}>{agent.description}</Muted>
+                          <Muted className="text-xs">{agent.description}</Muted>
                         )}
-                      </div>
+                      </Stack>
                     </TableCell>
                     <TableCell>
-                      <span style={{ ...mono, color: "var(--text-secondary)" }}>{agent.id}</span>
+                      <span className="font-mono text-xs text-text-secondary">{agent.id}</span>
                     </TableCell>
                     <TableCell>
                       <TaskTypeBadges taskTypes={agent.taskTypes} />

@@ -54,7 +54,6 @@ import { ProviderIcon } from "../../repositories/repositories-view";
 import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" } as const;
 function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
 }
@@ -167,14 +166,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
             <>
               <Link
                 href={`/repositories/${review.repository.id}/reviews`}
-                style={{
-                  ...mono,
-                  color: "var(--text-secondary)",
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "var(--space-1)",
-                }}
+                className="list-secondary font-mono"
               >
                 <ProviderIcon provider={review.repository.provider} size={14} />
                 {review.repository.fullPath}
@@ -200,7 +192,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           <Alert variant="danger">
             <IconAlertTriangle size={16} />
             <AlertTitle as="h2">The review failed</AlertTitle>
-            <AlertDescription style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            <AlertDescription className="review-pre-wrap">
               {review.error ?? "No error was recorded."}
             </AlertDescription>
           </Alert>
@@ -288,7 +280,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
                   {review.skippedFiles.map((file) => (
                     <TableRow key={file.path}>
                       <TableCell>
-                        <span style={{ ...mono, overflowWrap: "anywhere" }}>{file.path}</span>
+                        <span className="review-path">{file.path}</span>
                       </TableCell>
                       <TableCell>
                         <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>

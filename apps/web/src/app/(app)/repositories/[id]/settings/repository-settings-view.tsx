@@ -197,16 +197,7 @@ export function RepositorySettingsView({
           { label: "Settings" },
         ]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={
             <>

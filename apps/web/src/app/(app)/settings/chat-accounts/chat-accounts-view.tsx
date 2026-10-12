@@ -17,7 +17,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Muted,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconUnlink } from "@tabler/icons-react";
 import type { ChatPlatform } from "@omniralph/db";
@@ -45,16 +47,7 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Chat accounts" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Chat accounts"
           description="Slack and Discord accounts linked to you. The Omniralph bot answers a linked account as you, with your access in that organization."
@@ -67,75 +60,73 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
               it sends you. A Slack account with your sign-in email is linked automatically.
             </CardDescription>
           </CardHeader>
-          <CardContent style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            {identities.length === 0 && <Muted>No chat accounts are linked to you.</Muted>}
-            {identities.map((identity) => {
-              const platform = PLATFORM_NAMES[identity.platform];
-              const name = identity.displayName ?? identity.externalUserId;
-              return (
-                <div
-                  key={`${identity.organizationId}:${identity.platform}:${identity.externalUserId}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "var(--space-3)",
-                  }}
-                >
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                      <strong>{name}</strong>
-                      <Badge variant="neutral" size="sm">
-                        {platform}
-                      </Badge>
+          <Stack gap={3} asChild>
+            <CardContent>
+              {identities.length === 0 && <Muted>No chat accounts are linked to you.</Muted>}
+              {identities.map((identity) => {
+                const platform = PLATFORM_NAMES[identity.platform];
+                const name = identity.displayName ?? identity.externalUserId;
+                return (
+                  <Cluster
+                    key={`${identity.organizationId}:${identity.platform}:${identity.externalUserId}`}
+                    gap={3}
+                    justify="between"
+                  >
+                    <div>
+                      <Cluster>
+                        <strong>{name}</strong>
+                        <Badge variant="neutral" size="sm">
+                          {platform}
+                        </Badge>
+                      </Cluster>
+                      <Muted>
+                        {identity.organizationName} · linked{" "}
+                        {identity.source === "email" ? "automatically by email " : ""}
+                        {formatDateTime(identity.linkedAt)}
+                      </Muted>
                     </div>
-                    <Muted style={{ display: "block" }}>
-                      {identity.organizationName} · linked{" "}
-                      {identity.source === "email" ? "automatically by email " : ""}
-                      {formatDateTime(identity.linkedAt)}
-                    </Muted>
-                  </div>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="danger" disabled={pending}>
-                        <IconUnlink size={14} />
-                        Unlink
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Unlink {name}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          The bot stops answering this {platform} account as you in{" "}
-                          {identity.organizationName}, and won&apos;t link it automatically again.
-                          You can link it again through the bot.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          variant="danger"
-                          onClick={() =>
-                            run(
-                              () =>
-                                unlinkChatAccount({
-                                  organizationId: identity.organizationId,
-                                  platform: identity.platform,
-                                  externalUserId: identity.externalUserId,
-                                }),
-                              `Unlinked ${name}`,
-                            )
-                          }
-                        >
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="danger" disabled={pending}>
+                          <IconUnlink size={14} />
                           Unlink
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              );
-            })}
-          </CardContent>
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Unlink {name}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            The bot stops answering this {platform} account as you in{" "}
+                            {identity.organizationName}, and won&apos;t link it automatically again.
+                            You can link it again through the bot.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="danger"
+                            onClick={() =>
+                              run(
+                                () =>
+                                  unlinkChatAccount({
+                                    organizationId: identity.organizationId,
+                                    platform: identity.platform,
+                                    externalUserId: identity.externalUserId,
+                                  }),
+                                `Unlinked ${name}`,
+                              )
+                            }
+                          >
+                            Unlink
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </Cluster>
+                );
+              })}
+            </CardContent>
+          </Stack>
         </Card>
       </main>
     </>

@@ -61,7 +61,7 @@ function FindingCounts({ counts }: { counts: ReviewRow["findingCounts"] }) {
   const present = FINDING_SEVERITIES.filter((s) => counts[s] > 0);
   if (present.length === 0) return <Muted>None</Muted>;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+    <div className="review-severity-counts">
       {present.map((severity) => (
         <SeverityBadge key={severity} severity={severity} count={counts[severity]} />
       ))}
@@ -191,16 +191,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
             : [{ label: "Reviews" }]
         }
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title={
             repository ? (

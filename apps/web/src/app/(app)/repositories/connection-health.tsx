@@ -1,6 +1,14 @@
 "use client";
 
-import { Alert, AlertDescription, AlertTitle, Button, Muted } from "@iamthemcmaster/ui";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Cluster,
+  Muted,
+  Stack,
+} from "@iamthemcmaster/ui";
 import { IconWebhook } from "@tabler/icons-react";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
@@ -76,11 +84,11 @@ export function ConnectionHealth({
   isAdmin: boolean;
 }) {
   if (!health) {
-    return <Muted style={{ fontSize: "var(--text-xs)" }}>Not checked yet (checked daily).</Muted>;
+    return <Muted className="text-xs">Not checked yet (checked daily).</Muted>;
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-      <Muted style={{ fontSize: "var(--text-xs)" }}>
+    <Stack gap={2}>
+      <Muted className="text-xs">
         {health.tokenExpiresAt ? `Token expires ${health.tokenExpiresAt}` : "Token expiry unknown"}{" "}
         · Last checked {formatDateTime(health.checkedAt)}
       </Muted>
@@ -92,39 +100,26 @@ export function ConnectionHealth({
               : `${health.problems.length} problems with this connection`}
           </AlertTitle>
           <AlertDescription>
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: "var(--space-4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--space-2)",
-              }}
-            >
-              {health.problems.map((problem, i) => (
-                <li
-                  key={`${problem.code}-${problem.repositoryId ?? i}`}
-                  data-problem={problem.code}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-2)",
-                      flexWrap: "wrap",
-                    }}
+            <Stack asChild gap={2} className="m-0 pl-4">
+              <ul>
+                {health.problems.map((problem, i) => (
+                  <li
+                    key={`${problem.code}-${problem.repositoryId ?? i}`}
+                    data-problem={problem.code}
                   >
-                    <span style={{ flex: 1 }}>{problemText(problem, health)}</span>
-                    {isAdmin && problem.repositoryId && WEBHOOK_PROBLEMS.has(problem.code) && (
-                      <RecreateWebhookButton repositoryId={problem.repositoryId} />
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    <Cluster gap={2}>
+                      <span className="flex-1">{problemText(problem, health)}</span>
+                      {isAdmin && problem.repositoryId && WEBHOOK_PROBLEMS.has(problem.code) && (
+                        <RecreateWebhookButton repositoryId={problem.repositoryId} />
+                      )}
+                    </Cluster>
+                  </li>
+                ))}
+              </ul>
+            </Stack>
           </AlertDescription>
         </Alert>
       )}
-    </div>
+    </Stack>
   );
 }

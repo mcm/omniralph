@@ -2,11 +2,13 @@
 import {
   Button,
   Checkbox,
+  Cluster,
   Field,
   Input,
   Label,
   Muted,
   NativeSelect,
+  Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
@@ -25,16 +27,6 @@ import {
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
-import { monoInput } from "../agents/form-parts";
-
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-4)" } as const;
-const grid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "var(--space-4)",
-} as const;
-const row = { display: "flex", alignItems: "center", gap: "var(--space-2)" } as const;
-const danger = { margin: 0, color: "var(--danger-fg)" } as const;
 
 /** A setup or teardown command being edited; numbers as typed (empty uses the default). */
 export interface CommandDraft {
@@ -109,23 +101,15 @@ export function CommandsEditor({
   const update = (index: number, change: Partial<CommandDraft>) =>
     onChange(commands.map((command, i) => (i === index ? { ...command, ...change } : command)));
   return (
-    <div style={stack}>
-      {errors[field] && <p style={danger}>{errors[field]}</p>}
+    <Stack>
+      {errors[field] && <p className="m-0 text-danger-fg">{errors[field]}</p>}
       {commands.length === 0 && <Muted>No {noun}s.</Muted>}
       {commands.map((command, index) => {
         const prefix = `${field}.${index}`;
         const id = (name: string) => `task-${prefix}-${name}`.replaceAll(".", "-");
         const error = (name: string) => errors[`${prefix}.${name}`];
         return (
-          <div
-            key={index}
-            style={{
-              ...stack,
-              padding: "var(--space-3)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
+          <div key={index} className="definition-document">
             <Field
               label="Name"
               htmlFor={id("name")}
@@ -144,7 +128,7 @@ export function CommandsEditor({
                 aria-invalid={Boolean(error("name"))}
                 value={command.name}
                 onChange={(e) => update(index, { name: e.target.value })}
-                style={monoInput}
+                className="settings-mono"
               />
             </Field>
             <Field
@@ -161,10 +145,10 @@ export function CommandsEditor({
                 aria-invalid={Boolean(error("command"))}
                 value={command.command}
                 onChange={(e) => update(index, { command: e.target.value })}
-                style={monoInput}
+                className="settings-mono"
               />
             </Field>
-            <div style={grid}>
+            <div className="definition-grid">
               <Field
                 label="Timeout (seconds)"
                 htmlFor={id("timeoutSeconds")}
@@ -213,14 +197,14 @@ export function CommandsEditor({
                     aria-invalid={Boolean(error("fence"))}
                     value={command.fence}
                     onChange={(e) => update(index, { fence: e.target.value })}
-                    style={monoInput}
+                    className="settings-mono"
                   />
                 </Field>
               )}
             </div>
-            <div style={{ ...row, justifyContent: "space-between" }}>
+            <Cluster justify="between">
               {setup ? (
-                <div style={row}>
+                <div className="settings-check settings-check-center">
                   <Checkbox
                     id={id("optional")}
                     checked={command.optional}
@@ -243,7 +227,7 @@ export function CommandsEditor({
                 <IconTrash size={14} />
                 Remove {noun}
               </Button>
-            </div>
+            </Cluster>
           </div>
         );
       })}
@@ -258,7 +242,7 @@ export function CommandsEditor({
           Add {noun}
         </Button>
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -300,12 +284,12 @@ export function ToolSettingsFields({
   disabled: boolean;
 }) {
   return (
-    <div style={stack}>
+    <Stack>
       {TOOL_SETTINGS.filter((setting) => query || !setting.queryOnly).map(({ key, label }) => {
         const error = errors[`toolSettings.${key}`];
         return (
           <div key={key}>
-            <div style={row}>
+            <div className="settings-check settings-check-center">
               <Checkbox
                 id={`task-tool-settings-${key}`}
                 checked={value[key]}
@@ -314,11 +298,11 @@ export function ToolSettingsFields({
               />
               <Label htmlFor={`task-tool-settings-${key}`}>{label}</Label>
             </div>
-            {error && <p style={danger}>{error}</p>}
+            {error && <p className="m-0 text-danger-fg">{error}</p>}
           </div>
         );
       })}
-    </div>
+    </Stack>
   );
 }
 
@@ -400,8 +384,8 @@ export function CodingFields({
     value.prDescriptionTaskId !== "" &&
     !prDescriptionTasks.some((task) => task.id === value.prDescriptionTaskId);
   return (
-    <div style={stack}>
-      <div style={grid}>
+    <Stack>
+      <div className="definition-grid">
         <Field
           label="Push"
           htmlFor="task-push-timing"
@@ -470,7 +454,7 @@ export function CodingFields({
           </NativeSelect>
         </Field>
       </div>
-      <div style={grid}>
+      <div className="definition-grid">
         {LIMITS.map(([key, label]) => (
           <Field
             key={key}
@@ -492,6 +476,6 @@ export function CodingFields({
           </Field>
         ))}
       </div>
-    </div>
+    </Stack>
   );
 }

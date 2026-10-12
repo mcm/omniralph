@@ -62,16 +62,7 @@ export function HarnessSettingsView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Harness defaults" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Harness defaults"
           description="Settings every harness of this organization gets with its heartbeat."

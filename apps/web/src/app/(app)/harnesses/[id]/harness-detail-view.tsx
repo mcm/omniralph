@@ -28,6 +28,7 @@ import {
   Label,
   Muted,
   NativeSelect,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconCloudDownload, IconPin, IconPinnedOff, IconTrash } from "@tabler/icons-react";
 import { defaultPoolLimit } from "@omniralph/shared";
@@ -89,15 +90,11 @@ interface HarnessDetailViewProps {
   globalDesiredVersion: string | null;
 }
 
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-4)" } as const;
-const factLabel = { fontSize: "var(--text-xs)", color: "var(--text-tertiary)" } as const;
-const factValue = { fontSize: "var(--text-sm)", color: "var(--text-primary)" } as const;
-
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-      <span style={factLabel}>{label}</span>
-      <div style={factValue}>{children}</div>
+    <div className="fact">
+      <span className="fact-label">{label}</span>
+      <div className="fact-value">{children}</div>
     </div>
   );
 }
@@ -412,39 +409,22 @@ function PinsCard({
           this harness pre-clone the repository.
         </CardDescription>
       </CardHeader>
-      <CardContent style={stack}>
+      <CardContent className="list-card-content">
         {harness.pinnedRepositories.length === 0 ? (
           <Muted>
             No pinned repositories. This harness serves every repository that isn&apos;t pinned
             elsewhere.
           </Muted>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+          <Stack gap={2}>
             {harness.pinnedRepositories.map((repo) => (
-              <div
-                key={repo.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-3)",
-                  padding: "var(--space-2) var(--space-4)",
-                  background: "var(--bg-raised)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--border-subtle)",
-                }}
-              >
+              <div key={repo.id} className="harness-raised-row">
                 <ProviderIcon provider={repo.provider} size={14} />
                 <a
                   href={repo.webUrl}
                   target="_blank"
                   rel="noreferrer"
-                  style={{
-                    flex: 1,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--text-sm)",
-                    color: "var(--text-primary)",
-                    textDecoration: "none",
-                  }}
+                  className="flex-1 font-mono text-sm text-text-primary no-underline"
                 >
                   {repo.fullPath}
                 </a>
@@ -461,16 +441,15 @@ function PinsCard({
                 </Button>
               </div>
             ))}
-          </div>
+          </Stack>
         )}
         {!harness.revoked && (
-          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+          <div className="harness-inline-form harness-pin-form">
             <NativeSelect
               aria-label="Repository to pin"
               value={selected}
               disabled={pending || available.length === 0}
               onChange={(e) => setSelected(e.target.value)}
-              style={{ flex: 1 }}
             >
               <option value="">
                 {available.length === 0
@@ -526,12 +505,12 @@ export function InstallablesCard({
           local allowlist doesn&apos;t allow.
         </CardDescription>
       </CardHeader>
-      <CardContent style={stack}>
+      <CardContent className="list-card-content">
         <InstalledInstallables installables={installables} />
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-          <span style={factLabel}>Installs in the last 24 hours</span>
+        <Stack gap={2}>
+          <span className="fact-label">Installs in the last 24 hours</span>
           <InstallJobs jobs={installJobs} />
-        </div>
+        </Stack>
         {!harness.revoked && <InstallForm harnessId={harness.id} />}
       </CardContent>
     </Card>
@@ -687,16 +666,7 @@ export function HarnessDetailView({
       <AppHeader
         breadcrumbs={[{ label: "Harnesses", href: "/harnesses" }, { label: harness.name }]}
       />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader title={harness.name} meta={<HarnessStatusBadge harness={harness} />} />
 
         <TokenTheftAlert audit={audit} />
@@ -715,13 +685,7 @@ export function HarnessDetailView({
             <CardTitle as="h2">Status</CardTitle>
           </CardHeader>
           <CardContent>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(calc(var(--space-8) * 8), 1fr))",
-                gap: "var(--space-4)",
-              }}
-            >
+            <div className="harness-status-grid">
               <Fact label="Last heartbeat">
                 {harness.lastHeartbeatAt ? formatRelative(harness.lastHeartbeatAt, now) : "Never"}
               </Fact>
@@ -734,12 +698,12 @@ export function HarnessDetailView({
                     : "Not set"}
               </Fact>
               <Fact label="Update status">
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                <Stack gap={1}>
                   <div>
                     <UpdateStatusBadge harness={harness} />
                   </div>
                   {harness.update?.error && <Muted>{harness.update.error}</Muted>}
-                </div>
+                </Stack>
               </Fact>
               <Fact label="Failed versions">
                 {harness.failedVersions.length > 0 ? harness.failedVersions.join(", ") : "None"}
@@ -748,14 +712,14 @@ export function HarnessDetailView({
                 <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
               </Fact>
               <Fact label="Running jobs">
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                <Stack gap={1}>
                   <span>
                     {harness.runningJobs.length} / {harness.maxConcurrency}
                   </span>
                   {harness.runningJobs.map((job) => (
                     <JobTargetLink key={job.id} job={job} />
                   ))}
-                </div>
+                </Stack>
               </Fact>
               <Fact label="Concurrency per pool">
                 {formatPoolLimits(harness.effectivePoolLimits)}

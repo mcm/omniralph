@@ -82,32 +82,20 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
           return (
             <TableRow key={entry.id} data-event={entry.event}>
               <TableCell>
-                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
-                  {formatDateTime(entry.createdAt)}
-                </span>
+                <span className="list-text">{formatDateTime(entry.createdAt)}</span>
               </TableCell>
               <TableCell>
                 <Badge variant={HARNESS_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>
               </TableCell>
               <TableCell>
                 {summary ? (
-                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
-                    {summary}
-                  </span>
+                  <span className="text-sm text-text-primary">{summary}</span>
                 ) : (
                   <Muted>—</Muted>
                 )}
               </TableCell>
               <TableCell>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-tertiary)",
-                  }}
-                >
-                  {entry.ip ?? "—"}
-                </span>
+                <span className="font-mono text-xs text-text-tertiary">{entry.ip ?? "—"}</span>
               </TableCell>
             </TableRow>
           );

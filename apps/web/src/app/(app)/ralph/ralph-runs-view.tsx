@@ -57,15 +57,6 @@ interface RalphRunsViewProps {
   linearConnected: boolean;
 }
 
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const externalLink = {
-  color: "var(--text-primary)",
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "var(--space-1)",
-} as const;
-
 /** The run's Linear issue: identifier and title, linked to Linear when the URL is known. */
 export function LinearIssueLink({
   identifier,
@@ -83,17 +74,12 @@ export function LinearIssueLink({
     </>
   );
   return url ? (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      style={{ ...externalLink, fontSize: "var(--text-sm)" }}
-    >
+    <a href={url} target="_blank" rel="noreferrer" className="run-source">
       {content}
-      <IconExternalLink size={12} style={{ flexShrink: 0 }} />
+      <IconExternalLink size={12} className="shrink-0" />
     </a>
   ) : (
-    <span style={{ ...externalLink, fontSize: "var(--text-sm)" }}>{content}</span>
+    <span className="run-source">{content}</span>
   );
 }
 
@@ -122,8 +108,8 @@ export function RunSource({
   }
   const Icon = run.chatThread?.platform === "discord" ? IconBrandDiscord : IconBrandSlack;
   return (
-    <span style={{ ...externalLink, fontSize: "var(--text-sm)" }}>
-      {run.chatThread && <Icon size={12} style={{ flexShrink: 0 }} />}
+    <span className="run-source">
+      {run.chatThread && <Icon size={12} className="shrink-0" />}
       <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
     </span>
   );
@@ -150,14 +136,11 @@ export function PullRequestLink({ pullRequest }: { pullRequest: RalphRunRow["pul
 export function AgentName({ agent, isAdmin }: { agent: RalphRunRow["agent"]; isAdmin: boolean }) {
   if (!agent) return <Muted>—</Muted>;
   return isAdmin ? (
-    <Link
-      href={`/harnesses/${agent.id}`}
-      style={{ ...cellText, color: "var(--text-primary)", textDecoration: "none" }}
-    >
+    <Link href={`/harnesses/${agent.id}`} className="list-text list-text-primary">
       {agent.name}
     </Link>
   ) : (
-    <span style={cellText}>{agent.name}</span>
+    <span className="list-text">{agent.name}</span>
   );
 }
 
@@ -172,7 +155,7 @@ export function LinearNotConnected({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin ? (
           <>
             Connect a workspace in{" "}
-            <Link href="/settings/integrations" style={{ color: "var(--text-primary)" }}>
+            <Link href="/settings/integrations" className="text-text-primary">
               Settings › Integrations
             </Link>
             .
@@ -276,16 +259,7 @@ export function RalphRunsView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Ralph runs" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader
           title="Ralph runs"
           description="Linear epics and issues delegated to Omniralph, built story by story."

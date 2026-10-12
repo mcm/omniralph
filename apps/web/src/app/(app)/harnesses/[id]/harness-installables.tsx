@@ -4,10 +4,12 @@ import * as React from "react";
 import {
   Badge,
   Button,
+  Cluster,
   Empty,
   Field,
   Input,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -41,10 +43,6 @@ export interface InstallJobRow {
   createdAt: string;
 }
 
-const mono = { fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" } as const;
-const cellText = { fontSize: "var(--text-sm)", color: "var(--text-secondary)" } as const;
-const stack = { display: "flex", flexDirection: "column", gap: "var(--space-4)" } as const;
-
 /** The installables the harness reports, by name. */
 export function InstalledInstallables({ installables }: { installables: InstallableRow[] }) {
   if (installables.length === 0) {
@@ -69,10 +67,10 @@ export function InstalledInstallables({ installables }: { installables: Installa
         {installables.map((installable) => (
           <TableRow key={installable.name} data-installable={installable.name}>
             <TableCell>
-              <span style={mono}>{installable.name}</span>
+              <span className="font-mono text-sm">{installable.name}</span>
             </TableCell>
             <TableCell>
-              <span style={mono}>{installable.version}</span>
+              <span className="font-mono text-sm">{installable.version}</span>
             </TableCell>
           </TableRow>
         ))}
@@ -98,10 +96,10 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
         {jobs.map((job) => (
           <TableRow key={job.id} data-install-job={job.id}>
             <TableCell>
-              <span style={cellText}>{formatDateTime(job.createdAt)}</span>
+              <span className="list-text">{formatDateTime(job.createdAt)}</span>
             </TableCell>
             <TableCell>
-              <span style={mono}>
+              <span className="font-mono text-sm">
                 {job.name ?? "—"}@{job.version ?? "latest"}
               </span>
             </TableCell>
@@ -110,9 +108,9 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
             </TableCell>
             <TableCell>
               {job.error ? (
-                <span style={{ ...cellText, color: "var(--danger-fg)" }}>{job.error}</span>
+                <span className="list-text list-text-danger">{job.error}</span>
               ) : job.installedVersion ? (
-                <span style={cellText}>Installed {job.installedVersion}</span>
+                <span className="list-text">Installed {job.installedVersion}</span>
               ) : (
                 <Muted>—</Muted>
               )}
@@ -144,47 +142,49 @@ export function InstallForm({ harnessId }: { harnessId: string }) {
   };
 
   return (
-    <form onSubmit={submit} style={stack} aria-label="Install an installable">
-      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-        <Field
-          label="Package name"
-          htmlFor="install-name"
-          description="An npm package with an omniralph manifest, e.g. @omniralph/code-graph. The harness only installs packages its local installables.allow allows."
-          style={{ flex: 2, minWidth: "16rem" }}
-        >
-          <Input
-            id="install-name"
-            name="name"
-            required
-            disabled={pending}
-            placeholder="@omniralph/…"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)" }}
-          />
-        </Field>
-        <Field
-          label="Version"
-          htmlFor="install-version"
-          description="An exact version or a dist-tag."
-          style={{ flex: 1, minWidth: "10rem" }}
-        >
-          <Input
-            id="install-version"
-            name="version"
-            disabled={pending}
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)" }}
-          />
-        </Field>
-      </div>
-      <div>
-        <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
-          <IconCloudDownload size={14} />
-          {pending ? "Installing…" : "Install"}
-        </Button>
-      </div>
-    </form>
+    <Stack asChild>
+      <form onSubmit={submit} aria-label="Install an installable">
+        <Cluster gap={4} align="stretch">
+          <Field
+            label="Package name"
+            htmlFor="install-name"
+            description="An npm package with an omniralph manifest, e.g. @omniralph/code-graph. The harness only installs packages its local installables.allow allows."
+            className="harness-install-name"
+          >
+            <Input
+              id="install-name"
+              name="name"
+              required
+              disabled={pending}
+              placeholder="@omniralph/…"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+          <Field
+            label="Version"
+            htmlFor="install-version"
+            description="An exact version or a dist-tag."
+            className="harness-install-version"
+          >
+            <Input
+              id="install-version"
+              name="version"
+              disabled={pending}
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+        </Cluster>
+        <div>
+          <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
+            <IconCloudDownload size={14} />
+            {pending ? "Installing…" : "Install"}
+          </Button>
+        </div>
+      </form>
+    </Stack>
   );
 }

@@ -20,7 +20,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Muted,
+  Stack,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
 import type { AgentDefinition, NamedContent, TaskType } from "@omniralph/tasks";
@@ -33,11 +35,7 @@ import {
   BuiltinBadge,
   Fact,
   ModelName,
-  mono,
   NameList,
-  pageMain,
-  preBlock,
-  stack,
   TaskTypeBadges,
 } from "../agent-parts";
 
@@ -59,14 +57,14 @@ interface AgentDetailViewProps {
 function Documents({ documents, empty }: { documents: NamedContent[]; empty: string }) {
   if (documents.length === 0) return <Muted>{empty}</Muted>;
   return (
-    <div style={stack}>
+    <Stack gap={3}>
       {documents.map((doc) => (
         <details key={doc.name}>
-          <summary style={{ cursor: "pointer", fontSize: "var(--text-sm)" }}>{doc.name}</summary>
-          <pre style={{ ...preBlock, marginTop: "var(--space-2)" }}>{doc.content}</pre>
+          <summary className="cursor-pointer text-sm">{doc.name}</summary>
+          <pre className="definition-pre definition-pre-spaced">{doc.content}</pre>
         </details>
       ))}
-    </div>
+    </Stack>
   );
 }
 
@@ -149,14 +147,14 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
       <AppHeader
         breadcrumbs={[{ label: "Agents", href: "/settings/agents" }, { label: agent.name }]}
       />
-      <main style={pageMain}>
+      <main className="detail-main">
         <PageHeader
           title={agent.name}
           description={agent.description || undefined}
           meta={
             <>
               {builtin && <BuiltinBadge />}
-              <span style={{ ...mono, color: "var(--text-secondary)" }}>{agent.id}</span>
+              <span className="font-mono text-xs text-text-secondary">{agent.id}</span>
             </>
           }
           actions={isAdmin && <AdminActions agent={agent} builtin={builtin} tasks={tasks} />}
@@ -166,13 +164,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
           <CardHeader>
             <CardTitle as="h2">Overview</CardTitle>
           </CardHeader>
-          <CardContent
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "var(--space-4)",
-            }}
-          >
+          <CardContent className="definition-grid">
             <Fact label="Task types">
               <TaskTypeBadges taskTypes={agent.taskTypes} />
             </Fact>
@@ -200,7 +192,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
           </CardHeader>
           <CardContent>
             {agent.systemPrompt ? (
-              <pre style={preBlock}>{agent.systemPrompt}</pre>
+              <pre className="definition-pre">{agent.systemPrompt}</pre>
             ) : (
               <Muted>No system prompt.</Muted>
             )}
@@ -214,7 +206,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
               What the agent wants; a task&apos;s type and tool settings narrow it further.
             </CardDescription>
           </CardHeader>
-          <CardContent style={stack}>
+          <CardContent className="definition-stack">
             <Fact label="Claude Code tools">
               <NameList names={agent.tools.builtin} />
             </Fact>
@@ -253,20 +245,17 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
             <CardTitle as="h2">Used by</CardTitle>
             <CardDescription>Tasks that run on this agent.</CardDescription>
           </CardHeader>
-          <CardContent style={stack}>
+          <CardContent className="definition-stack">
             {tasks.length === 0 ? (
               <Muted>No task uses this agent.</Muted>
             ) : (
               tasks.map((task) => (
-                <div
-                  key={task.id}
-                  style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-                >
-                  <span style={{ fontSize: "var(--text-sm)" }}>{task.name}</span>
-                  <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
+                <Cluster key={task.id}>
+                  <span className="text-sm">{task.name}</span>
+                  <span className="font-mono text-xs text-text-secondary">{task.id}</span>
                   <Badge variant="neutral">{task.taskType}</Badge>
                   {task.builtin && <BuiltinBadge />}
-                </div>
+                </Cluster>
               ))
             )}
           </CardContent>

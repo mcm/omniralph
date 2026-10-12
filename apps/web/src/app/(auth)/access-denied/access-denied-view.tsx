@@ -25,14 +25,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
       <AuthBrand />
       <Card>
         <CardHeader>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              color: "var(--danger-fg)",
-            }}
-          >
+          <div className="auth-title-row text-danger-fg">
             <IconLock size={18} />
             <CardTitle as="h1">Access denied</CardTitle>
           </div>
@@ -42,7 +35,7 @@ export function AccessDeniedView({ reason }: AccessDeniedViewProps) {
               : "Your account isn't allowed to use this control panel."}
           </CardDescription>
         </CardHeader>
-        <CardContent style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+        <CardContent className="text-sm text-text-secondary">
           {forbidden
             ? "Ask an admin of your organization to change your role if you need access."
             : "Sign-in is limited to approved email domains and people invited to an organization. Ask an organization admin to invite your email, then try again."}

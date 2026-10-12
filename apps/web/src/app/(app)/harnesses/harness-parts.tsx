@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Muted } from "@iamthemcmaster/ui";
+import { Badge, Cluster, Muted, Stack } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
@@ -34,13 +34,13 @@ export function HarnessStatusBadge({
 export function TaskTypeBadges({ accepted }: { accepted: string[] }) {
   if (accepted.length === 0) return <Muted>None</Muted>;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+    <Cluster gap={1}>
       {accepted.map((taskType) => (
         <Badge key={taskType} variant="neutral">
           {taskType}
         </Badge>
       ))}
-    </div>
+    </Cluster>
   );
 }
 
@@ -55,25 +55,17 @@ export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] 
   const label = job.target?.label ?? job.id.slice(0, 8);
   const text = (
     <>
-      <span style={{ color: "var(--text-tertiary)" }}>{job.type}</span> {label}
+      <span className="text-text-tertiary">{job.type}</span> {label}
     </>
   );
-  const style = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "var(--space-1)",
-    fontFamily: "var(--font-mono)",
-    fontSize: "var(--text-xs)",
-    color: "var(--text-secondary)",
-    textDecoration: "none",
-  } as const;
+  const className = "list-secondary font-mono";
   return job.target?.url ? (
-    <a href={job.target.url} target="_blank" rel="noreferrer" style={style}>
+    <a href={job.target.url} target="_blank" rel="noreferrer" className={className}>
       {text}
       <IconExternalLink size={12} />
     </a>
   ) : (
-    <span style={style}>{text}</span>
+    <span className={className}>{text}</span>
   );
 }
 
@@ -84,14 +76,14 @@ export function RepositoryBadges({
 }) {
   if (repositories.length === 0) return <Muted>None</Muted>;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+    <Cluster gap={1}>
       {repositories.map((repo) => (
         <Badge key={repo.id} variant="info">
           <ProviderIcon provider={repo.provider} size={12} />
           {repo.fullPath}
         </Badge>
       ))}
-    </div>
+    </Cluster>
   );
 }
 
@@ -134,24 +126,18 @@ export function UpdateStatusBadge({
 export function HarnessVersionCell({ harness }: { harness: HarnessRow }) {
   const target = harness.updateRequest?.version ?? harness.desiredVersion;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+    <Stack gap={1}>
       {harness.version ? (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--text-sm)",
-            color: "var(--text-secondary)",
-          }}
-        >
+        <span className="font-mono text-sm text-text-secondary">
           {harness.version}
           {target && target !== harness.version && (
-            <span style={{ color: "var(--text-tertiary)" }}> → {target}</span>
+            <span className="text-text-tertiary"> → {target}</span>
           )}
         </span>
       ) : (
         <Muted>Unknown</Muted>
       )}
       {!harness.revoked && <UpdateStatusBadge harness={harness} />}
-    </div>
+    </Stack>
   );
 }

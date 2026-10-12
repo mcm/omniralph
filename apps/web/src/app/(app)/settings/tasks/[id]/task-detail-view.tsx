@@ -20,7 +20,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Muted,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -42,15 +44,7 @@ import { useAction } from "@/components/use-action";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
 import { cloneTaskDefinition, deleteTaskDefinition } from "../actions";
 import { repositoryTaskRoles } from "../repository-roles";
-import {
-  BuiltinBadge,
-  Fact,
-  mono,
-  NameList,
-  pageMain,
-  preBlock,
-  stack,
-} from "../../agents/agent-parts";
+import { BuiltinBadge, Fact, NameList } from "../../agents/agent-parts";
 import { AgentLink, TASK_TYPE_LABELS, taskEditHref, taskHref, TriggerBadges } from "../task-parts";
 
 interface TaskDetailViewProps {
@@ -64,12 +58,6 @@ interface TaskDetailViewProps {
   referrers: TaskReferrers;
   isAdmin: boolean;
 }
-
-const factGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "var(--space-4)",
-} as const;
 
 const CHAT_TASK_LABELS: Record<TaskReferrers["chatTasks"][number], string> = {
   askAboutCode: "Ask about code",
@@ -109,10 +97,10 @@ function Commands({
         {commands.map((command) => (
           <TableRow key={command.name}>
             <TableCell>
-              <span style={mono}>{command.name}</span>
+              <span className="font-mono text-xs">{command.name}</span>
             </TableCell>
             <TableCell>
-              <pre style={{ ...preBlock, padding: "var(--space-2)" }}>{command.command}</pre>
+              <pre className="definition-pre definition-pre-compact">{command.command}</pre>
             </TableCell>
             <TableCell>{command.timeoutSeconds}s</TableCell>
             <TableCell>{command.maxOutputBytes.toLocaleString("en-US")} bytes</TableCell>
@@ -156,17 +144,14 @@ function ReferrerList({ referrers }: { referrers: TaskReferrers }) {
   ];
   if (items.length === 0) return <Muted>Nothing uses this task.</Muted>;
   return (
-    <div style={stack}>
+    <Stack gap={3}>
       {items.map((item) => (
-        <div
-          key={item.key}
-          style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
-        >
-          <span style={{ fontSize: "var(--text-sm)" }}>{item.label}</span>
-          <Muted style={{ fontSize: "var(--text-xs)" }}>{item.detail}</Muted>
-        </div>
+        <Cluster key={item.key}>
+          <span className="text-sm">{item.label}</span>
+          <Muted className="text-xs">{item.detail}</Muted>
+        </Cluster>
       ))}
-    </div>
+    </Stack>
   );
 }
 
@@ -265,14 +250,14 @@ export function TaskDetailView({
       <AppHeader
         breadcrumbs={[{ label: "Tasks", href: "/settings/tasks" }, { label: task.name }]}
       />
-      <main style={pageMain}>
+      <main className="detail-main">
         <PageHeader
           title={task.name}
           description={task.description || undefined}
           meta={
             <>
               {builtin && <BuiltinBadge />}
-              <span style={{ ...mono, color: "var(--text-secondary)" }}>{task.id}</span>
+              <span className="font-mono text-xs text-text-secondary">{task.id}</span>
             </>
           }
           actions={
@@ -290,7 +275,7 @@ export function TaskDetailView({
           <CardHeader>
             <CardTitle as="h2">Overview</CardTitle>
           </CardHeader>
-          <CardContent style={factGrid}>
+          <CardContent className="definition-grid">
             <Fact label="Task type">{TASK_TYPE_LABELS[task.taskType]}</Fact>
             <Fact label="Agent">
               <AgentLink id={task.agentId} name={agentName} />
@@ -299,13 +284,17 @@ export function TaskDetailView({
               <TriggerBadges triggers={task.triggers} />
             </Fact>
             <Fact label="Sink">
-              <span style={mono}>{task.sink}</span>
+              <span className="font-mono text-xs">{task.sink}</span>
             </Fact>
             <Fact label="Pool">
               <Badge variant="neutral">{task.pool}</Badge>
             </Fact>
             <Fact label="Model override">
-              {task.model ? <span style={mono}>{task.model}</span> : <Muted>Agent model</Muted>}
+              {task.model ? (
+                <span className="font-mono text-xs">{task.model}</span>
+              ) : (
+                <Muted>Agent model</Muted>
+              )}
             </Fact>
             <Fact label="Token budget">{tokenBudgetText(task.tokenBudget)}</Fact>
             {task.maxTurns !== undefined && <Fact label="Max turns">{task.maxTurns}</Fact>}
@@ -322,11 +311,11 @@ export function TaskDetailView({
               Rendered with the trigger&apos;s variables for each run.
             </CardDescription>
           </CardHeader>
-          <CardContent style={stack}>
-            <pre style={preBlock}>{task.promptTemplate}</pre>
+          <CardContent className="definition-stack">
+            <pre className="definition-pre">{task.promptTemplate}</pre>
             {task.systemAppend && (
               <Fact label="Appended to the agent's system prompt">
-                <pre style={preBlock}>{task.systemAppend}</pre>
+                <pre className="definition-pre">{task.systemAppend}</pre>
               </Fact>
             )}
             {task.variableLimits && Object.keys(task.variableLimits).length > 0 && (
@@ -349,7 +338,7 @@ export function TaskDetailView({
               after it, whatever happened.
             </CardDescription>
           </CardHeader>
-          <CardContent style={stack}>
+          <CardContent className="definition-stack">
             <Fact label="Setup commands">
               <Commands commands={task.setupCommands} empty="No setup commands." />
             </Fact>
@@ -364,7 +353,7 @@ export function TaskDetailView({
             <CardTitle as="h2">Tool settings</CardTitle>
             <CardDescription>Narrow the tools the agent wants.</CardDescription>
           </CardHeader>
-          <CardContent style={factGrid}>
+          <CardContent className="definition-grid">
             <Fact label="Shell">
               <YesNo value={task.toolSettings.shell} />
             </Fact>
@@ -387,7 +376,7 @@ export function TaskDetailView({
             </CardHeader>
             <CardContent>
               {task.outputSchema ? (
-                <pre style={preBlock}>{JSON.stringify(task.outputSchema, null, 2)}</pre>
+                <pre className="definition-pre">{JSON.stringify(task.outputSchema, null, 2)}</pre>
               ) : (
                 <Muted>No output schema: the answer is free text.</Muted>
               )}
@@ -401,7 +390,7 @@ export function TaskDetailView({
               <CardTitle as="h2">Coding</CardTitle>
               <CardDescription>How a coding run pushes, opens its PR and retries.</CardDescription>
             </CardHeader>
-            <CardContent style={factGrid}>
+            <CardContent className="definition-grid">
               <Fact label="Push">
                 {task.pushTiming === "end" ? "Once, when every story is done" : "After each story"}
               </Fact>
@@ -441,10 +430,10 @@ export function TaskDetailView({
               it.
             </CardDescription>
           </CardHeader>
-          <CardContent style={factGrid}>
+          <CardContent className="definition-grid">
             <Fact label="Minimum harness version">
               {requirements.minHarnessVersion ? (
-                <span style={mono}>{requirements.minHarnessVersion}</span>
+                <span className="font-mono text-xs">{requirements.minHarnessVersion}</span>
               ) : (
                 <Muted>Any</Muted>
               )}

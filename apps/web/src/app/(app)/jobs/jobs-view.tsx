@@ -244,16 +244,7 @@ export function JobsView({
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Jobs" }]} />
-      <main
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "var(--space-8)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-6)",
-        }}
-      >
+      <main className="detail-main">
         <PageHeader title="Jobs" description="Queued, running and finished jobs of every type." />
 
         <Card>

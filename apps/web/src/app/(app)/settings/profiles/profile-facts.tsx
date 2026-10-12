@@ -13,17 +13,6 @@ export interface ProfileSummary {
   allowRepoExploration: boolean;
 }
 
-const factLabel: React.CSSProperties = {
-  fontSize: "var(--text-xs)",
-  color: "var(--text-tertiary)",
-};
-
-const factValue: React.CSSProperties = {
-  fontSize: "var(--text-sm)",
-  color: "var(--text-primary)",
-  fontVariantNumeric: "tabular-nums",
-};
-
 /** A profile's model, token cap and max files. */
 export function ProfileFacts({ profile }: { profile: ProfileSummary }) {
   const facts = [
@@ -32,33 +21,17 @@ export function ProfileFacts({ profile }: { profile: ProfileSummary }) {
     { label: "Max files", value: profile.maxFiles.toLocaleString(), mono: false },
   ];
   return (
-    <dl
-      style={{
-        margin: 0,
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
-        columnGap: "var(--space-3)",
-        rowGap: "var(--space-1)",
-        alignItems: "baseline",
-      }}
-    >
+    <dl className="profiles-facts">
       {facts.map((fact) => (
-        <div key={fact.label} style={{ display: "contents" }}>
-          <dt style={factLabel}>{fact.label}</dt>
-          <dd
-            style={{
-              ...factValue,
-              margin: 0,
-              fontFamily: fact.mono ? "var(--font-mono)" : undefined,
-              overflowWrap: "anywhere",
-            }}
-          >
+        <div key={fact.label} className="profiles-fact">
+          <dt className="profiles-fact-label">{fact.label}</dt>
+          <dd className={fact.mono ? "profiles-fact-value font-mono" : "profiles-fact-value"}>
             {fact.value}
           </dd>
         </div>
       ))}
-      <dt style={factLabel}>Exploration</dt>
-      <dd style={{ margin: 0 }}>
+      <dt className="profiles-fact-label">Exploration</dt>
+      <dd className="m-0">
         <Badge variant={profile.allowRepoExploration ? "info" : "neutral"} size="sm">
           {profile.allowRepoExploration ? "Explores the repository" : "Diff only"}
         </Badge>
