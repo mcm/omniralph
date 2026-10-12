@@ -24,6 +24,7 @@ import {
   IconMessageCircleUser,
   IconPlugConnected,
   IconRepeat,
+  IconRobot,
   IconServer,
   IconServerCog,
 } from "@tabler/icons-react";
@@ -42,6 +43,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   jobs: IconListCheck,
   analytics: IconChartBar,
   organization: IconBuildingCommunity,
+  agents: IconRobot,
   profiles: IconAdjustments,
   integrations: IconPlugConnected,
   harnessSettings: IconServerCog,
