@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   findRawColor,
   noArbitraryTailwind,
+  noBareTimestamp,
   noInlineLayoutStyle,
   noRawColor,
 } from "./design-system.mjs";
@@ -171,6 +172,44 @@ ruleTester.run("no-arbitrary-tailwind", noArbitraryTailwind, {
     {
       code: `const x = <Card bodyClassName="max-w-[60ch]" />;`,
       errors: [{ messageId: "arbitraryValue" }],
+    },
+  ],
+});
+
+ruleTester.run("no-bare-timestamp", noBareTimestamp, {
+  valid: [
+    `const x = <Timestamp iso={job.createdAt} />;`,
+    // Strings: tooltips, descriptions and variables are not rendered text nodes.
+    `const x = <Badge title={formatDateTime(at)}>Delivered</Badge>;`,
+    "const x = <Badge title={`Delivered ${formatDateTime(at)}`}>Delivered</Badge>;",
+    "const hint = `Last changed ${formatDateTime(at)}.`;",
+    `function label(at) { return formatDateTime(at); }`,
+    `const x = <span>{format(at)}</span>;`,
+  ],
+  invalid: [
+    {
+      code: `const x = <span className="list-text">{formatDateTime(job.createdAt)}</span>;`,
+      errors: [{ messageId: "bareTimestamp" }],
+    },
+    {
+      code: `const x = <Fact label="Enrolled">{formatDateTime(harness.createdAt)}</Fact>;`,
+      errors: [{ messageId: "bareTimestamp" }],
+    },
+    {
+      code: `const x = <>Revoked {at ? formatDateTime(at) : "never"}</>;`,
+      errors: [{ messageId: "bareTimestamp" }],
+    },
+    {
+      code: "const x = <p>{`Checked ${formatDateTime(at)}`}</p>;",
+      errors: [{ messageId: "bareTimestamp" }],
+    },
+    {
+      code: `const x = <span>{formatRelative(at, now)}</span>;`,
+      errors: [{ messageId: "bareTimestamp" }],
+    },
+    {
+      code: `const rows = items.map((i) => <td key={i.id}>{formatDateTime(i.at)}</td>);`,
+      errors: [{ messageId: "bareTimestamp" }],
     },
   ],
 });

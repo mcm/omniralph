@@ -18,8 +18,9 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconCloudDownload, IconPackage } from "@tabler/icons-react";
 import type { JobStatus } from "@omniralph/db";
+import { Timestamp } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import { installInstallable } from "../actions";
 import { JobStatusBadge } from "@/components/ralph-badges";
 import { EmptyValue } from "@/components/empty-value";
@@ -67,10 +68,10 @@ export function InstalledInstallables({ installables }: { installables: Installa
         {installables.map((installable) => (
           <TableRow key={installable.name} data-installable={installable.name}>
             <TableCell>
-              <span className="font-mono text-sm">{installable.name}</span>
+              <MonoValue value={installable.name} className="text-sm" />
             </TableCell>
             <TableCell>
-              <span className="font-mono text-sm">{installable.version}</span>
+              <MonoValue value={installable.version} className="text-sm" />
             </TableCell>
           </TableRow>
         ))}
@@ -96,7 +97,7 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
         {jobs.map((job) => (
           <TableRow key={job.id} data-install-job={job.id}>
             <TableCell>
-              <span className="list-text">{formatDateTime(job.createdAt)}</span>
+              <Timestamp iso={job.createdAt} />
             </TableCell>
             <TableCell>
               <span className="font-mono text-sm">

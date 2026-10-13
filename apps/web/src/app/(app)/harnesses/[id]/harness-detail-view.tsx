@@ -34,6 +34,7 @@ import { IconBan, IconCloudDownload, IconPin, IconPinnedOff, IconTrash } from "@
 import { defaultPoolLimit } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { SettingsCard } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
@@ -46,7 +47,6 @@ import {
 } from "@/lib/settings/changes";
 import { typedNumber } from "@/lib/settings/forms";
 import type { HarnessRow } from "@/lib/harnesses/rows";
-import { formatDateTime, formatRelative } from "@/lib/format-date";
 import {
   deleteHarness,
   pinRepository,
@@ -317,8 +317,8 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
       {harness.updateRequest && (
         <Muted>
           Update to {harness.updateRequest.version} requested{" "}
-          {formatDateTime(harness.updateRequest.requestedAt)}; the harness starts it with its next
-          heartbeat.
+          <Timestamp iso={harness.updateRequest.requestedAt} inline />; the harness starts it with
+          its next heartbeat.
         </Muted>
       )}
     </SettingsCard>
@@ -674,8 +674,8 @@ export function HarnessDetailView({
           <Alert variant="warning">
             <AlertTitle as="h2">Revoked</AlertTitle>
             <AlertDescription>
-              This harness was revoked {formatDateTime(harness.revokedAt)}. Its configuration can no
-              longer be changed.
+              This harness was revoked <Timestamp iso={harness.revokedAt} inline />. Its
+              configuration can no longer be changed.
             </AlertDescription>
           </Alert>
         )}
@@ -687,7 +687,11 @@ export function HarnessDetailView({
           <CardContent>
             <div className="harness-status-grid">
               <Fact label="Last heartbeat">
-                {harness.lastHeartbeatAt ? formatRelative(harness.lastHeartbeatAt, now) : "Never"}
+                {harness.lastHeartbeatAt ? (
+                  <Timestamp iso={harness.lastHeartbeatAt} now={now} inline />
+                ) : (
+                  "Never"
+                )}
               </Fact>
               <Fact label="Version">{harness.version ?? "Unknown"}</Fact>
               <Fact label="Desired version">
@@ -724,7 +728,9 @@ export function HarnessDetailView({
               <Fact label="Concurrency per pool">
                 {formatPoolLimits(harness.effectivePoolLimits)}
               </Fact>
-              <Fact label="Enrolled">{formatDateTime(harness.createdAt)}</Fact>
+              <Fact label="Enrolled">
+                <Timestamp iso={harness.createdAt} inline />
+              </Fact>
             </div>
           </CardContent>
         </Card>

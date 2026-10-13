@@ -1,5 +1,6 @@
 import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import type { ReactNode } from "react";
+import { MonoValue } from "@/components/mono-value";
 
 /** The path of an agent's detail page (built-in IDs contain a colon). */
 export function agentHref(id: string): string {
@@ -30,7 +31,7 @@ export function BuiltinBadge() {
 /** An agent's model, or what a null model falls back to. */
 export function ModelName({ model }: { model: string | null }) {
   if (model === null) return <Muted>Profile default</Muted>;
-  return <span className="font-mono text-sm">{model}</span>;
+  return <MonoValue value={model} className="text-sm" />;
 }
 
 /** A labelled value of a detail page. */

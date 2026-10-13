@@ -10,8 +10,8 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconWebhook } from "@tabler/icons-react";
+import { Timestamp } from "@/components/list-table";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import { recreateGitLabWebhook } from "./actions";
 
 /** A problem found by the daily GitLab check (`scm_connections.health`). */
@@ -90,7 +90,7 @@ export function ConnectionHealth({
     <Stack gap={2}>
       <Muted className="text-xs">
         {health.tokenExpiresAt ? `Token expires ${health.tokenExpiresAt}` : "Token expiry unknown"}{" "}
-        · Last checked {formatDateTime(health.checkedAt)}
+        · Last checked <Timestamp iso={health.checkedAt} inline />
       </Muted>
       {health.problems.length > 0 && (
         <Alert variant="warning">

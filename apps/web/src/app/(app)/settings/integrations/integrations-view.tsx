@@ -28,9 +28,9 @@ import {
 import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { EnvDocsLink } from "@/components/env-docs-link";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import type { ActionResult } from "@/lib/action-result";
 import { disconnectDiscord, disconnectLinear, disconnectSlack } from "./actions";
 import { ChatTasksCard, type ChatTasksSettings } from "./chat-tasks-card";
@@ -273,7 +273,7 @@ export function IntegrationsView({
               {linear ? (
                 <>
                   Connected to the <strong>{linear.name}</strong> workspace since{" "}
-                  {formatDateTime(linear.connectedAt)}.
+                  <Timestamp iso={linear.connectedAt} inline />.
                 </>
               ) : (
                 "Install the Omniralph app in one Linear workspace so issues can be delegated to it."
@@ -444,7 +444,7 @@ function ChatPlatformCard({
               <div>
                 <strong>{connection.name}</strong>
                 <Muted>
-                  Connected {formatDateTime(connection.connectedAt)}
+                  Connected <Timestamp iso={connection.connectedAt} inline />
                   {connection.installedBy && <> by {connection.installedBy}</>}
                 </Muted>
               </div>

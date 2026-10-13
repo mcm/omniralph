@@ -35,6 +35,7 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { JobRow } from "@/lib/harnesses/rows";
@@ -97,7 +98,7 @@ function JobTableRow({
           <Timestamp iso={job.finishedAt ?? job.createdAt} />
         </PhoneMeta>
       </TableCell>
-      <TableCell className={WIDE_COLUMN}>
+      <TableCell className={`${WIDE_COLUMN} jobs-col-type`}>
         <div className="list-cell-stack">
           <span className="list-filters">
             <span className="list-time list-text-primary text-numeric">{job.type}</span>
@@ -109,14 +110,14 @@ function JobTableRow({
                 href={job.target.url}
                 target="_blank"
                 rel="noreferrer"
-                className="list-secondary text-numeric"
+                className="list-secondary jobs-target"
                 aria-label={`Open ${job.target.label} on the code host`}
               >
-                {job.target.label}
+                <MonoValue value={job.target.label} />
                 <IconExternalLink size={12} />
               </a>
             ) : (
-              <span className="list-secondary text-numeric">{job.target.label}</span>
+              <MonoValue value={job.target.label} className="list-secondary jobs-target" />
             ))}
         </div>
       </TableCell>
@@ -285,7 +286,7 @@ export function JobsView({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Job</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Type</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} jobs-col-type`}>Type</TableHead>
                     <TableHead className={WIDE_COLUMN}>Status</TableHead>
                     <TableHead className={WIDE_COLUMN} numeric>
                       Deliveries

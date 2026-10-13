@@ -52,9 +52,9 @@ import {
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import type { RuleView } from "@/lib/rules/display";
 import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
@@ -348,7 +348,7 @@ function RulesTable({
               )}
             </TableCell>
             <TableCell className="list-nowrap">
-              <Muted>{formatDateTime(rule.createdAt)}</Muted>
+              <Timestamp iso={rule.createdAt} />
             </TableCell>
             {isAdmin && (
               <TableCell>

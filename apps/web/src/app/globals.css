@@ -257,6 +257,16 @@ body {
   flex: 1 1 0;
   min-width: 0;
 }
+@media (max-width: 767px) {
+  /* The repository name fills its cell without widening it, so a long one truncates in the
+     middle instead of pushing the row's switch and menu out of view. */
+  .repositories-title {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 0;
+    min-width: 100%;
+  }
+}
 .list-title-text-muted {
   color: var(--text-secondary);
 }
@@ -277,6 +287,9 @@ body {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   text-decoration: none;
+}
+.list-secondary > svg {
+  flex-shrink: 0;
 }
 .list-text {
   font-size: var(--text-sm);
@@ -305,6 +318,25 @@ body {
 .list-time {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+/* Mono values (components/mono-value.tsx, Timestamp): one line, truncated in the middle. */
+.mono-value {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.mono-value-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mono-value-tail {
+  flex-shrink: 0;
+}
+.mono-time {
   white-space: nowrap;
 }
 .list-actions {
@@ -363,6 +395,18 @@ body {
 }
 
 /* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`). */
+/* Jobs Type column: room for most targets; longer ones truncate in the middle instead of
+   widening the table past its actions. */
+.jobs-col-type {
+  min-width: 12rem;
+}
+.jobs-target {
+  width: 0;
+  min-width: 100%;
+}
+.jobs-target > svg {
+  flex-shrink: 0;
+}
 .job-row {
   scroll-margin-top: var(--space-16);
 }
@@ -542,6 +586,12 @@ body {
 }
 .fact-wide {
   grid-column: span 2;
+}
+@media (max-width: 767px) {
+  /* A timestamp never wraps; on phone its fact takes the row so it fits. */
+  .fact:has(time) {
+    grid-column: 1 / -1;
+  }
 }
 .fact-label {
   font-size: var(--text-xs);
@@ -735,8 +785,6 @@ body {
 }
 .review-file-path {
   flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .review-file-count {
   flex-shrink: 0;
@@ -1344,9 +1392,9 @@ body {
   overflow-wrap: anywhere;
 }
 .review-path {
-  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  overflow-wrap: anywhere;
+  /* A viewport cap, so a long path truncates instead of widening its table on phone. */
+  max-width: min(40ch, 50vw);
 }
 /* A raised panel: a connection on Repositories, a repository on the selection pages. */
 .repo-panel {

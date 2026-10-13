@@ -20,9 +20,9 @@ import {
   hasRefreshReuse,
   type AuditEventName,
 } from "@/lib/harnesses/display";
-import { formatDateTime } from "@/lib/format-date";
 import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
 import { EmptyValue } from "@/components/empty-value";
+import { Timestamp } from "@/components/list-table";
 
 /** Serializable `harness_audit` row. */
 export interface AuditRow {
@@ -44,7 +44,7 @@ export function TokenTheftAlert({ audit }: { audit: AuditRow[] }) {
       <AlertTitle as="h2">Possible token theft</AlertTitle>
       <AlertDescription>
         An already used refresh token for this harness was presented again on{" "}
-        {formatDateTime(reuse.createdAt)}
+        <Timestamp iso={reuse.createdAt} inline />
         {reuse.ip ? ` from ${reuse.ip}` : ""}. Either the harness&apos;s token file was copied, or
         the harness failed to save its rotated token. The harness was revoked automatically; check
         the host before enrolling it again.
@@ -82,7 +82,7 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
           return (
             <TableRow key={entry.id} data-event={entry.event}>
               <TableCell>
-                <span className="list-text">{formatDateTime(entry.createdAt)}</span>
+                <Timestamp iso={entry.createdAt} />
               </TableCell>
               <TableCell>
                 <Badge variant={HARNESS_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>

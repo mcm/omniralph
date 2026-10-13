@@ -33,10 +33,10 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconDoorExit, IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { isRole, type Role } from "@/lib/auth/roles";
-import { formatDateTime } from "@/lib/format-date";
 import { MAX_ORGANIZATION_NAME_LENGTH } from "@/lib/organizations/name";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import {
@@ -315,8 +315,8 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
       <div className="org-row-text">
         <div className="org-row-title">{invitation.email}</div>
         <div className="org-row-secondary">
-          invited {formatDateTime(invitation.createdAt)} · expires{" "}
-          {formatDateTime(invitation.expiresAt)}
+          invited <Timestamp iso={invitation.createdAt} inline /> · expires{" "}
+          <Timestamp iso={invitation.expiresAt} inline />
         </div>
       </div>
       <div className="org-row-actions">

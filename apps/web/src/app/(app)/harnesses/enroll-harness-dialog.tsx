@@ -20,8 +20,8 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
+import { Timestamp } from "@/components/list-table";
 import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
-import { formatDateTime } from "@/lib/format-date";
 import { createEnrollment } from "./actions";
 
 interface Enrollment {
@@ -104,7 +104,7 @@ export function EnrollHarnessDialog() {
               <DialogDescription>
                 Run these on the harness host as the harness&apos;s Unix user (installing needs npm
                 access to the private <code>@iamthemcmaster</code> scope). The token works once and
-                expires {formatDateTime(enrollment.expiresAt)}.
+                expires <Timestamp iso={enrollment.expiresAt} inline />.
               </DialogDescription>
             </DialogHeader>
             <Stack asChild gap={3}>

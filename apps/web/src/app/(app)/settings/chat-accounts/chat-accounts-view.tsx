@@ -24,9 +24,9 @@ import {
 import { IconUnlink } from "@tabler/icons-react";
 import type { ChatPlatform } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import { unlinkChatAccount } from "./actions";
 
 const PLATFORM_NAMES: Record<ChatPlatform, string> = { slack: "Slack", discord: "Discord" };
@@ -82,7 +82,7 @@ export function ChatAccountsView({ identities }: { identities: ChatAccount[] }) 
                       <Muted>
                         {identity.organizationName} · linked{" "}
                         {identity.source === "email" ? "automatically by email " : ""}
-                        {formatDateTime(identity.linkedAt)}
+                        <Timestamp iso={identity.linkedAt} inline />
                       </Muted>
                     </div>
                     <AlertDialog>

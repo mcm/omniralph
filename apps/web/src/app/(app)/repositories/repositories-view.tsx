@@ -68,6 +68,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { EnvDocsLink } from "@/components/env-docs-link";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { pageRange, totalPages } from "@/lib/pagination";
@@ -317,9 +318,9 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
   return (
     <TableRow>
       <TableCell className="list-col-main">
-        <Link href={`/repositories/${repo.id}/reviews`} className="list-title">
+        <Link href={`/repositories/${repo.id}/reviews`} className="list-title repositories-title">
           <ProviderIcon provider={repo.provider} size={14} />
-          <span className="list-title-text list-title-fill text-numeric">{repo.fullPath}</span>
+          <MonoValue value={repo.fullPath} className="list-title-text list-title-fill" />
         </Link>
         <PhoneMeta>
           {repo.lastReviewAt ? (

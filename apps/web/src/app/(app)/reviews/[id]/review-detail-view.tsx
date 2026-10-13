@@ -34,7 +34,8 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
-import { Timestamp } from "@/components/list-table";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import {
   FindingStatusBadge,
@@ -116,7 +117,7 @@ function FileFindingsSection({ file }: { file: FileFindings }) {
     <section className="review-file">
       <h3 className="review-file-header">
         <IconFileCode size={16} className="review-file-icon" />
-        <span className="review-file-path">{file.path}</span>
+        <MonoValue value={file.path} className="review-file-path" />
         <span className="review-file-count">
           {file.findings.length} finding{file.findings.length === 1 ? "" : "s"}
         </span>
@@ -167,10 +168,10 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
             <>
               <Link
                 href={`/repositories/${review.repository.id}/reviews`}
-                className="list-secondary font-mono"
+                className="list-secondary"
               >
                 <ProviderIcon provider={review.repository.provider} size={14} />
-                {review.repository.fullPath}
+                <MonoValue value={review.repository.fullPath} />
               </Link>
               <ReviewStatusBadge status={review.status} />
               <TriggerBadge trigger={review.trigger} />
@@ -222,7 +223,11 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           </Fact>
           <Fact label="Profile">{review.profileName ?? <EmptyValue />}</Fact>
           <Fact label="Model">
-            {review.model ? <span className="fact-mono">{review.model}</span> : <EmptyValue />}
+            {review.model ? (
+              <MonoValue value={review.model} className="fact-mono" />
+            ) : (
+              <EmptyValue />
+            )}
           </Fact>
           <Fact label="Harness">
             {review.agent ? (
@@ -274,20 +279,23 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>File</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Reason</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {review.skippedFiles.map((file) => (
                     <TableRow key={file.path}>
                       <TableCell>
-                        <span className="review-path">{file.path}</span>
+                        <MonoValue value={file.path} className="review-path" />
+                        <PhoneMeta>
+                          <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>
+                        </PhoneMeta>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={WIDE_COLUMN}>
                         <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>
                       </TableCell>
                     </TableRow>

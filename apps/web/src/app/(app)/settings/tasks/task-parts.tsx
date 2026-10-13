@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge, Cluster } from "@iamthemcmaster/ui";
 import type { TaskType } from "@omniralph/tasks";
 import { agentHref } from "../agents/agent-parts";
+import { MonoValue } from "@/components/mono-value";
 
 /** The path of a task's detail page (built-in IDs contain a colon). */
 export function taskHref(id: string): string {
@@ -43,7 +44,7 @@ export function AgentLink({
   /** E.g. `list-secondary` under a row's title on phone. */
   className?: string;
 }) {
-  if (name === null) return <span className="font-mono text-xs text-text-secondary">{id}</span>;
+  if (name === null) return <MonoValue value={id} className="text-xs text-text-secondary" />;
   return (
     <Link href={agentHref(id)} className={className}>
       {name}

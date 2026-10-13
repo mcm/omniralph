@@ -1,6 +1,7 @@
 // Local ESLint rules that keep the panel's styling inside the design system
 // (apps/web/DESIGN.md, @iamthemcmaster/ui): no raw color literals, no inline
-// layout/spacing/color/typography/size styles, no arbitrary Tailwind values.
+// layout/spacing/color/typography/size styles, no arbitrary Tailwind values,
+// no timestamps rendered outside <Timestamp>.
 // Tested in design-system.test.ts; wired up in apps/web/eslint.config.mjs.
 
 // Hex colors (#rgb, #rgba, #rrggbb, #rrggbbaa) as a standalone token. All-digit
@@ -260,12 +261,63 @@ export const noArbitraryTailwind = {
   },
 };
 
+// Formatters whose output is a timestamp; rendered, it goes through <Timestamp>.
+const TIMESTAMP_FORMATTERS = new Set(["formatDateTime", "formatRelative"]);
+
+/** Whether `node` ends up as a JSX child (text on the page) rather than an attribute or a variable. */
+function isRenderedAsJsxChild(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "JSXAttribute") return false;
+    if (current.type === "JSXExpressionContainer") {
+      return current.parent.type === "JSXElement" || current.parent.type === "JSXFragment";
+    }
+    if (
+      current.type === "VariableDeclarator" ||
+      current.type === "ReturnStatement" ||
+      current.type === "ArrowFunctionExpression" ||
+      current.type === "FunctionExpression" ||
+      current.type === "FunctionDeclaration" ||
+      current.type === "Property"
+    ) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** @type {import("eslint").Rule.RuleModule} */
+export const noBareTimestamp = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "Disallow rendering formatDateTime(...) as text: use <Timestamp> (mono, one line) instead",
+    },
+    schema: [],
+    messages: {
+      bareTimestamp:
+        "Render timestamps with <Timestamp iso={…} /> from @/components/list-table (mono, never wraps), not {{name}}(…) as text.",
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (node.callee.type !== "Identifier" || !TIMESTAMP_FORMATTERS.has(node.callee.name))
+          return;
+        if (!isRenderedAsJsxChild(node)) return;
+        context.report({ node, messageId: "bareTimestamp", data: { name: node.callee.name } });
+      },
+    };
+  },
+};
+
 const plugin = {
   meta: { name: "design-system" },
   rules: {
     "no-raw-color": noRawColor,
     "no-inline-layout-style": noInlineLayoutStyle,
     "no-arbitrary-tailwind": noArbitraryTailwind,
+    "no-bare-timestamp": noBareTimestamp,
   },
 };
 
