@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Timestamp } from "./list-table";
+import { formatDateTime, formatDateTimeAfter } from "@/lib/format-date";
+import { ListStatus, Timestamp } from "./list-table";
 import { MonoValue, monoValueTail } from "./mono-value";
 
 const css = readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
@@ -72,5 +73,38 @@ describe("Timestamp", () => {
     const html = renderToStaticMarkup(<Timestamp iso={iso} now={now} />);
     expect(html).toContain(">5 min ago</time>");
     expect(html).toMatch(/title="[^"]+"/);
+  });
+
+  it("drops the date parts it shares with `after`, the full value in its title", () => {
+    const sameDay = renderToStaticMarkup(
+      <Timestamp iso={iso} after={new Date(new Date(iso).getTime() - 60_000).toISOString()} />,
+    );
+    expect(sameDay).toContain(`>${formatDateTimeAfter(iso, iso)}</time>`);
+    expect(sameDay).not.toContain(">" + formatDateTime(iso) + "<");
+    expect(sameDay).toContain(`title="${formatDateTime(iso)}"`);
+    const otherYear = renderToStaticMarkup(
+      <Timestamp iso={iso} after="2024-01-01T12:00:00.000Z" />,
+    );
+    expect(otherYear).toContain(`>${formatDateTime(iso)}</time>`);
+    expect(otherYear).not.toContain("title=");
+  });
+});
+
+describe("ListStatus", () => {
+  it("shows the error on the badge's line, truncated, with the full text in its title", () => {
+    const error = "The story ran out of attempts: the integration tests need a GitLab instance.";
+    const html = renderToStaticMarkup(<ListStatus badge={<span>failed</span>} error={error} />);
+    expect(html).toBe(
+      `<div class="list-status"><span>failed</span><span class="list-error" title="${error}">${error}</span></div>`,
+    );
+    expect(rule(".list-error")).toContain("white-space: nowrap");
+    expect(rule(".list-error")).toContain("text-overflow: ellipsis");
+    expect(rule(".list-status")).toContain("width: 0");
+  });
+
+  it("renders only the badge without an error", () => {
+    expect(renderToStaticMarkup(<ListStatus badge={<span>ok</span>} error={null} />)).toBe(
+      '<div class="list-status"><span>ok</span></div>',
+    );
   });
 });
