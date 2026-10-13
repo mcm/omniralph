@@ -153,3 +153,8 @@ export function formatRate(rate: number): string {
   const percent = rate * 100;
   return `${percent > 0 && percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
+
+/** The noun after a false-positive count: "1 false positive", "2 false positives". */
+export function falsePositivesNoun(count: number): string {
+  return count === 1 ? "false positive" : "false positives";
+}
