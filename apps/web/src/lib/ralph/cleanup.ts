@@ -359,8 +359,8 @@ export async function recordClosedPullRequest(
 /**
  * A lane's PR/MR merged: the run's Linear issue (the epic, or the single
  * issue) moves to the team's first completed state, whether or not the code
- * host's Linear integration does it too. Not while another lane's PR/MR is
- * still open, nor when the issue is already completed or canceled; a chat run
+ * host's Linear integration does it too. Not while another lane's work isn't
+ * merged yet (its PR/MR is open, or not opened yet), nor when the issue is already completed or canceled; a chat run
  * has no issue. A failure is logged.
  */
 async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<void> {
@@ -368,7 +368,7 @@ async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<voi
     const run = await getRun(deps.db, lane.runId);
     if (!run || !isLinearRun(run)) return;
     const lanes = await listLanes(deps.db, run.id);
-    if (lanes.some((l) => l.id !== lane.id && l.prNumber !== null && !l.prClosed)) return;
+    if (lanes.some((l) => l.id !== lane.id && !l.prClosed && !l.prMerged)) return;
     const issue = await deps.linear.getIssue(run.linearIssueId);
     if (issue.stateType === "completed" || issue.stateType === "canceled") return;
     await deps.linear.setIssueState(run.linearIssueId, { type: "completed" });

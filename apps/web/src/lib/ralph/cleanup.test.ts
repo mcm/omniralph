@@ -24,6 +24,7 @@ import {
   organizations,
   seedReviewProfiles,
   type LinearRun,
+  ralphLanes,
 } from "@omniralph/db";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
@@ -74,6 +75,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
   let db: Database;
   let orgId: string;
   let repoId: string;
+  let otherRepoId: string;
   let agentA: string;
   let linear: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
@@ -122,6 +124,14 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
         provider: "github",
         externalId: "1",
         fullPath: "acme/api",
+      })
+    ).id;
+    otherRepoId = (
+      await connectRepository(db, {
+        connectionId: connection.id,
+        provider: "github",
+        externalId: "2",
+        fullPath: "acme/web",
       })
     ).id;
   }, 180_000);
@@ -422,6 +432,22 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect(linear.issues.get(epicId)?.stateType).toBe("completed");
     expect(linear.stateChanges.at(-1)).toEqual({ issueId: epicId, target: { type: "completed" } });
     expect((await lane(run)).prMerged).toBe(true);
+  });
+
+  it("leaves the epic alone while another lane hasn't opened its PR yet", async () => {
+    const { run, epicId } = await epicWithPullRequest();
+    await db.insert(ralphLanes).values({
+      runId: run.id,
+      repositoryId: otherRepoId,
+      branch: (await lane(run)).branch,
+      baseBranch: "main",
+    });
+    const changes = linear.stateChanges.length;
+    merge();
+    await reconcileCleanup(deps());
+    expect((await lane(run)).prMerged).toBe(true);
+    expect(linear.issues.get(epicId)?.stateType).not.toBe("completed");
+    expect(linear.stateChanges).toHaveLength(changes);
   });
 
   it("leaves a canceled epic alone when its PR merged", async () => {
