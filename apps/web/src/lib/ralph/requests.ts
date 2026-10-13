@@ -7,7 +7,7 @@
  * - A mention runs in request mode: its requests run as `ralph.request` jobs
  *   (one Claude session per lane, main lane first), with no story loop, no
  *   Linear state changes and no blockers; then the run completes with what
- *   they said. `/ralph` switches the run to epic mode.
+ *   they said. `/coding` switches the run to epic mode.
  * - In epic mode, a reply is guidance and a pending request: the next story
  *   takes it (as guidance), and when no story runs (the epic is done, or
  *   waits on blockers) it runs as a request. Push/PR requests never go to a
@@ -70,7 +70,7 @@ const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
 /**
  * Stores a mention's or reply's instruction on a run (inside `lockRun`;
- * cyralph's `onCreated`/`onPrompted`): `/ralph` switches a request-mode run to
+ * cyralph's `onCreated`/`onPrompted`): `/coding` switches a request-mode run to
  * epic mode, its pending requests becoming guidance too. In epic mode the
  * text is guidance (except a push/PR request, which no story agent may do)
  * and a pending request, unless the run waits after its PR/MR step failed

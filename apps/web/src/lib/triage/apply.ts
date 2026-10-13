@@ -9,7 +9,7 @@
  *
  * Nothing in Linear changes for a result that isn't valid, or when the issue
  * or one of its sub-issues went in progress or done while triage ran, except
- * that the `ralph:triage` label is removed whenever a triage job ends, so
+ * that the triage label is removed whenever a triage job ends, so
  * adding it again triages again.
  */
 import {
@@ -539,7 +539,7 @@ export async function onTriageJobCompleted(
 
 /**
  * A triage job failed for good or was canceled: its run ends `failed` (or
- * `stopped`), the session says so and the `ralph:triage` label is removed;
+ * `stopped`), the session says so and the triage label is removed;
  * a reply that arrived while it ran starts the next job. Errors are logged,
  * not thrown.
  */

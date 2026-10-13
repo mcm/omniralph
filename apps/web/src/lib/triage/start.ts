@@ -171,7 +171,7 @@ async function resolveRepository(
 
 export interface StartTriageOptions {
   /**
-   * The run created for this session already (the `ralph:triage` label
+   * The run created for this session already (the triage label
    * trigger creates it before the session): it is used instead of a new
    * one, and ends `stopped` or `failed` when triage doesn't start.
    */
@@ -353,7 +353,7 @@ export async function enqueueTriage(
 
 /**
  * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`,
- * or the session the `ralph:triage` label opened (with its `run`).
+ * or the session the triage label opened (with its `run`).
  */
 export async function startTriage(
   event: SessionCreatedEvent,

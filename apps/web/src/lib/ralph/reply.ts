@@ -23,11 +23,11 @@
  *    message for its live session (`messages.ts`): nothing else happens until
  *    the agent delivers it or it turns out it can't. A push/PR/MR request
  *    never goes to a story agent: it becomes a pending request.
- * 6. Otherwise (`requests.ts`, without `/ralph` and a leading `@name`): in
+ * 6. Otherwise (`requests.ts`, without `/coding` and a leading `@name`): in
  *    epic mode it is guidance (stored, the attempts of the unfinished stories
  *    reset, a waiting PR/MR step retried) and a pending request, which runs
  *    directly when no story takes it (the epic is done, or blocked); in
- *    request mode (a mention) only a pending request. `/ralph` switches a
+ *    request mode (a mention) only a pending request. `/coding` switches a
  *    request-mode run to epic mode (refused while the PRD has open questions).
  *
  * Every reply but stop, "Not yet" and a message for a running job advances
@@ -105,7 +105,7 @@ export type ReplyKind =
   /** A push/PR/MR request kept away from a running story agent. */
   | "request"
   | "guidance"
-  /** `/ralph` on a mention's run whose PRD still has open questions (or couldn't be checked): refused. */
+  /** `/coding` on a mention's run whose PRD still has open questions (or couldn't be checked): refused. */
   | "open_questions";
 
 export interface ReplyResult {
@@ -165,7 +165,7 @@ export async function handleReply(
   const body = continued ?? text;
   const ship = parseShipRequest(body);
   const instruction = parseInstruction(body);
-  // `/ralph` on a mention's run switches it to the story loop: not while the PRD has open questions.
+  // `/coding` on a mention's run switches it to the story loop: not while the PRD has open questions.
   if (instruction.wantsLoop && run.mode === "request" && isLinearRun(run)) {
     const issueId = run.focusStoryId ?? run.linearIssueId;
     let found: Awaited<ReturnType<typeof withOpenQuestions>>;
@@ -175,14 +175,14 @@ export async function handleReply(
       console.error(`Checking open questions of ${issueId} failed`, error);
       await postActivity(conversationFor(run, deps), {
         type: "error",
-        body: openQuestionsCheckFailedMessage(error, "Reply `/ralph` again to retry."),
+        body: openQuestionsCheckFailedMessage(error, "Reply `/coding` again to retry."),
       });
       return { kind: "open_questions" };
     }
     if (found) {
       await postActivity(conversationFor(run, deps), {
         type: "response",
-        body: openQuestionsMessage(found.issue, found.epic, "Then reply `/ralph` again."),
+        body: openQuestionsMessage(found.issue, found.epic, "Then reply `/coding` again."),
       });
       return { kind: "open_questions" };
     }
@@ -332,7 +332,7 @@ export async function handleReply(
   });
   if (!handled) return null;
   if (handled.note) await postActivity(conversationFor(run, deps), handled.note);
-  // `/ralph` on a mention's run: the story loop needs the epic's stories as sub-issues.
+  // `/coding` on a mention's run: the story loop needs the epic's stories as sub-issues.
   if ("switched" in handled && handled.switched) await materializeStories(deps, run);
   if (!handled.advance) return { kind: handled.kind };
   return { kind: handled.kind, advanced: await advanceRun(run.id, deps) };
