@@ -69,10 +69,14 @@ export const FINDING_STATUS_VARIANTS: Record<FindingStatus, IntentVariant> = {
   merged: "neutral",
 };
 
+/**
+ * Finding severities, most to least severe. Not states, so none of them takes
+ * `info` (running): `medium` uses `accent` to stay apart from `high` and `low`.
+ */
 export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], IntentVariant> = {
   critical: "danger",
   high: "warning",
-  medium: "info",
+  medium: "accent",
   low: "neutral",
   info: "neutral",
 };

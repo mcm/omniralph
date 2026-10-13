@@ -6,7 +6,6 @@ import {
   AlertTitle,
   Badge,
   Empty,
-  Muted,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/harnesses/display";
 import { formatDateTime } from "@/lib/format-date";
 import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
+import { EmptyValue } from "@/components/empty-value";
 
 /** Serializable `harness_audit` row. */
 export interface AuditRow {
@@ -91,11 +91,13 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
                 {summary ? (
                   <span className="text-sm text-text-primary">{summary}</span>
                 ) : (
-                  <Muted>—</Muted>
+                  <EmptyValue />
                 )}
               </TableCell>
               <TableCell>
-                <span className="font-mono text-xs text-text-tertiary">{entry.ip ?? "—"}</span>
+                <span className="font-mono text-xs text-text-tertiary">
+                  {entry.ip ?? <EmptyValue />}
+                </span>
               </TableCell>
             </TableRow>
           );

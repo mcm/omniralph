@@ -589,11 +589,11 @@ export function OrganizationSettingsView({
       <AppHeader breadcrumbs={[{ label: "Organization" }]} />
       <main className="detail-main">
         <PageHeader
-          title={organization.name}
+          title="Organization"
           description={
             isAdmin
-              ? "Manage the organization's name, members, invitations and email domains."
-              : "Only admins can change these settings."
+              ? `Settings for ${organization.name}: its name, members, invitations and email domains.`
+              : `Settings for ${organization.name}. Only admins can change them.`
           }
         />
 

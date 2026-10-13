@@ -45,6 +45,7 @@ import {
   runSourceLabel,
 } from "@/lib/ralph/display";
 import { ProviderIcon } from "../repositories/repositories-view";
+import { EmptyValue } from "@/components/empty-value";
 
 interface RalphRunsViewProps {
   runs: RalphRunRow[];
@@ -117,7 +118,7 @@ export function RunSource({
 
 /** The run's PR/MR, linked to the code host. */
 export function PullRequestLink({ pullRequest }: { pullRequest: RalphRunRow["pullRequest"] }) {
-  if (!pullRequest) return <Muted>—</Muted>;
+  if (!pullRequest) return <EmptyValue />;
   return (
     <a
       href={pullRequest.url}
@@ -134,7 +135,7 @@ export function PullRequestLink({ pullRequest }: { pullRequest: RalphRunRow["pul
 
 /** The run's agent, linked to its page for admins. */
 export function AgentName({ agent, isAdmin }: { agent: RalphRunRow["agent"]; isAdmin: boolean }) {
-  if (!agent) return <Muted>—</Muted>;
+  if (!agent) return <EmptyValue />;
   return isAdmin ? (
     <Link href={`/harnesses/${agent.id}`} className="list-text list-text-primary">
       {agent.name}
@@ -191,16 +192,14 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <div className="list-cell-stack">
-          <span className="list-secondary text-numeric list-nowrap">
-            {run.repository ? (
-              <>
-                <ProviderIcon provider={run.repository.provider} size={12} />
-                {run.repository.fullPath}
-              </>
-            ) : (
-              "Not chosen yet"
-            )}
-          </span>
+          {run.repository ? (
+            <span className="list-secondary text-numeric list-nowrap">
+              <ProviderIcon provider={run.repository.provider} size={12} />
+              {run.repository.fullPath}
+            </span>
+          ) : (
+            <span className="list-secondary">Not chosen yet</span>
+          )}
           {run.branch && (
             <span className="list-secondary text-numeric list-nowrap">{run.branch}</span>
           )}
@@ -352,10 +351,12 @@ export function RalphRunsView({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Run</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Repository / branch</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
+                      Repository / branch
+                    </TableHead>
                     <TableHead className={WIDE_COLUMN}>Status</TableHead>
                     <TableHead className={WIDE_COLUMN}>Stories</TableHead>
-                    <TableHead className={WIDE_COLUMN}>PR / MR</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>PR / MR</TableHead>
                     <TableHead className={WIDE_COLUMN}>Harness</TableHead>
                     <TableHead className={WIDE_COLUMN}>Updated</TableHead>
                     <TableHead aria-label="Links" />

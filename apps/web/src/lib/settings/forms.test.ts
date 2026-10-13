@@ -232,6 +232,26 @@ describe("profile change lists", () => {
   });
 });
 
+describe("profile token cap", () => {
+  it("shows the cap with separators and reads it back with or without them", () => {
+    const saved = profileDraft({
+      model: "claude-haiku-5-5",
+      maxTokensPerReview: 60_000,
+      maxFiles: 15,
+      allowRepoExploration: false,
+    });
+    expect(saved.maxTokensPerReview).toBe("60,000");
+    expect(profileValues(saved).maxTokensPerReview).toBe(60_000);
+    for (const typed of ["70000", "70,000", "70 000", " 70_000 "]) {
+      expect(profileValues({ ...saved, maxTokensPerReview: typed }).maxTokensPerReview).toBe(
+        70_000,
+      );
+    }
+    expect(profileValues({ ...saved, maxTokensPerReview: "" }).maxTokensPerReview).toBeNaN();
+    expect(profileValues({ ...saved, maxTokensPerReview: "7o,000" }).maxTokensPerReview).toBeNaN();
+  });
+});
+
 describe("stated defaults", () => {
   it("match the repository column defaults", () => {
     expect(repositories.profileId.default).toBe(REPOSITORY_SETTING_DEFAULTS.profileId);

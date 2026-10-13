@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  Badge,
   Button,
   Cluster,
   Empty,
@@ -22,7 +21,8 @@ import type { JobStatus } from "@omniralph/db";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { installInstallable } from "../actions";
-import { JOB_STATUS_VARIANTS } from "@/lib/state-variants";
+import { JobStatusBadge } from "@/components/ralph-badges";
+import { EmptyValue } from "@/components/empty-value";
 
 /** An installable the harness reported in its last heartbeat. */
 export interface InstallableRow {
@@ -100,11 +100,11 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
             </TableCell>
             <TableCell>
               <span className="font-mono text-sm">
-                {job.name ?? "—"}@{job.version ?? "latest"}
+                {job.name ?? <EmptyValue />}@{job.version ?? "latest"}
               </span>
             </TableCell>
             <TableCell>
-              <Badge variant={JOB_STATUS_VARIANTS[job.status]}>{job.status}</Badge>
+              <JobStatusBadge job={job} />
             </TableCell>
             <TableCell>
               {job.error ? (
@@ -112,7 +112,7 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
               ) : job.installedVersion ? (
                 <span className="list-text">Installed {job.installedVersion}</span>
               ) : (
-                <Muted>—</Muted>
+                <EmptyValue />
               )}
             </TableCell>
           </TableRow>

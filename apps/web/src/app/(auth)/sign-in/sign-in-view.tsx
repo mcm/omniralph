@@ -19,6 +19,7 @@ import {
 import { IconAlertTriangle, IconBrandGithub, IconBrandGitlab } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
 import { signInWithProvider } from "@/lib/auth/actions";
+import { signInDescription } from "@/lib/auth/sign-in-copy";
 import { DEV_SIGN_IN_PATH, PRIVACY_PATH, TERMS_PATH } from "@/lib/auth/routes";
 
 type ProviderId = "github" | "gitlab";
@@ -64,7 +65,10 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
         <CardHeader>
           <CardTitle as="h1">Sign in</CardTitle>
           <CardDescription>
-            Use your GitHub or GitLab account. Access is limited to approved team members.
+            {signInDescription(
+              providers.map((p) => p.name),
+              devSignIn,
+            )}
           </CardDescription>
         </CardHeader>
         <Stack asChild gap={3}>
@@ -118,8 +122,15 @@ export function SignInView({ providers, callbackUrl, error, devSignIn }: SignInV
               </Stack>
             )}
             <p className="auth-fine-print">
-              By signing in, you agree to the <Link href={TERMS_PATH}>terms of service</Link> and
-              the <Link href={PRIVACY_PATH}>privacy policy</Link>.
+              By signing in, you agree to the{" "}
+              <Link href={TERMS_PATH} className="inline-link">
+                terms of service
+              </Link>{" "}
+              and the{" "}
+              <Link href={PRIVACY_PATH} className="inline-link">
+                privacy policy
+              </Link>
+              .
             </p>
           </CardContent>
         </Stack>

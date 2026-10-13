@@ -7,6 +7,7 @@ import {
   RALPH_RUN_STATUS_VARIANTS,
   RALPH_STORY_STATUS_VARIANTS,
   REVIEW_STATUS_VARIANTS,
+  SEVERITY_VARIANTS,
 } from "./state-variants";
 
 // The State Vocabulary Rule (apps/web/DESIGN.md), by state name.
@@ -50,6 +51,12 @@ describe("state variants", () => {
       }
     });
   }
+
+  it("keeps severities off the running variant and tells the top three apart", () => {
+    expect(Object.values(SEVERITY_VARIANTS)).not.toContain(RULE.running);
+    const top = [SEVERITY_VARIANTS.critical, SEVERITY_VARIANTS.high, SEVERITY_VARIANTS.medium];
+    expect(new Set(top).size).toBe(top.length);
+  });
 
   it("treats a revoked harness as revoked even when it is online", () => {
     expect(harnessConnectionState({ online: true, revoked: true })).toBe("revoked");
