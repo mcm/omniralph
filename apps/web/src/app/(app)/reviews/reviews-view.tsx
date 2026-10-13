@@ -25,7 +25,8 @@ import { useCurrentUser } from "@/components/current-user";
 import { ReviewStatusBadge, SeverityCounts, TriggerBadge } from "@/components/review-badges";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
-import { MonoPath } from "@/components/mono-value";
+import { ListErrorRow } from "@/components/list-error";
+import { MonoPath, MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { totalPages } from "@/lib/pagination";
 import {
@@ -58,121 +59,139 @@ interface ReviewsViewProps {
   params: ReviewListParams;
   total: number;
   pageSize: number;
+  /** The current year, dropped from Created times (from the server, so both renders agree). */
+  year: number;
 }
+
+/** Columns in a review row, for the failure reason's row under it. */
+const REVIEW_COLUMNS = 7;
+/**
+ * The longest severity words ("1 critical 1 high") the Findings column fits on one line at
+ * 1440; a longer set shows initials ("1C 1H 1M").
+ */
+const FINDINGS_WORDS_UP_TO = 16;
 
 /** The severities a phone row still shows: the ones that need a look first. */
 const PHONE_SEVERITIES = ["critical", "high"] as const;
 
 function FindingCounts({ counts }: { counts: ReviewRow["findingCounts"] }) {
   if (FINDING_SEVERITIES.every((s) => counts[s] === 0)) return <Muted>None</Muted>;
-  return <SeverityCounts counts={counts} />;
+  return <SeverityCounts counts={counts} wordsUpTo={FINDINGS_WORDS_UP_TO} />;
 }
 
 function ReviewTableRow({
   review,
   showRepository,
   isAdmin,
+  year,
 }: {
   review: ReviewRow;
   showRepository: boolean;
   isAdmin: boolean;
+  year: number;
 }) {
   const overBudget = review.tokensUsed > review.budget;
   const change = `${review.repository.provider === "gitlab" ? "!" : "#"}${review.prNumber}`;
   const host = review.repository.provider === "gitlab" ? "GitLab" : "GitHub";
+  const error = review.status === "failed" ? review.error : null;
   return (
-    <TableRow>
-      <TableCell className="list-col-main review-col-main">
-        <div className="list-cell-stack">
-          <Link
-            href={`/reviews/${review.id}`}
-            className="list-title"
-            title={review.prTitle ?? undefined}
-          >
-            <span className="text-numeric list-nowrap">{change}</span>
-            <span
-              className={
-                review.prTitle ? "list-title-text" : "list-title-text list-title-text-muted"
-              }
-            >
-              {review.prTitle ?? "Untitled"}
-            </span>
-          </Link>
-          {showRepository && (
+    <>
+      <TableRow data-has-error={error ? true : undefined}>
+        <TableCell className="list-col-main review-col-main">
+          <div className="list-cell-stack">
             <Link
-              href={`/repositories/${review.repository.id}/reviews`}
-              className="list-secondary text-numeric list-nowrap"
+              href={`/reviews/${review.id}`}
+              className="list-title"
+              title={review.prTitle ?? undefined}
             >
-              <ProviderIcon provider={review.repository.provider} size={12} />
-              <span className="review-ellipsis">{review.repository.fullPath}</span>
+              <span className="text-numeric list-nowrap">{change}</span>
+              <span
+                className={
+                  review.prTitle ? "list-title-text" : "list-title-text list-title-text-muted"
+                }
+              >
+                {review.prTitle ?? "Untitled"}
+              </span>
             </Link>
-          )}
-        </div>
-        <PhoneMeta>
-          <ReviewStatusBadge status={review.status} />
-          <SeverityCounts counts={review.findingCounts} only={PHONE_SEVERITIES} />
-          <Timestamp iso={review.createdAt} />
-        </PhoneMeta>
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          <ReviewStatusBadge status={review.status} />
-          <TriggerBadge trigger={review.trigger} />
-          {review.status === "failed" && review.error && (
-            <Muted title={review.error} className="review-error">
-              {review.error}
-            </Muted>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          <span className="list-text list-text-primary">
-            {review.profileName ?? <EmptyValue />}
-          </span>
-          {review.agent ? (
-            isAdmin ? (
-              <Link href={`/harnesses/${review.agent.id}`} className="list-text">
-                {review.agent.name}
+            {showRepository && (
+              <Link
+                href={`/repositories/${review.repository.id}/reviews`}
+                className="list-secondary list-nowrap"
+              >
+                <ProviderIcon provider={review.repository.provider} size={12} />
+                <MonoValue value={review.repository.fullPath} />
               </Link>
+            )}
+          </div>
+          <PhoneMeta>
+            <ReviewStatusBadge status={review.status} />
+            <SeverityCounts counts={review.findingCounts} only={PHONE_SEVERITIES} />
+            <Timestamp iso={review.createdAt} year={year} />
+          </PhoneMeta>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <div className="list-cell-stack">
+            <ReviewStatusBadge status={review.status} />
+            <TriggerBadge trigger={review.trigger} />
+          </div>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <div className="list-cell-stack">
+            <span className="list-text list-text-primary">
+              {review.profileName ?? <EmptyValue />}
+            </span>
+            {review.agent ? (
+              isAdmin ? (
+                <Link href={`/harnesses/${review.agent.id}`} className="list-text">
+                  {review.agent.name}
+                </Link>
+              ) : (
+                <span className="list-text">{review.agent.name}</span>
+              )
             ) : (
-              <span className="list-text">{review.agent.name}</span>
-            )
-          ) : (
-            <Muted>No agent</Muted>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className={`${WIDE_COLUMN} review-col-findings`}>
-        <FindingCounts counts={review.findingCounts} />
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          <span
-            className={`list-time text-numeric${overBudget ? " list-text-danger" : ""}`}
-            title={`${review.tokensUsed.toLocaleString()} of ${review.budget.toLocaleString()} tokens`}
-          >
-            {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
-          </span>
-          <span className="list-time text-numeric" title="Duration">
-            {formatDuration(review.durationMs) ?? <EmptyValue />}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <Timestamp iso={review.createdAt} />
-      </TableCell>
-      <TableCell className="list-actions">
-        <div className="list-actions-group">
-          <RerunReviewDialog reviewId={review.id} changeLabel={change} compact />
-          <ExternalRowLink href={review.prUrl} label={`Open ${change} on ${host}`} />
-        </div>
-      </TableCell>
-    </TableRow>
+              <Muted>No agent</Muted>
+            )}
+          </div>
+        </TableCell>
+        <TableCell className={`${WIDE_COLUMN} review-col-nowrap`}>
+          <FindingCounts counts={review.findingCounts} />
+        </TableCell>
+        <TableCell className={`${WIDE_COLUMN} review-col-nowrap`}>
+          <div className="list-cell-stack">
+            <span
+              className={`list-time text-numeric${overBudget ? " list-text-danger" : ""}`}
+              title={`${review.tokensUsed.toLocaleString()} of ${review.budget.toLocaleString()} tokens`}
+            >
+              {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
+            </span>
+            <span className="list-time text-numeric" title="Duration">
+              {formatDuration(review.durationMs) ?? <EmptyValue />}
+            </span>
+          </div>
+        </TableCell>
+        <TableCell className={`${WIDE_COLUMN} review-col-nowrap`}>
+          <Timestamp iso={review.createdAt} year={year} />
+        </TableCell>
+        <TableCell className="list-actions">
+          <div className="list-actions-group">
+            <RerunReviewDialog reviewId={review.id} changeLabel={change} compact />
+            <ExternalRowLink href={review.prUrl} label={`Open ${change} on ${host}`} />
+          </div>
+        </TableCell>
+      </TableRow>
+      {error && <ListErrorRow error={error} colSpan={REVIEW_COLUMNS} />}
+    </>
   );
 }
 
-export function ReviewsView({ repository, reviews, params, total, pageSize }: ReviewsViewProps) {
+export function ReviewsView({
+  repository,
+  reviews,
+  params,
+  total,
+  pageSize,
+  year,
+}: ReviewsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const router = useRouter();
   const pathname = usePathname();
@@ -290,7 +309,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                 }
               />
             ) : (
-              <Table className="list-table">
+              <Table className="list-table reviews-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="list-nowrap">
@@ -313,6 +332,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                       review={review}
                       showRepository={!repository}
                       isAdmin={isAdmin}
+                      year={year}
                     />
                   ))}
                 </TableBody>
