@@ -153,8 +153,9 @@ async function rotateToken(
 
 function rotatedRecently({ rotatedAt }: GitLabCredentials): boolean {
   if (!rotatedAt) return false;
+  // A rotation stamped slightly in the future (another instance's clock is ahead) is recent too.
   const age = Date.now() - Date.parse(rotatedAt);
-  return age >= 0 && age < ROTATION_INTERVAL_MS;
+  return Math.abs(age) < ROTATION_INTERVAL_MS;
 }
 
 /** Records a rotation problem on top of the previous health when the check itself failed. */
