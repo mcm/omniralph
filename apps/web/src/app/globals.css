@@ -775,6 +775,11 @@ body {
 .fact-secondary {
   color: var(--text-secondary);
 }
+/* A qualifier on its own line under a fact's value. */
+.fact-note {
+  display: block;
+  font-size: var(--text-xs);
+}
 @media (max-width: 639.98px) {
   .fact-strip-content {
     padding: var(--space-4);
