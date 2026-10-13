@@ -16,8 +16,10 @@ import {
   jobs,
   listChatMessages,
   organizations,
+  repositories,
   runMigrations,
   saveChatConnection,
+  setAllowedTaskTypeDefaults,
   seedReviewProfiles,
   upsertChatChannelTaskSetting,
   upsertScmConnection,
@@ -533,6 +535,40 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
       expect(result).toMatchObject({ error: "unknown_repository" });
     }
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+    expect(h.thread.post).not.toHaveBeenCalled();
+  });
+
+  it("enqueues nothing and says so when the repository's query tasks are turned off", async () => {
+    const setQuery = (queryEnabled: boolean | null) =>
+      db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repositoryId));
+    const h = await harness();
+    try {
+      await setQuery(false);
+      const off = await ask(h, { repository: "acme/api", question: "How is auth done?" });
+      expect(off).toMatchObject({ error: "query_disabled" });
+      expect(off.message).toContain("Query tasks are turned off for acme/api");
+      expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+
+      // Inheriting an organization default without query tasks.
+      await setQuery(null);
+      await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
+      expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
+        { error: "query_disabled" },
+      );
+      expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+
+      // An explicit switch wins over the organization default (on a harness taking queries).
+      await setQuery(true);
+      await setAgent(harnessId, { acceptedTaskTypes: ["query"] });
+      expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
+        { status: "started" },
+      );
+      expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
+    } finally {
+      await setQuery(null);
+      await setAgent(harnessId, { acceptedTaskTypes: null });
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+    }
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 

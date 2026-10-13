@@ -25,6 +25,8 @@ export const REPLY_TASK_ID = "builtin:reply-to-finding";
 export type EnqueueReplyResult =
   | { status: "enqueued" | "duplicate"; jobId: string }
   | { status: "repository_unavailable" }
+  /** The repository's query tasks are turned off: nothing was enqueued. */
+  | { status: "query_disabled" }
   /** The finding has no inline thread to answer in. */
   | { status: "no_thread" };
 
@@ -89,14 +91,11 @@ export async function enqueueReply(
   if (!finding.scmCommentId) return { status: "no_thread" };
   const found = await getRepositoryWithConnection(db, review.repositoryId);
   const settings = found && (await getRepositoryReviewSettings(db, review.repositoryId));
-  if (
-    !found ||
-    !settings ||
-    found.repository.disconnectedAt ||
-    !(await resolveRepositorySwitches(db, found.repository)).review
-  ) {
+  const switches = found && (await resolveRepositorySwitches(db, found.repository));
+  if (!found || !settings || !switches || found.repository.disconnectedAt || !switches.review) {
     return { status: "repository_unavailable" };
   }
+  if (!switches.query) return { status: "query_disabled" };
   const definitions = organizationDefinitions(db, found.repository.organizationId);
   const task = await definitions.getTask(REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);

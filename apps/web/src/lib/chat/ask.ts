@@ -7,6 +7,7 @@ import {
   listHarnessOverview,
   listHarnessesUsableHostTools,
   mapThreadRun,
+  resolveRepositorySwitches,
   type Database,
   type Repository,
   type ScmConnection,
@@ -141,6 +142,8 @@ async function previousQuestion(
 
 export type EnqueueChatAskOutcome =
   | { status: "unknown_repository" }
+  /** The repository's query tasks are turned off: nothing was enqueued. */
+  | { status: "query_disabled"; repository: Repository }
   /** No online harness that would get the run can claim it: nothing was enqueued. */
   | {
       status: "no_capable_harness";
@@ -192,6 +195,9 @@ export async function enqueueChatAsk(
     return { status: "unknown_repository" };
   }
   const { repository, connection } = found;
+  if (!(await resolveRepositorySwitches(db, repository)).query) {
+    return { status: "query_disabled", repository };
+  }
 
   const { task } = input;
   const definitions = organizationDefinitions(db, input.organizationId);

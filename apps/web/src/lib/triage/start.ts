@@ -13,6 +13,7 @@ import {
   getRepositoryWithConnection,
   getTriageRunBySession,
   listRalphRepositories,
+  resolveRepositorySwitches,
   setTriageRunJob,
   setTriageRunStatus,
   type TriageRun,
@@ -51,6 +52,11 @@ export type StartTriageOutcome =
   /** Another session is triaging the issue right now. */
   | { status: "already_running"; run: TriageRun }
   | { status: "failed"; error: string }
+  /**
+   * The issue routes to a repository whose query tasks are turned off: nothing was enqueued
+   * and nothing posted.
+   */
+  | { status: "query_disabled"; repository: string }
   | { status: "queued"; run: TriageRun; jobId: string; repository: TriageRepository | null };
 
 /** Issue states triage never changes anything in. */
@@ -129,15 +135,25 @@ async function loadBlockers(
   return blockers.slice(0, MAX_ITEMS);
 }
 
-/** The routed repository at its default branch, or null when no repository routes the issue. */
+/**
+ * The routed repository at its default branch, null when no repository routes the issue, or
+ * `query_disabled` when the routed repository's query tasks are turned off.
+ */
 async function resolveRepository(
   deps: TriageDeps,
   issue: IssueSummary,
-): Promise<{ payload: TriageRepository; fullPath: string; routedBy: string } | null> {
+): Promise<
+  | { payload: TriageRepository; fullPath: string; routedBy: string }
+  | { status: "query_disabled"; repository: string }
+  | null
+> {
   const route = routeIssue(issue, await listRalphRepositories(deps.db, deps.organizationId));
   if (!route) return null;
   const found = await getRepositoryWithConnection(deps.db, route.repository.id);
   if (!found) throw new Error(`repository ${route.repository.fullPath} is gone`);
+  if (!(await resolveRepositorySwitches(deps.db, found.repository)).query) {
+    return { status: "query_disabled", repository: found.repository.fullPath };
+  }
   const defaultBranch = await deps.adapterFor(deps.db, found.connection).getDefaultBranch({
     fullPath: found.repository.fullPath,
     externalId: found.repository.externalId,
@@ -168,13 +184,15 @@ export interface TriageContext {
   children: IssueSummary[];
   comments: IssueComment[];
   blockers: TriageBlocker[];
-  repository: Awaited<ReturnType<typeof resolveRepository>>;
+  repository: Exclude<Awaited<ReturnType<typeof resolveRepository>>, { status: "query_disabled" }>;
 }
 
 /**
  * Loads what a triage job needs, or, when it can't run (the issue or a
  * sub-issue is in progress or done, or a load failed), says so in the session
- * and returns why (calling `end` with the status the run should end in).
+ * and returns why (calling `end` with the status the run should end in). When
+ * the issue routes to a repository whose query tasks are turned off, the run
+ * ends `stopped` without posting anything.
  */
 export async function prepareTriage(
   deps: TriageDeps,
@@ -183,7 +201,10 @@ export async function prepareTriage(
   end: (status: "stopped" | "failed") => Promise<void>,
 ): Promise<
   | { status: "ready"; context: TriageContext }
-  | Extract<StartTriageOutcome, { status: "load_failed" | "in_progress" | "failed" }>
+  | Extract<
+      StartTriageOutcome,
+      { status: "load_failed" | "in_progress" | "failed" | "query_disabled" }
+    >
 > {
   const { linear } = deps;
   let issue: IssueSummary;
@@ -213,7 +234,7 @@ export async function prepareTriage(
     return { status: "load_failed", error: errorMessage(error) };
   }
 
-  let repository: TriageContext["repository"];
+  let repository: Awaited<ReturnType<typeof resolveRepository>>;
   try {
     repository = await resolveRepository(deps, issue);
   } catch (error) {
@@ -223,6 +244,10 @@ export async function prepareTriage(
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
+  }
+  if (repository && "status" in repository) {
+    await end("stopped");
+    return repository;
   }
   return {
     status: "ready",

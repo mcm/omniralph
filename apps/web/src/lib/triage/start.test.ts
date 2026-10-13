@@ -8,8 +8,10 @@ import {
   jobs,
   organizations,
   ralphRuns,
+  repositories,
   runMigrations,
   seedReviewProfiles,
+  setAllowedTaskTypeDefaults,
   triageRuns,
   updateRepositoryRalphSettings,
   upsertScmConnection,
@@ -21,6 +23,7 @@ import type { TriageTemplateContext } from "@omniralph/ralph";
 import { QUERY_TASKS_MIN_HARNESS_VERSION, RunSpecJobPayload } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { getContainerRuntimeClient } from "testcontainers";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
@@ -261,6 +264,39 @@ describe.skipIf(!dockerAvailable)("starting triage from an @omniralph /triage me
     // A redelivered event doesn't queue a second job.
     expect(await startTriage(event, deps())).toMatchObject({ status: "exists" });
     expect(await db.select().from(jobs)).toHaveLength(1);
+  });
+
+  it("skips an issue routed to a repository whose query tasks are off, without posting", async () => {
+    const setQuery = (queryEnabled: boolean | null) =>
+      db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+    const issue = linear.add({ identifier: "ENG-40", title: "Off", labels: ["backend"] });
+    try {
+      await setQuery(false);
+      const event = mention(issue.id);
+      expect(await startTriage(event, deps())).toEqual({
+        status: "query_disabled",
+        repository: "acme/api",
+      });
+      expect(await db.select().from(jobs)).toEqual([]);
+      expect(await db.select().from(triageRuns)).toEqual([]);
+      expect(linear.activities).toEqual([]);
+
+      // Inheriting an organization default without query tasks.
+      await setQuery(null);
+      await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
+      expect(await startTriage(mention(issue.id), deps())).toMatchObject({
+        status: "query_disabled",
+      });
+      expect(await db.select().from(jobs)).toEqual([]);
+      expect(linear.activities).toEqual([]);
+
+      // Inheriting the built-in default (every task type) triages it.
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      expect(await startTriage(mention(issue.id), deps())).toMatchObject({ status: "queued" });
+    } finally {
+      await setQuery(null);
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+    }
   });
 
   it("changes nothing for an issue in progress", async () => {
