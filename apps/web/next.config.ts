@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   // native modules (`zlib-sync`, …) the bundler can't resolve; load it from
   // node_modules at runtime instead.
   serverExternalPackages: ["@chat-adapter/discord", "discord.js"],
+  // Extra hosts `next dev` serves its dev resources to, e.g. `host.docker.internal` when
+  // `verify:screens` runs on Docker Desktop (scripts/screens/docker-host.ts).
+  allowedDevOrigins: process.env.OMNIRALPH_ALLOWED_DEV_ORIGINS?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   // Coding tasks moved from `/ralph` to `/coding`; old links (bookmarks, chat
   // and Linear messages) keep working. The query string is passed along.
   async redirects() {
