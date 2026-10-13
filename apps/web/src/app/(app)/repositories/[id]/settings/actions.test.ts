@@ -570,7 +570,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
 
   it("saves the Ralph section: enabled, Linear routing, openPullRequestEarly, setup command, model and manual labels", async () => {
     expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: false,
+      ralphEnabled: null,
       linearTeamKeys: [],
       ralphSettings: {
         openPullRequestEarly: false,

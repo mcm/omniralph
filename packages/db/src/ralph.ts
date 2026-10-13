@@ -24,7 +24,15 @@ import {
 import type { ChatPlatform } from "./chat.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
-import type { Repository, RepositoryCodingPath, ScmProvider } from "./repositories.js";
+import { getAllowedTaskTypeDefaults } from "./app-settings.js";
+import {
+  effectiveRepositorySwitches,
+  switchedOn,
+  type Repository,
+  type RepositoryCodingPath,
+  type RepositoryWithSwitches,
+  type ScmProvider,
+} from "./repositories.js";
 import {
   harnesses,
   chatThreadRuns,
@@ -101,7 +109,8 @@ export const ACTIVE_RALPH_RUN_STATUSES = [
 // ── Repositories ─────────────────────────────────────────────────────────────
 
 export interface RepositoryRalphSettingsUpdate {
-  ralphEnabled: boolean;
+  /** Null inherits the organization's allowed task types (`coding`). */
+  ralphEnabled: boolean | null;
   linearTeamKeys: string[];
   linearProjectNames: string[];
   linearLabels: string[];
@@ -140,22 +149,27 @@ export async function updateRepositoryRalphSettings(
   return row ?? null;
 }
 
-/** The organization's connected repositories with ralph enabled (the routing candidates), by path. */
+/**
+ * The organization's connected repositories with ralph (coding) effectively enabled (the
+ * routing candidates), by path.
+ */
 export async function listRalphRepositories(
   db: Executor,
   organizationId: string,
-): Promise<Repository[]> {
-  return db
+): Promise<RepositoryWithSwitches[]> {
+  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
+  const rows = await db
     .select()
     .from(repositories)
     .where(
       and(
         eq(repositories.organizationId, organizationId),
-        eq(repositories.ralphEnabled, true),
+        switchedOn(repositories.ralphEnabled, allowed.includes("coding")),
         isNull(repositories.disconnectedAt),
       ),
     )
     .orderBy(asc(repositories.fullPath), asc(repositories.id));
+  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
@@ -762,6 +776,7 @@ export async function listRalphRunRepositories(
   db: Executor,
   organizationId: string,
 ): Promise<{ id: string; provider: ScmProvider; fullPath: string }[]> {
+  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
   return db
     .select({
       id: repositories.id,
@@ -773,7 +788,7 @@ export async function listRalphRunRepositories(
       and(
         eq(repositories.organizationId, organizationId),
         or(
-          eq(repositories.ralphEnabled, true),
+          switchedOn(repositories.ralphEnabled, allowed.includes("coding")),
           exists(
             db
               .select({ one: sql`1` })

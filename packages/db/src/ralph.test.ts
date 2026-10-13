@@ -3,6 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { ensureChatThread, listThreadRuns, saveChatConnection } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
@@ -72,6 +73,7 @@ import {
   ralphMessages,
   ralphRuns,
   organizations,
+  repositories,
 } from "./schema.js";
 import { seedReviewProfiles } from "./settings.js";
 
@@ -228,12 +230,20 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
 
   it("adds ralph settings and Linear routing to repositories, with defaults", async () => {
     expect(await getRepository(db, repoA)).toMatchObject({
-      ralphEnabled: false,
+      ralphEnabled: null,
       linearTeamKeys: [],
       linearProjectNames: [],
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
+    // Inheriting: coding is on while the organization allows it (the built-in default), by path.
+    expect((await listRalphRepositories(db, orgId)).map((r) => [r.id, r.effective.coding])).toEqual(
+      [
+        [repoB, true],
+        [repoA, true],
+      ],
+    );
+    await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
     expect(await listRalphRepositories(db, orgId)).toEqual([]);
 
     const settings = {
@@ -256,11 +266,16 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         }),
       ).toMatchObject({ ralphEnabled: true, linearTeamKeys: ["TOOL"], ralphSettings: settings });
     }
-    // By path.
+    // An explicit true wins over the organization's default; by path.
     expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
       "acme/a-web",
       "acme/b-api",
     ]);
+    await setAllowedTaskTypeDefaults(db, orgId, null, null);
+    // An explicit false wins when the organization allows coding.
+    await db.update(repositories).set({ ralphEnabled: false }).where(eq(repositories.id, repoB));
+    expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
+    await db.update(repositories).set({ ralphEnabled: true }).where(eq(repositories.id, repoB));
 
     await disconnectRepository(db, orgId, repoB);
     expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);

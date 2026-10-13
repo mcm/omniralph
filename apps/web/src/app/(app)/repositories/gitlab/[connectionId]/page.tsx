@@ -45,7 +45,7 @@ export default async function GitLabConnectionPage({
         fullPath: project.fullPath,
         private: project.visibility !== "public",
         htmlUrl: project.webUrl,
-        enabled: Boolean(row && !row.disconnectedAt && row.enabled),
+        enabled: Boolean(row && !row.disconnectedAt && row.effective.review),
       };
     });
   } catch (cause) {

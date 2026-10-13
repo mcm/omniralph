@@ -50,7 +50,7 @@ export default async function GitHubInstallationPage({
           fullPath: repo.fullPath,
           private: repo.private,
           htmlUrl: repo.htmlUrl,
-          enabled: Boolean(row && !row.disconnectedAt && row.enabled),
+          enabled: Boolean(row && !row.disconnectedAt && row.effective.review),
         };
       }),
     };

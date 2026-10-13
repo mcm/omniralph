@@ -108,7 +108,10 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
       .returning();
     expect(repo).toMatchObject({
       profileId: "standard",
-      enabled: true,
+      // Reviews, coding and queries inherit the organization's allowed task types (0076).
+      enabled: null,
+      ralphEnabled: null,
+      queryEnabled: null,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       // Ralph runs stay on the legacy jobs until an admin switches (0064).
@@ -816,6 +819,84 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
           [acme],
         );
         expect(added).toEqual([{ max_concurrency: null, accepted_task_types: null }]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
+  it("makes repositories inherit the organization's task types (0076)", async () => {
+    await db.execute(sql`create database repository_defaults`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/repository_defaults");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0076_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const connection = connections[0]!.id;
+        await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '1', 'acme/defaults', $2)`,
+          [org, connection],
+        );
+        await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id, enabled, ralph_enabled)
+           values ($1, 'github', '2', 'acme/configured', $2, false, true)`,
+          [org, connection],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{
+          full_path: string;
+          enabled: boolean | null;
+          ralph_enabled: boolean | null;
+          query_enabled: boolean | null;
+        }>(
+          `select full_path, enabled, ralph_enabled, query_enabled from repositories order by full_path`,
+        );
+        expect(rows).toEqual([
+          { full_path: "acme/configured", enabled: null, ralph_enabled: null, query_enabled: null },
+          { full_path: "acme/defaults", enabled: null, ralph_enabled: null, query_enabled: null },
+        ]);
+
+        // New repositories inherit too: no column default.
+        const { rows: added } = await client.query<{
+          enabled: boolean | null;
+          ralph_enabled: boolean | null;
+          query_enabled: boolean | null;
+        }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '3', 'acme/new', $2) returning enabled, ralph_enabled, query_enabled`,
+          [org, connection],
+        );
+        expect(added).toEqual([{ enabled: null, ralph_enabled: null, query_enabled: null }]);
       } finally {
         await client.end();
       }

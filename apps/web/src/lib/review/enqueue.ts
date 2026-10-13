@@ -16,6 +16,7 @@ import {
   type Database,
   type Job,
   type Review,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import {
   FindingCategory,
@@ -174,7 +175,12 @@ export async function enqueueReview(
 ): Promise<EnqueueReviewResult> {
   const found = await getRepositoryWithConnection(db, input.repositoryId);
   const settings = found && (await getRepositoryReviewSettings(db, input.repositoryId));
-  if (!found || !settings || !found.repository.enabled || found.repository.disconnectedAt) {
+  if (
+    !found ||
+    !settings ||
+    found.repository.disconnectedAt ||
+    !(await resolveRepositorySwitches(db, found.repository)).review
+  ) {
     return { status: "repository_unavailable" };
   }
   const { repository } = found;

@@ -27,6 +27,7 @@ import {
   type RalphLane,
   type RalphRun,
   type RalphRunOrigin,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
@@ -85,7 +86,11 @@ export async function respondToCi(
   const prNumber = found.lane.prNumber;
   if (prNumber === null || found.lane.prClosed) return ignored("not_ralph");
   const target = await getRepositoryWithConnection(deps.db, found.lane.repositoryId);
-  if (!target || target.repository.disconnectedAt || !target.repository.ralphEnabled) {
+  if (
+    !target ||
+    target.repository.disconnectedAt ||
+    !(await resolveRepositorySwitches(deps.db, target.repository)).coding
+  ) {
     return ignored("repository_unavailable");
   }
   const settings = parseRalphSettings(target.repository.ralphSettings);

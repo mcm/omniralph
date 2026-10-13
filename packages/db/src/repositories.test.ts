@@ -3,6 +3,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import {
@@ -10,13 +11,16 @@ import {
   connectRepository,
   deleteScmConnection,
   disconnectRepository,
+  effectiveRepositorySwitches,
   findScmConnectionsByExternalId,
   getRepository,
   getRepositoryWithConnection,
   getScmConnection,
+  listConnectionRepositories,
   listRepositoryOverview,
   listRepositoryOverviewPage,
   listScmConnections,
+  resolveRepositorySwitches,
   setRepositoryEnabled,
   upsertScmConnection,
 } from "./repositories.js";
@@ -83,6 +87,73 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
     expect(second.id).toBe(first.id);
     expect(second.encryptedCredentials).not.toContain("glpat");
     expect(connectionCredentials(second, key)).toEqual({ token: "glpat-second" });
+  });
+
+  it("resolves effective switches: own value when set, else the organization's task types", async () => {
+    const inheriting = { enabled: null, ralphEnabled: null, queryEnabled: null };
+    expect(effectiveRepositorySwitches(inheriting, ["query", "review", "coding"])).toEqual({
+      review: true,
+      coding: true,
+      query: true,
+    });
+    expect(effectiveRepositorySwitches(inheriting, ["review"])).toEqual({
+      review: true,
+      coding: false,
+      query: false,
+    });
+    // An explicit value wins in either direction.
+    expect(
+      effectiveRepositorySwitches({ enabled: false, ralphEnabled: true, queryEnabled: null }, [
+        "review",
+        "query",
+      ]),
+    ).toEqual({ review: false, coding: true, query: true });
+
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: orgId,
+        provider: "github",
+        name: "switches",
+        baseUrl: "https://api.github.com",
+        externalId: "3003",
+        credentials: {},
+      },
+      key,
+    ))!;
+    const repo = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "1",
+      fullPath: "acme/switches",
+    });
+    // A new repository inherits everything; with no organization settings, all is on.
+    expect(repo).toMatchObject({ enabled: null, ralphEnabled: null, queryEnabled: null });
+    expect(await resolveRepositorySwitches(db, repo)).toEqual({
+      review: true,
+      coding: true,
+      query: true,
+    });
+    try {
+      await setAllowedTaskTypeDefaults(db, orgId, ["query"], null);
+      expect(await resolveRepositorySwitches(db, repo)).toEqual({
+        review: false,
+        coding: false,
+        query: true,
+      });
+      expect((await listConnectionRepositories(db, connection.id))[0]?.effective).toEqual({
+        review: false,
+        coding: false,
+        query: true,
+      });
+      expect(await setRepositoryEnabled(db, orgId, repo.id, true)).toBe(true);
+      expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)).toMatchObject(
+        { enabled: true, ralphEnabled: false },
+      );
+    } finally {
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+    }
   });
 
   it("lists connected repos with profile, pins and last review; disconnect keeps history", async () => {
@@ -168,7 +239,8 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
     });
     expect(again).toMatchObject({
       id: repo.id,
-      enabled: true,
+      // Inherits the organization's allowed task types again.
+      enabled: null,
       disconnectedAt: null,
       fullPath: "acme/web-renamed",
     });
@@ -267,7 +339,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
     expect((await listRepositoryOverview(db, otherId)).map((r) => r.id)).not.toContain(repo.id);
     expect(await setRepositoryEnabled(db, otherId, repo.id, false)).toBe(false);
     expect(await disconnectRepository(db, otherId, repo.id)).toBeNull();
-    expect((await getRepository(db, repo.id))?.enabled).toBe(true);
+    expect((await getRepository(db, repo.id))?.enabled).toBeNull();
 
     // Profiles are per organization: same slugs, separate rows.
     expect((await listReviewProfiles(db, otherId)).map((p) => p.id).sort()).toEqual([

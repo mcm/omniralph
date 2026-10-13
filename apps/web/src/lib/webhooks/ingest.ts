@@ -13,6 +13,7 @@ import {
   type ScmConnection,
   type ScmProvider,
   type WebhookDeliveryRef,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -191,14 +192,16 @@ export async function handleWebhook(
   if (ci) return handleCi({ ...deps, ...match, provider, delivery, ci });
   const closed = spec.parseClosed(eventName, body);
   if (closed) return handleClosed({ ...deps, ...match, provider, delivery, closed });
+  const reviewsOff = async () =>
+    !!repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).review;
   const event = spec.parse(eventName, body);
   if (!event) {
     const comment = spec.parseComment(eventName, body);
     if (!comment) return ignored("unsupported_event");
-    if (!repository.enabled || repository.disconnectedAt) return ignored("repository_disabled");
+    if (await reviewsOff()) return ignored("repository_disabled");
     return handleComment({ ...deps, ...match, provider, delivery, comment });
   }
-  if (!repository.enabled || repository.disconnectedAt) return ignored("repository_disabled");
+  if (await reviewsOff()) return ignored("repository_disabled");
   const { triggers } = repository;
   if (event.kind === "open" && !triggers.onOpen) return ignored("trigger_disabled");
   if (event.kind === "push" && !triggers.onPush) return ignored("trigger_disabled");
@@ -293,7 +296,9 @@ async function handleCi(
 ): Promise<Response> {
   const { db, repository, delivery, ci } = input;
   if (!ci.failed) return ignored("ci_not_failed");
-  if (repository.disconnectedAt || !repository.ralphEnabled) return ignored("ralph_disabled");
+  if (repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).coding) {
+    return ignored("ralph_disabled");
+  }
   const lanes = await Promise.all([
     ...ci.prNumbers.map((n) => findLaneByPullRequest(db, repository.id, n)),
     ci.prNumbers.length === 0 && ci.branch

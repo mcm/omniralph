@@ -5,6 +5,7 @@ import {
   type Database,
   type FindingRow,
   type Review,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -88,7 +89,12 @@ export async function enqueueReply(
   if (!finding.scmCommentId) return { status: "no_thread" };
   const found = await getRepositoryWithConnection(db, review.repositoryId);
   const settings = found && (await getRepositoryReviewSettings(db, review.repositoryId));
-  if (!found || !settings || !found.repository.enabled || found.repository.disconnectedAt) {
+  if (
+    !found ||
+    !settings ||
+    found.repository.disconnectedAt ||
+    !(await resolveRepositorySwitches(db, found.repository)).review
+  ) {
     return { status: "repository_unavailable" };
   }
   const definitions = organizationDefinitions(db, found.repository.organizationId);

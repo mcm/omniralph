@@ -10,7 +10,7 @@ import {
 
 const repo = (fullPath: string, routing: Partial<RoutableRepository> = {}): RoutableRepository => ({
   fullPath,
-  ralphEnabled: true,
+  effective: { coding: true },
   linearTeamKeys: [],
   linearProjectNames: [],
   linearLabels: [],
@@ -121,7 +121,7 @@ describe("routeIssue", () => {
   });
 
   it("considers only ralph-enabled repositories", () => {
-    const disabled = repo("aaa/first", { ralphEnabled: false, linearTeamKeys: ["ENG"] });
+    const disabled = repo("aaa/first", { effective: { coding: false }, linearTeamKeys: ["ENG"] });
     expect(routeIssue(issue({ teamKey: "ENG" }), [disabled, api])?.repository).toBe(api);
     expect(routeIssue(issue({ description: "[repo=aaa/first]" }), [disabled, api])).toBeNull();
     expect(routeIssue(issue({ teamKey: "ENG" }), [disabled])).toBeNull();
@@ -228,8 +228,8 @@ describe("routeStory (a story of an epic)", () => {
   });
 
   it("ignores repositories without ralph enabled", () => {
-    expect(routed({ projectName: "Web" }, [repos[0]!, { ...repos[1]!, ralphEnabled: false }])).toBe(
-      "unroutable: it's in project Web, which no repository here is set up for",
-    );
+    expect(
+      routed({ projectName: "Web" }, [repos[0]!, { ...repos[1]!, effective: { coding: false } }]),
+    ).toBe("unroutable: it's in project Web, which no repository here is set up for");
   });
 });

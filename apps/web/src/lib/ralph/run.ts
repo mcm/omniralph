@@ -34,6 +34,7 @@ import {
   type ScmConnection,
   isLinearRun,
   runReference,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -462,7 +463,7 @@ async function laneRepository(
       ? "The run's repository is no longer connected, so I stopped."
       : `\`${found?.repository.fullPath ?? repositoryId}\` is no longer connected, so I stopped.`;
   }
-  if (!found.repository.ralphEnabled) {
+  if (!(await resolveRepositorySwitches(deps.db, found.repository)).coding) {
     return (
       `Ralph was disabled for \`${found.repository.fullPath}\`, so I stopped. Enable it under ` +
       "**Repository › Settings › Ralph** and delegate the issue again to continue."

@@ -1,5 +1,10 @@
 import "server-only";
-import { getRepositoryWithConnection, getReview, type Database } from "@omniralph/db";
+import {
+  getRepositoryWithConnection,
+  getReview,
+  type Database,
+  resolveRepositorySwitches,
+} from "@omniralph/db";
 import type { ChangeRequestState } from "@omniralph/scm";
 import type { RerunReviewInput } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -41,7 +46,11 @@ export async function rerunReview(
   if (found && found.repository.organizationId !== input.organizationId) {
     return { status: "not_found" };
   }
-  if (!found || !found.repository.enabled || found.repository.disconnectedAt) {
+  if (
+    !found ||
+    found.repository.disconnectedAt ||
+    !(await resolveRepositorySwitches(db, found.repository)).review
+  ) {
     return { status: "repository_unavailable" };
   }
   const { repository, connection } = found;
