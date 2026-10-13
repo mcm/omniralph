@@ -37,8 +37,8 @@ export async function stopRalphRun(runId: string): Promise<ActionResult> {
       run,
       userDisplayName(admin),
     );
-    revalidatePath("/ralph");
-    revalidatePath(`/ralph/${runId}`);
+    revalidatePath("/coding");
+    revalidatePath(`/coding/${runId}`);
     revalidatePath("/jobs");
     switch (result.status) {
       case "gone":

@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   // native modules (`zlib-sync`, …) the bundler can't resolve; load it from
   // node_modules at runtime instead.
   serverExternalPackages: ["@chat-adapter/discord", "discord.js"],
+  // Coding tasks moved from `/ralph` to `/coding`; old links (bookmarks, chat
+  // and Linear messages) keep working. The query string is passed along.
+  async redirects() {
+    return [
+      { source: "/ralph", destination: "/coding", permanent: true },
+      { source: "/ralph/:path*", destination: "/coding/:path*", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

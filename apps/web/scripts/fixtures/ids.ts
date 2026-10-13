@@ -1,6 +1,6 @@
 /**
  * Stable IDs of the fixture database, so screenshot routes can name detail
- * pages (e.g. `/ralph/${FIXTURE_IDS.ralphRuns.running}`). Every UUID is
+ * pages (e.g. `/coding/${FIXTURE_IDS.ralphRuns.running}`). Every UUID is
  * `<kind>-0000-4000-8000-<n>`: obviously fake, and the same on every seed.
  */
 

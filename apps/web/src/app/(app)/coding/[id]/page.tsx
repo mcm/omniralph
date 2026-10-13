@@ -15,7 +15,7 @@ export default async function RalphRunPage({ params }: { params: Promise<{ id: s
   const user = await requirePageUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  await enterResourceOrganization(user, "ralph_run", id, `/ralph/${id}`);
+  await enterResourceOrganization(user, "ralph_run", id, `/coding/${id}`);
   const db = getDb();
   const [detail, integration] = await Promise.all([
     getRunDetail(db, user.organization.id, id),

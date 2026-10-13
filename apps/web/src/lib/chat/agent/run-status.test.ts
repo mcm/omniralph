@@ -252,7 +252,7 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
       expect(shown).toMatchObject({
         runType: "coding",
         id: run.id,
-        url: `${APP_URL}/ralph/${run.id}`,
+        url: `${APP_URL}/coding/${run.id}`,
         task: "builtin:handle-request",
         status: "running",
         repository: "acme/api",

@@ -14,7 +14,7 @@ set -a; . apps/web/.env.fixtures; set +a
 pnpm --filter @omniralph/web dev
 
 # Sign in: open /sign-in/dev?email=admin@fixtures.example (or member@fixtures.example),
-# optionally with &callbackUrl=/ralph. The sign-in page also shows a form for it.
+# optionally with &callbackUrl=/coding. The sign-in page also shows a form for it.
 
 # Remove it.
 pnpm --filter @omniralph/web fixtures:down
@@ -30,7 +30,7 @@ exists with `OMNIRALPH_DEV_SIGNIN=1` **and** `NODE_ENV` other than `production`.
   refresh them (it replaces the previous seed). Online harnesses heartbeat in 2099, so they
   stay online however long after seeding the panel renders.
 - `ids.ts`: fixed IDs (`FIXTURE_IDS`) for naming detail pages, e.g.
-  `/ralph/${FIXTURE_IDS.ralphRuns.running}` or `/reviews/${FIXTURE_IDS.reviews.featured}`.
+  `/coding/${FIXTURE_IDS.ralphRuns.running}` or `/reviews/${FIXTURE_IDS.reviews.featured}`.
 
 Covered: an admin and a member (and a second organization for the switcher), a pending
 invitation, GitHub and GitLab connections with repositories (one disabled, one disconnected),

@@ -7,7 +7,7 @@ const { createEnterOrganizationPath, readEnterOrganizationToken, ENTER_ORGANIZAT
 const { createSignedState } = await import("@/lib/auth/signed-state");
 
 const env = { AUTH_SECRET: "test-auth-secret" } as unknown as NodeJS.ProcessEnv;
-const input = { userId: "user-1", organizationId: "org-1", next: "/ralph/run-1?tab=log" };
+const input = { userId: "user-1", organizationId: "org-1", next: "/coding/run-1?tab=log" };
 const tokenOf = (path: string) => new URL(path, "http://localhost").searchParams.get("token");
 
 describe("enter organization token", () => {
@@ -17,7 +17,7 @@ describe("enter organization token", () => {
     const token = tokenOf(path);
     expect(await readEnterOrganizationToken(token, "user-1", env)).toEqual({
       organizationId: "org-1",
-      next: "/ralph/run-1?tab=log",
+      next: "/coding/run-1?tab=log",
     });
     expect(await readEnterOrganizationToken(token, "user-2", env)).toBeNull();
   });

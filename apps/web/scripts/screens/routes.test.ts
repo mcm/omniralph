@@ -61,18 +61,18 @@ describe("SCREEN_ROUTES", () => {
 describe("routeMatches", () => {
   const route: ScreenRoute = {
     name: "ralph-run-running",
-    path: "/ralph/abc?tab=stories",
-    page: "(app)/ralph/[id]/page.tsx",
+    path: "/coding/abc?tab=stories",
+    page: "(app)/coding/[id]/page.tsx",
     auth: "signed-in",
   };
 
   it("matches names and paths (without the query)", () => {
     expect(routeMatches(route, "ralph-run-running")).toBe(true);
     expect(routeMatches(route, "ralph-*")).toBe(true);
-    expect(routeMatches(route, "/ralph/*")).toBe(true);
-    expect(routeMatches(route, "/ralph/abc")).toBe(true);
+    expect(routeMatches(route, "/coding/*")).toBe(true);
+    expect(routeMatches(route, "/coding/abc")).toBe(true);
     expect(routeMatches(route, "ralph")).toBe(false);
-    expect(routeMatches(route, "/ralph")).toBe(false);
+    expect(routeMatches(route, "/coding")).toBe(false);
   });
 
   it("keeps * within a segment and lets ** cross segments", () => {

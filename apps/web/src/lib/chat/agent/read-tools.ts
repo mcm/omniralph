@@ -146,7 +146,7 @@ export const listRalphRunsTool = defineChatTool({
       repositoryId,
       pageSize: CHAT_TOOL_RESULT_LIMIT,
     });
-    const listUrl = `${appUrl}${ralphRunListHref("/ralph", {
+    const listUrl = `${appUrl}${ralphRunListHref("/coding", {
       status: typeof status === "string" ? status : null,
       repositoryId: repositoryId ?? null,
       page: 1,
@@ -156,7 +156,7 @@ export const listRalphRunsTool = defineChatTool({
         const run = ralphRunRow(entry);
         return {
           id: run.id,
-          url: `${appUrl}/ralph/${run.id}`,
+          url: `${appUrl}/coding/${run.id}`,
           linearIssue: run.linearIdentifier,
           title: run.linearTitle,
           linearUrl: run.linearUrl,
@@ -203,7 +203,7 @@ async function ralphRunState(
   const currentStory = run.stories.find((story) => story.status === "running") ?? null;
   return {
     id: run.id,
-    url: `${appUrl}/ralph/${run.id}`,
+    url: `${appUrl}/coding/${run.id}`,
     linearIssue: run.linearIdentifier,
     title: run.linearTitle,
     linearUrl: run.linearUrl,

@@ -772,7 +772,7 @@ export function RalphRunDetailView({
   return (
     <>
       <AppHeader
-        breadcrumbs={[{ label: "Coding tasks", href: "/ralph" }, { label: runSourceLabel(run) }]}
+        breadcrumbs={[{ label: "Coding tasks", href: "/coding" }, { label: runSourceLabel(run) }]}
       />
       <main className="detail-main">
         <PageHeader

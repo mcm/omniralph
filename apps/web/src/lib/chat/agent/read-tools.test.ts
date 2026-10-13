@@ -269,7 +269,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       const runs = all.runs as Array<Result>;
       expect(runs.map((r) => r.id)).toEqual([org.activeRunId, org.doneRunId]);
       expect(runs[0]).toMatchObject({
-        url: `${APP_URL}/ralph/${org.activeRunId}`,
+        url: `${APP_URL}/coding/${org.activeRunId}`,
         linearIssue: "ENG-1",
         status: "running",
         repository: org.fullPath,
@@ -300,7 +300,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     const byIdentifier = await call("get_ralph_run", { run: "eng-1" }, acme.id);
     expect(byIdentifier).toMatchObject({
       id: acme.activeRunId,
-      url: `${APP_URL}/ralph/${acme.activeRunId}`,
+      url: `${APP_URL}/coding/${acme.activeRunId}`,
       title: "Acme epic 1",
       status: "running",
       pullRequest: { number: 7, url: "https://github.com/acme/api/pull/7" },
@@ -421,7 +421,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
       shown: CHAT_TOOL_RESULT_LIMIT,
       total: CHAT_TOOL_RESULT_LIMIT + 3,
       more: true,
-      note: expect.stringContaining(`${APP_URL}/ralph`),
+      note: expect.stringContaining(`${APP_URL}/coding`),
     });
     const jobs = await call("list_jobs", { type: "ralph.story" }, crowdedOrgId);
     expect(jobs.jobs).toHaveLength(CHAT_TOOL_RESULT_LIMIT);
@@ -478,7 +478,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
         const toolOutput = JSON.stringify(
           options.prompt.flatMap((m) => (m.role === "tool" ? m.content : [])),
         );
-        const url = toolOutput.match(/https:\/\/omniralph\.example\.com\/ralph\/[0-9a-f-]+/)![0];
+        const url = toolOutput.match(/https:\/\/omniralph\.example\.com\/coding\/[0-9a-f-]+/)![0];
         return {
           content: [{ type: "text", text: `One run is active: [ENG-1](${url}).` }],
           finishReason: "stop",
@@ -528,6 +528,6 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
     expect(toolOutput).toContain(acme.activeRunId);
     expect(toolOutput).not.toContain(acme.doneRunId);
     expect(toolOutput).not.toContain(other.activeRunId);
-    expect(posts).toEqual([`One run is active: [ENG-1](<${APP_URL}/ralph/${acme.activeRunId}>).`]);
+    expect(posts).toEqual([`One run is active: [ENG-1](<${APP_URL}/coding/${acme.activeRunId}>).`]);
   });
 });

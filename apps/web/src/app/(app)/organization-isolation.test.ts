@@ -115,8 +115,8 @@ vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("./harnesses/harnesses-view", () => ({ HarnessesView: () => null }));
 vi.mock("./harnesses/[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
-vi.mock("./ralph/ralph-runs-view", () => ({ RalphRunsView: () => null }));
-vi.mock("./ralph/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
+vi.mock("./coding/ralph-runs-view", () => ({ RalphRunsView: () => null }));
+vi.mock("./coding/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
 vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
@@ -141,8 +141,8 @@ const { default: ReviewsPage } = await import("./reviews/page");
 const { default: ReviewPage } = await import("./reviews/[id]/page");
 const { default: HarnessesPage } = await import("./harnesses/page");
 const { default: HarnessPage } = await import("./harnesses/[id]/page");
-const { default: RalphRunsPage } = await import("./ralph/page");
-const { default: RalphRunPage } = await import("./ralph/[id]/page");
+const { default: RalphRunsPage } = await import("./coding/page");
+const { default: RalphRunPage } = await import("./coding/[id]/page");
 const { default: JobsPage } = await import("./jobs/page");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
@@ -528,7 +528,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
       [`/harnesses/${b.harnessId}`, () => HarnessPage(params(b.harnessId)), b.harnessId],
-      [`/ralph/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
+      [`/coding/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
       [
         `/repositories/${b.repoId}/settings`,
         () => RepositorySettingsPage(params(b.repoId)),
