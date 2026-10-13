@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   version: null as string | null,
   updatedBy: null as string | null,
   latest: null as { version: string | null; error: string | null } | null,
+  allowedTaskTypes: null as string[] | null,
+  maxConcurrency: null as number | null,
   hostTools: [] as {
     id: string;
     organizationId: string;
@@ -32,8 +34,41 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@omniralph/db", async () => {
   const { HOST_TOOL_NAME_PATTERN } = await import("@omniralph/shared");
+  const { TASK_TYPES } = await import("@omniralph/tasks");
   return {
     TRACK_LATEST_HARNESS_VERSION: "latest",
+    MIN_MAX_CONCURRENCY: 1,
+    MAX_MAX_CONCURRENCY: 32,
+    // The organization-defaults setters, with their validation.
+    setAllowedTaskTypeDefaults: async (
+      _db: unknown,
+      organizationId: string,
+      types: string[] | null,
+      updatedBy: string,
+    ) => {
+      if (types?.some((t) => !(TASK_TYPES as readonly string[]).includes(t))) {
+        throw new Error("Unknown task types");
+      }
+      state.organizationId = organizationId;
+      state.allowedTaskTypes = types;
+      state.updatedBy = updatedBy;
+    },
+    setDefaultMaxConcurrency: async (
+      _db: unknown,
+      organizationId: string,
+      maxConcurrency: number | null,
+      updatedBy: string,
+    ) => {
+      if (
+        maxConcurrency !== null &&
+        !(Number.isInteger(maxConcurrency) && maxConcurrency >= 1 && maxConcurrency <= 32)
+      ) {
+        throw new Error("Max concurrency must be an integer from 1 to 32");
+      }
+      state.organizationId = organizationId;
+      state.maxConcurrency = maxConcurrency;
+      state.updatedBy = updatedBy;
+    },
     // An in-memory host tool catalog with the db helpers' contract.
     createHostTool: async (
       _db: unknown,
@@ -84,8 +119,13 @@ vi.mock("@omniralph/db", async () => {
   };
 });
 
-const { addHostTool, removeHostTool, setGlobalHarnessVersion, trackLatestHarnessVersion } =
-  await import("./actions");
+const {
+  addHostTool,
+  removeHostTool,
+  setGlobalHarnessVersion,
+  setOrganizationDefaults,
+  trackLatestHarnessVersion,
+} = await import("./actions");
 
 const REGISTRY = "https://registry.npmjs.org/@omniralph%2fharness";
 const requests: { authorization: string | null; accept: string | null }[] = [];
@@ -118,6 +158,8 @@ describe("Settings › Harness defaults actions", () => {
     state.version = null;
     state.updatedBy = null;
     state.latest = null;
+    state.allowedTaskTypes = null;
+    state.maxConcurrency = null;
     state.hostTools = [];
     requests.length = 0;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
@@ -197,6 +239,70 @@ describe("Settings › Harness defaults actions", () => {
       error: expect.stringContaining("answered 500"),
     });
     expect(state.version).toBeNull();
+  });
+
+  describe("organization defaults", () => {
+    it("saves the organization's task types and max concurrency", async () => {
+      expect(
+        await setOrganizationDefaults({
+          allowedTaskTypes: ["coding", "query"],
+          maxConcurrency: 8,
+        }),
+      ).toEqual({ ok: true });
+      expect(state).toMatchObject({
+        organizationId: "org-1",
+        allowedTaskTypes: ["coding", "query"],
+        maxConcurrency: 8,
+        updatedBy: "admin-1",
+      });
+
+      // No task types and the bounds are valid.
+      expect(await setOrganizationDefaults({ allowedTaskTypes: [], maxConcurrency: 1 })).toEqual({
+        ok: true,
+      });
+      expect(state).toMatchObject({ allowedTaskTypes: [], maxConcurrency: 1 });
+      expect(
+        await setOrganizationDefaults({
+          allowedTaskTypes: ["query", "review", "coding"],
+          maxConcurrency: 32,
+        }),
+      ).toEqual({ ok: true });
+      expect(state).toMatchObject({
+        allowedTaskTypes: ["query", "review", "coding"],
+        maxConcurrency: 32,
+      });
+    });
+
+    it("rejects unknown task types and max concurrency outside 1–32", async () => {
+      for (const bad of [
+        { allowedTaskTypes: ["query"], maxConcurrency: 0 },
+        { allowedTaskTypes: ["query"], maxConcurrency: 33 },
+        { allowedTaskTypes: ["query"], maxConcurrency: 2.5 },
+        { allowedTaskTypes: ["query"], maxConcurrency: Number.NaN },
+        { allowedTaskTypes: ["system"], maxConcurrency: 5 },
+        { allowedTaskTypes: ["ralph"], maxConcurrency: 5 },
+      ]) {
+        expect(await setOrganizationDefaults(bad)).toEqual({
+          ok: false,
+          error: "Max concurrency must be 1–32 and task types known ones.",
+        });
+      }
+      expect(state.allowedTaskTypes).toBeNull();
+      expect(state.maxConcurrency).toBeNull();
+    });
+
+    it("is admin-only", async () => {
+      state.user = user("member");
+      expect(
+        await setOrganizationDefaults({ allowedTaskTypes: ["query"], maxConcurrency: 3 }),
+      ).toEqual({ ok: false, error: expect.any(String) });
+      state.user = null;
+      expect(
+        await setOrganizationDefaults({ allowedTaskTypes: ["query"], maxConcurrency: 3 }),
+      ).toEqual({ ok: false, error: expect.any(String) });
+      expect(state.allowedTaskTypes).toBeNull();
+      expect(state.maxConcurrency).toBeNull();
+    });
   });
 
   describe("host tools", () => {

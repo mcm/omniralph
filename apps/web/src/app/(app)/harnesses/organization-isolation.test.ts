@@ -88,7 +88,7 @@ const {
   unpinRepository,
   updateHarnessConfig,
 } = await import("./actions");
-const { addHostTool, removeHostTool, setGlobalHarnessVersion } =
+const { addHostTool, removeHostTool, setGlobalHarnessVersion, setOrganizationDefaults } =
   await import("../settings/harnesses/actions");
 
 const dockerAvailable = await getContainerRuntimeClient().then(
@@ -216,6 +216,24 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
     expect((await HarnessSettingsPage()).props.desiredVersion).toBeNull();
     await setDesiredHarnessVersion(db, b.orgId, "2.0.0", b.userId);
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
+  });
+
+  it("keeps task-type and concurrency defaults per organization", async () => {
+    state.userId = a.userId;
+    expect(
+      await setOrganizationDefaults({ allowedTaskTypes: ["review"], maxConcurrency: 3 }),
+    ).toEqual({ ok: true });
+    expect((await HarnessSettingsPage()).props.defaults).toEqual({
+      allowedTaskTypes: ["review"],
+      maxConcurrency: 3,
+    });
+
+    // The other organization still has the built-in defaults.
+    state.userId = b.userId;
+    expect((await HarnessSettingsPage()).props.defaults).toEqual({
+      allowedTaskTypes: ["query", "review", "coding"],
+      maxConcurrency: 5,
+    });
   });
 
   it("keeps host tools per organization and refuses paths on the other's harnesses and tools", async () => {
