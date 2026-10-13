@@ -452,8 +452,8 @@ requests; it applies from the run's next job, and both paths share all run state
   what happened. A story task that pushes only at the end pushes story commits to a hidden ref and
   the branch once, with a `ralph.push` job, before the PR/MR is described.
 
-Coding runs are only claimed by harnesses on 0.11.0 or later; older ones leave them queued. A run
-sticks to the harness that ran its first job, so update a repository's harnesses (its pinned ones,
+Coding runs are only claimed by harnesses on 0.11.0 or later; older ones leave them queued. Each
+lane of a run sticks to the harness that ran its last job, so update a repository's harnesses (its pinned ones,
 or any accepting `coding`) before switching it to **Coding tasks**, or a run started on an older
 one waits for it to update. The repository's ralph **Model** isn't applied to the description run
 yet (it uses `opus`).
@@ -466,10 +466,11 @@ New harnesses only run query and review tasks. To let a harness run ralph jobs, 
 `long` pool; see
 [ADR 0004](adr/0004-organizations.md#job-isolation)).
 
-- A run sticks to the harness that started it: all its later jobs are targeted at that harness, so keep
-  `coding` accepted on it until its runs finish. If you untick `coding` on it or revoke it, the run's
-  next job goes to any harness that accepts `coding`, which recreates the branch worktree from the pushed
-  branch.
+- Each lane of a run (one per repository its stories are in) sticks to the harness that started its
+  jobs: the lane's later story, request, push and describe jobs are targeted at that harness, so keep
+  `coding` accepted on it until its runs finish. If you untick `coding` on it or revoke it, the lane's
+  next job goes to a harness its repository is pinned to, else to any harness that accepts `coding`,
+  which recreates the branch worktree from the pushed branch.
 - A repository pinned to harnesses (**Repository › Settings › Harness pinning**) starts its runs on a pinned
   harness, so at least one of them needs to accept `coding`, or the run's jobs are never picked up.
 - Ralph sessions are long and write code: give ralph harnesses their own host (or keep **Max
@@ -641,7 +642,7 @@ the newly enrolled one) picks them up.
 - **Ralph stories fail every attempt on a quality gate** with `command not found` or similar: the
   gate's toolchain isn't installed for the harness's user or isn't on the unit's `PATH`
   ([Host prerequisites](#host-prerequisites)).
-- **Ralph jobs stay queued**: no harness accepts the `coding` task type, the run's sticky (or pinned) harness is
+- **Ralph jobs stay queued**: no harness accepts the `coding` task type, the lane's sticky (or pinned) harness is
   offline, or (on the **Coding tasks** path) it runs a version older than 0.11.0. Check **Jobs** for the job's status.
 - **Reviews stay queued**: no online harness accepts the `review` task type on version 0.10.0 or
   later (or, if the repository pins jobs to harnesses, none of the pinned ones). Update the harness

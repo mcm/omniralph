@@ -184,7 +184,9 @@ PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
 settings (model, tools, prompt additions, setup command) and its quality gates (its
-`verifyCommands`, plus the PRD's gates when its `runPrdQualityGates` is on), on the run's agent.
+`verifyCommands`, plus the PRD's gates when its `runPrdQualityGates` is on), on the lane's harness
+(see [Harnesses and concurrency](#harnesses-and-concurrency)), so repositories pinned to different
+harnesses each run on theirs.
 The prompt names the repository. When every story is done, each lane is published in turn: a
 lane no story committed to (every story went elsewhere) gets no PR/MR; every other lane gets its
 own description job and its own PR/MR, and `openPullRequestEarly` follows each repository's own
@@ -536,8 +538,11 @@ and epic runs that are already going aren't affected.
 Ralph jobs are `coding` tasks in the `long` pool: they run on harnesses that accept the `coding`
 task type ([deploy-harness.md](deploy-harness.md#ralph)). A harness's `long` pool limit caps how
 many of its slots ralph may take; by default that's max concurrency − 1 (at least 1), so a harness
-with two or more slots keeps one free for reviews while stories run. All jobs of a run (every lane)
-go to the run's sticky harness.
+with two or more slots keeps one free for reviews while stories run. Each lane sticks to its own
+harness: a lane's story, request, push and describe jobs go to the harness that started the lane's
+last job while it still accepts `coding`, else to a harness its repository is pinned to, else to
+any harness that accepts `coding`. Lanes of an epic in repositories pinned to different harnesses
+each run on theirs; the run's harness shown on its page is the main lane's.
 Triage jobs run in the `short` pool on harnesses that accept `query` tasks; like reviews, they may
 take every slot by default, so lower the pool's limit to keep slots free for other work. Harnesses
 under pm2 update themselves to the version chosen on **Settings › Harnesses**
