@@ -1,11 +1,12 @@
 "use server";
 
-import { getRepository, updateRepositoryRalphSettings } from "@omniralph/db";
+import { getRepository, setRepositorySwitches, updateRepositoryRalphSettings } from "@omniralph/db";
 import {
   fieldErrors,
   RalphSettingsInput,
   ralphSettingsFromInput,
   RepositorySettingsInput,
+  RepositoryTaskTypesInput,
 } from "@omniralph/shared";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/action-result";
@@ -78,8 +79,33 @@ export async function updateRepositorySettings(
 }
 
 /**
- * Saves a repository's Ralph section: whether Linear delegations may build in
- * it, which Linear issues route to it, whether its runs use the legacy jobs or
+ * Saves which task types a repository runs: Query (externally triggered queries), Reviews and
+ * Coding, each on, off, or `null` to inherit the organization's default. The next trigger,
+ * claim or delegation uses the new values.
+ */
+export async function updateRepositoryTaskTypes(
+  repositoryId: string,
+  input: RepositoryTaskTypesInput,
+): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const parsed = RepositoryTaskTypesInput.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "Fix the highlighted fields.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+    if (!(await setRepositorySwitches(getDb(), admin.organization.id, repositoryId, parsed.data))) {
+      return { ok: false, error: "That repository isn't connected." };
+    }
+    revalidatePath(`/repositories/${repositoryId}/settings`);
+    revalidatePath("/repositories");
+  });
+}
+
+/**
+ * Saves a repository's Ralph section: which Linear issues route to it, whether its runs use the legacy jobs or
  * coding tasks (`coding_path`) and which story and request tasks (built-in
  * or the organization's own), and how its runs work (cyralph's
  * per-repository settings). The next job and decision of every run pick it up.
@@ -98,7 +124,6 @@ export async function updateRalphSettings(
       };
     }
     const {
-      ralphEnabled,
       linearTeamKeys,
       linearProjectNames,
       linearLabels,
@@ -115,7 +140,6 @@ export async function updateRalphSettings(
       return { ok: false, error: "Fix the highlighted fields.", fieldErrors: taskErrors };
     }
     const saved = await updateRepositoryRalphSettings(db, repositoryId, {
-      ralphEnabled,
       linearTeamKeys: linearTeamKeys.map((key) => key.toUpperCase()),
       linearProjectNames,
       linearLabels,

@@ -180,10 +180,14 @@ export async function connectGitLab(
   });
 }
 
-/** Turns reviews for a connected repository on or off. */
-export async function setRepositoryEnabled(id: string, enabled: boolean): Promise<ActionResult> {
+/** Turns reviews for a connected repository on, off, or (`null`) back to the organization's default. */
+export async function setRepositoryEnabled(
+  id: string,
+  enabled: boolean | null,
+): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
-    if (!(await setRepositoryEnabledRow(getDb(), admin.organization.id, id, Boolean(enabled)))) {
+    const value = enabled === null ? null : Boolean(enabled);
+    if (!(await setRepositoryEnabledRow(getDb(), admin.organization.id, id, value))) {
       return { ok: false, error: "That repository isn't connected." };
     }
     revalidatePath(REPOSITORIES_PATH);

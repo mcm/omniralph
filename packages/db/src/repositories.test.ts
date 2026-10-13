@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { getContainerRuntimeClient } from "testcontainers";
@@ -22,6 +22,7 @@ import {
   listScmConnections,
   resolveRepositorySwitches,
   setRepositoryEnabled,
+  setRepositorySwitches,
   upsertScmConnection,
 } from "./repositories.js";
 import {
@@ -148,8 +149,42 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
       });
       expect(await setRepositoryEnabled(db, orgId, repo.id, true)).toBe(true);
       expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)).toMatchObject(
-        { enabled: true, ralphEnabled: false },
+        {
+          enabled: true,
+          ralphEnabled: false,
+          queryEnabled: true,
+          overrides: { review: true, coding: null, query: null },
+        },
       );
+
+      // Each switch saves on, off or null (inherit); omitted ones stay as they are.
+      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: true, query: false })).toBe(
+        true,
+      );
+      expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)).toMatchObject(
+        {
+          enabled: true,
+          ralphEnabled: true,
+          queryEnabled: false,
+          overrides: { review: true, coding: true, query: false },
+        },
+      );
+      expect(
+        await setRepositorySwitches(db, orgId, repo.id, {
+          review: null,
+          coding: null,
+          query: null,
+        }),
+      ).toBe(true);
+      expect(await getRepository(db, repo.id)).toMatchObject({
+        enabled: null,
+        ralphEnabled: null,
+        queryEnabled: null,
+      });
+      expect(await setRepositoryEnabled(db, orgId, repo.id, null)).toBe(true);
+      // Another organization can't change it.
+      expect(await setRepositorySwitches(db, randomUUID(), repo.id, { review: false })).toBe(false);
+      expect((await getRepository(db, repo.id))?.enabled).toBeNull();
     } finally {
       await setAllowedTaskTypeDefaults(db, orgId, null, null);
       await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));

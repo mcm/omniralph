@@ -8,6 +8,8 @@ import {
   createDb,
   getRepository,
   jobs,
+  resolveRepositorySwitches,
+  setAllowedTaskTypeDefaults,
   listReviewProfiles,
   runMigrations,
   upsertScmConnection,
@@ -74,7 +76,8 @@ vi.mock("@/lib/auth/session", () => ({
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { updateRalphSettings, updateRepositorySettings } = await import("./actions");
+const { updateRalphSettings, updateRepositorySettings, updateRepositoryTaskTypes } =
+  await import("./actions");
 const { updateReviewProfile } = await import("../../../settings/profiles/actions");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
@@ -97,7 +100,6 @@ const baseSettings: RepositorySettingsInput = {
 };
 
 const baseRalph: RalphSettingsInput = {
-  ralphEnabled: false,
   linearTeamKeys: [],
   linearProjectNames: [],
   linearLabels: [],
@@ -568,7 +570,7 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     await updateRepositorySettings(repoId, baseSettings);
   });
 
-  it("saves the Ralph section: enabled, Linear routing, openPullRequestEarly, setup command, model and manual labels", async () => {
+  it("saves the Ralph section: Linear routing, openPullRequestEarly, setup command, model and manual labels", async () => {
     expect(await getRepository(db, repoId)).toMatchObject({
       ralphEnabled: null,
       linearTeamKeys: [],
@@ -582,7 +584,6 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(
       await updateRalphSettings(repoId, {
         ...baseRalph,
-        ralphEnabled: true,
         linearTeamKeys: ["tool", "ENG"],
         linearProjectNames: ["Omniralph"],
         linearLabels: ["backend", "api"],
@@ -593,7 +594,8 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: true,
+      // Coding is switched under Task types, not by the Ralph section.
+      ralphEnabled: null,
       linearTeamKeys: ["TOOL", "ENG"],
       linearProjectNames: ["Omniralph"],
       linearLabels: ["backend", "api"],
@@ -606,11 +608,11 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     });
     // Saving the review settings leaves the Ralph section alone, and the other way round.
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(true);
+    expect((await getRepository(db, repoId))!.linearTeamKeys).toEqual(["TOOL", "ENG"]);
 
     expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: false,
+      ralphEnabled: null,
       linearTeamKeys: [],
       linearProjectNames: [],
       linearLabels: [],
@@ -683,9 +685,10 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       "builtin:nope",
       randomUUID(),
     ]) {
-      expect(
-        await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true, storyTaskId }),
-      ).toMatchObject({ ok: false, fieldErrors: { storyTaskId: expect.any(String) } });
+      expect(await updateRalphSettings(repoId, { ...baseRalph, storyTaskId })).toMatchObject({
+        ok: false,
+        fieldErrors: { storyTaskId: expect.any(String) },
+      });
     }
     for (const requestTaskId of [
       othersRequest,
@@ -693,12 +696,12 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       "builtin:implement-story",
       "builtin:nope",
     ]) {
-      expect(
-        await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true, requestTaskId }),
-      ).toMatchObject({ ok: false, fieldErrors: { requestTaskId: expect.any(String) } });
+      expect(await updateRalphSettings(repoId, { ...baseRalph, requestTaskId })).toMatchObject({
+        ok: false,
+        fieldErrors: { requestTaskId: expect.any(String) },
+      });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: false,
       storyTaskId: "builtin:implement-story",
       requestTaskId: "builtin:handle-request",
     });
@@ -784,7 +787,6 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(
       await updateRalphSettings(repoId, {
         ...baseRalph,
-        ralphEnabled: true,
         linearTeamKeys: ["E N G"],
         linearLabels: ["a,b"],
         model: "",
@@ -804,10 +806,10 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
     expect(
       await updateRalphSettings(repoId, {
         ...baseRalph,
-        ralphEnabled: "yes",
+        codingPath: "yes",
       } as unknown as RalphSettingsInput),
-    ).toMatchObject({ ok: false, fieldErrors: { ralphEnabled: expect.any(String) } });
-    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(false);
+    ).toMatchObject({ ok: false, fieldErrors: { codingPath: expect.any(String) } });
+    expect((await getRepository(db, repoId))!.codingPath).toBe("legacy");
   });
 
   it("rejects Ralph settings for unknown repositories and from non-admins", async () => {
@@ -815,10 +817,81 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       ok: false,
       error: "That repository isn't connected.",
     });
+    const before = (await getRepository(db, repoId))!.linearLabels;
     state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-    expect(await updateRalphSettings(repoId, { ...baseRalph, ralphEnabled: true })).toMatchObject({
-      ok: false,
+    expect(
+      await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["members"] }),
+    ).toMatchObject({ ok: false });
+    expect((await getRepository(db, repoId))!.linearLabels).toEqual(before);
+  });
+
+  describe("task types", () => {
+    const INHERIT = { query: null, review: null, coding: null };
+    const COLUMNS = { query: "queryEnabled", review: "enabled", coding: "ralphEnabled" } as const;
+
+    it("saves each of Query, Reviews and Coding as inherit, on or off", async () => {
+      try {
+        for (const key of ["query", "review", "coding"] as const) {
+          for (const value of [true, false, null]) {
+            expect(await updateRepositoryTaskTypes(repoId, { ...INHERIT, [key]: value })).toEqual({
+              ok: true,
+            });
+            const repo = (await getRepository(db, repoId))!;
+            expect(repo[COLUMNS[key]]).toBe(value);
+            // The others stay inherited.
+            for (const other of ["query", "review", "coding"] as const) {
+              if (other !== key) expect(repo[COLUMNS[other]]).toBeNull();
+            }
+
+            // Inherit follows the organization's default; on and off win over it either way.
+            await setAllowedTaskTypeDefaults(db, orgId, [], null);
+            expect((await resolveRepositorySwitches(db, repo))[key]).toBe(value ?? false);
+            await setAllowedTaskTypeDefaults(db, orgId, ["query", "review", "coding"], null);
+            expect((await resolveRepositorySwitches(db, repo))[key]).toBe(value ?? true);
+            await setAllowedTaskTypeDefaults(db, orgId, null, null);
+          }
+        }
+      } finally {
+        await setAllowedTaskTypeDefaults(db, orgId, null, null);
+        await updateRepositoryTaskTypes(repoId, INHERIT);
+      }
     });
-    expect((await getRepository(db, repoId))!.ralphEnabled).toBe(false);
+
+    it("saves all three at once", async () => {
+      try {
+        expect(
+          await updateRepositoryTaskTypes(repoId, { query: false, review: true, coding: null }),
+        ).toEqual({ ok: true });
+        expect(await getRepository(db, repoId)).toMatchObject({
+          queryEnabled: false,
+          enabled: true,
+          ralphEnabled: null,
+        });
+      } finally {
+        await updateRepositoryTaskTypes(repoId, INHERIT);
+      }
+    });
+
+    it("rejects invalid input, unknown repositories and non-admins without saving", async () => {
+      expect(
+        await updateRepositoryTaskTypes(repoId, {
+          ...INHERIT,
+          review: "on",
+        } as unknown as typeof INHERIT),
+      ).toMatchObject({ ok: false, fieldErrors: { review: expect.any(String) } });
+      expect(await updateRepositoryTaskTypes(randomUUID(), INHERIT)).toEqual({
+        ok: false,
+        error: "That repository isn't connected.",
+      });
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(
+        await updateRepositoryTaskTypes(repoId, { query: false, review: false, coding: false }),
+      ).toMatchObject({ ok: false });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        queryEnabled: null,
+        enabled: null,
+        ralphEnabled: null,
+      });
+    });
   });
 });

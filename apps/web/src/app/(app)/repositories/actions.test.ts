@@ -485,12 +485,14 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     expect(after!.disconnectedAt).not.toBeNull();
   });
 
-  it("toggles reviews for a repository", async () => {
+  it("sets reviews for a repository on, off or back to the organization's default", async () => {
     await connectGitLabProjects([101]);
     const [repo] = await state.db.select().from(repositories);
-    expect(await setRepositoryEnabled(repo!.id, false)).toEqual({ ok: true });
-    const [after] = await state.db.select().from(repositories);
-    expect(after!.enabled).toBe(false);
+    for (const value of [false, true, null]) {
+      expect(await setRepositoryEnabled(repo!.id, value)).toEqual({ ok: true });
+      const [after] = await state.db.select().from(repositories);
+      expect(after!.enabled).toBe(value);
+    }
   });
 
   it("refuses members", async () => {

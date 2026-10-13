@@ -12,6 +12,7 @@ import {
   pathExcludeGlobError,
   RalphSettingsInput,
   RepositorySettingsInput,
+  RepositoryTaskTypesInput,
   ReviewProfileInput,
 } from "./settings.js";
 
@@ -163,8 +164,24 @@ describe("ReviewProfileInput", () => {
   });
 });
 
+describe("RepositoryTaskTypesInput", () => {
+  it("accepts on, off and null (the organization's default) for each task type", () => {
+    for (const value of [true, false, null]) {
+      const input = { query: value, review: value, coding: value };
+      expect(RepositoryTaskTypesInput.parse(input)).toEqual(input);
+    }
+  });
+
+  it("rejects a missing or non-boolean switch", () => {
+    const result = RepositoryTaskTypesInput.safeParse({ query: "on", review: null });
+    expect(fieldErrors(result.error!)).toEqual({
+      query: "Choose the organization's default, on or off.",
+      coding: "Choose the organization's default, on or off.",
+    });
+  });
+});
+
 const validRalph: RalphSettingsInput = {
-  ralphEnabled: true,
   linearTeamKeys: ["TOOL", "eng_2"],
   linearProjectNames: ["Omniralph v2"],
   linearLabels: ["backend", "needs: api"],

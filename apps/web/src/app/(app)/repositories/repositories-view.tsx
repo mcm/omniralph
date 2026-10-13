@@ -42,7 +42,6 @@ import {
   Input,
   Muted,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -72,12 +71,7 @@ import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { pageRange, totalPages } from "@/lib/pagination";
-import {
-  connectGitLab,
-  disconnectRepository,
-  removeScmConnection,
-  setRepositoryEnabled,
-} from "./actions";
+import { connectGitLab, disconnectRepository, removeScmConnection } from "./actions";
 import { ConnectionHealth, type ConnectionHealthRow } from "./connection-health";
 
 export interface RepositoryRow {
@@ -85,7 +79,8 @@ export interface RepositoryRow {
   provider: "github" | "gitlab";
   fullPath: string;
   webUrl: string;
-  enabled: boolean;
+  /** Query, Reviews and Coding: effective (on/off) and whether that's the organization's default. */
+  taskTypes: Record<"query" | "review" | "coding", { on: boolean; inherited: boolean }>;
   profileName: string;
   pinnedHarnesses: { id: string; name: string }[];
   /** ISO timestamp. */
@@ -312,8 +307,37 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
   );
 }
 
+const TASK_TYPE_BADGES = [
+  { key: "query", label: "Query" },
+  { key: "review", label: "Reviews" },
+  { key: "coding", label: "Coding" },
+] as const;
+
+/** A repository's effective task types: on in green, off in grey; inherited ones say so on hover. */
+export function TaskTypeBadges({ taskTypes }: { taskTypes: RepositoryRow["taskTypes"] }) {
+  return (
+    <div className="list-filters">
+      {TASK_TYPE_BADGES.map(({ key, label }) => {
+        const { on, inherited } = taskTypes[key];
+        const state = `${on ? "On" : "Off"} (${inherited ? "organization default" : "set for this repository"})`;
+        return (
+          <Badge
+            key={key}
+            variant={on ? "success" : "neutral"}
+            dot
+            title={`${label}: ${state}`}
+            aria-label={`${label}: ${state}`}
+          >
+            {label}
+            {inherited ? "" : on ? " on" : " off"}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+}
+
 function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: boolean }) {
-  const { pending, run } = useAction();
   const host = repo.provider === "github" ? "GitHub" : "GitLab";
   return (
     <TableRow>
@@ -331,23 +355,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         </PhoneMeta>
       </TableCell>
       <TableCell>
-        {isAdmin ? (
-          <Switch
-            checked={repo.enabled}
-            disabled={pending}
-            aria-label={`Reviews for ${repo.fullPath}`}
-            onCheckedChange={(enabled) =>
-              run(
-                () => setRepositoryEnabled(repo.id, enabled),
-                `Reviews ${enabled ? "enabled" : "disabled"} for ${repo.fullPath}`,
-              )
-            }
-          />
-        ) : (
-          <Badge variant={repo.enabled ? "success" : "neutral"} dot>
-            {repo.enabled ? "Enabled" : "Disabled"}
-          </Badge>
-        )}
+        <TaskTypeBadges taskTypes={repo.taskTypes} />
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <Badge variant="neutral">{repo.profileName}</Badge>
@@ -505,7 +513,7 @@ export function RepositoriesView({
       <main className="detail-main">
         <PageHeader
           title="Repositories"
-          description="Pull and merge requests in enabled repositories are reviewed automatically when they're opened or pushed to."
+          description="Pull and merge requests in repositories with reviews on are reviewed automatically when they're opened or pushed to. Set each repository's task types in its settings."
           actions={
             isAdmin && (
               <>
@@ -592,7 +600,7 @@ export function RepositoriesView({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Repository</TableHead>
-                    <TableHead>Reviews</TableHead>
+                    <TableHead>Task types</TableHead>
                     <TableHead className={WIDE_COLUMN}>Profile</TableHead>
                     <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
                     <TableHead className={WIDE_COLUMN}>Last review</TableHead>

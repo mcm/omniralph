@@ -30,7 +30,6 @@ import {
 const STORY = "33333333-3333-4333-8333-333333333333";
 
 const ralph: RalphInput = {
-  ralphEnabled: false,
   linearTeamKeys: ["ENG"],
   linearProjectNames: [],
   linearLabels: [],
@@ -58,11 +57,8 @@ function ralphCardChanges(card: keyof typeof RALPH_CARDS, edit: Partial<RalphDra
 }
 
 describe("Ralph change lists", () => {
-  it("lists enabling, the coding path and the story task by name", () => {
-    expect(
-      ralphCardChanges("ralph", { ralphEnabled: true, codingPath: "tasks", storyTaskId: STORY }),
-    ).toEqual([
-      { key: "ralphEnabled", label: "Enable Ralph", from: "Off", to: "On" },
+  it("lists the coding path and the story task by name", () => {
+    expect(ralphCardChanges("ralph", { codingPath: "tasks", storyTaskId: STORY })).toEqual([
       { key: "codingPath", label: "Coding path", from: "Legacy jobs", to: "Coding tasks" },
       { key: "storyTaskId", label: "Story task", from: "Implement story", to: "Careful story" },
     ]);

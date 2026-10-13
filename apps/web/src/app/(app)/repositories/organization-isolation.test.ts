@@ -88,7 +88,8 @@ const { default: ReviewsPage } = await import("../reviews/page");
 const { default: ReviewPage } = await import("../reviews/[id]/page");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
 const { setRepositoryEnabled, disconnectRepository } = await import("./actions");
-const { updateRalphSettings, updateRepositorySettings } = await import("./[id]/settings/actions");
+const { updateRalphSettings, updateRepositorySettings, updateRepositoryTaskTypes } =
+  await import("./[id]/settings/actions");
 const { addCustomRule, deleteRule, editRule, setRuleEnabled } =
   await import("./[id]/rules/actions");
 const { dismissFinding, restoreFinding } = await import("../reviews/[id]/actions");
@@ -235,6 +236,10 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
     state.userId = a.userId;
     const refused = { ok: false, error: expect.any(String) };
     expect(await setRepositoryEnabled(b.repoId, false)).toEqual(refused);
+    expect(await setRepositoryEnabled(b.repoId, null)).toEqual(refused);
+    expect(
+      await updateRepositoryTaskTypes(b.repoId, { query: false, review: false, coding: false }),
+    ).toEqual(refused);
     expect(await disconnectRepository(b.repoId)).toEqual(refused);
     expect(
       await updateRepositorySettings(b.repoId, {
@@ -249,7 +254,6 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
     ).toEqual(refused);
     expect(
       await updateRalphSettings(b.repoId, {
-        ralphEnabled: true,
         linearTeamKeys: [],
         linearProjectNames: [],
         linearLabels: [],
