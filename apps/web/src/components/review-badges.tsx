@@ -22,11 +22,18 @@ const SEVERITY_SHORT: Record<Severity, string> = {
   info: "I",
 };
 
+/**
+ * The library variant gives the chip its shape; `.severity-<severity>` in globals.css sets
+ * its fill, border and text so the five read as one ramp that only gets quieter in both
+ * themes (measured in `severity-ramp.test.ts`).
+ */
 function severityBadgeProps(severity: Severity) {
   const variant = SEVERITY_VARIANTS[severity];
-  if (variant === "quiet") return { variant: "neutral", className: "severity-quiet" } as const;
-  if (variant === "strong") return { variant: "neutral", className: "severity-strong" } as const;
-  return { variant, dot: severity === "critical" };
+  return {
+    variant: variant === "quiet" || variant === "strong" ? "neutral" : variant,
+    className: `severity-${severity}`,
+    dot: severity === "critical",
+  } as const;
 }
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
