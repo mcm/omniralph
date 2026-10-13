@@ -1173,6 +1173,14 @@ body {
 .analytics-link:hover {
   text-decoration: underline;
 }
+/* Phone: the repository takes the free width without widening it, so a long path truncates
+   in the middle and the Rate column (bar and %) stays in the card. */
+@media (max-width: 767.98px) {
+  .analytics-repo-col {
+    width: 100%;
+    max-width: 0;
+  }
+}
 @media (min-width: 768px) {
   .analytics-rate-col {
     width: 12rem;

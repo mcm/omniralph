@@ -40,6 +40,7 @@ import {
   analyticsHref,
   countTick,
   dayLabel,
+  falsePositivesNoun,
   formatRate,
   overallAverageTokens,
   RALPH_RUN_OUTCOME_LABELS,
@@ -532,7 +533,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               <Table className="list-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Repository</TableHead>
+                    <TableHead className="analytics-repo-col">Repository</TableHead>
                     <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Findings</TableHead>
                     <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Dismissed</TableHead>
                     <TableHead className={`analytics-num ${WIDE_COLUMN}`}>
@@ -544,7 +545,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 <TableBody>
                   {analytics.dismissalsByRepository.map((d) => (
                     <TableRow key={d.repository.id}>
-                      <TableCell>
+                      <TableCell className="analytics-repo-col">
                         <RepositoryLink repository={d.repository} />
                         <PhoneMeta>
                           <span className="analytics-phone-detail">
@@ -554,7 +555,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                             <span className="text-numeric">
                               {d.falsePositives.toLocaleString()}
                             </span>{" "}
-                            false positives
+                            {falsePositivesNoun(d.falsePositives)}
                           </span>
                         </PhoneMeta>
                       </TableCell>

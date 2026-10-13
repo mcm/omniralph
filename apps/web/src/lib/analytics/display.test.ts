@@ -4,6 +4,7 @@ import {
   analyticsHref,
   countTick,
   dayLabel,
+  falsePositivesNoun,
   formatRate,
   overallAverageTokens,
   parseAnalyticsParams,
@@ -144,5 +145,13 @@ describe("ralph analytics", () => {
     });
     expect(data.from).toBe("2026-09-29T00:00:00.000Z");
     expect(data.to).toBe("2026-10-06T00:00:00.000Z");
+  });
+});
+
+describe("falsePositivesNoun", () => {
+  it("is singular only for one", () => {
+    expect(falsePositivesNoun(1)).toBe("false positive");
+    expect(falsePositivesNoun(0)).toBe("false positives");
+    expect(falsePositivesNoun(2)).toBe("false positives");
   });
 });
