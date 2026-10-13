@@ -8,10 +8,15 @@ const DEFAULT_TAIL = 6;
 /**
  * The part of `value` that stays visible when it truncates in the middle:
  * from the last `/`, `!`, `#`, `@` or `:` (a file name, an MR/PR number, a
- * ref), else its last few characters.
+ * ref), else its last few characters. A PR/MR number keeps its repository name
+ * (`…/control-panel#307`) when that fits.
  */
 export function monoValueTail(value: string): string {
   const cut = Math.max(...["/", "!", "#", "@", ":"].map((sep) => value.lastIndexOf(sep)));
+  if (cut > 0 && /^[#!]\d+$/.test(value.slice(cut))) {
+    const repo = value.lastIndexOf("/", cut);
+    if (repo > 0 && value.length - repo <= MAX_TAIL) return value.slice(repo);
+  }
   if (cut > 0 && value.length - cut <= MAX_TAIL) return value.slice(cut);
   return value.length > DEFAULT_TAIL * 2 ? value.slice(-DEFAULT_TAIL) : "";
 }

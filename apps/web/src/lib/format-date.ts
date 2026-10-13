@@ -14,15 +14,22 @@ export function formatDateTimeAfter(iso: string, earlier: string): string {
   if (date.toDateString() === before.toDateString()) {
     return date.toLocaleTimeString(undefined, { timeStyle: "short" });
   }
-  if (date.getFullYear() === before.getFullYear()) {
-    return date.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  return formatDateTime(iso);
+  return formatDateTimeInYear(iso, before.getFullYear());
+}
+
+/**
+ * Locale date and time without the year when it is `year` (e.g. the current one):
+ * "Oct 6, 3:09 PM", else the full `formatDateTime`.
+ */
+export function formatDateTimeInYear(iso: string, year: number): string {
+  const date = new Date(iso);
+  if (date.getFullYear() !== year) return formatDateTime(iso);
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /** Short relative time, e.g. "12s ago", "5 min ago", "3 h ago", else the date. */

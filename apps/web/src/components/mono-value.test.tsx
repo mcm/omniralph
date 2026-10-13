@@ -3,7 +3,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { formatDateTime, formatDateTimeAfter } from "@/lib/format-date";
-import { ListStatus, Timestamp } from "./list-table";
+import { Timestamp } from "./list-table";
 import { MonoValue, monoValueTail } from "./mono-value";
 
 const css = readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
@@ -18,7 +18,9 @@ function rule(selector: string): string {
 describe("monoValueTail", () => {
   it("keeps a path's file name, a merge request number or a ref whole", () => {
     expect(monoValueTail("apps/web/src/app/(app)/repositories/page.tsx")).toBe("/page.tsx");
-    expect(monoValueTail("fixture-labs/platform/api!314")).toBe("!314");
+    expect(monoValueTail("fixture-labs/platform/api!314")).toBe("/api!314");
+    expect(monoValueTail("fixture-labs/control-panel#307")).toBe("/control-panel#307");
+    expect(monoValueTail("fixture-labs/a-very-long-repository-name#3")).toBe("#3");
     expect(monoValueTail("builtin:reply-to-finding")).toBe(":reply-to-finding");
   });
 
@@ -87,24 +89,5 @@ describe("Timestamp", () => {
     );
     expect(otherYear).toContain(`>${formatDateTime(iso)}</time>`);
     expect(otherYear).not.toContain("title=");
-  });
-});
-
-describe("ListStatus", () => {
-  it("shows the error on the badge's line, truncated, with the full text in its title", () => {
-    const error = "The story ran out of attempts: the integration tests need a GitLab instance.";
-    const html = renderToStaticMarkup(<ListStatus badge={<span>failed</span>} error={error} />);
-    expect(html).toBe(
-      `<div class="list-status"><span>failed</span><span class="list-error" title="${error}">${error}</span></div>`,
-    );
-    expect(rule(".list-error")).toContain("white-space: nowrap");
-    expect(rule(".list-error")).toContain("text-overflow: ellipsis");
-    expect(rule(".list-status")).toContain("width: 0");
-  });
-
-  it("renders only the badge without an error", () => {
-    expect(renderToStaticMarkup(<ListStatus badge={<span>ok</span>} error={null} />)).toBe(
-      '<div class="list-status"><span>ok</span></div>',
-    );
   });
 });

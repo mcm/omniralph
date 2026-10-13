@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import {
   Alert,
@@ -40,7 +41,8 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
-import { ListStatus, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { ListErrorRow } from "@/components/list-error";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -532,7 +534,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
             <TableRow>
               <TableHead>Type</TableHead>
               <TableHead className={WIDE_COLUMN}>ID</TableHead>
-              <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
+              <TableHead className={WIDE_COLUMN}>Status</TableHead>
               <TableHead className={WIDE_COLUMN}>Deliveries</TableHead>
               <TableHead className={WIDE_COLUMN}>Harness</TableHead>
               <TableHead className={WIDE_COLUMN}>Created</TableHead>
@@ -541,37 +543,40 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
           </TableHeader>
           <TableBody>
             {run.jobs.map((job) => (
-              <TableRow key={job.id}>
-                <TableCell>
-                  <Link href={jobPageHref(job.id)} className="fact-mono list-text-primary">
-                    {job.type}
-                  </Link>
-                  <PhoneMeta>
-                    <JobStatusBadge job={job} />
-                    {/* The ID a story's "Last job" names, so the two can be matched. */}
+              <Fragment key={job.id}>
+                <TableRow data-has-error={job.error ? true : undefined}>
+                  <TableCell>
+                    <Link href={jobPageHref(job.id)} className="fact-mono list-text-primary">
+                      {job.type}
+                    </Link>
+                    <PhoneMeta>
+                      <JobStatusBadge job={job} />
+                      {/* The ID a story's "Last job" names, so the two can be matched. */}
+                      <JobLink id={job.id} label={shortJobId(job.id)} />
+                      <Timestamp iso={job.finishedAt ?? job.createdAt} />
+                    </PhoneMeta>
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
                     <JobLink id={job.id} label={shortJobId(job.id)} />
-                    <Timestamp iso={job.finishedAt ?? job.createdAt} />
-                  </PhoneMeta>
-                </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  <JobLink id={job.id} label={shortJobId(job.id)} />
-                </TableCell>
-                <TableCell className={`${WIDE_COLUMN} list-col-status`}>
-                  <ListStatus badge={<JobStatusBadge job={job} />} error={job.error} />
-                </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  <span className="list-text">{job.deliveryCount}</span>
-                </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  <AgentName agent={job.agent} isAdmin={isAdmin} />
-                </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  <Timestamp iso={job.createdAt} />
-                </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
-                </TableCell>
-              </TableRow>
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <JobStatusBadge job={job} />
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <span className="list-text">{job.deliveryCount}</span>
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <AgentName agent={job.agent} isAdmin={isAdmin} />
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    <Timestamp iso={job.createdAt} />
+                  </TableCell>
+                  <TableCell className={WIDE_COLUMN}>
+                    {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
+                  </TableCell>
+                </TableRow>
+                {job.error && <ListErrorRow error={job.error} colSpan={7} />}
+              </Fragment>
             ))}
           </TableBody>
         </Table>
