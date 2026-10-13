@@ -2,6 +2,8 @@
 // sees or changes the other's, and gets a 404 on its URLs.
 import { randomBytes } from "node:crypto";
 import {
+  addMember,
+  setActiveOrganization,
   closeDb,
   connectRepository,
   createCustomRule,
@@ -88,6 +90,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const { default: RepositoriesPage } = await import("./page");
 const { default: RepositorySettingsPage } = await import("./[id]/settings/page");
 const { default: RepositoryCodingPage } = await import("./[id]/coding/page");
+const { default: RepositoryHarnessesPage } = await import("./[id]/harnesses/page");
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
 const { default: RepositoryReviewsPage } = await import("./[id]/reviews/page");
 const { default: GitHubInstallationPage } = await import("./github/[connectionId]/page");
@@ -283,9 +286,28 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
     expect((await RepositorySettingsPage(params(a.repoId))).props.codingChoices).toBeNull();
   });
 
+  it("shows the Coding tab to admins only; members get a 404 but see the other tabs", async () => {
+    const [member] = await db
+      .insert(users)
+      .values({ id: "alpha-member", email: "member@alpha.io" })
+      .returning();
+    expect(
+      await addMember(db, { organizationId: a.orgId, userId: member!.id, role: "member" }),
+    ).toBe("added");
+    await setActiveOrganization(db, { userId: member!.id, organizationId: a.orgId });
+    state.userId = member!.id;
+    await expect(RepositoryCodingPage(params(a.repoId))).rejects.toMatchObject(notFound);
+    expect((await RepositorySettingsPage(params(a.repoId))).props.tab).toBe("settings");
+    expect((await RepositoryHarnessesPage(params(a.repoId))).props.tab).toBe("harnesses");
+    state.userId = a.userId;
+    expect((await RepositoryCodingPage(params(a.repoId))).props.tab).toBe("coding");
+  });
+
   it("returns 404 for another organization's repository, review and installation pages", async () => {
     state.userId = a.userId;
     await expect(RepositorySettingsPage(params(b.repoId))).rejects.toMatchObject(notFound);
+    await expect(RepositoryCodingPage(params(b.repoId))).rejects.toMatchObject(notFound);
+    await expect(RepositoryHarnessesPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryReviewsPage({ ...params(b.repoId), ...noSearch })).rejects.toMatchObject(
       notFound,

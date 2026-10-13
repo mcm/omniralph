@@ -1,14 +1,21 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { getBuiltinTask, TRIGGERS_BY_TASK_TYPE, type TaskDefinition } from "@omniralph/tasks";
+import {
+  BUILTIN_TASKS,
+  getBuiltinTask,
+  TRIGGERS_BY_TASK_TYPE,
+  type TaskDefinition,
+} from "@omniralph/tasks";
 import type { TaskChoice } from "@/lib/definitions";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import {
   TaskForm,
+  taskInput,
   type TaskFormAgent,
   type TaskFormHostTool,
   type TaskFormSink,
 } from "./task-form";
+import { taskDraft } from "./task-changes";
 import { parseOutputSchema } from "./task-form-sections";
 
 vi.mock("./actions", () => ({
@@ -266,19 +273,26 @@ describe("TaskForm", () => {
     const html = render(
       {
         ...TASK,
-        requires: { installables: ["@omniralph/sast", "@omniralph/x"], hostTools: ["opengrep"] },
+        requires: {
+          installables: ["@omniralph/sast", "@omniralph/x"],
+          hostTools: ["opengrep", "retired-tool"],
+        },
       },
       {
         "requires.installables.1": "Expected a valid npm package name",
         "requires.hostTools.0": "Invalid string",
       },
     );
-    // Chips, not comma-separated text; one no harness reports is kept with a warning.
+    // Chips, not comma-separated text. Installables take typed names (one no harness reports
+    // yet isn't flagged); host tools only come from the catalog, so a retired one is.
     expect(html).toContain('title="@omniralph/sast"');
-    expect(html).toMatch(/@omniralph\/x<\/span><span class="picker-chip-note">not available/);
-    expect(html).toContain("No harness reports it, so no harness claims the task");
+    expect(html).toContain('title="@omniralph/x"');
+    expect(html).not.toMatch(/@omniralph\/x<\/span><span class="picker-chip-note">/);
     expect(html).toContain('title="opengrep"');
     expect(html).not.toMatch(/opengrep<\/span><span class="picker-chip-note">/);
+    expect(html).toMatch(/retired-tool<\/span><span class="picker-chip-note">not available/);
+    expect(html).toContain("no longer in the host tool catalog");
+    expect(html).toMatch(/<button[^>]*role="combobox"[^>]*id="task-requires-host-tools"/);
     expect(html).not.toContain('value="@omniralph/sast, @omniralph/x"');
     expect(fieldOf(html, "Expected a valid npm package name")).toBe("task-requires-installables");
     expect(fieldOf(html, "Invalid string")).toBe("task-requires-host-tools");
@@ -390,6 +404,27 @@ describe("parseOutputSchema", () => {
     for (const text of ["[]", "null", "42", '"object"']) {
       expect(parseOutputSchema(text), text).toEqual({
         error: "The output schema must be a JSON object.",
+      });
+    }
+  });
+});
+
+describe("taskInput", () => {
+  it("saves a task loaded and left unedited exactly as it was", () => {
+    const custom: TaskDefinition = {
+      ...TASK,
+      pool: "long",
+      requires: {
+        installables: ["@omniralph/sast", "@omniralph/unreported"],
+        hostTools: ["opengrep"],
+      },
+    };
+    for (const task of [custom, ...BUILTIN_TASKS]) {
+      const { id: _id, ...fields } = task;
+      // A task without requirements saves empty ones, which mean the same.
+      const requires = task.requires ?? { installables: [], hostTools: [] };
+      expect(taskInput(task, taskDraft(task, ["short", "long"]))).toEqual({
+        input: { ...fields, requires },
       });
     }
   });

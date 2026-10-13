@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
-import { AgentForm, type AgentFormProps } from "./agent-form";
+import { AgentForm, agentInput, type AgentFormProps } from "./agent-form";
+import { agentDraft } from "./agent-changes";
 
 vi.mock("./actions", () => ({
   createAgentDefinition: vi.fn(),
@@ -155,5 +156,30 @@ describe("AgentForm", () => {
   it("offers no model when no harness reports one", () => {
     const html = render(null, { choices: { models: [], installables: [], harnessCount: 0 } });
     expect(html).toContain("The profile&#x27;s model");
+  });
+});
+
+describe("agentInput", () => {
+  it("saves an agent loaded and left unedited exactly as it was", () => {
+    const custom: AgentDefinition = {
+      ...AGENT,
+      tools: {
+        ...AGENT.tools,
+        builtin: ["Read", "Bash(pnpm test:*)", "Grep"],
+        mcpServers: ["@omniralph/code-graph:graph", "custom:server"],
+      },
+    };
+    for (const agent of [
+      custom,
+      ...BUILTIN_AGENTS,
+      { ...AGENT, model: null, fallbackModel: null },
+    ]) {
+      const { id: _id, ...fields } = agent;
+      expect(agentInput(agentDraft(agent))).toEqual({
+        ...fields,
+        model: agent.model ?? null,
+        fallbackModel: agent.fallbackModel ?? null,
+      });
+    }
   });
 });

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { repositories } from "@omniralph/db";
+import { BUILT_IN_REVIEW_PROFILES, repositories } from "@omniralph/db";
 import {
   DEFAULT_RALPH_SETTINGS,
   RalphSettingsInput,
+  ReviewProfileInput,
   ralphSettingsFormValues,
   type RalphSettingsInput as RalphInput,
 } from "@omniralph/shared";
@@ -230,6 +231,24 @@ describe("repository change lists", () => {
 });
 
 describe("profile change lists", () => {
+  it("saves a profile left unedited as it was", () => {
+    for (const { model, maxTokensPerReview, maxFiles, allowRepoExploration } of [
+      ...BUILT_IN_REVIEW_PROFILES,
+      {
+        model: "claude-sonnet-5-5[1m]",
+        maxTokensPerReview: 1_234_567,
+        maxFiles: 1,
+        allowRepoExploration: false,
+      },
+    ]) {
+      const profile = { model, maxTokensPerReview, maxFiles, allowRepoExploration };
+      const values = profileValues(profileDraft(profile));
+      expect(values).toEqual(profile);
+      expect(ReviewProfileInput.parse(values)).toEqual(profile);
+      expect(settingChanges(PROFILE_SPECS, values, profile)).toEqual([]);
+    }
+  });
+
   it("lists the token cap and model old → new", () => {
     const saved = profileDraft({
       model: "claude-sonnet-5-5",
