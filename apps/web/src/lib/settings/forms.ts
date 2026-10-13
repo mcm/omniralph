@@ -170,6 +170,17 @@ export const REPOSITORY_CARDS = {
   pinning: ["pinnedHarnessIds"],
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
+/** The repository settings tabs' sections and the settings each one saves. */
+export const REPOSITORY_SECTIONS = {
+  review: [
+    ...REPOSITORY_CARDS.triggers,
+    ...REPOSITORY_CARDS.profile,
+    ...REPOSITORY_CARDS.tasks,
+    ...REPOSITORY_CARDS.files,
+  ],
+  harnesses: REPOSITORY_CARDS.pinning,
+} as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
+
 /** The repository settings' labels, showing profiles, tasks and harnesses by name. */
 export function repositorySpecs(names: {
   profiles: ReadonlyMap<string, string>;
@@ -301,6 +312,28 @@ export const RALPH_CARDS = {
   ],
   linear: ["manualLabels", "allowPreparation", "epicCompletedState"],
 } as const satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
+
+/** The settings that rewrite history or delete branches: the Danger zone saves them on their own. */
+const DANGER_KEYS = [
+  "historyRewrite",
+  "cleanupMergedWorktrees",
+  "unmergedBranchTimeoutMinutes",
+] as const satisfies readonly (keyof RalphSettingsInput)[];
+
+/** The Coding tab's sections and the settings each one saves. */
+export const CODING_SECTIONS = {
+  coding: [
+    ...RALPH_CARDS.ralph,
+    ...RALPH_CARDS.prompt,
+    ...RALPH_CARDS.tools,
+    ...RALPH_CARDS.verification,
+    ...RALPH_CARDS.followUp.filter(
+      (key) => !(DANGER_KEYS as readonly string[]).includes(key),
+    ),
+    ...RALPH_CARDS.linear,
+  ],
+  danger: DANGER_KEYS,
+} satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
 
 export const CODING_PATH_LABELS: Record<RalphCodingPath, string> = {
   legacy: "Legacy jobs",

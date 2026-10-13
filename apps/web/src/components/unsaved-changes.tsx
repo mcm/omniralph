@@ -19,6 +19,8 @@ import { installUnsavedGuard, unsavedSummary } from "@/lib/unsaved-changes";
 interface UnsavedEntry {
   label: string;
   anchorId: string;
+  /** False when the form shows its own unsaved state where it is (a settings section's footer). */
+  listed: boolean;
 }
 
 interface UnsavedContextValue {
@@ -100,16 +102,24 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   );
 }
 
-/** Marks a form as having unsaved changes while `dirty` (no-op outside the provider). */
-export function useUnsavedChanges(label: string, anchorId: string, dirty: boolean) {
+/**
+ * Marks a form as having unsaved changes while `dirty` (no-op outside the provider). Leaving the
+ * page asks first; `listed: false` keeps the form out of `UnsavedChangesBar`.
+ */
+export function useUnsavedChanges(
+  label: string,
+  anchorId: string,
+  dirty: boolean,
+  { listed = true }: { listed?: boolean } = {},
+) {
   const context = React.useContext(UnsavedContext);
   const set = context?.set;
   const key = React.useId();
   React.useEffect(() => {
     if (!set || !dirty) return;
-    set(key, { label, anchorId });
+    set(key, { label, anchorId, listed });
     return () => set(key, null);
-  }, [set, key, label, anchorId, dirty]);
+  }, [set, key, label, anchorId, dirty, listed]);
 }
 
 /** In page order: entries register in the order they became dirty. */
@@ -129,8 +139,9 @@ function inPageOrder(entries: readonly UnsavedEntry[]): UnsavedEntry[] {
  */
 export function UnsavedChangesBar() {
   const context = React.useContext(UnsavedContext);
-  if (!context || context.entries.length === 0) return null;
-  const entries = inPageOrder(context.entries);
+  const listed = context?.entries.filter((entry) => entry.listed) ?? [];
+  if (listed.length === 0) return null;
+  const entries = inPageOrder(listed);
   return (
     <div role="status" className="unsaved-bar">
       <IconAlertTriangle size={16} aria-hidden="true" className="unsaved-bar-icon" />

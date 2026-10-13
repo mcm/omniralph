@@ -141,23 +141,47 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    // A run-affecting card's save asks first, listing the changes.
-    name: "repository-settings-confirm",
+    // Failed validation: the save footer counts the fields that need attention.
+    name: "repository-settings-invalid",
     path: `/repositories/${ids.repositories.controlPanel}/settings`,
     page: "(app)/repositories/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#path-excludes", value: "!*.snap" },
+      { action: "click", selector: '#review-settings [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
+    name: "repository-coding",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "repository-harnesses",
+    path: `/repositories/${ids.repositories.controlPanel}/harnesses`,
+    page: "(app)/repositories/[id]/harnesses/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // A section's save asks first, listing the changes.
+    name: "repository-settings-confirm",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
       { action: "fill", selector: "#ralph-setup-command", value: "" },
-      { action: "click", selector: 'form[aria-label="Ralph › Verification"] [type="submit"]' },
+      { action: "click", selector: '#coding [type="submit"]' },
     ],
     viewportOnly: true,
   },
   {
-    // Two dirty cards: the bar at the bottom of the viewport counts them and links to each.
+    // The save footer sticks to the viewport bottom and counts the section's changes.
     name: "repository-settings-unsaved",
-    path: `/repositories/${ids.repositories.controlPanel}/settings`,
-    page: "(app)/repositories/[id]/settings/page.tsx",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
@@ -166,14 +190,29 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   {
-    // Following an in-app link with unsaved changes asks first.
+    // The Danger zone always asks first.
+    name: "repository-coding-danger-confirm",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#ralph-unmerged-timeout", value: "120" },
+      { action: "click", selector: '#danger-zone [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
+    // Switching tabs with unsaved changes asks first.
     name: "repository-settings-leave",
-    path: `/repositories/${ids.repositories.controlPanel}/settings`,
-    page: "(app)/repositories/[id]/settings/page.tsx",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#ralph-fallback-model", value: "sonnet" },
-      { action: "click", selector: 'a[href="/settings/profiles"]' },
+      {
+        action: "click",
+        selector: `a[href="/repositories/${ids.repositories.controlPanel}/settings"]`,
+      },
     ],
     viewportOnly: true,
   },

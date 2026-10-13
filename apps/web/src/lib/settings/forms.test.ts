@@ -12,12 +12,14 @@ import {
   PROFILE_SPECS,
   profileDraft,
   profileValues,
+  CODING_SECTIONS,
   RALPH_CARDS,
   RALPH_REPOSITORY_DEFAULTS,
   ralphDraft,
   ralphSpecs,
   ralphValues,
   REPOSITORY_CARDS,
+  REPOSITORY_SECTIONS,
   regroupTyped,
   REPOSITORY_SETTING_DEFAULTS,
   repositoryDraft,
@@ -121,6 +123,23 @@ describe("Ralph change lists", () => {
     const keys = Object.values(RALPH_CARDS).flat();
     expect(new Set(keys).size).toBe(keys.length);
     expect([...keys].sort()).toEqual(Object.keys(RalphSettingsInput.shape).sort());
+  });
+
+  it("covers every Coding setting with exactly one section, the destructive ones in the Danger zone", () => {
+    const keys = Object.values(CODING_SECTIONS).flat();
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort()).toEqual(Object.keys(RalphSettingsInput.shape).sort());
+    expect([...CODING_SECTIONS.danger].sort()).toEqual(
+      ["cleanupMergedWorktrees", "historyRewrite", "unmergedBranchTimeoutMinutes"],
+    );
+  });
+});
+
+describe("repository sections", () => {
+  it("covers every repository setting with exactly one section", () => {
+    const keys = Object.values(REPOSITORY_SECTIONS).flat();
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort()).toEqual(Object.values(REPOSITORY_CARDS).flat().sort());
   });
 });
 

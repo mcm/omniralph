@@ -15,6 +15,13 @@ import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { ralphTaskErrors, saveRepositorySettings } from "@/lib/repositories/settings";
 
+/** Refreshes a repository's settings tabs (Review settings, Coding and Harnesses). */
+function revalidateRepositorySettings(repositoryId: string) {
+  for (const tab of ["settings", "coding", "harnesses"]) {
+    revalidatePath(`/repositories/${repositoryId}/${tab}`);
+  }
+}
+
 /**
  * Saves a repository's review settings, including which review tasks its
  * review runs fan out to and the task correlating their findings (built-in or
@@ -72,7 +79,7 @@ export async function updateRepositorySettings(
           },
         };
     }
-    revalidatePath(`/repositories/${repositoryId}/settings`);
+    revalidateRepositorySettings(repositoryId);
     revalidatePath("/repositories");
     revalidatePath("/harnesses", "layout");
   });
@@ -99,13 +106,13 @@ export async function updateRepositoryTaskTypes(
     if (!(await setRepositorySwitches(getDb(), admin.organization.id, repositoryId, parsed.data))) {
       return { ok: false, error: "That repository isn't connected." };
     }
-    revalidatePath(`/repositories/${repositoryId}/settings`);
+    revalidateRepositorySettings(repositoryId);
     revalidatePath("/repositories");
   });
 }
 
 /**
- * Saves a repository's Ralph section: which Linear issues route to it, whether its runs use the legacy jobs or
+ * Saves a repository's Coding tab: which Linear issues route to it, whether its runs use the legacy jobs or
  * coding tasks (`coding_path`) and which story and request tasks (built-in
  * or the organization's own), and how its runs work (cyralph's
  * per-repository settings). The next job and decision of every run pick it up.
@@ -149,6 +156,6 @@ export async function updateRalphSettings(
       requestTaskId,
     });
     if (!saved) return { ok: false, error: "That repository isn't connected." };
-    revalidatePath(`/repositories/${repositoryId}/settings`);
+    revalidateRepositorySettings(repositoryId);
   });
 }
