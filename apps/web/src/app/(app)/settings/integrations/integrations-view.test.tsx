@@ -31,6 +31,7 @@ const SERVER: DiscordServer = {
 
 let chatTasks: ChatTasksSettings = {
   defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+  builtinDefaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
   choices: {
     askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code", builtin: true }],
     startWork: [{ id: "builtin:handle-request", name: "Handle a request", builtin: true }],
@@ -189,6 +190,7 @@ describe("IntegrationsView › Chat tasks › custom tasks", () => {
 
   it("lists the organization's own tasks in every picker, selected where chosen", () => {
     chatTasks = {
+      ...chatTasks,
       defaults: { askAboutCode: QUERY, startWork: "builtin:handle-request" },
       choices: {
         askAboutCode: [

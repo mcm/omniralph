@@ -3,20 +3,17 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
-  Button,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Cluster,
   Field,
   Input,
   NativeSelect,
   Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
-import { IconDeviceFloppy } from "@tabler/icons-react";
 import {
   CODING_FIELD_NAMES,
   TASK_TYPES,
@@ -25,22 +22,27 @@ import {
   type SinkKind,
   type TaskDefinition,
   type TaskType,
-  type TokenBudget,
-  type ToolSettings,
-  type TriggerKind,
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
+import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
-import { Choices, errorFor, splitNames } from "../agents/form-parts";
+import { NOT_SET, withDefault } from "@/lib/settings/changes";
+import { Choices, EditorActions, errorFor, splitNames } from "../agents/form-parts";
 import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
 import {
-  codingDraft,
+  defaultPool,
+  taskChanges,
+  taskDraft,
+  tokenBudget,
+  type BudgetMode,
+  type TaskDraft,
+} from "./task-changes";
+import {
   codingFields,
   CodingFields,
-  commandDraft,
   CommandsEditor,
   parseOutputSchema,
   setupCommand,
@@ -77,30 +79,6 @@ export interface TaskFormProps {
   initialErrors?: FieldErrors;
 }
 
-type BudgetMode = "profile" | "tokens" | "profileFraction";
-
-/** The pool a new task of `taskType` defaults to: coding runs are long. */
-function defaultPool(taskType: TaskType, pools: readonly PoolName[]): PoolName | "" {
-  const preferred = taskType === "coding" ? "long" : "short";
-  return pools.includes(preferred) ? preferred : (pools[0] ?? "");
-}
-
-function budgetMode(budget: TokenBudget | undefined): BudgetMode {
-  if (!budget) return "profile";
-  return "tokens" in budget ? "tokens" : "profileFraction";
-}
-
-function budgetAmount(budget: TokenBudget | undefined): string {
-  if (!budget) return "";
-  return "tokens" in budget ? String(budget.tokens) : String(budget.profileFraction * 100);
-}
-
-function tokenBudget(mode: BudgetMode, amount: string): TokenBudget {
-  if (mode === "profile") return null;
-  const value = Number(amount.trim() || Number.NaN);
-  return mode === "tokens" ? { tokens: value } : { profileFraction: value / 100 };
-}
-
 /**
  * The settings of `task` this form doesn't edit (system text, variable
  * limits, turn and idle limits), kept as they are.
@@ -120,10 +98,6 @@ function setupHint(commands: readonly { name: string }[]): string | undefined {
   return `Setup variables: ${names.map((name) => `{{setup.${name}}}`).join(", ")}.`;
 }
 
-function schemaText(schema: TaskDefinition["outputSchema"]): string {
-  return schema === undefined ? "" : JSON.stringify(schema, null, 2);
-}
-
 /** The form creating a task, or editing one of the organization's (common fields). */
 export function TaskForm({
   task,
@@ -135,85 +109,76 @@ export function TaskForm({
 }: TaskFormProps) {
   const router = useRouter();
   const { pending, run } = useAction();
-  const [name, setName] = React.useState(task?.name ?? "");
-  const [description, setDescription] = React.useState(task?.description ?? "");
-  const [taskType, setTaskType] = React.useState<TaskType>(task?.taskType ?? "query");
-  const [agentId, setAgentId] = React.useState(task?.agentId ?? "");
-  const [triggers, setTriggers] = React.useState<TriggerKind[]>(task?.triggers ?? []);
-  const [promptTemplate, setPromptTemplate] = React.useState(task?.promptTemplate ?? "");
-  const [sink, setSink] = React.useState<SinkKind | "">(task?.sink ?? "");
-  const [pool, setPool] = React.useState<PoolName | "">(task?.pool ?? defaultPool(taskType, pools));
-  const [model, setModel] = React.useState(task?.model ?? "");
-  const [budgetModeValue, setBudgetMode] = React.useState(budgetMode(task?.tokenBudget));
-  const [budgetAmountValue, setBudgetAmount] = React.useState(budgetAmount(task?.tokenBudget));
-  const [setupCommands, setSetupCommands] = React.useState(
-    (task?.setupCommands ?? []).map(commandDraft),
-  );
-  const [teardownCommands, setTeardownCommands] = React.useState(
-    (task?.teardownCommands ?? []).map(commandDraft),
-  );
-  const [toolSettings, setToolSettings] = React.useState<ToolSettings>(
-    task?.toolSettings ?? { shell: false, linearRead: false, network: false },
-  );
-  const [requiredInstallables, setRequiredInstallables] = React.useState(
-    task?.requires?.installables.join(", ") ?? "",
-  );
-  const [requiredHostTools, setRequiredHostTools] = React.useState(
-    task?.requires?.hostTools.join(", ") ?? "",
-  );
-  const [outputSchema, setOutputSchema] = React.useState(schemaText(task?.outputSchema));
-  const [coding, setCoding] = React.useState(codingDraft(task));
+  const [saved, setSaved] = React.useState(() => taskDraft(task, pools));
+  const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
+  const [confirming, setConfirming] = React.useState(false);
+  const set = (change: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...change }));
+  const { taskType, toolSettings } = draft;
+  const names = {
+    agents: new Map(agents.map((agent) => [agent.id, agent.name])),
+    tasks: new Map(prDescriptionTasks.map((choice) => [choice.id, choice.name])),
+  };
+  const changes = taskChanges(saved, draft, names);
+  const dirty = changes.length > 0;
 
   const typeAgents = agents.filter((agent) => agent.taskTypes.includes(taskType));
   const typeSinks = sinks.filter((option) => option.taskType === taskType);
   const typeTriggers = TRIGGERS_BY_TASK_TYPE[taskType];
 
   /** A new type drops the choices it doesn't accept. */
-  const changeTaskType = (next: TaskType) => {
-    setTaskType(next);
-    setTriggers((current) =>
-      current.filter((trigger) => TRIGGERS_BY_TASK_TYPE[next].includes(trigger)),
-    );
-    if (!agents.some((agent) => agent.id === agentId && agent.taskTypes.includes(next))) {
-      setAgentId("");
-    }
-    if (!sinks.some((option) => option.kind === sink && option.taskType === next)) setSink("");
-    if (!task) setPool(defaultPool(next, pools));
-  };
+  const changeTaskType = (next: TaskType) =>
+    setDraft((current) => ({
+      ...current,
+      taskType: next,
+      triggers: current.triggers.filter((trigger) => TRIGGERS_BY_TASK_TYPE[next].includes(trigger)),
+      agentId: agents.some(
+        (agent) => agent.id === current.agentId && agent.taskTypes.includes(next),
+      )
+        ? current.agentId
+        : "",
+      sink: sinks.some((option) => option.kind === current.sink && option.taskType === next)
+        ? current.sink
+        : "",
+      pool: task ? current.pool : defaultPool(next, pools),
+      // Shell is a query task setting: other types keep the saved one.
+      toolSettings:
+        next === "query"
+          ? current.toolSettings
+          : { ...current.toolSettings, shell: saved.toolSettings.shell },
+    }));
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const schema = taskType === "query" ? parseOutputSchema(outputSchema) : {};
+  const save = () => {
+    const schema = taskType === "query" ? parseOutputSchema(draft.outputSchema) : {};
     if ("error" in schema) {
       setErrors({ outputSchema: schema.error });
       return;
     }
     const input = {
       ...keptFields(task),
-      name,
-      description,
+      name: draft.name,
+      description: draft.description,
       taskType,
-      agentId,
-      triggers,
-      promptTemplate,
-      sink,
-      pool,
-      model: model.trim() || undefined,
-      tokenBudget: tokenBudget(budgetModeValue, budgetAmountValue),
-      setupCommands: setupCommands.map(setupCommand),
-      teardownCommands: teardownCommands.map(teardownCommand),
+      agentId: draft.agentId,
+      triggers: draft.triggers,
+      promptTemplate: draft.promptTemplate,
+      sink: draft.sink,
+      pool: draft.pool,
+      model: draft.model.trim() || undefined,
+      tokenBudget: tokenBudget(draft.budgetMode, draft.budgetAmount),
+      setupCommands: draft.setupCommands.map(setupCommand),
+      teardownCommands: draft.teardownCommands.map(teardownCommand),
       // Shell is a query task setting: other types keep what they have.
       toolSettings: {
         ...toolSettings,
         shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
       },
       requires: {
-        installables: splitNames(requiredInstallables),
-        hostTools: splitNames(requiredHostTools),
+        installables: splitNames(draft.requiredInstallables),
+        hostTools: splitNames(draft.requiredHostTools),
       },
       ...(schema.schema && { outputSchema: schema.schema }),
-      ...(taskType === "coding" && codingFields(coding)),
+      ...(taskType === "coding" && codingFields(draft.coding)),
       // Unset choices fail validation with their field's error.
     } as TaskDefinitionFields;
     let savedId = task?.id;
@@ -224,13 +189,27 @@ export function TaskForm({
         if (result.ok && "id" in result) savedId = result.id;
         return result;
       },
-      task ? `${name} saved` : `${name} created`,
+      task ? `${draft.name} saved` : `${draft.name} created`,
       () => {
         setErrors({});
+        setSaved(draft);
         if (savedId) router.push(taskHref(savedId));
       },
       (result) => setErrors(result.fieldErrors ?? {}),
     );
+  };
+
+  /** An edit confirms its change list first; a new task saves straight away. */
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pending) return;
+    if (!task) save();
+    else if (dirty) setConfirming(true);
+  };
+
+  const discard = () => {
+    setDraft(saved);
+    setErrors({});
   };
 
   const title = task ? `Edit ${task.name}` : "New task";
@@ -250,7 +229,7 @@ export function TaskForm({
           description="A task runs an agent with its prompt on the triggers it accepts and hands the output to its sink. Changes apply to the next run."
         />
         <Stack gap={6} asChild>
-          <form onSubmit={save} noValidate>
+          <form onSubmit={submit} noValidate>
             {errors.form && <p className="m-0 text-danger-fg">{errors.form}</p>}
             <Card>
               <CardHeader>
@@ -263,8 +242,8 @@ export function TaskForm({
                     disabled={pending}
                     error={Boolean(errors.name)}
                     aria-invalid={Boolean(errors.name)}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={draft.name}
+                    onChange={(e) => set({ name: e.target.value })}
                   />
                 </Field>
                 <Field label="Description" htmlFor="task-description" error={errors.description}>
@@ -273,15 +252,15 @@ export function TaskForm({
                     rows={2}
                     disabled={pending}
                     aria-invalid={Boolean(errors.description)}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    value={draft.description}
+                    onChange={(e) => set({ description: e.target.value })}
                   />
                 </Field>
                 <div className="definition-grid-wide">
                   <Field
                     label="Task type"
                     htmlFor="task-type"
-                    description="How the harness runs it."
+                    description={withDefault("How the harness runs it.", TASK_TYPE_LABELS.query)}
                     error={errors.taskType}
                     required
                   >
@@ -302,7 +281,7 @@ export function TaskForm({
                   <Field
                     label="Agent"
                     htmlFor="task-agent"
-                    description="Agents suited to the task type."
+                    description={withDefault("Agents suited to the task type.")}
                     error={errors.agentId}
                     required
                   >
@@ -310,8 +289,8 @@ export function TaskForm({
                       id="task-agent"
                       disabled={pending}
                       aria-invalid={Boolean(errors.agentId)}
-                      value={agentId}
-                      onChange={(e) => setAgentId(e.target.value)}
+                      value={draft.agentId}
+                      onChange={(e) => set({ agentId: e.target.value })}
                     >
                       <option value="">Choose an agent</option>
                       {typeAgents.map((agent) => (
@@ -325,15 +304,17 @@ export function TaskForm({
                 <Field
                   label="Triggers"
                   htmlFor="task-triggers"
-                  description="The events that may start it; the task type decides which it accepts."
+                  description={withDefault(
+                    "The events that may start it; the task type decides which it accepts.",
+                  )}
                   error={errorFor(errors, "triggers")}
                   required
                 >
                   <Choices
                     id="task-triggers"
                     options={typeTriggers}
-                    value={triggers}
-                    onChange={setTriggers}
+                    value={draft.triggers}
+                    onChange={(triggers) => set({ triggers })}
                     disabled={pending}
                   />
                 </Field>
@@ -352,7 +333,11 @@ export function TaskForm({
                 <Field
                   label="Template"
                   htmlFor="task-prompt-template"
-                  description={setupHint(setupCommands)}
+                  description={withDefault(
+                    ["Rendered with the trigger's variables.", setupHint(draft.setupCommands)]
+                      .filter(Boolean)
+                      .join(" "),
+                  )}
                   error={errors.promptTemplate}
                   required
                 >
@@ -361,8 +346,8 @@ export function TaskForm({
                     rows={16}
                     disabled={pending}
                     aria-invalid={Boolean(errors.promptTemplate)}
-                    value={promptTemplate}
-                    onChange={(e) => setPromptTemplate(e.target.value)}
+                    value={draft.promptTemplate}
+                    onChange={(e) => set({ promptTemplate: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
@@ -380,8 +365,8 @@ export function TaskForm({
               <CardContent>
                 <CommandsEditor
                   field="setupCommands"
-                  commands={setupCommands}
-                  onChange={setSetupCommands}
+                  commands={draft.setupCommands}
+                  onChange={(setupCommands) => set({ setupCommands })}
                   errors={errors}
                   disabled={pending}
                 />
@@ -399,8 +384,8 @@ export function TaskForm({
               <CardContent>
                 <CommandsEditor
                   field="teardownCommands"
-                  commands={teardownCommands}
-                  onChange={setTeardownCommands}
+                  commands={draft.teardownCommands}
+                  onChange={(teardownCommands) => set({ teardownCommands })}
                   errors={errors}
                   disabled={pending}
                 />
@@ -410,12 +395,14 @@ export function TaskForm({
             <Card>
               <CardHeader>
                 <CardTitle as="h2">Tool settings</CardTitle>
-                <CardDescription>Narrow the agent&apos;s tools for this task.</CardDescription>
+                <CardDescription>
+                  {withDefault("Narrow the agent's tools for this task.", "all off")}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <ToolSettingsFields
                   value={toolSettings}
-                  onChange={setToolSettings}
+                  onChange={(next) => set({ toolSettings: next })}
                   query={taskType === "query"}
                   errors={errors}
                   disabled={pending}
@@ -435,7 +422,9 @@ export function TaskForm({
                 <Field
                   label="Installables"
                   htmlFor="task-requires-installables"
-                  description="Comma-separated npm package names, e.g. @omniralph/code-graph."
+                  description={withDefault(
+                    "Comma-separated npm package names, e.g. @omniralph/code-graph.",
+                  )}
                   error={errorFor(errors, "requires.installables")}
                 >
                   <Input
@@ -443,15 +432,17 @@ export function TaskForm({
                     disabled={pending}
                     error={Boolean(errorFor(errors, "requires.installables"))}
                     aria-invalid={Boolean(errorFor(errors, "requires.installables"))}
-                    value={requiredInstallables}
-                    onChange={(e) => setRequiredInstallables(e.target.value)}
+                    value={draft.requiredInstallables}
+                    onChange={(e) => set({ requiredInstallables: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
                 <Field
                   label="Host tools"
                   htmlFor="task-requires-host-tools"
-                  description="Comma-separated names from Settings › Harness defaults › Host tools, e.g. opengrep."
+                  description={withDefault(
+                    "Comma-separated names from Settings › Harness defaults › Host tools, e.g. opengrep.",
+                  )}
                   error={errorFor(errors, "requires.hostTools")}
                 >
                   <Input
@@ -459,8 +450,8 @@ export function TaskForm({
                     disabled={pending}
                     error={Boolean(errorFor(errors, "requires.hostTools"))}
                     aria-invalid={Boolean(errorFor(errors, "requires.hostTools"))}
-                    value={requiredHostTools}
-                    onChange={(e) => setRequiredHostTools(e.target.value)}
+                    value={draft.requiredHostTools}
+                    onChange={(e) => set({ requiredHostTools: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
@@ -480,6 +471,7 @@ export function TaskForm({
                   <Field
                     label="Schema"
                     htmlFor="task-output-schema"
+                    description={withDefault("Leave it empty for a Markdown answer.")}
                     error={errorFor(errors, "outputSchema")}
                   >
                     <Textarea
@@ -487,8 +479,8 @@ export function TaskForm({
                       rows={10}
                       disabled={pending}
                       aria-invalid={Boolean(errorFor(errors, "outputSchema"))}
-                      value={outputSchema}
-                      onChange={(e) => setOutputSchema(e.target.value)}
+                      value={draft.outputSchema}
+                      onChange={(e) => set({ outputSchema: e.target.value })}
                       className="settings-mono"
                     />
                   </Field>
@@ -506,8 +498,8 @@ export function TaskForm({
                 </CardHeader>
                 <CardContent>
                   <CodingFields
-                    value={coding}
-                    onChange={setCoding}
+                    value={draft.coding}
+                    onChange={(coding) => set({ coding })}
                     prDescriptionTasks={prDescriptionTasks}
                     errors={errors}
                     disabled={pending}
@@ -525,7 +517,7 @@ export function TaskForm({
                 <Field
                   label="Sink"
                   htmlFor="task-sink"
-                  description="What applies the run's output."
+                  description={withDefault("What applies the run's output.")}
                   error={errors.sink}
                   required
                 >
@@ -533,8 +525,8 @@ export function TaskForm({
                     id="task-sink"
                     disabled={pending}
                     aria-invalid={Boolean(errors.sink)}
-                    value={sink}
-                    onChange={(e) => setSink(e.target.value as SinkKind)}
+                    value={draft.sink}
+                    onChange={(e) => set({ sink: e.target.value as SinkKind })}
                   >
                     <option value="">Choose a sink</option>
                     {typeSinks.map((option) => (
@@ -547,7 +539,10 @@ export function TaskForm({
                 <Field
                   label="Pool"
                   htmlFor="task-pool"
-                  description="Whose concurrency slots its runs take."
+                  description={withDefault(
+                    "Whose concurrency slots its runs take.",
+                    defaultPool(taskType, pools) || NOT_SET,
+                  )}
                   error={errors.pool}
                   required
                 >
@@ -555,10 +550,10 @@ export function TaskForm({
                     id="task-pool"
                     disabled={pending}
                     aria-invalid={Boolean(errors.pool)}
-                    value={pool}
-                    onChange={(e) => setPool(e.target.value as PoolName)}
+                    value={draft.pool}
+                    onChange={(e) => set({ pool: e.target.value as PoolName })}
                   >
-                    {pool === "" && <option value="">Choose a pool</option>}
+                    {draft.pool === "" && <option value="">Choose a pool</option>}
                     {pools.map((name) => (
                       <option key={name} value={name}>
                         {name}
@@ -569,7 +564,10 @@ export function TaskForm({
                 <Field
                   label="Model override"
                   htmlFor="task-model"
-                  description="Claude model ID. Empty uses the agent's model."
+                  description={withDefault(
+                    "Claude model ID. Leave it empty to use the agent's model.",
+                    "the agent's model",
+                  )}
                   error={errors.model}
                 >
                   <Input
@@ -577,36 +575,41 @@ export function TaskForm({
                     disabled={pending}
                     error={Boolean(errors.model)}
                     aria-invalid={Boolean(errors.model)}
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
+                    value={draft.model}
+                    onChange={(e) => set({ model: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
-                <Field label="Token budget" htmlFor="task-token-budget" error={budgetError}>
+                <Field
+                  label="Token budget"
+                  htmlFor="task-token-budget"
+                  description={withDefault("The most tokens a run may use.", "the profile budget")}
+                  error={budgetError}
+                >
                   <div className="task-budget">
                     <NativeSelect
                       id="task-token-budget"
                       disabled={pending}
                       aria-invalid={Boolean(budgetError)}
-                      value={budgetModeValue}
-                      onChange={(e) => setBudgetMode(e.target.value as BudgetMode)}
+                      value={draft.budgetMode}
+                      onChange={(e) => set({ budgetMode: e.target.value as BudgetMode })}
                     >
                       <option value="profile">Profile budget</option>
                       <option value="tokens">Tokens</option>
                       <option value="profileFraction">% of the profile budget</option>
                     </NativeSelect>
-                    {budgetModeValue !== "profile" && (
+                    {draft.budgetMode !== "profile" && (
                       <Input
                         id="task-token-budget-amount"
-                        aria-label={budgetModeValue === "tokens" ? "Tokens" : "Percent"}
+                        aria-label={draft.budgetMode === "tokens" ? "Tokens" : "Percent"}
                         type="number"
                         min={1}
-                        max={budgetModeValue === "tokens" ? undefined : 100}
+                        max={draft.budgetMode === "tokens" ? undefined : 100}
                         disabled={pending}
                         error={Boolean(budgetError)}
                         aria-invalid={Boolean(budgetError)}
-                        value={budgetAmountValue}
-                        onChange={(e) => setBudgetAmount(e.target.value)}
+                        value={draft.budgetAmount}
+                        onChange={(e) => set({ budgetAmount: e.target.value })}
                       />
                     )}
                   </div>
@@ -614,22 +617,31 @@ export function TaskForm({
               </CardContent>
             </Card>
 
-            <Cluster>
-              <Button type="submit" variant="primary" disabled={pending}>
-                <IconDeviceFloppy size={14} />
-                {pending ? "Saving…" : task ? "Save task" : "Create task"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => router.push(task ? taskHref(task.id) : "/settings/tasks")}
-              >
-                Cancel
-              </Button>
-            </Cluster>
+            <EditorActions
+              anchorId="task-form-actions"
+              label={task?.name ?? "New task"}
+              editing={task !== null}
+              dirty={dirty}
+              pending={pending}
+              saveLabel={task ? "Save task" : "Create task"}
+              onDiscard={discard}
+              cancelHref={task ? taskHref(task.id) : "/settings/tasks"}
+            />
           </form>
         </Stack>
+        {task && (
+          <ConfirmChangesDialog
+            open={confirming}
+            onCancel={() => setConfirming(false)}
+            title={`Save ${task.name}?`}
+            consequence="The task's next run uses the new settings."
+            changes={changes}
+            onConfirm={() => {
+              setConfirming(false);
+              save();
+            }}
+          />
+        )}
       </main>
     </>
   );

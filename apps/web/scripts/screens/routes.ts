@@ -198,6 +198,18 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
+    name: "settings-agent-edit-confirm",
+    path: `/settings/agents/${ids.definitions.agent}/edit`,
+    page: "(app)/settings/agents/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#agent-fallback-model", value: "claude-haiku-5-5" },
+      { action: "fill", selector: "#agent-system-prompt", value: "Answer briefly.\nCite files." },
+      { action: "click", selector: '#agent-form-actions [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
     name: "settings-agent-new",
     path: "/settings/agents/new",
     page: "(app)/settings/agents/new/page.tsx",
@@ -226,6 +238,32 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     path: `/settings/tasks/${ids.definitions.task}/edit`,
     page: "(app)/settings/tasks/[id]/edit/page.tsx",
     auth: "signed-in",
+  },
+  {
+    // Two unsaved edits: the Unsaved changes badge, Discard and the sticky bar.
+    name: "settings-task-edit-dirty",
+    path: `/settings/tasks/${ids.definitions.task}/edit`,
+    page: "(app)/settings/tasks/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#task-description", value: "Answers questions about code." },
+      { action: "fill", selector: "#task-model", value: "claude-sonnet-5-5" },
+      // Scrolls the save row (and its badge, which a click leaves alone) into view.
+      { action: "click", selector: "#task-form-actions > :last-child" },
+    ],
+    viewportOnly: true,
+  },
+  {
+    name: "settings-task-edit-confirm",
+    path: `/settings/tasks/${ids.definitions.task}/edit`,
+    page: "(app)/settings/tasks/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#task-model", value: "claude-sonnet-5-5" },
+      { action: "fill", selector: "#task-description", value: "Answers questions about code." },
+      { action: "click", selector: '#task-form-actions [type="submit"]' },
+    ],
+    viewportOnly: true,
   },
   {
     name: "settings-task-new",

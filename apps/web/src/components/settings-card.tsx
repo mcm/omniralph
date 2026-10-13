@@ -93,6 +93,50 @@ export function SettingChangeList({ changes }: { changes: readonly SettingChange
   );
 }
 
+/** Asks before saving run-affecting changes: what they affect and the "old → new" list. */
+export function ConfirmChangesDialog({
+  open,
+  onCancel,
+  title,
+  consequence,
+  affected,
+  changes,
+  onConfirm,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  /** E.g. "Save Security review?". */
+  title: string;
+  consequence: string;
+  affected?: React.ReactNode;
+  changes: readonly SettingChange[];
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{consequence}</AlertDialogDescription>
+          <SettingChangeList changes={changes} />
+          {affected}
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>
+            Save {changes.length === 1 ? "1 change" : `${changes.length} changes`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 /**
  * A card of related settings with its own save. Save is enabled, and Discard shown, only while
  * the card has unsaved changes; a run-affecting card confirms the change list first. While it
@@ -177,31 +221,17 @@ export function SettingsCard({
         )}
       </form>
       {confirm && (
-        <AlertDialog
+        <ConfirmChangesDialog
           open={confirming !== null}
-          onOpenChange={(open) => {
-            if (!open) setConfirming(null);
+          onCancel={() => setConfirming(null)}
+          title={`Save ${title}?`}
+          consequence={confirm.consequence}
+          affected={confirm.affected}
+          changes={changes}
+          onConfirm={() => {
+            if (confirming) save(confirming);
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Save {title}?</AlertDialogTitle>
-              <AlertDialogDescription>{confirm.consequence}</AlertDialogDescription>
-              <SettingChangeList changes={changes} />
-              {confirm.affected}
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep editing</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  if (confirming) save(confirming);
-                }}
-              >
-                Save {changes.length === 1 ? "1 change" : `${changes.length} changes`}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        />
       )}
     </Card>
   );

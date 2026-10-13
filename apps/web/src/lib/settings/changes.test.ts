@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatLongText,
   formatSettingValue,
   sameSettingValue,
   settingChanges,
@@ -7,6 +8,15 @@ import {
   withoutFieldErrors,
   type SettingSpec,
 } from "./changes";
+
+describe("formatLongText", () => {
+  it("shows short one-line text whole and summarizes the rest", () => {
+    expect(formatLongText("Review it.")).toBe("Review it.");
+    expect(formatLongText("")).toBe("Not set");
+    expect(formatLongText("a\nb")).toBe("2 lines, 3 characters");
+    expect(formatLongText("x".repeat(1200))).toBe("1 line, 1,200 characters");
+  });
+});
 
 describe("formatSettingValue", () => {
   it("shows flags as On/Off, empty values as Not set and lists comma-separated", () => {

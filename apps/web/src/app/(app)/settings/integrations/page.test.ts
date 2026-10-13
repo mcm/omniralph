@@ -51,6 +51,10 @@ vi.mock("@/lib/chat/discord-oauth", () => ({
   discordOAuthConfig: () => (state.discordConfigured ? { applicationId: "a" } : null),
 }));
 vi.mock("@omniralph/db", () => ({
+  DEFAULT_CHAT_TASKS: {
+    askAboutCode: "builtin:ask-about-code",
+    startWork: "builtin:handle-request",
+  },
   listStoredTaskDefinitions: async (_db: unknown, organizationId: string) =>
     organizationId === "org-a" ? await storedTaskRows() : [],
   // Only the active organization's integration exists.
@@ -227,6 +231,10 @@ describe("Settings › Integrations page › chat tasks", () => {
     const { props } = await render();
     expect(props.chatTasks).toEqual({
       defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+      builtinDefaults: {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: "builtin:handle-request",
+      },
       // Built-in and the organization's own tasks of the role's type accepting chat.request.
       choices: {
         askAboutCode: [

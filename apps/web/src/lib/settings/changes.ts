@@ -40,6 +40,26 @@ export function formatSettingValue(value: SettingValue): string {
   return value.length === 0 ? "Not set" : value.join(", ");
 }
 
+/** Longest text the change list shows whole; longer or multi-line text is summarized. */
+const SHORT_TEXT = 80;
+
+/**
+ * A text setting that may be long (a prompt, a document) as the change list shows it: whole when
+ * it is short and on one line, else its size ("12 lines, 840 characters").
+ */
+export function formatLongText(value: SettingValue): string {
+  if (typeof value !== "string" || value.trim() === "") return formatSettingValue(value);
+  if (value.length <= SHORT_TEXT && !value.includes("\n")) return value;
+  return textSize(value);
+}
+
+/** A text's size: "12 lines, 840 characters". */
+export function textSize(text: string): string {
+  const count = (n: number, noun: string) =>
+    `${n.toLocaleString("en-US")} ${noun}${n === 1 ? "" : "s"}`;
+  return `${count(text.split("\n").length, "line")}, ${count(text.length, "character")}`;
+}
+
 /** Whether two setting values are the same (lists element by element, in order). */
 export function sameSettingValue(a: SettingValue, b: SettingValue): boolean {
   if (Array.isArray(a) || Array.isArray(b)) {
