@@ -27,6 +27,7 @@ import {
   jobs,
   listStories,
   pinRepositoryToHarness,
+  ralphLanes,
   ralphRuns,
   repositories,
   runMigrations,
@@ -887,11 +888,12 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         ship: false,
       });
       const second = await request(run.id, { summary: "Fixed CI." });
+      // The app lane has no harness of its own yet: any harness may take its job.
       expect(second.job).toMatchObject({
         type: "ralph.request",
         ...routing("builtin:handle-request"),
         repositoryId: gitlabRepoId,
-        targetHarnessId: agentA,
+        targetHarnessId: null,
       });
       expect(second.payload).toMatchObject({
         repositoryId: gitlabRepoId,
@@ -1665,7 +1667,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
     await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
-    await db.update(ralphRuns).set({ harnessId: foreign!.id }).where(eq(ralphRuns.id, run.id));
+    await db.update(ralphLanes).set({ harnessId: foreign!.id }).where(eq(ralphLanes.runId, run.id));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
@@ -2337,6 +2339,51 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       ]);
     });
 
+    it("sends each lane's jobs to its own harness when its repository is pinned to another", async () => {
+      await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: repoId });
+      await pinRepositoryToHarness(db, { harnessId: agentB, repositoryId: gitlabRepoId });
+      const t = crossRepo("Web");
+      const run = await delegate(t.epic.id);
+      const laneHarnesses = async () =>
+        Object.fromEntries((await listLanes(db, run.id)).map((l) => [l.repositoryId, l.harnessId]));
+
+      expect(await activeJob(run.id)).toMatchObject({
+        repositoryId: repoId,
+        targetHarnessId: agentA,
+      });
+      expect((await work(run.id, { commitSha: sha(51) }, agentA)).story.identifier).toBe("ENG-2");
+      expect(await activeJob(run.id)).toMatchObject({
+        repositoryId: gitlabRepoId,
+        targetHarnessId: agentB,
+      });
+      expect((await work(run.id, { commitSha: sha(52) }, agentB)).story.identifier).toBe("ENG-3");
+      // Starting the app lane's job left the main lane (and the run) on A.
+      expect(await laneHarnesses()).toEqual({ [repoId]: agentA, [gitlabRepoId]: agentB });
+      expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
+      expect(await activeJob(run.id)).toMatchObject({
+        repositoryId: repoId,
+        targetHarnessId: agentA,
+      });
+      expect((await work(run.id, { commitSha: sha(53) }, agentA)).story.identifier).toBe("ENG-4");
+
+      // Each lane's describe job goes to its harness too.
+      expect(await activeJob(run.id)).toMatchObject({
+        type: "ralph.describe-pr",
+        repositoryId: repoId,
+        targetHarnessId: agentA,
+      });
+      await describePr(run.id, { title: "API: priority" }, agentA);
+      expect(await activeJob(run.id)).toMatchObject({
+        type: "ralph.describe-pr",
+        repositoryId: gitlabRepoId,
+        targetHarnessId: agentB,
+      });
+      await describePr(run.id, { title: "Web: badge" }, agentB);
+      expect(await laneHarnesses()).toEqual({ [repoId]: agentA, [gitlabRepoId]: agentB });
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api", "group/app"]);
+    });
+
     /** Runs `body` with the GitLab repository's ralph settings changed. */
     async function withAppSettings(
       settings: Partial<typeof DEFAULT_RALPH_SETTINGS>,
@@ -2389,10 +2436,11 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         ]);
 
         // ENG-3 runs in its lane: that repository, the same branch on its base, its settings and gates.
+        // That lane has no harness of its own yet: any harness may take its job.
         const job = await activeJob(run.id);
         expect(job).toMatchObject({
           repositoryId: gitlabRepoId,
-          targetHarnessId: agentA,
+          targetHarnessId: null,
         });
         const second = await work(run.id, { commitSha: sha(42) }, agentA);
         expect(second).toMatchObject({
@@ -2408,7 +2456,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
           `on \`${web.branch}\` in \`group/app\``,
         );
 
-        // The sticky agent takes every lane's jobs.
+        // The main lane's jobs stick to its harness.
         expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
         expect((await work(run.id, { commitSha: sha(43) }, agentA)).repositoryId).toBe(repoId);
 
