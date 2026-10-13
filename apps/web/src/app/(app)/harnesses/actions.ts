@@ -2,6 +2,7 @@
 
 import {
   createHarnessEnrollment,
+  getDefaultMaxConcurrency,
   getHarnessOverview,
   getDesiredHarnessVersion,
   getRepository,
@@ -93,25 +94,21 @@ export async function createEnrollment(name: string): Promise<EnrollmentActionRe
   return created ?? { ok: false, error: "Couldn't create an enrollment token." };
 }
 
-const HarnessConfig = z
-  .object({
-    maxConcurrency: z.number().int().min(1).max(32),
-    acceptedTaskTypes: z.array(z.enum(TASK_TYPES)),
-    poolLimits: z.partialRecord(z.enum(POOLS), z.number().int().min(1)),
-  })
-  .superRefine((config, ctx) => {
-    for (const [pool, limit] of Object.entries(config.poolLimits)) {
-      if (limit !== undefined && limit > config.maxConcurrency) {
-        ctx.addIssue({ code: "custom", message: `${pool}'s limit exceeds max concurrency.` });
-      }
-    }
-  });
+const HarnessConfig = z.object({
+  maxConcurrency: z.number().int().min(1).max(32).nullable(),
+  acceptedTaskTypes: z.array(z.enum(TASK_TYPES)).nullable(),
+  poolLimits: z.partialRecord(z.enum(POOLS), z.number().int().min(1)),
+});
 export interface HarnessConfigForm {
-  maxConcurrency: number;
-  /** Task types the harness may claim jobs of (`query`, `review`, `coding`). */
-  acceptedTaskTypes: string[];
+  /** Null uses the organization's default (Settings › Harnesses). */
+  maxConcurrency: number | null;
   /**
-   * Per-pool concurrency limits (1 to `maxConcurrency`); left-out pools use
+   * Task types the harness may claim jobs of (`query`, `review`, `coding`); null uses the
+   * organization's default.
+   */
+  acceptedTaskTypes: string[] | null;
+  /**
+   * Per-pool concurrency limits (1 to the effective max concurrency); left-out pools use
    * the default.
    */
   poolLimits: Record<string, number>;
@@ -123,13 +120,19 @@ export async function updateHarnessConfig(
   input: HarnessConfigForm,
 ): Promise<ActionResult> {
   return runAdminAction(async (admin) => {
+    const invalid = {
+      ok: false,
+      error:
+        "Max concurrency must be 1–32, task types known ones, and each pool limit 1 to the max concurrency.",
+    } as const;
     const parsed = HarnessConfig.safeParse(input);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error:
-          "Max concurrency must be 1–32, task types known ones, and each pool limit 1 to the max concurrency.",
-      };
+    if (!parsed.success) return invalid;
+    // Pool limits are checked against the max concurrency the harness gets, inherited or not.
+    const maxConcurrency =
+      parsed.data.maxConcurrency ??
+      (await getDefaultMaxConcurrency(getDb(), admin.organization.id));
+    if (Object.values(parsed.data.poolLimits).some((limit) => limit > maxConcurrency)) {
+      return invalid;
     }
     if (!(await updateHarnessConfigRow(getDb(), admin.organization.id, harnessId, parsed.data))) {
       return { ok: false, error: "That harness doesn't exist or was revoked." };
