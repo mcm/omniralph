@@ -191,7 +191,7 @@ const GITHUB = "https://api.github.com/repos/acme/app";
 const github = {
   /** Current PR state the GitHub mock serves. */
   pr: { baseSha: "", headSha: "", files: [] as { filename: string; patch: string }[] },
-  reviews: [] as { id: number; body: Record<string, unknown> }[],
+  reviews: [] as { id: number; number: number; body: Record<string, unknown> }[],
   /** Issue (PR conversation) comments by ID. */
   comments: new Map<number, { issue: number; body: string }>(),
   /** Comment requests, in order: `create` (POST) or `edit` (PATCH). */
@@ -213,9 +213,13 @@ const server = setupServer(
   ),
   http.get(`${GITHUB}/pulls/:number/files`, () => HttpResponse.json(github.pr.files)),
   http.get(`${GITHUB}/compare/:basehead`, () => HttpResponse.json({ files: github.pr.files })),
-  http.post(`${GITHUB}/pulls/:number/reviews`, async ({ request }) => {
+  http.post(`${GITHUB}/pulls/:number/reviews`, async ({ params, request }) => {
     const id = 9000 + github.reviews.length;
-    github.reviews.push({ id, body: (await request.json()) as Record<string, unknown> });
+    github.reviews.push({
+      id,
+      number: Number(params.number),
+      body: (await request.json()) as Record<string, unknown>,
+    });
     return HttpResponse.json({ id });
   }),
   http.post(`${GITHUB}/issues/:number/comments`, async ({ params, request }) => {
@@ -233,18 +237,21 @@ const server = setupServer(
     github.commentRequests.push({ kind: "edit", id });
     return HttpResponse.json({ id });
   }),
-  http.get(`${GITHUB}/pulls/:number/reviews/:id/comments`, ({ params }) => {
-    const posted = github.reviews.find((r) => r.id === Number(params.id))!;
-    const comments = posted.body.comments as { path: string; line: number; side: string }[];
-    return HttpResponse.json(
-      comments.map((c, i) => ({
-        id: posted.id * 10 + i,
-        path: c.path,
-        line: c.line,
-        side: c.side,
-      })),
-    );
-  }),
+  http.get(`${GITHUB}/pulls/:number/comments`, ({ params }) =>
+    HttpResponse.json(
+      github.reviews
+        .filter((r) => r.number === Number(params.number))
+        .flatMap((posted) =>
+          (posted.body.comments as { path: string; line: number; side: string }[]).map((c, i) => ({
+            id: posted.id * 10 + i,
+            pull_request_review_id: posted.id,
+            path: c.path,
+            line: c.line,
+            side: c.side,
+          })),
+        ),
+    ),
+  ),
 );
 
 let ipCounter = 0;
