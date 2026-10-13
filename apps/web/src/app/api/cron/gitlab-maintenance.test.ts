@@ -8,6 +8,7 @@ import {
   runMigrations,
   scmConnections,
   seedReviewProfiles,
+  updateScmConnectionCredentials,
   upsertScmConnection,
   type Database,
   type ScmConnection,
@@ -267,6 +268,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/gitlab-maintenance", () => {
       expect(await tokenOf(connection.id)).toEqual({
         token: "glpat-rotated-1",
         webhookSecret: "secret",
+        rotatedAt: expect.any(String),
       });
       // The check ran with the new token (the old one is revoked).
       expect(await healthOf(connection.id)).toMatchObject({
@@ -289,6 +291,36 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/gitlab-maintenance", () => {
       ]);
       expect((await tokenOf(connection.id)).token).toBe("glpat-rotated-1");
       expect(await healthOf(connection.id)).toMatchObject({ problems: [] });
+    });
+
+    it("doesn't rotate a token another run rotated less than an hour ago", async () => {
+      const connection = await gitlabConnection(HEALTHY, "42");
+      expect(await (await cron("cron-secret")).json()).toMatchObject({ rotated: 1 });
+
+      // A second run that lists the connection after the first one finished.
+      expect(await (await cron("cron-secret")).json()).toEqual({
+        rotated: 0,
+        checked: 1,
+        problems: 0,
+        failed: 0,
+      });
+
+      expect(gitlab.rotations).toBe(1);
+      expect((await tokenOf(connection.id)).token).toBe("glpat-rotated-1");
+    });
+
+    it("rotates a token again once the last rotation is an hour old", async () => {
+      const connection = await gitlabConnection(HEALTHY, "42");
+      expect(await (await cron("cron-secret")).json()).toMatchObject({ rotated: 1 });
+      await updateScmConnectionCredentials(db, connection.id, async (credentials) => ({
+        ...credentials,
+        rotatedAt: new Date(Date.now() - 61 * 60 * 1000).toISOString(),
+      }));
+
+      expect(await (await cron("cron-secret")).json()).toMatchObject({ rotated: 1 });
+
+      expect(gitlab.rotations).toBe(2);
+      expect((await tokenOf(connection.id)).token).toBe("glpat-rotated-2");
     });
 
     it("records rotation_unsupported on an instance without self-rotation and keeps the token", async () => {
