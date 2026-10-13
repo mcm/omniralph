@@ -1,8 +1,9 @@
 // `pnpm --filter @omniralph/web verify:screens`: screenshots every panel route against the
 // fixture database. Starts the fixture Postgres and `next dev`, runs Playwright in the
-// mcr.microsoft.com/playwright container (`--network host`; files in and out with `docker
-// cp`, no bind mounts, so a remote Docker daemon works), runs `impeccable detect` on each
-// captured page when the CLI is available, and stops everything. See ../../README.md.
+// mcr.microsoft.com/playwright container (`--network host`, opening `host.docker.internal`
+// on Docker Desktop; files in and out with `docker cp`, no bind mounts, so a remote Docker
+// daemon works), runs `impeccable detect` on each captured page when the CLI is available,
+// and stops everything. See ../../README.md.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -14,6 +15,7 @@ import { promisify } from "node:util";
 import { removeFixtureDatabases } from "../fixtures/container";
 import { FIXTURE_EMAILS } from "../fixtures/ids";
 import { startFixtures } from "../fixtures/start";
+import { browserHost, DEV_ORIGINS_ENV } from "./docker-host";
 import { parseScreensOptions, USAGE, VIEWPORTS, type ScreensOptions } from "./options";
 import { routeMatches, SCREEN_ROUTES } from "./routes";
 
@@ -82,13 +84,18 @@ async function main(): Promise<number> {
     const path = join(WEB_DIR, file);
     if (!existsSync(path)) cleanups.push(() => rm(path, { force: true }));
   }
+  const host = browserHost(await dockerOperatingSystem());
   const port = await freePort();
   const baseUrl = `http://localhost:${port}`;
   log(`Starting the panel on ${baseUrl}…`);
-  const server = startPanel(port, fixtureEnv);
+  const server = startPanel(
+    port,
+    host === "localhost" ? fixtureEnv : { ...fixtureEnv, [DEV_ORIGINS_ENV]: host },
+  );
   cleanups.push(() => stopPanel(server));
   await waitForPanel(baseUrl, server);
 
+  if (host !== "localhost") log(`Docker Desktop: the browser opens the panel on ${host}.`);
   log(
     `Capturing ${routes.length} route(s) × ${options.viewports.length} viewport(s) × ${options.themes.length} theme(s) in ${image}…`,
   );
@@ -96,7 +103,7 @@ async function main(): Promise<number> {
     image,
     outDir,
     config: {
-      baseUrl,
+      baseUrl: `http://${host}:${port}`,
       signInPath: `/sign-in/dev?email=${encodeURIComponent(FIXTURE_EMAILS.admin)}&callbackUrl=/`,
       routes: routes.map(({ name, path, auth, steps, viewportOnly }) => ({
         name,
@@ -131,6 +138,12 @@ function readPlaywrightVersion(): string {
 function playwrightCoreDir(): string {
   const require = createRequire(join(WEB_DIR, "package.json"));
   return dirname(require.resolve("playwright-core/package.json"));
+}
+
+/** `docker info`'s `OperatingSystem` ("Docker Desktop" on Docker Desktop). */
+async function dockerOperatingSystem(): Promise<string> {
+  const { stdout } = await run("docker", ["info", "--format", "{{.OperatingSystem}}"]);
+  return stdout.trim();
 }
 
 function runInherited(command: string, args: string[], cwd: string): Promise<void> {

@@ -37,7 +37,11 @@ the host. It runs unattended:
 2. starts the fixture database and `next dev` on a free port;
 3. runs `scripts/screens/capture.mjs` in `mcr.microsoft.com/playwright:v<version>-noble`, the
    version of the `playwright-core` dev dependency, with `--network host`. The script and
-   `playwright-core` go in, and the screenshots come out, with `docker cp` (no bind mounts);
+   `playwright-core` go in, and the screenshots come out, with `docker cp` (no bind mounts).
+   On Docker Desktop (Mac, Windows), whose `localhost` is the VM's rather than the host's, the
+   browser opens `host.docker.internal` instead, and `next dev` is started with
+   `OMNIRALPH_ALLOWED_DEV_ORIGINS=host.docker.internal` so it allows that origin
+   (`allowedDevOrigins` in `next.config.ts`; without it the page never hydrates);
 4. signs in with the dev sign-in and captures each route of `scripts/screens/routes.ts`;
 5. runs `impeccable detect --json` on each page's HTML snapshot, if the CLI is available
    (`$IMPECCABLE_CLI`, `impeccable` on `PATH`, or the Claude Code plugin's launcher);
