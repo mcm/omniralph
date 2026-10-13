@@ -946,16 +946,38 @@ body {
     gap: 2px;
   }
 }
-/* Medium: the neutral well with a strong border and primary text, one step louder
-   than neutral `low` and never the info hue that running states wear. */
-.severity-strong.severity-strong {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
+/* Finding severity chips: one ramp that only gets quieter, critical > high > medium > low >
+   info, in both themes. Text, border and fill contrast against the surface each fall (or
+   hold) step by step; `severity-ramp.test.ts` measures it from the theme tokens. Critical
+   and high lift their hue toward primary text and outline in it, so the tinted chips stay
+   louder than the neutral ones in dark too. Medium is the neutral well with secondary text
+   and a border a step above low's (never the info hue running states wear); low dims its
+   text halfway to tertiary; info has no fill, a dashed outline and tertiary text. */
+.severity-critical.severity-critical {
+  background-color: var(--danger-tint);
+  border-color: color-mix(in srgb, var(--danger-fg) 80%, transparent);
+  color: color-mix(in srgb, var(--danger-fg) 60%, var(--text-primary));
 }
-/* The quietest severity (info): no fill, dashed outline, set apart from neutral `low`. */
-.severity-quiet.severity-quiet {
+.severity-high.severity-high {
+  background-color: var(--warning-tint);
+  border-color: color-mix(in srgb, var(--warning-fg) 70%, transparent);
+  color: color-mix(in srgb, var(--warning-fg) 75%, var(--text-primary));
+}
+.severity-medium.severity-medium {
+  background-color: var(--bg-raised);
+  border-color: color-mix(in srgb, var(--border-strong) 25%, var(--border-default));
+  color: var(--text-secondary);
+}
+.severity-low.severity-low {
+  background-color: var(--bg-raised);
+  border-color: var(--border-default);
+  color: color-mix(in srgb, var(--text-secondary) 50%, var(--text-tertiary));
+}
+.severity-info.severity-info {
   background-color: transparent;
+  border-color: var(--border-default);
   border-style: dashed;
+  color: var(--text-tertiary);
 }
 .review-files {
   display: flex;

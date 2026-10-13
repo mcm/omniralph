@@ -15,7 +15,9 @@ describe("SeverityCounts", () => {
       '<span class="text-numeric">3</span>',
     ]);
     expect(html).not.toContain("high");
-    expect(html).toContain("severity-quiet");
+    for (const severity of ["critical", "medium", "low", "info"]) {
+      expect(html).toContain(`severity-${severity}`);
+    }
   });
 
   it("shows only the requested severities, and nothing when none are present", () => {

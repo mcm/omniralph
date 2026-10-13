@@ -80,8 +80,9 @@ export const FINDING_STATUS_VARIANTS: Record<FindingStatus, IntentVariant> = {
 
 /**
  * How loud a finding severity reads: the library's tinted intents plus `strong`
- * (neutral well, strong border and primary text) and `quiet` (no fill, dashed
- * outline), so five severities get five looks. Never `info`: that's the running
+ * (neutral well, secondary text, a border one step above `neutral`) and `quiet` (no
+ * fill, dashed outline, tertiary text), so five severities get five looks. The exact
+ * colours are `.severity-<severity>` in globals.css. Never `info`: that's the running
  * hue. Never `accent`: a solid fill would outshout `critical`.
  */
 export type SeverityVariant = "danger" | "warning" | "strong" | "neutral" | "quiet";
