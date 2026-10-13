@@ -190,6 +190,9 @@ importers:
       '@omniralph/shared':
         specifier: workspace:*
         version: link:../shared
+      '@omniralph/tasks':
+        specifier: workspace:*
+        version: link:../tasks
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1)
