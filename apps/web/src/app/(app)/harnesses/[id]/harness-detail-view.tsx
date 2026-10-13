@@ -286,9 +286,9 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
         <Muted>
           Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
           concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
-          <InlineCode>long</InlineCode> coding tasks. Leave blank for the default: long leaves one
-          slot free for other work; short may use every slot. Lowering a limit doesn&apos;t cancel
-          running jobs; the harness takes no new ones until it is under the limit.
+          <InlineCode>long</InlineCode> coding tasks. Leave it empty for the default: long leaves
+          one slot free for other work; short may use every slot. Lowering a limit doesn&apos;t
+          cancel running jobs; the harness takes no new ones until it is under the limit.
         </Muted>
         <div className="settings-row">
           {POOLS.map((pool) => (
@@ -331,7 +331,8 @@ const VERSION_SPECS: SettingSpec[] = [
   {
     key: "override",
     label: "Desired version override",
-    format: (value) => (value === "" ? "None (organization's version)" : formatSettingValue(value)),
+    format: (value) =>
+      value === "" ? "Not set (organization's version)" : formatSettingValue(value),
   },
 ];
 
@@ -370,11 +371,11 @@ function VersionCard({
       <Field
         label="Desired version override"
         htmlFor="desired-version"
-        description={`Semver, e.g. 1.4.0. Leave blank to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: blank.`}
+        description={`Semver, e.g. 1.4.0. Leave it empty to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: not set.`}
       >
         <Input
           id="desired-version"
-          placeholder={globalDesiredVersion ?? "Not set"}
+          placeholder={`Global (${globalDesiredVersion ?? "not set"})`}
           disabled={harness.revoked}
           value={override}
           onChange={(e) => setOverride(e.target.value)}

@@ -370,7 +370,7 @@ export function RepositorySettingsView({
           <Field
             label="Path excludes"
             htmlFor="path-excludes"
-            description="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped. Default: none."
+            description="One glob per line. A pattern without / matches at any depth; a leading / anchors it to the repository root. Lock files, build output and generated files are always skipped. Default: not set."
           >
             <Textarea
               id="path-excludes"
@@ -380,7 +380,7 @@ export function RepositorySettingsView({
               aria-invalid={excludeErrors.length > 0}
               value={draft.pathExcludes}
               onChange={(e) => set("pathExcludes", e.target.value)}
-              placeholder={"*.snap\n/docs/**\nsrc/**/*.generated.ts"}
+              placeholder={"e.g. *.snap\n/docs/**\nsrc/**/*.generated.ts"}
               className="settings-mono"
             />
           </Field>
@@ -390,7 +390,7 @@ export function RepositorySettingsView({
           <Field
             label="Custom instructions"
             htmlFor="custom-instructions"
-            description={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters. Default: none.`}
+            description={`Added to every review prompt for this repository. ${instructionsLength.toLocaleString()} / ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString()} characters. Default: not set.`}
             error={errors.customInstructions}
           >
             <Textarea
@@ -408,7 +408,7 @@ export function RepositorySettingsView({
 
         <SettingsCard
           title="Harness pinning"
-          description="Only the selected harnesses run this repository's jobs. Leave all unselected to let any harness run them. Newly pinned harnesses pre-clone the repository. Default: none selected."
+          description="Only the selected harnesses run this repository's jobs. Leave all unselected to let any harness run them. Newly pinned harnesses pre-clone the repository. Default: not set (any harness)."
           {...card(REPOSITORY_CARDS.pinning, (input) =>
             input.pinnedHarnessIds.some((id) => !settings.pinnedHarnessIds.includes(id))
               ? "Saved; newly pinned harnesses will pre-clone the repository"

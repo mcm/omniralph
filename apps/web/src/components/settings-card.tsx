@@ -25,6 +25,8 @@ import {
 import { IconArrowBackUp, IconDeviceFloppy } from "@tabler/icons-react";
 import type { ActionResult } from "@/lib/action-result";
 import type { SettingChange } from "@/lib/settings/changes";
+import { unsavedAnchorId } from "@/lib/unsaved-changes";
+import { useUnsavedChanges } from "./unsaved-changes";
 import { useAction } from "./use-action";
 
 /** A validated save: the server action and what to say when it succeeds. */
@@ -94,7 +96,8 @@ export function SettingChangeList({ changes }: { changes: readonly SettingChange
 /**
  * A card of related settings with its own save. Save is enabled, and Discard shown, only while
  * the card has unsaved changes; a run-affecting card confirms the change list first. While it
- * saves, its controls are disabled (a disabled fieldset).
+ * saves, its controls are disabled (a disabled fieldset). While dirty, the page's
+ * `UnsavedChangesBar` links to it and leaving the page asks first.
  */
 export function SettingsCard({
   title,
@@ -114,6 +117,8 @@ export function SettingsCard({
   const [confirming, setConfirming] = React.useState<SettingsSave | null>(null);
   const dirty = changes.length > 0;
   const statusId = React.useId();
+  const anchorId = unsavedAnchorId(title);
+  useUnsavedChanges(title, anchorId, dirty && !readOnly);
 
   const save = (request: SettingsSave) =>
     run(request.action, request.success, request.onSuccess, request.onError);
@@ -128,7 +133,7 @@ export function SettingsCard({
   };
 
   return (
-    <Card>
+    <Card id={anchorId} className="settings-card">
       <form onSubmit={submit} noValidate aria-label={title}>
         <CardHeader
           action={

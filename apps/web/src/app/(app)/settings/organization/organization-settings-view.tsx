@@ -387,7 +387,7 @@ function InvitationsCard({
                   type="email"
                   required
                   autoComplete="off"
-                  placeholder="name@example.com"
+                  placeholder="e.g. name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -491,7 +491,7 @@ function DomainsCard({
                     id="organization-domain"
                     required
                     autoComplete="off"
-                    placeholder="example.com"
+                    placeholder="e.g. example.com"
                     value={domain}
                     onChange={(e) => setDomain(e.target.value)}
                   />

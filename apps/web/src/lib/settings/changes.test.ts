@@ -9,13 +9,13 @@ import {
 } from "./changes";
 
 describe("formatSettingValue", () => {
-  it("shows flags as On/Off, empty values as None and lists comma-separated", () => {
+  it("shows flags as On/Off, empty values as Not set and lists comma-separated", () => {
     expect(formatSettingValue(true)).toBe("On");
     expect(formatSettingValue(false)).toBe("Off");
-    expect(formatSettingValue("")).toBe("None");
-    expect(formatSettingValue("  ")).toBe("None");
-    expect(formatSettingValue(null)).toBe("None");
-    expect(formatSettingValue([])).toBe("None");
+    expect(formatSettingValue("")).toBe("Not set");
+    expect(formatSettingValue("  ")).toBe("Not set");
+    expect(formatSettingValue(null)).toBe("Not set");
+    expect(formatSettingValue([])).toBe("Not set");
     expect(formatSettingValue(["a", "b"])).toBe("a, b");
     expect(formatSettingValue("opus")).toBe("opus");
   });

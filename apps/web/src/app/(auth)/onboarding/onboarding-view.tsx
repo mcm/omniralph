@@ -99,7 +99,7 @@ function CreateOrganizationCard() {
                 id="organization-name"
                 required
                 maxLength={100}
-                placeholder="Acme"
+                placeholder="e.g. Acme"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />

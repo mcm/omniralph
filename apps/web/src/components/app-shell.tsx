@@ -4,6 +4,7 @@ import { SidebarProvider, SonnerToaster, TooltipProvider } from "@iamthemcmaster
 import { AppSidebar, type OrganizationOption } from "./app-sidebar";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { OrganizationGuard } from "./organization-guard";
+import { UnsavedChangesBar, UnsavedChangesProvider } from "./unsaved-changes";
 
 export function AppShell({
   user,
@@ -28,12 +29,17 @@ export function AppShell({
           {/* No AuroraField: this shell wraps the data surfaces, which sit on a flat page
           (DESIGN.md). Below 768px the sidebar is the library's navigation sheet, opened
           from the trigger in AppHeader. */}
-          <SidebarProvider>
-            <div className="app-shell flex">
-              <AppSidebar organizations={organizations} />
-              <div className="flex flex-1 flex-col min-w-0">{children}</div>
-            </div>
-          </SidebarProvider>
+          <UnsavedChangesProvider>
+            <SidebarProvider>
+              <div className="app-shell flex">
+                <AppSidebar organizations={organizations} />
+                <div className="flex flex-1 flex-col min-w-0">
+                  {children}
+                  <UnsavedChangesBar />
+                </div>
+              </div>
+            </SidebarProvider>
+          </UnsavedChangesProvider>
           <SonnerToaster position="bottom-right" />
         </TooltipProvider>
       </OrganizationGuard>

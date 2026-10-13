@@ -288,22 +288,22 @@ export function RalphSettingsSection({
           "linearLabels",
           "ralph-labels",
           "Linear labels",
-          "Comma-separated. Issues with any of these labels route here. Default: none.",
-          { placeholder: "backend, api" },
+          withDefault("Comma-separated. Issues with any of these labels route here."),
+          { placeholder: "e.g. backend, api" },
         )}
         {textInput(
           "linearProjectNames",
           "ralph-projects",
           "Linear projects",
-          "Comma-separated project names. Default: none.",
-          { placeholder: "Omniralph" },
+          withDefault("Comma-separated project names."),
+          { placeholder: "e.g. Omniralph" },
         )}
         {textInput(
           "linearTeamKeys",
           "ralph-teams",
           "Linear team keys",
-          "Comma-separated, e.g. ENG. Default: none.",
-          { placeholder: "ENG, OPS" },
+          withDefault("Comma-separated team keys."),
+          { placeholder: "e.g. ENG, OPS" },
         )}
       </SettingsCard>
 
@@ -317,8 +317,10 @@ export function RalphSettingsSection({
           "verifyCommands",
           "ralph-verify-commands",
           "Verify commands",
-          "One per line. Run as quality gates for every story and request in this repository, before the PRD's. Default: none.",
-          "pnpm typecheck\npnpm test",
+          withDefault(
+            "One per line. Run as quality gates for every story and request in this repository, before the PRD's.",
+          ),
+          "e.g. pnpm typecheck\npnpm test",
         )}
         {switchInput(
           "runPrdQualityGates",
@@ -331,8 +333,10 @@ export function RalphSettingsSection({
           "setupCommand",
           "ralph-setup-command",
           "Setup command",
-          `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters. Default: none.`,
-          { placeholder: "pnpm install --frozen-lockfile", mono: true },
+          withDefault(
+            `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters.`,
+          ),
+          { placeholder: "e.g. pnpm install --frozen-lockfile", mono: true },
         )}
       </SettingsCard>
 
@@ -345,7 +349,9 @@ export function RalphSettingsSection({
         <Field
           label="Appended instruction"
           htmlFor="ralph-append-instruction"
-          description={`Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters. Default: none.`}
+          description={withDefault(
+            `Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`,
+          )}
           error={errors.appendInstruction}
         >
           <Textarea
@@ -368,8 +374,8 @@ export function RalphSettingsSection({
             "fallbackModel",
             "ralph-fallback-model",
             "Fallback model",
-            "Used when the model is overloaded. Empty for none. Default: none.",
-            { mono: true, placeholder: "sonnet" },
+            withDefault("Used when the model is overloaded. Leave it empty for no fallback."),
+            { mono: true, placeholder: "e.g. sonnet" },
           )}
         </div>
       </SettingsCard>
@@ -384,15 +390,17 @@ export function RalphSettingsSection({
           "allowedTools",
           "ralph-allowed-tools",
           "Allowed tools",
-          "Empty for Ralph's whole policy. Otherwise only these tools are available, and only calls matching these rules run, e.g. Bash(pnpm test:*). Default: empty.",
-          "Read\nEdit\nBash(pnpm test:*)",
+          withDefault(
+            "Leave it empty for Ralph's whole policy. Otherwise only these tools are available, and only calls matching these rules run.",
+          ),
+          "e.g. Read\nEdit\nBash(pnpm test:*)",
         )}
         {linesInput(
           "disallowedTools",
           "ralph-disallowed-tools",
           "Disallowed tools",
-          "Always denied, on top of Ralph's policy. Default: none.",
-          "WebFetch",
+          withDefault("Always denied, on top of Ralph's policy."),
+          "e.g. WebFetch",
         )}
       </SettingsCard>
 
@@ -496,7 +504,7 @@ export function RalphSettingsSection({
             "Comma-separated. Stories with any of these labels are steps for a person: Ralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Ralph files.",
             RALPH_DEFAULT_TEXT.manualLabels,
           ),
-          { placeholder: "manual" },
+          { placeholder: "e.g. manual" },
         )}
         {switchInput(
           "allowPreparation",
@@ -509,8 +517,10 @@ export function RalphSettingsSection({
           "epicCompletedState",
           "ralph-epic-completed-state",
           "Epic completed state",
-          "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Empty leaves it alone. Default: empty.",
-          { placeholder: "In Review" },
+          withDefault(
+            "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Not set leaves the epic alone.",
+          ),
+          { placeholder: "e.g. In Review" },
         )}
       </SettingsCard>
     </>
