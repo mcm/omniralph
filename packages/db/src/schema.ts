@@ -994,6 +994,11 @@ export const harnesses = pgTable(
       .$type<{ name: string; version: string }[]>()
       .notNull()
       .default([]),
+    /** The Claude models the harness's login can run, as its last heartbeat reported them. */
+    reportedModels: jsonb("reported_models")
+      .$type<{ value: string; displayName: string }[]>()
+      .notNull()
+      .default([]),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older harnesses. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The harness's self-update progress, as last reported. */

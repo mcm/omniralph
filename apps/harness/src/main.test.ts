@@ -247,6 +247,7 @@ describe("omniralph-harness CLI", () => {
         env: {},
         logger: silentLogger(),
         onShutdownSignal: () => {},
+        listModels: async () => [{ value: "opus", displayName: "Opus", description: "" }],
         ...extra,
       };
     }
@@ -364,6 +365,7 @@ describe("omniralph-harness CLI", () => {
       expect(server.calls.find((c) => c.path === "/api/harness/heartbeat")?.body).toMatchObject({
         version: "1.0.0",
         selfUpdate: "supported",
+        models: [{ value: "opus", displayName: "Opus" }],
       });
     });
 

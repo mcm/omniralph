@@ -54,6 +54,7 @@ export async function POST(req: Request): Promise<Response> {
     failedVersions: body.data.failedVersions,
     handledUpdateRequestId: body.data.handledUpdateRequestId,
     installables: body.data.installables,
+    models: body.data.models,
   });
   if (!agent) return badRequest("unknown_agent");
   await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);

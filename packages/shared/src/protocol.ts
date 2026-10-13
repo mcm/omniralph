@@ -239,6 +239,13 @@ export const ReportedInstallable = z.object({
 });
 export type ReportedInstallable = z.infer<typeof ReportedInstallable>;
 
+/** A Claude model the harness's login can run (the Agent SDK's `supportedModels()`). */
+export const ReportedModel = z.object({
+  value: z.string().min(1).max(200),
+  displayName: z.string().max(200),
+});
+export type ReportedModel = z.infer<typeof ReportedModel>;
+
 /** A host tool's name (`HostToolName` of `@omniralph/tasks`, which task definitions require by). */
 export { HOST_TOOL_NAME_PATTERN, HostToolName };
 
@@ -292,6 +299,8 @@ export const Heartbeat = z.object({
   handledUpdateRequestId: z.uuid().nullable().optional(),
   /** The installables installed on the harness (absent from older harnesses). */
   installables: z.array(ReportedInstallable).max(100).default([]),
+  /** The Claude models the harness's login can run (absent from older harnesses; none when unknown). */
+  models: z.array(ReportedModel).max(100).default([]),
   /** The host tools of the last response's `hostTools`, as the harness found them. */
   hostTools: z.array(ReportedHostTool).max(100).default([]),
 });

@@ -43,6 +43,18 @@ describe("protocol", () => {
     ).toBe(false);
   });
 
+  it("defaults a heartbeat's models to none, so older harnesses validate", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.parse(base).models).toEqual([]);
+    const models = [{ value: "opus", displayName: "Opus" }];
+    expect(Heartbeat.parse({ ...base, models }).models).toEqual(models);
+    expect(
+      Heartbeat.safeParse({ ...base, models: [{ value: "", displayName: "Empty" }] }).success,
+    ).toBe(false);
+    const tooMany = Array.from({ length: 101 }, (_, i) => ({ value: `m${i}`, displayName: "M" }));
+    expect(Heartbeat.safeParse({ ...base, models: tooMany }).success).toBe(false);
+  });
+
   it("defaults a heartbeat's host tools to none and validates them", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
     expect(Heartbeat.parse(base).hostTools).toEqual([]);

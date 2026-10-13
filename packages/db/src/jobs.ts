@@ -625,6 +625,8 @@ export async function recordHarnessHeartbeat(
     handledUpdateRequestId?: string | null;
     /** The installables installed on the harness; replaces the last report (none clears it). */
     installables?: { name: string; version: string }[];
+    /** The Claude models the harness can run; replaces the last report (none clears it). */
+    models?: { value: string; displayName: string }[];
     now?: Date;
   },
 ): Promise<typeof harnesses.$inferSelect | null> {
@@ -639,6 +641,7 @@ export async function recordHarnessHeartbeat(
       updateState: input.update ?? null,
       failedVersions: input.failedVersions ?? [],
       reportedInstallables: input.installables ?? [],
+      reportedModels: input.models ?? [],
       ...(handled !== null && {
         updateRequestId: clearIfHandled(harnesses.updateRequestId),
         updateRequestVersion: clearIfHandled(harnesses.updateRequestVersion),

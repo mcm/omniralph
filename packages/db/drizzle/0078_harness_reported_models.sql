@@ -1,0 +1,1 @@
+ALTER TABLE "harnesses" ADD COLUMN "reported_models" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -11,6 +11,7 @@ import {
   listJobs,
   listHarnessInstallJobs,
   listHarnessOverview,
+  listReportedModels,
   markHarnessDeleted,
   requestHarnessUpdate,
   setHarnessDesiredVersion,
@@ -195,6 +196,65 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(await getResourceOrganizationId(db, "harness", a)).toBeNull();
     const [row] = await db.select().from(harnesses).where(eq(harnesses.id, a));
     expect(row?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("replaces the reported models with each heartbeat's", async () => {
+    const a = await enroll(orgA, "a-models");
+    const opus = { value: "opus", displayName: "Opus" };
+    const heartbeat = (models?: { value: string; displayName: string }[]) =>
+      recordHarnessHeartbeat(db, a, { version: "1.0.0", models });
+    expect((await heartbeat([opus]))?.reportedModels).toEqual([opus]);
+    expect((await getHarnessOverview(db, orgA, a))?.reportedModels).toEqual([opus]);
+    // An older harness, or one whose login can't list them, reports none.
+    expect((await heartbeat())?.reportedModels).toEqual([]);
+  });
+
+  describe("listReportedModels", () => {
+    const opus = { value: "opus", displayName: "Opus" };
+    const sonnet = { value: "sonnet", displayName: "Sonnet" };
+    const haiku = { value: "haiku", displayName: "Haiku" };
+    const fable = { value: "claude-fable-5-1", displayName: "Fable 5.1" };
+    let org: string;
+    let first: string;
+    let second: string;
+    let revoked: string;
+
+    beforeAll(async () => {
+      const [row] = await db.insert(organizations).values({ name: "Models" }).returning();
+      org = row!.id;
+      first = await enroll(org, "models-1");
+      second = await enroll(org, "models-2");
+      revoked = await enroll(org, "models-revoked");
+      const other = await enroll(orgB, "models-other-org");
+      await recordHarnessHeartbeat(db, first, { version: "1.0.0", models: [opus, sonnet] });
+      await recordHarnessHeartbeat(db, second, { version: "1.0.0", models: [sonnet, haiku] });
+      await recordHarnessHeartbeat(db, revoked, { version: "1.0.0", models: [fable] });
+      await recordHarnessHeartbeat(db, other, { version: "1.0.0", models: [fable] });
+      await revokeHarness(db, revoked, { organizationId: org });
+    });
+
+    it("de-duplicates overlapping models, sorted by display name, with their harnesses", async () => {
+      expect(await listReportedModels(db, org)).toEqual([
+        { ...haiku, harnessIds: [second] },
+        { ...opus, harnessIds: [first] },
+        { ...sonnet, harnessIds: [first, second] },
+      ]);
+    });
+
+    it("filters by harness, ignoring other organizations' harnesses", async () => {
+      expect(await listReportedModels(db, org, { harnessIds: [second] })).toEqual([
+        { ...haiku, harnessIds: [second] },
+        { ...sonnet, harnessIds: [second] },
+      ]);
+      expect(await listReportedModels(db, org, { harnessIds: [] })).toEqual([]);
+      const [other] = await listHarnessOverview(db, orgB);
+      expect(await listReportedModels(db, org, { harnessIds: [other!.id] })).toEqual([]);
+    });
+
+    it("ignores revoked harnesses, even when asked for them", async () => {
+      expect(await listReportedModels(db, org, { harnessIds: [revoked] })).toEqual([]);
+      expect((await listReportedModels(db, org)).map((m) => m.value)).not.toContain(fable.value);
+    });
   });
 
   it("replaces the reported installables with each heartbeat's", async () => {
