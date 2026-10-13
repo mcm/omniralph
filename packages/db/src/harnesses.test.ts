@@ -140,6 +140,48 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(await config(await enroll(orgB, "b-defaults"))).toEqual(builtIn);
   });
 
+  it("saves an override and switches each field back to inheriting with null", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Overrides" }).returning();
+    const organizationId = org!.id;
+    const a = await enroll(organizationId, "override");
+    await setDefaultMaxConcurrency(db, organizationId, 7, null);
+    const overview = async () => (await getHarnessOverview(db, organizationId, a))!;
+
+    expect(
+      await updateHarnessConfig(db, organizationId, a, {
+        maxConcurrency: 2,
+        acceptedTaskTypes: ["review"],
+        poolLimits: {},
+      }),
+    ).toMatchObject({ maxConcurrency: 2, acceptedTaskTypes: ["review"] });
+    expect((await overview()).effective).toEqual({
+      acceptedTaskTypes: ["review"],
+      maxConcurrency: 2,
+    });
+
+    // Back to the organization's max concurrency, keeping the task types override.
+    expect(
+      await updateHarnessConfig(db, organizationId, a, {
+        maxConcurrency: null,
+        acceptedTaskTypes: ["review"],
+        poolLimits: {},
+      }),
+    ).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: ["review"] });
+    expect(
+      await updateHarnessConfig(db, organizationId, a, {
+        maxConcurrency: null,
+        acceptedTaskTypes: null,
+        poolLimits: {},
+      }),
+    ).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: null });
+    const inheriting = await overview();
+    expect(inheriting.effective).toEqual({
+      acceptedTaskTypes: ["query", "review", "coding"],
+      maxConcurrency: 7,
+    });
+    expect(inheriting.defaults).toEqual(inheriting.effective);
+  });
+
   it("soft-deletes only revoked harnesses of the organization and hides them", async () => {
     const a = await enroll(orgA, "a-delete");
     expect(await markHarnessDeleted(db, orgA, a)).toBe(false);

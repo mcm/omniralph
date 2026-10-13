@@ -56,6 +56,7 @@ import {
   setHarnessDesiredVersion,
   unpinRepository,
   updateHarnessConfig,
+  type HarnessConfigForm,
 } from "../actions";
 import {
   formatPoolLimits,
@@ -124,25 +125,39 @@ const TASK_TYPE_LABELS: Record<(typeof TASK_TYPES)[number], string> = {
   coding: "Coding",
 };
 
-/**
- * A harness's configuration when neither it nor its organization sets one (the built-in
- * `DEFAULT_MAX_CONCURRENCY` and `DEFAULT_ALLOWED_TASK_TYPES` in `@omniralph/db`).
- */
-export const HARNESS_CONFIG_DEFAULTS = {
-  maxConcurrency: 5,
-  acceptedTaskTypes: TASK_TYPES,
-};
+const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
 
-interface ConfigDraft {
+/** Task types as the form words them: "Query, Review and Coding", "None". */
+function taskTypeList(taskTypes: readonly string[]): string {
+  return taskTypes.length === 0
+    ? "None"
+    : listFormat.format(
+        taskTypes.map((t) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]] ?? t),
+      );
+}
+
+export interface ConfigDraft {
+  /** Use the organization's max concurrency (stored as null). */
+  inheritMaxConcurrency: boolean;
+  /** The harness's own max concurrency, used unless it inherits. */
   maxConcurrency: string;
+  /** Use the organization's task types (stored as null). */
+  inheritTaskTypes: boolean;
+  /** The harness's own task types, used unless it inherits. */
   taskTypes: readonly string[];
   /** Blank for the pool's default. */
   limits: Readonly<Record<string, string>>;
 }
 
-function configDraft(harness: HarnessRow): ConfigDraft {
+/**
+ * The form for a harness. Inherited fields start from the organization's values, so turning
+ * "Use organization default" off overrides from what the harness runs now.
+ */
+export function configDraft(harness: HarnessRow): ConfigDraft {
   return {
+    inheritMaxConcurrency: harness.overrides.maxConcurrency === null,
     maxConcurrency: String(harness.maxConcurrency),
+    inheritTaskTypes: harness.overrides.acceptedTaskTypes === null,
     taskTypes: harness.acceptedTaskTypes.filter((t) =>
       (TASK_TYPES as readonly string[]).includes(t),
     ),
@@ -152,13 +167,32 @@ function configDraft(harness: HarnessRow): ConfigDraft {
   };
 }
 
-/** The draft as compared and saved: task types in their listed order, blank limits null. */
+/**
+ * The draft as compared and saved: null for inherited fields, task types in their listed
+ * order, blank limits null.
+ */
 function configValues(draft: ConfigDraft): Record<string, SettingValue> {
   return {
-    maxConcurrency: typedNumber(draft.maxConcurrency),
-    acceptedTaskTypes: TASK_TYPES.filter((t) => draft.taskTypes.includes(t)),
+    maxConcurrency: draft.inheritMaxConcurrency ? null : typedNumber(draft.maxConcurrency),
+    acceptedTaskTypes: draft.inheritTaskTypes
+      ? null
+      : TASK_TYPES.filter((t) => draft.taskTypes.includes(t)),
     ...Object.fromEntries(
       POOLS.map((pool) => [pool, draft.limits[pool]?.trim() ? Number(draft.limits[pool]) : null]),
+    ),
+  };
+}
+
+/** What `updateHarnessConfig` saves for the draft. */
+export function configInput(draft: ConfigDraft): HarnessConfigForm {
+  const values = configValues(draft);
+  return {
+    maxConcurrency: values.maxConcurrency as number | null,
+    acceptedTaskTypes:
+      values.acceptedTaskTypes === null ? null : [...(values.acceptedTaskTypes as string[])],
+    // Blank limits use the default.
+    poolLimits: Object.fromEntries(
+      POOLS.filter((pool) => values[pool] !== null).map((pool) => [pool, values[pool] as number]),
     ),
   };
 }
@@ -166,30 +200,68 @@ function configValues(draft: ConfigDraft): Record<string, SettingValue> {
 const poolLimitFormat = (value: SettingValue) =>
   value === null ? "Default" : formatSettingValue(value);
 
-const CONFIG_SPECS: SettingSpec[] = [
-  { key: "maxConcurrency", label: "Max concurrency" },
-  {
-    key: "acceptedTaskTypes",
-    label: "Accepted task types",
-    format: (value) =>
-      formatSettingValue(
-        Array.isArray(value)
-          ? value.map((t: string) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]] ?? t)
-          : value,
-      ),
-  },
-  ...POOLS.map((pool) => ({
-    key: pool,
-    label: `${pool[0]!.toUpperCase()}${pool.slice(1)} pool limit`,
-    format: poolLimitFormat,
-  })),
-];
+function configSpecs(defaults: HarnessRow["defaults"]): SettingSpec[] {
+  return [
+    {
+      key: "maxConcurrency",
+      label: "Max concurrency",
+      format: (value) =>
+        value === null
+          ? `Organization default (${defaults.maxConcurrency})`
+          : formatSettingValue(value),
+    },
+    {
+      key: "acceptedTaskTypes",
+      label: "Accepted task types",
+      format: (value) =>
+        value === null
+          ? `Organization default (${taskTypeList(defaults.acceptedTaskTypes)})`
+          : taskTypeList(value as readonly string[]),
+    },
+    ...POOLS.map((pool) => ({
+      key: pool,
+      label: `${pool[0]!.toUpperCase()}${pool.slice(1)} pool limit`,
+      format: poolLimitFormat,
+    })),
+  ];
+}
 
-function ConfigCard({ harness }: { harness: HarnessRow }) {
+/** The "Use organization default" switch of a field. */
+function InheritCheck({
+  id,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (inherit: boolean) => void;
+}) {
+  return (
+    <div className="settings-check settings-check-center">
+      <Checkbox
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
+      <Label htmlFor={id}>Use organization default</Label>
+      <Muted>Settings › Harnesses; follows it when it changes.</Muted>
+    </div>
+  );
+}
+
+export function ConfigCard({ harness }: { harness: HarnessRow }) {
   const saved = React.useMemo(() => configDraft(harness), [harness]);
   const [draft, setDraft] = React.useState(saved);
-  const slots = Number(draft.maxConcurrency) >= 1 ? Math.floor(Number(draft.maxConcurrency)) : 1;
-  const values = configValues(draft);
+  const { defaults } = harness;
+  const maxConcurrency = draft.inheritMaxConcurrency
+    ? defaults.maxConcurrency
+    : Number(draft.maxConcurrency);
+  const slots = maxConcurrency >= 1 ? Math.floor(maxConcurrency) : 1;
+  const taskTypes = draft.inheritTaskTypes ? defaults.acceptedTaskTypes : draft.taskTypes;
+  const specs = React.useMemo(() => configSpecs(defaults), [defaults]);
 
   const toggle = (taskType: string, on: boolean) =>
     setDraft((d) => ({
@@ -198,26 +270,15 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
     }));
 
   const prepare = () => ({
-    action: () =>
-      updateHarnessConfig(harness.id, {
-        maxConcurrency: Number(draft.maxConcurrency),
-        acceptedTaskTypes: [...(values.acceptedTaskTypes as string[])],
-        // Blank limits use the default.
-        poolLimits: Object.fromEntries(
-          POOLS.filter((pool) => values[pool] !== null).map((pool) => [
-            pool,
-            values[pool] as number,
-          ]),
-        ),
-      }),
+    action: () => updateHarnessConfig(harness.id, configInput(draft)),
     success: "Saved. The harness picks it up with its next heartbeat.",
   });
 
   return (
     <SettingsCard
       title="Configuration"
-      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds)."
-      changes={settingChanges(CONFIG_SPECS, configValues(saved), values)}
+      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Each uses the organization's default unless you set it here."
+      changes={settingChanges(specs, configValues(saved), configValues(draft))}
       prepare={prepare}
       onDiscard={() => setDraft(saved)}
       confirm={{
@@ -226,45 +287,77 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
       }}
       readOnly={harness.revoked}
     >
-      <div className="settings-row">
-        <Field
-          label="Max concurrency"
-          htmlFor="max-concurrency"
-          description={withDefault(
-            "Jobs the harness runs at once (1–32).",
-            String(HARNESS_CONFIG_DEFAULTS.maxConcurrency),
-          )}
-        >
-          <Input
-            id="max-concurrency"
-            type="number"
-            className="input-number"
-            min={1}
-            max={32}
-            required
-            disabled={harness.revoked}
-            value={draft.maxConcurrency}
-            onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
-          />
-        </Field>
+      <div className="settings-group" role="group" aria-labelledby="max-concurrency-label">
+        <span id="max-concurrency-label" className="settings-group-label">
+          Max concurrency
+        </span>
+        <InheritCheck
+          id="max-concurrency-inherit"
+          checked={draft.inheritMaxConcurrency}
+          disabled={harness.revoked}
+          onChange={(inherit) =>
+            setDraft((d) => ({
+              ...d,
+              inheritMaxConcurrency: inherit,
+              maxConcurrency: inherit ? String(defaults.maxConcurrency) : d.maxConcurrency,
+            }))
+          }
+        />
+        <div className="settings-row">
+          <Field
+            label="Jobs at once"
+            htmlFor="max-concurrency"
+            description={
+              draft.inheritMaxConcurrency
+                ? `Jobs the harness runs at once: the organization's ${defaults.maxConcurrency}.`
+                : withDefault(
+                    "Jobs the harness runs at once (1–32).",
+                    `the organization's ${defaults.maxConcurrency}`,
+                  )
+            }
+          >
+            <Input
+              id="max-concurrency"
+              type="number"
+              className="input-number"
+              min={1}
+              max={32}
+              required
+              disabled={harness.revoked || draft.inheritMaxConcurrency}
+              value={
+                draft.inheritMaxConcurrency ? String(defaults.maxConcurrency) : draft.maxConcurrency
+              }
+              onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
+            />
+          </Field>
+        </div>
       </div>
       <div className="settings-group" role="group" aria-labelledby="task-types-label">
         <span id="task-types-label" className="settings-group-label">
           Accepted task types
         </span>
         <Muted>
-          Which tasks this host may run. Housekeeping jobs (repository syncs) always run. Default:{" "}
-          {new Intl.ListFormat("en", { type: "conjunction" }).format(
-            HARNESS_CONFIG_DEFAULTS.acceptedTaskTypes.map((t) => TASK_TYPE_LABELS[t]),
-          )}
-          .
+          Which tasks this host may run. Housekeeping jobs (repository syncs) always run.
+          Organization default: {taskTypeList(defaults.acceptedTaskTypes)}.
         </Muted>
+        <InheritCheck
+          id="task-types-inherit"
+          checked={draft.inheritTaskTypes}
+          disabled={harness.revoked}
+          onChange={(inherit) =>
+            setDraft((d) => ({
+              ...d,
+              inheritTaskTypes: inherit,
+              taskTypes: inherit ? defaults.acceptedTaskTypes : d.taskTypes,
+            }))
+          }
+        />
         {TASK_TYPES.map((taskType) => (
           <div key={taskType} className="settings-check settings-check-center">
             <Checkbox
               id={`task-type-${taskType}`}
-              checked={draft.taskTypes.includes(taskType)}
-              disabled={harness.revoked}
+              checked={taskTypes.includes(taskType)}
+              disabled={harness.revoked || draft.inheritTaskTypes}
               onCheckedChange={(checked) => toggle(taskType, checked === true)}
             />
             <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
@@ -317,6 +410,11 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
       )}
     </SettingsCard>
   );
+}
+
+/** Where a configuration value comes from, after the value. */
+function ConfigSource({ override }: { override: boolean }) {
+  return <span className="fact-secondary">{override ? "(override)" : "(organization)"}</span>;
 }
 
 // ── Version ──────────────────────────────────────────────────────────────────
@@ -751,12 +849,16 @@ export function HarnessDetailView({
                 )}
               </Fact>
               <Fact label="Accepted task types">
-                <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
+                <Stack gap={1}>
+                  <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
+                  <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
+                </Stack>
               </Fact>
               <Fact label="Running jobs" wide>
                 <Stack gap={1}>
                   <span>
-                    {harness.runningJobs.length} / {harness.maxConcurrency}
+                    {harness.runningJobs.length} / {harness.maxConcurrency}{" "}
+                    <ConfigSource override={harness.overrides.maxConcurrency !== null} />
                   </span>
                   {harness.runningJobs.map((job) => (
                     <JobTargetLink key={job.id} job={job} />

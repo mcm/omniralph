@@ -15,6 +15,8 @@ import {
   listHarnessOverview,
   listRecentHarnessAudit,
   runMigrations,
+  setAllowedTaskTypeDefaults,
+  setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   setHarnessHostToolPath,
   upsertScmConnection,
@@ -348,6 +350,86 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(cleared!.poolLimits).toEqual({});
       const reset = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(reset.poolLimits).toEqual({ short: 3, long: 2 });
+    });
+
+    it("saves an override and switches back to the organization's defaults", async () => {
+      const { harnessId, accessToken } = await enrolledHarness();
+      const heartbeat = async () =>
+        (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      const row = async () => harnessRow((await getHarnessOverview(db, orgId, harnessId))!);
+      await setDefaultMaxConcurrency(db, orgId, 6, null);
+      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
+      try {
+        expect(await row()).toMatchObject({
+          acceptedTaskTypes: ["query", "review"],
+          maxConcurrency: 6,
+          overrides: { acceptedTaskTypes: null, maxConcurrency: null },
+          defaults: { acceptedTaskTypes: ["query", "review"], maxConcurrency: 6 },
+          effectivePoolLimits: { short: 6, long: 5 },
+        });
+
+        // Override both.
+        expect(
+          await updateHarnessConfig(harnessId, {
+            maxConcurrency: 2,
+            acceptedTaskTypes: ["coding"],
+            poolLimits: {},
+          }),
+        ).toEqual({ ok: true });
+        expect(await row()).toMatchObject({
+          acceptedTaskTypes: ["coding"],
+          maxConcurrency: 2,
+          overrides: { acceptedTaskTypes: ["coding"], maxConcurrency: 2 },
+          effectivePoolLimits: { short: 2, long: 1 },
+        });
+        expect(await heartbeat()).toMatchObject({
+          maxConcurrency: 2,
+          acceptedTaskTypes: ["coding"],
+          poolLimits: { short: 2, long: 1 },
+        });
+
+        // Back to the organization's max concurrency only; pool limits are checked against it.
+        const inheritMax = { maxConcurrency: null, acceptedTaskTypes: ["coding"] };
+        expect(
+          await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 7 } }),
+        ).toMatchObject({ ok: false });
+        expect(
+          await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 6 } }),
+        ).toEqual({ ok: true });
+        const [stored] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+        expect(stored).toMatchObject({
+          maxConcurrency: null,
+          acceptedTaskTypes: ["coding"],
+          poolLimits: { short: 6 },
+        });
+        expect(await heartbeat()).toMatchObject({
+          maxConcurrency: 6,
+          acceptedTaskTypes: ["coding"],
+        });
+
+        // Back to inheriting both: an organization change reaches the harness.
+        expect(
+          await updateHarnessConfig(harnessId, {
+            maxConcurrency: null,
+            acceptedTaskTypes: null,
+            poolLimits: {},
+          }),
+        ).toEqual({ ok: true });
+        await setDefaultMaxConcurrency(db, orgId, 3, null);
+        expect(await row()).toMatchObject({
+          acceptedTaskTypes: ["query", "review"],
+          maxConcurrency: 3,
+          overrides: { acceptedTaskTypes: null, maxConcurrency: null },
+        });
+        expect(await heartbeat()).toMatchObject({
+          maxConcurrency: 3,
+          acceptedTaskTypes: ["query", "review"],
+          poolLimits: { short: 3, long: 2 },
+        });
+      } finally {
+        await setDefaultMaxConcurrency(db, orgId, null, null);
+        await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      }
     });
 
     it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {

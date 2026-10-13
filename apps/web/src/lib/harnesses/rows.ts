@@ -33,6 +33,10 @@ export interface HarnessRow {
   acceptedTaskTypes: string[];
   /** Its max concurrency, the organization's default filled in. */
   maxConcurrency: number;
+  /** The harness's own task types and max concurrency; null ones inherit `defaults`. */
+  overrides: { acceptedTaskTypes: string[] | null; maxConcurrency: number | null };
+  /** The organization's defaults (Settings › Harnesses). */
+  defaults: { acceptedTaskTypes: string[]; maxConcurrency: number };
   /** Per-pool limits as stored (unset ones use the default). */
   poolLimits: Record<string, number>;
   /** Effective limits of the `short` and `long` pools, as sent to the harness. */
@@ -92,6 +96,14 @@ export function harnessRow(
     }),
     acceptedTaskTypes: agent.effective.acceptedTaskTypes,
     maxConcurrency: agent.effective.maxConcurrency,
+    overrides: {
+      acceptedTaskTypes: agent.acceptedTaskTypes,
+      maxConcurrency: agent.maxConcurrency,
+    },
+    defaults: {
+      acceptedTaskTypes: [...agent.defaults.acceptedTaskTypes],
+      maxConcurrency: agent.defaults.maxConcurrency,
+    },
     poolLimits: storedLimits(agent.poolLimits),
     effectivePoolLimits: effectivePoolLimits(
       agent.poolLimits,

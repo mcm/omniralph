@@ -52,6 +52,8 @@ export interface HarnessJobSummary {
 export interface HarnessOverview extends HarnessRow {
   /** Its configuration with the organization's defaults filled in (`effectiveHarnessConfig`). */
   effective: EffectiveHarnessConfig;
+  /** The organization's defaults it inherits where its own values are null. */
+  defaults: HarnessDefaults;
   runningJobs: HarnessJobSummary[];
   pinnedRepositories: RepositoryLink[];
 }
@@ -159,6 +161,7 @@ async function withJobsAndPins(
   return rows.map((agent) => ({
     ...agent,
     effective: effectiveHarnessConfig(agent, defaults),
+    defaults,
     runningJobs: running
       .filter((job) => job.harnessId === agent.id)
       .map((job) => ({
@@ -216,9 +219,13 @@ export async function getHarnessOverview(
 }
 
 export interface HarnessConfigInput {
-  maxConcurrency: number;
-  /** Task types the harness may claim jobs of (`system` is always accepted). */
-  acceptedTaskTypes: Job["taskType"][];
+  /** Null inherits the organization's default. */
+  maxConcurrency: number | null;
+  /**
+   * Task types the harness may claim jobs of (`system` is always accepted); null inherits
+   * the organization's default.
+   */
+  acceptedTaskTypes: Job["taskType"][] | null;
   /** Per-pool concurrency limits; pools left out use the default. */
   poolLimits: Partial<Record<string, number>>;
 }
@@ -238,7 +245,7 @@ export async function updateHarnessConfig(
     .update(harnesses)
     .set({
       maxConcurrency: input.maxConcurrency,
-      acceptedTaskTypes: [...new Set(input.acceptedTaskTypes)],
+      acceptedTaskTypes: input.acceptedTaskTypes && [...new Set(input.acceptedTaskTypes)],
       poolLimits: input.poolLimits,
     })
     .where(
