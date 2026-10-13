@@ -78,7 +78,7 @@ import { fitTitle } from "@omniralph/ralph";
 import { CODING_DEFAULTS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
 import { organizationDefinitions } from "@/lib/definitions";
-import { advanceRun, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
+import { advanceRun, laneHarnessId, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -2219,6 +2219,81 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       await describePr(run.id);
       expect((await getRun(db, run.id))?.status).toBe("completed");
       expect(scm.changeRequests).toHaveLength(1);
+    });
+
+    it("records the harness that starts a job on the job's lane, and on the run for the main lane", async () => {
+      const t = crossRepo("Web");
+      const run = await delegate(t.epic.id);
+      const harnessesOf = async () => {
+        const lanes = await listLanes(db, run.id);
+        return {
+          run: (await getRun(db, run.id))?.harnessId,
+          main: lanes.find((l) => l.repositoryId === repoId)?.harnessId,
+          web: lanes.find((l) => l.repositoryId === gitlabRepoId)?.harnessId,
+        };
+      };
+      expect(await harnessesOf()).toEqual({ run: null, main: null, web: null });
+
+      const job = await activeJob(run.id);
+      expect(job.repositoryId).toBe(repoId);
+      expect(await onRalphJobStarted(db, job, agentA)).toEqual({ skip: false });
+      expect(await harnessesOf()).toEqual({ run: agentA, main: agentA, web: null });
+
+      // A job in the secondary lane changes only that lane's harness.
+      const webJob: Job = { ...job, repositoryId: gitlabRepoId };
+      expect(await onRalphJobStarted(db, webJob, agentB)).toEqual({ skip: false });
+      expect(await harnessesOf()).toEqual({ run: agentA, main: agentA, web: agentB });
+    });
+
+    describe("laneHarnessId", () => {
+      const lane = (harnessId: string | null, repositoryId = gitlabRepoId) => ({
+        harnessId,
+        repositoryId,
+      });
+      const run = () => ({ organizationId: orgId });
+
+      it("is the lane's sticky harness while it is usable", async () => {
+        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentB);
+      });
+
+      it("falls back to the repository's pinned harness when the sticky one is revoked", async () => {
+        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+        expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentA);
+      });
+
+      it("falls back to the pinned harness when the sticky one doesn't take coding tasks", async () => {
+        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await db
+          .update(harnesses)
+          .set({ acceptedTaskTypes: ["review"] })
+          .where(eq(harnesses.id, agentB));
+        expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentA);
+      });
+
+      it("falls back to the pinned harness when the sticky one is in another organization", async () => {
+        const [other] = await db.insert(organizations).values({ name: "Initech" }).returning();
+        const [foreign] = await db
+          .insert(harnesses)
+          .values({ organizationId: other!.id, name: "initech-1", acceptedTaskTypes: ["coding"] })
+          .returning();
+        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        expect(await laneHarnessId(db, run(), lane(foreign!.id))).toBe(agentA);
+      });
+
+      it("falls back to the pinned harness without a sticky one", async () => {
+        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        expect(await laneHarnessId(db, run(), lane(null))).toBe(agentA);
+        // Another repository's pin doesn't count.
+        expect(await laneHarnessId(db, run(), lane(null, repoId))).toBeUndefined();
+      });
+
+      it("is undefined without a usable sticky harness or a pin", async () => {
+        expect(await laneHarnessId(db, run(), lane(null))).toBeUndefined();
+        await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+        expect(await laneHarnessId(db, run(), lane(agentB))).toBeUndefined();
+      });
     });
 
     it("gives a story whose project routes to another repository a lane there", async () => {

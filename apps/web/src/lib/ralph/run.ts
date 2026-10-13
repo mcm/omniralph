@@ -15,6 +15,7 @@ import {
   listMessages,
   listStories,
   lockRun,
+  pinnedHarnessFor,
   updateLane,
   updateRun,
   updateStory,
@@ -406,25 +407,51 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
 }
 
 /**
- * The run's agent, while it may still take the run's jobs (not revoked,
- * accepting `coding` tasks itself or by the organization's default, in the
- * run's organization).
+ * A harness while it may still take a run's jobs (not revoked, accepting
+ * `coding` tasks itself or by the organization's default, in the run's
+ * organization).
  */
-export async function stickyHarnessId(
+async function usableHarnessId(
   db: Database,
-  run: Pick<RalphRun, "harnessId" | "organizationId">,
+  organizationId: string,
+  harnessId: string | null,
 ): Promise<string | undefined> {
-  if (!run.harnessId) return undefined;
-  const agent = await getHarness(db, run.harnessId);
+  if (!harnessId) return undefined;
+  const agent = await getHarness(db, harnessId);
   if (
     !agent ||
     agent.revokedAt ||
-    agent.organizationId !== run.organizationId ||
+    agent.organizationId !== organizationId ||
     !(await resolveHarnessConfig(db, agent)).acceptedTaskTypes.includes("coding")
   ) {
     return undefined;
   }
   return agent.id;
+}
+
+/** The run's agent (its main lane's), while it may still take the run's jobs. */
+export async function stickyHarnessId(
+  db: Database,
+  run: Pick<RalphRun, "harnessId" | "organizationId">,
+): Promise<string | undefined> {
+  return usableHarnessId(db, run.organizationId, run.harnessId);
+}
+
+/**
+ * The harness a lane's jobs go to: its sticky harness while usable (see
+ * `usableHarnessId`), else one its repository is pinned to, else undefined
+ * (any harness of the organization may take them).
+ */
+export async function laneHarnessId(
+  db: Database,
+  run: Pick<RalphRun, "organizationId">,
+  lane: Pick<RalphLane, "harnessId" | "repositoryId">,
+): Promise<string | undefined> {
+  return (
+    (await usableHarnessId(db, run.organizationId, lane.harnessId)) ??
+    (await pinnedHarnessFor(db, run.organizationId, lane.repositoryId)) ??
+    undefined
+  );
 }
 
 /** Ends a run that can't go on (e.g. its repository is gone), with an error in its session. */

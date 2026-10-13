@@ -2,10 +2,12 @@ import "server-only";
 import {
   findLaneByPullRequest,
   getReviewRun,
+  getLaneByRepository,
   getRun,
   listLanes,
   lockRun,
   skipJob,
+  updateLane,
   updateRun,
   type Database,
   type Job,
@@ -22,12 +24,14 @@ import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
  * Outcome hooks of `ralph.*` jobs (registered in `lib/jobs/handlers.ts`). A
  * job's outcome itself is applied by `advanceRun`, which finds it through the
  * story's `last_job_id`; the hooks only make sure the run is advanced and
- * record the run's sticky agent.
+ * record the lanes' sticky agents.
  */
 
 /**
- * A delivery started: the agent becomes the run's sticky agent (its later
- * jobs are targeted at it). A job of a run that is over is skipped.
+ * A delivery started: the agent becomes the sticky agent of the job's lane
+ * (the run's lane in the job's repository; its later jobs are targeted at
+ * it), and of the run when that is the main lane. A job of a run that is
+ * over is skipped.
  */
 export async function onRalphJobStarted(
   db: Database,
@@ -37,7 +41,11 @@ export async function onRalphJobStarted(
   if (!job.ralphRunId) return { skip: false };
   const finished = await lockRun(db, job.ralphRunId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return true;
-    if (run.harnessId !== harnessId) await updateRun(tx, run.id, { harnessId });
+    const repositoryId = job.repositoryId ?? run.repositoryId;
+    const lane = repositoryId ? await getLaneByRepository(tx, run.id, repositoryId) : null;
+    if (lane && lane.harnessId !== harnessId) await updateLane(tx, lane.id, { harnessId });
+    const main = !repositoryId || repositoryId === run.repositoryId;
+    if (main && run.harnessId !== harnessId) await updateRun(tx, run.id, { harnessId });
     return false;
   });
   if (finished ?? true) {
