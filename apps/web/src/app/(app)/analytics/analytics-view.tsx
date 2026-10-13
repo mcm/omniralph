@@ -32,6 +32,7 @@ import { EmptyValue } from "@/components/empty-value";
 import { useCurrentUser } from "@/components/current-user";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
+import { MonoValue } from "@/components/mono-value";
 import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
 import {
@@ -95,7 +96,7 @@ function RepositoryLink({ repository }: { repository: AnalyticsRepositoryRef }) 
   return (
     <Link href={`/repositories/${repository.id}/reviews`} className="analytics-repo-link">
       <ProviderIcon provider={repository.provider} size={12} />
-      <span className="text-numeric">{repository.fullPath}</span>
+      <MonoValue value={repository.fullPath} />
     </Link>
   );
 }
@@ -374,21 +375,28 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           <Card ribbon>
             <CardHeader>
               <CardTitle as="h2">Tokens per day</CardTitle>
-              <CardDescription>{period}, input and output stacked</CardDescription>
+              <CardDescription>
+                {period}, input and output each on its own scale (output is far smaller)
+              </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="analytics-card-stack">
               <AreaChart
-                aria-label="Tokens per day"
-                height={240}
+                aria-label="Input tokens per day"
+                height={176}
                 data={daily}
                 xKey="day"
-                stacked
                 showLegend
                 tickFormatter={formatTokens}
-                areas={[
-                  { key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES },
-                  { key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES },
-                ]}
+                areas={[{ key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES }]}
+              />
+              <AreaChart
+                aria-label="Output tokens per day"
+                height={128}
+                data={daily}
+                xKey="day"
+                showLegend
+                tickFormatter={formatTokens}
+                areas={[{ key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES }]}
               />
             </CardContent>
           </Card>

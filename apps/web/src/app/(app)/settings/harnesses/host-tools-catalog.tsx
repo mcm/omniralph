@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconPlus, IconTool, IconTrash } from "@tabler/icons-react";
+import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
 import { addHostTool, removeHostTool } from "./actions";
@@ -144,12 +145,12 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
           description="Add the software harness owners install by hand that tasks rely on."
         />
       ) : (
-        <Table>
+        <Table className="list-table">
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead />
+              <TableHead className={WIDE_COLUMN}>Description</TableHead>
+              <TableHead aria-label="Actions" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -157,15 +158,20 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
               <TableRow key={tool.id} data-host-tool={tool.name}>
                 <TableCell>
                   <MonoValue value={tool.name} className="text-sm" />
+                  {tool.description && (
+                    <PhoneMeta>
+                      <span className="text-sm">{tool.description}</span>
+                    </PhoneMeta>
+                  )}
                 </TableCell>
-                <TableCell>
+                <TableCell className={WIDE_COLUMN}>
                   {tool.description ? (
                     <span className="text-sm">{tool.description}</span>
                   ) : (
                     <EmptyValue />
                   )}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="list-actions">
                   <DeleteHostTool tool={tool} />
                 </TableCell>
               </TableRow>

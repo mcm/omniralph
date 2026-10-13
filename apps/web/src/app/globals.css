@@ -394,6 +394,14 @@ body {
 .mono-time {
   white-space: nowrap;
 }
+.mono-path-segment {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .list-actions {
   text-align: right;
   white-space: nowrap;
@@ -626,6 +634,8 @@ body {
 /* Multi-line values (commands, globs): a line diff, so only the changed lines are struck. */
 .settings-change-diff {
   margin: 0;
+  max-height: 16rem;
+  overflow-y: auto;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
@@ -912,6 +922,36 @@ body {
     white-space: nowrap;
   }
 }
+/* Initials on phone ("2C"), words from 768px ("2 critical"). */
+.severity-word {
+  display: none;
+}
+@media (min-width: 768px) {
+  .severity-counts > * {
+    gap: var(--space-1);
+  }
+  .severity-short {
+    display: none;
+  }
+  .severity-word {
+    display: inline;
+  }
+  /* Reviews list: the counts wrap between severities (never inside one) to fit the column. */
+  .review-col-findings {
+    width: 9.5rem;
+    min-width: 9.5rem;
+  }
+  .review-col-findings .severity-counts {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+}
+/* Medium: the neutral well with a strong border and primary text, one step louder
+   than neutral `low` and never the info hue that running states wear. */
+.severity-strong.severity-strong {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
 /* The quietest severity (info): no fill, dashed outline, set apart from neutral `low`. */
 .severity-quiet.severity-quiet {
   background-color: transparent;
@@ -957,14 +997,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4) 0 var(--space-4) var(--space-4);
-  border-left: 2px solid var(--border-default);
+  padding-block: var(--space-4);
 }
 .review-finding + .review-finding {
   border-top: 1px solid var(--border-subtle);
-}
-.review-finding[data-inactive] {
-  border-left-style: dashed;
 }
 .review-finding-head {
   display: flex;
@@ -1125,9 +1161,9 @@ body {
   align-items: center;
   gap: var(--space-1);
   font-size: var(--text-xs);
+  min-width: 0;
   color: var(--text-primary);
   text-decoration: none;
-  overflow-wrap: anywhere;
 }
 .analytics-link {
   color: inherit;
@@ -1201,6 +1237,18 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
+.harness-pinned-link {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.harness-repo-badge {
+  max-width: 100%;
+  min-width: 0;
+}
 .harness-secret-row {
   padding-block: var(--space-3);
 }
@@ -1224,6 +1272,34 @@ body {
 }
 .harness-path-input {
   min-width: 14rem;
+}
+/* Phone: each host tool is a block (name, status, effective path, then the path form across
+   the width), so the form never scrolls out of view. */
+@media (max-width: 767.98px) {
+  .host-tools-table thead {
+    display: none;
+  }
+  .host-tools-table tr {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+  }
+  .host-tools-table td:not(.list-col-wide) {
+    display: block;
+    width: 100%;
+    padding-block: 0;
+  }
+}
+/* Phone: the path input takes the cell's width and Save wraps below it. */
+@media (max-width: 767.98px) {
+  .harness-inline-form {
+    flex-wrap: wrap;
+  }
+  .harness-path-input {
+    min-width: 0;
+    flex: 1 1 9rem;
+  }
 }
 .harness-install-name {
   flex: 2;
@@ -1509,14 +1585,6 @@ body {
   flex-wrap: wrap;
   overflow-wrap: anywhere;
 }
-.org-row-secondary {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .org-row-meta {
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -1639,8 +1707,10 @@ body {
   color: var(--text-accent);
   white-space: nowrap;
 }
-.repo-rule-cell {
-  min-width: 17.5rem;
+@media (min-width: 768px) {
+  .repo-rule-cell {
+    min-width: 17.5rem;
+  }
 }
 .repo-rule-text {
   margin: 0;

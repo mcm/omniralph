@@ -63,7 +63,7 @@ describe("taskChanges", () => {
     ]);
   });
 
-  it("summarizes a long prompt and lists commands one per line", () => {
+  it("keeps a prompt whole and lists commands one per line", () => {
     const [prompt, setup] = changesTo({
       promptTemplate: "Review the change.\nList each vulnerability.",
       setupCommands: [
@@ -81,7 +81,7 @@ describe("taskChanges", () => {
       key: "promptTemplate",
       label: "Prompt template",
       from: "Review the change for vulnerabilities.",
-      to: "2 lines, 43 characters",
+      to: "Review the change.\nList each vulnerability.",
     });
     expect(setup).toEqual({
       key: "setupCommands",

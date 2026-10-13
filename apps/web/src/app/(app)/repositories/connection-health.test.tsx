@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { formatDate } from "@/lib/format-date";
 import { ConnectionHealth, type ConnectionHealthRow as Health } from "./connection-health";
+
+const EXPIRY = formatDate("2026-10-09");
 
 vi.mock("./actions", () => ({ recreateGitLabWebhook: vi.fn() }));
 
@@ -25,7 +28,9 @@ function problemItem(html: string, code: string): string {
 describe("ConnectionHealth", () => {
   it("shows the token expiry and the last check, without a warning when all is well", () => {
     const html = render(health([]));
-    expect(html).toContain("Token expires 2026-10-09");
+    expect(html).toContain(
+      `Token expires <time dateTime="2026-10-09" class="mono-time text-numeric">${EXPIRY}</time>`,
+    );
     expect(html).toContain("Last checked");
     expect(html).toContain("2026");
     expect(html).not.toContain("problem");
@@ -70,9 +75,9 @@ describe("ConnectionHealth", () => {
       ]),
     );
     expect(problemItem(html, "rotation_unsupported")).toBe(
-      "This GitLab instance can't rotate the bot token. The bot token expires on 2026-10-09.",
+      `This GitLab instance can't rotate the bot token. The bot token expires on ${EXPIRY}.`,
     );
-    expect(problemItem(html, "token_expiring")).toContain("The bot token expires on 2026-10-09.");
+    expect(problemItem(html, "token_expiring")).toContain(`The bot token expires on ${EXPIRY}.`);
     expect(
       problemItem(
         render(health([{ code: "rotation_unsupported", message: "Can't rotate." }], null)),

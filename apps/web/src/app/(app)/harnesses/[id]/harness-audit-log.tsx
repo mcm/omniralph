@@ -22,7 +22,7 @@ import {
 } from "@/lib/harnesses/display";
 import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
 import { EmptyValue } from "@/components/empty-value";
-import { Timestamp } from "@/components/list-table";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 
 /** Serializable `harness_audit` row. */
 export interface AuditRow {
@@ -66,13 +66,13 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
     );
   }
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
-          <TableHead>When</TableHead>
+          <TableHead className={WIDE_COLUMN}>When</TableHead>
           <TableHead>Event</TableHead>
-          <TableHead>Details</TableHead>
-          <TableHead>IP</TableHead>
+          <TableHead className={WIDE_COLUMN}>Details</TableHead>
+          <TableHead className={WIDE_COLUMN}>IP</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -81,20 +81,27 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
           const summary = auditDetailSummary(entry.event, entry.detail);
           return (
             <TableRow key={entry.id} data-event={entry.event}>
-              <TableCell>
+              <TableCell className={WIDE_COLUMN}>
                 <Timestamp iso={entry.createdAt} />
               </TableCell>
               <TableCell>
                 <Badge variant={HARNESS_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>
+                <PhoneMeta>
+                  {summary && <span className="text-sm text-text-primary">{summary}</span>}
+                  {entry.ip && (
+                    <span className="font-mono text-xs text-text-tertiary">{entry.ip}</span>
+                  )}
+                  <Timestamp iso={entry.createdAt} />
+                </PhoneMeta>
               </TableCell>
-              <TableCell>
+              <TableCell className={WIDE_COLUMN}>
                 {summary ? (
                   <span className="text-sm text-text-primary">{summary}</span>
                 ) : (
                   <EmptyValue />
                 )}
               </TableCell>
-              <TableCell>
+              <TableCell className={WIDE_COLUMN}>
                 <span className="font-mono text-xs text-text-tertiary">
                   {entry.ip ?? <EmptyValue />}
                 </span>

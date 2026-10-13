@@ -62,8 +62,8 @@ function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
 }
 
 function FindingItem({ finding }: { finding: FindingView }) {
-  // Dismissed and resolved findings are marked by their status badge, a dashed rule and a
-  // secondary title, never by opacity: dimming the item would also dim its Restore control.
+  // Dismissed and resolved findings are marked by their status badge and a secondary title,
+  // never by opacity: dimming the item would also dim its Restore control.
   const inactive = finding.status !== "open";
   return (
     <li

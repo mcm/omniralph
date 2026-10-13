@@ -24,9 +24,9 @@ const SEVERITY_SHORT: Record<Severity, string> = {
 
 function severityBadgeProps(severity: Severity) {
   const variant = SEVERITY_VARIANTS[severity];
-  return variant === "quiet"
-    ? ({ variant: "neutral", className: "severity-quiet" } as const)
-    : { variant, dot: severity === "critical" };
+  if (variant === "quiet") return { variant: "neutral", className: "severity-quiet" } as const;
+  if (variant === "strong") return { variant: "neutral", className: "severity-strong" } as const;
+  return { variant, dot: severity === "critical" };
 }
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
@@ -40,8 +40,8 @@ export function SeverityBadge({ severity, count }: { severity: Severity; count?:
 
 /**
  * Finding counts per severity on one line, most severe first, skipping zeros:
- * mono count plus the severity's initial ("2C"; the full name is in the tooltip
- * and read to screen readers). `only` limits the severities shown (the phone
+ * mono count plus the severity's name ("2 critical") from 768px, its initial
+ * ("2C") on phone (the full name is in the tooltip and read to screen readers). `only` limits the severities shown (the phone
  * row shows just critical and high).
  */
 export function SeverityCounts({
@@ -58,7 +58,12 @@ export function SeverityCounts({
       {present.map((severity) => (
         <Badge key={severity} {...severityBadgeProps(severity)} size="sm" title={severity}>
           <span className="text-numeric">{counts[severity]}</span>
-          <span aria-hidden>{SEVERITY_SHORT[severity]}</span>
+          <span aria-hidden className="severity-short">
+            {SEVERITY_SHORT[severity]}
+          </span>
+          <span aria-hidden className="severity-word">
+            {severity}
+          </span>
           <span className="sr-only">{severity}</span>
         </Badge>
       ))}

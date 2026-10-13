@@ -34,6 +34,7 @@ import {
 import { IconDoorExit, IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { isRole, type Role } from "@/lib/auth/roles";
@@ -236,8 +237,12 @@ function Member({
           {name}
           {isSelf && <Badge variant="neutral">You</Badge>}
         </div>
-        <div className="org-row-secondary">
-          {member.email ?? "no email"} · joined {new Date(member.joinedAt).toLocaleDateString()}
+        {/* The email truncates at the end (full value in its title); the join date wraps whole. */}
+        <div className="org-row-meta">
+          {member.email ? <MonoValue value={member.email} truncate="end" /> : "No email"} ·{" "}
+          <span className="list-nowrap">
+            joined <Timestamp iso={member.joinedAt} date inline />
+          </span>
         </div>
       </div>
       {isAdmin ? (

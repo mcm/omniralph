@@ -79,17 +79,18 @@ export const FINDING_STATUS_VARIANTS: Record<FindingStatus, IntentVariant> = {
 };
 
 /**
- * How loud a finding severity reads: the library's tinted intents plus `quiet`
- * (no fill, dashed outline), so five severities get five looks. Never `accent`:
- * a solid fill would outshout `critical`.
+ * How loud a finding severity reads: the library's tinted intents plus `strong`
+ * (neutral well, strong border and primary text) and `quiet` (no fill, dashed
+ * outline), so five severities get five looks. Never `info`: that's the running
+ * hue. Never `accent`: a solid fill would outshout `critical`.
  */
-export type SeverityVariant = "danger" | "warning" | "info" | "neutral" | "quiet";
+export type SeverityVariant = "danger" | "warning" | "strong" | "neutral" | "quiet";
 
 /** Loudness of each severity variant, loudest first. */
 export const SEVERITY_VARIANT_WEIGHT: Record<SeverityVariant, number> = {
   danger: 4,
   warning: 3,
-  info: 2,
+  strong: 2,
   neutral: 1,
   quiet: 0,
 };
@@ -98,9 +99,39 @@ export const SEVERITY_VARIANT_WEIGHT: Record<SeverityVariant, number> = {
 export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], SeverityVariant> = {
   critical: "danger",
   high: "warning",
-  medium: "info",
+  medium: "strong",
   low: "neutral",
   info: "quiet",
+};
+
+/** A host tool's configured path as last checked, and whether it can run at all. */
+export type HostToolPathState = "unchecked" | "exists" | "missing" | "unavailable";
+
+export const HOST_TOOL_PATH_VARIANTS: Record<HostToolPathState, IntentVariant> = {
+  unchecked: "neutral",
+  exists: "success",
+  missing: "danger",
+  unavailable: "warning",
+};
+
+/** An integration's state: a saved connection the server can't use (app not configured) warns. */
+export type IntegrationState = "connected" | "unconfigured" | "disconnected";
+
+export function integrationState(connected: boolean, configured: boolean): IntegrationState {
+  if (!connected) return "disconnected";
+  return configured ? "connected" : "unconfigured";
+}
+
+export const INTEGRATION_STATE_VARIANTS: Record<IntegrationState, IntentVariant> = {
+  connected: "success",
+  unconfigured: "warning",
+  disconnected: "neutral",
+};
+
+export const INTEGRATION_STATE_LABELS: Record<IntegrationState, string> = {
+  connected: "Connected",
+  unconfigured: "Connected · not configured",
+  disconnected: "Not connected",
 };
 
 export type HarnessConnectionState = "online" | "offline" | "revoked";

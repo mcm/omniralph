@@ -362,7 +362,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
             ))}
           </div>
         ) : (
-          <Muted>Any agent</Muted>
+          <Muted>Any harness</Muted>
         )}
       </TableCell>
       <TableCell className={WIDE_COLUMN}>

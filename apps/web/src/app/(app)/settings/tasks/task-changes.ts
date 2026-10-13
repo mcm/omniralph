@@ -12,7 +12,6 @@ import type {
   TriggerKind,
 } from "@omniralph/tasks";
 import {
-  formatLongText,
   formatSettingValue,
   settingChanges,
   type SettingChange,
@@ -186,11 +185,11 @@ export function taskSpecs(names: TaskChangeNames): SettingSpec[] {
       value === "" && empty ? empty : (labels[String(value)] ?? formatSettingValue(value));
   return [
     { key: "name", label: "Name" },
-    { key: "description", label: "Description", format: formatLongText },
+    { key: "description", label: "Description" },
     { key: "taskType", label: "Task type", format: option(TASK_TYPE_LABELS) },
     { key: "agentId", label: "Agent", format: byName(names.agents) },
     { key: "triggers", label: "Triggers" },
-    { key: "promptTemplate", label: "Prompt template", format: formatLongText },
+    { key: "promptTemplate", label: "Prompt template" },
     { key: "setupCommands", label: "Setup commands", format: lines },
     { key: "teardownCommands", label: "Teardown commands", format: lines },
     { key: "shell", label: "Shell (Bash)" },
@@ -198,7 +197,7 @@ export function taskSpecs(names: TaskChangeNames): SettingSpec[] {
     { key: "network", label: "Network access" },
     { key: "requiredInstallables", label: "Required installables" },
     { key: "requiredHostTools", label: "Required host tools" },
-    { key: "outputSchema", label: "Output schema", format: formatLongText },
+    { key: "outputSchema", label: "Output schema" },
     { key: "pushTiming", label: "Push", format: option(PUSH_TIMING_LABELS) },
     {
       key: "draftPullRequest",

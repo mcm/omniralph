@@ -23,6 +23,7 @@ import {
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { MonoPath } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { SettingsCard, SwitchField } from "@/components/settings-card";
 import {
@@ -202,7 +203,7 @@ export function RepositorySettingsView({
           title={
             <>
               <ProviderIcon provider={repository.provider} size={20} />
-              <span className="text-numeric">{repository.fullPath}</span>
+              <MonoPath value={repository.fullPath} />
             </>
           }
           description="How this repository is reviewed. Changes apply to the next review; queued and running reviews keep the settings they started with."

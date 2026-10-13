@@ -12,6 +12,7 @@ import {
 import { IconWebhook } from "@tabler/icons-react";
 import { Timestamp } from "@/components/list-table";
 import { useAction } from "@/components/use-action";
+import { formatDate } from "@/lib/format-date";
 import { recreateGitLabWebhook } from "./actions";
 
 /** A problem found by the daily GitLab check (`scm_connections.health`). */
@@ -35,7 +36,7 @@ const WEBHOOK_PROBLEMS = new Set(["webhook_missing", "webhook_events_outdated"])
 
 function expiry(tokenExpiresAt: string | null): string {
   return tokenExpiresAt
-    ? `The bot token expires on ${tokenExpiresAt}.`
+    ? `The bot token expires on ${formatDate(tokenExpiresAt)}.`
     : "GitLab doesn't report when the bot token expires.";
 }
 
@@ -89,7 +90,13 @@ export function ConnectionHealth({
   return (
     <Stack gap={2}>
       <Muted className="text-xs">
-        {health.tokenExpiresAt ? `Token expires ${health.tokenExpiresAt}` : "Token expiry unknown"}{" "}
+        {health.tokenExpiresAt ? (
+          <>
+            Token expires <Timestamp iso={health.tokenExpiresAt} date inline />
+          </>
+        ) : (
+          "Token expiry unknown"
+        )}{" "}
         · Last checked <Timestamp iso={health.checkedAt} inline />
       </Muted>
       {health.problems.length > 0 && (

@@ -24,7 +24,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconCheck, IconDeviceFloppy } from "@tabler/icons-react";
 import type { ActionResult } from "@/lib/action-result";
-import { isMultiLineChange, lineDiff, type SettingChange } from "@/lib/settings/changes";
+import { changeDiff, isMultiLineChange, type SettingChange } from "@/lib/settings/changes";
 import { unsavedAnchorId } from "@/lib/unsaved-changes";
 import { useUnsavedChanges } from "./unsaved-changes";
 import { useAction } from "./use-action";
@@ -75,7 +75,7 @@ export function SettingChangeList({ changes }: { changes: readonly SettingChange
         <div key={change.key} className="settings-change">
           <dt className="settings-change-label">{change.label}</dt>
           {isMultiLineChange(change) ? (
-            <LineDiff from={change.from} to={change.to} />
+            <LineDiff change={change} />
           ) : (
             <dd className="settings-change-values">
               <span className="settings-change-from">
@@ -100,11 +100,19 @@ export function SettingChangeList({ changes }: { changes: readonly SettingChange
 const DIFF_MARK = { same: " ", removed: "−", added: "+" } as const;
 const DIFF_SR = { same: "", removed: "Removed: ", added: "Added: " } as const;
 
-/** A multi-line value's change, line by line: only removed lines are struck. */
-function LineDiff({ from, to }: { from: string; to: string }) {
+/**
+ * A multi-line value's change, line by line: only removed lines are struck. A long one (a system
+ * prompt) scrolls inside the dialog and can be focused to scroll by keyboard.
+ */
+function LineDiff({ change }: { change: SettingChange }) {
   return (
-    <dd className="settings-change-diff">
-      {lineDiff(from, to).map((line, i) => (
+    <dd
+      className="settings-change-diff"
+      tabIndex={0}
+      role="region"
+      aria-label={`${change.label} changes`}
+    >
+      {changeDiff(change).map((line, i) => (
         <div key={i} className={`settings-diff-line settings-diff-${line.kind}`}>
           <span aria-hidden="true" className="settings-diff-mark">
             {DIFF_MARK[line.kind]}

@@ -97,7 +97,7 @@ function Documents({
             <Field
               label="Content"
               htmlFor={`agent-${prefix}-content`}
-              description={withDefault("Markdown.")}
+              description="Markdown."
               error={errors[`${prefix}.content`]}
               required
             >
@@ -247,7 +247,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Suited task types"
                   htmlFor="agent-task-types"
-                  description={withDefault("Tasks of these types may run on the agent.")}
+                  description="Tasks of these types may run on the agent."
                   error={errorFor(errors, "taskTypes")}
                   required
                 >
@@ -331,7 +331,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="System prompt"
                   htmlFor="agent-system-prompt"
-                  description={withDefault("Markdown.")}
+                  description="Markdown."
                   error={errors.systemPrompt}
                 >
                   <Textarea

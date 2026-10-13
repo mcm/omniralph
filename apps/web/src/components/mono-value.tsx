@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { cn } from "@iamthemcmaster/ui";
 
 /** Longest tail kept whole when a value truncates in the middle (a file name, an ID suffix). */
@@ -45,6 +46,28 @@ export function MonoValue({
     <span className={cn("mono-value text-numeric", className)} title={title}>
       <span className="mono-value-head">{head}</span>
       {tail && <span className="mono-value-tail">{tail}</span>}
+    </span>
+  );
+}
+
+/**
+ * A path in mono that may wrap, but only after a `/` (a repository name in a
+ * page title): each segment stays whole, or truncates at the end if it alone is
+ * wider than the line.
+ */
+export function MonoPath({ value, className }: { value: string; className?: string }) {
+  return (
+    <span className={cn("mono-path text-numeric", className)} title={value}>
+      {value.split("/").map((segment, i) => (
+        <Fragment key={i}>
+          {i > 0 && (
+            <>
+              /<wbr />
+            </>
+          )}
+          <span className="mono-path-segment">{segment}</span>
+        </Fragment>
+      ))}
     </span>
   );
 }
