@@ -854,7 +854,7 @@ export async function reconcileCleanup(
 
   for (const { lane } of await listLanesToCleanUp(deps.db, deps.organizationId, origin)) {
     const cleanup = lane.cleanup;
-    await attempt(`Cleaning up ${lane.branch} (ralph lane ${lane.id})`, async () => {
+    await attempt(`Cleaning up ${lane.branch} (coding task lane ${lane.id})`, async () => {
       if (cleanup?.jobId) {
         const job = await getJob(deps.db, cleanup.jobId);
         if (job && ACTIVE_JOB_STATUSES.has(job.status)) return;

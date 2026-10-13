@@ -35,6 +35,8 @@ interface CaptureResult {
   finalPath: string | null;
   scrollWidth: number | null;
   overflow: boolean;
+  /** The visible text around each "Ralph" on the page (none expected). */
+  retiredWording: string[];
   consoleErrors: string[];
   error: string | null;
   screenshot: string | null;
@@ -364,6 +366,7 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   const summary: string[] = [];
   const failed = results.filter((r) => r.error);
   const overflowing = results.filter((r) => r.overflow);
+  const retired = results.filter((r) => r.retiredWording.length > 0);
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
   const redirected = results.filter((r) => r.finalPath && r.finalPath !== r.path);
 
@@ -380,6 +383,16 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
     }
   } else {
     summary.push("No route is wider than its viewport.");
+  }
+  if (retired.length > 0) {
+    summary.push(`\nShows "Ralph" (say "Coding" instead):`);
+    for (const r of retired) {
+      for (const text of r.retiredWording) {
+        summary.push(`  ${r.route} ${r.viewport} ${r.theme}: …${text}…`);
+      }
+    }
+  } else {
+    summary.push('No route shows "Ralph".');
   }
   if (serverErrors.length > 0) {
     summary.push(`\nServer errors:`);
@@ -398,7 +411,7 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   summary.push(`Details: ${join(outDir, "results.json")}`);
   log(summary.join("\n"));
 
-  if (failed.length > 0) return 1;
+  if (failed.length > 0 || retired.length > 0) return 1;
   if (strict && overflowing.length > 0) return 1;
   return 0;
 }

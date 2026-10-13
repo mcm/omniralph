@@ -414,7 +414,7 @@ export async function stopRun(
   }
   let canceled = 0;
   for (const jobId of stopped.jobIds) {
-    const ok = await quietly(`Canceling job ${jobId} of ralph run ${run.id}`, () =>
+    const ok = await quietly(`Canceling job ${jobId} of coding task ${run.id}`, () =>
       deps.dispatcher.cancel(jobId),
     );
     if (ok) canceled += 1;

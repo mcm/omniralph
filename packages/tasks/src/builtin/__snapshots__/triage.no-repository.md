@@ -1,4 +1,4 @@
-Triage the Linear issue OPS-1 into a PRD that ralph can build.
+Triage the Linear issue OPS-1 into a PRD that Omniralph can build.
 
 ## The issue
 - Identifier: OPS-1
@@ -23,7 +23,7 @@ No repository is routed to this issue, so there is no checkout: keep file paths 
 
 ## How to triage
 
-The PRDs you write are executed by ralph, a Linear agent that runs each sub-issue (or a single issue) as one fresh, unattended AI coding session: it runs the quality gates, commits, marks the story done and moves on, and opens the pull request when every story is done. Precision and machine-verifiable acceptance criteria matter. Ralph reads stories from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from story IDs or metadata in titles or bodies.
+The PRDs you write are executed by Omniralph, a Linear agent that runs each sub-issue (or a single issue) as one fresh, unattended AI coding session: it runs the quality gates, commits, marks the story done and moves on, and opens the pull request when every story is done. Precision and machine-verifiable acceptance criteria matter. Omniralph reads stories from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from story IDs or metadata in titles or bodies.
 
 ### 1. Understand the issue
 - Read the title, description, comments, sub-issues and blockers below. Work out what is already specified, what you can infer about intent, and what is missing relative to the PRD format.
@@ -35,10 +35,10 @@ The PRDs you write are executed by ralph, a Linear agent that runs each sub-issu
 - `reformat`: the issue is already planned (it has sub-issues) but isn't in the format below. Reformat it, don't replan it: keep its scope, decisions, stories and their order, and fix the format of the description and of every Backlog/Todo sub-issue (`subIssueUpdates`). Never add new stories alongside existing sub-issues (`stories` stays empty), and never drop, merge or cancel sub-issues; if work seems to be missing, or a sub-issue seems wrong or redundant, say so in an open question.
 - `unchanged`: the issue is already a PRD in the format below and needs no rewrite. Return its current description (without any `## Open Questions` section) and title as they are, with no stories or sub-issue updates.
 - An issue whose description holds user stories but has no sub-issues (e.g. a `### US-001: …` PRD) is `prd`: rewrite it in this format, with its stories as `stories` when it is L or larger.
-- Ralph never touches work in progress: only sub-issues in state type `backlog` or `unstarted` can be updated.
+- Omniralph never touches work in progress: only sub-issues in state type `backlog` or `unstarted` can be updated.
 
 ### 3. Write the PRD (`description`)
-The description becomes the issue's description, and ralph includes it in every story's prompt. Use these sections, in this order, each as a plain `##` heading (`## Goals`, not `## 2. Goals`); the optional ones only when there is something to say:
+The description becomes the issue's description, and Omniralph includes it in every story's prompt. Use these sections, in this order, each as a plain `##` heading (`## Goals`, not `## 2. Goals`); the optional ones only when there is something to say:
 1. `## Introduction`: what the feature is and the problem it solves.
 2. `## Goals`: specific, measurable objectives (bullets).
 3. `## Quality Gates`: the commands every story must pass (see below). Always present.
@@ -54,7 +54,7 @@ Don't write a `# Title` heading (the title is its own field), a `## Description`
 Branch line: by default add none. Add ``> Branch: `name` `` on its own line after the sections only when the issue or `LINEAR.md` asks for it (keep one that is already there). Never add a `[repo=…]` tag: repositories are routed by their settings, not by the description.
 
 #### Quality Gates
-Ralph finds the gates by exact format, so follow it exactly:
+Omniralph finds the gates by exact format, so follow it exactly:
 - The heading is literally `## Quality Gates`.
 - Each command is its own bullet, and the command is the **first backticked span** of the bullet: ``- `pnpm lint` - Linting``.
 - Anything that isn't a shell command must not start with backticks (a bullet like ``- `dev-browser` skill`` would be run as a command): write it as a plain prose bullet.
@@ -72,7 +72,7 @@ These commands must pass for every user story:
 Discover them from the repository, in this order:
 1. **CI config first** (`.github/workflows/*.yml`, `.gitlab-ci.yml` or equivalent): take the commands the pull-request pipeline runs (lint, typecheck, test, build). Gates weaker than CI let every story pass and then fail at the end, because CI only runs once the finished epic's pull request opens.
 2. **Then the scripts those commands call** (`package.json` scripts, `Makefile`, `pyproject.toml`, …). Prefer an aggregate script when CI uses one.
-Don't add browser verification unless the issue or `LINEAR.md` says the ralph host has a browser tool. Without a repository, keep the heading with a prose bullet saying the gates are still to be decided, and add an open question asking which repository and commands apply.
+Don't add browser verification unless the issue or `LINEAR.md` says the coding host has a browser tool. Without a repository, keep the heading with a prose bullet saying the gates are still to be decided, and add an open question asking which repository and commands apply.
 
 ### 4. Size it (`size`)
 Estimate the size of the entire body of work (every goal and functional requirement, not one piece): the number of distinct requirements, the surface area touched (database, API, UI, integrations, infra), unknowns and risk, and how many focused AI-agent sessions it would realistically take. XS, S, M, L or XL. Then apply the rule:
@@ -97,7 +97,7 @@ As a [user], I want [feature] so that [benefit].
 ```
 
   Don't repeat the title as a heading, and don't add a `## Ralph Metadata` section, story IDs, priority or dependency lines: those are Linear fields. The heading is exactly `## Acceptance Criteria` (no trailing colon). Never refer to other stories by drafting labels like US-001.
-- `priority`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when ralph picks the next story, so use one priority for the whole epic, or priorities that agree with the order on purpose.
+- `priority`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next story, so use one priority for the whole epic, or priorities that agree with the order on purpose.
 - `dependsOn`: the 0-based indexes, in `stories`, of the stories it really depends on. These become "blocks" relations, the only thing that stops a story from running early.
 - `manual`: true for a step only a person can do (secrets or credentials, DNS, third-party consoles, data migrations run by ops, design sign-off). Such steps are their own stories, never acceptance criteria on an agent story.
 - Every acceptance criterion must be verifiable by the agent itself, inside the repository: nothing that needs human judgement, production access or an external account. "Works correctly" is bad; "Button shows a confirmation dialog before deleting" is good.
@@ -118,7 +118,7 @@ Verify that the finished epic meets every functional requirement and every story
 The epic's description is the PRD (sections above, without `## Acceptance Criteria`); the stories go in `stories` only, never into the description.
 
 ### 6. Single issues (smaller than L)
-Ralph treats the whole description as one story, and would split it into sub-issues if it looked like a PRD with stories. So:
+Omniralph treats the whole description as one story, and would split it into sub-issues if it looked like a PRD with stories. So:
 - no story-style headings such as `### US-001: …`, `### FR-1: …` or `### Feature 1.1: …`: functional requirements are bullets and criteria are checkboxes;
 - no ```json block containing `userStories`;
 - `## Acceptance Criteria` is the last section.
@@ -128,7 +128,7 @@ Ralph treats the whole description as one story, and would split it into sub-iss
 For each sub-issue in state type `backlog` or `unstarted` that isn't in the story format above, add an entry with its `id` (as given below), its title without ID prefixes, its body in the story format (keep its intent and criteria; drop `## Ralph Metadata`, story IDs, priority and dependency lines, and turn criteria into a `## Acceptance Criteria` checklist), its `priority` (1–4; keep the current one unless it has none) and `blockedBy` (the `id`s of the sibling sub-issues it depends on, including the existing relations). Leave out sub-issues that are already fine and every sub-issue in any other state.
 
 ### 8. Open questions (`openQuestions`)
-You can't ask anyone during the session. Answer what you can from the issue, comments, sub-issues, blockers and source, and make reasonable, conventional choices for minor details (mention notable ones under Technical Considerations). Every ambiguity that remains and would change the scope, the behaviour, the acceptance criteria or the structure becomes one open question: specific, self-contained, and answerable in a sentence, with lettered options when that helps (e.g. "Who can delete a project? A. Owners only B. Owners and admins"). Don't ask about anything the issue already answers. Leave `openQuestions` empty when nothing is left: the issue then moves to Todo, ready for ralph. With open questions it stays in Backlog and ralph won't start it until they are answered.
+You can't ask anyone during the session. Answer what you can from the issue, comments, sub-issues, blockers and source, and make reasonable, conventional choices for minor details (mention notable ones under Technical Considerations). Every ambiguity that remains and would change the scope, the behaviour, the acceptance criteria or the structure becomes one open question: specific, self-contained, and answerable in a sentence, with lettered options when that helps (e.g. "Who can delete a project? A. Owners only B. Owners and admins"). Don't ask about anything the issue already answers. Leave `openQuestions` empty when nothing is left: the issue then moves to Todo, ready for Omniralph. With open questions it stays in Backlog and Omniralph won't start it until they are answered.
 - A description that already ends with a `## Open Questions` section holds the questions of an earlier triage: fold the answers given in the comments or the reply into the PRD, and keep only the questions still unanswered.
 
 ### 9. Summary (`summary`)

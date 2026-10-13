@@ -11,7 +11,7 @@ import { ENGINEER_AGENT } from "./engineer.js";
 
 /** The story-specific rules of ralph's story system prompt (`RALPH_SYSTEM_APPEND`). */
 export const STORY_RULES = `## Rules
-You are working a Linear epic one user story at a time (the Ralph loop).
+You are working a Linear epic one user story at a time (the coding loop).
 - Work only on the single story you are given; other stories get their own sessions.
 - Never run git commit, git push, or open pull requests: the orchestrator handles version control and Linear updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
 - Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.

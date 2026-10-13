@@ -508,7 +508,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         guidance: [],
       });
       expect(payload.epic.prd).toContain("Build the thing.");
-      expect(payload.progress).toContain("# Ralph Progress Log");
+      expect(payload.progress).toContain("# Progress Log");
       expect(payload.stories).toEqual([
         ...[
           { identifier: "ENG-2", title: "Alpha", status: "open", manual: false, dependsOn: [] },

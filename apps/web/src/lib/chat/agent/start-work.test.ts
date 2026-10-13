@@ -817,7 +817,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       const assistantTexts = calls[0]!.prompt.flatMap((m) =>
         m.role === "assistant" ? m.content.flatMap((p) => (p.type === "text" ? [p.text] : [])) : [],
       );
-      expect(assistantTexts.some((t) => t.startsWith(`[ralph run ${run.id}]`))).toBe(false);
+      expect(assistantTexts.some((t) => t.startsWith(`[coding task ${run.id}]`))).toBe(false);
       const [completion] = (await listRunEvents(db, orgId, chatThread.id)).filter(
         (e) => e.kind === "completion",
       );
