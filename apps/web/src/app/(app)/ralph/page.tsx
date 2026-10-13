@@ -11,7 +11,7 @@ import { parseRalphRunListParams } from "@/lib/ralph/display";
 import { ralphRunRow } from "@/lib/ralph/history";
 import { RalphRunsView } from "./ralph-runs-view";
 
-export const metadata: Metadata = { title: "Ralph runs · Omniralph" };
+export const metadata: Metadata = { title: "Coding tasks · Omniralph" };
 
 export default async function RalphRunsPage({
   searchParams,

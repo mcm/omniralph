@@ -50,7 +50,7 @@ const RUN_AFFECTING: SettingsConfirmation = {
 };
 
 /**
- * Repository › Settings › Ralph (admin-only): says which Linear issues route
+ * Repository › Settings › Coding (admin-only): says which Linear issues route
  * to the repository (coding itself is switched under Task types) and how its runs
  * work (cyralph's per-repository settings), grouped as Verification, Prompt
  * and model, Tools, PR follow-up and Linear. Each card saves on its own; the
@@ -108,7 +108,7 @@ export function RalphSettingsSection({
       }
       return {
         action: () => updateRalphSettings(repositoryId, parsed.data),
-        success: "Ralph settings saved; they apply to the next job of every run",
+        success: "Coding settings saved; they apply to the next job of every run",
         onSuccess: () => setErrors((e) => withoutFieldErrors(e, keys)),
         onError: (result: { fieldErrors?: FieldErrors }) =>
           setErrors((e) => ({ ...e, ...result.fieldErrors })),
@@ -220,7 +220,7 @@ export function RalphSettingsSection({
   return (
     <>
       <SettingsCard
-        title="Ralph"
+        title="Coding"
         description={
           <>
             How Linear issues delegated to the Omniralph app are built here, story by story, once
@@ -236,7 +236,7 @@ export function RalphSettingsSection({
           label="Coding path"
           htmlFor="ralph-coding-path"
           description={withDefault(
-            "How runs work stories and requests: the legacy Ralph jobs, or coding runs of the story and request tasks below.",
+            "How runs work stories and requests: the legacy jobs, or coding runs of the story and request tasks below.",
             RALPH_DEFAULT_TEXT.codingPath,
           )}
           error={errors.codingPath}
@@ -305,7 +305,7 @@ export function RalphSettingsSection({
       </SettingsCard>
 
       <SettingsCard
-        title="Ralph › Verification"
+        title="Coding › Verification"
         description="The quality gates the job runs after a story's session reports it complete; a failing gate sends its output back for the next attempt."
         confirm={RUN_AFFECTING}
         {...card(RALPH_CARDS.verification)}
@@ -338,7 +338,7 @@ export function RalphSettingsSection({
       </SettingsCard>
 
       <SettingsCard
-        title="Ralph › Prompt and model"
+        title="Coding › Prompt and model"
         description="What the Claude sessions are told and which model runs them."
         confirm={RUN_AFFECTING}
         {...card(RALPH_CARDS.prompt)}
@@ -378,8 +378,8 @@ export function RalphSettingsSection({
       </SettingsCard>
 
       <SettingsCard
-        title="Ralph › Tools"
-        description="Agent SDK tools or permission rules, one per line. They can only narrow Ralph's tool policy, never widen it."
+        title="Coding › Tools"
+        description="Agent SDK tools or permission rules, one per line. They can only narrow Omniralph's coding tool policy, never widen it."
         confirm={RUN_AFFECTING}
         {...card(RALPH_CARDS.tools)}
       >
@@ -388,7 +388,7 @@ export function RalphSettingsSection({
           "ralph-allowed-tools",
           "Allowed tools",
           withDefault(
-            "Leave it empty for Ralph's whole policy. Otherwise only these tools are available, and only calls matching these rules run.",
+            "Leave it empty for Omniralph's whole coding policy. Otherwise only these tools are available, and only calls matching these rules run.",
           ),
           "e.g. Read\nEdit\nBash(pnpm test:*)",
         )}
@@ -396,14 +396,14 @@ export function RalphSettingsSection({
           "disallowedTools",
           "ralph-disallowed-tools",
           "Disallowed tools",
-          withDefault("Always denied, on top of Ralph's policy."),
+          withDefault("Always denied, on top of Omniralph's coding policy."),
           "e.g. WebFetch",
         )}
       </SettingsCard>
 
       <SettingsCard
-        title="Ralph › PR follow-up"
-        description="The run's pull or merge request: when it opens, and how Ralph looks after it (reviews, CI and cleanup after the merge)."
+        title="Coding › PR follow-up"
+        description="The run's pull or merge request: when it opens, and how Omniralph looks after it (reviews, CI and cleanup after the merge)."
         {...card(RALPH_CARDS.followUp)}
       >
         {switchInput(
@@ -438,7 +438,7 @@ export function RalphSettingsSection({
           "respondToReviews",
           "ralph-respond-to-reviews",
           "Fix review findings",
-          "Omniralph's review findings and @bot requests on the run's pull or merge request become requests Ralph works on.",
+          "Omniralph's review findings and @bot requests on the run's pull or merge request become requests the run works on.",
           DEFAULT_RALPH_SETTINGS.respondToReviews,
         )}
         {numberInput(
@@ -446,7 +446,7 @@ export function RalphSettingsSection({
           "ralph-max-review-rounds",
           "Max review rounds",
           withDefault(
-            `Reviews acted on per pull or merge request before Ralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
+            `Reviews acted on per pull or merge request before Omniralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
             RALPH_DEFAULT_TEXT.maxReviewRounds,
           ),
           MAX_FIX_ROUNDS,
@@ -489,8 +489,8 @@ export function RalphSettingsSection({
       </SettingsCard>
 
       <SettingsCard
-        title="Ralph › Linear"
-        description="How Ralph reads and updates the Linear epic."
+        title="Coding › Linear"
+        description="How Omniralph reads and updates the Linear epic."
         {...card(RALPH_CARDS.linear)}
       >
         {textInput(
@@ -498,7 +498,7 @@ export function RalphSettingsSection({
           "ralph-manual-labels",
           "Manual labels",
           withDefault(
-            "Comma-separated. Stories with any of these labels are steps for a person: Ralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Ralph files.",
+            "Comma-separated. Stories with any of these labels are steps for a person: Omniralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Omniralph files.",
             RALPH_DEFAULT_TEXT.manualLabels,
           ),
           { placeholder: "e.g. manual" },

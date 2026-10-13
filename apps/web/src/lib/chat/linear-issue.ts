@@ -152,7 +152,7 @@ export function createdCard(
   }
   if (delegated) {
     children.push(
-      CardText("Delegated to ralph: I'll post here when it starts and when it finishes."),
+      CardText("Delegated to Omniralph: I'll post here when it starts and when it finishes."),
     );
   }
   if (draft.linearIssueUrl) {
@@ -199,7 +199,7 @@ export function cardFor(draft: ChatLinearIssueDraft): CardElement {
 /** What `chat_messages` records once the issue is created. */
 export function createdMessage(draft: Draft, delegated = false): string {
   const created = `Created Linear issue ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
-  return delegated ? `${created}, and delegated it to ralph.` : created;
+  return delegated ? `${created}, and delegated it to Omniralph.` : created;
 }
 
 /**
@@ -266,7 +266,7 @@ export async function embedScreenshots(
 }
 
 export const DELEGATION_FAILED_REPLY =
-  "The issue was created, but Linear didn't delegate it to ralph. Ask me to delegate it again, or delegate it to Omniralph in Linear.";
+  "The issue was created, but Linear didn't delegate it to Omniralph. Ask me to delegate it again, or delegate it to Omniralph in Linear.";
 
 export interface LinearIssueActionDeps {
   db: Database;

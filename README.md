@@ -177,7 +177,7 @@ details.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
    Integrations**, enable ralph and its Linear routing on a repository and `coding` tasks
    on a harness, then delegate an epic to the app (or @mention it with a request)
-   → [docs/linear.md](docs/linear.md). Runs show up under **Ralph runs**. Replacing cyralph?
+   → [docs/linear.md](docs/linear.md). Runs show up under **Coding tasks**. Replacing cyralph?
    Follow [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md).
 7. **Chat in Slack or Discord** (optional): create the Slack app from its manifest and/or the
    Discord application, enable the AI Gateway, set the env vars, connect the workspace or server

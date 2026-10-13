@@ -39,7 +39,7 @@ Setting ralph up takes five steps:
 1. [Create the Linear OAuth app](#1-create-the-linear-oauth-app).
 2. [Set the env vars](#2-set-the-env-vars) on the control panel.
 3. [Connect the workspace](#3-connect-from-settings--integrations) from **Settings › Integrations**.
-4. [Enable ralph and configure routing](#4-configure-routing) on a repository, and enable the
+4. [Turn coding on and configure routing](#4-configure-routing) on a repository, and enable the
    `coding` task type on a harness ([deploy-harness.md](deploy-harness.md#ralph)).
 5. [Delegate an issue](#5-delegate-an-issue).
 
@@ -98,9 +98,9 @@ expires) and from the same browser.
   workspace and ignored for workspaces no organization connected.
 - Runs, routing and ralph's repositories are per organization too: a delegated issue is only
   routed to repositories of the workspace's organization, and its jobs only go to that
-  organization's agents. Only its members see the runs under **Ralph runs**.
+  organization's agents. Only its members see the runs under **Coding tasks**.
 - **Disconnect** deletes the stored tokens. Runs can't advance (their stories are re-read from
-  Linear before each one) until Linear is connected again. Stopping a run from **Ralph runs** still
+  Linear before each one) until Linear is connected again. Stopping a run from **Coding tasks** still
   works.
 - To move to another workspace, disconnect, then connect again while signed in to the other one.
   To move a workspace to another organization, disconnect it in the first and connect it from the
@@ -108,11 +108,10 @@ expires) and from the same browser.
 
 ## 4. Configure routing
 
-Ralph only builds in repositories that opted in. On **Repository › Settings › Ralph**:
+Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Routing is on **Repository › Settings › Coding**:
 
 | Setting | What it does |
 | -- | -- |
-| **Enable ralph** | Delegated issues may build in this repository and push branches to it. Off by default. |
 | **Linear labels** | Comma-separated label names. Issues with any of them route here. |
 | **Linear projects** | Comma-separated project names. |
 | **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
@@ -146,12 +145,12 @@ A delegated issue is routed to the first repository that matches, trying these r
 
 1. a `[repo=<fullPath>]` tag in the issue's (or epic's) description, e.g. `[repo=acme/web]` or
    `[repo=group/subgroup/project]`. A tag is authoritative: an issue tagged with a repository that
-   doesn't have ralph enabled isn't routed by its labels, project or team.
+   doesn't have coding on isn't routed by its labels, project or team.
 2. one of the issue's labels in a repository's **Linear labels**
 3. the issue's project in a repository's **Linear projects**
 4. the issue's team key in a repository's **Linear team keys**
 
-Matching ignores case, and only repositories with ralph enabled are candidates. When several
+Matching ignores case, and only repositories with coding on are candidates. When several
 repositories match the same rule, the one whose path sorts first wins, so avoid overlapping routes:
 use labels or tags for the exceptions and a team key for the default.
 
@@ -169,7 +168,7 @@ Routing runs again whenever the issue is delegated again:
   works there on a new branch, and the agent session says that the earlier branch and PR/MR stay
   as they are.
 
-If no repository has ralph enabled at all, the session gets an error explaining how to enable one.
+If no repository has coding on at all, the session gets an error explaining how to enable one.
 
 **Stories in other repositories.** In an epic with sub-issues, each story is also routed on the
 signals it doesn't share with the epic, in the same order: its own `[repo=…]` tag, a routing
@@ -396,7 +395,7 @@ links) reach the agent, as in cyralph:
   them with the Read tool (which shows images). A file that couldn't be downloaded is listed as
   such ("Don't guess what it shows"), and the agent says so once in the session as a thought.
 
-Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Ralph runs**,
+Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Coding tasks**,
 where admins can also stop a run. A run's page has one section per repository (lane) with its
 branch, PR/MR, stories, review rounds and CI fix rounds (out of the repository's `maxReviewRounds`
 / `maxFixRounds`, or "off" when that loop is turned off) and cleanup state. Below them are
@@ -561,8 +560,8 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
   issue: add its label, project or team to a repository's routing, or tag the issue with
   `[repo=<path>]`.
-- **"No repository has ralph enabled".** Enable ralph on a repository under
-  **Repository › Settings › Ralph**.
+- **"No repository has coding on".** Turn coding on for a repository under
+  **Repository › Settings › Task types**.
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
 - **"I couldn't download … attachment(s) from Linear".** `HTTP 401`/`403` or an HTML page means

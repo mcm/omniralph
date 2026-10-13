@@ -9,7 +9,7 @@ const change = { key: "model", label: "Model", from: "opus", to: "sonnet" };
 function render(changes: (typeof change)[], readOnly = false) {
   return renderToStaticMarkup(
     <SettingsCard
-      title="Ralph › Prompt and model"
+      title="Coding › Prompt and model"
       description="What the sessions are told."
       changes={changes}
       prepare={() => null}
@@ -64,6 +64,6 @@ describe("SettingChangeList", () => {
 
 describe("SettingsCard anchor", () => {
   it("gives the card an id the unsaved-changes bar links to", () => {
-    expect(render([change])).toContain('id="settings-ralph-prompt-and-model"');
+    expect(render([change])).toContain('id="settings-coding-prompt-and-model"');
   });
 });

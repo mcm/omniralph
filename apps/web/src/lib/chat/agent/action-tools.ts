@@ -41,25 +41,25 @@ const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/ralph/$
 export const startWork = defineChatTool({
   tier: "action",
   description:
-    "Starts work on a change request: a ralph run of this channel's \"start work\" coding task in one of the organization's ralph-enabled repositories, bound to this thread. Ralph works on its own branch, its answers and questions come back to you as run events for this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous. It returns the run's id right away and posts nothing: tell the user in your reply that the run started.",
+    "Starts work on a change request: a coding task of this channel's \"start work\" task in one of the organization's repositories with coding on, bound to this thread. It works on its own branch, its answers and questions come back to you as run events for this thread, and opens a pull/merge request when the request calls for one. A follow-up in a thread whose last run worked in the same repository continues that run's branch and pull request. Only call it once the repository is unambiguous. It returns the run's id right away and posts nothing: tell the user in your reply that the run started.",
   inputSchema: z.object({
     repository: z
       .string()
       .min(1)
       .max(300)
-      .describe("Full path of a ralph-enabled repository of the organization, e.g. `acme/api`."),
+      .describe("Full path of a repository with coding on of the organization, e.g. `acme/api`."),
     request: z
       .string()
       .min(1)
       .max(10_000)
       .describe(
-        "The self-contained instruction for ralph: what to change, where and why, with every detail from the conversation it needs (ralph doesn't read the thread). The users' messages are quoted after it.",
+        "The self-contained instruction for the coding agent: what to change, where and why, with every detail from the conversation it needs (it doesn't read the thread). The users' messages are quoted after it.",
       ),
     ship: z
       .boolean()
       .optional()
       .describe(
-        'True when the user asks to ship the work of this thread\'s last run in that repository ("ship it", commit and push it, open the PR): ralph then commits what it left, pushes the branch and opens the pull/merge request. `request` may add last notes (e.g. "bump the version first"), or just say to ship it.',
+        'True when the user asks to ship the work of this thread\'s last run in that repository ("ship it", commit and push it, open the PR): Omniralph then commits what it left, pushes the branch and opens the pull/merge request. `request` may add last notes (e.g. "bump the version first"), or just say to ship it.',
       ),
   }),
   async execute(input, context: ChatToolContext) {
@@ -81,15 +81,15 @@ export const startWork = defineChatTool({
           error: "unknown_repository",
           message:
             outcome.candidates.length > 0
-              ? `\`${input.repository}\` isn't a ralph-enabled repository of this organization. Ask the user which of these they mean: ${outcome.candidates.join(", ")}.`
-              : "No repository of this organization has ralph enabled. An admin can enable it under Repository › Settings › Ralph in the control panel.",
+              ? `\`${input.repository}\` isn't a repository of this organization with coding on. Ask the user which of these they mean: ${outcome.candidates.join(", ")}.`
+              : "No repository of this organization has coding on. An admin can turn it on under Repository › Settings › Task types in the control panel.",
           candidates: outcome.candidates,
         };
       case "already_running":
         return {
           error: "run_active",
           message:
-            "This thread already has a ralph run in progress. Don't start another one: pass the user's request to that run with reply_to_run instead.",
+            "This thread already has a coding task in progress. Don't start another one: pass the user's request to that run with reply_to_run instead.",
           run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
         };
       case "failed":
@@ -97,7 +97,7 @@ export const startWork = defineChatTool({
       case "nothing_to_ship":
         return {
           error: "nothing_to_ship",
-          message: `This thread has no earlier ralph run in \`${input.repository}\`, so there's no branch to ship. Tell the user, or start the change itself without \`ship\`.`,
+          message: `This thread has no earlier coding task in \`${input.repository}\`, so there's no branch to ship. Tell the user, or start the change itself without \`ship\`.`,
         };
       case "started":
         return {
@@ -185,7 +185,7 @@ export const replyToRun = defineChatTool({
       .boolean()
       .optional()
       .describe(
-        'True when the user asks to ship the run\'s work ("ship it", commit and push it, open the PR): after its current step, ralph commits the work, pushes the branch and opens the pull/merge request. `text` may add last notes.',
+        'True when the user asks to ship the run\'s work ("ship it", commit and push it, open the PR): after its current step, Omniralph commits the work, pushes the branch and opens the pull/merge request. `text` may add last notes.',
       ),
     attachments: z
       .array(z.string().min(1).max(40))
@@ -219,7 +219,7 @@ export const replyToRun = defineChatTool({
         return {
           error: "no_active_run",
           message:
-            "This thread has no coding run in progress. To have ralph do more, start new work with start_work.",
+            "This thread has no coding run in progress. To have Omniralph do more, start new work with start_work.",
         };
       case "live":
         return {
@@ -341,7 +341,7 @@ export const answerRunCleanup = defineChatTool({
 export const sendRalphGuidance = defineChatTool({
   tier: "action",
   description:
-    "Sends guidance to any unfinished ralph run of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): ralph applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the ralph run of this thread, prefer reply_to_run, which reaches a working session right away.",
+    "Sends guidance to any unfinished coding task of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): it applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the coding task of this thread, prefer reply_to_run, which reaches a working session right away.",
   inputSchema: z.object({
     run: z.string().min(1).max(100).describe("Run id or Linear issue identifier (e.g. `ENG-42`)."),
     text: z
@@ -365,7 +365,7 @@ export const sendRalphGuidance = defineChatTool({
       case "not_found":
         return {
           error: "not_found",
-          message: `No ralph run of this organization matches "${ref}".`,
+          message: `No coding task of this organization matches "${ref}".`,
         };
       case "finished":
         return {
@@ -524,7 +524,7 @@ const linearErrorText = (error: unknown) =>
 export const delegateLinearIssue = defineChatTool({
   tier: "action",
   description:
-    "Delegates an existing Linear issue to the Omniralph app, so ralph builds it (an epic with a PRD and stories, or a single issue) the way it does when someone delegates it in Linear. Ralph works in the issue's Linear agent session; this thread gets a message when the run starts, when it opens its pull/merge request, and when it finishes or fails. Use it when a user asks to have ralph build, work on or take an existing issue. For a new issue, draft it with draft_linear_issue instead: its card has a Create and delegate button.",
+    "Delegates an existing Linear issue to the Omniralph app, so Omniralph builds it (an epic with a PRD and stories, or a single issue) the way it does when someone delegates it in Linear. Omniralph works in the issue's Linear agent session; this thread gets a message when the run starts, when it opens its pull/merge request, and when it finishes or fails. Use it when a user asks to have Omniralph build, work on or take an existing issue. For a new issue, draft it with draft_linear_issue instead: its card has a Create and delegate button.",
   inputSchema: z.object({
     issue: z
       .string()
@@ -564,7 +564,7 @@ export const delegateLinearIssue = defineChatTool({
       status: "delegated",
       issue: { identifier: issue.identifier, title: issue.title, url: issue.url },
       message:
-        "Delegated to ralph. Tell the user briefly, with the issue's link; this thread gets a message when the run starts and when it finishes.",
+        "Delegated to Omniralph. Tell the user briefly, with the issue's link; this thread gets a message when the run starts and when it finishes.",
     };
   },
 });

@@ -41,7 +41,7 @@ export async function onRalphJobStarted(
     return false;
   });
   if (finished ?? true) {
-    await skipJob(db, job.id, { reason: "The ralph run is over" });
+    await skipJob(db, job.id, { reason: "The coding task is over" });
     return { skip: true, reason: "skipped" };
   }
   return { skip: false };

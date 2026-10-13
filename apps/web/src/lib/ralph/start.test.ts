@@ -428,8 +428,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
     const [error] = linear.bodies(unroutable.sessionId, "error");
-    expect(error).toContain("no repository has ralph enabled");
-    expect(error).toContain("Repository › Settings › Ralph");
+    expect(error).toContain("no repository has coding on");
+    expect(error).toContain("Repository › Settings › Task types");
     expect(error).toContain("[repo=<owner/name>]");
 
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
@@ -516,7 +516,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       );
       expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain("`[repo=owner/name]`");
       expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
-        "Repository › Settings › Ralph",
+        "Repository › Settings › Coding",
       );
 
       // Advancing again (e.g. the reconcile cron) waits without asking twice.
@@ -1094,7 +1094,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       expect(await db.select().from(chatLinearDelegations)).toEqual([]);
       expect(adapter.postMessage).toHaveBeenCalledOnce();
       expect(adapter.postMessage).toHaveBeenCalledWith("discord:G-webhook:CH1:TH1", {
-        markdown: expect.stringContaining("🚀 Ralph started building [ENG-110 From chat]"),
+        markdown: expect.stringContaining("🚀 Omniralph started building [ENG-110 From chat]"),
       });
     });
 

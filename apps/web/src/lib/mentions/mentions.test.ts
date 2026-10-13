@@ -802,7 +802,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(request!.text).not.toContain("The finding:");
       expect(state.scm.calls.postComment).toHaveLength(1);
       expect(state.scm.calls.postComment[0]!.body).toContain(
-        "On it, @maintainer: I passed this to ralph's run of [ENG-1](<https://linear.app/acme/issue/ENG-1>), which will work on it once its current step finishes",
+        "On it, @maintainer: I passed this to the coding task of [ENG-1](<https://linear.app/acme/issue/ENG-1>), which will work on it once its current step finishes",
       );
       expect(state.linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
         "@maintainer asked for changes on the pull request. I'll work through it as soon as the current step finishes.",
@@ -828,7 +828,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(res).toEqual({ status: "accepted", command: "question" });
       const [request] = await pending(run.id);
       expect(request!.text).toContain("please also update the README");
-      expect(state.scm.calls.postComment[0]!.body).toContain("I passed this to ralph's run");
+      expect(state.scm.calls.postComment[0]!.body).toContain("I passed this to the coding task");
     });
 
     it("questions in a finding's thread, review, dismiss and help keep their v1 behaviour", async () => {
@@ -866,7 +866,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
           /^Sorry @drive-by, only people with write access to this repository can use `@omniralph fix`/,
         ),
         expect.stringMatching(
-          /^Sorry @drive-by, only people with write access to this repository can ask ralph for changes/,
+          /^Sorry @drive-by, only people with write access to this repository can ask for changes/,
         ),
       ]);
     });
@@ -876,7 +876,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       const res = await conversationComment(number, "@omniralph fix the typo");
       expect(res).toEqual({ status: "accepted", command: "fix" });
       expect(state.scm.calls.postComment[0]!.body).toBe(
-        "Sorry @maintainer, `@omniralph fix` only works on pull requests that ralph opened.",
+        "Sorry @maintainer, `@omniralph fix` only works on pull requests that Omniralph opened.",
       );
     });
 
@@ -887,7 +887,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       await db.update(ralphRuns).set({ status: "failed" }).where(eq(ralphRuns.id, run.id));
       await conversationComment(number, "@omniralph fix the typo");
       expect(await pending(run.id)).toEqual([]);
-      expect(state.scm.calls.postComment[0]!.body).toContain("ralph's run of [ENG-1]");
+      expect(state.scm.calls.postComment[0]!.body).toContain("the coding task of [ENG-1]");
       expect(state.scm.calls.postComment[0]!.body).toContain("is over");
     });
   });

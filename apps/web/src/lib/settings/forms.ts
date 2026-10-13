@@ -352,7 +352,9 @@ export function ralphSpecs(
     requestTaskId: byName(taskNames),
     verifyCommands: lines,
     allowedTools: (value) =>
-      Array.isArray(value) && value.length === 0 ? "Not set (Ralph's whole policy)" : lines(value),
+      Array.isArray(value) && value.length === 0
+        ? "Not set (Omniralph's whole coding policy)"
+        : lines(value),
     disallowedTools: lines,
   };
   return Object.fromEntries(

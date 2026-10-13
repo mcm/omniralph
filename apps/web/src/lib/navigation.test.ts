@@ -7,7 +7,7 @@ describe("navGroups", () => {
     expect(labels).toEqual([
       "Repositories",
       "Reviews",
-      "Ralph runs",
+      "Coding tasks",
       "Harnesses",
       "Jobs",
       "Analytics",
@@ -61,7 +61,7 @@ describe("navGroupsForRole", () => {
 
   it("shows admin pages to admins", () => {
     expect(labels("admin")).toEqual([
-      ["Operations", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
+      ["Operations", ["Repositories", "Reviews", "Coding tasks", "Harnesses", "Jobs", "Analytics"]],
       [
         "Settings",
         [
@@ -79,7 +79,7 @@ describe("navGroupsForRole", () => {
 
   it("hides admin pages from members", () => {
     expect(labels("member")).toEqual([
-      ["Operations", ["Repositories", "Reviews", "Ralph runs", "Harnesses", "Jobs", "Analytics"]],
+      ["Operations", ["Repositories", "Reviews", "Coding tasks", "Harnesses", "Jobs", "Analytics"]],
       ["Settings", ["Organization", "Agents", "Tasks", "Chat accounts"]],
     ]);
   });

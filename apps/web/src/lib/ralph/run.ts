@@ -465,8 +465,8 @@ async function laneRepository(
   }
   if (!(await resolveRepositorySwitches(deps.db, found.repository)).coding) {
     return (
-      `Ralph was disabled for \`${found.repository.fullPath}\`, so I stopped. Enable it under ` +
-      "**Repository › Settings › Ralph** and delegate the issue again to continue."
+      `Coding was turned off for \`${found.repository.fullPath}\`, so I stopped. Turn it on under ` +
+      "**Repository › Settings › Task types** and delegate the issue again to continue."
     );
   }
   if (!lane) return "The run has no branch in its repository, so I stopped.";
@@ -481,7 +481,7 @@ function notACodingTask(
 ): string {
   return (
     `\`${repository.fullPath}\` runs its ${what} with \`${taskId}\`, which isn't a coding task ` +
-    "that takes them, so I stopped. Choose another task under **Repository › Settings › Ralph**."
+    "that takes them, so I stopped. Choose another task under **Repository › Settings › Coding**."
   );
 }
 

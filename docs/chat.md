@@ -210,7 +210,7 @@ bot says so once when a limit is reached.
 Linked members can ask the bot to change code: it starts a ralph run of the channel's **Start
 work** [chat task](#chat-tasks) in a repository, and stays the thread's voice while it works. The
 run is a request-mode run, like an [@mention in Linear](linear.md#mentions-request-mode), but it
-belongs to the chat thread instead of a Linear issue; it shows up under **Ralph runs** with the
+belongs to the chat thread instead of a Linear issue; it shows up under **Coding tasks** with the
 platform and channel it came from. The organization doesn't need Linear for it.
 
 ### Starting a request
@@ -220,7 +220,7 @@ platform and channel it came from. The organization doesn't need Linear for it.
 The control-panel agent works out the repository from the conversation (asking first when it's
 ambiguous) and starts the run with its `start_work` tool:
 
-- The repository must be one of the organization's repositories with ralph enabled (see
+- The repository must be one of the organization's repositories with coding on (see
   [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
   used); otherwise the bot lists the ones it can use. The session runs on a harness that accepts
   the `coding` task type ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until
@@ -361,7 +361,7 @@ delegate it by identifier ("have ralph build ENG-42"): its `delegate_linear_issu
 issue's delegate to the Omniralph app. Either way it's the same as delegating in Linear: Linear
 starts an agent session and ralph builds the issue as described in
 [linear.md › Delegate an issue](linear.md#5-delegate-an-issue) (the issue's team must be routed to
-a repository with ralph enabled).
+a repository with coding on).
 
 The run stays a Linear run: its progress, questions and replies are in the Linear issue's agent
 session, not in chat. The thread gets the issue's link, and one message each when:
@@ -523,9 +523,9 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                                                    |
 | A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.                               |
 | The bot says the channel's task can't run                | An admin picks another **Ask about code** or **Start work** task (or removes the channel's override) under **Settings › Integrations › Chat tasks**.                                                         |
-| The bot won't start a ralph request                      | You're a linked member; the repository has ralph enabled and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
+| The bot won't start a ralph request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
 | The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
 | "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
 | A code question says no harness can take it              | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                                                  |
 | The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
-| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with ralph enabled and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |
+| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |

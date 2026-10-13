@@ -285,8 +285,8 @@ refused under the field):
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Repository › **Settings** › **Review tasks** (`/repositories/<id>/settings`) | Review tasks accepting `pr.updated`; check one or more, they run in parallel in each review run                      |
 | Repository › **Settings** › **Review tasks** › **Correlation task**          | Query tasks accepting `run.invoked` whose output schema fits the correlation output (`{ findings, summary }`)        |
-| Repository › **Settings** › **Ralph** › **Story task**                       | Coding tasks accepting `linear.delegated` (used on the coding-tasks **Coding path**)                                 |
-| Repository › **Settings** › **Ralph** › **Request task**                     | Coding tasks accepting every request trigger                                                                         |
+| Repository › **Settings** › **Coding** › **Story task**                       | Coding tasks accepting `linear.delegated` (used on the coding-tasks **Coding path**)                                 |
+| Repository › **Settings** › **Coding** › **Request task**                     | Coding tasks accepting every request trigger                                                                         |
 | **Settings › Integrations** › **Chat tasks** › **Ask about code**            | Query tasks accepting `chat.request` (organization default and channel overrides; see [chat.md](chat.md#chat-tasks)) |
 | **Settings › Integrations** › **Chat tasks** › **Start work**                | Coding tasks accepting `chat.request`                                                                                |
 | A coding task's **Coding** › **PR description task**                         | Query tasks accepting `run.invoked` whose output schema guarantees `{ title, body }`                                 |

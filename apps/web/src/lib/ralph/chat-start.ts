@@ -155,7 +155,7 @@ export async function startChatRequest(
       branch: chatRunBranch(run),
       baseBranch,
     });
-    if (!moved) throw new Error(`Ralph run ${run.id} is gone`);
+    if (!moved) throw new Error(`Run ${run.id} is gone`);
     run = { ...run, repositoryId: repository.id };
     await addInstruction(
       tx,

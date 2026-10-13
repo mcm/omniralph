@@ -22,7 +22,7 @@ export default function TermsPage() {
       <h2>The service</h2>
       <p>
         Omniralph reviews pull and merge requests in connected repositories, builds Linear issues
-        with AI agents (&quot;ralph&quot;), and answers questions about an organization&apos;s runs,
+        with AI agents (coding tasks), and answers questions about an organization&apos;s runs,
         reviews, jobs, agents and repositories in Slack and Discord. Everything belongs to an
         organization: its members share it, and its admins decide what is connected and enabled.
       </p>

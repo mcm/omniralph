@@ -226,6 +226,21 @@ describe("RepositorySettingsView task types", () => {
     expect(html).not.toContain('id="ralph-enabled"');
   });
 
+  it("calls the coding cards Coding, not Ralph", () => {
+    const text = render().replace(/<[^>]+>/g, " ");
+    for (const title of [
+      "Coding",
+      "Coding › Verification",
+      "Coding › Prompt and model",
+      "Coding › Tools",
+      "Coding › PR follow-up",
+      "Coding › Linear",
+    ]) {
+      expect(text).toContain(title);
+    }
+    expect(text).not.toMatch(/\bRalph\b/);
+  });
+
   it("maps choices to stored values and back", () => {
     for (const value of [true, false, null]) {
       expect(taskTypeValue(taskTypeChoice(value))).toBe(value);

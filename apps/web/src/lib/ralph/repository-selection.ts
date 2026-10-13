@@ -36,7 +36,7 @@ export const ROUTED_BY_SELECTION = "your selection";
 export const REPOSITORY_QUESTION =
   "Which repository should I work in for this issue?\n\n" +
   "(Add a `[repo=owner/name]` tag to the issue description, or this issue's label, project or " +
-  "team to a repository's routing under **Repository › Settings › Ralph**, to skip this next time.)";
+  "team to a repository's routing under **Repository › Settings › Coding**, to skip this next time.)";
 
 /** The repositories a run asks to choose from, or null when it isn't asking. */
 export function repositorySelectionOf(run: Pick<RalphRun, "pendingElicitation">): string[] | null {
@@ -65,7 +65,7 @@ export function repositoryQuestionFor(description: string | null | undefined): s
   const tags = parseRepoTags(description);
   if (tags.length === 0) return REPOSITORY_QUESTION;
   const named = tags.map((t) => `\`${t}\``).join(", ");
-  return `Its \`[repo=…]\` tag (${named}) names no repository with ralph enabled.\n\n${REPOSITORY_QUESTION}`;
+  return `Its \`[repo=…]\` tag (${named}) names no repository with coding on.\n\n${REPOSITORY_QUESTION}`;
 }
 
 /** The work a run left in the repository it worked in before re-routing moved it. */
@@ -226,8 +226,8 @@ export async function awaitRepository(
   if (candidates.length === 0) {
     return {
       failed:
-        "No repository has ralph enabled, so I can't build this. Enable ralph on one under " +
-        "**Repository › Settings › Ralph** and delegate the issue again.",
+        "No repository has coding on, so I can't build this. Turn it on for one under " +
+        "**Repository › Settings › Task types** and delegate the issue again.",
     };
   }
   const updated =
