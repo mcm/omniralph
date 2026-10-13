@@ -114,7 +114,8 @@ A daily cron (`/api/cron/gitlab-maintenance`, 04:45 UTC) rotates each connection
 GitLab's `POST /personal_access_tokens/self/rotate`: the new token expires 7 days later and is
 stored encrypted in place of the old one, which GitLab revokes at once. No admin action is needed,
 and the token you pasted stops working after the first rotation, so don't use it anywhere else.
-Requests that were using the old token retry once with the new one.
+Requests that were using the old token retry once with the new one. A token rotated less than an
+hour ago (by an overlapping or repeated run of the cron) isn't rotated again.
 
 - If the instance has no self-rotation (older than GitLab 16.10), the token isn't rotated: the
   connection shows a warning with the token's expiry. Connect GitLab again with a new token before

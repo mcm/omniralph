@@ -18,9 +18,14 @@ import { getDb } from "@/lib/db";
 
 interface GitLabCredentials extends Record<string, unknown> {
   token: string;
+  /** When the cron last rotated the token (ISO); unset until the first rotation. */
+  rotatedAt?: string;
 }
 
 const ROTATION_PROBLEMS = new Set(["rotation_unsupported", "rotation_failed"]);
+
+/** A token rotated less than this long ago (by an overlapping or repeated run) isn't rotated again. */
+const ROTATION_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Vercel Cron (`vercel.json`, daily): rotates every GitLab connection's bot
@@ -72,9 +77,11 @@ export async function GET(req: Request): Promise<Response> {
 /**
  * Rotates the connection's bot token under a row lock, writing the new token
  * in the same transaction (GitLab revokes the old one immediately). The token
- * is re-read once the lock is held: when it differs from the one listed, a
- * concurrent run already rotated it, so it isn't rotated again. Returns the
- * token to use now and the rotation problem to record, if any.
+ * is re-read once the lock is held: when it differs from the one listed, or
+ * was rotated within the last hour, another run already rotated it (even one
+ * that finished before this run listed the connection), so it isn't rotated
+ * again. Returns the token to use now and the rotation problem to record, if
+ * any.
  */
 async function rotateToken(
   db: Database,
@@ -92,13 +99,17 @@ async function rotateToken(
       connection.id,
       async (credentials) => {
         locked.token = credentials.token;
-        if (credentials.token !== listed) return null;
+        if (credentials.token !== listed || rotatedRecently(credentials)) return null;
         locked.rotation = await rotateGitLabToken({
           baseUrl: connection.baseUrl,
           token: credentials.token,
         });
         if (locked.rotation.status !== "rotated") return null;
-        return { ...credentials, token: locked.rotation.token };
+        return {
+          ...credentials,
+          token: locked.rotation.token,
+          rotatedAt: new Date().toISOString(),
+        };
       },
     );
   } catch (error) {
@@ -138,6 +149,12 @@ async function rotateToken(
     };
   }
   return { token, rotated: false, problem: null };
+}
+
+function rotatedRecently({ rotatedAt }: GitLabCredentials): boolean {
+  if (!rotatedAt) return false;
+  const age = Date.now() - Date.parse(rotatedAt);
+  return age >= 0 && age < ROTATION_INTERVAL_MS;
 }
 
 /** Records a rotation problem on top of the previous health when the check itself failed. */
