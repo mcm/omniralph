@@ -21,6 +21,7 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import { TASK_TYPES, type PoolName, type SinkKind, type TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { BuiltinBadge } from "../agents/agent-parts";
 import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "./task-parts";
@@ -53,15 +54,15 @@ const TASK_TYPE_DESCRIPTIONS: Record<TaskType, string> = {
 function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
   if (tasks.length === 0) return <Muted>No tasks of this type.</Muted>;
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
           <TableHead>Name</TableHead>
-          <TableHead>ID</TableHead>
-          <TableHead>Agent</TableHead>
-          <TableHead>Triggers</TableHead>
-          <TableHead>Sink</TableHead>
-          <TableHead>Pool</TableHead>
+          <TableHead className={WIDE_COLUMN}>ID</TableHead>
+          <TableHead className={WIDE_COLUMN}>Agent</TableHead>
+          <TableHead className={WIDE_COLUMN}>Triggers</TableHead>
+          <TableHead className={WIDE_COLUMN}>Sink</TableHead>
+          <TableHead className={WIDE_COLUMN}>Pool</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -77,20 +78,26 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
                 </div>
                 {task.description && <Muted className="text-xs">{task.description}</Muted>}
               </Stack>
+              <PhoneMeta>
+                <AgentLink id={task.agentId} name={task.agentName} className="list-secondary" />
+                <TriggerBadges triggers={task.triggers} />
+                <span className="font-mono text-xs">{task.sink}</span>
+                <Badge variant="neutral">{task.pool}</Badge>
+              </PhoneMeta>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <span className="font-mono text-xs text-text-secondary">{task.id}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <AgentLink id={task.agentId} name={task.agentName} />
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <TriggerBadges triggers={task.triggers} />
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <span className="font-mono text-xs">{task.sink}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <Badge variant="neutral">{task.pool}</Badge>
             </TableCell>
           </TableRow>

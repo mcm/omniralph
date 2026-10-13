@@ -20,6 +20,7 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { agentHref, BuiltinBadge, ModelName, TaskTypeBadges } from "./agent-parts";
 
@@ -70,13 +71,13 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
             <CardDescription>Built-in agents first, then your organization&apos;s.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
+            <Table className="list-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Task types</TableHead>
-                  <TableHead>Model</TableHead>
+                  <TableHead className={WIDE_COLUMN}>ID</TableHead>
+                  <TableHead className={WIDE_COLUMN}>Task types</TableHead>
+                  <TableHead className={WIDE_COLUMN}>Model</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -94,14 +95,18 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
                           <Muted className="text-xs">{agent.description}</Muted>
                         )}
                       </Stack>
+                      <PhoneMeta>
+                        <TaskTypeBadges taskTypes={agent.taskTypes} />
+                        <ModelName model={agent.model} />
+                      </PhoneMeta>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={WIDE_COLUMN}>
                       <span className="font-mono text-xs text-text-secondary">{agent.id}</span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={WIDE_COLUMN}>
                       <TaskTypeBadges taskTypes={agent.taskTypes} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={WIDE_COLUMN}>
                       <ModelName model={agent.model} />
                     </TableCell>
                   </TableRow>
