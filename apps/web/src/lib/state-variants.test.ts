@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   harnessConnectionState,
+  integrationState,
+  INTEGRATION_STATE_VARIANTS,
   HARNESS_CONNECTION_VARIANTS,
   HARNESS_UPDATE_STATUS_VARIANTS,
   JOB_STATUS_VARIANTS,
@@ -69,6 +71,26 @@ describe("state variants", () => {
     const variants = FINDING_SEVERITIES.map((s) => SEVERITY_VARIANTS[s]);
     expect(new Set(variants).size).toBe(FINDING_SEVERITIES.length);
     expect(variants).not.toContain("accent");
+  });
+
+  it("never gives a severity the look of a running or in-progress state", () => {
+    const running = new Set<string>(
+      Object.values(MAPS).flatMap((map) =>
+        Object.entries(map)
+          .filter(([state]) => RULE[state] === "info")
+          .map(([, variant]) => variant),
+      ),
+    );
+    for (const severity of FINDING_SEVERITIES) {
+      expect(running.has(SEVERITY_VARIANTS[severity]), severity).toBe(false);
+    }
+  });
+
+  it("warns about a saved integration the server isn't configured for", () => {
+    expect(integrationState(true, true)).toBe("connected");
+    expect(integrationState(true, false)).toBe("unconfigured");
+    expect(integrationState(false, false)).toBe("disconnected");
+    expect(INTEGRATION_STATE_VARIANTS.unconfigured).toBe("warning");
   });
 
   it("treats a revoked harness as revoked even when it is online", () => {

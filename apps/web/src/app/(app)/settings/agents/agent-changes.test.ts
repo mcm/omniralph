@@ -75,8 +75,8 @@ describe("agentChanges", () => {
     ]);
   });
 
-  it("summarizes a long system prompt", () => {
-    const [change] = changesTo({ systemPrompt: "x".repeat(200) });
-    expect(change?.to).toBe("1 line, 200 characters");
+  it("keeps a system prompt whole so the confirmation can diff it", () => {
+    const [change] = changesTo({ systemPrompt: "You review.\nBe brief." });
+    expect(change?.to).toBe("You review.\nBe brief.");
   });
 });

@@ -2,6 +2,7 @@ import type * as React from "react";
 import { Button } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
 import {
+  formatDate,
   formatDateTime,
   formatDateTimeAfter,
   formatDateTimeInYear,
@@ -19,7 +20,8 @@ export const WIDE_COLUMN = "list-col-wide";
  * shows the relative time ("5 min ago") and the exact one in its title. With
  * `after` (an earlier timestamp shown beside it, e.g. a job's created time next to
  * its finished one) it drops the date parts they share, and with `year` (the current
- * one) it drops the year when it is that; the full value is in its title.
+ * one) it drops the year when it is that; the full value is in its title. `date` shows
+ * only the day (a date-only value such as a token's expiry).
  */
 export function Timestamp({
   iso,
@@ -27,14 +29,16 @@ export function Timestamp({
   now,
   after,
   year,
+  date,
 }: {
   iso: string;
   inline?: boolean;
+  date?: boolean;
   now?: number;
   after?: string;
   year?: number;
 }) {
-  const exact = formatDateTime(iso);
+  const exact = date ? formatDate(iso) : formatDateTime(iso);
   const text =
     now !== undefined
       ? formatRelative(iso, now)

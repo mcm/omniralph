@@ -116,11 +116,11 @@ export function CommandsEditor({
             <Field
               label="Name"
               htmlFor={id("name")}
-              description={withDefault(
+              description={
                 setup
                   ? `Its output is {{setup.${command.name.trim() || "<name>"}}} in the template.`
-                  : "Names it in the run log.",
-              )}
+                  : "Names it in the run log."
+              }
               error={error("name")}
               required
             >
@@ -137,7 +137,7 @@ export function CommandsEditor({
             <Field
               label="Command"
               htmlFor={id("command")}
-              description={withDefault("Run with sh -c in the working directory.")}
+              description="Run with sh -c in the working directory."
               error={error("command")}
               required
             >

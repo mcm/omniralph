@@ -35,6 +35,7 @@ import { defaultPoolLimit } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { SettingsCard } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
@@ -436,20 +437,21 @@ function PinsCard({
                   href={repo.webUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 font-mono text-sm text-text-primary no-underline"
+                  className="harness-pinned-link"
                 >
-                  {repo.fullPath}
+                  <MonoValue value={repo.fullPath} />
                 </a>
                 <Button
                   size="sm"
                   variant="ghost"
                   disabled={pending || harness.revoked}
+                  aria-label={`Unpin ${repo.fullPath}`}
                   onClick={() =>
                     run(() => unpinRepository(harness.id, repo.id), `Unpinned ${repo.fullPath}`)
                   }
                 >
                   <IconPinnedOff size={14} />
-                  Unpin
+                  <span className="list-label-wide">Unpin</span>
                 </Button>
               </div>
             ))}

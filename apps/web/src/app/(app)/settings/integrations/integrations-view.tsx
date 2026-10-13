@@ -32,6 +32,11 @@ import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { ActionResult } from "@/lib/action-result";
+import {
+  INTEGRATION_STATE_LABELS,
+  INTEGRATION_STATE_VARIANTS,
+  integrationState,
+} from "@/lib/state-variants";
 import { disconnectDiscord, disconnectLinear, disconnectSlack } from "./actions";
 import { ChatTasksCard, type ChatTasksSettings } from "./chat-tasks-card";
 
@@ -259,15 +264,7 @@ export function IntegrationsView({
           <CardHeader>
             <CardTitle as="h2" className="settings-card-title">
               Linear
-              {linear ? (
-                <Badge variant="success" size="sm">
-                  Connected
-                </Badge>
-              ) : (
-                <Badge variant="neutral" size="sm">
-                  Not connected
-                </Badge>
-              )}
+              <IntegrationBadge connected={Boolean(linear)} configured={linearConfigured} />
             </CardTitle>
             <CardDescription>
               {linear ? (
@@ -411,15 +408,7 @@ function ChatPlatformCard({
       <CardHeader>
         <CardTitle as="h2" className="settings-card-title">
           {platform}
-          {connections.length > 0 ? (
-            <Badge variant="success" size="sm">
-              Connected
-            </Badge>
-          ) : (
-            <Badge variant="neutral" size="sm">
-              Not connected
-            </Badge>
-          )}
+          <IntegrationBadge connected={connections.length > 0} configured={configured} />
         </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
@@ -494,6 +483,14 @@ function ChatPlatformCard({
         </CardContent>
       </Stack>
     </Card>
+  );
+}
+
+/** "Connected", or a warning when the connection is saved but the server can't use it. */
+function IntegrationBadge({ connected, configured }: { connected: boolean; configured: boolean }) {
+  const state = integrationState(connected, configured);
+  return (
+    <Badge variant={INTEGRATION_STATE_VARIANTS[state]}>{INTEGRATION_STATE_LABELS[state]}</Badge>
   );
 }
 

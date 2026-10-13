@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatLongText,
+  changeDiff,
   isMultiLineChange,
   lineDiff,
   formatSettingValue,
@@ -10,15 +10,6 @@ import {
   withoutFieldErrors,
   type SettingSpec,
 } from "./changes";
-
-describe("formatLongText", () => {
-  it("shows short one-line text whole and summarizes the rest", () => {
-    expect(formatLongText("Review it.")).toBe("Review it.");
-    expect(formatLongText("")).toBe("Not set");
-    expect(formatLongText("a\nb")).toBe("2 lines, 3 characters");
-    expect(formatLongText("x".repeat(1200))).toBe("1 line, 1,200 characters");
-  });
-});
 
 describe("formatSettingValue", () => {
   it("shows flags as On/Off, empty values as Not set and lists comma-separated", () => {
@@ -119,5 +110,18 @@ describe("lineDiff", () => {
   it("tells multi-line changes from one-line ones", () => {
     expect(isMultiLineChange({ from: "a", to: "b" })).toBe(false);
     expect(isMultiLineChange({ from: "Not set", to: "a\nb" })).toBe(true);
+    expect(isMultiLineChange({ from: "a", to: "x".repeat(81) })).toBe(true);
+  });
+
+  it("diffs a value against Not set as only added or only removed lines", () => {
+    expect(changeDiff({ from: "Not set", to: "You review.\nBe brief." })).toEqual([
+      { kind: "added", text: "You review." },
+      { kind: "added", text: "Be brief." },
+    ]);
+    expect(changeDiff({ from: "a\nb", to: "Not set" })).toEqual([
+      { kind: "removed", text: "a" },
+      { kind: "removed", text: "b" },
+    ]);
+    expect(changeDiff({ from: "a\nb", to: "a\nc" })).toEqual(lineDiff("a\nb", "a\nc"));
   });
 });

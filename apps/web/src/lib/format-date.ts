@@ -4,6 +4,18 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * Locale date, e.g. "Oct 5, 2026". A date-only ISO value ("2026-10-05") is read as that
+ * calendar day, not as UTC midnight shifted into the local zone.
+ */
+export function formatDate(iso: string): string {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  return new Date(iso).toLocaleDateString(undefined, {
+    dateStyle: "medium",
+    timeZone: dateOnly ? "UTC" : undefined,
+  });
+}
+
+/**
  * Locale date and time without the parts it shares with an earlier instant shown
  * beside it: "3:09 PM" on the same day, "Oct 6, 3:09 PM" in the same year, else the
  * full `formatDateTime`.

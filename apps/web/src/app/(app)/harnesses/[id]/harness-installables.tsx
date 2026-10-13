@@ -18,7 +18,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconCloudDownload, IconPackage } from "@tabler/icons-react";
 import type { JobStatus } from "@omniralph/db";
-import { Timestamp } from "@/components/list-table";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
 import { installInstallable } from "../actions";
@@ -57,7 +57,7 @@ export function InstalledInstallables({ installables }: { installables: Installa
     );
   }
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
           <TableHead>Package</TableHead>
@@ -81,40 +81,48 @@ export function InstalledInstallables({ installables }: { installables: Installa
 }
 
 /** The harness's recent `install` jobs, newest first. */
+/** An install job's outcome: its error, the version it installed, or nothing yet. */
+function InstallJobDetails({ job }: { job: InstallJobRow }) {
+  if (job.error) return <span className="list-text list-text-danger">{job.error}</span>;
+  if (job.installedVersion) {
+    return <span className="list-text">Installed {job.installedVersion}</span>;
+  }
+  return <EmptyValue />;
+}
+
 export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
   if (jobs.length === 0) return <Muted>No installs in the last 24 hours.</Muted>;
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
-          <TableHead>Requested</TableHead>
+          <TableHead className={WIDE_COLUMN}>Requested</TableHead>
           <TableHead>Package</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Details</TableHead>
+          <TableHead className={WIDE_COLUMN}>Status</TableHead>
+          <TableHead className={WIDE_COLUMN}>Details</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {jobs.map((job) => (
           <TableRow key={job.id} data-install-job={job.id}>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <Timestamp iso={job.createdAt} />
             </TableCell>
             <TableCell>
               <span className="font-mono text-sm">
                 {job.name ?? <EmptyValue />}@{job.version ?? "latest"}
               </span>
+              <PhoneMeta>
+                <JobStatusBadge job={job} />
+                {(job.error || job.installedVersion) && <InstallJobDetails job={job} />}
+                <Timestamp iso={job.createdAt} />
+              </PhoneMeta>
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <JobStatusBadge job={job} />
             </TableCell>
-            <TableCell>
-              {job.error ? (
-                <span className="list-text list-text-danger">{job.error}</span>
-              ) : job.installedVersion ? (
-                <span className="list-text">Installed {job.installedVersion}</span>
-              ) : (
-                <EmptyValue />
-              )}
+            <TableCell className={WIDE_COLUMN}>
+              <InstallJobDetails job={job} />
             </TableCell>
           </TableRow>
         ))}

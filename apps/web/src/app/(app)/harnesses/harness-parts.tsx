@@ -77,9 +77,9 @@ export function RepositoryBadges({
   return (
     <Cluster gap={1}>
       {repositories.map((repo) => (
-        <Badge key={repo.id} variant="info">
+        <Badge key={repo.id} variant="neutral" className="harness-repo-badge">
           <ProviderIcon provider={repo.provider} size={12} />
-          {repo.fullPath}
+          <MonoValue value={repo.fullPath} />
         </Badge>
       ))}
     </Cluster>

@@ -281,7 +281,7 @@ export function TaskForm({
                   <Field
                     label="Agent"
                     htmlFor="task-agent"
-                    description={withDefault("Agents suited to the task type.")}
+                    description="Agents suited to the task type."
                     error={errors.agentId}
                     required
                   >
@@ -304,9 +304,7 @@ export function TaskForm({
                 <Field
                   label="Triggers"
                   htmlFor="task-triggers"
-                  description={withDefault(
-                    "The events that may start it; the task type decides which it accepts.",
-                  )}
+                  description="The events that may start it; the task type decides which it accepts."
                   error={errorFor(errors, "triggers")}
                   required
                 >
@@ -333,11 +331,12 @@ export function TaskForm({
                 <Field
                   label="Template"
                   htmlFor="task-prompt-template"
-                  description={withDefault(
-                    ["Rendered with the trigger's variables.", setupHint(draft.setupCommands)]
-                      .filter(Boolean)
-                      .join(" "),
-                  )}
+                  description={[
+                    "Rendered with the trigger's variables.",
+                    setupHint(draft.setupCommands),
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   error={errors.promptTemplate}
                   required
                 >
@@ -517,7 +516,7 @@ export function TaskForm({
                 <Field
                   label="Sink"
                   htmlFor="task-sink"
-                  description={withDefault("What applies the run's output.")}
+                  description="What applies the run's output."
                   error={errors.sink}
                   required
                 >

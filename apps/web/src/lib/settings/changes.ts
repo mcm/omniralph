@@ -40,18 +40,8 @@ export function formatSettingValue(value: SettingValue): string {
   return value.length === 0 ? "Not set" : value.join(", ");
 }
 
-/** Longest text the change list shows whole; longer or multi-line text is summarized. */
+/** Longest one-line value the change list shows as "old → new"; longer text shows as a line diff. */
 const SHORT_TEXT = 80;
-
-/**
- * A text setting that may be long (a prompt, a document) as the change list shows it: whole when
- * it is short and on one line, else its size ("12 lines, 840 characters").
- */
-export function formatLongText(value: SettingValue): string {
-  if (typeof value !== "string" || value.trim() === "") return formatSettingValue(value);
-  if (value.length <= SHORT_TEXT && !value.includes("\n")) return value;
-  return textSize(value);
-}
 
 /** A text's size: "12 lines, 840 characters". */
 export function textSize(text: string): string {
@@ -110,9 +100,25 @@ export interface DiffLine {
   text: string;
 }
 
-/** Whether a change is shown as a line diff (either side spans lines) rather than old → new. */
+/**
+ * Whether a change is shown as a line diff (either side spans lines or is too long for one line)
+ * rather than old → new.
+ */
 export function isMultiLineChange(change: Pick<SettingChange, "from" | "to">): boolean {
-  return change.from.includes("\n") || change.to.includes("\n");
+  return [change.from, change.to].some((side) => side.includes("\n") || side.length > SHORT_TEXT);
+}
+
+/**
+ * The line diff of a change: a side that is "Not set" contributes no lines, so a new prompt reads
+ * as its added lines and a cleared one as its removed lines.
+ */
+export function changeDiff(change: Pick<SettingChange, "from" | "to">): DiffLine[] {
+  const notSet = formatSettingValue(null);
+  if (change.from === notSet) return change.to.split("\n").map((text) => ({ kind: "added", text }));
+  if (change.to === notSet) {
+    return change.from.split("\n").map((text) => ({ kind: "removed", text }));
+  }
+  return lineDiff(change.from, change.to);
 }
 
 /**

@@ -11,7 +11,6 @@ import type {
   TaskType,
 } from "@omniralph/tasks";
 import {
-  formatLongText,
   formatSettingValue,
   settingChanges,
   textSize,
@@ -101,7 +100,7 @@ export function agentValues(draft: AgentDraft): Record<string, SettingValue> {
 /** The agent form's settings in form order, with their labels and how they're shown. */
 export const AGENT_SPECS: readonly SettingSpec[] = [
   { key: "name", label: "Name" },
-  { key: "description", label: "Description", format: formatLongText },
+  { key: "description", label: "Description" },
   { key: "taskTypes", label: "Suited task types" },
   { key: "model", label: "Model" },
   { key: "fallbackModel", label: "Fallback model" },
@@ -110,7 +109,7 @@ export const AGENT_SPECS: readonly SettingSpec[] = [
     label: "System prompt mode",
     format: (value) => SYSTEM_PROMPT_MODE_LABELS[value as SystemPromptMode] ?? String(value),
   },
-  { key: "systemPrompt", label: "System prompt", format: formatLongText },
+  { key: "systemPrompt", label: "System prompt" },
   { key: "builtinTools", label: "Claude Code tools" },
   { key: "harnessTools", label: "Harness tools" },
   { key: "linearTools", label: "Linear tools" },

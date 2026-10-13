@@ -125,10 +125,18 @@ describe("TaskForm", () => {
     expect(submitButton(render(null))).not.toContain('disabled=""');
   });
 
-  it("states the default of the sink, pool, token budget and model", () => {
+  it("states the default of the pool, token budget and model, never of a required field", () => {
     const html = render(TASK);
+    for (const required of [
+      "Agents suited to the task type.",
+      "the task type decides which it accepts.",
+      "Rendered with the trigger&#x27;s variables.",
+      "What applies the run&#x27;s output.",
+    ]) {
+      expect(html).not.toContain(`${required} Default: not set.`);
+    }
     for (const [field, text] of [
-      ["task-sink", "What applies the run&#x27;s output. Default: not set."],
+      ["task-sink", "What applies the run&#x27;s output."],
       ["task-pool", "Whose concurrency slots its runs take. Default: short."],
       ["task-token-budget", "Default: the profile budget."],
       ["task-model", "Default: the agent&#x27;s model."],

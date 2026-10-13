@@ -52,7 +52,8 @@ import {
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import { Timestamp } from "@/components/list-table";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { MonoPath } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { RuleView } from "@/lib/rules/display";
@@ -199,7 +200,7 @@ function EditRuleDialog({ repositoryId, rule }: { repositoryId: string; rule: Ru
       <DialogTrigger asChild>
         <Button size="sm" variant="ghost" aria-label="Edit rule">
           <IconPencil size={14} />
-          Edit
+          <span className="list-label-wide">Edit</span>
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -233,7 +234,7 @@ function DeleteRuleButton({ repositoryId, rule }: { repositoryId: string; rule: 
       <AlertDialogTrigger asChild>
         <Button size="sm" variant="ghost" disabled={pending} aria-label="Delete rule">
           <IconTrash size={14} />
-          Delete
+          <span className="list-label-wide">Delete</span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -284,6 +285,24 @@ function EnabledSwitch({
   );
 }
 
+/** Where a rule came from: the finding it was learned from, or who wrote it. */
+function RuleSource({ rule, kind }: { rule: RuleView; kind: RuleView["kind"] }) {
+  if (kind !== "learned") {
+    return <span className="text-sm">{rule.createdBy ?? "Unknown user"}</span>;
+  }
+  return rule.sourceFinding ? (
+    <Link
+      href={rule.sourceFinding.href}
+      className="text-sm text-text-accent"
+      title={rule.sourceFinding.path}
+    >
+      {rule.sourceFinding.title}
+    </Link>
+  ) : (
+    <Muted>Finding deleted</Muted>
+  );
+}
+
 function RulesTable({
   repositoryId,
   rules,
@@ -296,13 +315,15 @@ function RulesTable({
   isAdmin: boolean;
 }) {
   return (
-    <Table>
+    <Table className="list-table">
       <TableHeader>
         <TableRow>
           <TableHead>Rule</TableHead>
           <TableHead>Enabled</TableHead>
-          <TableHead>{kind === "learned" ? "Learned from" : "Created by"}</TableHead>
-          <TableHead>Created</TableHead>
+          <TableHead className={WIDE_COLUMN}>
+            {kind === "learned" ? "Learned from" : "Created by"}
+          </TableHead>
+          <TableHead className={WIDE_COLUMN}>Created</TableHead>
           {isAdmin && <TableHead aria-label="Actions" />}
         </TableRow>
       </TableHeader>
@@ -326,33 +347,23 @@ function RulesTable({
                   {rule.text}
                 </p>
               </Stack>
+              <PhoneMeta>
+                <RuleSource rule={rule} kind={kind} />
+                <Timestamp iso={rule.createdAt} />
+              </PhoneMeta>
             </TableCell>
             <TableCell>
               <EnabledSwitch repositoryId={repositoryId} rule={rule} isAdmin={isAdmin} />
             </TableCell>
-            <TableCell>
-              {kind === "learned" ? (
-                rule.sourceFinding ? (
-                  <Link
-                    href={rule.sourceFinding.href}
-                    className="text-sm text-text-accent"
-                    title={rule.sourceFinding.path}
-                  >
-                    {rule.sourceFinding.title}
-                  </Link>
-                ) : (
-                  <Muted>Finding deleted</Muted>
-                )
-              ) : (
-                <span className="text-sm">{rule.createdBy ?? "Unknown user"}</span>
-              )}
+            <TableCell className={WIDE_COLUMN}>
+              <RuleSource rule={rule} kind={kind} />
             </TableCell>
-            <TableCell className="list-nowrap">
+            <TableCell className={`${WIDE_COLUMN} list-nowrap`}>
               <Timestamp iso={rule.createdAt} />
             </TableCell>
             {isAdmin && (
-              <TableCell>
-                <div className="flex justify-end gap-1">
+              <TableCell className="list-actions">
+                <div className="list-actions-group">
                   <EditRuleDialog repositoryId={repositoryId} rule={rule} />
                   <DeleteRuleButton repositoryId={repositoryId} rule={rule} />
                 </div>
@@ -384,7 +395,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           title={
             <>
               <ProviderIcon provider={repository.provider} size={20} />
-              <span className="text-numeric">{repository.fullPath}</span>
+              <MonoPath value={repository.fullPath} />
             </>
           }
           description="Enabled rules are added to every review of this repository, after the review rubric. Dismissing a finding as a false positive teaches the reviewer a new rule."

@@ -63,6 +63,8 @@ function rows(html: string): Record<string, string> {
 function cells(row: string): string[] {
   return [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) =>
     m[1]!
+      // The phone meta repeats the hidden columns.
+      .replace(/<div class="list-phone-meta">[\s\S]*?<\/div>/g, "")
       .replace(/<input[^>]*value="([^"]*)"[^>]*>/g, "[$1]")
       // A MonoValue's head and tail are one value.
       .replace(/<\/span><span class="mono-value-tail">/g, "")

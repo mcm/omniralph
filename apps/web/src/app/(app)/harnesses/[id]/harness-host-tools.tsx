@@ -16,8 +16,10 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconDeviceFloppy, IconTool } from "@tabler/icons-react";
+import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
+import { HOST_TOOL_PATH_VARIANTS } from "@/lib/state-variants";
 import { setHostToolPath } from "../actions";
 
 /** Serializable catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
@@ -37,11 +39,13 @@ export interface HostToolRow {
 
 function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
   if (tool.configuredPath === null) return <Muted>Not configured</Muted>;
-  if (tool.configuredPathExists === null) return <Badge variant="neutral">Not checked yet</Badge>;
+  if (tool.configuredPathExists === null) {
+    return <Badge variant={HOST_TOOL_PATH_VARIANTS.unchecked}>Not checked yet</Badge>;
+  }
   return tool.configuredPathExists ? (
-    <Badge variant="success">Exists</Badge>
+    <Badge variant={HOST_TOOL_PATH_VARIANTS.exists}>Exists</Badge>
   ) : (
-    <Badge variant="danger">Missing</Badge>
+    <Badge variant={HOST_TOOL_PATH_VARIANTS.missing}>Missing</Badge>
   );
 }
 
@@ -52,7 +56,7 @@ function DiscoveredPath({ tool }: { tool: HostToolRow }) {
 
 function EffectivePath({ tool }: { tool: HostToolRow }) {
   if (tool.effectivePath) return <MonoValue value={tool.effectivePath} className="text-sm" />;
-  return <Badge variant="warning">Unavailable</Badge>;
+  return <Badge variant={HOST_TOOL_PATH_VARIANTS.unavailable}>Unavailable</Badge>;
 }
 
 /** Sets or (blank) clears the tool's configured path on the harness. */
@@ -115,14 +119,14 @@ export function HarnessHostTools({
     );
   }
   return (
-    <Table>
+    <Table className="list-table host-tools-table">
       <TableHeader>
         <TableRow>
           <TableHead>Tool</TableHead>
           <TableHead>Configured path</TableHead>
-          <TableHead>Configured path exists</TableHead>
-          <TableHead>Discovered path</TableHead>
-          <TableHead>Effective path</TableHead>
+          <TableHead className={WIDE_COLUMN}>Configured path exists</TableHead>
+          <TableHead className={WIDE_COLUMN}>Discovered path</TableHead>
+          <TableHead className={WIDE_COLUMN}>Effective path</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -133,6 +137,10 @@ export function HarnessHostTools({
                 <MonoValue value={tool.name} className="text-sm" />
                 {tool.description && <Muted>{tool.description}</Muted>}
               </Stack>
+              <PhoneMeta>
+                <ConfiguredPathStatus tool={tool} />
+                <EffectivePath tool={tool} />
+              </PhoneMeta>
             </TableCell>
             <TableCell>
               {revoked ? (
@@ -145,13 +153,13 @@ export function HarnessHostTools({
                 <ConfiguredPathForm harnessId={harnessId} tool={tool} />
               )}
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <ConfiguredPathStatus tool={tool} />
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <DiscoveredPath tool={tool} />
             </TableCell>
-            <TableCell>
+            <TableCell className={WIDE_COLUMN}>
               <EffectivePath tool={tool} />
             </TableCell>
           </TableRow>
