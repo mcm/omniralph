@@ -576,8 +576,8 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     expect(postEphemeral).not.toHaveBeenCalled();
     const [edit] = edited(adapter);
     expect(edit!.text).toContain(issue!.url);
-    expect(edit!.text).toContain("Delegated to ralph");
-    expect((await recorded())[0]!.content).toContain("delegated it to ralph");
+    expect(edit!.text).toContain("Delegated to Omniralph");
+    expect((await recorded())[0]!.content).toContain("delegated it to Omniralph");
   });
 
   it("keeps the created issue and tells the requester when delegating fails", async () => {
@@ -600,7 +600,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
     );
     const [edit] = edited(adapter);
     expect(edit!.text).toContain("Created");
-    expect(edit!.text).not.toContain("Delegated to ralph");
+    expect(edit!.text).not.toContain("Delegated to Omniralph");
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
   });
 

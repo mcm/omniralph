@@ -238,7 +238,7 @@ export function appliedMessage(
       ...triage.openQuestions.map((q, i) => `${i + 1}. ${q}`),
     );
   } else {
-    lines.push("", "No open questions: it's ready to delegate to ralph.");
+    lines.push("", "No open questions: it's ready to delegate to Omniralph.");
   }
   return lines.join("\n");
 }

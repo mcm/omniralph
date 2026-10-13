@@ -106,12 +106,12 @@ async function post(deps: RalphDeps, sessionId: string, content: ActivityContent
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The error for an issue no repository can build: none has ralph enabled. */
+/** The error for an issue no repository can build: none has coding on. */
 export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   return [
-    `I can't build **${epic.identifier}**: no repository has ralph enabled.`,
-    "Enable ralph on a repository under **Repository › Settings › Ralph** (and add this issue's " +
-      "label, project or team to its Linear routing, or a `[repo=<owner/name>]` tag to the issue " +
+    `I can't build **${epic.identifier}**: no repository has coding on.`,
+    "Turn coding on for a repository under **Repository › Settings › Task types** (and add this " +
+      "issue's label, project or team to its Linear routing under **Repository › Settings › Coding**, or a `[repo=<owner/name>]` tag to the issue " +
       "description). Then delegate it to me again.",
   ].join("\n\n");
 }
@@ -627,7 +627,7 @@ async function startNewRun(
       branch: epic.branchName,
       baseBranch,
     });
-    if (!moved) throw new Error(`Ralph run ${run.id} is gone`);
+    if (!moved) throw new Error(`Run ${run.id} is gone`);
     const lane = (await updateLane(tx, moved.lane.id, { baseBranch })) ?? moved.lane;
     run = { ...run, repositoryId: chosen.repository.id };
     await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));

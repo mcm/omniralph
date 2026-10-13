@@ -89,7 +89,7 @@ function helpText(handle: string): string {
     `- ${cmd("review")}: review the whole diff again for new issues (optionally ${cmd("review quick")}, ${cmd("review standard")} or ${cmd("review deep")}).`,
     `- ${cmd("review fresh")}: review the whole diff from scratch, raising issues again even if they're already open (also with a profile, e.g. ${cmd("review fresh deep")}).`,
     `- ${cmd("dismiss [reason]")} in one of my finding's threads: dismiss the finding (reasons: false positive, won't fix, not relevant, other).`,
-    `- ${cmd("fix [what to change]")} on a pull/merge request ralph opened: ralph makes the change and pushes it (in one of my finding's threads, it fixes that finding).`,
+    `- ${cmd("fix [what to change]")} on a pull/merge request Omniralph opened: Omniralph makes the change and pushes it (in one of my finding's threads, it fixes that finding).`,
     `- Mention me with a question in a finding's thread and I'll answer it.`,
   ].join("\n");
 }
@@ -197,7 +197,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         ? `Delegate ${linear.linearIdentifier} to me in Linear again to pick it back up.`
         : "Ask for it again in the chat thread it came from to pick it back up.";
       await respond(
-        `Sorry @${author}, ralph's run${issue} is over, so I can't work on this ${term}. ${again}`,
+        `Sorry @${author}, the coding task${issue} is over, so I can't work on this ${term}. ${again}`,
         hosts,
       );
       return { status: "ralph_unavailable", runId: run.id };
@@ -210,7 +210,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
           : "";
     const follow = linear ? "Follow along in Linear." : "Follow along in its chat thread.";
     await respond(
-      `On it, @${author}: I passed this to ralph's run${issue}, which will work on it${when} and push the changes here. ${follow}`,
+      `On it, @${author}: I passed this to the coding task${issue}, which will work on it${when} and push the changes here. ${follow}`,
       hosts,
     );
     return { status: "ralph_request", runId: run.id, delivery: result.status };
@@ -221,7 +221,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       const found = await ralphLane();
       if (!found || !(await codingEnabled())) {
         await respond(
-          `Sorry @${author}, ${inlineCode(`@${handle} fix`)} only works on ${term}s that ralph opened.`,
+          `Sorry @${author}, ${inlineCode(`@${handle} fix`)} only works on ${term}s that Omniralph opened.`,
         );
         return { status: "not_ralph" };
       }
@@ -315,7 +315,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         const ralph = (await codingEnabled()) ? await ralphLane() : null;
         if (ralph) {
           if (!(await adapter.hasWriteAccess(repo, author))) {
-            return refuse("ask ralph for changes");
+            return refuse("ask for changes");
           }
           return requestRalph(ralph, command.text, null);
         }

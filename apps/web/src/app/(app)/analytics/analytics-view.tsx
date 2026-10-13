@@ -123,9 +123,9 @@ function RalphSection({
     <Empty
       size="sm"
       icon={<IconRepeat size={20} />}
-      title="No ralph runs"
+      title="No coding tasks"
       titleAs="h4"
-      description="No ralph runs started in this period."
+      description="No coding tasks started in this period."
     />
   );
 
@@ -133,10 +133,10 @@ function RalphSection({
     <section aria-labelledby="analytics-ralph" className="analytics-section">
       <div>
         <h2 id="analytics-ralph" className="analytics-section-title">
-          Ralph
+          Coding
         </h2>
         <Muted>
-          Token usage of ralph jobs, the runs started in the period and their stories&apos;
+          Token usage of coding jobs, the tasks started in the period and their stories&apos;
           outcomes.
         </Muted>
       </div>
@@ -144,7 +144,7 @@ function RalphSection({
       <Metrics>
         <Metric label="Runs started" value={ralph.totals.runs.toLocaleString()} />
         <Metric
-          label="Ralph tokens"
+          label="Coding tokens"
           value={formatTokens(tokens)}
           title={`${tokens.toLocaleString()} tokens`}
         />
@@ -163,11 +163,11 @@ function RalphSection({
       <div className="analytics-split">
         <Card ribbon>
           <CardHeader>
-            <CardTitle as="h3">Ralph tokens per day</CardTitle>
+            <CardTitle as="h3">Coding tokens per day</CardTitle>
             <CardDescription>
               {period}: {formatTokens(ralph.totals.tokensIn)} in,{" "}
               {formatTokens(ralph.totals.tokensOut)} out over {ralph.totals.jobs.toLocaleString()}{" "}
-              jobs. Ralph jobs next to reviews (in + out).
+              jobs. Coding jobs next to reviews (in + out).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -175,14 +175,14 @@ function RalphSection({
               noRunsEmpty
             ) : (
               <AreaChart
-                aria-label="Ralph tokens per day"
+                aria-label="Coding tokens per day"
                 height={240}
                 data={daily}
                 xKey="day"
                 showLegend
                 tickFormatter={formatTokens}
                 areas={[
-                  { key: "ralphTokens", label: "Ralph", ...PRIMARY_SERIES },
+                  { key: "ralphTokens", label: "Coding", ...PRIMARY_SERIES },
                   { key: "reviewTokens", label: "Reviews", ...COMPARISON_SERIES },
                 ]}
               />
@@ -319,7 +319,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
       <main className="detail-main analytics-main">
         <PageHeader
           title="Analytics"
-          description={`Token usage, review quality and ralph runs for ${scope}, last ${params.days} days by UTC day.`}
+          description={`Token usage, review quality and coding tasks for ${scope}, last ${params.days} days by UTC day.`}
           actions={
             <>
               <ToggleGroup

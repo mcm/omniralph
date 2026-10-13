@@ -170,7 +170,7 @@ async function enqueueCleanupJob(
     return { why: "the repository is no longer connected" };
   }
   const harnessId = await stickyHarnessId(deps.db, run);
-  if (!harnessId) return { why: "the agent that holds the branch can't take ralph jobs anymore" };
+  if (!harnessId) return { why: "the agent that holds the branch can't take coding jobs anymore" };
   const { repository, connection } = found;
   const payload = WorktreeCleanupPayload.parse({
     runId: run.id,

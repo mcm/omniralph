@@ -52,13 +52,13 @@ export function noticeText(run: NotifiedRun, notice: RunThreadNotice): string {
   const issue = issueLink(run);
   switch (notice.kind) {
     case "started":
-      return `🚀 Ralph started building ${issue}. Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`;
+      return `🚀 Omniralph started building ${issue}. Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`;
     case "pr_opened":
       return `🔗 ${notice.label} for ${issue} is open: ${notice.url}`;
     case "completed":
-      return withPullRequestLinks(`✅ Ralph finished ${issue}.`, notice.lanes);
+      return withPullRequestLinks(`✅ Omniralph finished ${issue}.`, notice.lanes);
     case "failed":
-      return `⚠️ Ralph stopped working on ${issue}: ${tail(notice.error, MAX_ERROR_CHARS)}`;
+      return `⚠️ Omniralph stopped working on ${issue}: ${tail(notice.error, MAX_ERROR_CHARS)}`;
   }
 }
 

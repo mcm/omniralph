@@ -34,7 +34,7 @@ describe("unsavedSummary", () => {
 
 describe("unsavedAnchorId", () => {
   it("slugs the card title", () => {
-    expect(unsavedAnchorId("Ralph › Tools")).toBe("settings-ralph-tools");
+    expect(unsavedAnchorId("Coding › Tools")).toBe("settings-coding-tools");
     expect(unsavedAnchorId("›")).toBe("settings-card");
   });
 });
@@ -50,7 +50,7 @@ describe("guardedHref", () => {
     expect(guardedHref(plainClick, anchor("/jobs", { target: "_blank" }), HERE)).toBeNull();
     expect(guardedHref(plainClick, anchor("/export", { download: true }), HERE)).toBeNull();
     expect(guardedHref(plainClick, anchor("https://github.com/x"), HERE)).toBeNull();
-    expect(guardedHref(plainClick, anchor("#settings-ralph-tools"), HERE)).toBeNull();
+    expect(guardedHref(plainClick, anchor("#settings-coding-tools"), HERE)).toBeNull();
     expect(
       guardedHref({ ...plainClick, defaultPrevented: true }, anchor("/jobs"), HERE),
     ).toBeNull();
@@ -97,7 +97,7 @@ describe("installUnsavedGuard", () => {
   });
 
   it("lets a same-page anchor through even while dirty", () => {
-    const { click, onLeave } = setup(true, "#settings-ralph-tools");
+    const { click, onLeave } = setup(true, "#settings-coding-tools");
     expect(click().defaultPrevented).toBe(false);
     expect(onLeave).not.toHaveBeenCalled();
   });

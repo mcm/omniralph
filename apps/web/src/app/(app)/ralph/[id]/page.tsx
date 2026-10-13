@@ -9,7 +9,7 @@ import { organizationDefinitions } from "@/lib/definitions";
 import { ralphRunDetailView } from "@/lib/ralph/history";
 import { RalphRunDetailView } from "./ralph-run-detail-view";
 
-export const metadata: Metadata = { title: "Ralph run · Omniralph" };
+export const metadata: Metadata = { title: "Coding task · Omniralph" };
 
 export default async function RalphRunPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageUser();

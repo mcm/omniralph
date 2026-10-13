@@ -437,7 +437,7 @@ Jobs download the run's Linear attachments through the control panel and cache t
 
 ### Coding path: legacy jobs or coding tasks
 
-**Repository › Settings › Ralph › Coding path** picks how a repository's runs work stories and
+**Repository › Settings › Coding › Coding path** picks how a repository's runs work stories and
 requests; it applies from the run's next job, and both paths share all run state:
 
 - **Legacy jobs** (the default): `ralph.story`, `ralph.request` and `ralph.describe-pr` run the

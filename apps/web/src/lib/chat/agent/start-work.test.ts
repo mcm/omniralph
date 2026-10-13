@@ -698,7 +698,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       await turn(model, "Also fix the one in CONTRIBUTING.md");
 
       const system = systemOf(calls[0]!);
-      expect(system).toContain(`This thread's ralph run: ${run.id}`);
+      expect(system).toContain(`This thread's coding task: ${run.id}`);
       expect(system).toContain("its session is working right now");
       const tools = calls[0]!.tools?.map((t) => t.name);
       expect(tools).toEqual(
@@ -806,7 +806,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       expect(calls).toHaveLength(2);
       expect(reactions).toEqual([]);
       expect(systemOf(calls[0]!)).toContain(
-        `This thread's ralph run: ${run.id} (status: completed)`,
+        `This thread's coding task: ${run.id} (status: completed)`,
       );
       // A finished run takes no messages: the agent is told to start new work.
       expect(toolOutput(calls[1]!)).toMatchObject({ error: "no_active_run" });
@@ -835,7 +835,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
       await turn(model, "Is it working?");
 
       expect(calls).toHaveLength(1);
-      expect(systemOf(calls[0]!)).toContain(`This thread's ralph run: ${run.id}`);
+      expect(systemOf(calls[0]!)).toContain(`This thread's coding task: ${run.id}`);
       expect(systemOf(calls[0]!)).not.toContain("its session is working right now");
       expect(reactions).toEqual([]);
       expect(posts).toEqual(["It hasn't started yet."]);

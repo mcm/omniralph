@@ -30,7 +30,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Reviews and runs.</strong> Review findings, dismissals and the rules learned from
-          them, ralph runs, their stories and messages, jobs and their logs.
+          them, coding tasks, their stories and messages, jobs and their logs.
         </li>
         <li>
           <strong>Linear data.</strong> For a connected Linear workspace: the issues, epics,

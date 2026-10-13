@@ -153,7 +153,7 @@ export function LinearNotConnected({ isAdmin }: { isAdmin: boolean }) {
       <IconPlugConnected size={16} />
       <AlertTitle as="h2">Linear isn&apos;t connected</AlertTitle>
       <AlertDescription>
-        Ralph runs start when a Linear issue is delegated to the Omniralph app.{" "}
+        Coding tasks start when a Linear issue is delegated to the Omniralph app.{" "}
         {isAdmin ? (
           <>
             Connect a workspace in{" "}
@@ -262,10 +262,10 @@ export function RalphRunsView({
 
   return (
     <>
-      <AppHeader breadcrumbs={[{ label: "Ralph runs" }]} />
+      <AppHeader breadcrumbs={[{ label: "Coding tasks" }]} />
       <main className="detail-main">
         <PageHeader
-          title="Ralph runs"
+          title="Coding tasks"
           description="Linear epics and issues delegated to Omniralph, built story by story."
         />
 
@@ -316,7 +316,7 @@ export function RalphRunsView({
             {total === 0 && !filtered && !linearConnected ? (
               <Empty
                 icon={<IconPlugConnected size={24} />}
-                title="Connect Linear to start ralph runs"
+                title="Connect Linear to start coding tasks"
                 titleAs="h3"
                 description={
                   isAdmin
@@ -342,13 +342,13 @@ export function RalphRunsView({
                     ? "No runs on this page"
                     : filtered
                       ? "No runs match these filters"
-                      : "No ralph runs yet"
+                      : "No coding tasks yet"
                 }
                 titleAs="h3"
                 description={
                   total > 0
                     ? "The page is past the last one."
-                    : "Runs appear here when a Linear epic or issue is delegated to the Omniralph app and routed to a repository with ralph enabled."
+                    : "Runs appear here when a Linear epic or issue is delegated to the Omniralph app and routed to a repository with coding enabled."
                 }
               />
             ) : (

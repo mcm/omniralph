@@ -58,7 +58,7 @@ const linearNotices: Notices = {
   connected: {
     variant: "success",
     title: "Linear connected",
-    description: "Delegate an issue to the Omniralph app in Linear to start a ralph run.",
+    description: "Delegate an issue to the Omniralph app in Linear to start a coding task.",
   },
   denied: {
     variant: "warning",
@@ -238,7 +238,7 @@ export function IntegrationsView({
       <main className="detail-main">
         <PageHeader
           title="Integrations"
-          description="Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating a Linear issue to the Omniralph app starts a ralph run."
+          description="Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating a Linear issue to the Omniralph app starts a coding task."
         />
 
         {notice && (

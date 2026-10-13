@@ -23,10 +23,10 @@ orchestrates runs).
   jobs, with short-lived, job-scoped git credentials and no Linear or code-host API token.
 - **Where state lives.** cyralph keeps `sessions.json`, progress logs and worktrees under its state
   directory. Omniralph keeps runs, stories, lanes, requests and messages in Postgres (shown under
-  **Ralph runs**); harnesses keep only branch worktrees and caches.
+  **Coding tasks**); harnesses keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
   **Settings › Integrations** (Linear), **Settings › Harnesses** (harness version), **Harnesses › <harness>**
-  (concurrency, accepted task types, pool limits) and **Repository › Settings › Ralph** (everything per repository).
+  (concurrency, accepted task types, pool limits) and **Repository › Settings › Coding** (everything per repository).
   Changes apply from a run's next decision, without restarts.
 - **Two Linear apps.** Omniralph is its own Linear app (OAuth application). An issue is handled by
   whichever app it's delegated to (or @mentioned); each app's routing only picks the repository.
@@ -105,7 +105,7 @@ always behaves like cyralph's default and has no setting for it.
 ### `repositories[]`
 
 Each cyralph repository becomes a connected repository (**Repositories › Connect GitHub** or
-**Connect GitLab**) with ralph enabled. All settings below are on **Repository › Settings › Ralph**
+**Connect GitLab**) with coding on. All settings below are on **Repository › Settings › Coding**
 unless noted.
 
 | cyralph | Omniralph | Notes |
@@ -118,7 +118,7 @@ unless noted.
 | `routingLabels` | **Linear labels** | |
 | `projectKeys`, `projectNames` | **Linear projects** | One field for both. |
 | `githubUrl`, `gitlabUrl` | Not needed | `[repo=…]` tags and the repository question match the full path or its last segment. Tags that used a URL, a cyralph `id` that differs from the path, several repositories (`repo=a,b`) or a branch (`[repo=app#branch]`) must be rewritten as `[repo=<full path>]`. |
-| `isActive` | **Enable ralph** | Off by default: only repositories that opted in are routed to, offered in the repository question or pushed to. |
+| `isActive` | **Task types › Coding** | On by default (the organization's default): only repositories that opted in are routed to, offered in the repository question or pushed to. |
 | `verifyCommands` | **Verify commands** | One per line. |
 | `runPrdQualityGates` | **Run the PRD's quality gates** | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
 | `forge`, `gitlabHost` | Not needed | Known from the connection the repository belongs to. |
@@ -178,17 +178,17 @@ Do the steps in order. Each has a check, and [Rollback](#rollback) says how to u
   that don't, with **Recreate webhook**; [gitlab.md](gitlab.md)).
 - Keep a copy of cyralph's `config.json`: it's the source for the mapping and for a rollback.
 
-### 1. Enable ralph and set the settings per repository
+### 1. Turn coding on and set the settings per repository
 
 For every entry in cyralph's `repositories[]`:
 
 1. Make sure the repository is connected (**Repositories**), and enable the Omniralph review on it
    if cyralph relied on review bots: review responses only come from Omniralph's own reviews.
-2. On **Repository › Settings › Ralph**, enter the settings from the [mapping](#config-mapping)
+2. On **Repository › Settings › Coding**, enter the settings from the [mapping](#config-mapping)
    (verify commands, setup command, model, tools, appended instruction, follow-up settings, manual
    labels, epic completed state, and **Run the PRD's quality gates** off if cyralph had
    `runPrdQualityGates` unset).
-3. Tick **Enable ralph**, but leave **Linear team keys**, **Linear labels** and **Linear projects**
+3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but leave **Linear team keys**, **Linear labels** and **Linear projects**
    **empty** for now: routing moves in step 4.
 4. Leave **Coding path** on **Legacy jobs** (the default), which behaves like cyralph. **Coding
    tasks** runs the same loop as coding runs of built-in tasks, where sessions can't push by
@@ -224,7 +224,7 @@ cyralph's OAuth app: its webhook points at cyralph.
 **Verify:** **Settings › Integrations** shows the workspace. In Linear, the Omniralph app can be
 picked as an issue's delegate and @mentioned. Delegate a throwaway issue tagged with
 `[repo=<full path>]` of a ralph-enabled repository (tags route even without team keys): its
-session acknowledges within seconds, the run shows up under **Ralph runs**, a job runs on a
+session acknowledges within seconds, the run shows up under **Coding tasks**, a job runs on a
 ralph-enabled harness, and the run ends with a PR/MR. Close that PR/MR afterwards. Also @mention the
 app on an issue with a small request and check that it answers in request mode.
 
@@ -305,10 +305,10 @@ Every step before 6 is reversible from the control panel and cyralph's `config.j
 
 | Undo | How |
 | -- | -- |
-| Step 1 | Turn **Enable ralph** off on the repository: new delegations aren't routed there. Stop runs you don't want to continue under **Ralph runs**; their branches and PRs/MRs stay. |
+| Step 1 | Set **Task types › Coding** to **Off** on the repository: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
 | Step 2 | Untick `ralph` on the harness (running jobs finish; queued ones wait for another ralph harness). Set a pm2 harness's version override back to the version it ran. |
 | Step 3 | **Disconnect** Linear on **Settings › Integrations** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
-| Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Ralph runs › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
+| Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
 | Step 5 | Re-delegate stopped epics to cyralph (while it's still installed). |
 | Steps 6 and 7 | Harder: restore `~/.cyralph` (or re-create it from the saved `config.json`), recreate cyralph's Linear OAuth app and run `cyralph auth` again, re-add its GitHub webhook and tunnel, and `pm2 start` it. Then roll routing back team by team as for step 4. |
 

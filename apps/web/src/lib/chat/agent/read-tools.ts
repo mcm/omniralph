@@ -127,7 +127,7 @@ const repositoryInput = z
 
 export const listRalphRunsTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's ralph runs (Linear issues ralph works on), newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status (\`active\` = pending, running or waiting) and repository.`,
+  description: `Lists the organization's coding tasks (Linear issues Omniralph works on), newest first, at most ${CHAT_TOOL_RESULT_LIMIT}. Filter by status (\`active\` = pending, running or waiting) and repository.`,
   inputSchema: z.object({
     status: z.enum(["active", ...RALPH_RUN_STATUSES]).nullish(),
     repository: repositoryInput,
@@ -254,7 +254,7 @@ async function ralphRunState(
 export const getRalphRunTool = defineChatTool({
   tier: "read",
   description:
-    "One ralph run by its id or its Linear issue identifier (e.g. `ENG-42`; the latest run of that issue): status, the story being worked on, stories and their progress, how many messages (guidance, requests) it hasn't taken in yet, when it last did something, the progress log's latest entries and PR/MR links.",
+    "One coding task by its id or its Linear issue identifier (e.g. `ENG-42`; the latest run of that issue): status, the story being worked on, stories and their progress, how many messages (guidance, requests) it hasn't taken in yet, when it last did something, the progress log's latest entries and PR/MR links.",
   inputSchema: z.object({
     run: z.string().min(1).max(100).describe("Run id or Linear issue identifier."),
   }),
@@ -263,7 +263,10 @@ export const getRalphRunTool = defineChatTool({
     const runId = await findRalphRunId(db, organizationId, ref);
     const detail = runId ? await getRunDetail(db, organizationId, runId) : null;
     if (!detail) {
-      return { error: "not_found", message: `No ralph run of this organization matches "${ref}".` };
+      return {
+        error: "not_found",
+        message: `No coding task of this organization matches "${ref}".`,
+      };
     }
     return ralphRunState(db, organizationId, detail, appUrl);
   },
@@ -435,7 +438,7 @@ export const getRunStatusTool = defineChatTool({
       : {
           error: "no_run",
           message:
-            "No run was started in this thread. Ask which run they mean (list_ralph_runs finds ralph runs).",
+            "No run was started in this thread. Ask which run they mean (list_ralph_runs finds coding tasks).",
         };
   },
 });
@@ -584,7 +587,7 @@ export const listJobsTool = defineChatTool({
 
 export const listHarnessesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's harnesses (the hosts that run review and ralph jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, accepted task types, pool limits, last heartbeat and running jobs.`,
+  description: `Lists the organization's harnesses (the hosts that run review and coding jobs), at most ${CHAT_TOOL_RESULT_LIMIT}: online status, version, accepted task types, pool limits, last heartbeat and running jobs.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
@@ -628,7 +631,7 @@ export const listHarnessesTool = defineChatTool({
 
 export const listRepositoriesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and ralph are enabled, the review profile, pinned harnesses and the latest review.`,
+  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and coding are on, the review profile, pinned harnesses and the latest review.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const page = await listRepositoryOverviewPage(db, organizationId, {
@@ -690,7 +693,7 @@ async function chatAskAttachments(
 export const askAboutCodeTool = defineChatTool({
   tier: "read",
   description:
-    "Asks a question about the code of one of the organization's connected repositories (any, not only ralph-enabled ones): starts a run of this channel's \"ask about code\" task, which a harness answers from a read-only checkout of the default branch. It returns the run's id right away; the answer follows in this thread a little later. A follow-up's context includes the thread's previous code question and its answer.",
+    "Asks a question about the code of one of the organization's connected repositories (any, not only ones with coding on): starts a run of this channel's \"ask about code\" task, which a harness answers from a read-only checkout of the default branch. It returns the run's id right away; the answer follows in this thread a little later. A follow-up's context includes the thread's previous code question and its answer.",
   inputSchema: z.object({
     repository: z
       .string()

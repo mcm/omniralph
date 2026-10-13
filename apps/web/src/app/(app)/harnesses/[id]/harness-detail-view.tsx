@@ -116,7 +116,7 @@ function Fact({
 const TASK_TYPE_HINTS: Record<(typeof TASK_TYPES)[number], string> = {
   query: "Read-only questions: replies, code questions, learned rules, triage.",
   review: "Pull request reviews.",
-  coding: "Ralph runs that change code and push it.",
+  coding: "Coding tasks that change code and push it.",
 };
 
 const TASK_TYPE_LABELS: Record<(typeof TASK_TYPES)[number], string> = {

@@ -2906,7 +2906,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(run).toMatchObject({ origin: "linear", chatThreadId: threadId });
       expect(await db.select().from(chatLinearDelegations)).toEqual([]);
       expect(posted()).toEqual([
-        `🚀 Ralph started building [ENG-140 Fix the login bug](<${issue.url}>). Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`,
+        `🚀 Omniralph started building [ENG-140 Fix the login bug](<${issue.url}>). Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`,
       ]);
 
       await work(run.id, { commitSha: sha(60) });
@@ -2921,7 +2921,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
       expect(opened).toBe(
         `🔗 Pull request #1 for [ENG-140 Fix the login bug](<${issue.url}>) is open: ${pr.prUrl}`,
       );
-      expect(finished).toContain("✅ Ralph finished [ENG-140 Fix the login bug]");
+      expect(finished).toContain("✅ Omniralph finished [ENG-140 Fix the login bug]");
       expect(finished).toContain(`Pull request #1: ${pr.prUrl}`);
       // Recorded in the thread's history as the run's.
       const recorded = await db
@@ -2962,9 +2962,9 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
       expect((await getRun(db, run.id))?.status).toBe("failed");
       const [started, failed, ...more] = posted();
-      expect(started).toContain("🚀 Ralph started building");
-      expect(failed).toContain("⚠️ Ralph stopped working on [ENG-141 Doomed]");
-      expect(failed).toContain("Ralph was disabled for `acme/api`");
+      expect(started).toContain("🚀 Omniralph started building");
+      expect(failed).toContain("⚠️ Omniralph stopped working on [ENG-141 Doomed]");
+      expect(failed).toContain("Coding was turned off for `acme/api`");
       expect(more).toEqual([]);
     });
 

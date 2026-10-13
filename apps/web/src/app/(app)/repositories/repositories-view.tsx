@@ -424,7 +424,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
               <AlertDialogTitle>Remove {connection.name}?</AlertDialogTitle>
               <AlertDialogDescription>
                 The {kind} and all of its repositories are removed from this organization, together
-                with their reviews, rules, agent pins and ralph runs
+                with their reviews, rules, agent pins and coding tasks
                 {connection.provider === "gitlab"
                   ? ". The project webhooks are deleted from GitLab"
                   : ". The app stays installed on GitHub until you uninstall it there"}

@@ -569,7 +569,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     });
     expect(await res.json()).toEqual({ status: "accepted", command: "fix" });
     expect(comments).toEqual([
-      "On it, @maintainer: I passed this to ralph's run, which will work on it and push the changes here. Follow along in its chat thread.",
+      "On it, @maintainer: I passed this to the coding task, which will work on it and push the changes here. Follow along in its chat thread.",
     ]);
     expect(await relayed()).toEqual([
       "`@maintainer` asked for changes on the pull request. Working through it.",
