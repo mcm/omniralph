@@ -254,10 +254,11 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
     it("reaches the harness in its next heartbeat response", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      // A new harness inherits the organization's (built-in) defaults.
       expect(before).toMatchObject({
-        maxConcurrency: 1,
+        maxConcurrency: 5,
         pollIntervalSeconds: 5,
-        acceptedTaskTypes: ["query", "review"],
+        acceptedTaskTypes: ["query", "review", "coding"],
         pinnedRepoIds: [],
       });
 
@@ -288,7 +289,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
     it("saves the accepted task types and they reach the harness", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(before.acceptedTaskTypes).toEqual(["query", "review"]);
+      expect(before.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
 
       expect(
         await updateHarnessConfig(harnessId, {
@@ -307,7 +308,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
     it("sends the effective per-pool limits and stores the edited ones", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const initial = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(initial.poolLimits).toEqual({ short: 1, long: 1 });
+      expect(initial.poolLimits).toEqual({ short: 5, long: 4 });
 
       // Unset: the long pool leaves one slot for short jobs.
       const config = {
@@ -534,7 +535,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(await updateHarnessConfig(harnessId, valid)).toMatchObject({ ok: false });
       expect(await pinRepository(harnessId, repoA)).toMatchObject({ ok: false });
       const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(harness!.maxConcurrency).toBe(1);
+      // Unchanged: still inheriting.
+      expect(harness!.maxConcurrency).toBeNull();
     });
   });
 

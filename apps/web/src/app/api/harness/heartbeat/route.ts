@@ -6,6 +6,7 @@ import {
   recordHarnessHeartbeat,
   recordHarnessHostTools,
   renewJobLeases,
+  resolveHarnessConfig,
 } from "@omniralph/db";
 import {
   DEFAULT_POOLS,
@@ -56,15 +57,18 @@ export async function POST(req: Request): Promise<Response> {
   });
   if (!agent) return badRequest("unknown_agent");
   await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
-  const [pinnedRepoIds, poolNames, running, organizationVersion, hostTools] = await Promise.all([
-    listHarnessPinnedRepositoryIds(db, harnessId),
-    listPoolNames(db, agent.organizationId),
-    classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
-    agent.desiredVersion
-      ? null
-      : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    listHarnessHostTools(db, agent.organizationId, harnessId),
-  ]);
+  const [pinnedRepoIds, poolNames, running, organizationVersion, hostTools, config] =
+    await Promise.all([
+      listHarnessPinnedRepositoryIds(db, harnessId),
+      listPoolNames(db, agent.organizationId),
+      classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
+      agent.desiredVersion
+        ? null
+        : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+      listHarnessHostTools(db, agent.organizationId, harnessId),
+      // Its own max concurrency and accepted task types, else the organization's defaults.
+      resolveHarnessConfig(db, agent),
+    ]);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.
   await renewJobLeases(db, harnessId, keepIds);
@@ -89,12 +93,12 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   return Response.json({
-    maxConcurrency: agent.maxConcurrency,
+    maxConcurrency: config.maxConcurrency,
     // Legacy fields: old harnesses require them; `topics: []` stops their polling.
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
-    acceptedTaskTypes: agent.acceptedTaskTypes.filter(isJobTaskType),
+    acceptedTaskTypes: config.acceptedTaskTypes.filter(isJobTaskType),
     // `short` and `long` always exist (seeded per organization).
-    poolLimits: effectivePoolLimits(agent.poolLimits, agent.maxConcurrency, [
+    poolLimits: effectivePoolLimits(agent.poolLimits, config.maxConcurrency, [
       ...new Set([...DEFAULT_POOLS, ...poolNames]),
     ]),
     pinnedRepoIds,

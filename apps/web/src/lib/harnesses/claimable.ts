@@ -26,7 +26,8 @@ export interface RunHarnessRequirements {
 /**
  * The organization's harnesses that would get a query run in `repositoryId`
  * (its pinned harnesses when it has some, else all), each saying whether it
- * can claim one now as `claimJob` decides: it accepts `query` tasks, reports
+ * can claim one now as `claimJob` decides: it accepts `query` tasks (itself or
+ * by the organization's default: `effective`), reports
  * the run's minimum version or later, reports every required installable and
  * has an effective path for every required host tool (`usableHostTools`, by
  * harness ID: `listHarnessesUsableHostTools`). Revoked and offline harnesses
@@ -47,7 +48,7 @@ export function queryClaimableHarnesses(
       name: h.name,
       version: h.reportedVersion,
       capable:
-        h.acceptedTaskTypes.includes("query") &&
+        h.effective.acceptedTaskTypes.includes("query") &&
         versionCapable(h.reportedVersion, requirements.minHarnessVersion) &&
         requirements.installables.every((name) =>
           h.reportedInstallables.some((installable) => installable.name === name),

@@ -4,7 +4,9 @@ import {
   harnesses,
   closeDb,
   createDb,
+  createHarnessEnrollment,
   createReview,
+  enrollHarness,
   feedback,
   findings,
   jobs,
@@ -21,6 +23,8 @@ import {
   type Database,
   organizations,
   seedReviewProfiles,
+  setAllowedTaskTypeDefaults,
+  setDefaultMaxConcurrency,
 } from "@omniralph/db";
 import {
   JOB_LEASE_SECONDS,
@@ -1281,7 +1285,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const body = (await res.json()) as HeartbeatResponse;
       expect(body).toMatchObject({
         maxConcurrency: 2,
-        acceptedTaskTypes: ["query", "review"],
+        acceptedTaskTypes: ["query", "review", "coding"],
         pinnedRepoIds: [repositoryId],
         organizationId: orgId,
       });
@@ -1437,6 +1441,98 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         }),
       );
       expect(revoked.status).toBe(401);
+    });
+  });
+
+  describe("organization defaults", () => {
+    beforeAll(() => {
+      registerJobOutcomeHandler("defaults.run", {
+        payload: z.object({}),
+        onStarted: async () => ({ skip: false }),
+      });
+    });
+
+    async function codingJob(organizationId: string) {
+      const { job } = await dispatcher().createAndPublish({
+        organizationId,
+        type: "defaults.run",
+        taskType: "coding",
+        pool: "long",
+        payload: {},
+        dedupeKey: randomUUID(),
+      });
+      return job.id;
+    }
+
+    async function heartbeatAs(accessToken: string) {
+      const res = await heartbeat(
+        agentRequest("heartbeat", accessToken, {
+          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
+        }),
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as HeartbeatResponse;
+    }
+
+    function claimLong(accessToken: string) {
+      return claim(
+        agentRequest("claim", accessToken, { body: { pools: ["long"], waitSeconds: 0 } }),
+      );
+    }
+
+    it("has an enrolled harness claim coding jobs and run 5 at once with no organization settings", async () => {
+      const organizationId = await newOrg();
+      const enrollment = await createHarnessEnrollment(db, { organizationId });
+      const { harnessId } = (await enrollHarness(db, {
+        enrollmentToken: enrollment.token,
+        name: "host",
+        version: "0.2.0",
+      }))!;
+      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(row).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: null, poolLimits: {} });
+      const accessToken = await getTokenSigner().signAccessToken(harnessId);
+
+      const jobId = await codingJob(organizationId);
+      const res = await claimLong(accessToken);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
+
+      expect(await heartbeatAs(accessToken)).toMatchObject({
+        maxConcurrency: 5,
+        acceptedTaskTypes: ["query", "review", "coding"],
+        poolLimits: { short: 5, long: 4 },
+      });
+    });
+
+    it("keeps a harness's own values and gives inheriting harnesses the organization's new defaults", async () => {
+      const organizationId = await newOrg();
+      const own = await newAgent({
+        organizationId,
+        maxConcurrency: 2,
+        acceptedTaskTypes: ["query", "coding"],
+      });
+      const inheriting = await newAgent({ organizationId });
+
+      await setDefaultMaxConcurrency(db, organizationId, 3, null);
+      await setAllowedTaskTypeDefaults(db, organizationId, ["query", "review"], null);
+
+      expect(await heartbeatAs(own.accessToken)).toMatchObject({
+        maxConcurrency: 2,
+        acceptedTaskTypes: ["query", "coding"],
+        poolLimits: { short: 2, long: 1 },
+      });
+      expect(await heartbeatAs(inheriting.accessToken)).toMatchObject({
+        maxConcurrency: 3,
+        acceptedTaskTypes: ["query", "review"],
+        poolLimits: { short: 3, long: 2 },
+      });
+
+      // Coding is off by the new default for the inheriting harness only.
+      const jobId = await codingJob(organizationId);
+      expect((await claimLong(inheriting.accessToken)).status).toBe(204);
+      expect((await jobRow(jobId)).status).toBe("queued");
+      expect((await claimLong(own.accessToken)).status).toBe(200);
+      expect((await jobRow(jobId)).status).toBe("running");
     });
   });
 

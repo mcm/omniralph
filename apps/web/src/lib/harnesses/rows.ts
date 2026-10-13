@@ -29,8 +29,9 @@ export interface HarnessRow {
   /** An admin's "Update now" the harness hasn't acted on yet (`requestedAt` is ISO). */
   updateRequest: { version: string; requestedAt: string } | null;
   updateStatus: HarnessUpdateStatus;
-  /** Task types the harness may claim jobs of (`system` jobs always run). */
+  /** Task types the harness may claim jobs of (`system` jobs always run), defaults filled in. */
   acceptedTaskTypes: string[];
+  /** Its max concurrency, the organization's default filled in. */
   maxConcurrency: number;
   /** Per-pool limits as stored (unset ones use the default). */
   poolLimits: Record<string, number>;
@@ -89,10 +90,14 @@ export function harnessRow(
       failedVersions: agent.failedVersions,
       updateRequested: updateRequest !== null,
     }),
-    acceptedTaskTypes: agent.acceptedTaskTypes,
-    maxConcurrency: agent.maxConcurrency,
+    acceptedTaskTypes: agent.effective.acceptedTaskTypes,
+    maxConcurrency: agent.effective.maxConcurrency,
     poolLimits: storedLimits(agent.poolLimits),
-    effectivePoolLimits: effectivePoolLimits(agent.poolLimits, agent.maxConcurrency, DEFAULT_POOLS),
+    effectivePoolLimits: effectivePoolLimits(
+      agent.poolLimits,
+      agent.effective.maxConcurrency,
+      DEFAULT_POOLS,
+    ),
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
       type: job.type,

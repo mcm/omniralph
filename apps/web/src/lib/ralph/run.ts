@@ -7,6 +7,7 @@
  */
 import {
   getHarness,
+  resolveHarnessConfig,
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
@@ -405,7 +406,8 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
 
 /**
  * The run's agent, while it may still take the run's jobs (not revoked,
- * accepting `coding` tasks, in the run's organization).
+ * accepting `coding` tasks itself or by the organization's default, in the
+ * run's organization).
  */
 export async function stickyHarnessId(
   db: Database,
@@ -417,7 +419,7 @@ export async function stickyHarnessId(
     !agent ||
     agent.revokedAt ||
     agent.organizationId !== run.organizationId ||
-    !agent.acceptedTaskTypes.includes("coding")
+    !(await resolveHarnessConfig(db, agent)).acceptedTaskTypes.includes("coding")
   ) {
     return undefined;
   }

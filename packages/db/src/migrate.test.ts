@@ -669,7 +669,13 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
           );
         }
 
-        await runMigrations(uri);
+        // Up to 0075, which resets every harness to the organization defaults.
+        const upTo0075 = journal.entries.findIndex((e) => e.tag.startsWith("0075_"));
+        writeFileSync(
+          journalPath,
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo0075) }),
+        );
+        await migrate(drizzle(client), { migrationsFolder: before });
         const { rows: jobRows } = await client.query<{
           type: string;
           task_type: string;
@@ -745,6 +751,71 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
         );
         expect(indexes).toHaveLength(2);
         expect(indexes.every((i) => i.indexdef.includes("task_type"))).toBe(true);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
+  it("makes harnesses inherit the organization defaults (0075)", async () => {
+    await db.execute(sql`create database harness_defaults`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/harness_defaults");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0075_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const acme = orgs[0]!.id;
+        await client.query(
+          `insert into harnesses (organization_id, name) values ($1, 'defaults')`,
+          [acme],
+        );
+        await client.query(
+          `insert into harnesses (organization_id, name, max_concurrency, accepted_task_types, pool_limits)
+           values ($1, 'configured', 3, '{review,coding}', '{"long": 1, "short": 2}')`,
+          [acme],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{
+          name: string;
+          max_concurrency: number | null;
+          accepted_task_types: string[] | null;
+          pool_limits: Record<string, number>;
+        }>(
+          `select name, max_concurrency, accepted_task_types, pool_limits from harnesses order by name`,
+        );
+        expect(rows).toEqual([
+          { name: "configured", max_concurrency: null, accepted_task_types: null, pool_limits: {} },
+          { name: "defaults", max_concurrency: null, accepted_task_types: null, pool_limits: {} },
+        ]);
+
+        // New harnesses inherit too: no column default.
+        const { rows: added } = await client.query<{
+          max_concurrency: number | null;
+          accepted_task_types: string[] | null;
+        }>(
+          `insert into harnesses (organization_id, name) values ($1, 'new')
+           returning max_concurrency, accepted_task_types`,
+          [acme],
+        );
+        expect(added).toEqual([{ max_concurrency: null, accepted_task_types: null }]);
       } finally {
         await client.end();
       }
