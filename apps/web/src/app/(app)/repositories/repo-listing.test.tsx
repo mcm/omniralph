@@ -32,7 +32,7 @@ vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => ({}) }));
 vi.mock("@omniralph/db", () => ({
   getScmConnection: async () => mocks.connection,
   listConnectionRepositories: async () => [
-    { externalId: "1", enabled: true, disconnectedAt: null },
+    { externalId: "1", disconnectedAt: null, effective: { review: true } },
   ],
   connectionCredentials: () => ({ token: "glpat-test" }),
 }));
