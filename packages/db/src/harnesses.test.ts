@@ -10,7 +10,9 @@ import {
   resolveHarnessConfig,
   listJobs,
   listHarnessInstallJobs,
+  listActiveHarnessIds,
   listHarnessOverview,
+  listReportedInstallables,
   listReportedModels,
   listRepositoryCodingHarnessIds,
   markHarnessDeleted,
@@ -255,6 +257,70 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     it("ignores revoked harnesses, even when asked for them", async () => {
       expect(await listReportedModels(db, org, { harnessIds: [revoked] })).toEqual([]);
       expect((await listReportedModels(db, org)).map((m) => m.value)).not.toContain(fable.value);
+    });
+  });
+
+  describe("listReportedInstallables", () => {
+    const hello = (version: string) => ({ name: "@omniralph/hello", version });
+    const graph = { name: "@omniralph/code-graph", version: "2.0.0" };
+    let org: string;
+    let first: string;
+    let second: string;
+    let revoked: string;
+
+    beforeAll(async () => {
+      const [row] = await db.insert(organizations).values({ name: "Installables" }).returning();
+      org = row!.id;
+      first = await enroll(org, "installables-1");
+      second = await enroll(org, "installables-2");
+      revoked = await enroll(org, "installables-revoked");
+      await recordHarnessHeartbeat(db, first, { version: "1.0.0", installables: [hello("1.0.0")] });
+      await recordHarnessHeartbeat(db, second, {
+        version: "1.0.0",
+        installables: [hello("1.1.0"), graph],
+      });
+      await recordHarnessHeartbeat(db, revoked, {
+        version: "1.0.0",
+        installables: [{ name: "@omniralph/gone", version: "1.0.0" }],
+      });
+      await revokeHarness(db, revoked, { organizationId: org });
+      const install = (
+        name: string,
+        mcpServers: unknown,
+        finishedAt: Date,
+        status: "completed" | "failed" = "completed",
+      ) => ({
+        organizationId: org,
+        type: "install",
+        taskType: "system" as const,
+        status,
+        targetHarnessId: second,
+        payload: { name },
+        result: { name, version: "1.0.0", changed: true, mcpServers },
+        finishedAt,
+      });
+      await db
+        .insert(jobs)
+        .values([
+          install("@omniralph/hello", ["old"], new Date("2026-10-01T00:00:00Z")),
+          install("@omniralph/hello", ["greet"], new Date("2026-10-02T00:00:00Z")),
+          install("@omniralph/hello", ["broken"], new Date("2026-10-03T00:00:00Z"), "failed"),
+          install("@omniralph/gone", ["gone"], new Date("2026-10-02T00:00:00Z")),
+        ]);
+    });
+
+    it("lists reported installables by name with their harnesses and latest MCP servers", async () => {
+      expect(await listReportedInstallables(db, org)).toEqual([
+        { name: graph.name, harnessIds: [second], mcpServers: [] },
+        { name: "@omniralph/hello", harnessIds: [first, second], mcpServers: ["greet"] },
+      ]);
+      expect(await listActiveHarnessIds(db, org)).toEqual([first, second]);
+    });
+
+    it("lists nothing for an organization without harnesses", async () => {
+      const [row] = await db.insert(organizations).values({ name: "No harnesses" }).returning();
+      expect(await listReportedInstallables(db, row!.id)).toEqual([]);
+      expect(await listActiveHarnessIds(db, row!.id)).toEqual([]);
     });
   });
 

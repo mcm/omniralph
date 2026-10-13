@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
-import { AgentForm } from "./agent-form";
+import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
+import { AgentForm, type AgentFormProps } from "./agent-form";
 
 vi.mock("./actions", () => ({
   createAgentDefinition: vi.fn(),
@@ -22,6 +23,23 @@ const AGENT = {
   referenceDocs: [{ name: "threat-model", content: "Our threat model." }],
 };
 
+const CHOICES: HarnessChoices = {
+  models: [
+    { value: "claude-opus-5-5", displayName: "Opus 5.5", harnessIds: ["h1", "h2"] },
+    { value: "claude-haiku-5-5", displayName: "Haiku 5.5", harnessIds: ["h1"] },
+  ],
+  installables: [
+    { name: "@omniralph/code-graph", harnessIds: ["h1"], mcpServers: ["graph"] },
+    { name: "@omniralph/sast", harnessIds: ["h2"], mcpServers: [] },
+  ],
+  harnessCount: 2,
+};
+
+const render = (
+  agent: AgentFormProps["agent"],
+  props: Partial<Omit<AgentFormProps, "agent">> = {},
+) => renderToStaticMarkup(<AgentForm agent={agent} choices={CHOICES} {...props} />);
+
 /** The form's submit button, from its tag to its label. */
 const submitButton = (html: string) => {
   const at = html.indexOf('type="submit"');
@@ -30,17 +48,17 @@ const submitButton = (html: string) => {
   return html.slice(start, html.indexOf("</button>", at));
 };
 
-/** The `for` of the last label before `text`: the field `text` is shown in. */
+/** The field `text` is shown in: the id of the field whose description or error holds it. */
 const fieldOf = (html: string, text: string) => {
   const at = html.indexOf(text);
   expect(at, `"${text}" is shown`).toBeGreaterThan(-1);
-  const label = html.lastIndexOf('for="', at);
-  return html.slice(label + 5, html.indexOf('"', label + 5));
+  const start = html.lastIndexOf('id="', at) + 4;
+  return html.slice(start, html.indexOf('"', start)).replace(/-(description|error)$/, "");
 };
 
 describe("AgentForm", () => {
   it("renders every field of an agent being edited", () => {
-    const html = renderToStaticMarkup(<AgentForm agent={AGENT} />);
+    const html = render(AGENT);
     for (const id of [
       "agent-name",
       "agent-description",
@@ -59,16 +77,19 @@ describe("AgentForm", () => {
       expect(html).toContain(`id="${id}"`);
     }
     expect(html).toContain('value="Security reviewer"');
-    expect(html).toContain('value="claude-opus-5-5"');
-    expect(html).toContain('value="claude-sonnet-5-5"');
-    expect(html).toContain(`value="${reviewer.tools.builtin.join(", ")}"`);
+    // The model by its name; a fallback no harness reports is kept with a warning.
+    expect(html).toContain("Opus 5.5");
+    expect(html).toMatch(/claude-sonnet-5-5<\/span><span class="picker-chip-note">not available/);
+    // Tools are chips, not a comma-separated text box.
+    for (const tool of reviewer.tools.builtin) expect(html).toContain(`>${tool}<`);
+    expect(html).not.toContain(`value="${reviewer.tools.builtin.join(", ")}"`);
     expect(html).toContain('value="owasp"');
     expect(html).toContain("Our threat model.");
     expect(html).toContain("Save agent");
   });
 
   it("disables Save on an unchanged edit and states each field's default", () => {
-    const html = renderToStaticMarkup(<AgentForm agent={AGENT} />);
+    const html = render(AGENT);
     expect(submitButton(html)).toContain('disabled=""');
     expect(submitButton(html)).toContain("Save agent");
     expect(html).not.toContain("Discard");
@@ -79,7 +100,7 @@ describe("AgentForm", () => {
   });
 
   it("renders an empty form for a new agent", () => {
-    const html = renderToStaticMarkup(<AgentForm agent={null} />);
+    const html = render(null);
     expect(html).toContain("New agent");
     expect(html).toContain('id="agent-name"');
     expect(html).toContain("Create agent");
@@ -100,7 +121,7 @@ describe("AgentForm", () => {
       model: "Model is required.",
       fallbackModel: "Fallback model is too long.",
     };
-    const html = renderToStaticMarkup(<AgentForm agent={AGENT} initialErrors={errors} />);
+    const html = render(AGENT, { initialErrors: errors });
     const expected: Record<string, string> = {
       name: "agent-name",
       systemPrompt: "agent-system-prompt",
@@ -118,5 +139,21 @@ describe("AgentForm", () => {
       expect(fieldOf(html, message), field).toMatch(new RegExp(`^${expected[field]}(-|$)`));
     }
     expect(html).toContain('id="agent-name" aria-invalid="true"');
+  });
+
+  it("shows saved MCP servers as chips, configured servers too", () => {
+    const html = render({
+      ...AGENT,
+      tools: { ...AGENT.tools, mcpServers: ["@omniralph/code-graph:graph", "github"] },
+    });
+    expect(html).toContain(">@omniralph/code-graph:graph<");
+    expect(html).toContain(">github<");
+    // Typed-in server names are allowed, so neither is drawn as unavailable.
+    expect(html).not.toMatch(/github<\/span><span class="picker-chip-note">/);
+  });
+
+  it("offers no model when no harness reports one", () => {
+    const html = render(null, { choices: { models: [], installables: [], harnessCount: 0 } });
+    expect(html).toContain("The profile&#x27;s model");
   });
 });

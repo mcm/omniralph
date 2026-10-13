@@ -74,6 +74,14 @@ vi.mock("@omniralph/db", async () => {
         : [],
     listChatChannelTaskReferences: async () => [],
     listPoolNames: async () => ["short", "long", "gpu"],
+    listActiveHarnessIds: async () => ["harness-1"],
+    listReportedModels: async () => [],
+    listReportedInstallables: async () => [
+      { name: "@omniralph/code-graph", harnessIds: ["harness-1"], mcpServers: ["graph"] },
+    ],
+    listHostTools: async () => [
+      { id: "tool-1", organizationId: "org-1", name: "opengrep", description: "SAST scanner" },
+    ],
     getChatTaskDefaults: async () => ({
       askAboutCode: "builtin:ask-about-code",
       startWork: "builtin:handle-request",
@@ -210,6 +218,14 @@ describe("Settings › Tasks pages", () => {
     expect(props.sinks).toContainEqual({ kind: "chat-thread", taskType: "query" });
     // Only pools a definition can name.
     expect(props.pools).toEqual(["short", "long"]);
+    expect(props.choices).toEqual({
+      models: [],
+      installables: [
+        { name: "@omniralph/code-graph", harnessIds: ["harness-1"], mcpServers: ["graph"] },
+      ],
+      harnessCount: 1,
+    });
+    expect(props.hostTools).toEqual([{ name: "opengrep", description: "SAST scanner" }]);
   });
 
   it("edit page renders the organization's task in the form", async () => {

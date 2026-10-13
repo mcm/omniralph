@@ -2,7 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { getBuiltinTask, TRIGGERS_BY_TASK_TYPE, type TaskDefinition } from "@omniralph/tasks";
 import type { TaskChoice } from "@/lib/definitions";
-import { TaskForm, type TaskFormAgent, type TaskFormSink } from "./task-form";
+import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
+import {
+  TaskForm,
+  type TaskFormAgent,
+  type TaskFormHostTool,
+  type TaskFormSink,
+} from "./task-form";
 import { parseOutputSchema } from "./task-form-sections";
 
 vi.mock("./actions", () => ({
@@ -44,6 +50,20 @@ const PR_DESCRIPTION_TASKS: TaskChoice[] = [
   { id: "22222222-2222-4222-8222-222222222222", name: "Describe with changelog", builtin: false },
 ];
 
+const CHOICES: HarnessChoices = {
+  models: [{ value: "claude-opus-5-5", displayName: "Opus 5.5", harnessIds: ["h1", "h2"] }],
+  installables: [
+    { name: "@omniralph/sast", harnessIds: ["h1"], mcpServers: [] },
+    { name: "@omniralph/code-graph", harnessIds: ["h1", "h2"], mcpServers: ["graph"] },
+  ],
+  harnessCount: 2,
+};
+
+const HOST_TOOLS: TaskFormHostTool[] = [
+  { name: "opengrep", description: "SAST scanner" },
+  { name: "semgrep", description: null },
+];
+
 const render = (task: TaskDefinition | null, initialErrors = {}) =>
   renderToStaticMarkup(
     <TaskForm
@@ -52,6 +72,8 @@ const render = (task: TaskDefinition | null, initialErrors = {}) =>
       sinks={SINKS}
       pools={["short", "long"]}
       prDescriptionTasks={PR_DESCRIPTION_TASKS}
+      choices={CHOICES}
+      hostTools={HOST_TOOLS}
       initialErrors={initialErrors}
     />,
   );
@@ -82,12 +104,12 @@ const submitButton = (html: string) => {
   return html.slice(start, html.indexOf("</button>", at));
 };
 
-/** The `for` of the last label before `text`: the field `text` is shown in. */
+/** The field `text` is shown in: the id of the field whose description or error holds it. */
 const fieldOf = (html: string, text: string) => {
   const at = html.indexOf(text);
   expect(at, `"${text}" is shown`).toBeGreaterThan(-1);
-  const label = html.lastIndexOf('for="', at);
-  return html.slice(label + 5, html.indexOf('"', label + 5));
+  const start = html.lastIndexOf('id="', at) + 4;
+  return html.slice(start, html.indexOf('"', start)).replace(/-(description|error)$/, "");
 };
 
 describe("TaskForm", () => {
@@ -110,7 +132,8 @@ describe("TaskForm", () => {
     }
     expect(html).toContain('value="Security review"');
     expect(html).toContain("Review the change for vulnerabilities.");
-    expect(html).toContain('value="claude-opus-5-5"');
+    // The model override by its name.
+    expect(html).toMatch(/id="task-model"[^]*?Opus 5\.5/);
     expect(html).toContain('value="50000"');
     expect(html).toContain("Save task");
   });
@@ -250,10 +273,13 @@ describe("TaskForm", () => {
         "requires.hostTools.0": "Invalid string",
       },
     );
-    expect(html).toMatch(
-      /id="task-requires-installables"[^>]*value="@omniralph\/sast, @omniralph\/x"/,
-    );
-    expect(html).toMatch(/id="task-requires-host-tools"[^>]*value="opengrep"/);
+    // Chips, not comma-separated text; one no harness reports is kept with a warning.
+    expect(html).toContain('title="@omniralph/sast"');
+    expect(html).toMatch(/@omniralph\/x<\/span><span class="picker-chip-note">not available/);
+    expect(html).toContain("No harness reports it, so no harness claims the task");
+    expect(html).toContain('title="opengrep"');
+    expect(html).not.toMatch(/opengrep<\/span><span class="picker-chip-note">/);
+    expect(html).not.toContain('value="@omniralph/sast, @omniralph/x"');
     expect(fieldOf(html, "Expected a valid npm package name")).toBe("task-requires-installables");
     expect(fieldOf(html, "Invalid string")).toBe("task-requires-host-tools");
     expect(render(TASK)).toMatch(/id="task-requires-installables"[^>]*value=""/);

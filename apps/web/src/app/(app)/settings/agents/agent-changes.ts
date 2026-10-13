@@ -18,9 +18,8 @@ import {
   type SettingSpec,
   type SettingValue,
 } from "@/lib/settings/changes";
-import { splitNames } from "./form-parts";
 
-/** Everything the agent form edits, as typed. */
+/** Everything the agent form edits, as entered. */
 export interface AgentDraft {
   name: string;
   description: string;
@@ -29,10 +28,10 @@ export interface AgentDraft {
   fallbackModel: string;
   systemPromptMode: SystemPromptMode;
   systemPrompt: string;
-  builtinTools: string;
+  builtinTools: string[];
   harnessTools: HarnessTool[];
   linearTools: LinearTool[];
-  mcpServers: string;
+  mcpServers: string[];
   skills: NamedContent[];
   referenceDocs: NamedContent[];
 }
@@ -47,10 +46,10 @@ export function agentDraft(agent: Omit<AgentDefinition, "id"> | null): AgentDraf
     fallbackModel: agent?.fallbackModel ?? "",
     systemPromptMode: agent?.systemPromptMode ?? "append",
     systemPrompt: agent?.systemPrompt ?? "",
-    builtinTools: agent?.tools.builtin.join(", ") ?? "",
+    builtinTools: agent?.tools.builtin ?? [],
     harnessTools: agent?.tools.harness ?? [],
     linearTools: agent?.tools.linear ?? [],
-    mcpServers: agent?.tools.mcpServers.join(", ") ?? "",
+    mcpServers: agent?.tools.mcpServers ?? [],
     skills: agent?.skills ?? [],
     referenceDocs: agent?.referenceDocs ?? [],
   };
@@ -88,10 +87,10 @@ export function agentValues(draft: AgentDraft): Record<string, SettingValue> {
     fallbackModel: draft.fallbackModel.trim(),
     systemPromptMode: draft.systemPromptMode,
     systemPrompt: draft.systemPrompt,
-    builtinTools: splitNames(draft.builtinTools),
+    builtinTools: draft.builtinTools,
     harnessTools: draft.harnessTools,
     linearTools: draft.linearTools,
-    mcpServers: splitNames(draft.mcpServers),
+    mcpServers: draft.mcpServers,
     skills: draft.skills.map(documentKey),
     referenceDocs: draft.referenceDocs.map(documentKey),
   };

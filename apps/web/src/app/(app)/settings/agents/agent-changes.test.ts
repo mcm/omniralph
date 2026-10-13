@@ -18,9 +18,9 @@ const saved = agentDraft(AGENT);
 const changesTo = (change: Partial<AgentDraft>) => agentChanges(saved, { ...saved, ...change });
 
 describe("agentChanges", () => {
-  it("has none for the saved agent, whatever the list spacing", () => {
+  it("has none for the saved agent", () => {
     expect(agentChanges(saved, agentDraft(AGENT))).toEqual([]);
-    expect(changesTo({ builtinTools: saved.builtinTools.replaceAll(", ", ",") })).toEqual([]);
+    expect(changesTo({ builtinTools: [...saved.builtinTools] })).toEqual([]);
   });
 
   it("lists each changed setting old → new, in form order", () => {

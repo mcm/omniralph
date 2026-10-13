@@ -18,7 +18,6 @@ import {
   type SettingSpec,
   type SettingValue,
 } from "@/lib/settings/changes";
-import { splitNames } from "../agents/form-parts";
 import {
   codingDraft,
   commandDraft,
@@ -49,8 +48,8 @@ export interface TaskDraft {
   setupCommands: CommandDraft[];
   teardownCommands: CommandDraft[];
   toolSettings: ToolSettings;
-  requiredInstallables: string;
-  requiredHostTools: string;
+  requiredInstallables: string[];
+  requiredHostTools: string[];
   outputSchema: string;
   coding: CodingDraft;
 }
@@ -89,8 +88,8 @@ export function taskDraft(task: TaskDefinition | null, pools: readonly PoolName[
     setupCommands: (task?.setupCommands ?? []).map(commandDraft),
     teardownCommands: (task?.teardownCommands ?? []).map(commandDraft),
     toolSettings: task?.toolSettings ?? { shell: false, linearRead: false, network: false },
-    requiredInstallables: task?.requires?.installables.join(", ") ?? "",
-    requiredHostTools: task?.requires?.hostTools.join(", ") ?? "",
+    requiredInstallables: task?.requires?.installables ?? [],
+    requiredHostTools: task?.requires?.hostTools ?? [],
     outputSchema:
       task?.outputSchema === undefined ? "" : JSON.stringify(task.outputSchema, null, 2),
     coding: codingDraft(task),
@@ -155,8 +154,8 @@ export function taskValues(draft: TaskDraft): Record<string, SettingValue> {
     shell: draft.toolSettings.shell,
     linearRead: draft.toolSettings.linearRead,
     network: draft.toolSettings.network,
-    requiredInstallables: splitNames(draft.requiredInstallables),
-    requiredHostTools: splitNames(draft.requiredHostTools),
+    requiredInstallables: draft.requiredInstallables,
+    requiredHostTools: draft.requiredHostTools,
     outputSchema: draft.taskType === "query" ? draft.outputSchema.trim() : null,
     pushTiming: coding ? draft.coding.pushTiming : null,
     draftPullRequest: coding ? draft.coding.draftPullRequest : null,

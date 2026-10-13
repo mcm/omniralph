@@ -352,10 +352,27 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/settings/agents/[id]/edit/page.tsx",
     auth: "signed-in",
     steps: [
-      { action: "fill", selector: "#agent-fallback-model", value: "claude-haiku-5-5" },
       { action: "fill", selector: "#agent-system-prompt", value: "Answer briefly.\nCite files." },
       { action: "click", selector: '#agent-form-actions [type="submit"]' },
     ],
+    viewportOnly: true,
+  },
+  {
+    // The model picker: what the organization's harnesses report.
+    name: "settings-agent-edit-model",
+    path: `/settings/agents/${ids.definitions.agent}/edit`,
+    page: "(app)/settings/agents/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#agent-model" }],
+    viewportOnly: true,
+  },
+  {
+    // MCP servers as chips, suggesting the installables' servers.
+    name: "settings-agent-edit-mcp",
+    path: `/settings/agents/${ids.definitions.agent}/edit`,
+    page: "(app)/settings/agents/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#agent-tools-mcp" }],
     viewportOnly: true,
   },
   {
@@ -396,7 +413,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#task-description", value: "Answers questions about code." },
-      { action: "fill", selector: "#task-model", value: "claude-sonnet-5-5" },
+      { action: "fill", selector: "#task-prompt-template", value: "Answer the question." },
       // Scrolls the save row (and its badge, which a click leaves alone) into view.
       { action: "click", selector: "#task-form-actions > :last-child" },
     ],
@@ -408,10 +425,19 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/settings/tasks/[id]/edit/page.tsx",
     auth: "signed-in",
     steps: [
-      { action: "fill", selector: "#task-model", value: "claude-sonnet-5-5" },
+      { action: "fill", selector: "#task-prompt-template", value: "Answer the question." },
       { action: "fill", selector: "#task-description", value: "Answers questions about code." },
       { action: "click", selector: '#task-form-actions [type="submit"]' },
     ],
+    viewportOnly: true,
+  },
+  {
+    // Required host tools picked from the catalog.
+    name: "settings-task-edit-host-tools",
+    path: `/settings/tasks/${ids.definitions.task}/edit`,
+    page: "(app)/settings/tasks/[id]/edit/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#task-requires-host-tools" }],
     viewportOnly: true,
   },
   {
@@ -468,6 +494,14 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     path: "/settings/profiles",
     page: "(app)/settings/profiles/page.tsx",
     auth: "signed-in",
+  },
+  {
+    name: "settings-profiles-model",
+    path: "/settings/profiles",
+    page: "(app)/settings/profiles/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#profile-standard-model" }],
+    viewportOnly: true,
   },
   {
     name: "settings-profiles-unsaved",

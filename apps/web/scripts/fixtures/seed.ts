@@ -1218,6 +1218,15 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       taskType: "system",
       pool: null,
       payload: { name: "@omniralph/code-graph", version: "0.4.1" },
+      // Its MCP server is what the agent editor suggests as @omniralph/code-graph:graph.
+      result: {
+        name: "@omniralph/code-graph",
+        version: "0.4.1",
+        changed: true,
+        commands: [],
+        mcpServers: ["graph"],
+        skills: 0,
+      },
       status: "completed",
       harnessId: H.online,
       targetHarnessId: H.online,

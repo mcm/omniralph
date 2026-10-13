@@ -454,6 +454,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
+      expect(pages.profiles!.props.choices.harnessCount).toBe(1);
       expect(pages.harnessSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
       expect(pages.integrations!.props.linear).toMatchObject({
         workspaceId: `${own.name}-workspace`,

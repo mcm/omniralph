@@ -264,6 +264,88 @@ export async function listReportedModels(
   );
 }
 
+/** IDs of the organization's harnesses that aren't revoked or deleted, by name. */
+export async function listActiveHarnessIds(
+  db: Database,
+  organizationId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: harnesses.id })
+    .from(harnesses)
+    .where(
+      and(
+        eq(harnesses.organizationId, organizationId),
+        isNull(harnesses.revokedAt),
+        isNull(harnesses.deletedAt),
+      ),
+    )
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+  return rows.map((row) => row.id);
+}
+
+/** An installable the organization's harnesses report, with the harnesses that have it. */
+export interface ReportedInstallableOption {
+  name: string;
+  harnessIds: string[];
+  /** Its MCP servers, from its latest completed install job (empty when none says). */
+  mcpServers: string[];
+}
+
+/**
+ * The installables the organization's non-revoked harnesses last reported, by name, with the
+ * MCP servers the latest completed install of each said it provides.
+ */
+export async function listReportedInstallables(
+  db: Database,
+  organizationId: string,
+): Promise<ReportedInstallableOption[]> {
+  const rows = await db
+    .select({ id: harnesses.id, installables: harnesses.reportedInstallables })
+    .from(harnesses)
+    .where(
+      and(
+        eq(harnesses.organizationId, organizationId),
+        isNull(harnesses.revokedAt),
+        isNull(harnesses.deletedAt),
+      ),
+    )
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+  const byName = new Map<string, ReportedInstallableOption>();
+  for (const row of rows) {
+    for (const { name } of row.installables) {
+      const option = byName.get(name);
+      if (!option) byName.set(name, { name, harnessIds: [row.id], mcpServers: [] });
+      else if (!option.harnessIds.includes(row.id)) option.harnessIds.push(row.id);
+    }
+  }
+  if (byName.size === 0) return [];
+  const installedName = sql<string>`${jobs.result}->>'name'`;
+  const installs = await db
+    .selectDistinctOn([installedName], {
+      name: installedName,
+      mcpServers: sql<unknown>`${jobs.result}->'mcpServers'`,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.type, INSTALL_JOB_TYPE),
+        eq(jobs.status, "completed"),
+        inArray(installedName, [...byName.keys()]),
+      ),
+    )
+    .orderBy(installedName, sql`${jobs.finishedAt} desc nulls last`, desc(jobs.createdAt));
+  for (const install of installs) {
+    const option = byName.get(install.name);
+    if (option && Array.isArray(install.mcpServers)) {
+      option.mcpServers = install.mcpServers.filter(
+        (server): server is string => typeof server === "string",
+      );
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * The harnesses that may run a repository's coding jobs: its active pinned harnesses, else every
  * harness of the organization that accepts coding (its own task types, else the default).

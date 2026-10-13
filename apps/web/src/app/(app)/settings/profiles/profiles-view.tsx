@@ -10,6 +10,7 @@ import {
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
+import { ModelPicker, type ModelOption } from "@/components/pickers";
 import { SettingsCard, SwitchField } from "@/components/settings-card";
 import { formatDateTime } from "@/lib/format-date";
 import { formatSettingValue, settingChanges, withDefault } from "@/lib/settings/changes";
@@ -67,7 +68,13 @@ export function AffectedRepositories({
   );
 }
 
-function ProfileCard({ profile }: { profile: ProfileRow }) {
+/** The models the organization's harnesses report, for the profiles' model pickers. */
+export interface ProfileModelChoices {
+  models: ModelOption[];
+  harnessCount: number;
+}
+
+function ProfileCard({ profile, choices }: { profile: ProfileRow; choices: ProfileModelChoices }) {
   const saved = React.useMemo(() => profileDraft(profile), [profile]);
   const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
@@ -118,17 +125,16 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
         <Field
           label="Model"
           htmlFor={`${idPrefix}-model`}
-          description={describe("Claude model ID.", "model")}
+          description={describe("From the models your harnesses report.", "model")}
           error={errors.model}
           required
         >
-          <Input
+          <ModelPicker
             id={`${idPrefix}-model`}
-            error={Boolean(errors.model)}
-            aria-invalid={Boolean(errors.model)}
             value={draft.model}
-            onChange={(e) => set("model", e.target.value)}
-            className="settings-mono"
+            onChange={(model) => set("model", model ?? "")}
+            options={choices.models}
+            harnessCount={choices.harnessCount}
           />
         </Field>
         <Field
@@ -185,7 +191,13 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
   );
 }
 
-export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
+export function ProfilesView({
+  profiles,
+  choices,
+}: {
+  profiles: ProfileRow[];
+  choices: ProfileModelChoices;
+}) {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Profiles" }]} />
@@ -195,7 +207,11 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
           description="Each repository uses one of these profiles. Changes apply to the next review of every repository using the profile. Built-in profiles can be edited but not deleted."
         />
         {profiles.map((profile) => (
-          <ProfileCard key={`${profile.id}-${profile.updatedAt}`} profile={profile} />
+          <ProfileCard
+            key={`${profile.id}-${profile.updatedAt}`}
+            profile={profile}
+            choices={choices}
+          />
         ))}
       </main>
     </>
