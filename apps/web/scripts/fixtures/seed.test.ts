@@ -6,6 +6,7 @@ import {
   feedback,
   findings,
   harnesses,
+  harnessRepoPins,
   integrations,
   jobs,
   organizationMembers,
@@ -95,6 +96,18 @@ describe("seedFixtures", () => {
     );
     expect(online.some((h) => h.reportedVersion !== "1.8.0")).toBe(true);
     expect(rows.some((h) => h.revokedAt)).toBe(true);
+    // Enough for the pinned-harness picker to need its search.
+    expect(rows.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("pins the control panel to a revoked harness among others", async () => {
+    const pins = await db
+      .select({ revokedAt: harnesses.revokedAt })
+      .from(harnessRepoPins)
+      .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
+      .where(eq(harnessRepoPins.repositoryId, FIXTURE_IDS.repositories.controlPanel));
+    expect(pins.length).toBeGreaterThan(1);
+    expect(pins.some((pin) => pin.revokedAt)).toBe(true);
   });
 
   it("has ralph runs and stories in every state, with attempts, progress and follow-ups", async () => {

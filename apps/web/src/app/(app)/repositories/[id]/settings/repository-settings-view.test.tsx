@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
-import { RepositorySettingsView, type RepositorySettingsTab } from "./repository-settings-view";
+import {
+  RepositorySettingsView,
+  type RepositoryHarness,
+  type RepositorySettingsTab,
+} from "./repository-settings-view";
 import type { CodingChoices, RalphSettingsValues } from "./ralph-settings-section";
 import { updateRalphSettings, updateRepositoryTaskTypes } from "./actions";
 import {
@@ -83,9 +87,23 @@ const codingOn: TaskTypesValues = {
   overrides: { ...inheritAll.overrides, coding: true },
 };
 
-const HARNESSES = [
-  { id: "h1", name: "build-01", lastHeartbeatAt: "2026-10-13T10:00:00.000Z" },
-  { id: "h2", name: "build-02", lastHeartbeatAt: null },
+const HARNESSES: RepositoryHarness[] = [
+  {
+    id: "h1",
+    name: "build-01",
+    online: true,
+    revoked: false,
+    updating: false,
+    acceptedTaskTypes: ["review", "coding"],
+  },
+  {
+    id: "h2",
+    name: "build-02",
+    online: false,
+    revoked: false,
+    updating: false,
+    acceptedTaskTypes: ["review"],
+  },
 ];
 
 function render(
@@ -95,7 +113,7 @@ function render(
     ralph?: RalphSettingsValues;
     choices?: CodingChoices;
     taskTypes?: TaskTypesValues;
-    agents?: { id: string; name: string; lastHeartbeatAt: string | null }[];
+    harnesses?: RepositoryHarness[];
     pinnedHarnessIds?: string[];
   } = {},
 ) {
@@ -141,7 +159,7 @@ function render(
           allowRepoExploration: true,
         },
       ]}
-      agents={overrides.agents ?? HARNESSES}
+      harnesses={overrides.harnesses ?? HARNESSES}
       ralph={overrides.ralph ?? ralph}
       codingChoices={overrides.choices ?? choices}
       codingTasks={{
@@ -512,6 +530,30 @@ describe("RepositorySettingsView pinned harnesses", () => {
     expect(html).toContain("Only the pinned harness runs this repository&#x27;s jobs.");
   });
 
+  it("lists the pinned harnesses below the picker with their status", () => {
+    const html = render("harnesses", { pinnedHarnessIds: ["h2"] });
+    const list = /<ul[^>]*aria-label="Pinned harnesses"[^>]*>(.*?)<\/ul>/.exec(html);
+    expect(list).not.toBeNull();
+    expect(text(list![1]!)).toMatch(/build-02.*Review.*Offline/);
+    expect(list![1]).toContain('aria-label="Unpin build-02"');
+    expect(text(html)).not.toContain("None pinned");
+  });
+
+  it("says jobs go to any eligible harness when none is pinned", () => {
+    const html = render("harnesses");
+    expect(html).not.toContain('aria-label="Pinned harnesses"');
+    expect(text(html)).toContain("None pinned: jobs go to any eligible harness");
+  });
+
+  it("lists a pin to a revoked harness as revoked", () => {
+    const html = render("harnesses", {
+      harnesses: [...HARNESSES, { ...HARNESSES[0]!, id: "h3", name: "old-01", revoked: true }],
+      pinnedHarnessIds: ["h3"],
+    });
+    expect(text(html)).toMatch(/old-01.*Revoked/);
+    expect(text(html)).toMatch(/“old-01” is not available\. It was revoked or deleted/);
+  });
+
   it("keeps a pin to a harness that is no longer pinnable, with a warning", () => {
     const html = render("harnesses", { pinnedHarnessIds: ["gone"] });
     expect(text(html)).toMatch(/gone/);
@@ -519,7 +561,7 @@ describe("RepositorySettingsView pinned harnesses", () => {
   });
 
   it("says any harness runs the jobs when none is enrolled", () => {
-    const html = render("harnesses", { agents: [] });
+    const html = render("harnesses", { harnesses: [] });
     expect(html).not.toContain('id="pinned-harnesses"');
     expect(text(html)).toMatch(/No harnesses are enrolled yet/);
   });

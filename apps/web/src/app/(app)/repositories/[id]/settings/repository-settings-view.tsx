@@ -14,7 +14,7 @@ import {
   Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
-import { IconExternalLink } from "@tabler/icons-react";
+import { IconExternalLink, IconX } from "@tabler/icons-react";
 import {
   fieldErrors as toFieldErrors,
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
@@ -46,6 +46,8 @@ import {
   type RepositoryDraft,
   type RepositoryValues,
 } from "@/lib/settings/forms";
+import { HARNESS_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
+import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
 import type { ProfileSummary } from "../../../settings/profiles/profile-facts";
@@ -96,8 +98,8 @@ interface RepositorySettingsViewProps {
   /** The tasks that can correlate its review runs' findings. */
   correlationTasks: TaskChoiceOption[];
   profiles: ProfileSummary[];
-  /** Harnesses that can be pinned (not revoked). */
-  agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
+  /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
+  harnesses: RepositoryHarness[];
   /** The Coding tab's settings; only passed to admins. */
   ralph: RalphSettingsValues | null;
   /** The Coding tab's picker choices; only passed to admins on that tab. */
@@ -106,6 +108,34 @@ interface RepositorySettingsViewProps {
   codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
   taskTypes: TaskTypesValues;
+}
+
+/** A harness of the organization, as the Harnesses tab shows it. */
+export interface RepositoryHarness {
+  id: string;
+  name: string;
+  online: boolean;
+  revoked: boolean;
+  /** It is updating itself to its desired version. */
+  updating: boolean;
+  /** Task types it may claim jobs of, the organization's defaults filled in. */
+  acceptedTaskTypes: string[];
+}
+
+/** Online, Offline or Updating (an offline harness reads as offline even mid-update). */
+function harnessStatusLabel(harness: RepositoryHarness): string {
+  if (!harness.online) return "Offline";
+  return harness.updating ? "Updating" : "Online";
+}
+
+/** "Review, Coding", or "No task types". */
+function taskTypesLabel(taskTypes: string[]): string {
+  return taskTypes.length === 0 ? "No task types" : taskTypes.map(stateLabel).join(", ");
+}
+
+/** The picker hint of a pinnable harness: its status and the task types it accepts. */
+export function harnessHint(harness: RepositoryHarness): string {
+  return `${harnessStatusLabel(harness)} · ${taskTypesLabel(harness.acceptedTaskTypes)}`;
 }
 
 function InlineError({ message }: { message?: string }) {
@@ -152,7 +182,7 @@ export function RepositorySettingsView({
   reviewTasks,
   correlationTasks,
   profiles,
-  agents,
+  harnesses,
   ralph,
   codingChoices,
   codingTasks,
@@ -161,9 +191,10 @@ export function RepositorySettingsView({
   const isAdmin = useCurrentUser().role === "admin";
   const disabled = !isAdmin;
 
+  const pinnable = React.useMemo(() => harnesses.filter((h) => !h.revoked), [harnesses]);
   const context = React.useMemo(
-    () => ({ reviewTaskIds: reviewTasks.map((t) => t.id), harnessIds: agents.map((a) => a.id) }),
-    [reviewTasks, agents],
+    () => ({ reviewTaskIds: reviewTasks.map((t) => t.id), harnessIds: pinnable.map((h) => h.id) }),
+    [reviewTasks, pinnable],
   );
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
   const [draft, setDraft] = React.useState(saved);
@@ -181,9 +212,9 @@ export function RepositorySettingsView({
       repositorySpecs({
         profiles: new Map(profiles.map((p) => [p.id, p.name])),
         tasks: new Map([...reviewTasks, ...correlationTasks].map((t) => [t.id, t.name])),
-        harnesses: new Map(agents.map((a) => [a.id, a.name])),
+        harnesses: new Map(harnesses.map((h) => [h.id, h.name])),
       }),
-    [profiles, reviewTasks, correlationTasks, agents],
+    [profiles, reviewTasks, correlationTasks, harnesses],
   );
   const taskName = (id: string) =>
     [...reviewTasks, ...correlationTasks].find((t) => t.id === id)?.name ?? id;
@@ -542,12 +573,16 @@ export function RepositorySettingsView({
 
   const harnessOptions = React.useMemo(
     () =>
-      agents.map((agent) => ({
-        value: agent.id,
-        label: agent.name,
-        hint: agent.lastHeartbeatAt ? undefined : "Never seen",
+      pinnable.map((harness) => ({
+        value: harness.id,
+        label: harness.name,
+        hint: harnessHint(harness),
       })),
-    [agents],
+    [pinnable],
+  );
+  const harnessNames = React.useMemo(
+    () => new Map(harnesses.map((h) => [h.id, h.name])),
+    [harnesses],
   );
   const pinError =
     errors.pinnedHarnessIds ??
@@ -570,33 +605,47 @@ export function RepositorySettingsView({
         title="Pinning"
         description="Only the pinned harnesses run this repository's jobs. Leave all unpinned to let any harness run them. Default: not set (any harness)."
       >
-        {agents.length === 0 && draft.pinnedHarnessIds.length === 0 ? (
+        {pinnable.length === 0 && draft.pinnedHarnessIds.length === 0 ? (
           <Muted>No harnesses are enrolled yet; any harness that enrolls can run jobs.</Muted>
         ) : (
-          <Field
-            label="Pinned harnesses"
-            htmlFor="pinned-harnesses"
-            description={
-              draftValues.pinnedHarnessIds.length === 0
-                ? "Any harness can run this repository's jobs."
-                : draftValues.pinnedHarnessIds.length === 1
-                  ? "Only the pinned harness runs this repository's jobs."
-                  : `Only the ${draftValues.pinnedHarnessIds.length} pinned harnesses run this repository's jobs.`
-            }
-            error={pinError}
-          >
-            <MultiSelect
-              id="pinned-harnesses"
-              value={draft.pinnedHarnessIds}
-              onChange={(value) => set("pinnedHarnessIds", value)}
-              options={harnessOptions}
+          <>
+            <Field
+              label="Pinned harnesses"
+              htmlFor="pinned-harnesses"
+              description={
+                draftValues.pinnedHarnessIds.length === 0
+                  ? "Any harness can run this repository's jobs."
+                  : draftValues.pinnedHarnessIds.length === 1
+                    ? "Only the pinned harness runs this repository's jobs."
+                    : `Only the ${draftValues.pinnedHarnessIds.length} pinned harnesses run this repository's jobs.`
+              }
+              error={pinError}
+            >
+              <MultiSelect
+                id="pinned-harnesses"
+                value={draft.pinnedHarnessIds}
+                onChange={(value) => set("pinnedHarnessIds", value)}
+                options={harnessOptions}
+                disabled={disabled}
+                placeholder="Any harness"
+                searchPlaceholder="Search harnesses…"
+                searchLabel="Search harnesses"
+                staleMessage="It was revoked or deleted. It's kept until you remove it."
+                staleLabels={harnessNames}
+              />
+            </Field>
+            <PinnedHarnessList
+              pinnedIds={draft.pinnedHarnessIds}
+              harnesses={harnesses}
               disabled={disabled}
-              placeholder="Any harness"
-              searchPlaceholder="Search harnesses…"
-              searchLabel="Search harnesses"
-              staleMessage="It was revoked or deleted. It's kept until you remove it."
+              onRemove={(id) =>
+                set(
+                  "pinnedHarnessIds",
+                  draft.pinnedHarnessIds.filter((pinned) => pinned !== id),
+                )
+              }
             />
-          </Field>
+          </>
         )}
       </SettingsSubsection>
     </SettingsSection>
@@ -651,5 +700,64 @@ export function RepositorySettingsView({
         </div>
       </main>
     </>
+  );
+}
+
+/** The pinned harnesses with their status, each removable; or that none is pinned. */
+function PinnedHarnessList({
+  pinnedIds,
+  harnesses,
+  disabled,
+  onRemove,
+}: {
+  pinnedIds: readonly string[];
+  harnesses: RepositoryHarness[];
+  disabled: boolean;
+  onRemove: (id: string) => void;
+}) {
+  if (pinnedIds.length === 0) {
+    return <Muted>None pinned: jobs go to any eligible harness</Muted>;
+  }
+  return (
+    <ul className="settings-pin-list" aria-label="Pinned harnesses">
+      {pinnedIds.map((id) => {
+        const harness = harnesses.find((h) => h.id === id);
+        const name = harness?.name ?? "Deleted harness";
+        return (
+          <li key={id} className="settings-pin">
+            <div className="settings-pin-main">
+              <span className="settings-pin-name">{name}</span>
+              <span className="settings-pin-detail">
+                {harness ? taskTypesLabel(harness.acceptedTaskTypes) : "It no longer exists"}
+              </span>
+            </div>
+            <div className="settings-pin-badges">
+              {harness ? (
+                <>
+                  <HarnessStatusBadge harness={harness} />
+                  {harness.online && harness.updating && (
+                    <Badge variant={HARNESS_UPDATE_STATUS_VARIANTS.updating} dot live>
+                      Updating
+                    </Badge>
+                  )}
+                </>
+              ) : (
+                <Badge variant="neutral">Deleted</Badge>
+              )}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              aria-label={`Unpin ${name}`}
+              onClick={() => onRemove(id)}
+            >
+              <IconX size={14} />
+            </Button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

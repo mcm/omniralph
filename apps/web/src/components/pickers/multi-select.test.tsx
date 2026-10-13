@@ -138,6 +138,21 @@ describe("MultiSelect", () => {
     expect(screen.queryByText(/is not available/)).toBeNull();
   });
 
+  it("names a value that isn't an option by its staleLabels entry", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <Harness
+        initial={["h1", "revoked-id"]}
+        staleLabels={new Map([["revoked-id", "old-runner"]])}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText(/“old-runner” is not available/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Remove old-runner" }));
+    expect(onChange).toHaveBeenLastCalledWith(["h1"]);
+  });
+
   it("stays responsive with 500 options: renders a bounded list and searches all of them", async () => {
     const user = userEvent.setup();
     const options = Array.from({ length: 500 }, (_, i) => ({

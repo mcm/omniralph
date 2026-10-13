@@ -361,10 +361,17 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         enrolledBy: U.admin,
         createdAt: ago(85 * DAY),
       },
+      ...poolHarnesses(allTypes, now),
     ]);
-    await tx
-      .insert(harnessRepoPins)
-      .values({ id: fixtureId("pin", 1), harnessId: H.online, repositoryId: R.controlPanel });
+    // The control panel is pinned to harnesses in every state, one of them revoked.
+    await tx.insert(harnessRepoPins).values(
+      [H.online, H.offline, H.updating, H.revoked].map((harnessId, i) => ({
+        id: fixtureId("pin", i + 1),
+        harnessId,
+        repositoryId: R.controlPanel,
+        createdAt: ago((10 - i) * DAY),
+      })),
+    );
     const opengrep = fixtureId("hostTool", 1);
     await tx.insert(hostTools).values([
       { id: opengrep, organizationId: O.main, name: "opengrep", description: "Static analysis." },
@@ -423,6 +430,30 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await seedReviews(tx, now);
     await seedOtherJobs(tx, now);
   });
+}
+
+/** How many pool harnesses fill the organization out to about 30, for the long pickers. */
+const POOL_HARNESSES = 25;
+
+/** Pool harnesses (`pool-01`…): mostly online, some offline, with varied task types. */
+function poolHarnesses(allTypes: string[], now: Date): (typeof harnesses.$inferInsert)[] {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const taskTypes = [allTypes, ["query", "review"], ["coding"], ["review"]];
+  return Array.from({ length: POOL_HARNESSES }, (_, i) => ({
+    id: fixtureId("harness", 100 + i),
+    organizationId: O.main,
+    name:
+      i === 7
+        ? "pool-08-gpu-runner-in-the-eu-west-datacenter"
+        : `pool-${String(i + 1).padStart(2, "0")}`,
+    maxConcurrency: 2,
+    acceptedTaskTypes: taskTypes[i % taskTypes.length],
+    reportedVersion: FIXTURE_DESIRED_VERSION,
+    selfUpdate: "supported" as const,
+    lastHeartbeatAt: i % 5 === 4 ? ago((i + 1) * HOUR) : ONLINE_HEARTBEAT,
+    enrolledBy: U.admin,
+    createdAt: ago((20 - (i % 20)) * DAY),
+  }));
 }
 
 /** Deletes an earlier seed (organizations cascade to almost everything). */

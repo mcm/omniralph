@@ -51,6 +51,8 @@ export interface MultiSelectProps {
   searchLabel?: string;
   /** What the warning under the field says about values that aren't options. */
   staleMessage?: string;
+  /** Names for values that aren't options (e.g. a revoked harness), shown instead of the value. */
+  staleLabels?: ReadonlyMap<string, string>;
   disabled?: boolean;
   className?: string;
   id?: string;
@@ -86,6 +88,7 @@ export function MultiSelect(props: MultiSelectProps) {
     searchPlaceholder = "Search…",
     searchLabel = "Search options",
     staleMessage = "They're kept until you remove them.",
+    staleLabels,
     disabled = false,
     className,
     error,
@@ -135,9 +138,10 @@ export function MultiSelect(props: MultiSelectProps) {
       announce(`Added ${option.label}`);
     }
   };
+  const staleLabel = (item: string) => staleLabels?.get(item) ?? item;
   const remove = (item: string) => {
     onChange(value.filter((other) => other !== item));
-    announce(`Removed ${known.get(item)?.label ?? item}`);
+    announce(`Removed ${known.get(item)?.label ?? staleLabel(item)}`);
   };
 
   const summary =
@@ -177,7 +181,7 @@ export function MultiSelect(props: MultiSelectProps) {
                 {stale.map((item) => (
                   <li key={item}>
                     <PickerChip
-                      label={item}
+                      label={staleLabel(item)}
                       stale
                       disabled={disabled}
                       onRemove={() => remove(item)}
@@ -261,7 +265,7 @@ export function MultiSelect(props: MultiSelectProps) {
       {stale.length > 0 ? (
         <StaleNote id={noteId}>
           {stale.length === 1
-            ? `“${stale[0]}” is ${NOT_AVAILABLE}. `
+            ? `“${staleLabel(stale[0] ?? "")}” is ${NOT_AVAILABLE}. `
             : `${stale.length} saved values are ${NOT_AVAILABLE}. `}
           {staleMessage}
         </StaleNote>

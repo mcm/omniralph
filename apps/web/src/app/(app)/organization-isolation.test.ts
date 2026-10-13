@@ -435,7 +435,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
       expect(ids(pages.repositories!.props.repositories)).toEqual([own.repoId]);
       expect(pages.repositorySettings!.props.repository.id).toBe(own.repoId);
-      expect(ids(pages.repositorySettings!.props.agents)).toEqual([own.harnessId]);
+      expect(ids(pages.repositorySettings!.props.harnesses)).toEqual([own.harnessId]);
       expect(ids(pages.repositoryRules!.props.rules)).toEqual([own.ruleId]);
       expect(ids(pages.repositoryReviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.githubInstallation!.props.connectionId).toBe(own.connectionId);
