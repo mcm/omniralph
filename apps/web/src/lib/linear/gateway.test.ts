@@ -94,6 +94,50 @@ describe("SdkLinearGateway reads", () => {
     ]);
   });
 
+  it("lists every page of issue labels, without label groups", async () => {
+    resolvers.IssueLabels = (v) => ({
+      issueLabels: v.after
+        ? {
+            nodes: [{ id: "l3", name: "Backend", isGroup: false, team: { id: "t1" } }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          }
+        : {
+            nodes: [
+              { id: "l1", name: "ralph", isGroup: false, team: null },
+              { id: "l2", name: "Area", isGroup: true, team: null },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: "c1" },
+          },
+    });
+    expect(await gateway().listIssueLabels()).toEqual([
+      { id: "l1", name: "ralph", teamId: null },
+      { id: "l3", name: "Backend", teamId: "t1" },
+    ]);
+    expect(calls.map((c) => c.variables)).toEqual([
+      { first: 100, after: null },
+      { first: 100, after: "c1" },
+    ]);
+  });
+
+  it("lists every page of projects", async () => {
+    resolvers.Projects = (v) => ({
+      projects: v.after
+        ? {
+            nodes: [{ id: "p2", name: "Cyralph" }],
+            pageInfo: { hasNextPage: false, endCursor: "c2" },
+          }
+        : {
+            nodes: [{ id: "p1", name: "Omniralph" }],
+            pageInfo: { hasNextPage: true, endCursor: "c1" },
+          },
+    });
+    expect(await gateway().listProjects()).toEqual([
+      { id: "p1", name: "Omniralph" },
+      { id: "p2", name: "Cyralph" },
+    ]);
+    expect(calls.map((c) => c.operation)).toEqual(["Projects", "Projects"]);
+  });
+
   it("reads the viewer (the app user)", async () => {
     resolvers.Viewer = () => ({ viewer: { id: "app-user", name: "Omniralph" } });
     expect(await gateway().getViewer()).toEqual({ id: "app-user", name: "Omniralph" });

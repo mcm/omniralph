@@ -16,6 +16,7 @@ import type {
   LinearDocument,
   LinearGateway,
   PlanStep,
+  Project,
   Team,
   UpdateIssueInput,
   UploadDownload,
@@ -41,6 +42,15 @@ export class FakeLinearGateway implements LinearGateway {
   plans = new Map<string, PlanStep[][]>();
   urls: Array<{ sessionId: string; label: string; url: string }> = [];
   labels: IssueLabel[] = [];
+  /** What `listProjects` returns. */
+  projects: Project[] = [];
+  /**
+   * Page size of `listIssueLabels` and `listProjects`: they read every page,
+   * one `pageRequests` entry per page, like the SDK gateway.
+   */
+  pageSize = 50;
+  /** Every page those lists read, by method name, in order. */
+  pageRequests: Array<{ method: string; after: number }> = [];
   /** What `listTeams` returns. */
   teams: Team[] = [{ id: "team-1", key: "ENG", name: "Engineering" }];
   /** What `getViewer` returns: the app user. */
@@ -188,6 +198,26 @@ export class FakeLinearGateway implements LinearGateway {
     const label = { id: `label-${this.labels.length + 1}`, name, teamId };
     this.labels.push(label);
     return label;
+  }
+  /** Every item of `items`, read `pageSize` at a time. */
+  private allPages<T>(method: string, items: T[]): T[] {
+    const nodes: T[] = [];
+    let after = 0;
+    for (;;) {
+      this.pageRequests.push({ method, after });
+      const page = items.slice(after, after + this.pageSize);
+      nodes.push(...page);
+      after += page.length;
+      if (page.length === 0 || after >= items.length) return nodes;
+    }
+  }
+  async listIssueLabels(): Promise<IssueLabel[]> {
+    this.fail("listIssueLabels");
+    return this.allPages("listIssueLabels", this.labels).map((l) => ({ ...l }));
+  }
+  async listProjects(): Promise<Project[]> {
+    this.fail("listProjects");
+    return this.allPages("listProjects", this.projects).map((p) => ({ ...p }));
   }
   async createIssue(input: CreateIssueInput) {
     this.fail("createIssue");

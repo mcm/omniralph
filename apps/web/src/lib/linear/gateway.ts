@@ -75,6 +75,11 @@ export interface IssueLabel {
   teamId: string | null;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+}
+
 export interface Team {
   id: string;
   key: string;
@@ -173,6 +178,10 @@ export interface LinearGateway {
   /** The team's label with this name (case-insensitive), else a workspace label, else null. */
   findLabel(teamId: string, name: string): Promise<IssueLabel | null>;
   createLabel(teamId: string, name: string): Promise<IssueLabel>;
+  /** Every label issues can carry, workspace and team labels (all pages; not label groups). */
+  listIssueLabels(): Promise<IssueLabel[]>;
+  /** Every project in the workspace (all pages). */
+  listProjects(): Promise<Project[]>;
   createIssue(input: CreateIssueInput): Promise<IssueSummary>;
   /** `blockerId` blocks `blockedId`. */
   createBlocksRelation(blockerId: string, blockedId: string): Promise<void>;
@@ -683,6 +692,61 @@ export class SdkLinearGateway implements LinearGateway {
     );
     if (!result.issueLabel) throw new LinearMutationError("issueLabelCreate");
     return { id: result.issueLabel.id, name: result.issueLabel.name, teamId };
+  }
+
+  async listIssueLabels(): Promise<IssueLabel[]> {
+    type LabelNode = { id: string; name: string; isGroup: boolean; team?: { id: string } | null };
+    const nodes = await this.paginate(async (after) => {
+      const data = await this.request<{ issueLabels: Connection<LabelNode> }>(
+        /* GraphQL */ `
+          query IssueLabels($first: Int!, $after: String) {
+            issueLabels(first: $first, after: $after) {
+              nodes {
+                id
+                name
+                isGroup
+                team {
+                  id
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.issueLabels;
+    });
+    // A label group only parents its labels; issues can't carry it.
+    return nodes
+      .filter((l) => !l.isGroup)
+      .map((l) => ({ id: l.id, name: l.name, teamId: l.team?.id ?? null }));
+  }
+
+  async listProjects(): Promise<Project[]> {
+    return this.paginate(async (after) => {
+      const data = await this.request<{ projects: Connection<Project> }>(
+        /* GraphQL */ `
+          query Projects($first: Int!, $after: String) {
+            projects(first: $first, after: $after) {
+              nodes {
+                id
+                name
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.projects;
+    });
   }
 
   private async projectId(name: string): Promise<string | undefined> {
