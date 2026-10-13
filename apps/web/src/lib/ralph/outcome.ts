@@ -28,7 +28,7 @@ import { organizationDefinitions } from "@/lib/definitions";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
-import { runManualLabels } from "./epic-loader";
+import { repositoryManualLabels, runManualLabels } from "./epic-loader";
 import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
@@ -316,7 +316,9 @@ export async function recordRound(
 
 /**
  * Files the follow-ups a story turned up as sub-issues of the epic (manual
- * ones with the manual label); `blocking` makes them block the story, else
+ * ones with the manual label), routed to the story's lane: a story of another
+ * repository's lane files them with its own team, project and routing labels
+ * (and that repository's manual label), so they're worked there too; `blocking` makes them block the story, else
  * they block the story's open dependents (the stories it blocks, such as the
  * epic's validation story) so those still wait for the follow-up work. A
  * follow-up with the title of an open sub-issue reuses it, so a retry that
@@ -347,8 +349,10 @@ export async function fileFollowUps(
   const open = new Map(
     siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
   );
-  const priority = siblings.find((s) => s.id === story.linearIssueId)?.priority ?? 0;
-  const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
+  const own = siblings.find((s) => s.id === story.linearIssueId);
+  const priority = own?.priority ?? 0;
+  const target = await followUpTarget(ctx, story, parent, own);
+  const { manualLabel } = target;
   // A blocking follow-up holds the story, so its dependents wait for it already.
   const dependents = options.blocking
     ? []
@@ -363,17 +367,18 @@ export async function fileFollowUps(
   const forPerson: string[] = [];
   const failed: string[] = [];
   for (const followUp of followUps) {
+    const labels = labelsFor(target, followUp.manual);
     try {
       const issue =
         open.get(followUp.title.toLowerCase()) ??
         (await linear.createIssue({
-          teamId: parent.teamId,
+          teamId: target.teamId,
           parentId: parent.id,
           title: followUp.title,
           description: `${followUp.description}\n\n_${FOLLOW_UP_MARK} ${story.identifier}._`.trim(),
           priority,
-          ...(parent.projectName && { projectName: parent.projectName }),
-          ...(followUp.manual && { labels: [manualLabel] }),
+          ...(target.projectName && { projectName: target.projectName }),
+          ...(labels.length > 0 && { labels }),
         }));
       open.set(followUp.title.toLowerCase(), issue);
       if (options.blocking && issue.id !== story.linearIssueId) {
@@ -399,6 +404,7 @@ export async function fileFollowUps(
       : dependents.map((d) => d.issue.identifier);
     lines.push(
       `Filed ${filed.join(", ")} as ${filed.length === 1 ? "a new story" : "new stories"} of **${run.linearIdentifier}**` +
+        (target.repository ? ` in \`${target.repository}\`` : "") +
         `${blocked.length > 0 ? `, blocking ${blocked.map((id) => `**${id}**`).join(", ")}` : ""}.`,
     );
   }
@@ -415,6 +421,55 @@ export async function fileFollowUps(
       body: lines.join(" "),
     });
   }
+}
+
+/** Where a story's follow-ups are filed (`followUpTarget`). */
+interface FollowUpTarget {
+  teamId: string;
+  projectName?: string;
+  /** Labels every follow-up gets (the story's routing labels in another lane). */
+  labels: string[];
+  manualLabel: string;
+  /** The full path of the story's repository when it isn't the main lane's. */
+  repository?: string;
+}
+
+/**
+ * Where a story's follow-ups go: the epic's team and project for a story of
+ * the main lane; for one of another repository's lane, the story's own team,
+ * project and the labels that route it there, so the follow-ups route (as
+ * `routeStories` judges them) to the same repository.
+ */
+async function followUpTarget(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  parent: IssueSummary,
+  own: IssueSummary | undefined,
+): Promise<FollowUpTarget> {
+  const { run } = ctx;
+  const lane = await storyLane(ctx.tx, run, story);
+  const repository =
+    own && lane && lane.repositoryId !== run.repositoryId
+      ? await getRepository(ctx.db, lane.repositoryId)
+      : null;
+  if (!own || !repository) {
+    const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
+    return { teamId: parent.teamId, projectName: parent.projectName, labels: [], manualLabel };
+  }
+  const routing = new Set(repository.linearLabels.map((l) => l.trim().toLowerCase()));
+  const [manualLabel = "manual"] = repositoryManualLabels(repository);
+  return {
+    teamId: own.teamId,
+    projectName: own.projectName,
+    labels: own.labels.filter((l) => routing.has(l.trim().toLowerCase())),
+    manualLabel,
+    repository: repository.fullPath,
+  };
+}
+
+/** A follow-up's labels: the target's, and the manual label for a manual one. */
+function labelsFor(target: FollowUpTarget, manual: boolean): string[] {
+  return manual ? [...target.labels, target.manualLabel] : target.labels;
 }
 
 /** The open sibling stories `story` blocks, with the IDs of their blockers. */

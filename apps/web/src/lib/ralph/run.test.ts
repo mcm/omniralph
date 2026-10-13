@@ -2412,6 +2412,119 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 
+    it("files a secondary lane's follow-ups so they're worked in that lane", async () => {
+      await withAppSettings({ manualLabels: ["ops"] }, async () => {
+        const t = crossRepo("Web");
+        const run = await delegate(t.epic.id);
+        const web = (await listLanes(db, run.id)).find((l) => l.repositoryId === gitlabRepoId)!;
+
+        expect((await work(run.id, { commitSha: sha(61) })).story.identifier).toBe("ENG-2");
+        expect(
+          (
+            await work(run.id, {
+              commitSha: sha(62),
+              followUps: [
+                { title: "Style the badge", description: "Use the theme.", manual: false },
+                { title: "Upload the icon", description: "To the CDN.", manual: true },
+              ],
+            })
+          ).story.identifier,
+        ).toBe("ENG-3");
+        const style = [...linear.issues.values()].find((i) => i.title === "Style the badge")!;
+        const icon = [...linear.issues.values()].find((i) => i.title === "Upload the icon")!;
+        // The story's project (not the epic's), and the app repository's manual label.
+        expect(style).toMatchObject({ parentId: t.epic.id, projectName: "Web", labels: [] });
+        expect(icon).toMatchObject({ projectName: "Web", labels: ["ops"] });
+        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+          `Filed **${style.identifier}**, **${icon.identifier}** as new stories of **ENG-1** in \`group/app\`.`,
+        );
+
+        // The follow-up (priority 2) runs next, in the app lane.
+        expect(await activeJob(run.id)).toMatchObject({ repositoryId: gitlabRepoId });
+        expect((await work(run.id, { commitSha: sha(63) })).story.identifier).toBe(
+          style.identifier,
+        );
+        const stories = await listStories(db, run.id);
+        expect(
+          stories
+            .filter((s) => s.identifier === style.identifier || s.identifier === icon.identifier)
+            .map((s) => [s.identifier, s.status, s.laneId]),
+        ).toEqual([
+          [style.identifier, "completed", web.id],
+          [icon.identifier, "manual", web.id],
+        ]);
+      });
+    });
+
+    it("files the follow-ups of a story routed by team or label with its team and routing label", async () => {
+      const update = (linearLabels: string[]) =>
+        updateRepositoryRalphSettings(db, gitlabRepoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["GL"],
+          linearProjectNames: ["Web"],
+          linearLabels,
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+        });
+      await update(["frontend"]);
+      try {
+        const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
+        linear.add({
+          identifier: "GL-2",
+          title: "By team",
+          parentId: epic.id,
+          teamId: "team-gl",
+          teamKey: "GL",
+          priority: 1,
+        });
+        linear.add({
+          identifier: "ENG-3",
+          title: "By label",
+          parentId: epic.id,
+          projectName: "API",
+          labels: ["Frontend", "bug"],
+          priority: 2,
+        });
+        const run = await delegate(epic.id);
+        const web = (await listLanes(db, run.id)).find((l) => l.repositoryId === gitlabRepoId)!;
+
+        const laneOf = async (identifier: string) =>
+          (await listStories(db, run.id)).find((s) => s.identifier === identifier)?.laneId;
+
+        expect(
+          (
+            await work(run.id, {
+              followUps: [{ title: "Team follow-up", description: "More.", manual: false }],
+            })
+          ).story.identifier,
+        ).toBe("GL-2");
+        const byTeam = [...linear.issues.values()].find((i) => i.title === "Team follow-up")!;
+        // The story's team (not the epic's) and no project.
+        expect(byTeam).toMatchObject({ teamId: "team-gl", teamKey: "GL", labels: [] });
+        expect(byTeam.projectName).toBeUndefined();
+        expect((await work(run.id)).story.identifier).toBe(byTeam.identifier);
+        expect(await laneOf(byTeam.identifier)).toBe(web.id);
+
+        expect(
+          (
+            await work(run.id, {
+              followUps: [{ title: "Label follow-up", description: "More.", manual: false }],
+            })
+          ).story.identifier,
+        ).toBe("ENG-3");
+        const byLabel = [...linear.issues.values()].find((i) => i.title === "Label follow-up")!;
+        // Only the label that routes it, as on the story.
+        expect(byLabel).toMatchObject({
+          teamId: "team-1",
+          projectName: "API",
+          labels: ["Frontend"],
+        });
+        expect((await work(run.id)).story.identifier).toBe(byLabel.identifier);
+        expect(await laneOf(byLabel.identifier)).toBe(web.id);
+      } finally {
+        await update([]);
+      }
+    });
+
     it("works a story whose project routes to another repository there, on its own branch and PR", async () => {
       await withAppSettings({ verifyCommands: ["npm run check"], model: "sonnet" }, async () => {
         const t = crossRepo("Web");
