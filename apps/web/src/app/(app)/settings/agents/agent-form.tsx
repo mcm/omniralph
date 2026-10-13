@@ -26,11 +26,13 @@ import {
   type NamedContent,
   type SystemPromptMode,
 } from "@omniralph/tasks";
-import type { FieldErrors } from "@omniralph/shared";
+import { CLAUDE_CODE_TOOLS, type FieldErrors } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
+import { ModelPicker, TagInput } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
+import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { withDefault } from "@/lib/settings/changes";
 import {
   createAgentDefinition,
@@ -44,11 +46,13 @@ import {
   type AgentDraft,
 } from "./agent-changes";
 import { agentHref } from "./agent-parts";
-import { Choices, EditorActions, errorFor, splitNames } from "./form-parts";
+import { Choices, EditorActions, errorFor, mcpServerOptions } from "./form-parts";
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
   agent: (Omit<AgentDefinition, "id"> & { id: string }) | null;
+  /** The models and installables the organization's harnesses report. */
+  choices: HarnessChoices;
   /** Field errors to show from the start (component tests). */
   initialErrors?: FieldErrors;
 }
@@ -141,7 +145,7 @@ function Documents({
 }
 
 /** The form creating an agent, or editing one of the organization's. */
-export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
+export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps) {
   const router = useRouter();
   const { pending, run } = useAction();
   const [saved, setSaved] = React.useState(() => agentDraft(agent));
@@ -159,10 +163,10 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
       systemPrompt: draft.systemPrompt,
       systemPromptMode: draft.systemPromptMode,
       tools: {
-        builtin: splitNames(draft.builtinTools),
+        builtin: draft.builtinTools,
         harness: draft.harnessTools,
         linear: draft.linearTools,
-        mcpServers: splitNames(draft.mcpServers),
+        mcpServers: draft.mcpServers,
       },
       skills: draft.skills,
       referenceDocs: draft.referenceDocs,
@@ -264,37 +268,38 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     label="Model"
                     htmlFor="agent-model"
                     description={withDefault(
-                      "Claude model ID. Leave it empty to use the repository profile's model.",
+                      "From the models your harnesses report. The profile's model leaves it to the repository's review profile.",
                       "the profile's model",
                     )}
                     error={errors.model}
                   >
-                    <Input
+                    <ModelPicker
                       id="agent-model"
                       disabled={pending}
-                      error={Boolean(errors.model)}
-                      aria-invalid={Boolean(errors.model)}
                       value={draft.model}
-                      onChange={(e) => set({ model: e.target.value })}
-                      className="settings-mono"
+                      onChange={(model) => set({ model: model ?? "" })}
+                      options={choices.models}
+                      harnessCount={choices.harnessCount}
+                      allowNone
+                      noneLabel="The profile's model"
                     />
                   </Field>
                   <Field
                     label="Fallback model"
                     htmlFor="agent-fallback-model"
                     description={withDefault(
-                      "Used when the model is overloaded. Leave it empty for no fallback.",
+                      "Used when the model is overloaded. None runs without a fallback.",
                     )}
                     error={errors.fallbackModel}
                   >
-                    <Input
+                    <ModelPicker
                       id="agent-fallback-model"
                       disabled={pending}
-                      error={Boolean(errors.fallbackModel)}
-                      aria-invalid={Boolean(errors.fallbackModel)}
                       value={draft.fallbackModel}
-                      onChange={(e) => set({ fallbackModel: e.target.value })}
-                      className="settings-mono"
+                      onChange={(fallbackModel) => set({ fallbackModel: fallbackModel ?? "" })}
+                      options={choices.models}
+                      harnessCount={choices.harnessCount}
+                      allowNone
                     />
                   </Field>
                 </div>
@@ -358,16 +363,19 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Claude Code tools"
                   htmlFor="agent-tools-builtin"
-                  description={withDefault("Comma-separated, e.g. Read, Grep, Glob.")}
+                  description={withDefault(
+                    "Pick Claude Code's tools, or type a rule such as Bash(git log:*).",
+                  )}
                   error={errorFor(errors, "tools.builtin")}
                 >
-                  <Input
+                  <TagInput
                     id="agent-tools-builtin"
                     disabled={pending}
-                    error={Boolean(errorFor(errors, "tools.builtin"))}
-                    aria-invalid={Boolean(errorFor(errors, "tools.builtin"))}
                     value={draft.builtinTools}
-                    onChange={(e) => set({ builtinTools: e.target.value })}
+                    onChange={(builtinTools) => set({ builtinTools })}
+                    options={CLAUDE_CODE_TOOLS}
+                    allowCustom
+                    placeholder="Add a tool…"
                     className="settings-mono"
                   />
                 </Field>
@@ -409,17 +417,18 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                   label="MCP servers"
                   htmlFor="agent-tools-mcp"
                   description={withDefault(
-                    "Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable).",
+                    "Pick an installable's server (<package>:<server>; its tasks then need that installable), or type the name of an MCP server configured on the harnesses.",
                   )}
                   error={errorFor(errors, "tools.mcpServers")}
                 >
-                  <Input
+                  <TagInput
                     id="agent-tools-mcp"
                     disabled={pending}
-                    error={Boolean(errorFor(errors, "tools.mcpServers"))}
-                    aria-invalid={Boolean(errorFor(errors, "tools.mcpServers"))}
                     value={draft.mcpServers}
-                    onChange={(e) => set({ mcpServers: e.target.value })}
+                    onChange={(mcpServers) => set({ mcpServers })}
+                    options={mcpServerOptions(choices)}
+                    allowCustom
+                    placeholder="Add an MCP server…"
                     className="settings-mono"
                   />
                 </Field>

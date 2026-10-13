@@ -26,11 +26,13 @@ import {
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
+import { ModelPicker, TagInput } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
+import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { NOT_SET, withDefault } from "@/lib/settings/changes";
-import { Choices, EditorActions, errorFor, splitNames } from "../agents/form-parts";
+import { Choices, EditorActions, errorFor, installableOptions } from "../agents/form-parts";
 import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
 import {
   defaultPool,
@@ -65,6 +67,12 @@ export interface TaskFormSink {
   taskType: TaskType;
 }
 
+/** A host tool the form can require. */
+export interface TaskFormHostTool {
+  name: string;
+  description: string | null;
+}
+
 export interface TaskFormProps {
   /** The task being edited, or null to create one. */
   task: TaskDefinition | null;
@@ -75,6 +83,10 @@ export interface TaskFormProps {
   pools: PoolName[];
   /** The tasks a coding task may name for its PR description (`PR_DESCRIPTION_TASKS`). */
   prDescriptionTasks: TaskChoice[];
+  /** The models and installables the organization's harnesses report. */
+  choices: HarnessChoices;
+  /** The organization's host tools (Settings › Harness defaults › Host tools), by name. */
+  hostTools: TaskFormHostTool[];
   /** Field errors to show from the start (component tests). */
   initialErrors?: FieldErrors;
 }
@@ -105,6 +117,8 @@ export function TaskForm({
   sinks,
   pools,
   prDescriptionTasks,
+  choices,
+  hostTools,
   initialErrors = {},
 }: TaskFormProps) {
   const router = useRouter();
@@ -174,8 +188,8 @@ export function TaskForm({
         shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
       },
       requires: {
-        installables: splitNames(draft.requiredInstallables),
-        hostTools: splitNames(draft.requiredHostTools),
+        installables: draft.requiredInstallables,
+        hostTools: draft.requiredHostTools,
       },
       ...(schema.schema && { outputSchema: schema.schema }),
       ...(taskType === "coding" && codingFields(draft.coding)),
@@ -422,35 +436,44 @@ export function TaskForm({
                   label="Installables"
                   htmlFor="task-requires-installables"
                   description={withDefault(
-                    "Comma-separated npm package names, e.g. @omniralph/code-graph.",
+                    "From the installables your harnesses report. Install one on a harness's Installables tab.",
                   )}
                   error={errorFor(errors, "requires.installables")}
                 >
-                  <Input
+                  <TagInput
                     id="task-requires-installables"
                     disabled={pending}
-                    error={Boolean(errorFor(errors, "requires.installables"))}
-                    aria-invalid={Boolean(errorFor(errors, "requires.installables"))}
                     value={draft.requiredInstallables}
-                    onChange={(e) => set({ requiredInstallables: e.target.value })}
+                    onChange={(requiredInstallables) => set({ requiredInstallables })}
+                    options={installableOptions(choices)}
+                    placeholder={
+                      choices.installables.length > 0
+                        ? "Add an installable…"
+                        : "No harness reports an installable"
+                    }
+                    staleMessage="No harness reports it, so no harness claims the task's runs. It's kept until you remove it."
                     className="settings-mono"
                   />
                 </Field>
                 <Field
                   label="Host tools"
                   htmlFor="task-requires-host-tools"
-                  description={withDefault(
-                    "Comma-separated names from Settings › Harness defaults › Host tools, e.g. opengrep.",
-                  )}
+                  description={withDefault("From Settings › Harness defaults › Host tools.")}
                   error={errorFor(errors, "requires.hostTools")}
                 >
-                  <Input
+                  <TagInput
                     id="task-requires-host-tools"
                     disabled={pending}
-                    error={Boolean(errorFor(errors, "requires.hostTools"))}
-                    aria-invalid={Boolean(errorFor(errors, "requires.hostTools"))}
                     value={draft.requiredHostTools}
-                    onChange={(e) => set({ requiredHostTools: e.target.value })}
+                    onChange={(requiredHostTools) => set({ requiredHostTools })}
+                    options={hostTools.map((tool) => ({
+                      value: tool.name,
+                      hint: tool.description ?? undefined,
+                    }))}
+                    placeholder={
+                      hostTools.length > 0 ? "Add a host tool…" : "No host tools in the catalog"
+                    }
+                    staleMessage="It's no longer in the host tool catalog. It's kept until you remove it."
                     className="settings-mono"
                   />
                 </Field>
@@ -564,19 +587,20 @@ export function TaskForm({
                   label="Model override"
                   htmlFor="task-model"
                   description={withDefault(
-                    "Claude model ID. Leave it empty to use the agent's model.",
+                    "From the models your harnesses report.",
                     "the agent's model",
                   )}
                   error={errors.model}
                 >
-                  <Input
+                  <ModelPicker
                     id="task-model"
                     disabled={pending}
-                    error={Boolean(errors.model)}
-                    aria-invalid={Boolean(errors.model)}
                     value={draft.model}
-                    onChange={(e) => set({ model: e.target.value })}
-                    className="settings-mono"
+                    onChange={(model) => set({ model: model ?? "" })}
+                    options={choices.models}
+                    harnessCount={choices.harnessCount}
+                    allowNone
+                    noneLabel="The agent's model"
                   />
                 </Field>
                 <Field

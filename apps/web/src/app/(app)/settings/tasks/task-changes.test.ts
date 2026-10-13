@@ -29,9 +29,9 @@ describe("taskChanges", () => {
     expect(taskChanges(saved, taskDraft(TASK, ["short", "long"]), NAMES)).toEqual([]);
   });
 
-  it("ignores whitespace the save trims and list formatting", () => {
+  it("ignores whitespace the save trims", () => {
     expect(changesTo({ name: " Security review ", model: "claude-opus-5-5 " })).toEqual([]);
-    expect(changesTo({ requiredInstallables: saved.requiredInstallables + " , " })).toEqual([]);
+    expect(changesTo({ requiredInstallables: [...saved.requiredInstallables] })).toEqual([]);
   });
 
   it("lists each changed setting old → new, in form order, agents by name", () => {

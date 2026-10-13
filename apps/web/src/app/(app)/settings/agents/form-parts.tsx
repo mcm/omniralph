@@ -4,14 +4,27 @@ import Link from "next/link";
 import { Badge, Button, Checkbox, Cluster, Label } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconDeviceFloppy } from "@tabler/icons-react";
 import type { FieldErrors } from "@omniralph/shared";
+import { INSTALLABLE_MCP_SERVER_SEPARATOR } from "@omniralph/tasks";
+import { harnessCoverage, type TagOption } from "@/components/pickers";
 import { useUnsavedChanges } from "@/components/unsaved-changes";
+import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 
-/** Names from a comma- or newline-separated list. */
-export function splitNames(value: string): string[] {
-  return value
-    .split(/[,\n]/)
-    .map((name) => name.trim())
-    .filter(Boolean);
+/** The installables the harnesses report, each with how many have it. */
+export function installableOptions({ installables, harnessCount }: HarnessChoices): TagOption[] {
+  return installables.map((installable) => ({
+    value: installable.name,
+    hint: harnessCoverage(installable.harnessIds, harnessCount),
+  }));
+}
+
+/** The MCP servers of the installables the harnesses report, as `<package>:<server>`. */
+export function mcpServerOptions({ installables, harnessCount }: HarnessChoices): TagOption[] {
+  return installables.flatMap((installable) =>
+    installable.mcpServers.map((server) => ({
+      value: `${installable.name}${INSTALLABLE_MCP_SERVER_SEPARATOR}${server}`,
+      hint: harnessCoverage(installable.harnessIds, harnessCount),
+    })),
+  );
 }
 
 /** The error of `field` or of anything under it (`tools.builtin.2` for `tools.builtin`). */

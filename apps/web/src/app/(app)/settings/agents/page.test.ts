@@ -32,6 +32,8 @@ const rows = vi.hoisted(() => {
   return { agent };
 });
 
+const MODEL = { value: "claude-opus-5-5", displayName: "Opus 5.5", harnessIds: ["harness-1"] };
+
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requirePageUser: async (role: Role = "member") => assertRole(state.user, role),
@@ -48,6 +50,10 @@ vi.mock("@omniralph/db", () => ({
     organizationId === rows.agent.organizationId ? [rows.agent] : [],
   getStoredTaskDefinition: async () => null,
   listStoredTaskDefinitions: async () => [],
+  listActiveHarnessIds: async (_db: unknown, organizationId: string) =>
+    organizationId === rows.agent.organizationId ? ["harness-1"] : [],
+  listReportedModels: async () => [MODEL],
+  listReportedInstallables: async () => [],
 }));
 vi.mock("./agents-view", () => ({ AgentsView: () => null }));
 vi.mock("./[id]/agent-detail-view", () => ({ AgentDetailView: () => null }));
@@ -132,7 +138,10 @@ describe("Settings › Agents pages", () => {
 
   it("new page renders an empty form for an admin", async () => {
     state.user = user("admin");
-    expect((await NewAgentPage()).props).toEqual({ agent: null });
+    expect((await NewAgentPage()).props).toEqual({
+      agent: null,
+      choices: { models: [MODEL], installables: [], harnessCount: 1 },
+    });
   });
 
   it("edit page renders the organization's agent in the form", async () => {
