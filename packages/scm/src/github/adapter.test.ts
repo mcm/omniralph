@@ -366,18 +366,33 @@ describe("postReview", () => {
         reviewBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ id: 900 });
       }),
+      // Like GitHub, the review's own listing leaves out the anchors.
       http.get(`${API}/repos/acme/widgets/pulls/7/reviews/900/comments`, () => {
+        const comments = (reviewBody?.comments ?? []) as { path: string }[];
+        return HttpResponse.json(
+          comments.map((c, i) => ({ id: 1000 + i, path: c.path, line: null, side: null })),
+        );
+      }),
+      http.get(`${API}/repos/acme/widgets/pulls/7/comments`, () => {
         const comments = (reviewBody?.comments ?? []) as {
           path: string;
           line: number;
           side: string;
         }[];
-        // Returned newest first to check the ID matching doesn't rely on order.
-        return HttpResponse.json(
-          comments
-            .map((c, i) => ({ id: 1000 + i, path: c.path, line: c.line, side: c.side }))
+        // Returned newest first to check the ID matching doesn't rely on order,
+        // with another review's comment on the same anchor.
+        return HttpResponse.json([
+          ...comments
+            .map((c, i) => ({
+              id: 1000 + i,
+              pull_request_review_id: 900,
+              path: c.path,
+              line: c.line,
+              side: c.side,
+            }))
             .reverse(),
-        );
+          { id: 500, pull_request_review_id: 800, path: "src/app.ts", line: 12, side: "RIGHT" },
+        ]);
       }),
     );
   });
