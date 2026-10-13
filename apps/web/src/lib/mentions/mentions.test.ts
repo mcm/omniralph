@@ -13,8 +13,10 @@ import {
   jobs,
   listPendingRequests,
   ralphRuns,
+  repositories,
   reviews,
   runMigrations,
+  setAllowedTaskTypeDefaults,
   updateLane,
   updateRepositoryRalphSettings,
   upsertScmConnection,
@@ -467,6 +469,34 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.replyToComment[0]!.body).toContain("I'll learn from it");
     });
 
+    it("dismisses a false positive without rule generation when query tasks are off", async () => {
+      const setQuery = (queryEnabled: boolean | null) =>
+        db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+      const learnJobs = () => db.select().from(jobs).where(eq(jobs.type, "review.learn-rule"));
+      const before = (await learnJobs()).length;
+      try {
+        await setQuery(false);
+        const { number, finding, commentId } = await reviewedPr();
+        await threadComment(number, commentId, "@omniralph dismiss");
+        const [row] = await db.select().from(findings).where(eq(findings.id, finding.id));
+        expect(row!.status).toBe("dismissed");
+        expect(await learnJobs()).toHaveLength(before);
+        expect(state.scm.calls.replyToComment).toHaveLength(1);
+        expect(state.scm.calls.replyToComment[0]!.body).toContain("dismissed this finding");
+        expect(state.scm.calls.replyToComment[0]!.body).not.toContain("learn");
+
+        // Inheriting an organization default without query tasks.
+        await setQuery(null);
+        await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
+        const inheriting = await reviewedPr();
+        await threadComment(inheriting.number, inheriting.commentId, "@omniralph dismiss");
+        expect(await learnJobs()).toHaveLength(before);
+      } finally {
+        await setQuery(null);
+        await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      }
+    });
+
     it("refuses users without write access and leaves the finding open", async () => {
       const { number, finding, commentId } = await reviewedPr();
       await threadComment(number, commentId, "@omniralph dismiss", "drive-by");
@@ -553,6 +583,36 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
       });
       // The answer is the reply; nothing is posted yet.
       expect(state.scm.calls.replyToComment).toHaveLength(0);
+    });
+
+    it("skips questions without replying when the repository's query tasks are off", async () => {
+      const setQuery = (queryEnabled: boolean | null) =>
+        db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+      const before = (await replyJobs()).length;
+      try {
+        await setQuery(false);
+        const off = await reviewedPr();
+        await threadComment(off.number, off.commentId, "Is this reachable, @omniralph?");
+        expect(await replyJobs()).toHaveLength(before);
+        expect(state.scm.calls.replyToComment).toEqual([]);
+
+        // Inheriting an organization default without query tasks.
+        await setQuery(null);
+        await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
+        const inheriting = await reviewedPr();
+        await threadComment(inheriting.number, inheriting.commentId, "Why, @omniralph?");
+        expect(await replyJobs()).toHaveLength(before);
+        expect(state.scm.calls.replyToComment).toEqual([]);
+
+        // An explicit switch wins over the organization default.
+        await setQuery(true);
+        const on = await reviewedPr();
+        await threadComment(on.number, on.commentId, "And now, @omniralph?");
+        expect(await replyJobs()).toHaveLength(before + 1);
+      } finally {
+        await setQuery(null);
+        await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      }
     });
 
     it("politely refuses questions in a finding's thread from users without write access", async () => {

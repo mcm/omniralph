@@ -6,6 +6,7 @@ import {
   type Feedback,
   type FindingRow,
   type Review,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -16,14 +17,18 @@ import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
  * `@bot dismiss`) enqueues a run of the built-in query task
  * `builtin:learn-rule`; its `learned-rule` sink (`lib/sinks/learned-rule.ts`)
  * dedupes the result against the repository's rules and stores it as an
- * enabled `learned` rule.
+ * enabled `learned` rule. Nothing is enqueued when the repository's query
+ * tasks are turned off.
  */
 
 export const LEARN_RULE_TASK_ID = "builtin:learn-rule";
 
 export type EnqueueLearnRuleResult =
   | { status: "enqueued" | "duplicate"; jobId: string }
-  | { status: "skipped"; reason: "not_false_positive" | "repository_unavailable" };
+  | {
+      status: "skipped";
+      reason: "not_false_positive" | "repository_unavailable" | "query_disabled";
+    };
 
 /**
  * The `finding.dismissed` trigger context of a rule generation: the finding
@@ -77,6 +82,9 @@ export async function enqueueLearnRule(
   const settings = found && (await getRepositoryReviewSettings(db, review.repositoryId));
   if (!found || !settings || found.repository.disconnectedAt) {
     return { status: "skipped", reason: "repository_unavailable" };
+  }
+  if (!(await resolveRepositorySwitches(db, found.repository)).query) {
+    return { status: "skipped", reason: "query_disabled" };
   }
   const definitions = organizationDefinitions(db, found.repository.organizationId);
   const task = await definitions.getTask(LEARN_RULE_TASK_ID);

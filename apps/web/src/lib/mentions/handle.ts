@@ -63,6 +63,8 @@ export type BotCommandOutcome =
   | { status: "dismissed"; findingId: string }
   | { status: "dismiss_conflict"; findingId: string }
   | { status: "reply_enqueued"; jobId: string }
+  /** A question in a finding thread of a repository whose query tasks are turned off. */
+  | { status: "query_disabled" }
   | { status: "not_in_finding_thread" }
   /** `@bot fix` or a request on a ralph PR/MR, added to its run. */
   | { status: "ralph_request"; runId: string; delivery: PullRequestRequestDelivery }
@@ -299,10 +301,10 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         return { status: "dismiss_conflict", findingId: found.finding.id };
       }
       const label = FEEDBACK_REASON_LABELS[command.reason].toLowerCase();
-      const learn =
-        command.reason === "false_positive"
-          ? " I'll learn from it so later reviews don't raise it again."
-          : "";
+      // No rule generation when it wasn't enqueued (e.g. the repository's query tasks are off).
+      const learn = result.learnRuleJobId
+        ? " I'll learn from it so later reviews don't raise it again."
+        : "";
       await respond(`Thanks @${author}, I dismissed this finding (${label}).${learn}`);
       return { status: "dismissed", findingId: found.finding.id };
     }
@@ -333,6 +335,8 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       if (result.status === "enqueued" || result.status === "duplicate") {
         return { status: "reply_enqueued", jobId: result.jobId };
       }
+      // Query tasks are turned off for the repository: skipped without a reply.
+      if (result.status === "query_disabled") return { status: "query_disabled" };
       await respond(`Sorry @${author}, I can't answer questions for this repository right now.`);
       return { status: "review_unavailable" };
     }
