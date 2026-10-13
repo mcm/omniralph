@@ -124,10 +124,13 @@ const TASK_TYPE_LABELS: Record<(typeof TASK_TYPES)[number], string> = {
   coding: "Coding",
 };
 
-/** A new harness's configuration (the `harnesses` column defaults in `@omniralph/db`). */
+/**
+ * A harness's configuration when neither it nor its organization sets one (the built-in
+ * `DEFAULT_MAX_CONCURRENCY` and `DEFAULT_ALLOWED_TASK_TYPES` in `@omniralph/db`).
+ */
 export const HARNESS_CONFIG_DEFAULTS = {
-  maxConcurrency: 1,
-  acceptedTaskTypes: ["query", "review"],
+  maxConcurrency: 5,
+  acceptedTaskTypes: TASK_TYPES,
 };
 
 interface ConfigDraft {
@@ -251,9 +254,9 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
         </span>
         <Muted>
           Which tasks this host may run. Housekeeping jobs (repository syncs) always run. Default:{" "}
-          {HARNESS_CONFIG_DEFAULTS.acceptedTaskTypes
-            .map((t) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]])
-            .join(" and ")}
+          {new Intl.ListFormat("en", { type: "conjunction" }).format(
+            HARNESS_CONFIG_DEFAULTS.acceptedTaskTypes.map((t) => TASK_TYPE_LABELS[t]),
+          )}
           .
         </Muted>
         {TASK_TYPES.map((taskType) => (

@@ -39,6 +39,7 @@ import {
   type Job,
   organizations,
   seedReviewProfiles,
+  setAllowedTaskTypeDefaults,
   type LinearRun,
 } from "@omniralph/db";
 import {
@@ -1606,6 +1607,40 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentA));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+  });
+
+  it("sticks to an agent inheriting coding tasks until the organization's default turns them off", async () => {
+    await db.update(harnesses).set({ acceptedTaskTypes: null }).where(eq(harnesses.id, agentA));
+    const epic = linear.add({ identifier: "ENG-38", title: "Epic" });
+    linear.add({ identifier: "ENG-39", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
+    linear.add({ identifier: "ENG-40", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
+    linear.add({ identifier: "ENG-41", title: "Three", parentId: epic.id, subIssueSortOrder: 2 });
+    const run = await delegate(epic.id);
+    const finishOnA = async () => {
+      const job = await activeJob(run.id);
+      await db.update(jobs).set({ targetHarnessId: agentA }).where(eq(jobs.id, job.id));
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        harnessId: agentA,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      await onRalphJobStarted(db, job, agentA);
+      await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
+      await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    };
+    try {
+      await finishOnA();
+      expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
+      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
+      await finishOnA();
+      expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+    } finally {
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+    }
   });
 
   it("never sticks to an agent of another organization", async () => {

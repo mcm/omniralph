@@ -965,12 +965,13 @@ export const harnesses = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    maxConcurrency: integer("max_concurrency").notNull().default(1),
-    /** Task types the harness runs (`system` is always accepted); trust, not concurrency. */
-    acceptedTaskTypes: text("accepted_task_types")
-      .array()
-      .notNull()
-      .default(sql`'{query,review}'::text[]`),
+    /** Null: the organization's default (`app_settings` `harness.maxConcurrency`). */
+    maxConcurrency: integer("max_concurrency"),
+    /**
+     * Task types the harness runs (`system` is always accepted); trust, not concurrency.
+     * Null: the organization's default (`app_settings` `tasks.allowedTypes`).
+     */
+    acceptedTaskTypes: text("accepted_task_types").array(),
     /**
      * Per-pool caps on concurrent jobs (e.g. `{ "long": 1 }`), within
      * `maxConcurrency`. Unset pools use the protocol's default limit.

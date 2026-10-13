@@ -1,4 +1,10 @@
-import { claimJob, getHarness, type Database, type SettledJob } from "@omniralph/db";
+import {
+  claimJob,
+  getHarness,
+  resolveHarnessConfig,
+  type Database,
+  type SettledJob,
+} from "@omniralph/db";
 import {
   ClaimRequest,
   MAX_JOB_DELIVERIES,
@@ -48,7 +54,9 @@ export async function POST(req: Request): Promise<Response> {
     // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
     const agent = await getHarness(db, harnessId);
     if (!agent || agent.revokedAt) return unauthorized();
-    const run = await claimNext(db, agent, body.data.pools);
+    // Its own accepted task types, else the organization's default (read each time too).
+    const { acceptedTaskTypes } = await resolveHarnessConfig(db, agent);
+    const run = await claimNext(db, { ...agent, acceptedTaskTypes }, body.data.pools);
     if (run) return Response.json(run satisfies ClaimRun);
     const left = deadline - Date.now();
     if (left <= 0 || !(await wait(Math.min(CLAIM_RETRY_MS, left), req.signal))) break;

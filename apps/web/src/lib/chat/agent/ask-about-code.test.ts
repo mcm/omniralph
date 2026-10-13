@@ -75,7 +75,8 @@ describe("queryClaimableHarnesses", () => {
       reportedVersion: "0.9.0",
       revokedAt: null,
       lastHeartbeatAt: now,
-      acceptedTaskTypes: ["query", "review"],
+      acceptedTaskTypes: null,
+      effective: { acceptedTaskTypes: ["query", "review"], maxConcurrency: 5 },
       reportedInstallables: [],
       pinnedRepositories: [],
       ...over,
@@ -92,9 +93,18 @@ describe("queryClaimableHarnesses", () => {
     const incapable = [
       harness({ name: "old", reportedVersion: "0.8.0" }),
       harness({ name: "unknown", reportedVersion: null }),
-      harness({ name: "no-query", acceptedTaskTypes: ["review", "coding"] }),
+      harness({
+        name: "no-query",
+        acceptedTaskTypes: ["review", "coding"],
+        effective: { acceptedTaskTypes: ["review", "coding"], maxConcurrency: 5 },
+      }),
+      // Inheriting an organization default without query tasks.
+      harness({
+        name: "no-query-default",
+        effective: { acceptedTaskTypes: ["review"], maxConcurrency: 5 },
+      }),
     ];
-    expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false]);
+    expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false, false]);
   });
 
   it("only counts harnesses with every required installable and host tool", () => {

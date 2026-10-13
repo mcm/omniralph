@@ -526,6 +526,13 @@
       "when": 1791821772451,
       "tag": "0074_ralph_story_rounds",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791902676698,
+      "tag": "0075_harness_inherit_defaults",
+      "breakpoints": true
     }
   ]
 }

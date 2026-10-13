@@ -195,7 +195,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
     expect(await unpinRepository(b.harnessId, b.repoId)).toMatchObject({ ok: false });
 
     const other = (await getHarnessOverview(db, b.orgId, b.harnessId))!;
-    expect(other).toMatchObject({ maxConcurrency: 1, desiredVersion: null, revokedAt: null });
+    expect(other).toMatchObject({ maxConcurrency: null, desiredVersion: null, revokedAt: null });
     expect(other.pinnedRepositories).toEqual([]);
 
     // Its own harness and repository still work.

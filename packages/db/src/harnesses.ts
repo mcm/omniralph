@@ -16,6 +16,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { getAllowedTaskTypeDefaults, getDefaultMaxConcurrency } from "./app-settings.js";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -49,8 +50,61 @@ export interface HarnessJobSummary {
 }
 
 export interface HarnessOverview extends HarnessRow {
+  /** Its configuration with the organization's defaults filled in (`effectiveHarnessConfig`). */
+  effective: EffectiveHarnessConfig;
   runningJobs: HarnessJobSummary[];
   pinnedRepositories: RepositoryLink[];
+}
+
+/** The organization's harness defaults, for harnesses without their own values. */
+export interface HarnessDefaults {
+  acceptedTaskTypes: readonly string[];
+  maxConcurrency: number;
+}
+
+/** What a harness runs: its own value where it has one, else the organization's default. */
+export interface EffectiveHarnessConfig {
+  /** Task types it may claim jobs of (`system` is always accepted). */
+  acceptedTaskTypes: string[];
+  maxConcurrency: number;
+}
+
+/** The organization's harness defaults (`app_settings`, else the built-in ones). */
+export async function getHarnessDefaults(
+  db: Database,
+  organizationId: string,
+): Promise<HarnessDefaults> {
+  const [acceptedTaskTypes, maxConcurrency] = await Promise.all([
+    getAllowedTaskTypeDefaults(db, organizationId),
+    getDefaultMaxConcurrency(db, organizationId),
+  ]);
+  return { acceptedTaskTypes, maxConcurrency };
+}
+
+/** A harness's effective configuration: each of its values when not null, else the default. */
+export function effectiveHarnessConfig(
+  harness: Pick<HarnessRow, "acceptedTaskTypes" | "maxConcurrency">,
+  defaults: HarnessDefaults,
+): EffectiveHarnessConfig {
+  return {
+    acceptedTaskTypes: [...(harness.acceptedTaskTypes ?? defaults.acceptedTaskTypes)],
+    maxConcurrency: harness.maxConcurrency ?? defaults.maxConcurrency,
+  };
+}
+
+/**
+ * A harness's effective configuration, reading its organization's defaults only when it
+ * inherits something.
+ */
+export async function resolveHarnessConfig(
+  db: Database,
+  harness: Pick<HarnessRow, "organizationId" | "acceptedTaskTypes" | "maxConcurrency">,
+): Promise<EffectiveHarnessConfig> {
+  const [acceptedTaskTypes, maxConcurrency] = await Promise.all([
+    harness.acceptedTaskTypes ?? getAllowedTaskTypeDefaults(db, harness.organizationId),
+    harness.maxConcurrency ?? getDefaultMaxConcurrency(db, harness.organizationId),
+  ]);
+  return { acceptedTaskTypes: [...acceptedTaskTypes], maxConcurrency };
 }
 
 const repositoryLinkColumns = {
@@ -70,10 +124,15 @@ function repositoryLink(row: {
   return { id: row.repoId, provider: row.provider, fullPath: row.fullPath, baseUrl: row.baseUrl };
 }
 
-async function withJobsAndPins(db: Database, rows: HarnessRow[]): Promise<HarnessOverview[]> {
+async function withJobsAndPins(
+  db: Database,
+  organizationId: string,
+  rows: HarnessRow[],
+): Promise<HarnessOverview[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [running, pins] = await Promise.all([
+  const [defaults, running, pins] = await Promise.all([
+    getHarnessDefaults(db, organizationId),
     db
       .select({
         id: jobs.id,
@@ -99,6 +158,7 @@ async function withJobsAndPins(db: Database, rows: HarnessRow[]): Promise<Harnes
   ]);
   return rows.map((agent) => ({
     ...agent,
+    effective: effectiveHarnessConfig(agent, defaults),
     runningJobs: running
       .filter((job) => job.harnessId === agent.id)
       .map((job) => ({
@@ -132,7 +192,7 @@ export async function listHarnessOverview(
       asc(harnesses.name),
       asc(harnesses.createdAt),
     );
-  return withJobsAndPins(db, rows);
+  return withJobsAndPins(db, organizationId, rows);
 }
 
 /** One of the organization's harnesses (null for unknown and deleted harnesses and other organizations'). */
@@ -151,7 +211,7 @@ export async function getHarnessOverview(
         isNull(harnesses.deletedAt),
       ),
     );
-  const [agent] = await withJobsAndPins(db, rows);
+  const [agent] = await withJobsAndPins(db, organizationId, rows);
   return agent ?? null;
 }
 

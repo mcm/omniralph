@@ -7,6 +7,7 @@ import { createHarnessEnrollment, enrollHarness, revokeHarness } from "./harness
 import {
   findJobPage,
   getHarnessOverview,
+  resolveHarnessConfig,
   listJobs,
   listHarnessInstallJobs,
   listHarnessOverview,
@@ -15,7 +16,12 @@ import {
   setHarnessDesiredVersion,
   updateHarnessConfig,
 } from "./harnesses.js";
-import { getDesiredHarnessVersion, setDesiredHarnessVersion } from "./app-settings.js";
+import {
+  getDesiredHarnessVersion,
+  setAllowedTaskTypeDefaults,
+  setDefaultMaxConcurrency,
+  setDesiredHarnessVersion,
+} from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { recordHarnessHeartbeat } from "./jobs.js";
 import { runMigrations } from "./migrate.js";
@@ -98,6 +104,40 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     expect(await revokeHarness(db, a, { organizationId: orgB })).toBeNull();
     expect((await getHarnessOverview(db, orgA, a))?.revokedAt).toBeNull();
     expect(await revokeHarness(db, a, { organizationId: orgA })).not.toBeNull();
+  });
+
+  it("resolves a harness's own values, else its organization's defaults", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Defaults" }).returning();
+    const organizationId = org!.id;
+    const inheriting = await enroll(organizationId, "inheriting");
+    const own = await enroll(organizationId, "own");
+    await db
+      .update(harnesses)
+      .set({ maxConcurrency: 2, acceptedTaskTypes: ["review"] })
+      .where(eq(harnesses.id, own));
+    const config = async (harnessId: string) => {
+      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      return resolveHarnessConfig(db, row!);
+    };
+    const effective = async (harnessId: string) =>
+      (await getHarnessOverview(db, organizationId, harnessId))?.effective;
+
+    // No organization settings: every task type, 5 at once.
+    const builtIn = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 };
+    expect(await config(inheriting)).toEqual(builtIn);
+    expect(await effective(inheriting)).toEqual(builtIn);
+    const ownConfig = { acceptedTaskTypes: ["review"], maxConcurrency: 2 };
+    expect(await config(own)).toEqual(ownConfig);
+
+    await setDefaultMaxConcurrency(db, organizationId, 8, null);
+    await setAllowedTaskTypeDefaults(db, organizationId, ["query"], null);
+    const changed = { acceptedTaskTypes: ["query"], maxConcurrency: 8 };
+    expect(await config(inheriting)).toEqual(changed);
+    expect(await effective(inheriting)).toEqual(changed);
+    expect(await config(own)).toEqual(ownConfig);
+    expect(await effective(own)).toEqual(ownConfig);
+    // Another organization keeps the built-in defaults.
+    expect(await config(await enroll(orgB, "b-defaults"))).toEqual(builtIn);
   });
 
   it("soft-deletes only revoked harnesses of the organization and hides them", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { harnesses, repositories } from "@omniralph/db";
+import { repositories } from "@omniralph/db";
 import {
   DEFAULT_RALPH_SETTINGS,
   RalphSettingsInput,
@@ -264,7 +264,6 @@ describe("stated defaults", () => {
     expect(repositories.codingPath.default).toBe(RALPH_REPOSITORY_DEFAULTS.codingPath);
     expect(repositories.storyTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.storyTaskId);
     expect(repositories.requestTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.requestTaskId);
-    expect(harnesses.maxConcurrency.default).toBe(1);
   });
 });
 
