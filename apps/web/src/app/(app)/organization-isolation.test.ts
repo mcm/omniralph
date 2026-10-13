@@ -375,6 +375,12 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
     await container?.stop();
   });
 
+  /** The content a page streams in behind its Suspense boundary. */
+  async function streamed(page: JSX.Element): Promise<JSX.Element> {
+    const child = page.props.children as JSX.Element;
+    return (child.type as (props: unknown) => Promise<JSX.Element>)(child.props);
+  }
+
   /** What a member of `own` gets from every list and detail loader, by page. */
   async function loadEveryPage(own: Tenant): Promise<Record<string, JSX.Element>> {
     state.userId = own.userId;
@@ -384,9 +390,11 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
       repositorySettings: await RepositorySettingsPage(params(own.repoId)),
       repositoryRules: await RepositoryRulesPage(params(own.repoId)),
       repositoryReviews: await RepositoryReviewsPage({ ...params(own.repoId), ...search() }),
-      githubInstallation: await GitHubInstallationPage({
-        params: Promise.resolve({ connectionId: own.connectionId }),
-      }),
+      githubInstallation: await streamed(
+        await GitHubInstallationPage({
+          params: Promise.resolve({ connectionId: own.connectionId }),
+        }),
+      ),
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
       harnesses: await HarnessesPage(),

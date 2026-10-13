@@ -20,6 +20,8 @@ import {
   InlineCode,
   Label,
   Muted,
+  Skeleton,
+  Spinner,
   Stack,
 } from "@iamthemcmaster/ui";
 import {
@@ -49,6 +51,9 @@ export interface SelectableRepoRow {
 /** Repositories per page; selections are kept across pages. */
 const PAGE_SIZE = 25;
 
+/** Placeholder rows while the list loads. */
+const LOADING_ROWS = 5;
+
 interface RepoSelectionViewProps {
   /** Breadcrumb after "Repositories", e.g. `GitHub · acme`. */
   breadcrumb: string;
@@ -61,7 +66,8 @@ interface RepoSelectionViewProps {
   emptyDescription: string;
   /** The error's title and cause (what to check) for each kind of listing failure. */
   describeError: (failure: ListingFailure) => { title: string; cause: React.ReactNode };
-  repos: SelectableRepoRow[];
+  /** `null` while the list is still loading from the code host. */
+  repos: SelectableRepoRow[] | null;
   error: string | null;
   /** Saves the selected repository IDs. */
   save: (selectedIds: number[]) => Promise<ActionResult>;
@@ -77,11 +83,13 @@ export function RepoSelectionView({
   emptyIcon,
   emptyDescription,
   describeError,
-  repos,
+  repos: listed,
   error,
   save,
   savedMessage,
 }: RepoSelectionViewProps) {
+  const loading = listed === null;
+  const repos = listed ?? [];
   const router = useRouter();
   const failure = error ? listingFailure(error) : null;
   const errorCopy = failure ? describeError(failure) : null;
@@ -163,7 +171,20 @@ export function RepoSelectionView({
               </CardHeader>
               <Stack asChild gap={2}>
                 <CardContent>
-                  {repos.length === 0 ? (
+                  {loading ? (
+                    <div aria-busy="true" className="repo-selection-loading">
+                      <div className="repo-select-all">
+                        <Spinner size="sm" variant="neutral" label="Loading repositories…" />
+                        <Muted aria-hidden="true">Loading repositories…</Muted>
+                      </div>
+                      {Array.from({ length: LOADING_ROWS }, (_, index) => (
+                        <div key={index} className="repo-panel repo-row" aria-hidden="true">
+                          <Skeleton width={4} height={4} radius="sm" />
+                          <Skeleton width={`${40 + ((index * 17) % 30)}%`} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : repos.length === 0 ? (
                     <Empty
                       icon={emptyIcon}
                       title="No repositories"
@@ -221,7 +242,7 @@ export function RepoSelectionView({
                   Back
                 </Link>
               </Button>
-              <Button variant="primary" onClick={submit} disabled={pending}>
+              <Button variant="primary" onClick={submit} disabled={pending || loading}>
                 <IconDeviceFloppy size={14} />
                 {pending ? "Saving…" : "Save"}
               </Button>

@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { connectionCredentials, getScmConnection, listConnectionRepositories } from "@omniralph/db";
+import { Suspense } from "react";
+import {
+  connectionCredentials,
+  getScmConnection,
+  listConnectionRepositories,
+  type ScmConnection,
+} from "@omniralph/db";
 import { GitLabSetupClient, MAX_LISTED_GITLAB_PROJECTS } from "@omniralph/scm";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
@@ -23,12 +29,34 @@ export default async function GitLabConnectionPage({
     `/repositories/gitlab/${connectionId}`,
   );
   const admin = await requirePageUser("admin");
-  const db = getDb();
-  const connection = await getScmConnection(db, admin.organization.id, connectionId);
+  const connection = await getScmConnection(getDb(), admin.organization.id, connectionId);
   if (!connection || connection.provider !== "gitlab") notFound();
 
+  // The page renders right away; the list streams in once GitLab answers.
+  return (
+    <Suspense
+      fallback={
+        <GitLabProjectsView
+          connectionId={connection.id}
+          name={connection.name}
+          projects={null}
+          truncated={false}
+          error={null}
+        />
+      }
+    >
+      <ConnectionProjects connection={connection} />
+    </Suspense>
+  );
+}
+
+/** The bot's projects from GitLab, marked with the ones connected here. */
+async function ConnectionProjects({ connection }: { connection: ScmConnection }) {
   const connected = new Map(
-    (await listConnectionRepositories(db, connection.id)).map((repo) => [repo.externalId, repo]),
+    (await listConnectionRepositories(getDb(), connection.id)).map((repo) => [
+      repo.externalId,
+      repo,
+    ]),
   );
   let projects: GitLabProjectRow[] = [];
   let error: string | null = null;
