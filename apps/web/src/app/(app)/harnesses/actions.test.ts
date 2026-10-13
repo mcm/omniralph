@@ -15,6 +15,7 @@ import {
   listHarnessOverview,
   listRecentHarnessAudit,
   runMigrations,
+  scmConnections,
   setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
@@ -304,6 +305,45 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(await searchPinnableRepositories("nothing")).toEqual({ ok: true, repositories: [] });
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await searchPinnableRepositories("")).toMatchObject({ ok: false });
+    });
+
+    it("returns at most 20 repositories per search, only the organization's", async () => {
+      const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
+      await seedReviewProfiles(db, otherOrg!.id);
+      const otherConnection = (await upsertScmConnection(db, {
+        organizationId: otherOrg!.id,
+        provider: "gitlab",
+        name: "other bot",
+        baseUrl: "https://gitlab.other.example.com",
+        externalId: "6",
+        credentials: { token: "glpat-other", webhookSecret: "hook" },
+      }))!;
+      await connectRepository(db, {
+        connectionId: otherConnection.id,
+        provider: "gitlab",
+        externalId: "201",
+        fullPath: "bulk/other-org",
+      });
+      expect(await searchPinnableRepositories("bulk/")).toEqual({ ok: true, repositories: [] });
+
+      const [connection] = await db
+        .select()
+        .from(scmConnections)
+        .where(eq(scmConnections.organizationId, orgId));
+      for (let i = 0; i < 25; i += 1) {
+        await connectRepository(db, {
+          connectionId: connection!.id,
+          provider: "gitlab",
+          externalId: `bulk-${i}`,
+          fullPath: `bulk/repo-${String(i).padStart(2, "0")}`,
+        });
+      }
+      const result = await searchPinnableRepositories("bulk/");
+      expect(result.ok).toBe(true);
+      expect(result.repositories).toHaveLength(20);
+      expect(result.repositories!.map((r) => r.fullPath)).toEqual(
+        Array.from({ length: 20 }, (_, i) => `bulk/repo-${String(i).padStart(2, "0")}`),
+      );
     });
 
     it("saves the accepted task types and they reach the harness", async () => {

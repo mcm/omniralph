@@ -144,6 +144,27 @@ function Documents({
   );
 }
 
+/** What saving `draft` sends. A saved agent's unedited draft sends the agent as it is. */
+export function agentInput(draft: AgentDraft): AgentDefinitionFields {
+  return {
+    name: draft.name,
+    description: draft.description,
+    systemPrompt: draft.systemPrompt,
+    systemPromptMode: draft.systemPromptMode,
+    tools: {
+      builtin: draft.builtinTools,
+      harness: draft.harnessTools,
+      linear: draft.linearTools,
+      mcpServers: draft.mcpServers,
+    },
+    skills: draft.skills,
+    referenceDocs: draft.referenceDocs,
+    model: draft.model.trim() || null,
+    fallbackModel: draft.fallbackModel.trim() || null,
+    taskTypes: draft.taskTypes,
+  };
+}
+
 /** The form creating an agent, or editing one of the organization's. */
 export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps) {
   const router = useRouter();
@@ -157,23 +178,7 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
   const dirty = changes.length > 0;
 
   const save = () => {
-    const input: AgentDefinitionFields = {
-      name: draft.name,
-      description: draft.description,
-      systemPrompt: draft.systemPrompt,
-      systemPromptMode: draft.systemPromptMode,
-      tools: {
-        builtin: draft.builtinTools,
-        harness: draft.harnessTools,
-        linear: draft.linearTools,
-        mcpServers: draft.mcpServers,
-      },
-      skills: draft.skills,
-      referenceDocs: draft.referenceDocs,
-      model: draft.model.trim() || null,
-      fallbackModel: draft.fallbackModel.trim() || null,
-      taskTypes: draft.taskTypes,
-    };
+    const input = agentInput(draft);
     let savedId = agent?.id;
     run(
       async () => {

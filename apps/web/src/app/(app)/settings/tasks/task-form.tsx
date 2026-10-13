@@ -26,7 +26,7 @@ import {
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
 import { AppHeader } from "@/components/app-header";
-import { ModelPicker, TagInput } from "@/components/pickers";
+import { ModelPicker, MultiSelect, TagInput } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
@@ -103,6 +103,47 @@ function keptFields(task: TaskDefinition | null): Partial<TaskDefinition> {
   return kept;
 }
 
+/**
+ * What saving `draft` sends for `task` (null when creating one), or the output schema's error.
+ * A saved task's unedited draft sends the task as it is.
+ */
+export function taskInput(
+  task: TaskDefinition | null,
+  draft: TaskDraft,
+): { input: TaskDefinitionFields } | { error: string } {
+  const { taskType, toolSettings } = draft;
+  const schema = taskType === "query" ? parseOutputSchema(draft.outputSchema) : {};
+  if ("error" in schema) return { error: schema.error };
+  const input = {
+    ...keptFields(task),
+    name: draft.name,
+    description: draft.description,
+    taskType,
+    agentId: draft.agentId,
+    triggers: draft.triggers,
+    promptTemplate: draft.promptTemplate,
+    sink: draft.sink,
+    pool: draft.pool,
+    model: draft.model.trim() || undefined,
+    tokenBudget: tokenBudget(draft.budgetMode, draft.budgetAmount),
+    setupCommands: draft.setupCommands.map(setupCommand),
+    teardownCommands: draft.teardownCommands.map(teardownCommand),
+    // Shell is a query task setting: other types keep what they have.
+    toolSettings: {
+      ...toolSettings,
+      shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
+    },
+    requires: {
+      installables: draft.requiredInstallables,
+      hostTools: draft.requiredHostTools,
+    },
+    ...(schema.schema && { outputSchema: schema.schema }),
+    ...(taskType === "coding" && codingFields(draft.coding)),
+    // Unset choices fail validation with their field's error.
+  } as TaskDefinitionFields;
+  return { input };
+}
+
 /** The setup variables the template may use, by the commands' names. */
 function setupHint(commands: readonly { name: string }[]): string | undefined {
   const names = commands.map((command) => command.name.trim()).filter(Boolean);
@@ -163,38 +204,12 @@ export function TaskForm({
     }));
 
   const save = () => {
-    const schema = taskType === "query" ? parseOutputSchema(draft.outputSchema) : {};
-    if ("error" in schema) {
-      setErrors({ outputSchema: schema.error });
+    const prepared = taskInput(task, draft);
+    if ("error" in prepared) {
+      setErrors({ outputSchema: prepared.error });
       return;
     }
-    const input = {
-      ...keptFields(task),
-      name: draft.name,
-      description: draft.description,
-      taskType,
-      agentId: draft.agentId,
-      triggers: draft.triggers,
-      promptTemplate: draft.promptTemplate,
-      sink: draft.sink,
-      pool: draft.pool,
-      model: draft.model.trim() || undefined,
-      tokenBudget: tokenBudget(draft.budgetMode, draft.budgetAmount),
-      setupCommands: draft.setupCommands.map(setupCommand),
-      teardownCommands: draft.teardownCommands.map(teardownCommand),
-      // Shell is a query task setting: other types keep what they have.
-      toolSettings: {
-        ...toolSettings,
-        shell: taskType === "query" ? toolSettings.shell : (task?.toolSettings.shell ?? false),
-      },
-      requires: {
-        installables: draft.requiredInstallables,
-        hostTools: draft.requiredHostTools,
-      },
-      ...(schema.schema && { outputSchema: schema.schema }),
-      ...(taskType === "coding" && codingFields(draft.coding)),
-      // Unset choices fail validation with their field's error.
-    } as TaskDefinitionFields;
+    const { input } = prepared;
     let savedId = task?.id;
     run(
       async () => {
@@ -436,7 +451,7 @@ export function TaskForm({
                   label="Installables"
                   htmlFor="task-requires-installables"
                   description={withDefault(
-                    "From the installables your harnesses report. Install one on a harness's Installables tab.",
+                    "From the installables your harnesses report, or type a package name. Install one on a harness's Installables tab.",
                   )}
                   error={errorFor(errors, "requires.installables")}
                 >
@@ -446,12 +461,12 @@ export function TaskForm({
                     value={draft.requiredInstallables}
                     onChange={(requiredInstallables) => set({ requiredInstallables })}
                     options={installableOptions(choices)}
+                    allowCustom
                     placeholder={
                       choices.installables.length > 0
                         ? "Add an installable…"
-                        : "No harness reports an installable"
+                        : "Type an installable's package name…"
                     }
-                    staleMessage="No harness reports it, so no harness claims the task's runs. It's kept until you remove it."
                     className="settings-mono"
                   />
                 </Field>
@@ -461,18 +476,19 @@ export function TaskForm({
                   description={withDefault("From Settings › Harness defaults › Host tools.")}
                   error={errorFor(errors, "requires.hostTools")}
                 >
-                  <TagInput
+                  <MultiSelect
                     id="task-requires-host-tools"
                     disabled={pending}
                     value={draft.requiredHostTools}
                     onChange={(requiredHostTools) => set({ requiredHostTools })}
                     options={hostTools.map((tool) => ({
                       value: tool.name,
+                      label: tool.name,
                       hint: tool.description ?? undefined,
                     }))}
-                    placeholder={
-                      hostTools.length > 0 ? "Add a host tool…" : "No host tools in the catalog"
-                    }
+                    placeholder={hostTools.length > 0 ? "None" : "No host tools in the catalog"}
+                    searchPlaceholder="Search host tools…"
+                    searchLabel="Search host tools"
                     staleMessage="It's no longer in the host tool catalog. It's kept until you remove it."
                     className="settings-mono"
                   />

@@ -415,7 +415,12 @@ export function RepositorySettingsView({
                     data-selected={profile.id === draft.profileId ? "" : undefined}
                     data-disabled={disabled ? "" : undefined}
                     // The radio in the row is the keyboard control; the row is a bigger target.
-                    onClick={() => !disabled && set("profileId", profile.id)}
+                    // The radio's hidden form input dispatches a bubbling click whenever its
+                    // checked state changes (e.g. on Discard): that isn't the person choosing.
+                    onClick={(e) => {
+                      if (disabled || (e.target as Element).tagName === "INPUT") return;
+                      set("profileId", profile.id);
+                    }}
                   >
                     <td>
                       <RadioGroupItem

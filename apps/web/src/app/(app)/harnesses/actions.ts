@@ -367,7 +367,7 @@ export interface PinnableRepository {
 }
 
 /** Most repositories one search returns: the picker asks people to type more past it. */
-const REPOSITORY_SEARCH_LIMIT = 50;
+const REPOSITORY_SEARCH_LIMIT = 20;
 
 export type RepositorySearchResult = ActionResult & { repositories?: PinnableRepository[] };
 
