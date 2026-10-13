@@ -25,6 +25,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { MonoPath, MonoValue } from "@/components/mono-value";
+import { MultiSelect } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { SwitchField } from "@/components/settings-card";
 import { SettingsSection, SettingsSubsection } from "@/components/settings-section";
@@ -539,6 +540,19 @@ export function RepositorySettingsView({
     </SettingsSection>
   );
 
+  const harnessOptions = React.useMemo(
+    () =>
+      agents.map((agent) => ({
+        value: agent.id,
+        label: agent.name,
+        hint: agent.lastHeartbeatAt ? undefined : "Never seen",
+      })),
+    [agents],
+  );
+  const pinError =
+    errors.pinnedHarnessIds ??
+    Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1];
+
   const harnessesSection = (
     <SettingsSection
       id="harnesses"
@@ -556,44 +570,34 @@ export function RepositorySettingsView({
         title="Pinning"
         description="Only the pinned harnesses run this repository's jobs. Leave all unpinned to let any harness run them. Default: not set (any harness)."
       >
-        {agents.length === 0 ? (
+        {agents.length === 0 && draft.pinnedHarnessIds.length === 0 ? (
           <Muted>No harnesses are enrolled yet; any harness that enrolls can run jobs.</Muted>
         ) : (
-          <Stack gap={3} role="group" aria-label="Pinned harnesses">
-            {agents.map((agent) => (
-              <div key={agent.id} className="settings-check settings-check-center">
-                <Checkbox
-                  id={`pin-${agent.id}`}
-                  checked={draft.pinnedHarnessIds.includes(agent.id)}
-                  disabled={disabled}
-                  onCheckedChange={(checked) =>
-                    set(
-                      "pinnedHarnessIds",
-                      checked === true
-                        ? [...draft.pinnedHarnessIds, agent.id]
-                        : draft.pinnedHarnessIds.filter((id) => id !== agent.id),
-                    )
-                  }
-                />
-                <Label htmlFor={`pin-${agent.id}`}>{agent.name}</Label>
-                {!agent.lastHeartbeatAt && <Badge variant="neutral">Never seen</Badge>}
-              </div>
-            ))}
-          </Stack>
+          <Field
+            label="Pinned harnesses"
+            htmlFor="pinned-harnesses"
+            description={
+              draftValues.pinnedHarnessIds.length === 0
+                ? "Any harness can run this repository's jobs."
+                : draftValues.pinnedHarnessIds.length === 1
+                  ? "Only the pinned harness runs this repository's jobs."
+                  : `Only the ${draftValues.pinnedHarnessIds.length} pinned harnesses run this repository's jobs.`
+            }
+            error={pinError}
+          >
+            <MultiSelect
+              id="pinned-harnesses"
+              value={draft.pinnedHarnessIds}
+              onChange={(value) => set("pinnedHarnessIds", value)}
+              options={harnessOptions}
+              disabled={disabled}
+              placeholder="Any harness"
+              searchPlaceholder="Search harnesses…"
+              searchLabel="Search harnesses"
+              staleMessage="It was revoked or deleted. It's kept until you remove it."
+            />
+          </Field>
         )}
-        <Muted>
-          {draftValues.pinnedHarnessIds.length === 0
-            ? "Any harness can run this repository's jobs."
-            : draftValues.pinnedHarnessIds.length === 1
-              ? "Only the pinned harness runs this repository's jobs."
-              : `Only the ${draftValues.pinnedHarnessIds.length} pinned harnesses run this repository's jobs.`}
-        </Muted>
-        <InlineError
-          message={
-            errors.pinnedHarnessIds ??
-            Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1]
-          }
-        />
       </SettingsSubsection>
     </SettingsSection>
   );
