@@ -23,6 +23,9 @@ pnpm --filter @omniralph/web fixtures:down
 `fixtures:up` prints `DATABASE_URL`, `ENCRYPTION_KEY` and `AUTH_SECRET` (fixed, fake values)
 and `OMNIRALPH_DEV_SIGNIN=1`. The dev sign-in (`src/app/(auth)/sign-in/dev/route.ts`) only
 exists with `OMNIRALPH_DEV_SIGNIN=1` **and** `NODE_ENV` other than `production`.
+It also prints `OMNIRALPH_FIXTURE_LINEAR=1`: the settings pickers then read the fixture Linear
+workspace (`src/lib/linear/fixture-gateway.ts`: teams FIX, OPS and WEB, their labels, projects
+and states) instead of linear.app; also only outside production.
 
 ## What's in it
 

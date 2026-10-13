@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import { RepositorySettingsView, type RepositorySettingsTab } from "./repository-settings-view";
-import type { RalphSettingsValues } from "./ralph-settings-section";
+import type { CodingChoices, RalphSettingsValues } from "./ralph-settings-section";
 import { updateRalphSettings, updateRepositoryTaskTypes } from "./actions";
 import {
   inheritLabel,
@@ -55,6 +55,28 @@ const inheritAll: TaskTypesValues = {
   inherited: { query: true, review: true, coding: false },
 };
 
+/** A connected Linear workspace and the models of two harnesses accepting coding. */
+const choices: CodingChoices = {
+  linear: {
+    status: "connected",
+    options: {
+      teams: [
+        { key: "ENG", name: "Engineering" },
+        { key: "OPS", name: "Operations" },
+      ],
+      labels: ["backend", "manual"],
+      projects: ["Omniralph"],
+      states: ["In Review", "Done"],
+    },
+  },
+  models: [
+    { value: "opus", displayName: "Opus", harnessIds: ["h1", "h2"] },
+    { value: "sonnet", displayName: "Sonnet", harnessIds: ["h1"] },
+  ],
+  harnessCount: 2,
+  pinned: false,
+};
+
 /** Coding on for the repository, so the Coding tab shows its settings. */
 const codingOn: TaskTypesValues = {
   ...inheritAll,
@@ -66,6 +88,7 @@ function render(
   overrides: {
     correlationTaskId?: string;
     ralph?: RalphSettingsValues;
+    choices?: CodingChoices;
     taskTypes?: TaskTypesValues;
   } = {},
 ) {
@@ -113,6 +136,7 @@ function render(
       ]}
       agents={[]}
       ralph={overrides.ralph ?? ralph}
+      codingChoices={overrides.choices ?? choices}
       codingTasks={{
         story: [
           { id: "builtin:implement-story", name: "Implement story", builtin: true },
@@ -348,6 +372,119 @@ describe("RepositorySettingsView task types", () => {
     expect(taskTypeValue("on")).toBe(true);
     expect(taskTypeValue("off")).toBe(false);
     expect(inheritLabel(false)).toBe("Use organization default (Off)");
+  });
+});
+
+describe("RepositorySettingsView Coding pickers", () => {
+  const picked: RalphSettingsValues = {
+    ...ralph,
+    linearTeamKeys: ["ENG"],
+    linearLabels: ["backend", "renamed-label"],
+    linearProjectNames: ["Omniralph"],
+    manualLabels: ["manual", "by-hand"],
+    model: "opus",
+    fallbackModel: "claude-gone-1",
+    allowedTools: ["Read", "Bash(pnpm test:*)"],
+    epicCompletedState: "In Review",
+  };
+
+  /** The markup of the Field around the control with `id`. */
+  function field(html: string, id: string): string {
+    const start = html.indexOf(`id="${id}"`);
+    expect(start, id).toBeGreaterThan(-1);
+    // From the label before the control to the next field's label.
+    const from = html.lastIndexOf("<label", start);
+    const next = html.indexOf("<label", start);
+    return html.slice(from, next === -1 ? undefined : next);
+  }
+
+  it("picks Linear values as chips: team keys with their names, stale ones flagged", () => {
+    const html = render("coding", { ralph: picked });
+    expect(text(field(html, "ralph-teams"))).toContain("ENG · Engineering");
+    expect(field(html, "ralph-teams")).toContain('role="combobox"');
+    const labels = text(field(html, "ralph-labels"));
+    expect(labels).toContain("backend");
+    expect(labels).toMatch(/“renamed-label” is not available/);
+    expect(text(field(html, "ralph-projects"))).toContain("Omniralph");
+    expect(text(field(html, "ralph-manual-labels"))).toMatch(/“by-hand” is not available/);
+    // No comma-separated text boxes left.
+    expect(text(html)).not.toMatch(/Comma-separated/);
+  });
+
+  it("describes the first manual label as the one Coding adds, in order", () => {
+    const html = render("coding", { ralph: { ...picked, manualLabels: ["by-hand", "manual"] } });
+    expect(text(html)).toMatch(/The first, “by-hand”, is the label Coding adds/);
+    const manual = text(field(html, "ralph-manual-labels"));
+    expect(manual.indexOf("by-hand")).toBeLessThan(manual.lastIndexOf("manual"));
+  });
+
+  it("offers the epic state as leave alone, started, completed, then the workspace's states", () => {
+    const html = render("coding", { ralph: picked });
+    const options = [
+      ...select(html, "ralph-epic-completed-state").matchAll(/<option[^>]*>([^<]*)</g),
+    ].map((m) => m[1]);
+    expect(options).toEqual([
+      "Leave the epic alone",
+      "started: the team&#x27;s first started state",
+      "completed: the team&#x27;s first completed state",
+      "In Review",
+      "Done",
+    ]);
+    expect(select(html, "ralph-epic-completed-state")).toMatch(
+      /<option value="In Review" selected="">/,
+    );
+
+    const stale = render("coding", { ralph: { ...picked, epicCompletedState: "Shipped" } });
+    expect(select(stale, "ralph-epic-completed-state")).toContain("Shipped (not available)");
+    expect(text(stale)).toMatch(/“Shipped” is not available/);
+  });
+
+  it("picks the models the harnesses report, the fallback with None", () => {
+    const html = render("coding", { ralph: picked });
+    const model = field(html, "ralph-model");
+    expect(model).toContain('role="combobox"');
+    expect(text(model)).toContain("Opus");
+    expect(text(model)).toMatch(/from those the harnesses that accept coding report/);
+    // The saved fallback no harness reports is kept with a warning.
+    expect(text(field(html, "ralph-fallback-model"))).toMatch(/not available/);
+    const pinned = render("coding", { ralph: picked, choices: { ...choices, pinned: true } });
+    expect(text(field(pinned, "ralph-model"))).toMatch(/the repository.{1,6}s pinned harnesses/);
+    const none = render("coding", { ralph: { ...picked, fallbackModel: "" } });
+    expect(text(field(none, "ralph-fallback-model"))).toContain("None");
+  });
+
+  it("says when no harness can run coding jobs", () => {
+    const html = render("coding", {
+      ralph: picked,
+      choices: { ...choices, models: [], harnessCount: 0 },
+    });
+    expect(text(html)).toMatch(/No active harness accepts coding jobs/);
+  });
+
+  it("enters tools as chips, rules included", () => {
+    const html = render("coding", { ralph: picked });
+    const tools = text(field(html, "ralph-allowed-tools"));
+    expect(tools).toContain("Read");
+    expect(tools).toContain("Bash(pnpm test:*)");
+    // Rules aren't Claude Code tool names, but they aren't stale either.
+    expect(tools).not.toMatch(/not available/);
+    expect(html).not.toMatch(/<textarea[^>]*id="ralph-allowed-tools"/);
+  });
+
+  it("shows the saved Linear values read-only, linking to Integrations, without Linear", () => {
+    for (const linear of [{ status: "disconnected" }, { status: "unavailable" }] as const) {
+      const html = render("coding", { ralph: picked, choices: { ...choices, linear } });
+      expect(html).toContain('href="/settings/integrations"');
+      for (const id of ["ralph-labels", "ralph-projects", "ralph-teams", "ralph-manual-labels"]) {
+        expect(field(html, id)).toMatch(new RegExp(`id="${id}"[^>]*disabled=""`));
+        expect(text(field(html, id))).not.toMatch(/not available/);
+      }
+      expect(text(field(html, "ralph-labels"))).toContain("renamed-label");
+      expect(select(html, "ralph-epic-completed-state")).toContain("In Review");
+      expect(html).toMatch(/<select[^>]*id="ralph-epic-completed-state"[^>]*disabled=""/);
+    }
+    const linked = render("coding", { ralph: picked });
+    expect(linked).not.toContain('href="/settings/integrations"');
   });
 });
 

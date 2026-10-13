@@ -21,5 +21,7 @@ export async function startFixtures(): Promise<Record<string, string>> {
     ENCRYPTION_KEY: FIXTURE_ENCRYPTION_KEY,
     AUTH_SECRET: FIXTURE_AUTH_SECRET,
     OMNIRALPH_DEV_SIGNIN: "1",
+    // Linear settings pickers read the fixture workspace (`lib/linear/fixture-gateway.ts`).
+    OMNIRALPH_FIXTURE_LINEAR: "1",
   };
 }

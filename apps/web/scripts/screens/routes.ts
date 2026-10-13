@@ -185,8 +185,35 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
-      { action: "fill", selector: "#ralph-fallback-model", value: "sonnet" },
+      { action: "fill", selector: "#ralph-setup-command", value: "pnpm install" },
     ],
+    viewportOnly: true,
+  },
+  {
+    // Linear labels picked from the fixture workspace; "legacy-api" is no longer in it.
+    name: "repository-coding-labels",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#ralph-labels" }],
+    viewportOnly: true,
+  },
+  {
+    // Teams show as "KEY · Team name".
+    name: "repository-coding-teams",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#ralph-teams" }],
+    viewportOnly: true,
+  },
+  {
+    // Models the harnesses accepting coding report.
+    name: "repository-coding-model",
+    path: `/repositories/${ids.repositories.controlPanel}/coding`,
+    page: "(app)/repositories/[id]/coding/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#ralph-fallback-model" }],
     viewportOnly: true,
   },
   {
@@ -208,7 +235,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/repositories/[id]/coding/page.tsx",
     auth: "signed-in",
     steps: [
-      { action: "fill", selector: "#ralph-fallback-model", value: "sonnet" },
+      { action: "fill", selector: "#ralph-setup-command", value: "pnpm install" },
       {
         action: "click",
         selector: `a[href="/repositories/${ids.repositories.controlPanel}/settings"]`,

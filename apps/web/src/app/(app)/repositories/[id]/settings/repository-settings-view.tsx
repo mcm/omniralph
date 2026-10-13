@@ -49,7 +49,11 @@ import { ProviderIcon } from "../../repositories-view";
 import { RepositoryNav } from "../repository-nav";
 import type { ProfileSummary } from "../../../settings/profiles/profile-facts";
 import { updateRepositorySettings } from "./actions";
-import { CodingSettingsSections, type RalphSettingsValues } from "./ralph-settings-section";
+import {
+  CodingSettingsSections,
+  type CodingChoices,
+  type RalphSettingsValues,
+} from "./ralph-settings-section";
 import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 import {
   saveWithTaskTypes,
@@ -95,6 +99,8 @@ interface RepositorySettingsViewProps {
   agents: { id: string; name: string; /** ISO timestamp. */ lastHeartbeatAt: string | null }[];
   /** The Coding tab's settings; only passed to admins. */
   ralph: RalphSettingsValues | null;
+  /** The Coding tab's picker choices; only passed to admins on that tab. */
+  codingChoices: CodingChoices | null;
   /** The Coding tab's story and request task choices. */
   codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
@@ -147,6 +153,7 @@ export function RepositorySettingsView({
   profiles,
   agents,
   ralph,
+  codingChoices,
   codingTasks,
   taskTypes,
 }: RepositorySettingsViewProps) {
@@ -273,8 +280,8 @@ export function RepositorySettingsView({
     >
       {!reviewsOn && (
         <Muted className="settings-section-off">
-          Reviews are off: pull and merge requests here aren&apos;t reviewed. The settings below
-          are kept and apply once reviews are on.
+          Reviews are off: pull and merge requests here aren&apos;t reviewed. The settings below are
+          kept and apply once reviews are on.
         </Muted>
       )}
       <SettingsSubsection
@@ -322,8 +329,8 @@ export function RepositorySettingsView({
         title="Who reviews"
         description={
           <>
-            The profile trades review depth against token usage; the reviewers run in parallel
-            and their findings are posted as one review.
+            The profile trades review depth against token usage; the reviewers run in parallel and
+            their findings are posted as one review.
             {isAdmin && (
               <>
                 {" "}
@@ -627,10 +634,11 @@ export function RepositorySettingsView({
 
         <div className="settings-sections">
           {tab === "settings" && reviewSection}
-          {tab === "coding" && isAdmin && ralph && (
+          {tab === "coding" && isAdmin && ralph && codingChoices && (
             <CodingSettingsSections
               repositoryId={repository.id}
               settings={ralph}
+              choices={codingChoices}
               codingTasks={codingTasks}
               taskTypes={taskTypes}
             />

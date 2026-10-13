@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected, LinearNotConnectedError } from "./client";
+import { fixtureLinearEnabled, fixtureLinearGateway } from "./fixture-gateway";
 import type { LinearGateway } from "./gateway";
 import type { LinearSettingsOptions } from "./settings-values";
 
@@ -13,7 +14,10 @@ export const LINEAR_SETTINGS_OPTIONS_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { expiresAt: number; options: Promise<LinearSettingsOptions> }>();
 
 export interface LinearSettingsOptionsDeps {
-  /** The organization's workspace gateway (default: its connected one, else disconnected). */
+  /**
+   * The organization's workspace gateway (default: its connected one, else disconnected; with
+   * `OMNIRALPH_FIXTURE_LINEAR=1` a connected workspace reads the fixture one).
+   */
   gateway?: (organizationId: string) => Promise<LinearGateway>;
   now?: () => number;
 }
@@ -60,7 +64,12 @@ export async function getLinearSettingsOptions(
   if (!entry || entry.expiresAt <= now) {
     const gateway =
       deps.gateway ??
-      ((id: string) => getLinearGatewayOrDisconnected({ db: getDb(), organizationId: id }));
+      ((id: string) =>
+        getLinearGatewayOrDisconnected({
+          db: getDb(),
+          organizationId: id,
+          ...(fixtureLinearEnabled() && { createGateway: fixtureLinearGateway }),
+        }));
     const options = gateway(organizationId).then(load);
     entry = { expiresAt: now + LINEAR_SETTINGS_OPTIONS_TTL_MS, options };
     cache.set(organizationId, entry);

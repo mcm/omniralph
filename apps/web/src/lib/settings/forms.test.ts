@@ -94,8 +94,8 @@ describe("Ralph change lists", () => {
     ]);
   });
 
-  it("ignores edits that save the same values (spacing, case of team keys)", () => {
-    expect(ralphCardChanges("ralph", { linearTeamKeys: " eng ," })).toEqual([]);
+  it("ignores edits that save the same values (case of team keys, numbers as typed)", () => {
+    expect(ralphCardChanges("ralph", { linearTeamKeys: ["eng"] })).toEqual([]);
     expect(ralphCardChanges("followUp", { maxReviewRounds: "3" })).toEqual([]);
   });
 
@@ -129,9 +129,11 @@ describe("Ralph change lists", () => {
     const keys = Object.values(CODING_SECTIONS).flat();
     expect(new Set(keys).size).toBe(keys.length);
     expect([...keys].sort()).toEqual(Object.keys(RalphSettingsInput.shape).sort());
-    expect([...CODING_SECTIONS.danger].sort()).toEqual(
-      ["cleanupMergedWorktrees", "historyRewrite", "unmergedBranchTimeoutMinutes"],
-    );
+    expect([...CODING_SECTIONS.danger].sort()).toEqual([
+      "cleanupMergedWorktrees",
+      "historyRewrite",
+      "unmergedBranchTimeoutMinutes",
+    ]);
   });
 });
 

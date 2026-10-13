@@ -224,6 +224,8 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         profileId: "standard",
         ralphEnabled: true,
         linearTeamKeys: ["FIX"],
+        // "legacy-api" isn't in the fixture Linear workspace: the Coding tab shows it as stale.
+        linearLabels: ["backend", "legacy-api"],
         pathExcludes: ["**/*.snap", "pnpm-lock.yaml"],
         customInstructions: "Prefer server components; flag any client-side secret.",
         ralphSettings: {

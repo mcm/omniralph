@@ -264,6 +264,45 @@ export async function listReportedModels(
   );
 }
 
+/**
+ * The harnesses that may run a repository's coding jobs: its active pinned harnesses, else every
+ * harness of the organization that accepts coding (its own task types, else the default).
+ * Revoked and deleted harnesses are left out (pins only to those count as none). `pinned` says
+ * which of the two the IDs are.
+ */
+export async function listRepositoryCodingHarnessIds(
+  db: Database,
+  organizationId: string,
+  repositoryId: string,
+): Promise<{ pinned: boolean; harnessIds: string[] }> {
+  const active = and(
+    eq(harnesses.organizationId, organizationId),
+    isNull(harnesses.revokedAt),
+    isNull(harnesses.deletedAt),
+  );
+  const pinned = await db
+    .select({ id: harnesses.id })
+    .from(harnessRepoPins)
+    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
+    .where(and(eq(harnessRepoPins.repositoryId, repositoryId), active))
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+  if (pinned.length > 0) return { pinned: true, harnessIds: pinned.map((r) => r.id) };
+  const [defaults, rows] = await Promise.all([
+    getAllowedTaskTypeDefaults(db, organizationId),
+    db
+      .select({ id: harnesses.id, acceptedTaskTypes: harnesses.acceptedTaskTypes })
+      .from(harnesses)
+      .where(active)
+      .orderBy(asc(harnesses.name), asc(harnesses.createdAt)),
+  ]);
+  return {
+    pinned: false,
+    harnessIds: rows
+      .filter((r) => (r.acceptedTaskTypes ?? defaults).includes("coding"))
+      .map((r) => r.id),
+  };
+}
+
 export interface HarnessConfigInput {
   /** Null inherits the organization's default. */
   maxConcurrency: number | null;
