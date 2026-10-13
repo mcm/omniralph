@@ -905,6 +905,93 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     }
   });
 
+  it("backfills each lane's harness from its run (0077)", async () => {
+    await db.execute(sql`create database lane_harnesses`);
+    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/lane_harnesses");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0077_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const { rows: repos } = await client.query<{ id: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '1', 'acme/main', $2), ($1, 'github', '2', 'acme/other', $2)
+           returning id`,
+          [org, connections[0]!.id],
+        );
+        const { rows: harnessRows } = await client.query<{ id: string }>(
+          `insert into harnesses (organization_id, name) values ($1, 'sticky') returning id`,
+          [org],
+        );
+        const harness = harnessRows[0]!.id;
+        const { rows: runs } = await client.query<{ id: string }>(
+          `insert into ralph_runs (organization_id, kind, repository_id, harness_id,
+             linear_issue_id, linear_identifier, linear_agent_session_id)
+           values ($1, 'prd', $2, $3, 'i1', 'ENG-1', 's1'), ($1, 'prd', $2, null, 'i2', 'ENG-2', 's2')
+           returning id`,
+          [org, repos[0]!.id, harness],
+        );
+        for (const [run, repo, branch] of [
+          [runs[0]!.id, repos[0]!.id, "a"],
+          [runs[0]!.id, repos[1]!.id, "b"],
+          [runs[1]!.id, repos[0]!.id, "c"],
+        ]) {
+          await client.query(
+            `insert into ralph_lanes (run_id, repository_id, branch, base_branch)
+             values ($1, $2, $3, 'main')`,
+            [run, repo, branch],
+          );
+        }
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{ branch: string; harness_id: string | null }>(
+          `select branch, harness_id from ralph_lanes order by branch`,
+        );
+        expect(rows).toEqual([
+          { branch: "a", harness_id: harness },
+          { branch: "b", harness_id: harness },
+          { branch: "c", harness_id: null },
+        ]);
+
+        // Deleting the harness clears the lanes' harness.
+        await client.query(`delete from harnesses where id = $1`, [harness]);
+        const { rows: after } = await client.query<{ harness_id: string | null }>(
+          `select distinct harness_id from ralph_lanes`,
+        );
+        expect(after).toEqual([{ harness_id: null }]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("cancels legacy review.run jobs and renames review task jobs (0063)", async () => {
     await db.execute(sql`create database legacy_review_jobs`);
     const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/legacy_review_jobs");

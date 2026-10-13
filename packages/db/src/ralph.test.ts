@@ -1024,12 +1024,14 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         branch: "b",
         baseBranch: "main",
       });
+      await updateLane(db, (await getLaneByRepository(db, previous.id, repoB))!.id, { harnessId });
       await updateRun(db, previous.id, { status: "stopped" });
 
       const next = (await createRun(db, runInput({ repositoryId: null }))).run;
       const copied = await copyLanes(db, previous.id, next.id, { exceptRepositoryId: repoA });
-      expect(copied.map((l) => [l.runId, l.repositoryId, l.branch])).toEqual([
-        [next.id, repoB, "b"],
+      // The lane keeps its sticky harness.
+      expect(copied.map((l) => [l.runId, l.repositoryId, l.branch, l.harnessId])).toEqual([
+        [next.id, repoB, "b", harnessId],
       ]);
       expect(await listLanes(db, previous.id)).toHaveLength(2);
     });

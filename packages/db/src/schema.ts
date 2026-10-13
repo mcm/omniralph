@@ -1685,7 +1685,10 @@ export const ralphRuns = pgTable(
     repositoryId: uuid("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
     /** How the repository was chosen, e.g. "team `ENG`" or "your selection" (kept on re-routing). */
     routedBy: text("routed_by"),
-    /** The sticky harness: set by the run's first job, all later jobs (of every lane) are targeted at it. */
+    /**
+     * The main lane's sticky harness (`ralph_lanes.harness_id`), mirrored for
+     * run-level readers. Lane jobs are targeted at their lane's harness.
+     */
     harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
     /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
     prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
@@ -1947,6 +1950,11 @@ export const ralphLanes = pgTable(
     requestHarnessId: uuid("request_harness_id").references(() => harnesses.id, {
       onDelete: "set null",
     }),
+    /**
+     * The lane's sticky harness: the one its last job started on. Its later
+     * jobs are targeted at it while it is usable (`laneHarnessId`).
+     */
+    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
     stashes: jsonb("stashes").$type<RalphStash[]>().notNull().default([]),
     cleanup: jsonb("cleanup").$type<RalphLaneCleanup>(),
     publish: jsonb("publish").$type<RalphLanePublish>(),
