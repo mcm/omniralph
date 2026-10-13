@@ -100,9 +100,9 @@ export function installUnsavedGuard({
     onLeave(href);
   };
   win.addEventListener("beforeunload", beforeUnload);
-  root.addEventListener("click", click, true);
+  root.addEventListener("click", click, { capture: true });
   return () => {
     win.removeEventListener("beforeunload", beforeUnload);
-    root.removeEventListener("click", click, true);
+    root.removeEventListener("click", click, { capture: true });
   };
 }
