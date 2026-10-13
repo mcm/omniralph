@@ -810,6 +810,11 @@ export interface RalphSettings {
    * first one labels the manual stories and follow-ups ralph files.
    */
   manualLabels: string[];
+  /**
+   * Linear labels (matched ignoring case) that keep Omniralph from working an
+   * issue: a delegation or mention of an issue (or its epic) with one is refused.
+   */
+  blockedLabels: string[];
   historyRewrite: "when-asked" | "never";
   respondToReviews: boolean;
   maxReviewRounds: number;
@@ -835,6 +840,7 @@ export const DEFAULT_RALPH_SETTINGS: RalphSettings = {
   fallbackModel: null,
   allowPreparation: true,
   manualLabels: ["manual"],
+  blockedLabels: ["under-review", "blocked"],
   historyRewrite: "when-asked",
   respondToReviews: true,
   maxReviewRounds: 3,

@@ -259,6 +259,11 @@ const SetupCommand = z
 const manualLabels = () =>
   routingValues(RoutingName, "manual labels").min(1, "Enter at least one manual label.");
 
+/** Linear labels that keep Omniralph off an issue unless the repository sets its own. */
+export const DEFAULT_BLOCKED_LABELS = ["under-review", "blocked"];
+
+const blockedLabels = () => routingValues(RoutingName, "blocked labels");
+
 /**
  * Per-repository settings of ralph as stored
  * (`repositories.ralph_settings`; ported from cyralph's `repositories[]`).
@@ -286,6 +291,11 @@ export const RalphSettings = z.object({
   allowPreparation: z.boolean().default(true),
   /** Linear labels marking a story as manual; the first labels the manual stories ralph files. */
   manualLabels: manualLabels().default(["manual"]),
+  /**
+   * Linear labels (matched ignoring case) that keep Omniralph from working an
+   * issue: a delegation or mention of an issue (or its epic) with one is refused.
+   */
+  blockedLabels: blockedLabels().default(() => [...DEFAULT_BLOCKED_LABELS]),
   /** Whether request mode may rebase and `--force-with-lease` when asked to. */
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES).default("when-asked"),
   /** Fix Omniralph review findings and `@bot` requests on the run's PR/MR. */
@@ -393,6 +403,8 @@ export const RalphSettingsInput = z.object({
   // Linear
   /** Linear labels marking a story as manual; the first labels the manual stories ralph files. */
   manualLabels: manualLabels(),
+  /** Linear labels that keep Omniralph from working an issue; empty for none. */
+  blockedLabels: blockedLabels(),
   allowPreparation: z.boolean(),
   /** Empty to leave the epic's state alone. */
   epicCompletedState: optionalText(EpicState),
@@ -413,6 +425,7 @@ export function ralphSettingsFromInput(input: RalphSettingsInput): RalphSettings
     fallbackModel: text(input.fallbackModel),
     allowPreparation: input.allowPreparation,
     manualLabels: input.manualLabels,
+    blockedLabels: input.blockedLabels,
     historyRewrite: input.historyRewrite,
     respondToReviews: input.respondToReviews,
     maxReviewRounds: input.maxReviewRounds,
@@ -456,6 +469,7 @@ export function ralphSettingsFormValues(
     cleanupMergedWorktrees: settings.cleanupMergedWorktrees,
     unmergedBranchTimeoutMinutes: settings.unmergedBranchTimeoutMinutes,
     manualLabels: [...settings.manualLabels],
+    blockedLabels: [...settings.blockedLabels],
     allowPreparation: settings.allowPreparation,
     epicCompletedState: settings.epicCompletedState ?? "",
   };

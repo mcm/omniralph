@@ -205,6 +205,7 @@ const validRalph: RalphSettingsInput = {
   cleanupMergedWorktrees: true,
   unmergedBranchTimeoutMinutes: 60,
   manualLabels: ["manual", "needs a person"],
+  blockedLabels: ["under-review", "blocked"],
   allowPreparation: true,
   epicCompletedState: "",
 };
@@ -263,6 +264,17 @@ describe("RalphSettingsInput", () => {
       ),
     ).toEqual({ "manualLabels.1": "Names can't contain commas or control characters." });
   });
+
+  it("allows no blocked labels, but only valid ones", () => {
+    expect(RalphSettingsInput.parse({ ...validRalph, blockedLabels: [] }).blockedLabels).toEqual(
+      [],
+    );
+    expect(
+      fieldErrors(
+        RalphSettingsInput.safeParse({ ...validRalph, blockedLabels: ["blocked", "a,b"] }).error!,
+      ),
+    ).toEqual({ "blockedLabels.1": "Names can't contain commas or control characters." });
+  });
 });
 
 describe("RalphSettings", () => {
@@ -277,6 +289,7 @@ describe("RalphSettings", () => {
       fallbackModel: null,
       allowPreparation: true,
       manualLabels: ["manual"],
+      blockedLabels: ["under-review", "blocked"],
       historyRewrite: "when-asked",
       respondToReviews: true,
       maxReviewRounds: 3,
@@ -323,6 +336,7 @@ describe("RalphSettings", () => {
       model: "sonnet",
     });
     expect(parseRalphSettings(null)).toEqual(DEFAULT_RALPH_SETTINGS);
+    expect(parseRalphSettings({ blockedLabels: [] }).blockedLabels).toEqual([]);
   });
 });
 
@@ -340,6 +354,7 @@ describe("ralphSettingsFromInput", () => {
       ralphSettingsFromInput(
         RalphSettingsInput.parse({
           ...validRalph,
+          blockedLabels: [],
           fallbackModel: " sonnet ",
           allowedTools: ["Read", "Bash(pnpm test:*)"],
           epicCompletedState: "In Review",
@@ -347,6 +362,7 @@ describe("ralphSettingsFromInput", () => {
         }),
       ),
     ).toMatchObject({
+      blockedLabels: [],
       fallbackModel: "sonnet",
       allowedTools: ["Read", "Bash(pnpm test:*)"],
       epicCompletedState: "In Review",

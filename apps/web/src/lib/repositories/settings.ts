@@ -10,6 +10,7 @@ import {
   type Repository,
 } from "@omniralph/db";
 import {
+  DEFAULT_BLOCKED_LABELS,
   parseRalphSettings,
   type FieldErrors,
   type RalphSettingsInput,
@@ -147,8 +148,8 @@ function notInWorkspace(values: readonly string[], what: string): string {
 }
 
 /**
- * Field errors of a Coding form's Linear values: each label, project, team key, manual label
- * and the epic completed state must exist in the organization's connected Linear workspace.
+ * Field errors of a Coding form's Linear values: each label, project, team key, manual and
+ * blocked label and the epic completed state must exist in the organization's connected Linear workspace.
  * Values the repository already has saved are kept even when they went stale (a renamed label
  * stays until a person removes it); only new ones are checked. Without a connected workspace
  * nothing is checked. `"unavailable"` when the workspace couldn't be read.
@@ -158,22 +159,33 @@ export async function ralphLinearErrors(
   saved: SavedLinearValues,
   input: Pick<
     RalphSettingsInput,
-    "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "manualLabels" | "epicCompletedState"
+    | "linearTeamKeys"
+    | "linearProjectNames"
+    | "linearLabels"
+    | "manualLabels"
+    | "blockedLabels"
+    | "epicCompletedState"
   >,
 ): Promise<FieldErrors | "unavailable"> {
-  const savedEpicState = parseRalphSettings(saved.ralphSettings).epicCompletedState ?? "";
+  const savedSettings = parseRalphSettings(saved.ralphSettings);
+  const savedEpicState = savedSettings.epicCompletedState ?? "";
   const epicState = input.epicCompletedState.trim();
   const added = {
     labels: newValues(input.linearLabels, saved.linearLabels),
     projects: newValues(input.linearProjectNames, saved.linearProjectNames),
     teamKeys: newValues(input.linearTeamKeys, saved.linearTeamKeys),
     manualLabels: newValues(input.manualLabels, repositoryManualLabels(saved)),
+    // The default blocked labels are always accepted: one missing from the workspace never matches.
+    blockedLabels: newValues(input.blockedLabels, [
+      ...savedSettings.blockedLabels,
+      ...DEFAULT_BLOCKED_LABELS,
+    ]),
     epicCompletedState:
       epicState.toLowerCase() === savedEpicState.trim().toLowerCase() ? null : epicState,
   };
   const anyAdded =
     added.labels.length + added.projects.length + added.teamKeys.length > 0 ||
-    added.manualLabels.length > 0 ||
+    added.manualLabels.length + added.blockedLabels.length > 0 ||
     Boolean(added.epicCompletedState);
   if (!anyAdded) return {};
   let options;
@@ -194,6 +206,9 @@ export async function ralphLinearErrors(
     }),
     ...(unknown.manualLabels.length > 0 && {
       manualLabels: notInWorkspace(unknown.manualLabels, "label"),
+    }),
+    ...(unknown.blockedLabels.length > 0 && {
+      blockedLabels: notInWorkspace(unknown.blockedLabels, "label"),
     }),
     ...(unknown.epicCompletedState && {
       epicCompletedState: `“${unknown.epicCompletedState}” isn't a workflow state in your Linear workspace.`,

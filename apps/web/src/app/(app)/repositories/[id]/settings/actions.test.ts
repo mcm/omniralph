@@ -731,6 +731,7 @@ describe.skipIf(!databaseAvailable)(
           disallowedTools: ["WebFetch"],
           allowPreparation: false,
           manualLabels: ["by hand"],
+          blockedLabels: [],
           historyRewrite: "never",
           respondToReviews: false,
           maxReviewRounds: 5,
@@ -751,6 +752,7 @@ describe.skipIf(!databaseAvailable)(
         disallowedTools: ["WebFetch"],
         allowPreparation: false,
         manualLabels: ["by hand"],
+        blockedLabels: [],
         historyRewrite: "never",
         respondToReviews: false,
         maxReviewRounds: 5,
@@ -864,6 +866,7 @@ describe.skipIf(!databaseAvailable)(
             linearLabels: ["Backend"],
             linearProjectNames: ["Omniralph"],
             manualLabels: ["needs human", "manual"],
+            blockedLabels: ["blocked", "BACKEND"],
             epicCompletedState: "in review",
           }),
         ).toEqual({ ok: true });
@@ -885,6 +888,8 @@ describe.skipIf(!databaseAvailable)(
             linearLabels: ["backend", "frontend", "api"],
             linearProjectNames: ["Cyralph"],
             manualLabels: ["by-hand"],
+            // The default "under-review" is already saved, so only "on-hold" is checked.
+            blockedLabels: ["under-review", "on-hold"],
             epicCompletedState: "Shipped",
           }),
         ).toEqual({
@@ -895,6 +900,7 @@ describe.skipIf(!databaseAvailable)(
             linearLabels: "“frontend”, “api” aren't labels in your Linear workspace.",
             linearProjectNames: "“Cyralph” isn't a project in your Linear workspace.",
             manualLabels: "“by-hand” isn't a label in your Linear workspace.",
+            blockedLabels: "“on-hold” isn't a label in your Linear workspace.",
             epicCompletedState: "“Shipped” isn't a workflow state in your Linear workspace.",
           },
         });
