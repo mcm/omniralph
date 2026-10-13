@@ -4,6 +4,7 @@ import {
   closeDb,
   getScmConnection,
   createDb,
+  getRepository,
   jobs,
   repositories,
   reviews,
@@ -13,6 +14,7 @@ import {
   type Database,
   organizations,
   seedReviewProfiles,
+  setAllowedTaskTypeDefaults,
 } from "@omniralph/db";
 import { reviewTriggerContext } from "@omniralph/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -238,7 +240,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
     for (const id of [githubRepoId, gitlabRepoId]) {
       await db
         .update(repositories)
-        .set({ enabled: true, triggers: { onOpen: true, onPush: true, drafts: false } })
+        .set({ enabled: null, triggers: { onOpen: true, onPush: true, drafts: false } })
         .where(eq(repositories.id, id));
     }
   });
@@ -328,6 +330,10 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
           pull_requests: [{ number: 1 }],
         },
       });
+      await db
+        .update(repositories)
+        .set({ ralphEnabled: false })
+        .where(eq(repositories.id, githubRepoId));
       const jobCount = async () => (await db.select().from(jobs)).length;
       const before = await jobCount();
       const forged = await github(
@@ -357,6 +363,33 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
       );
       expect(await included.json()).toMatchObject({ status: "enqueued" });
       expect(await prJobs(githubRepoId, number)).toHaveLength(1);
+    });
+
+    it("reviews a repository that inherits, unless the organization turns reviews off", async () => {
+      // No organization settings: a new repository (reviews switch null) gets reviews.
+      expect((await getRepository(db, githubRepoId))?.enabled).toBeNull();
+      const inherited = await github(
+        githubRequest(githubPayload("opened", { number: ++prCounter })),
+      );
+      expect(await inherited.json()).toMatchObject({ status: "enqueued" });
+
+      try {
+        await setAllowedTaskTypeDefaults(db, orgId, ["query", "coding"], null);
+        const off = await github(githubRequest(githubPayload("opened", { number: ++prCounter })));
+        expect(await off.json()).toEqual({ status: "ignored", reason: "repository_disabled" });
+
+        // An explicit true wins over the organization's default.
+        await db
+          .update(repositories)
+          .set({ enabled: true })
+          .where(eq(repositories.id, githubRepoId));
+        const number = ++prCounter;
+        const on = await github(githubRequest(githubPayload("opened", { number })));
+        expect(await on.json()).toMatchObject({ status: "enqueued" });
+        expect(await prJobs(githubRepoId, number)).toHaveLength(1);
+      } finally {
+        await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      }
     });
 
     it("returns 200 and does nothing for disabled and unknown repos", async () => {
@@ -518,6 +551,10 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
         object_attributes: { id: 9, ref: "feature", sha: nextSha(), status },
         merge_request: { iid: 1 },
       });
+      await db
+        .update(repositories)
+        .set({ ralphEnabled: false })
+        .where(eq(repositories.id, gitlabRepoId));
       const event = "Pipeline Hook";
       expect(
         (await gitlab(gitlabRequest(payload("failed"), { event, token: "nope" }))).status,

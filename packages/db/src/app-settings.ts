@@ -17,7 +17,7 @@ export interface AppSetting<T> {
 }
 
 export async function getAppSetting(
-  db: Database,
+  db: Pick<Database, "select">,
   organizationId: string,
   key: string,
 ): Promise<AppSetting<unknown> | null> {
@@ -173,7 +173,7 @@ function isTaskType(value: unknown): value is TaskType {
 
 /** The organization's allowed task types; absent or not a list of task types is the built-in default. */
 export async function getAllowedTaskTypeDefaults(
-  db: Database,
+  db: Pick<Database, "select">,
   organizationId: string,
 ): Promise<TaskType[]> {
   const setting = await getAppSetting(db, organizationId, ALLOWED_TASK_TYPES_KEY);

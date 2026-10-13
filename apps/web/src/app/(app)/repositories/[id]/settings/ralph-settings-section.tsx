@@ -203,12 +203,15 @@ export function RalphSettingsSection({
     id: string,
     label: string,
     hint: string,
-    defaultValue: boolean,
+    defaultValue: boolean | string,
   ) => (
     <SwitchField
       id={id}
       label={label}
-      description={withDefault(hint, onOff(defaultValue))}
+      description={withDefault(
+        hint,
+        typeof defaultValue === "string" ? defaultValue : onOff(defaultValue),
+      )}
       checked={draft[key]}
       disabled={false}
       onChange={(value) => set(key, value)}
@@ -234,7 +237,7 @@ export function RalphSettingsSection({
           "ralph-enabled",
           "Enable Ralph",
           "Delegated Linear issues may build in this repository and push branches to it.",
-          RALPH_REPOSITORY_DEFAULTS.ralphEnabled,
+          RALPH_DEFAULT_TEXT.ralphEnabled,
         )}
         <Field
           label="Coding path"

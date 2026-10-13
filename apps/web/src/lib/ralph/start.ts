@@ -29,6 +29,7 @@ import {
   type RalphRunMode,
   type RalphTransaction,
   type Repository,
+  type RepositoryWithSwitches,
 } from "@omniralph/db";
 import {
   hasOpenQuestions,
@@ -189,7 +190,7 @@ export interface ChosenRepository {
  */
 export function chooseRepository(
   root: IssueSummary,
-  repositories: readonly Repository[],
+  repositories: readonly RepositoryWithSwitches[],
   previous: Pick<RalphRun, "repositoryId" | "routedBy"> | null,
 ): ChosenRepository | null {
   const current = previous?.repositoryId
@@ -332,7 +333,7 @@ async function askForRepositoryFirst(
     event: SessionCreatedEvent;
     loaded: LoadedEpic;
     previous: RalphRun | null;
-    repositories: readonly Repository[];
+    repositories: readonly RepositoryWithSwitches[];
     start: StartOptions;
   },
 ): Promise<StartOutcome> {

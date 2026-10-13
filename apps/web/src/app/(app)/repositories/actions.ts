@@ -7,6 +7,7 @@ import {
   deleteScmConnection,
   disconnectRepository as disconnectRepositoryRow,
   findScmConnection,
+  getAllowedTaskTypeDefaults,
   getRepository,
   getScmConnection,
   listConnectionRepositories,
@@ -14,6 +15,7 @@ import {
   setRepositoryEnabled as setRepositoryEnabledRow,
   setRepositoryWebhookId,
   upsertScmConnection,
+  type Database,
 } from "@omniralph/db";
 import {
   GitLabSetupClient,
@@ -84,6 +86,7 @@ async function connectGitLabProjects(
   const known = new Map(
     (await listConnectionRepositories(db, connectionId)).map((repo) => [repo.externalId, repo]),
   );
+  const enabled = await selectedReviewsSwitch(db, organizationId);
   const failed: string[] = [];
   for (const project of projects) {
     const input = {
@@ -91,10 +94,11 @@ async function connectGitLabProjects(
       provider: "gitlab",
       externalId: String(project.id),
       fullPath: project.fullPath,
+      enabled,
     } as const;
     const previous = known.get(input.externalId);
     const hooked = Boolean(previous && !previous.disconnectedAt && previous.webhookId);
-    if (hooked && previous?.enabled) {
+    if (hooked && previous?.effective.review) {
       await connectRepository(db, input);
       continue;
     }
@@ -308,6 +312,14 @@ export async function removeScmConnection(connectionId: string): Promise<ActionR
 }
 
 /**
+ * The reviews switch a repository ticked on a selection page is connected with: inherit the
+ * organization's default, or on when the default leaves reviews off.
+ */
+async function selectedReviewsSwitch(db: Database, organizationId: string): Promise<true | null> {
+  return (await getAllowedTaskTypeDefaults(db, organizationId)).includes("review") ? null : true;
+}
+
+/**
  * Saves which repositories of a GitHub App installation get reviews: selected ones are
  * connected (or re-enabled), other connected ones are disabled. Only repositories the
  * installation can access are accepted.
@@ -334,6 +346,7 @@ export async function saveGitHubRepositories(
     }
 
     const selected = new Set(selectedRepoIds.map(String));
+    const enabled = await selectedReviewsSwitch(db, organizationId);
     for (const repo of available) {
       if (!selected.has(String(repo.id))) continue;
       await connectRepository(db, {
@@ -341,10 +354,11 @@ export async function saveGitHubRepositories(
         provider: "github",
         externalId: String(repo.id),
         fullPath: repo.fullPath,
+        enabled,
       });
     }
     for (const repo of await listConnectionRepositories(db, connectionId)) {
-      if (!repo.disconnectedAt && repo.enabled && !selected.has(repo.externalId)) {
+      if (!repo.disconnectedAt && repo.effective.review && !selected.has(repo.externalId)) {
         await setRepositoryEnabledRow(db, organizationId, repo.id, false);
       }
     }
@@ -395,7 +409,7 @@ export async function saveGitLabProjects(
     for (const repo of await listConnectionRepositories(db, connectionId)) {
       if (
         !repo.disconnectedAt &&
-        repo.enabled &&
+        repo.effective.review &&
         listedIds.has(repo.externalId) &&
         !selected.has(repo.externalId)
       ) {

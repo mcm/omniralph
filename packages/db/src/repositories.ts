@@ -3,7 +3,8 @@
  * control panel's Repositories page. Connection credentials are JSON encrypted
  * with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, count, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max, or, sql, type AnyColumn } from "drizzle-orm";
+import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -22,6 +23,58 @@ export type ScmConnection = typeof scmConnections.$inferSelect;
 export type Repository = typeof repositories.$inferSelect;
 /** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
 export type RepositoryCodingPath = Repository["codingPath"];
+
+/**
+ * Which task types a repository runs: reviews (`enabled`), coding (`ralphEnabled`) and
+ * externally triggered queries (`queryEnabled`).
+ */
+export interface RepositorySwitches {
+  review: boolean;
+  coding: boolean;
+  query: boolean;
+}
+
+/** A repository with its effective switches (`effectiveRepositorySwitches`). */
+export type RepositoryWithSwitches = Repository & { effective: RepositorySwitches };
+
+/**
+ * A repository's effective switches: each of its own values when not null, else whether the
+ * organization's allowed task types include that type.
+ */
+export function effectiveRepositorySwitches(
+  repository: Pick<Repository, "enabled" | "ralphEnabled" | "queryEnabled">,
+  allowedTaskTypes: readonly string[],
+): RepositorySwitches {
+  return {
+    review: repository.enabled ?? allowedTaskTypes.includes("review"),
+    coding: repository.ralphEnabled ?? allowedTaskTypes.includes("coding"),
+    query: repository.queryEnabled ?? allowedTaskTypes.includes("query"),
+  };
+}
+
+/**
+ * A repository's effective switches, reading its organization's allowed task types only when
+ * it inherits one.
+ */
+export async function resolveRepositorySwitches(
+  db: Pick<Database, "select">,
+  repository: Pick<Repository, "organizationId" | "enabled" | "ralphEnabled" | "queryEnabled">,
+): Promise<RepositorySwitches> {
+  const inherits =
+    repository.enabled === null ||
+    repository.ralphEnabled === null ||
+    repository.queryEnabled === null;
+  const allowed = inherits ? await getAllowedTaskTypeDefaults(db, repository.organizationId) : [];
+  return effectiveRepositorySwitches(repository, allowed);
+}
+
+/**
+ * A SQL condition that a repository switch column is effectively on, given whether the
+ * organization allows its task type (null inherits it).
+ */
+export function switchedOn(column: AnyColumn, allowed: boolean) {
+  return allowed ? or(isNull(column), eq(column, true)) : eq(column, true);
+}
 
 export interface ScmConnectionInput {
   organizationId: string;
@@ -250,14 +303,14 @@ export interface ConnectRepositoryInput {
   externalId: string;
   fullPath: string;
   webhookId?: string | null;
-  /** Whether reviews are on (default `true`). */
-  enabled?: boolean;
+  /** Whether reviews are on (default null: the organization's allowed task types decide). */
+  enabled?: boolean | null;
 }
 
 /**
  * Connects (or reconnects) a repository: creates it, or re-enables an existing row for the
  * same connection and external ID (clearing `disconnectedAt`) so its history carries over.
- * With `enabled: false` it's connected with reviews off.
+ * With `enabled: false` it's connected with reviews off; without `enabled` it inherits.
  * The repository belongs to its connection's organization.
  */
 export async function connectRepository(
@@ -266,7 +319,7 @@ export async function connectRepository(
 ): Promise<Repository> {
   const set = {
     fullPath: input.fullPath,
-    enabled: input.enabled ?? true,
+    enabled: input.enabled ?? null,
     disconnectedAt: null,
     ...(input.webhookId !== undefined ? { webhookId: input.webhookId } : {}),
   };
@@ -306,16 +359,20 @@ function inOrganization(organizationId: string | undefined) {
   return organizationId === undefined ? undefined : eq(repositories.organizationId, organizationId);
 }
 
-/** Repositories of a connection, including disconnected ones. */
+/** Repositories of a connection, including disconnected ones, with their effective switches. */
 export async function listConnectionRepositories(
   db: Database,
   connectionId: string,
-): Promise<Repository[]> {
-  return db
+): Promise<RepositoryWithSwitches[]> {
+  const rows = await db
     .select()
     .from(repositories)
     .where(eq(repositories.connectionId, connectionId))
     .orderBy(asc(repositories.fullPath));
+  const [first] = rows;
+  if (!first) return [];
+  const allowed = await getAllowedTaskTypeDefaults(db, first.organizationId);
+  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
 }
 
 /**
@@ -392,7 +449,9 @@ export interface RepositoryOverview {
   id: string;
   provider: ScmProvider;
   fullPath: string;
+  /** Reviews are on (effective: its own value, else the organization's allowed task types). */
   enabled: boolean;
+  /** Coding is on (effective, like `enabled`). */
   ralphEnabled: boolean;
   connectionId: string;
   connectionName: string;
@@ -422,6 +481,7 @@ const overviewColumns = {
   fullPath: repositories.fullPath,
   enabled: repositories.enabled,
   ralphEnabled: repositories.ralphEnabled,
+  queryEnabled: repositories.queryEnabled,
   connectionId: repositories.connectionId,
   connectionName: scmConnections.name,
   baseUrl: scmConnections.baseUrl,
@@ -450,16 +510,22 @@ function overviewQuery(db: Database, organizationId: string) {
     .$dynamic();
 }
 
-type OverviewRow = Omit<RepositoryOverview, "pinnedHarnesses" | "lastReviewAt">;
+type OverviewRow = Omit<
+  RepositoryOverview,
+  "enabled" | "ralphEnabled" | "pinnedHarnesses" | "lastReviewAt"
+> &
+  Pick<Repository, "enabled" | "ralphEnabled" | "queryEnabled">;
 
 async function withPinsAndLastReview(
   db: Database,
+  organizationId: string,
   rows: OverviewRow[],
 ): Promise<RepositoryOverview[]> {
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
-  const [pins, lastReviews] = await Promise.all([
+  const [allowedTaskTypes, pins, lastReviews] = await Promise.all([
+    getAllowedTaskTypeDefaults(db, organizationId),
     db
       .select({
         repositoryId: harnessRepoPins.repositoryId,
@@ -484,11 +550,16 @@ async function withPinsAndLastReview(
     pinsByRepo.set(pin.repositoryId, list);
   }
   const lastReviewByRepo = new Map(lastReviews.map((r) => [r.repositoryId, r.at]));
-  return rows.map((row) => ({
-    ...row,
-    pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
-    lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
-  }));
+  return rows.map(({ queryEnabled, ...row }) => {
+    const effective = effectiveRepositorySwitches({ ...row, queryEnabled }, allowedTaskTypes);
+    return {
+      ...row,
+      enabled: effective.review,
+      ralphEnabled: effective.coding,
+      pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
+      lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
+    };
+  });
 }
 
 /** The organization's connected (not disconnected) repositories with their profile, pins and latest review. */
@@ -496,7 +567,7 @@ export async function listRepositoryOverview(
   db: Database,
   organizationId: string,
 ): Promise<RepositoryOverview[]> {
-  return withPinsAndLastReview(db, await overviewQuery(db, organizationId));
+  return withPinsAndLastReview(db, organizationId, await overviewQuery(db, organizationId));
 }
 
 /**
@@ -517,7 +588,7 @@ export async function listRepositoryOverviewPage(
       .offset((page - 1) * pageSize),
   ]);
   return {
-    repositories: await withPinsAndLastReview(db, rows),
+    repositories: await withPinsAndLastReview(db, organizationId, rows),
     total: totalRow?.total ?? 0,
     page,
     pageSize,

@@ -1,6 +1,7 @@
 /**
  * Which repository a delegated Linear issue builds in. Only repositories with
- * ralph enabled are candidates; the rules are tried in order and the first
+ * coding effectively enabled (their own switch, else the organization's
+ * allowed task types) are candidates; the rules are tried in order and the first
  * one that matches wins:
  *
  *   1. tag      a `[repo=<fullPath>]` tag in the description (Linear may escape it as `\[repo=…\]`)
@@ -26,7 +27,8 @@ export interface RoutableIssue {
 
 export interface RoutableRepository {
   fullPath: string;
-  ralphEnabled: boolean;
+  /** Its effective switches; only `coding` matters here (`effectiveRepositorySwitches`). */
+  effective: { coding: boolean };
   linearTeamKeys: readonly string[];
   linearProjectNames: readonly string[];
   linearLabels: readonly string[];
@@ -63,7 +65,7 @@ export function routeIssue<R extends RoutableRepository>(
   repositories: readonly R[],
 ): RouteMatch<R> | null {
   const candidates = repositories
-    .filter((r) => r.ralphEnabled)
+    .filter((r) => r.effective.coding)
     .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
 
   const tags = parseRepoTags(issue.description);
@@ -121,7 +123,7 @@ export function routeStory<R extends RoutableRepository>(
   epic: { projectName?: string | null; teamKey?: string | null },
 ): StoryRoute<R> {
   const candidates = repositories
-    .filter((r) => r.ralphEnabled)
+    .filter((r) => r.effective.coding)
     .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
 
   const tags = parseRepoTags(story.description);

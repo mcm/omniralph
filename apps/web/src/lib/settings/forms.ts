@@ -204,7 +204,6 @@ export function repositorySpecs(names: {
 
 /** Defaults of the Ralph section's repository columns (`@omniralph/db`; a test keeps them in step). */
 export const RALPH_REPOSITORY_DEFAULTS = {
-  ralphEnabled: false,
   codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -376,6 +375,8 @@ export const RALPH_DEFAULT_TEXT = {
   manualLabels: DEFAULT_RALPH_SETTINGS.manualLabels.join(", "),
   historyRewrite: HISTORY_REWRITE_LABELS[DEFAULT_RALPH_SETTINGS.historyRewrite],
   codingPath: CODING_PATH_LABELS[RALPH_REPOSITORY_DEFAULTS.codingPath],
+  /** `ralph_enabled` has no column default: null inherits the organization's task types. */
+  ralphEnabled: "the organization's default",
   onOff: (value: boolean) => formatSettingValue(value),
 };
 

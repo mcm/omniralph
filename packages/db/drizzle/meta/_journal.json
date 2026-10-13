@@ -533,6 +533,13 @@
       "when": 1791902676698,
       "tag": "0075_harness_inherit_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1791904973791,
+      "tag": "0076_repository_inherit_defaults",
+      "breakpoints": true
     }
   ]
 }

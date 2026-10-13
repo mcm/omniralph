@@ -863,7 +863,8 @@ export const repositories = pgTable(
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => scmConnections.id, { onDelete: "cascade" }),
-    enabled: boolean("enabled").notNull().default(true),
+    /** Reviews run here; null inherits the organization's allowed task types (`review`). */
+    enabled: boolean("enabled"),
     /** A review profile of the repository's organization (composite foreign key below). */
     profileId: text("profile_id").notNull().default(DEFAULT_PROFILE_ID),
     triggers: jsonb("triggers")
@@ -882,8 +883,16 @@ export const repositories = pgTable(
       .default(sql`'{builtin:review-pr}'::text[]`),
     /** The query task that merges the results of a review run's tasks. */
     correlationTaskId: text("correlation_task_id").notNull().default("builtin:correlate-findings"),
-    /** Linear delegations may build in this repository (ralph). */
-    ralphEnabled: boolean("ralph_enabled").notNull().default(false),
+    /**
+     * Linear delegations may build in this repository (ralph); null inherits the
+     * organization's allowed task types (`coding`).
+     */
+    ralphEnabled: boolean("ralph_enabled"),
+    /**
+     * Externally triggered query tasks may run here; null inherits the organization's
+     * allowed task types (`query`).
+     */
+    queryEnabled: boolean("query_enabled"),
     /** Linear routing: team keys (e.g. `ENG`), project names and labels routed here. */
     linearTeamKeys: text("linear_team_keys")
       .array()

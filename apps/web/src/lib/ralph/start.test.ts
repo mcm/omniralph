@@ -9,6 +9,7 @@ import {
   closeDb,
   createDb,
   getMainLane,
+  getRepository,
   getRun,
   getRunBySession,
   insertJob,
@@ -19,6 +20,7 @@ import {
   ralphRuns,
   runMigrations,
   saveIntegration,
+  setAllowedTaskTypeDefaults,
   updateLane,
   updateRepositoryRalphSettings,
   updateRun,
@@ -432,6 +434,55 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
 
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
     expect(linear.issues.get(elsewhere.id)?.stateType).toBe("unstarted");
+  });
+
+  it("routes to a repository that inherits coding from the organization, unless it overrides", async () => {
+    // No organization settings: a repository that never set its coding switch is routable.
+    await updateRepositoryRalphSettings(
+      db,
+      repoId,
+      routing({ ralphEnabled: null, linearTeamKeys: ["ENG"] }),
+    );
+    expect((await getRepository(db, repoId))?.ralphEnabled).toBeNull();
+    const inherited = created(linear.add({ identifier: "ENG-50", title: "Inherit" }).id);
+    expect(await startRun(inherited, deps())).toMatchObject({ status: "started" });
+    expect(await getRunBySession(db, inherited.sessionId)).toMatchObject({ repositoryId: repoId });
+    await db.delete(jobs);
+    await db.delete(ralphRuns);
+
+    // An explicit false blocks coding although the organization allows it.
+    await updateRepositoryRalphSettings(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryRalphSettings(
+      db,
+      repoId,
+      routing({ ralphEnabled: false, linearTeamKeys: ["ENG"] }),
+    );
+    const blocked = created(linear.add({ identifier: "ENG-51", title: "Blocked" }).id);
+    expect(await startRun(blocked, deps())).toEqual({ status: "unroutable" });
+
+    try {
+      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
+      // Inheriting a default without coding: not routable.
+      await updateRepositoryRalphSettings(
+        db,
+        repoId,
+        routing({ ralphEnabled: null, linearTeamKeys: ["ENG"] }),
+      );
+      const off = created(linear.add({ identifier: "ENG-52", title: "Off" }).id);
+      expect(await startRun(off, deps())).toEqual({ status: "unroutable" });
+
+      // An explicit true allows it although the organization doesn't.
+      await updateRepositoryRalphSettings(
+        db,
+        repoId,
+        routing({ ralphEnabled: true, linearTeamKeys: ["ENG"] }),
+      );
+      const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
+      expect(await startRun(on, deps())).toMatchObject({ status: "started" });
+      expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
+    } finally {
+      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+    }
   });
 
   describe("the repository question", () => {

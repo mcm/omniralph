@@ -8,6 +8,7 @@ import {
   type RalphRun,
   type Repository,
   type ScmConnection,
+  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { buildPullRequestCommentRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
@@ -124,6 +125,8 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     }
   };
 
+  const codingEnabled = async () => (await resolveRepositorySwitches(db, repository)).coding;
+
   const refuse = async (what: string): Promise<BotCommandOutcome> => {
     await respond(
       `Sorry @${author}, only people with write access to this repository can ${what}.`,
@@ -214,7 +217,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
   switch (command.kind) {
     case "fix": {
       const found = await ralphLane();
-      if (!found || !repository.ralphEnabled) {
+      if (!found || !(await codingEnabled())) {
         await respond(
           `Sorry @${author}, ${inlineCode(`@${handle} fix`)} only works on ${term}s that ralph opened.`,
         );
@@ -307,7 +310,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       const found = await inThread();
       if (!found) {
         // Outside finding threads on a ralph PR/MR: a request for ralph.
-        const ralph = repository.ralphEnabled ? await ralphLane() : null;
+        const ralph = (await codingEnabled()) ? await ralphLane() : null;
         if (ralph) {
           if (!(await adapter.hasWriteAccess(repo, author))) {
             return refuse("ask ralph for changes");

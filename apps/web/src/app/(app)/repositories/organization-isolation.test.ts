@@ -260,10 +260,10 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
       }),
     ).toEqual(refused);
     expect(await getRepository(db, b.repoId)).toMatchObject({
-      enabled: true,
+      enabled: null,
       disconnectedAt: null,
       profileId: "standard",
-      ralphEnabled: false,
+      ralphEnabled: null,
     });
 
     expect(await addCustomRule(b.repoId, { text: "Sneaky rule" })).toEqual(refused);
