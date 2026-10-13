@@ -1,6 +1,7 @@
 import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import type { ReactNode } from "react";
 import { MonoValue } from "@/components/mono-value";
+import { stateLabel } from "@/lib/state-variants";
 
 /** The path of an agent's detail page (built-in IDs contain a colon). */
 export function agentHref(id: string): string {
@@ -17,7 +18,7 @@ export function TaskTypeBadges({ taskTypes }: { taskTypes: readonly string[] }) 
     <Cluster gap={1}>
       {taskTypes.map((taskType) => (
         <Badge key={taskType} variant="neutral">
-          {taskType}
+          {stateLabel(taskType)}
         </Badge>
       ))}
     </Cluster>
@@ -30,7 +31,7 @@ export function BuiltinBadge() {
 
 /** An agent's model, or what a null model falls back to. */
 export function ModelName({ model }: { model: string | null }) {
-  if (model === null) return <Muted>Profile default</Muted>;
+  if (model === null) return <Muted className="list-nowrap">Profile default</Muted>;
   return <MonoValue value={model} className="text-sm" />;
 }
 

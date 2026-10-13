@@ -11,6 +11,7 @@ import {
 } from "@/lib/state-variants";
 import { ProviderIcon } from "../repositories/repositories-view";
 import { MonoValue } from "@/components/mono-value";
+import { stateLabel } from "@/lib/state-variants";
 
 const HARNESS_CONNECTION_LABELS = { online: "Online", offline: "Offline", revoked: "Revoked" };
 
@@ -34,7 +35,7 @@ export function TaskTypeBadges({ accepted }: { accepted: string[] }) {
     <div className="harness-badge-row">
       {accepted.map((taskType) => (
         <Badge key={taskType} variant="neutral">
-          {taskType}
+          {stateLabel(taskType)}
         </Badge>
       ))}
     </div>

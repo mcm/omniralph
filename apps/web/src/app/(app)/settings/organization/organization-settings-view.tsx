@@ -314,9 +314,15 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
     <div className="org-row">
       <div className="org-row-text">
         <div className="org-row-title">{invitation.email}</div>
-        <div className="org-row-secondary">
-          invited <Timestamp iso={invitation.createdAt} inline /> · expires{" "}
-          <Timestamp iso={invitation.expiresAt} inline />
+        {/* Prose in sans, the times mono; it wraps between the two dates, never inside one. */}
+        <div className="org-row-meta">
+          <span className="list-nowrap">
+            Invited <Timestamp iso={invitation.createdAt} inline />
+          </span>{" "}
+          ·{" "}
+          <span className="list-nowrap">
+            expires <Timestamp iso={invitation.expiresAt} inline />
+          </span>
         </div>
       </div>
       <div className="org-row-actions">

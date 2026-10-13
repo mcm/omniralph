@@ -91,14 +91,14 @@ describe("HostToolsCard", () => {
       "[/opt/cm/bin/cm] Save",
       "Missing",
       "/usr/bin/configured-missing",
-      "unavailable",
+      "Unavailable",
     ]);
     expect(cells(byName["configured-unchecked"]!)).toEqual([
       "configured-unchecked",
       "[/opt/cu/bin/cu] Save",
       "Not checked yet",
       "Not found on PATH",
-      "unavailable",
+      "Unavailable",
     ]);
     expect(cells(byName.discovered!)).toEqual([
       "discovered",
@@ -112,14 +112,14 @@ describe("HostToolsCard", () => {
       "[] Save",
       "Not configured",
       "Not found on PATH",
-      "unavailable",
+      "Unavailable",
     ]);
     expect(cells(byName["never-reported"]!)).toEqual([
       "never-reported",
       "[] Save",
       "Not configured",
       "Not reported yet",
-      "unavailable",
+      "Unavailable",
     ]);
   });
 

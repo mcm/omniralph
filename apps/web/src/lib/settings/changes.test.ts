@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   formatLongText,
+  isMultiLineChange,
+  lineDiff,
   formatSettingValue,
   sameSettingValue,
   settingChanges,
@@ -90,5 +92,32 @@ describe("withoutFieldErrors", () => {
 describe("withDefault", () => {
   it("appends the default as a sentence", () => {
     expect(withDefault("Jobs at once.", "1")).toBe("Jobs at once. Default: 1.");
+  });
+});
+
+describe("lineDiff", () => {
+  it("keeps unchanged lines and marks only the changed ones", () => {
+    expect(
+      lineDiff("pnpm lint\npnpm typecheck\npnpm test", "pnpm typecheck\npnpm test\npnpm e2e"),
+    ).toEqual([
+      { kind: "removed", text: "pnpm lint" },
+      { kind: "same", text: "pnpm typecheck" },
+      { kind: "same", text: "pnpm test" },
+      { kind: "added", text: "pnpm e2e" },
+    ]);
+  });
+
+  it("puts a replaced line's removal before its addition", () => {
+    expect(lineDiff("a\nb\nc", "a\nB\nc")).toEqual([
+      { kind: "same", text: "a" },
+      { kind: "removed", text: "b" },
+      { kind: "added", text: "B" },
+      { kind: "same", text: "c" },
+    ]);
+  });
+
+  it("tells multi-line changes from one-line ones", () => {
+    expect(isMultiLineChange({ from: "a", to: "b" })).toBe(false);
+    expect(isMultiLineChange({ from: "Not set", to: "a\nb" })).toBe(true);
   });
 });

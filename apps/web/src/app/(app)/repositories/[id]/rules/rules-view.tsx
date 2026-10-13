@@ -389,7 +389,7 @@ export function RulesView({ repository, rules }: RulesViewProps) {
           }
           description="Enabled rules are added to every review of this repository, after the review rubric. Dismissing a finding as a false positive teaches the reviewer a new rule."
           actions={
-            <Button asChild variant="ghost">
+            <Button asChild variant="ghost" className="page-header-ghost">
               <a href={repository.webUrl} target="_blank" rel="noreferrer">
                 <IconExternalLink size={14} />
                 Open on {repository.provider === "github" ? "GitHub" : "GitLab"}

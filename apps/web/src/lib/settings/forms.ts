@@ -26,6 +26,26 @@ export function groupedNumber(value: number): string {
   return value.toLocaleString("en-US");
 }
 
+/**
+ * Regroups a count as it is typed ("150000" → "150,000"), keeping the caret after the same
+ * digit. Text that isn't only digits and separators is left alone, so validation can flag it.
+ */
+export function regroupTyped(value: string, caret: number): { value: string; caret: number } {
+  if (!/^[\d,_\s]*$/.test(value)) return { value, caret };
+  const digits = value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (digits === "") return { value: "", caret: 0 };
+  const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  // Digits before the caret, counted in the regrouped text.
+  const stripped = value.replace(/\D/g, "").length - digits.length;
+  let before = Math.max(0, value.slice(0, caret).replace(/\D/g, "").length - stripped);
+  let next = 0;
+  while (before > 0 && next < grouped.length) {
+    if (grouped[next] !== ",") before--;
+    next++;
+  }
+  return { value: grouped, caret: next };
+}
+
 /** A typed count that may have separators ("60,000", "60 000", "60_000"); NaN when empty. */
 export function typedGroupedNumber(value: string): number {
   return typedNumber(value.replace(/[,_\s]/g, ""));

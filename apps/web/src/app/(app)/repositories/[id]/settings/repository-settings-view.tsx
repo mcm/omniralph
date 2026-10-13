@@ -207,7 +207,7 @@ export function RepositorySettingsView({
           }
           description="How this repository is reviewed. Changes apply to the next review; queued and running reviews keep the settings they started with."
           actions={
-            <Button asChild variant="ghost">
+            <Button asChild variant="ghost" className="page-header-ghost">
               <a href={repository.webUrl} target="_blank" rel="noreferrer">
                 <IconExternalLink size={14} />
                 Open on {repository.provider === "github" ? "GitHub" : "GitLab"}

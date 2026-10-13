@@ -52,7 +52,7 @@ function DiscoveredPath({ tool }: { tool: HostToolRow }) {
 
 function EffectivePath({ tool }: { tool: HostToolRow }) {
   if (tool.effectivePath) return <MonoValue value={tool.effectivePath} className="text-sm" />;
-  return <Badge variant="warning">unavailable</Badge>;
+  return <Badge variant="warning">Unavailable</Badge>;
 }
 
 /** Sets or (blank) clears the tool's configured path on the harness. */

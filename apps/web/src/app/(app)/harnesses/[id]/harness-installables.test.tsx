@@ -54,9 +54,9 @@ describe("InstallablesCard", () => {
       jobs.map((job) => job.id),
     );
     expect(html).toContain("@acme/graph@latest");
-    expect(html).toContain("failed");
+    expect(html).toContain("Failed");
     expect(html).toContain("@acme/graph isn&#x27;t allowed by installables.allow");
-    expect(html).toContain("completed");
+    expect(html).toContain("Completed");
     expect(html).toContain("Installed 1.0.0");
     expect(html).not.toContain("No installables");
   });

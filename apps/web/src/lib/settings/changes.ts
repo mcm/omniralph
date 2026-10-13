@@ -103,3 +103,50 @@ export function withoutFieldErrors(
 export function withDefault(description: string, defaultValue: string = NOT_SET): string {
   return `${description} Default: ${defaultValue}.`;
 }
+
+/** One line of a multi-line change: kept, removed or added. */
+export interface DiffLine {
+  kind: "same" | "removed" | "added";
+  text: string;
+}
+
+/** Whether a change is shown as a line diff (either side spans lines) rather than old → new. */
+export function isMultiLineChange(change: Pick<SettingChange, "from" | "to">): boolean {
+  return change.from.includes("\n") || change.to.includes("\n");
+}
+
+/**
+ * The line diff of two multi-line values (longest common subsequence), so a change list strikes
+ * only the lines that changed. Removed lines come before the added lines that replace them.
+ */
+export function lineDiff(from: string, to: string): DiffLine[] {
+  const a = from.split("\n");
+  const b = to.split("\n");
+  // lcs(i, j): length of the longest common subsequence of a[i..] and b[j..], row-major.
+  const width = b.length + 1;
+  const table = new Array<number>((a.length + 1) * width).fill(0);
+  const lcs = (i: number, j: number) => table[i * width + j] ?? 0;
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i * width + j] =
+        a[i] === b[j] ? lcs(i + 1, j + 1) + 1 : Math.max(lcs(i + 1, j), lcs(i, j + 1));
+    }
+  }
+  const lines: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      lines.push({ kind: "same", text: a[i]! });
+      i++;
+      j++;
+    } else if (j >= b.length || (i < a.length && lcs(i + 1, j) >= lcs(i, j + 1))) {
+      lines.push({ kind: "removed", text: a[i]! });
+      i++;
+    } else {
+      lines.push({ kind: "added", text: b[j]! });
+      j++;
+    }
+  }
+  return lines;
+}

@@ -25,7 +25,8 @@ export function TriggerBadges({ triggers }: { triggers: readonly string[] }) {
   return (
     <Cluster gap={1}>
       {triggers.map((trigger) => (
-        <Badge key={trigger} variant="neutral">
+        // An event name (e.g. pr.updated), shown as the exact value.
+        <Badge key={trigger} variant="neutral" className="text-numeric">
           {trigger}
         </Badge>
       ))}

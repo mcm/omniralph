@@ -64,7 +64,7 @@ import {
   truncate,
   type RalphRunDetailView as RalphRunDetail,
 } from "@/lib/ralph/display";
-import { RALPH_MESSAGE_STATE_VARIANTS } from "@/lib/state-variants";
+import { RALPH_MESSAGE_STATE_VARIANTS, stateLabel } from "@/lib/state-variants";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { stopRalphRun } from "../actions";
 import {
@@ -195,8 +195,9 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
               <IssueRef identifier={story.identifier} title={story.title} runUrl={run.linearUrl} />
               <PhoneMeta>
                 <RalphStoryStatusBadge status={story.status} />
-                <span className="list-time text-numeric">
-                  {story.attempts} {story.attempts === 1 ? "attempt" : "attempts"}
+                <span className="list-time">
+                  <span className="text-numeric">{story.attempts}</span>{" "}
+                  {story.attempts === 1 ? "attempt" : "attempts"}
                 </span>
                 {story.lastJobId && (
                   <JobLink id={story.lastJobId} label={shortJobId(story.lastJobId)} />
@@ -473,7 +474,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
               return (
                 <TableRow key={message.id}>
                   <TableCell className={WIDE_COLUMN}>
-                    <Badge variant="neutral">{message.kind}</Badge>
+                    <Badge variant="neutral">{stateLabel(message.kind)}</Badge>
                   </TableCell>
                   <TableCell>
                     <span className="run-text-cell" title={message.text}>
@@ -530,6 +531,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
           <TableHeader>
             <TableRow>
               <TableHead>Type</TableHead>
+              <TableHead className={WIDE_COLUMN}>ID</TableHead>
               <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
               <TableHead className={WIDE_COLUMN}>Deliveries</TableHead>
               <TableHead className={WIDE_COLUMN}>Harness</TableHead>
@@ -546,8 +548,13 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                   </Link>
                   <PhoneMeta>
                     <JobStatusBadge job={job} />
+                    {/* The ID a story's "Last job" names, so the two can be matched. */}
+                    <JobLink id={job.id} label={shortJobId(job.id)} />
                     <Timestamp iso={job.finishedAt ?? job.createdAt} />
                   </PhoneMeta>
+                </TableCell>
+                <TableCell className={WIDE_COLUMN}>
+                  <JobLink id={job.id} label={shortJobId(job.id)} />
                 </TableCell>
                 <TableCell className={`${WIDE_COLUMN} list-col-status`}>
                   <ListStatus badge={<JobStatusBadge job={job} />} error={job.error} />
@@ -738,7 +745,7 @@ export function RalphRunDetailView({
           actions={
             <>
               {run.origin === "linear" && run.linearUrl && (
-                <Button asChild variant="ghost">
+                <Button asChild variant="ghost" className="page-header-ghost">
                   <a href={run.linearUrl} target="_blank" rel="noreferrer">
                     <IconExternalLink size={14} />
                     Open in Linear

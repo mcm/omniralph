@@ -43,6 +43,7 @@ import { pageRange, totalPages } from "@/lib/pagination";
 import { JobStatusBadge } from "@/components/ralph-badges";
 import { cancelJob } from "./actions";
 import { EmptyValue } from "@/components/empty-value";
+import { stateLabel } from "@/lib/state-variants";
 
 type JobStatus = JobRow["status"];
 
@@ -100,7 +101,7 @@ function JobTableRow({
       <TableCell className={`${WIDE_COLUMN} jobs-col-type`}>
         <div className="jobs-type-line">
           <span className="list-time list-text-primary text-numeric">{job.type}</span>
-          <Badge variant="neutral">{job.taskType}</Badge>
+          <Badge variant="neutral">{stateLabel(job.taskType)}</Badge>
           {job.target &&
             (job.target.url ? (
               <a
@@ -254,7 +255,7 @@ export function JobsView({
                 <option value="">All statuses</option>
                 {statuses.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {stateLabel(s)}
                   </option>
                 ))}
               </NativeSelect>

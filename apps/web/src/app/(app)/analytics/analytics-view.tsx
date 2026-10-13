@@ -33,6 +33,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
+import { RalphRunStatusBadge } from "@/components/ralph-badges";
 import {
   ANALYTICS_RANGES,
   analyticsHref,
@@ -272,7 +273,7 @@ function RalphSection({
               <CountRows
                 rows={RALPH_RUN_OUTCOMES.map((outcome) => ({
                   key: outcome,
-                  label: RALPH_RUN_OUTCOME_LABELS[outcome],
+                  label: <RalphRunStatusBadge status={outcome} />,
                   count: ralph.runsByOutcome[outcome],
                 }))}
               />
@@ -538,9 +539,14 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                       <TableCell>
                         <RepositoryLink repository={d.repository} />
                         <PhoneMeta>
-                          <span className="analytics-phone-detail text-numeric">
-                            {d.dismissed.toLocaleString()} of {d.findings.toLocaleString()}{" "}
-                            dismissed, {d.falsePositives.toLocaleString()} false positives
+                          <span className="analytics-phone-detail">
+                            <span className="text-numeric">{d.dismissed.toLocaleString()}</span> of{" "}
+                            <span className="text-numeric">{d.findings.toLocaleString()}</span>{" "}
+                            dismissed,{" "}
+                            <span className="text-numeric">
+                              {d.falsePositives.toLocaleString()}
+                            </span>{" "}
+                            false positives
                           </span>
                         </PhoneMeta>
                       </TableCell>

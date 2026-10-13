@@ -43,14 +43,14 @@ describe("AgentsView", () => {
     expect(builtin).toContain("builtin:reviewer");
     expect(builtin).toContain('href="/settings/agents/builtin%3Areviewer"');
     expect(builtin).toContain("Built-in");
-    expect(builtin).toContain(">query<");
-    expect(builtin).toContain(">review<");
+    expect(builtin).toContain(">Query<");
+    expect(builtin).toContain(">Review<");
 
     const custom = row(html, "Security reviewer");
     expect(custom).toContain(CUSTOM.id);
     expect(custom).toContain(`href="/settings/agents/${CUSTOM.id}"`);
     expect(custom).not.toContain("Built-in");
-    expect(custom).toContain(">review<");
+    expect(custom).toContain(">Review<");
     expect(custom).toContain("claude-opus-5-5");
     expect(html).not.toContain("New agent");
   });
@@ -94,7 +94,7 @@ describe("AgentDetailView", () => {
     expect(html).toContain("style-guide");
     expect(html).toContain("claude-sonnet-5-5");
     expect(html).toContain("claude-haiku-5-5");
-    expect(html).toContain(">query<");
+    expect(html).toContain(">Query<");
     expect(html).toContain("Review a pull request");
     expect(html).toContain("builtin:review-pr");
   });
@@ -139,7 +139,7 @@ describe("AgentsView on phone", () => {
     const tr = row(html, "Security reviewer");
     const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
     const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));
-    expect(meta).toContain(">review<");
+    expect(meta).toContain(">Review<");
     expect(meta).toContain("claude-opus-5-5");
     expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(3);
     expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(3);

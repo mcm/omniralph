@@ -9,6 +9,7 @@ import {
   REVIEW_STATUS_VARIANTS,
   SEVERITY_VARIANT_WEIGHT,
   SEVERITY_VARIANTS,
+  stateLabel,
 } from "./state-variants";
 import { FINDING_SEVERITIES } from "./reviews/display";
 
@@ -74,5 +75,14 @@ describe("state variants", () => {
     expect(harnessConnectionState({ online: true, revoked: true })).toBe("revoked");
     expect(harnessConnectionState({ online: true, revoked: false })).toBe("online");
     expect(harnessConnectionState({ online: false, revoked: false })).toBe("offline");
+  });
+});
+
+describe("stateLabel", () => {
+  it("writes every state in sentence case", () => {
+    expect(stateLabel("running")).toBe("Running");
+    expect(stateLabel("in_progress")).toBe("In progress");
+    expect(stateLabel("too_large")).toBe("Too large");
+    expect(stateLabel("")).toBe("");
   });
 });
