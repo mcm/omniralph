@@ -22,7 +22,7 @@ import {
 import { IconExternalLink, IconHistory } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import { ReviewStatusBadge, SeverityBadge, TriggerBadge } from "@/components/review-badges";
+import { ReviewStatusBadge, SeverityCounts, TriggerBadge } from "@/components/review-badges";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
@@ -58,16 +58,12 @@ interface ReviewsViewProps {
   pageSize: number;
 }
 
+/** The severities a phone row still shows: the ones that need a look first. */
+const PHONE_SEVERITIES = ["critical", "high"] as const;
+
 function FindingCounts({ counts }: { counts: ReviewRow["findingCounts"] }) {
-  const present = FINDING_SEVERITIES.filter((s) => counts[s] > 0);
-  if (present.length === 0) return <Muted>None</Muted>;
-  return (
-    <div className="review-severity-counts">
-      {present.map((severity) => (
-        <SeverityBadge key={severity} severity={severity} count={counts[severity]} />
-      ))}
-    </div>
-  );
+  if (FINDING_SEVERITIES.every((s) => counts[s] === 0)) return <Muted>None</Muted>;
+  return <SeverityCounts counts={counts} />;
 }
 
 function ReviewTableRow({
@@ -84,9 +80,13 @@ function ReviewTableRow({
   const host = review.repository.provider === "gitlab" ? "GitLab" : "GitHub";
   return (
     <TableRow>
-      <TableCell className="list-col-main">
+      <TableCell className="list-col-main review-col-main">
         <div className="list-cell-stack">
-          <Link href={`/reviews/${review.id}`} className="list-title">
+          <Link
+            href={`/reviews/${review.id}`}
+            className="list-title"
+            title={review.prTitle ?? undefined}
+          >
             <span className="text-numeric list-nowrap">{change}</span>
             <span
               className={
@@ -102,12 +102,13 @@ function ReviewTableRow({
               className="list-secondary text-numeric list-nowrap"
             >
               <ProviderIcon provider={review.repository.provider} size={12} />
-              {review.repository.fullPath}
+              <span className="review-ellipsis">{review.repository.fullPath}</span>
             </Link>
           )}
         </div>
         <PhoneMeta>
           <ReviewStatusBadge status={review.status} />
+          <SeverityCounts counts={review.findingCounts} only={PHONE_SEVERITIES} />
           <Timestamp iso={review.createdAt} />
         </PhoneMeta>
       </TableCell>
@@ -116,8 +117,8 @@ function ReviewTableRow({
           <ReviewStatusBadge status={review.status} />
           <TriggerBadge trigger={review.trigger} />
           {review.status === "failed" && review.error && (
-            <Muted title={review.error} className="list-error">
-              {review.error.length > 80 ? `${review.error.slice(0, 80)}…` : review.error}
+            <Muted title={review.error} className="review-error">
+              {review.error}
             </Muted>
           )}
         </div>

@@ -70,15 +70,28 @@ export const FINDING_STATUS_VARIANTS: Record<FindingStatus, IntentVariant> = {
 };
 
 /**
- * Finding severities, most to least severe. Not states, so none of them takes
- * `info` (running): `medium` uses `accent` to stay apart from `high` and `low`.
+ * How loud a finding severity reads: the library's tinted intents plus `quiet`
+ * (no fill, dashed outline), so five severities get five looks. Never `accent`:
+ * a solid fill would outshout `critical`.
  */
-export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], IntentVariant> = {
+export type SeverityVariant = "danger" | "warning" | "info" | "neutral" | "quiet";
+
+/** Loudness of each severity variant, loudest first. */
+export const SEVERITY_VARIANT_WEIGHT: Record<SeverityVariant, number> = {
+  danger: 4,
+  warning: 3,
+  info: 2,
+  neutral: 1,
+  quiet: 0,
+};
+
+/** Finding severities, most to least severe, on a ramp that only gets quieter. */
+export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], SeverityVariant> = {
   critical: "danger",
   high: "warning",
-  medium: "accent",
+  medium: "info",
   low: "neutral",
-  info: "neutral",
+  info: "quiet",
 };
 
 export type HarnessConnectionState = "online" | "offline" | "revoked";

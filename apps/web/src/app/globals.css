@@ -657,6 +657,61 @@ body {
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+/* Finding counts on one line (Reviews list): never wraps between severities. */
+.severity-counts {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  white-space: nowrap;
+}
+.severity-counts > * {
+  gap: 2px;
+  padding-inline: var(--space-1);
+}
+/* Reviews list at desktop: every row is one line plus one meta line. The PR column
+   takes the leftover width and its title, repository and a failed review's error
+   truncate (full text in the tooltip) instead of wrapping. */
+.review-ellipsis {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 768px) {
+  .review-col-main {
+    width: 100%;
+    min-width: 11rem;
+    max-width: 0;
+  }
+  .review-col-main .list-title {
+    display: flex;
+    flex-wrap: nowrap;
+    max-width: 100%;
+  }
+  .review-col-main .list-title-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .review-col-main .list-secondary {
+    max-width: 100%;
+  }
+  /* Fills the status cell without widening it (0 width, 100% min). */
+  .review-error {
+    width: 0;
+    min-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+/* The quietest severity (info): no fill, dashed outline, set apart from neutral `low`. */
+.severity-quiet.severity-quiet {
+  background-color: transparent;
+  border-style: dashed;
+}
 .review-files {
   display: flex;
   flex-direction: column;

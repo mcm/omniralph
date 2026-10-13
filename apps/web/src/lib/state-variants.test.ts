@@ -7,8 +7,10 @@ import {
   RALPH_RUN_STATUS_VARIANTS,
   RALPH_STORY_STATUS_VARIANTS,
   REVIEW_STATUS_VARIANTS,
+  SEVERITY_VARIANT_WEIGHT,
   SEVERITY_VARIANTS,
 } from "./state-variants";
+import { FINDING_SEVERITIES } from "./reviews/display";
 
 // The State Vocabulary Rule (apps/web/DESIGN.md), by state name.
 const RULE: Record<string, string> = {
@@ -52,10 +54,20 @@ describe("state variants", () => {
     });
   }
 
-  it("keeps severities off the running variant and tells the top three apart", () => {
-    expect(Object.values(SEVERITY_VARIANTS)).not.toContain(RULE.running);
-    const top = [SEVERITY_VARIANTS.critical, SEVERITY_VARIANTS.high, SEVERITY_VARIANTS.medium];
-    expect(new Set(top).size).toBe(top.length);
+  it("ramps severities from loudest (critical) to quietest (info)", () => {
+    const weights = FINDING_SEVERITIES.map((s) => SEVERITY_VARIANT_WEIGHT[SEVERITY_VARIANTS[s]]);
+    for (let i = 1; i < weights.length; i++) {
+      expect(
+        weights[i],
+        `${FINDING_SEVERITIES[i]} is quieter than ${FINDING_SEVERITIES[i - 1]}`,
+      ).toBeLessThan(weights[i - 1]!);
+    }
+  });
+
+  it("gives every severity its own variant and never a solid fill", () => {
+    const variants = FINDING_SEVERITIES.map((s) => SEVERITY_VARIANTS[s]);
+    expect(new Set(variants).size).toBe(FINDING_SEVERITIES.length);
+    expect(variants).not.toContain("accent");
   });
 
   it("treats a revoked harness as revoked even when it is online", () => {
