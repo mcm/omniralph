@@ -81,7 +81,7 @@ export const RALPH_RUN_OUTCOME_LABELS: Record<RalphRunOutcome, string> = {
   waiting: "Waiting",
   stopped: "Stopped",
   failed: "Failed",
-  running: "In progress",
+  running: "Running",
 };
 
 export type RalphStoryOutcome = keyof RalphStoryOutcomes;

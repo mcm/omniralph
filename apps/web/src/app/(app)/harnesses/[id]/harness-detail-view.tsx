@@ -90,9 +90,18 @@ interface HarnessDetailViewProps {
   globalDesiredVersion: string | null;
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+/** A status fact. `wide` takes the whole row on phone, where the grid has two columns. */
+function Fact({
+  label,
+  wide,
+  children,
+}: {
+  label: string;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="fact">
+    <div className={wide ? "fact harness-fact-wide" : "fact"}>
       <span className="fact-label">{label}</span>
       <div className="fact-value">{children}</div>
     </div>
@@ -173,10 +182,8 @@ const CONFIG_SPECS: SettingSpec[] = [
 ];
 
 function ConfigCard({ harness }: { harness: HarnessRow }) {
-  const { pending, run } = useAction();
   const saved = React.useMemo(() => configDraft(harness), [harness]);
   const [draft, setDraft] = React.useState(saved);
-  const disabled = harness.revoked || pending;
   const slots = Number(draft.maxConcurrency) >= 1 ? Math.floor(Number(draft.maxConcurrency)) : 1;
   const values = configValues(draft);
 
@@ -214,25 +221,6 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
           "The harness picks these up with its next heartbeat (within 20 seconds). Running jobs aren't cancelled; it takes new jobs by the new limits.",
       }}
       readOnly={harness.revoked}
-      actions={
-        harness.selfUpdate === "supported" && (
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={disabled}
-            title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
-            onClick={() =>
-              run(
-                () => requestHarnessUpdate(harness.id),
-                `${harness.name} will update with its next heartbeat.`,
-              )
-            }
-          >
-            <IconCloudDownload size={14} />
-            Update now
-          </Button>
-        )
-      }
     >
       <div className="settings-row">
         <Field
@@ -246,6 +234,7 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
           <Input
             id="max-concurrency"
             type="number"
+            className="input-number"
             min={1}
             max={32}
             required
@@ -301,6 +290,7 @@ function ConfigCard({ harness }: { harness: HarnessRow }) {
               <Input
                 id={`limit-${pool}`}
                 type="number"
+                className="input-number-wide"
                 min={1}
                 max={slots}
                 placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
@@ -343,6 +333,8 @@ function VersionCard({
   harness: HarnessRow;
   globalDesiredVersion: string | null;
 }) {
+  const { pending, run } = useAction();
+  const disabled = harness.revoked || pending;
   const savedOverride = harness.desiredVersionOverride ?? "";
   const [override, setOverride] = React.useState(savedOverride);
 
@@ -367,6 +359,25 @@ function VersionCard({
       })}
       onDiscard={() => setOverride(savedOverride)}
       readOnly={harness.revoked}
+      actions={
+        harness.selfUpdate === "supported" && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={disabled}
+            title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
+            onClick={() =>
+              run(
+                () => requestHarnessUpdate(harness.id),
+                `${harness.name} will update with its next heartbeat.`,
+              )
+            }
+          >
+            <IconCloudDownload size={14} />
+            Update now
+          </Button>
+        )
+      }
     >
       <Field
         label="Desired version override"
@@ -379,7 +390,7 @@ function VersionCard({
           disabled={harness.revoked}
           value={override}
           onChange={(e) => setOverride(e.target.value)}
-          className="settings-mono"
+          className="settings-mono input-number-wide"
         />
       </Field>
     </SettingsCard>
@@ -694,13 +705,30 @@ export function HarnessDetailView({
                   "Never"
                 )}
               </Fact>
-              <Fact label="Version">{harness.version ?? "Unknown"}</Fact>
+              <Fact label="Version">
+                {harness.version ? (
+                  <span className="text-numeric">{harness.version}</span>
+                ) : (
+                  "Unknown"
+                )}
+              </Fact>
               <Fact label="Desired version">
-                {harness.desiredVersion
-                  ? `${harness.desiredVersion}${harness.desiredVersionOverride ? " (override)" : harness.tracksLatest ? " (latest on npm)" : " (organization)"}`
-                  : harness.tracksLatest
-                    ? "Latest on npm (not read yet)"
-                    : "Not set"}
+                {harness.desiredVersion ? (
+                  <>
+                    <span className="text-numeric">{harness.desiredVersion}</span>{" "}
+                    <span className="fact-secondary">
+                      {harness.desiredVersionOverride
+                        ? "(override)"
+                        : harness.tracksLatest
+                          ? "(latest on npm)"
+                          : "(organization)"}
+                    </span>
+                  </>
+                ) : harness.tracksLatest ? (
+                  "Latest on npm (not read yet)"
+                ) : (
+                  "Not set"
+                )}
               </Fact>
               <Fact label="Update status">
                 <Stack gap={1}>
@@ -711,12 +739,16 @@ export function HarnessDetailView({
                 </Stack>
               </Fact>
               <Fact label="Failed versions">
-                {harness.failedVersions.length > 0 ? harness.failedVersions.join(", ") : "None"}
+                {harness.failedVersions.length > 0 ? (
+                  <span className="text-numeric">{harness.failedVersions.join(", ")}</span>
+                ) : (
+                  "None"
+                )}
               </Fact>
               <Fact label="Accepted task types">
                 <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
               </Fact>
-              <Fact label="Running jobs">
+              <Fact label="Running jobs" wide>
                 <Stack gap={1}>
                   <span>
                     {harness.runningJobs.length} / {harness.maxConcurrency}

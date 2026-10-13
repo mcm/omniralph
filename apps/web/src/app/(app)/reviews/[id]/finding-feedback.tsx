@@ -185,7 +185,7 @@ export function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
                   </span>
                   {entry.restoredAt && (
                     <Badge variant="neutral" size="sm">
-                      restored
+                      Restored
                     </Badge>
                   )}
                 </Cluster>

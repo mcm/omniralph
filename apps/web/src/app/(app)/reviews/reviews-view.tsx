@@ -41,6 +41,7 @@ import { ProviderIcon } from "../repositories/repositories-view";
 import { RepositoryNav } from "../repositories/[id]/repository-nav";
 import { RerunReviewDialog } from "./rerun-review-dialog";
 import { EmptyValue } from "@/components/empty-value";
+import { stateLabel } from "@/lib/state-variants";
 
 interface ReviewsViewProps {
   /** The repository whose reviews are listed; null lists all repositories. */
@@ -214,7 +215,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
           }
           actions={
             repository && (
-              <Button asChild variant="ghost">
+              <Button asChild variant="ghost" className="page-header-ghost">
                 <a href={repository.webUrl} target="_blank" rel="noreferrer">
                   <IconExternalLink size={14} />
                   Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
@@ -248,7 +249,7 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
                   <option value="">All statuses</option>
                   {REVIEW_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s.replace("_", " ")}
+                      {stateLabel(s)}
                     </option>
                   ))}
                 </NativeSelect>

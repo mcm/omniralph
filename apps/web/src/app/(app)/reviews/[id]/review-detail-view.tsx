@@ -55,6 +55,7 @@ import { ProviderIcon } from "../../repositories/repositories-view";
 import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 import { EmptyValue } from "@/components/empty-value";
+import { stateLabel } from "@/lib/state-variants";
 
 function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
@@ -179,7 +180,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           }
           actions={
             <>
-              <Button asChild variant="ghost">
+              <Button asChild variant="ghost" className="page-header-ghost">
                 <a href={review.prUrl} target="_blank" rel="noreferrer">
                   <IconExternalLink size={14} />
                   Open {review.repository.provider === "gitlab" ? "merge" : "pull"} request
@@ -292,11 +293,11 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
                       <TableCell>
                         <MonoValue value={file.path} className="review-path" />
                         <PhoneMeta>
-                          <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>
+                          <Badge variant="neutral">{stateLabel(file.reason)}</Badge>
                         </PhoneMeta>
                       </TableCell>
                       <TableCell className={WIDE_COLUMN}>
-                        <Badge variant="neutral">{file.reason.replaceAll("_", " ")}</Badge>
+                        <Badge variant="neutral">{stateLabel(file.reason)}</Badge>
                       </TableCell>
                     </TableRow>
                   ))}

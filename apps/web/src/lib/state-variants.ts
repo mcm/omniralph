@@ -14,6 +14,15 @@ import type { ReviewDetailView, ReviewRow } from "@/lib/reviews/display";
  * pending, cancelled or skipped. Nothing else picks a state's variant.
  */
 
+/**
+ * A state or category value as badge text: sentence case, underscores as spaces
+ * ("in_progress" → "In progress"), so every badge in the panel reads the same way.
+ */
+export function stateLabel(value: string): string {
+  const text = value.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export const RALPH_RUN_STATUS_VARIANTS: Record<RalphRunRow["status"], IntentVariant> = {
   pending: "neutral",
   running: "info",

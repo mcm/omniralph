@@ -34,6 +34,7 @@ import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { ActionResult } from "@/lib/action-result";
 import { pageRange, pageSlice, totalPages } from "@/lib/pagination";
+import { isRetryable, listingFailure, type ListingFailure } from "@/lib/scm/listing-error";
 
 /** A repository (GitHub) or project (GitLab) the connection can access. */
 export interface SelectableRepoRow {
@@ -58,9 +59,8 @@ interface RepoSelectionViewProps {
   listedDescription: React.ReactNode;
   emptyIcon: React.ReactNode;
   emptyDescription: string;
-  errorTitle: string;
-  /** What usually makes the listing fail, and what to check. */
-  errorCause: React.ReactNode;
+  /** The error's title and cause (what to check) for each kind of listing failure. */
+  describeError: (failure: ListingFailure) => { title: string; cause: React.ReactNode };
   repos: SelectableRepoRow[];
   error: string | null;
   /** Saves the selected repository IDs. */
@@ -76,14 +76,15 @@ export function RepoSelectionView({
   listedDescription,
   emptyIcon,
   emptyDescription,
-  errorTitle,
-  errorCause,
+  describeError,
   repos,
   error,
   save,
   savedMessage,
 }: RepoSelectionViewProps) {
   const router = useRouter();
+  const failure = error ? listingFailure(error) : null;
+  const errorCopy = failure ? describeError(failure) : null;
   const [retrying, startRetry] = React.useTransition();
   const { pending, run } = useAction();
   const [selected, setSelected] = React.useState(
@@ -119,26 +120,32 @@ export function RepoSelectionView({
       <main className="detail-main">
         <PageHeader title={title} description={intro} />
 
-        {error ? (
+        {errorCopy && failure ? (
           // Only the error: an empty list here would blame the wrong thing.
           <Alert variant="danger">
             <IconAlertTriangle size={16} />
-            <AlertTitle as="h2">{errorTitle}</AlertTitle>
+            <AlertTitle as="h2">{errorCopy.title}</AlertTitle>
             <AlertDescription className="repo-selection-error">
-              <span>{errorCause}</span>
-              <span>
-                Error: <InlineCode className="repo-selection-error-detail">{error}</InlineCode>
-              </span>
+              <span>{errorCopy.cause}</span>
+              {/* A missing setting is already named in the cause. */}
+              {failure.kind !== "config" && (
+                <span>
+                  Error: <InlineCode className="repo-selection-error-detail">{error}</InlineCode>
+                </span>
+              )}
               <span className="repo-selection-error-actions">
-                <Button
-                  variant="secondary"
-                  disabled={retrying}
-                  onClick={() => startRetry(() => router.refresh())}
-                >
-                  <IconRefresh size={14} />
-                  {retrying ? "Retrying…" : "Retry"}
-                </Button>
-                <Button asChild variant="ghost">
+                {/* A missing setting or refused credentials don't fix themselves on a retry. */}
+                {isRetryable(failure) && (
+                  <Button
+                    variant="secondary"
+                    disabled={retrying}
+                    onClick={() => startRetry(() => router.refresh())}
+                  >
+                    <IconRefresh size={14} />
+                    {retrying ? "Retrying…" : "Retry"}
+                  </Button>
+                )}
+                <Button asChild variant={isRetryable(failure) ? "ghost" : "secondary"}>
                   <Link href="/repositories">
                     <IconArrowLeft size={14} />
                     Back to repositories

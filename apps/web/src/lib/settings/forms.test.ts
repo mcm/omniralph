@@ -18,6 +18,7 @@ import {
   ralphSpecs,
   ralphValues,
   REPOSITORY_CARDS,
+  regroupTyped,
   REPOSITORY_SETTING_DEFAULTS,
   repositoryDraft,
   repositoryInput,
@@ -264,5 +265,23 @@ describe("stated defaults", () => {
     expect(repositories.storyTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.storyTaskId);
     expect(repositories.requestTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.requestTaskId);
     expect(harnesses.maxConcurrency.default).toBe(1);
+  });
+});
+
+describe("regroupTyped", () => {
+  it("regroups a typed count and keeps the caret after the same digit", () => {
+    // "15000|" + "0" typed at the end.
+    expect(regroupTyped("150000", 6)).toEqual({ value: "150,000", caret: 7 });
+    // A digit typed after "1" in "1,000": "12|,000".
+    expect(regroupTyped("12,000", 2)).toEqual({ value: "12,000", caret: 2 });
+    // "1|,000" → "1|0,000" after typing "0" behind the 1.
+    expect(regroupTyped("10,000", 2)).toEqual({ value: "10,000", caret: 2 });
+    expect(regroupTyped("100,00", 4)).toEqual({ value: "10,000", caret: 4 });
+  });
+
+  it("leaves text that isn't a count, and empties an empty one", () => {
+    expect(regroupTyped("15k", 3)).toEqual({ value: "15k", caret: 3 });
+    expect(regroupTyped("", 0)).toEqual({ value: "", caret: 0 });
+    expect(regroupTyped("007", 3)).toEqual({ value: "7", caret: 1 });
   });
 });

@@ -164,6 +164,7 @@ export function CommandsEditor({
                 <Input
                   id={id("timeoutSeconds")}
                   type="number"
+                  className="input-number"
                   min={1}
                   disabled={disabled}
                   error={Boolean(error("timeoutSeconds"))}
@@ -184,6 +185,7 @@ export function CommandsEditor({
                 <Input
                   id={id("maxOutputBytes")}
                   type="number"
+                  className="input-number-wide"
                   min={1}
                   disabled={disabled}
                   error={Boolean(error("maxOutputBytes"))}
@@ -499,6 +501,7 @@ export function CodingFields({
             <Input
               id={`task-${key}`}
               type="number"
+              className="input-number"
               min={key === "maxReviewRounds" || key === "maxFixRounds" ? 0 : 1}
               disabled={disabled}
               error={Boolean(errors[key])}

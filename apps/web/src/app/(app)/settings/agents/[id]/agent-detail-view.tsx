@@ -31,6 +31,7 @@ import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
+import { stateLabel } from "@/lib/state-variants";
 import {
   agentEditHref,
   BuiltinBadge,
@@ -254,7 +255,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
                 <Cluster key={task.id}>
                   <span className="text-sm">{task.name}</span>
                   <MonoValue value={task.id} className="text-xs text-text-secondary" />
-                  <Badge variant="neutral">{task.taskType}</Badge>
+                  <Badge variant="neutral">{stateLabel(task.taskType)}</Badge>
                   {task.builtin && <BuiltinBadge />}
                 </Cluster>
               ))

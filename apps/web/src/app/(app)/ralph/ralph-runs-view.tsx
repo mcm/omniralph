@@ -30,7 +30,13 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import { ExternalRowLink, ListStatus, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import {
+  ExternalRowLink,
+  ListStatus,
+  PhoneMeta,
+  Timestamp,
+  WIDE_COLUMN,
+} from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
@@ -45,6 +51,7 @@ import {
 } from "@/lib/ralph/display";
 import { ProviderIcon } from "../repositories/repositories-view";
 import { EmptyValue } from "@/components/empty-value";
+import { stateLabel } from "@/lib/state-variants";
 
 interface RalphRunsViewProps {
   runs: RalphRunRow[];
@@ -280,7 +287,7 @@ export function RalphRunsView({
                   <option value="">All statuses</option>
                   {RALPH_RUN_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {stateLabel(s)}
                     </option>
                   ))}
                 </NativeSelect>

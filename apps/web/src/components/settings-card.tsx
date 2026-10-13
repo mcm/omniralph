@@ -22,9 +22,9 @@ import {
   Field,
   Switch,
 } from "@iamthemcmaster/ui";
-import { IconArrowBackUp, IconDeviceFloppy } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconDeviceFloppy } from "@tabler/icons-react";
 import type { ActionResult } from "@/lib/action-result";
-import type { SettingChange } from "@/lib/settings/changes";
+import { isMultiLineChange, lineDiff, type SettingChange } from "@/lib/settings/changes";
 import { unsavedAnchorId } from "@/lib/unsaved-changes";
 import { useUnsavedChanges } from "./unsaved-changes";
 import { useAction } from "./use-action";
@@ -74,22 +74,48 @@ export function SettingChangeList({ changes }: { changes: readonly SettingChange
       {changes.map((change) => (
         <div key={change.key} className="settings-change">
           <dt className="settings-change-label">{change.label}</dt>
-          <dd className="settings-change-values">
-            <span className="settings-change-from">
-              <span className="sr-only">From </span>
-              {change.from}
-            </span>
-            <span aria-hidden="true" className="settings-change-arrow">
-              →
-            </span>
-            <span className="settings-change-to">
-              <span className="sr-only">to </span>
-              {change.to}
-            </span>
-          </dd>
+          {isMultiLineChange(change) ? (
+            <LineDiff from={change.from} to={change.to} />
+          ) : (
+            <dd className="settings-change-values">
+              <span className="settings-change-from">
+                <span className="sr-only">From </span>
+                {change.from}
+              </span>
+              <span aria-hidden="true" className="settings-change-arrow">
+                →
+              </span>
+              <span className="settings-change-to">
+                <span className="sr-only">to </span>
+                {change.to}
+              </span>
+            </dd>
+          )}
         </div>
       ))}
     </dl>
+  );
+}
+
+const DIFF_MARK = { same: " ", removed: "−", added: "+" } as const;
+const DIFF_SR = { same: "", removed: "Removed: ", added: "Added: " } as const;
+
+/** A multi-line value's change, line by line: only removed lines are struck. */
+function LineDiff({ from, to }: { from: string; to: string }) {
+  return (
+    <dd className="settings-change-diff">
+      {lineDiff(from, to).map((line, i) => (
+        <div key={i} className={`settings-diff-line settings-diff-${line.kind}`}>
+          <span aria-hidden="true" className="settings-diff-mark">
+            {DIFF_MARK[line.kind]}
+          </span>
+          <span className="settings-diff-text">
+            {DIFF_SR[line.kind] && <span className="sr-only">{DIFF_SR[line.kind]}</span>}
+            {line.text || " "}
+          </span>
+        </div>
+      ))}
+    </dd>
   );
 }
 
@@ -138,6 +164,12 @@ export function ConfirmChangesDialog({
 }
 
 /**
+ * Cards whose save just succeeded, by anchor id. Some pages key a card by its saved version
+ * so a save remounts it with fresh values; this carries its "Saved" state across that remount.
+ */
+const justSaved = new Set<string>();
+
+/**
  * A card of related settings with its own save. Save is enabled, and Discard shown, only while
  * the card has unsaved changes; a run-affecting card confirms the change list first. While it
  * saves, its controls are disabled (a disabled fieldset). While dirty, the page's
@@ -160,12 +192,29 @@ export function SettingsCard({
   const { pending, run } = useAction();
   const [confirming, setConfirming] = React.useState<SettingsSave | null>(null);
   const dirty = changes.length > 0;
+  // "Saved" next to Save after a save (DESIGN.md, the No Celebration Rule), until the next edit.
   const statusId = React.useId();
   const anchorId = unsavedAnchorId(title);
+  const [saved, setSaved] = React.useState(() => justSaved.has(anchorId));
+  React.useEffect(() => {
+    justSaved.delete(anchorId);
+  }, [anchorId]);
+  if (saved && dirty) setSaved(false);
   useUnsavedChanges(title, anchorId, dirty && !readOnly);
 
-  const save = (request: SettingsSave) =>
-    run(request.action, request.success, request.onSuccess, request.onError);
+  const save = (request: SettingsSave) => {
+    setSaved(false);
+    run(
+      request.action,
+      request.success,
+      () => {
+        justSaved.add(anchorId);
+        setSaved(true);
+        request.onSuccess?.();
+      },
+      request.onError,
+    );
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,6 +251,14 @@ export function SettingsCard({
         {!readOnly && (
           <CardFooter>
             {actions}
+            <span role="status" className="settings-saved">
+              {saved && !dirty && !pending && (
+                <>
+                  <IconCheck size={14} aria-hidden="true" />
+                  Saved
+                </>
+              )}
+            </span>
             {dirty && (
               <Button type="button" variant="ghost" disabled={pending} onClick={onDiscard}>
                 <IconArrowBackUp size={14} />

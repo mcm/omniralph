@@ -180,6 +180,7 @@ export function RalphSettingsSection({
       <Input
         id={id}
         type="number"
+        className="input-number"
         min={min}
         max={max}
         error={Boolean(errors[key])}

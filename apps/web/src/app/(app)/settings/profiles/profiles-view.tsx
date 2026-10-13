@@ -17,6 +17,7 @@ import {
   PROFILE_SPECS,
   profileDraft,
   profileValues,
+  regroupTyped,
   type ProfileDraft,
 } from "@/lib/settings/forms";
 import { updateReviewProfile } from "./actions";
@@ -140,14 +141,11 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
           error={errors.maxTokensPerReview}
           required
         >
-          <Input
+          <GroupedNumberInput
             id={`${idPrefix}-max-tokens`}
-            inputMode="numeric"
             error={Boolean(errors.maxTokensPerReview)}
-            aria-invalid={Boolean(errors.maxTokensPerReview)}
             value={draft.maxTokensPerReview}
-            onChange={(e) => set("maxTokensPerReview", e.target.value)}
-            className="text-numeric"
+            onChange={(value) => set("maxTokensPerReview", value)}
           />
         </Field>
         <Field
@@ -168,7 +166,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
             aria-invalid={Boolean(errors.maxFiles)}
             value={draft.maxFiles}
             onChange={(e) => set("maxFiles", e.target.value)}
-            className="text-numeric"
+            className="text-numeric input-number"
           />
         </Field>
       </div>
@@ -201,5 +199,43 @@ export function ProfilesView({ profiles }: { profiles: ProfileRow[] }) {
         ))}
       </main>
     </>
+  );
+}
+
+/** A large count that keeps its thousands grouping as it is typed ("150000" shows "150,000"). */
+function GroupedNumberInput({
+  id,
+  error,
+  value,
+  onChange,
+}: {
+  id: string;
+  error: boolean;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const caret = React.useRef<{ input: HTMLInputElement; position: number } | null>(null);
+  // Regrouping replaces the value, which moves the caret to the end: put it back.
+  React.useLayoutEffect(() => {
+    if (!caret.current) return;
+    const { input, position } = caret.current;
+    caret.current = null;
+    if (document.activeElement === input) input.setSelectionRange(position, position);
+  });
+  return (
+    <Input
+      id={id}
+      inputMode="numeric"
+      error={error}
+      aria-invalid={error}
+      value={value}
+      onChange={(e) => {
+        const input = e.target;
+        const next = regroupTyped(input.value, input.selectionStart ?? input.value.length);
+        caret.current = { input, position: next.caret };
+        onChange(next.value);
+      }}
+      className="text-numeric input-number-wide"
+    />
   );
 }

@@ -177,8 +177,15 @@ body {
   .app-crumb-middle {
     display: none;
   }
+  /* The parents give way first, so the current page keeps at least its first word. */
+  .app-crumb:not(:last-child) {
+    flex-shrink: 4;
+  }
   .app-crumb:not(:last-child) .app-crumb-label {
     max-width: 14ch;
+  }
+  .app-crumb:last-child {
+    min-width: 9ch;
   }
   .app-crumb-ellipsis {
     display: inline-flex;
@@ -223,6 +230,13 @@ body {
 .page-header-actions {
   flex: 0 1 auto;
   max-width: 100%;
+}
+/* Below 768px the actions wrap under the title: a leading ghost action (a link out of the
+   panel) pulls back by its padding so its icon lines up with the title. */
+@media (max-width: 767.98px) {
+  .page-header-actions > .page-header-ghost:first-child {
+    margin-left: calc(-1 * var(--space-4));
+  }
 }
 @media (max-width: 639.98px) {
   .page-header-title {
@@ -412,6 +426,12 @@ body {
     gap: var(--space-1) var(--space-2);
     margin-top: var(--space-1);
   }
+  /* The time always takes the last line, so every row wraps the same way whatever the
+     width of its badge. */
+  .list-phone-meta > time {
+    order: 1;
+    flex-basis: 100%;
+  }
 }
 
 /* Jobs Type column: takes the table's free width and holds type, task and target on one
@@ -590,6 +610,33 @@ body {
   color: var(--text-secondary);
 }
 .settings-change-to {
+  color: var(--text-primary);
+}
+/* Multi-line values (commands, globs): a line diff, so only the changed lines are struck. */
+.settings-change-diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.settings-diff-line {
+  display: flex;
+  gap: var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.settings-diff-mark {
+  flex-shrink: 0;
+  width: 1ch;
+  color: var(--text-secondary);
+}
+.settings-diff-same {
+  color: var(--text-secondary);
+}
+.settings-diff-removed .settings-diff-text {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.settings-diff-added {
   color: var(--text-primary);
 }
 .settings-affected {
@@ -1196,6 +1243,15 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: var(--space-4);
 }
+/* Phone: two columns of short facts; the running jobs (and timestamps) take the row. */
+@media (max-width: 639.98px) {
+  .harness-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .harness-fact-wide {
+    grid-column: 1 / -1;
+  }
+}
 
 /* sidebar, auth, org-switcher, legal, onboarding: shell, brand and auth-page layout */
 .sidebar-header {
@@ -1451,6 +1507,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.org-row-meta {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
 .profiles-facts {
   margin: 0;
   display: grid;
@@ -1483,13 +1543,20 @@ body {
 
 /* run, review, repo, jobs: list and detail pieces. */
 /* A run's source (Linear issue or chat thread), linked or plain. */
+/* Inline text, not flex: a wrapping title flows under the identifier instead of becoming
+   a second column. */
 .run-source {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+  display: inline;
   font-size: var(--text-sm);
   color: var(--text-primary);
   text-decoration: none;
+}
+.run-source > * + * {
+  margin-left: var(--space-1);
+}
+.run-source > svg {
+  display: inline-block;
+  vertical-align: -0.125em;
 }
 /* Issue lists in the "Waiting" alert and the "Not in a repository here" card. */
 .run-issue-list {
@@ -1601,4 +1668,27 @@ body {
   margin: var(--space-2) 0;
   padding: 0;
   list-style: none;
+}
+
+/* Single-number inputs size to their content instead of spanning the field: counts, rounds
+   and seconds, and the wider token and byte amounts (and "Default (n)" placeholders). */
+.input-number {
+  width: 8rem;
+  max-width: 100%;
+}
+.input-number-wide {
+  width: 12rem;
+  max-width: 100%;
+}
+
+/* The inline "Saved" state beside a settings card's Save (components/settings-card.tsx). */
+.settings-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.settings-saved svg {
+  color: var(--success-fg);
 }

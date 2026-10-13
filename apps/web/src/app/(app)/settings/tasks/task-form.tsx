@@ -603,6 +603,7 @@ export function TaskForm({
                         id="task-token-budget-amount"
                         aria-label={draft.budgetMode === "tokens" ? "Tokens" : "Percent"}
                         type="number"
+                        className="input-number-wide"
                         min={1}
                         max={draft.budgetMode === "tokens" ? undefined : 100}
                         disabled={pending}

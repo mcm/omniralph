@@ -7,6 +7,7 @@ import {
   FINDING_STATUS_VARIANTS,
   REVIEW_STATUS_VARIANTS,
   SEVERITY_VARIANTS,
+  stateLabel,
 } from "@/lib/state-variants";
 
 type Severity = keyof ReviewRow["findingCounts"];
@@ -32,7 +33,7 @@ export function SeverityBadge({ severity, count }: { severity: Severity; count?:
   return (
     <Badge {...severityBadgeProps(severity)} size="sm">
       {count !== undefined && <span className="text-numeric">{count}</span>}
-      {severity}
+      {stateLabel(severity)}
     </Badge>
   );
 }
@@ -68,7 +69,7 @@ export function SeverityCounts({
 export function ReviewStatusBadge({ status }: { status: Status }) {
   return (
     <Badge variant={REVIEW_STATUS_VARIANTS[status]} dot live={status === "running"}>
-      {status.replace("_", " ")}
+      {stateLabel(status)}
     </Badge>
   );
 }
@@ -78,7 +79,7 @@ export function TriggerBadge({ trigger }: { trigger: ReviewRow["trigger"] }) {
   return (
     <Badge variant="neutral">
       <Icon size={12} />
-      {trigger}
+      {stateLabel(trigger)}
     </Badge>
   );
 }
@@ -86,7 +87,7 @@ export function TriggerBadge({ trigger }: { trigger: ReviewRow["trigger"] }) {
 export function FindingStatusBadge({ status }: { status: FindingStatus }) {
   return (
     <Badge variant={FINDING_STATUS_VARIANTS[status]} size="sm">
-      {status}
+      {stateLabel(status)}
     </Badge>
   );
 }
