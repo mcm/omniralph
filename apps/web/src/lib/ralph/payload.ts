@@ -16,6 +16,7 @@ import type {
 import {
   dependencyLabel,
   initialProgress,
+  normalizeRepoPath,
   uniqueCommands,
   type Epic,
   type Story,
@@ -70,18 +71,30 @@ export function jobSettings(repository: Pick<Repository, "ralphSettings">): Ralp
 }
 
 /**
+ * The PRD's gates for a lane's repository: the shared ones (`## Quality Gates`), then those under
+ * the repository's `### <path>` heading. Another repository's gates are never included.
+ */
+export function prdGatesFor(
+  epic: Pick<Epic, "qualityGates" | "repositoryQualityGates">,
+  repository: Pick<Repository, "fullPath">,
+): string[] {
+  const scoped = epic.repositoryQualityGates?.[normalizeRepoPath(repository.fullPath)] ?? [];
+  return uniqueCommands([...epic.qualityGates, ...scoped]);
+}
+
+/**
  * A story's quality gates (cyralph's `verifyCommands` of `runStory`): the
- * repository's `verifyCommands`, then the PRD's gates when
- * `runPrdQualityGates` is on, duplicates removed. A single issue has no PRD:
- * only `verifyCommands`.
+ * repository's `verifyCommands`, then the PRD's gates for the repository
+ * (`prdGatesFor`) when `runPrdQualityGates` is on, duplicates removed. A
+ * single issue has no PRD: only `verifyCommands`.
  */
 export function storyQualityGates(
   kind: RalphRun["kind"],
-  epic: Pick<Epic, "qualityGates">,
-  repository: Pick<Repository, "ralphSettings">,
+  epic: Pick<Epic, "qualityGates" | "repositoryQualityGates">,
+  repository: Pick<Repository, "ralphSettings" | "fullPath">,
 ): string[] {
   const settings = parseRalphSettings(repository.ralphSettings);
-  const prd = kind !== "single" && settings.runPrdQualityGates ? epic.qualityGates : [];
+  const prd = kind !== "single" && settings.runPrdQualityGates ? prdGatesFor(epic, repository) : [];
   return uniqueCommands([...settings.verifyCommands, ...prd]).slice(0, 100);
 }
 
@@ -143,7 +156,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     stories: storyList(epic, input.stories).slice(0, 500),
     commitMessage: storyCommitMessage(run.kind, identifier, story.title),
     qualityGates: storyQualityGates(run.kind, epic, repository),
-    prdQualityGates: run.kind === "single" ? [] : uniqueCommands(epic.qualityGates).slice(0, 50),
+    prdQualityGates: run.kind === "single" ? [] : prdGatesFor(epic, repository).slice(0, 50),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     lastFeedback: row.lastFeedback ? row.lastFeedback.slice(-20_000) : null,
     guidance: run.guidance.slice(-MAX_GUIDANCE_IN_PROMPT).map((g) => g.text.slice(0, 20_000)),

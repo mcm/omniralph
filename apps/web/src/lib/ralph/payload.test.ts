@@ -146,6 +146,68 @@ describe("story quality gates", () => {
     expect(request("single").qualityGates).toEqual(["pnpm typecheck"]);
   });
 
+  it("add the PRD's gates for the lane's repository, never another repository's", () => {
+    const scoped: Epic = {
+      ...epic(),
+      repositoryQualityGates: {
+        "acme/api": ["cargo test", "pnpm test"],
+        "acme/web": ["pnpm build"],
+      },
+    };
+    const api = { ...repository({ verifyCommands: ["pnpm typecheck"] }), fullPath: "Acme/API" };
+    const web = { ...repository({}), fullPath: "acme/web" };
+    const other = { ...repository({}), fullPath: "acme/docs" };
+    const storyPayload = (repo: Repository) =>
+      buildStoryPayload({
+        run: run(),
+        lane,
+        repository: repo,
+        connection,
+        epic: scoped,
+        stories: [story],
+        story,
+        row: row as RalphStory,
+      });
+
+    expect(storyPayload(api)).toMatchObject({
+      qualityGates: ["pnpm typecheck", "pnpm test", "pnpm lint", "cargo test"],
+      prdQualityGates: ["pnpm test", "pnpm lint", "cargo test"],
+    });
+    expect(storyPayload(web)).toMatchObject({
+      qualityGates: ["pnpm test", "pnpm lint", "pnpm build"],
+      prdQualityGates: ["pnpm test", "pnpm lint", "pnpm build"],
+    });
+    expect(storyPayload(other).qualityGates).toEqual(["pnpm test", "pnpm lint"]);
+    // With runPrdQualityGates off, a lane runs only its verify commands.
+    expect(
+      storyQualityGates("children", scoped, {
+        ...repository({ runPrdQualityGates: false }),
+        fullPath: "acme/web",
+      }),
+    ).toEqual([]);
+    // The describe-pr and request jobs of a lane report the same gates.
+    const describe = buildDescribePrPayload({
+      run: run(),
+      lane,
+      repository: web,
+      connection,
+      epic: scoped,
+      rows: [],
+    });
+    expect(describe.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
+    const request = buildRequestPayload({
+      run: run(),
+      lane: { ...lane, prUrl: null },
+      repository: web,
+      connection,
+      epic: scoped,
+      stories: [story],
+      requests: [{ id: randomUUID(), text: "push it" }],
+      resumeSessionId: null,
+    });
+    expect(request.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
+  });
+
   it("say whether a request comes from Linear or a chat thread", () => {
     const request = (origin: RalphRun["origin"]) =>
       buildRequestPayload({
