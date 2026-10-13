@@ -248,13 +248,16 @@ export class GitHubAdapter implements ScmAdapter {
 
     const inlineCommentIds: (string | null)[] = review.inlineComments.map(() => null);
     if (inline.length > 0) {
-      const posted = await octokit.paginate(octokit.pulls.listCommentsForReview, {
-        owner,
-        repo: name,
-        pull_number: number,
-        review_id: created.id,
-        per_page: 100,
-      });
+      // The PR's comment list, not the review's: `listCommentsForReview`
+      // returns `line` and `side` as null, so nothing would match.
+      const posted = (
+        await octokit.paginate(octokit.pulls.listReviewComments, {
+          owner,
+          repo: name,
+          pull_number: number,
+          per_page: 100,
+        })
+      ).filter((comment) => comment.pull_request_review_id === created.id);
       // Match posted comments back to inputs by anchor, in creation order.
       const byKey = new Map<string, number[]>();
       for (const comment of [...posted].sort((a, b) => a.id - b.id)) {
