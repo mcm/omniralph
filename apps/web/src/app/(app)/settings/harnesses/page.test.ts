@@ -56,6 +56,7 @@ vi.mock("@omniralph/db", () => ({
 vi.mock("./harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
 const { default: HarnessSettingsPage } = await import("./page");
+const { default: HostToolsSettingsPage } = await import("./host-tools/page");
 
 const user = (role: Role) => ({
   id: `${role}-1`,
@@ -77,12 +78,23 @@ describe("Settings › Harness defaults page", () => {
   it("shows the organization's version", async () => {
     state.user = user("admin");
     expect((await HarnessSettingsPage()).props).toEqual({
+      tab: "defaults",
       desiredVersion: "1.4.0",
       updatedAt: "2026-10-01T00:00:00.000Z",
       latest: null,
       packageName: "@omniralph/harness",
       defaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
       builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+      hostTools: [],
+    });
+  });
+
+  it("lists the organization's host tools on the Host tools tab, for admins only", async () => {
+    state.user = user("member");
+    await expect(HostToolsSettingsPage()).rejects.toThrow();
+    state.user = user("admin");
+    expect((await HostToolsSettingsPage()).props).toMatchObject({
+      tab: "host-tools",
       hostTools: [{ id: "tool-1", name: "semgrep", description: "SAST scanner" }],
     });
   });

@@ -74,6 +74,7 @@ const {
   pinRepository,
   requestHarnessUpdate,
   revokeHarness,
+  searchPinnableRepositories,
   setHarnessDesiredVersion,
   setHostToolPath,
   unpinRepository,
@@ -286,6 +287,23 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
       expect(await unpinRepository(harnessId, repoA)).toEqual({ ok: true });
       const unpinned = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(unpinned.pinnedRepoIds).toEqual([]);
+    });
+
+    it("searches the connected repositories to pin, for admins only", async () => {
+      expect(await searchPinnableRepositories("")).toEqual({
+        ok: true,
+        repositories: [
+          { id: repoA, provider: "gitlab", fullPath: "acme/api" },
+          { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+        ],
+      });
+      expect(await searchPinnableRepositories("WEB")).toEqual({
+        ok: true,
+        repositories: [{ id: repoB, provider: "gitlab", fullPath: "acme/web" }],
+      });
+      expect(await searchPinnableRepositories("nothing")).toEqual({ ok: true, repositories: [] });
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await searchPinnableRepositories("")).toMatchObject({ ok: false });
     });
 
     it("saves the accepted task types and they reach the harness", async () => {

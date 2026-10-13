@@ -325,6 +325,15 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
     const past = await listRepositoryOverviewPage(db, orgId, { page: 99, pageSize: 2 });
     expect(past).toMatchObject({ repositories: [], total: all.length, page: 99 });
 
+    // A search keeps the paths containing it, ignoring case; LIKE wildcards match literally.
+    const found = await listRepositoryOverviewPage(db, orgId, { search: "PAGED/", pageSize: 3 });
+    expect(found.total).toBe(4);
+    expect(found.repositories.map((r) => r.fullPath)).toEqual(["paged/a", "paged/b", "paged/c"]);
+    const one = await listRepositoryOverviewPage(db, orgId, { search: " ed/e " });
+    expect(one.repositories.map((r) => r.fullPath)).toEqual(["paged/e"]);
+    expect((await listRepositoryOverviewPage(db, orgId, { search: "paged_" })).total).toBe(0);
+    expect((await listRepositoryOverviewPage(db, orgId, { search: "%" })).total).toBe(0);
+
     await db
       .update(repositories)
       .set({ profileId: "deep" })

@@ -1026,6 +1026,10 @@ body {
   min-width: 0;
   max-width: 56rem;
 }
+/* A subsection holding a table: the table takes the section's width, not the fields' 56rem. */
+.settings-sub-wide .settings-sub-fields {
+  max-width: none;
+}
 /* A switch and the number it enables, side by side. */
 .settings-pair {
   display: grid;
@@ -1682,7 +1686,7 @@ body {
 }
 
 /* harness: harness list, detail and enroll dialog. */
-/* A raised row holding an icon, a value and an action (pinned repository, one-time secret). */
+/* A raised row holding an icon, a value and an action (the one-time enrollment secret). */
 .harness-raised-row {
   display: flex;
   align-items: center;
@@ -1691,14 +1695,6 @@ body {
   background: var(--bg-raised);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-}
-.harness-pinned-link {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  text-decoration: none;
 }
 .harness-repo-badge {
   max-width: 100%;
@@ -1715,21 +1711,11 @@ body {
   color: var(--text-primary);
   word-break: break-all;
 }
-/* A control and its button on one line. */
-.harness-inline-form {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.harness-pin-form > :first-child {
-  flex: 1;
-  min-width: 0;
-}
 .harness-path-input {
   min-width: 14rem;
 }
-/* Phone: each host tool is a block (name, status, effective path, then the path form across
-   the width), so the form never scrolls out of view. */
+/* Phone: each host tool is a block (name, status, effective path, then the path input across
+   the width), so the input never scrolls out of view. */
 @media (max-width: 767.98px) {
   .host-tools-table thead {
     display: none;
@@ -1764,14 +1750,11 @@ body {
   min-width: 0;
   margin: 0;
 }
-/* Phone: the path input takes the cell's width and Save wraps below it. */
+/* Phone: the path input takes the cell's width. */
 @media (max-width: 767.98px) {
-  .harness-inline-form {
-    flex-wrap: wrap;
-  }
   .harness-path-input {
     min-width: 0;
-    flex: 1 1 9rem;
+    width: 100%;
   }
 }
 .harness-install-name {
@@ -2252,10 +2235,13 @@ body {
   color: var(--success-fg);
 }
 
-/* Repository page tabs (repository-nav.tsx): the strip scrolls on its own when the tabs don't
-   fit, instead of widening the page. */
-.repository-tabs {
+/* Page tabs (components/page-tabs.tsx): the strip scrolls on its own when the tabs don't fit,
+   instead of widening the page. */
+.page-tabs {
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
+}
+.page-tabs > * {
+  white-space: nowrap;
 }

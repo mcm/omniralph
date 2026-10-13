@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { HarnessRow } from "@/lib/harnesses/rows";
-import { InstallablesCard } from "./harness-detail-view";
+import { InstallablesSection } from "./harness-detail-view";
 import type { InstallJobRow } from "./harness-installables";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
@@ -33,10 +33,10 @@ const jobs: InstallJobRow[] = [
   },
 ];
 
-describe("InstallablesCard", () => {
+describe("InstallablesSection", () => {
   it("lists the reported installables and the recent install jobs with status and error", () => {
     const html = renderToStaticMarkup(
-      <InstallablesCard
+      <InstallablesSection
         harness={harness}
         installables={[
           { name: "@omniralph/code-graph", version: "0.3.1" },
@@ -63,7 +63,7 @@ describe("InstallablesCard", () => {
 
   it("shows empty states when nothing is installed or was installed recently", () => {
     const html = renderToStaticMarkup(
-      <InstallablesCard harness={harness} installables={[]} installJobs={[]} />,
+      <InstallablesSection harness={harness} installables={[]} installJobs={[]} />,
     );
     expect(html).toContain("No installables");
     expect(html).toContain("No installs in the last 24 hours.");
@@ -72,14 +72,14 @@ describe("InstallablesCard", () => {
 
   it("offers an Install form with the version defaulting to latest, unless revoked", () => {
     const html = renderToStaticMarkup(
-      <InstallablesCard harness={harness} installables={[]} installJobs={[]} />,
+      <InstallablesSection harness={harness} installables={[]} installJobs={[]} />,
     );
     expect(html).toMatch(/<input[^>]*id="install-name"/);
     expect(html).toMatch(/<input[^>]*id="install-version"[^>]*value="latest"/);
     expect(html).toContain("Install</button>");
 
     const revoked = renderToStaticMarkup(
-      <InstallablesCard
+      <InstallablesSection
         harness={{ ...harness, revoked: true }}
         installables={[]}
         installJobs={[]}

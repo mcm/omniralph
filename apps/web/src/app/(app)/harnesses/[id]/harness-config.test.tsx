@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { HarnessRow } from "@/lib/harnesses/rows";
-import { ConfigCard, configDraft, configInput } from "./harness-detail-view";
+import { configDraft, configInput, HarnessSettingsSection } from "./harness-detail-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -24,6 +24,10 @@ function harness(overrides: HarnessRow["overrides"]): HarnessRow {
     poolLimits: {},
     effectivePoolLimits: { short: maxConcurrency, long: maxConcurrency - 1 },
     updateRequest: null,
+    name: "build-01",
+    selfUpdate: "supported",
+    desiredVersionOverride: null,
+    pinnedRepositories: [],
   } as unknown as HarnessRow;
 }
 
@@ -35,9 +39,15 @@ function tag(html: string, id: string): string {
   return html.match(new RegExp(`<[^>]*id="${id}"[^>]*>`))?.[0] ?? "";
 }
 
-describe("ConfigCard", () => {
+function render(harness: HarnessRow): string {
+  return renderToStaticMarkup(
+    <HarnessSettingsSection harness={harness} globalDesiredVersion="1.4.0" />,
+  );
+}
+
+describe("HarnessSettingsSection", () => {
   it("shows the organization's values, locked, while the harness inherits them", () => {
-    const html = renderToStaticMarkup(<ConfigCard harness={inheriting} />);
+    const html = render(inheriting);
     expect(html.match(/Use organization default/g)).toHaveLength(2);
     expect(tag(html, "max-concurrency-inherit")).toContain('aria-checked="true"');
     expect(tag(html, "task-types-inherit")).toContain('aria-checked="true"');
@@ -51,7 +61,7 @@ describe("ConfigCard", () => {
   });
 
   it("shows the harness's own values, editable, when it overrides them", () => {
-    const html = renderToStaticMarkup(<ConfigCard harness={overriding} />);
+    const html = render(overriding);
     expect(tag(html, "max-concurrency-inherit")).toContain('aria-checked="false"');
     expect(tag(html, "task-types-inherit")).toContain('aria-checked="false"');
     expect(tag(html, "max-concurrency")).toContain('value="2"');
@@ -59,6 +69,44 @@ describe("ConfigCard", () => {
     expect(tag(html, "task-type-coding")).toContain('aria-checked="true"');
     expect(tag(html, "task-type-query")).toContain('aria-checked="false"');
     expect(tag(html, "task-type-query")).not.toMatch(/ disabled=""/);
+  });
+
+  it("saves concurrency, task types, pins and the version override with one save", () => {
+    const html = render(inheriting);
+    expect(html.match(/<form/g)).toHaveLength(1);
+    expect(html.match(/type="submit"/g)).toHaveLength(1);
+    expect(html).toContain("Save settings");
+    for (const title of ["Concurrency", "Task types", "Pinned repositories", "Version"]) {
+      expect(html).toContain(`>${title}</h3>`);
+    }
+    expect(tag(html, "desired-version")).toContain('placeholder="Organization (1.4.0)"');
+    expect(html).toContain("Update now</button>");
+  });
+
+  it("shows the pinned repositories as chips in a searchable picker", () => {
+    const html = render({
+      ...inheriting,
+      pinnedRepositories: [
+        {
+          id: "repo-1",
+          provider: "github",
+          fullPath: "acme/api",
+          webUrl: "https://github.com/acme/api",
+        },
+      ],
+    } as HarnessRow);
+    expect(tag(html, "pinned-repositories")).toContain('role="combobox"');
+    expect(html).toContain("acme/api");
+    expect(html).toMatch(/Jobs for this repository only go to the harnesses/);
+    expect(render(inheriting)).toMatch(/None: this harness serves every repository/);
+  });
+
+  it("is read-only on a revoked harness", () => {
+    const html = render({ ...overriding, revoked: true } as HarnessRow);
+    expect(html).not.toContain('type="submit"');
+    expect(html).not.toContain("Update now</button>");
+    expect(tag(html, "max-concurrency")).toMatch(/ disabled=""/);
+    expect(tag(html, "desired-version")).toMatch(/ disabled=""/);
   });
 });
 

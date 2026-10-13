@@ -85,6 +85,69 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/harnesses/[id]/page.tsx",
     auth: "signed-in",
   },
+  {
+    name: "harness-revoked",
+    path: `/harnesses/${ids.harnesses.revoked}`,
+    page: "(app)/harnesses/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "harness-settings",
+    path: `/harnesses/${ids.harnesses.online}/settings`,
+    page: "(app)/harnesses/[id]/settings/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // Pinned repositories are searched on the server.
+    name: "harness-settings-pins",
+    path: `/harnesses/${ids.harnesses.online}/settings`,
+    page: "(app)/harnesses/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#pinned-repositories" }],
+    viewportOnly: true,
+  },
+  {
+    // One save for every setting of the harness, confirmed with the change list.
+    name: "harness-settings-confirm",
+    path: `/harnesses/${ids.harnesses.online}/settings`,
+    page: "(app)/harnesses/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#limit-short", value: "2" },
+      { action: "fill", selector: "#desired-version", value: "1.4.0" },
+      { action: "click", selector: '#harness-settings [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
+    name: "harness-settings-revoked",
+    path: `/harnesses/${ids.harnesses.revoked}/settings`,
+    page: "(app)/harnesses/[id]/settings/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "harness-installables",
+    path: `/harnesses/${ids.harnesses.online}/installables`,
+    page: "(app)/harnesses/[id]/installables/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "harness-host-tools",
+    path: `/harnesses/${ids.harnesses.online}/host-tools`,
+    page: "(app)/harnesses/[id]/host-tools/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // The save footer counts the changed paths.
+    name: "harness-host-tools-unsaved",
+    path: `/harnesses/${ids.harnesses.online}/host-tools`,
+    page: "(app)/harnesses/[id]/host-tools/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: '[id^="host-tool-path-"]', value: "/opt/semgrep/bin/semgrep" },
+    ],
+    viewportOnly: true,
+  },
   { name: "ralph", path: "/coding", page: "(app)/coding/page.tsx", auth: "signed-in" },
   {
     name: "ralph-run-running",
@@ -367,6 +430,25 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     name: "settings-harnesses",
     path: "/settings/harnesses",
     page: "(app)/settings/harnesses/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // Defaults and the harness version save together, confirmed with the change list.
+    name: "settings-harnesses-confirm",
+    path: "/settings/harnesses",
+    page: "(app)/settings/harnesses/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#default-max-concurrency", value: "4" },
+      { action: "fill", selector: "#desired-version", value: "1.4.0" },
+      { action: "click", selector: '#harness-defaults [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
+    name: "settings-harnesses-host-tools",
+    path: "/settings/harnesses/host-tools",
+    page: "(app)/settings/harnesses/host-tools/page.tsx",
     auth: "signed-in",
   },
   {

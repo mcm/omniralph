@@ -6,6 +6,7 @@ import {
   getHarnessOverview,
   getDesiredHarnessVersion,
   getRepository,
+  listRepositoryOverviewPage,
   TRACK_LATEST_HARNESS_VERSION,
   requestHarnessUpdate as requestHarnessUpdateRow,
   setHarnessHostToolPath,
@@ -32,10 +33,13 @@ import { getAppUrl } from "@/lib/app-url";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
+import { HARNESS_TABS, harnessTabHref } from "./[id]/harness-tabs";
 
 function revalidate(harnessId?: string): void {
   revalidatePath("/harnesses");
-  if (harnessId) revalidatePath(`/harnesses/${harnessId}`);
+  if (harnessId) {
+    for (const tab of HARNESS_TABS) revalidatePath(harnessTabHref(harnessId, tab.value));
+  }
   revalidatePath("/repositories");
 }
 
@@ -353,6 +357,38 @@ export async function setHostToolPath(
     }
     revalidate(harnessId);
   });
+}
+
+/** A connected repository a harness can be pinned to. */
+export interface PinnableRepository {
+  id: string;
+  provider: "github" | "gitlab";
+  fullPath: string;
+}
+
+/** Most repositories one search returns: the picker asks people to type more past it. */
+const REPOSITORY_SEARCH_LIMIT = 50;
+
+export type RepositorySearchResult = ActionResult & { repositories?: PinnableRepository[] };
+
+/**
+ * The organization's connected repositories whose path contains `query` (all of them when it's
+ * blank), in path order, at most `REPOSITORY_SEARCH_LIMIT`: the choices of a harness's pins.
+ */
+export async function searchPinnableRepositories(query: string): Promise<RepositorySearchResult> {
+  let repositories: PinnableRepository[] = [];
+  const result = await runAdminAction(async (admin) => {
+    const page = await listRepositoryOverviewPage(getDb(), admin.organization.id, {
+      search: query.slice(0, 200),
+      pageSize: REPOSITORY_SEARCH_LIMIT,
+    });
+    repositories = page.repositories.map(({ id, provider, fullPath }) => ({
+      id,
+      provider,
+      fullPath,
+    }));
+  });
+  return result.ok ? { ...result, repositories } : result;
 }
 
 /** Unpins a repository from a harness (any harness may then serve it, unless other pins remain). */

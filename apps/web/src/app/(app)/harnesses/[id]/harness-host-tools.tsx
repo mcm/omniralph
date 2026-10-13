@@ -1,9 +1,7 @@
 "use client";
 
-import * as React from "react";
 import {
   Badge,
-  Button,
   Empty,
   Input,
   Muted,
@@ -15,12 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from "@iamthemcmaster/ui";
-import { IconDeviceFloppy, IconTool } from "@tabler/icons-react";
+import { IconTool } from "@tabler/icons-react";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
-import { useAction } from "@/components/use-action";
 import { HOST_TOOL_PATH_VARIANTS } from "@/lib/state-variants";
-import { setHostToolPath } from "../actions";
 
 /** Serializable catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
 export interface HostToolRow {
@@ -82,54 +78,22 @@ function HostToolPhoneFacts({ tool }: { tool: HostToolRow }) {
   );
 }
 
-/** Sets or (blank) clears the tool's configured path on the harness. */
-function ConfiguredPathForm({ harnessId, tool }: { harnessId: string; tool: HostToolRow }) {
-  const { pending, run } = useAction();
-  const [path, setPath] = React.useState(tool.configuredPath ?? "");
-
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = path.trim();
-    run(
-      () => setHostToolPath(harnessId, tool.hostToolId, path),
-      trimmed
-        ? `${tool.name} will run from ${trimmed} once the harness finds it there.`
-        : `Cleared. The harness uses the ${tool.name} it finds on its PATH.`,
-    );
-  };
-
-  return (
-    <form onSubmit={save} className="harness-inline-form">
-      <Input
-        id={`host-tool-path-${tool.hostToolId}`}
-        aria-label={`Configured path of ${tool.name}`}
-        name="path"
-        placeholder="Discover on PATH"
-        disabled={pending}
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        className="harness-path-input font-mono"
-      />
-      <Button type="submit" variant="secondary" size="sm" disabled={pending}>
-        <IconDeviceFloppy size={14} />
-        {pending ? "Saving…" : "Save"}
-      </Button>
-    </form>
-  );
-}
-
 /**
  * Every host tool of the organization's catalog on this harness: the configured path (editable
- * unless the harness is revoked), what the harness last reported and the path it runs it from.
+ * unless the harness is revoked, saved by the section around the table), what the harness last
+ * reported and the path it runs it from.
  */
 export function HarnessHostTools({
-  harnessId,
   revoked,
   hostTools,
+  paths,
+  onPathChange,
 }: {
-  harnessId: string;
   revoked: boolean;
   hostTools: HostToolRow[];
+  /** The configured path drafts, by host tool id; blank discovers the tool on `PATH`. */
+  paths: Readonly<Record<string, string>>;
+  onPathChange: (hostToolId: string, path: string) => void;
 }) {
   if (hostTools.length === 0) {
     return (
@@ -172,7 +136,14 @@ export function HarnessHostTools({
                   <Muted>Not configured</Muted>
                 )
               ) : (
-                <ConfiguredPathForm harnessId={harnessId} tool={tool} />
+                <Input
+                  id={`host-tool-path-${tool.hostToolId}`}
+                  aria-label={`Configured path of ${tool.name}`}
+                  placeholder="Discover on PATH"
+                  value={paths[tool.hostToolId] ?? ""}
+                  onChange={(e) => onPathChange(tool.hostToolId, e.target.value)}
+                  className="harness-path-input font-mono"
+                />
               )}
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
