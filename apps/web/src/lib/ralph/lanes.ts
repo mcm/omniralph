@@ -19,7 +19,8 @@ import {
   type RalphStory,
   type RalphTransaction,
 } from "@omniralph/db";
-import type { Epic } from "@omniralph/ralph";
+import { withManualOptions, type Epic } from "@omniralph/ralph";
+import { repositoryAllowsPreparation, repositoryManualLabels } from "./epic-loader";
 import { describeRoute, routeStory } from "./routing";
 import type { RalphDeps } from "./run";
 
@@ -49,9 +50,11 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
  * Routes each story of a sub-issue epic on its own signals (`routeStory`),
  * changing `epic`'s stories: one that belongs in another ralph-enabled
  * repository gets `repo` and a lane there (created with the main lane's branch
- * and that repository's default branch as its base); one that belongs in a
- * repository Omniralph doesn't have becomes manual with `elsewhere` set. Other
- * epics, and manual stories, stay in the main lane. Returns every story's lane.
+ * and that repository's default branch as its base), and is manual (and
+ * prepared) by that repository's manual labels and `allowPreparation` instead
+ * of the main repository's; one that belongs in a repository Omniralph doesn't
+ * have becomes manual with `elsewhere` set (and no preparation). Other epics'
+ * stories stay in the main lane. Returns every story's lane.
  */
 export async function routeStories(
   deps: Pick<RalphDeps, "db" | "adapterFor">,
@@ -67,8 +70,7 @@ export async function routeStories(
 
   const repositories = await listRalphRepositories(tx, run.organizationId);
   const byRepository = new Map<string, RalphLane | null>();
-  for (const s of epic.stories) {
-    if (s.manual) continue;
+  for (const [i, s] of epic.stories.entries()) {
     const route = routeStory(
       repositories,
       {
@@ -81,10 +83,22 @@ export async function routeStories(
     if (route.type === "unroutable") {
       s.manual = true;
       s.elsewhere = route.reason;
+      // No repository here to prepare it in.
+      delete s.preparation;
       lanes.set(key(s), { laneId: null, elsewhere: route.reason });
     } else if (route.type === "selected" && route.repository.id !== main.repositoryId) {
       const { repository } = route;
-      s.repo = { id: repository.id, name: repository.fullPath, routedBy: describeRoute(route) };
+      // Its repository's manual labels and preparation setting apply, not the main one's.
+      const routed = withManualOptions(s, {
+        manualLabels: repositoryManualLabels(repository),
+        allowPreparation: repositoryAllowsPreparation(repository),
+      });
+      routed.repo = {
+        id: repository.id,
+        name: repository.fullPath,
+        routedBy: describeRoute(route),
+      };
+      epic.stories[i] = routed;
       if (!byRepository.has(repository.id)) {
         byRepository.set(repository.id, await laneIn(deps, tx, run, main, repository.id));
       }

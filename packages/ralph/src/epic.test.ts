@@ -9,6 +9,7 @@ import {
   prdEpic,
   singleIssueEpic,
   statusFromStateType,
+  withManualOptions,
 } from "./epic.js";
 import { parsePrd } from "./prd.js";
 import { sortStories } from "./selection.js";
@@ -187,6 +188,33 @@ describe("preparation blocks", () => {
     expect(epic.stories[0]?.manual).toBe(true);
     expect(epic.stories[0]).not.toHaveProperty("preparation");
     expect(epic.stories[0]?.description).toContain("cyralph-prepare");
+  });
+
+  it("reads a story again with another repository's manual labels and preparation", () => {
+    const description = `Deploy it.\n\n${fence}cyralph-prepare\ngit push origin HEAD:staging\n${fence}`;
+    const [byHand, manual] = childrenEpic(
+      issue(),
+      [
+        child({ title: "Deploy", identifier: "ENG-41", labels: ["By Hand"], description }),
+        child({ title: "Check", identifier: "ENG-42", labels: ["manual"], description }),
+      ],
+      { manualLabels: ["manual"], allowPreparation: false },
+    ).stories;
+    expect(byHand?.manual).toBeUndefined();
+    expect(manual).toMatchObject({ manual: true });
+    expect(manual).not.toHaveProperty("preparation");
+
+    const elsewhere = { manualLabels: ["by hand"], allowPreparation: true };
+    expect(withManualOptions(byHand!, elsewhere)).toMatchObject({
+      manual: true,
+      preparation: ["git push origin HEAD:staging"],
+    });
+    const notManual = withManualOptions(manual!, elsewhere);
+    expect(notManual).not.toHaveProperty("manual");
+    expect(notManual).not.toHaveProperty("preparation");
+    expect(
+      withManualOptions(byHand!, { ...elsewhere, allowPreparation: false }),
+    ).not.toHaveProperty("preparation");
   });
 
   it("leaves preparation unset for a manual story without a block", () => {

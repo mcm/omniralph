@@ -331,7 +331,11 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const approved = await approvedPreparation(deps, tx, run, stories);
   run = approved.run;
   if (approved.story && approved.request) {
-    return enqueuePreparation(deps, tx, run, { story: approved.story, request: approved.request });
+    return enqueuePreparation(deps, tx, run, {
+      story: approved.story,
+      request: approved.request,
+      rows,
+    });
   }
   const allDone = isEpicComplete(stories);
   // A draft PR/MR once the first story is pushed (`opensPullRequestEarly`).
@@ -814,7 +818,7 @@ async function describeLane(
 
 /**
  * Runs an approved manual-story preparation: a `worktree.exec` system RPC (the
- * run's one job, on its lane's agent, `laneHarnessId`; on both coding paths)
+ * run's one job, in the story's lane, on that lane's agent, `laneHarnessId`; on both coding paths)
  * with the story's commands as they are now and the approval they must match. Its outcome is
  * applied by `applyPreparationJob`.
  */
@@ -822,10 +826,13 @@ async function enqueuePreparation(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
-  input: { story: Story; request: RalphPreparationRequest },
+  input: { story: Story; request: RalphPreparationRequest; rows: RalphStory[] },
 ): Promise<AdvanceResult> {
   const { story, request } = input;
-  const found = await usableRepository(deps, tx, run);
+  // In the worktree of the story's lane (the repository it routes to).
+  const row = input.rows.find((r) => r.linearIssueId === (story.issueId ?? story.key));
+  const lane = await storyLane(tx, run, row ?? { laneId: request.laneId ?? null });
+  const found = await usableRepository(deps, tx, run, lane ?? undefined);
   if ("action" in found) return found;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
@@ -838,7 +845,7 @@ async function enqueuePreparation(
       story,
       approved: { commandsHash: request.commandsHash, headSha: request.headSha },
     }),
-    repositoryId: run.repositoryId,
+    repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
     targetHarnessId: await laneHarnessId(deps.db, run, found.lane),

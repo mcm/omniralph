@@ -238,7 +238,7 @@ export function describeRun(
     );
   }
   const open = epic.stories.filter((s) => s.status !== "completed" && s.status !== "cancelled");
-  for (const s of open.filter((x) => x.repo)) {
+  for (const s of open.filter((x) => x.repo && !x.manual)) {
     lines.push(
       `**${s.storyId}** belongs in \`${s.repo?.name}\` (routed by ${s.repo?.routedBy}), so I'll ` +
         "work it there, on its own branch and its own pull/merge request.",
@@ -253,7 +253,7 @@ export function describeRun(
   const manual = open.filter((s) => s.manual && !s.elsewhere);
   if (manual.length > 0) {
     lines.push(
-      `Manual steps for a person: ${manual.map((s) => `**${s.storyId}**`).join(", ")}. ` +
+      `Manual steps for a person: ${manual.map((s) => `**${s.storyId}**${s.repo ? ` (in \`${s.repo.name}\`)` : ""}`).join(", ")}. ` +
         "I won't work them, and stories that depend on them wait until they're done.",
     );
   }

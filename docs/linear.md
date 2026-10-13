@@ -175,7 +175,10 @@ signals it doesn't share with the epic, in the same order: its own routing label
 other than the epic's, a team other than the epic's. A story without any stays in the epic's
 repository. A story routed to another ralph-enabled repository gets a lane there:
 its own branch (the epic's branch name, based on that repository's default branch) and its own
-PR/MR, and the run's start message says so. A story whose project matches no
+PR/MR, and the run's start message says so. Stories are routed before ralph decides which are
+manual: a story is manual when it carries one of the **Manual labels** of the repository it routes
+to (the epic's repository when it stays there), and its preparation is offered only when that
+repository has **Offer to run preparation** on. A story whose project matches no
 ralph-enabled repository is treated like a manual step ("isn't in a repository I have"), shown as
 "(manual: no repository here)" in the plan: nothing is built for it, and stories that depend on it
 wait until a person completes it. Teams and labels often span repositories, so an unknown one
@@ -237,12 +240,12 @@ How the run behaves:
   first value is the baseline), it is marked exhausted with an error showing the trend, e.g.
   `critique score (higher is better): 23 → 26 → 26`. A story that reports no metric is only limited
   by the round cap. `/continue` or a guidance reply gives exhausted stories fresh rounds.
-- **Manual stories.** Sub-issues labelled with one of the repository's **Manual labels** (`manual`
-  by default) are for a person: the run waits for them to be
+- **Manual stories.** Sub-issues labelled with one of the **Manual labels** (`manual` by default)
+  of the repository they route to are for a person: the run waits for them to be
   completed. A manual story's description may contain a ` ```cyralph-prepare ` block of shell
-  commands, one per line; when the story becomes unblocked the session asks **Run it** / **I'll do
-  it myself** / **Not yet**, and **Run it** runs them in the branch worktree, on the agent of the lane that holds
-  it.
+  commands, one per line; when the story becomes unblocked and its repository has **Offer to run
+  preparation** on, the session asks **Run it** / **I'll do it myself** / **Not yet**, and **Run it**
+  runs them in the worktree of the story's lane (its repository's branch), on that lane's agent.
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
