@@ -124,7 +124,7 @@ config), with the same names and defaults, grouped as on the page:
 | Group | Setting | Default | What it does |
 | -- | -- | -- | -- |
 | Verification | **Verify commands** (`verifyCommands`) | none | One per line. The story job runs them as quality gates after the session reports a story complete; a failing one sends its output back for the next attempt. |
-| Verification | **Run the PRD's quality gates** (`runPrdQualityGates`) | on | Also run the PRD's `## Quality Gates` commands, after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
+| Verification | **Run the PRD's quality gates** (`runPrdQualityGates`) | on | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
 | Verification | **Setup command** (`setupCommand`) | none | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
 | Prompt and model | **Appended instruction** (`appendInstruction`) | none | Text appended to every story (and request) prompt. |
 | Prompt and model | **Model** (`model`) / **Fallback model** (`fallbackModel`) | `opus` / none | The Claude model alias or ID the sessions use, and the one used when it's overloaded. |
@@ -188,7 +188,8 @@ PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
 settings (model, tools, prompt additions, setup command) and its quality gates (its
-`verifyCommands`, plus the PRD's gates when its `runPrdQualityGates` is on), on the lane's harness
+`verifyCommands`, plus the PRD's shared gates and its own scoped gates when its
+`runPrdQualityGates` is on; see **Quality gates** above), on the lane's harness
 (see [Harnesses and concurrency](#harnesses-and-concurrency)), so repositories pinned to different
 harnesses each run on theirs.
 The prompt names the repository. When every story is done, each lane is published in turn: a
@@ -223,6 +224,20 @@ How the run behaves:
 - **Quality gates.** The repository's **Verify commands**, then (with **Run the PRD's quality
   gates** on) the commands under the epic description's `## Quality Gates` heading, run after
   every story; a failing gate fails the attempt. A single issue runs the verify commands only.
+  Gates can be scoped to a repository with a `### <repository full path>` heading inside
+  `## Quality Gates`: bullets before any such heading are shared, bullets under one apply only to
+  that repository's lane (matched case-insensitively; backticks and a trailing `:` are fine). Each
+  lane runs its repository's verify commands, the shared gates and its own scoped gates, never
+  another repository's:
+
+  ```markdown
+  ## Quality Gates
+  - `pnpm lint`
+  ### acme/api
+  - `cargo test`
+  ### acme/web
+  - `pnpm build`
+  ```
 - **Order.** Stories in progress first, then by Linear priority, then sub-issue order. A story waits
   while it's blocked by an open issue. A failed or incomplete attempt is retried with feedback up
   to 3 times, then the story is marked exhausted and later independent stories still run.
