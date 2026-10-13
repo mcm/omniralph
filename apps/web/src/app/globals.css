@@ -1092,6 +1092,29 @@ body {
 .analytics-rate > :first-child {
   flex: 1;
 }
+/* The comparison series of a two-series chart (tokens out, reviews next to ralph):
+   neutral like a baseline, and dashed with a fainter fill in the plot and the legend, so it
+   never differs from the accent series by hue alone. It is also a step away in lightness:
+   lighter than the accent in light, darker in dark (the dark accent is pale; chart-6 there
+   is as light, border-strong still clears 3:1 on the surface). The view passes this token
+   as the series colour; the selectors key on it because recharts writes it into
+   `stroke`/`fill`. */
+:root {
+  --analytics-comparison: var(--chart-6);
+}
+[data-theme="dark"] {
+  --analytics-comparison: var(--border-strong);
+}
+.analytics-main .recharts-area-curve[stroke="var(--analytics-comparison)"] {
+  stroke-dasharray: 6 4;
+}
+.analytics-main .recharts-area-area[fill="var(--analytics-comparison)"] {
+  fill-opacity: 0.05;
+}
+.analytics-main .recharts-legend-icon[stroke="var(--analytics-comparison)"] {
+  stroke-dasharray: 3 2;
+  stroke-width: 3;
+}
 
 /* Recharts measures tick labels in a hidden span to space them out, but the library
    renders ticks in mono (`.text-numeric`): measure in the same face, or the measured

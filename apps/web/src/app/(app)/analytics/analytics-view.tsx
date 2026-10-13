@@ -11,7 +11,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  ChartContainer,
   Empty,
   Metric,
   Muted,
@@ -29,6 +28,7 @@ import {
 import { IconChartBar, IconRepeat, IconServer, IconThumbDown } from "@tabler/icons-react";
 import type { AnalyticsRepositoryRef } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
+import { EmptyValue } from "@/components/empty-value";
 import { useCurrentUser } from "@/components/current-user";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
@@ -62,10 +62,12 @@ interface AnalyticsViewProps {
 }
 
 /**
- * Series intents: the headline series in accent, the comparison in neutral, so the two
- * differ in lightness and not just hue (accent and info are both blue).
+ * Series: the headline in accent; the comparison in neutral through
+ * `--analytics-comparison`, which globals.css draws dashed with a fainter fill (plot and
+ * legend), so the two never differ by hue alone.
  */
-const SERIES = { primary: "accent", comparison: "neutral" } as const;
+const PRIMARY_SERIES = { variant: "accent" } as const;
+const COMPARISON_SERIES = { color: "var(--analytics-comparison)" } as const;
 
 /** KPI tiles: the library `Metric`, mono value, reflowing by min width. */
 function Metrics({ children }: { children: React.ReactNode }) {
@@ -149,7 +151,7 @@ function RalphSection({
         />
         <Metric
           label="Attempts per story"
-          value={completed === 0 ? "—" : ralph.averageAttempts.toLocaleString()}
+          value={completed === 0 ? <EmptyValue /> : ralph.averageAttempts.toLocaleString()}
           title="Average attempts per completed story"
         />
       </Metrics>
@@ -168,20 +170,18 @@ function RalphSection({
             {noRuns && tokens === 0 ? (
               noRunsEmpty
             ) : (
-              <ChartContainer>
-                <AreaChart
-                  aria-label="Ralph tokens per day"
-                  height={240}
-                  data={daily}
-                  xKey="day"
-                  showLegend
-                  tickFormatter={formatTokens}
-                  areas={[
-                    { key: "ralphTokens", label: "Ralph", variant: SERIES.primary },
-                    { key: "reviewTokens", label: "Reviews", variant: SERIES.comparison },
-                  ]}
-                />
-              </ChartContainer>
+              <AreaChart
+                aria-label="Ralph tokens per day"
+                height={240}
+                data={daily}
+                xKey="day"
+                showLegend
+                tickFormatter={formatTokens}
+                areas={[
+                  { key: "ralphTokens", label: "Ralph", ...PRIMARY_SERIES },
+                  { key: "reviewTokens", label: "Reviews", ...COMPARISON_SERIES },
+                ]}
+              />
             )}
           </CardContent>
         </Card>
@@ -194,22 +194,20 @@ function RalphSection({
             {noRuns ? (
               noRunsEmpty
             ) : (
-              <ChartContainer>
-                <BarChart
-                  aria-label="Runs per day"
-                  height={240}
-                  data={daily}
-                  xKey="day"
-                  stacked
-                  showLegend
-                  tickFormatter={countTick}
-                  bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
-                    key: outcome,
-                    label: RALPH_RUN_OUTCOME_LABELS[outcome],
-                    variant: RALPH_RUN_STATUS_VARIANTS[outcome],
-                  }))}
-                />
-              </ChartContainer>
+              <BarChart
+                aria-label="Runs per day"
+                height={240}
+                data={daily}
+                xKey="day"
+                stacked
+                showLegend
+                tickFormatter={countTick}
+                bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
+                  key: outcome,
+                  label: RALPH_RUN_OUTCOME_LABELS[outcome],
+                  variant: RALPH_RUN_STATUS_VARIANTS[outcome],
+                }))}
+              />
             )}
           </CardContent>
         </Card>
@@ -224,22 +222,20 @@ function RalphSection({
           {noRuns ? (
             noRunsEmpty
           ) : (
-            <ChartContainer>
-              <BarChart
-                aria-label="Story outcomes per day"
-                height={240}
-                data={daily}
-                xKey="day"
-                stacked
-                showLegend
-                tickFormatter={countTick}
-                bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
-                  key: outcome,
-                  label: RALPH_STORY_OUTCOME_LABELS[outcome],
-                  variant: RALPH_STORY_OUTCOME_VARIANTS[outcome],
-                }))}
-              />
-            </ChartContainer>
+            <BarChart
+              aria-label="Story outcomes per day"
+              height={240}
+              data={daily}
+              xKey="day"
+              stacked
+              showLegend
+              tickFormatter={countTick}
+              bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
+                key: outcome,
+                label: RALPH_STORY_OUTCOME_LABELS[outcome],
+                variant: RALPH_STORY_OUTCOME_VARIANTS[outcome],
+              }))}
+            />
           )}
         </CardContent>
       </Card>
@@ -316,7 +312,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Analytics" }]} />
-      <main className="detail-main">
+      <main className="detail-main analytics-main">
         <PageHeader
           title="Analytics"
           description={`Token usage, review quality and ralph runs for ${scope}, last ${params.days} days by UTC day.`}
@@ -380,21 +376,19 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               <CardDescription>{period}, input and output stacked</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartContainer>
-                <AreaChart
-                  aria-label="Tokens per day"
-                  height={240}
-                  data={daily}
-                  xKey="day"
-                  stacked
-                  showLegend
-                  tickFormatter={formatTokens}
-                  areas={[
-                    { key: "tokensIn", label: "Tokens in", variant: SERIES.primary },
-                    { key: "tokensOut", label: "Tokens out", variant: SERIES.comparison },
-                  ]}
-                />
-              </ChartContainer>
+              <AreaChart
+                aria-label="Tokens per day"
+                height={240}
+                data={daily}
+                xKey="day"
+                stacked
+                showLegend
+                tickFormatter={formatTokens}
+                areas={[
+                  { key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES },
+                  { key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES },
+                ]}
+              />
             </CardContent>
           </Card>
           <Card>
@@ -403,16 +397,14 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               <CardDescription>{period}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartContainer>
-                <BarChart
-                  aria-label="Reviews per day"
-                  height={240}
-                  data={daily}
-                  xKey="day"
-                  tickFormatter={countTick}
-                  bars={[{ key: "reviews", label: "Reviews", variant: SERIES.primary }]}
-                />
-              </ChartContainer>
+              <BarChart
+                aria-label="Reviews per day"
+                height={240}
+                data={daily}
+                xKey="day"
+                tickFormatter={countTick}
+                bars={[{ key: "reviews", label: "Reviews", ...PRIMARY_SERIES }]}
+              />
             </CardContent>
           </Card>
         </div>
@@ -433,22 +425,20 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 />
               ) : (
                 <>
-                  <ChartContainer>
-                    <BarChart
-                      aria-label="Average tokens per review by profile"
-                      height={160}
-                      data={profiles}
-                      xKey="profile"
-                      tickFormatter={formatTokens}
-                      bars={[
-                        {
-                          key: "averageTokens",
-                          label: "Tokens per review",
-                          variant: SERIES.primary,
-                        },
-                      ]}
-                    />
-                  </ChartContainer>
+                  <BarChart
+                    aria-label="Average tokens per review by profile"
+                    height={160}
+                    data={profiles}
+                    xKey="profile"
+                    tickFormatter={formatTokens}
+                    bars={[
+                      {
+                        key: "averageTokens",
+                        label: "Tokens per review",
+                        ...PRIMARY_SERIES,
+                      },
+                    ]}
+                  />
                   <Table className="list-table">
                     <TableHeader>
                       <TableRow>
