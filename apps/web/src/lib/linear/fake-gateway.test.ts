@@ -155,3 +155,42 @@ describe("FakeLinearGateway read tools", () => {
     await expect(linear.getDocument("nope")).rejects.toThrow(/No document/);
   });
 });
+
+describe("FakeLinearGateway lists", () => {
+  it("reads every page of labels and projects", async () => {
+    const linear = new FakeLinearGateway();
+    linear.pageSize = 2;
+    linear.labels = ["a", "b", "c", "d", "e"].map((name, i) => ({
+      id: `l${i}`,
+      name,
+      teamId: i % 2 ? "team-1" : null,
+    }));
+    linear.projects = [
+      { id: "p1", name: "One" },
+      { id: "p2", name: "Two" },
+    ];
+
+    expect((await linear.listIssueLabels()).map((l) => l.name)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(await linear.listProjects()).toEqual(linear.projects);
+    expect(linear.pageRequests).toEqual([
+      { method: "listIssueLabels", after: 0 },
+      { method: "listIssueLabels", after: 2 },
+      { method: "listIssueLabels", after: 4 },
+      { method: "listProjects", after: 0 },
+    ]);
+  });
+
+  it("reads one empty page when there is nothing", async () => {
+    const linear = new FakeLinearGateway();
+    expect(await linear.listProjects()).toEqual([]);
+    expect(linear.pageRequests).toEqual([{ method: "listProjects", after: 0 }]);
+  });
+
+  it("fails each list on demand", async () => {
+    const linear = new FakeLinearGateway();
+    for (const method of ["listIssueLabels", "listProjects"] as const) {
+      linear.failures.set(method, new Error(method));
+      await expect(linear[method]()).rejects.toThrow(method);
+    }
+  });
+});
