@@ -165,6 +165,15 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
+    // Pinned harnesses are picked from a searchable list.
+    name: "repository-harnesses-picker",
+    path: `/repositories/${ids.repositories.controlPanel}/harnesses`,
+    page: "(app)/repositories/[id]/harnesses/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: "#pinned-harnesses" }],
+    viewportOnly: true,
+  },
+  {
     // A section's save asks first, listing the changes.
     name: "repository-settings-confirm",
     path: `/repositories/${ids.repositories.controlPanel}/coding`,

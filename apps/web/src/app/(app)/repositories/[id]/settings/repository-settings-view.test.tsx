@@ -83,6 +83,11 @@ const codingOn: TaskTypesValues = {
   overrides: { ...inheritAll.overrides, coding: true },
 };
 
+const HARNESSES = [
+  { id: "h1", name: "build-01", lastHeartbeatAt: "2026-10-13T10:00:00.000Z" },
+  { id: "h2", name: "build-02", lastHeartbeatAt: null },
+];
+
 function render(
   tab: RepositorySettingsTab,
   overrides: {
@@ -90,6 +95,8 @@ function render(
     ralph?: RalphSettingsValues;
     choices?: CodingChoices;
     taskTypes?: TaskTypesValues;
+    agents?: { id: string; name: string; lastHeartbeatAt: string | null }[];
+    pinnedHarnessIds?: string[];
   } = {},
 ) {
   return renderToStaticMarkup(
@@ -106,7 +113,7 @@ function render(
         triggers: { onOpen: true, onPush: true, drafts: false },
         pathExcludes: [],
         customInstructions: "",
-        pinnedHarnessIds: [],
+        pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
         reviewTaskIds: ["builtin:review-pr", REVIEW_ID],
         correlationTaskId: overrides.correlationTaskId ?? CORRELATION_ID,
       }}
@@ -134,7 +141,7 @@ function render(
           allowRepoExploration: true,
         },
       ]}
-      agents={[]}
+      agents={overrides.agents ?? HARNESSES}
       ralph={overrides.ralph ?? ralph}
       codingChoices={overrides.choices ?? choices}
       codingTasks={{
@@ -485,6 +492,36 @@ describe("RepositorySettingsView Coding pickers", () => {
     }
     const linked = render("coding", { ralph: picked });
     expect(linked).not.toContain('href="/settings/integrations"');
+  });
+});
+
+describe("RepositorySettingsView pinned harnesses", () => {
+  it("picks pinned harnesses from a searchable list, not a checkbox per harness", () => {
+    const html = render("harnesses");
+    expect(html).toMatch(
+      /<button[^>]*role="combobox"[^>]*id="pinned-harnesses"|<button[^>]*id="pinned-harnesses"[^>]*role="combobox"/,
+    );
+    expect(html).not.toContain('id="pin-h1"');
+    expect(text(html)).toContain("Any harness");
+  });
+
+  it("shows the pinned harnesses as chips by name", () => {
+    const html = render("harnesses", { pinnedHarnessIds: ["h2"] });
+    expect(text(html)).toContain("build-02");
+    expect(text(html)).not.toContain("build-01");
+    expect(html).toContain("Only the pinned harness runs this repository&#x27;s jobs.");
+  });
+
+  it("keeps a pin to a harness that is no longer pinnable, with a warning", () => {
+    const html = render("harnesses", { pinnedHarnessIds: ["gone"] });
+    expect(text(html)).toMatch(/gone/);
+    expect(text(html)).toMatch(/revoked or deleted/);
+  });
+
+  it("says any harness runs the jobs when none is enrolled", () => {
+    const html = render("harnesses", { agents: [] });
+    expect(html).not.toContain('id="pinned-harnesses"');
+    expect(text(html)).toMatch(/No harnesses are enrolled yet/);
   });
 });
 
