@@ -918,6 +918,8 @@ export interface NewRalphLaneInput {
   repositoryId: string;
   branch: string;
   baseBranch: string;
+  /** Its sticky harness (none until one of its jobs starts). */
+  harnessId?: string | null;
 }
 
 /** The run's lane in `repositoryId`, created with `input`'s branches if it has none yet. */
@@ -1169,7 +1171,9 @@ export async function moveToRepository(
   const run = await getRun(db, runId);
   if (!run) return null;
   if (run.repositoryId === repositoryId) {
-    return { lane: await ensureLane(db, { runId, repositoryId, ...fresh }), left: null };
+    // A main lane created late sticks to the harness the run's jobs already started on.
+    const lane = await ensureLane(db, { runId, repositoryId, ...fresh, harnessId: run.harnessId });
+    return { lane, left: null };
   }
   const old = await getMainLane(db, run);
   if (old) await db.delete(ralphLanes).where(eq(ralphLanes.id, old.id));

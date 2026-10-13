@@ -323,6 +323,19 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/gitlab-maintenance", () => {
       expect((await tokenOf(connection.id)).token).toBe("glpat-rotated-2");
     });
 
+    it("doesn't rotate a token stamped as rotated in the near future (clock skew)", async () => {
+      const connection = await gitlabConnection(HEALTHY, "42");
+      expect(await (await cron("cron-secret")).json()).toMatchObject({ rotated: 1 });
+      await updateScmConnectionCredentials(db, connection.id, async (credentials) => ({
+        ...credentials,
+        rotatedAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      }));
+
+      expect(await (await cron("cron-secret")).json()).toMatchObject({ rotated: 0 });
+
+      expect(gitlab.rotations).toBe(1);
+    });
+
     it("records rotation_unsupported on an instance without self-rotation and keeps the token", async () => {
       gitlab.rotateStatus = 404;
       gitlab.rotateMessage = "404 Not Found";

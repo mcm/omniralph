@@ -1098,6 +1098,15 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
         const same = await moveToRepository(db, run.id, repoA, { branch: "x", baseBranch: "y" });
         expect(same).toMatchObject({ left: null, lane: { id: started!.lane.id, branch: "kept" } });
 
+        // A main lane missing from the run's repository is created on the run's sticky harness.
+        const { run: bare } = await createRun(db, runInput({ branch: undefined }));
+        await updateRun(db, bare.id, { harnessId });
+        const created = await moveToRepository(db, bare.id, repoA, {
+          branch: "b",
+          baseBranch: "main",
+        });
+        expect(created?.lane).toMatchObject({ repositoryId: repoA, harnessId });
+
         expect(
           await moveToRepository(db, "00000000-0000-4000-8000-000000000000", repoA, {
             branch: "b",
