@@ -1453,11 +1453,15 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
     });
 
     async function codingJob(organizationId: string) {
+      return taskJob(organizationId, "coding", "long");
+    }
+
+    async function taskJob(organizationId: string, taskType: Tasks.TaskType, pool: string) {
       const { job } = await dispatcher().createAndPublish({
         organizationId,
         type: "defaults.run",
-        taskType: "coding",
-        pool: "long",
+        taskType,
+        pool,
         payload: {},
         dedupeKey: randomUUID(),
       });
@@ -1502,6 +1506,31 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
         acceptedTaskTypes: ["query", "review", "coding"],
         poolLimits: { short: 5, long: 4 },
       });
+    });
+
+    it("has an inheriting harness claim query, review and coding jobs with no organization settings", async () => {
+      const organizationId = await newOrg();
+      const { accessToken } = await newAgent({ organizationId });
+      for (const [taskType, pool] of [
+        ["query", "short"],
+        ["review", "short"],
+        ["coding", "long"],
+      ] as const) {
+        const jobId = await taskJob(organizationId, taskType, pool);
+        const res = await claim(
+          agentRequest("claim", accessToken, { body: { pools: [pool], waitSeconds: 0 } }),
+        );
+        expect(res.status).toBe(200);
+        expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
+      }
+    });
+
+    it("lets a harness's own task types turn off a type the organization allows", async () => {
+      const organizationId = await newOrg();
+      const own = await newAgent({ organizationId, acceptedTaskTypes: ["query", "review"] });
+      const jobId = await codingJob(organizationId);
+      expect((await claimLong(own.accessToken)).status).toBe(204);
+      expect((await jobRow(jobId)).status).toBe("queued");
     });
 
     it("keeps a harness's own values and gives inheriting harnesses the organization's new defaults", async () => {
