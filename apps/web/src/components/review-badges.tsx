@@ -49,19 +49,31 @@ export function SeverityBadge({ severity, count }: { severity: Severity; count?:
  * Finding counts per severity on one line, most severe first, skipping zeros:
  * mono count plus the severity's name ("2 critical") from 768px, its initial
  * ("2C") on phone (the full name is in the tooltip and read to screen readers). `only` limits the severities shown (the phone
- * row shows just critical and high).
+ * row shows just critical and high). `wordsUpTo` caps the words' length in characters: a
+ * longer set shows initials at every width, so it stays on one line in a fixed column.
  */
+/** The characters "2 critical 1 high" takes: each count, a space and its severity's name. */
+export function severityWordsLength(
+  counts: ReviewRow["findingCounts"],
+  present: readonly Severity[],
+): number {
+  return present.reduce((sum, s) => sum + String(counts[s]).length + 1 + s.length, 0);
+}
+
 export function SeverityCounts({
   counts,
   only = FINDING_SEVERITIES,
+  wordsUpTo,
 }: {
   counts: ReviewRow["findingCounts"];
   only?: readonly Severity[];
+  wordsUpTo?: number;
 }) {
   const present = FINDING_SEVERITIES.filter((s) => only.includes(s) && counts[s] > 0);
   if (present.length === 0) return null;
+  const short = wordsUpTo !== undefined && severityWordsLength(counts, present) > wordsUpTo;
   return (
-    <span className="severity-counts">
+    <span className={short ? "severity-counts severity-counts-short" : "severity-counts"}>
       {present.map((severity) => (
         <Badge key={severity} {...severityBadgeProps(severity)} size="sm" title={severity}>
           <span className="text-numeric">{counts[severity]}</span>

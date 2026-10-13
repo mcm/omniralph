@@ -884,15 +884,8 @@ body {
   padding-inline: var(--space-1);
 }
 /* Reviews list at desktop: every row is one line plus one meta line. The PR column
-   takes the leftover width and its title, repository and a failed review's error
-   truncate (full text in the tooltip) instead of wrapping. */
-.review-ellipsis {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+   takes the leftover width: its title truncates at the end (full text in the tooltip),
+   its repository in the middle (MonoValue). A failed review's reason has its own row. */
 @media (min-width: 768px) {
   .review-col-main {
     width: 100%;
@@ -912,14 +905,17 @@ body {
   }
   .review-col-main .list-secondary {
     max-width: 100%;
+  } /* Every other column shrinks to its content, so the spare width goes to the title. */
+  .reviews-table th:not(:first-child) {
+    width: 1%;
   }
-  /* Fills the status cell without widening it (0 width, 100% min). */
-  .review-error {
-    width: 0;
-    min-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .reviews-table .review-col-nowrap {
     white-space: nowrap;
+  }
+  /* Seven columns at 1440: a step less padding than other lists, for the title. */
+  .reviews-table th,
+  .reviews-table td {
+    padding-inline: var(--space-3);
   }
 }
 /* Initials on phone ("2C"), words from 768px ("2 critical"). */
@@ -936,14 +932,15 @@ body {
   .severity-word {
     display: inline;
   }
-  /* Reviews list: the counts wrap between severities (never inside one) to fit the column. */
-  .review-col-findings {
-    width: 9.5rem;
-    min-width: 9.5rem;
+  /* A set too long for its column (SeverityCounts `wordsUpTo`) keeps initials. */
+  .severity-counts-short > * {
+    gap: 1px;
   }
-  .review-col-findings .severity-counts {
-    flex-wrap: wrap;
-    gap: 2px;
+  .severity-counts-short .severity-short {
+    display: inline;
+  }
+  .severity-counts-short .severity-word {
+    display: none;
   }
 }
 /* Finding severity chips: one ramp that only gets quieter, critical > high > medium > low >

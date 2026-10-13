@@ -29,6 +29,7 @@ export default async function ReviewsPage({
       params={params}
       total={page.total}
       pageSize={page.pageSize}
+      year={new Date().getFullYear()}
     />
   );
 }

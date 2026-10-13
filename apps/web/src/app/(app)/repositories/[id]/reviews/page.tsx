@@ -52,6 +52,7 @@ export default async function RepositoryReviewsPage({
       params={listParams}
       total={page.total}
       pageSize={page.pageSize}
+      year={new Date().getFullYear()}
     />
   );
 }
