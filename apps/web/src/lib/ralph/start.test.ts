@@ -396,6 +396,41 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     ]);
   });
 
+  it("treats an issue whose sub-issues are all canceled as a single story", async () => {
+    const issue = linear.add({ identifier: "ENG-25", title: "Former epic" });
+    linear.add({
+      identifier: "ENG-26",
+      title: "Dropped",
+      parentId: issue.id,
+      stateType: "canceled",
+    });
+    linear.add({ identifier: "ENG-27", title: "Also", parentId: issue.id, stateType: "canceled" });
+    const event = created(issue.id);
+    await startRun(event, deps());
+    const run = await withLane(await getRunBySession(db, event.sessionId));
+    expect(run).toMatchObject({ kind: "single", linearIssueId: issue.id });
+    expect(
+      (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
+    ).toEqual([[issue.id, "ENG-25", "running"]]);
+    expect(linear.issues.get(issue.id)?.stateType).toBe("started");
+  });
+
+  it("keeps an issue with canceled and open sub-issues a children epic", async () => {
+    const epic = linear.add({ identifier: "ENG-35", title: "Epic" });
+    linear.add({
+      identifier: "ENG-36",
+      title: "Dropped",
+      parentId: epic.id,
+      stateType: "canceled",
+    });
+    linear.add({ identifier: "ENG-37", title: "Kept", parentId: epic.id });
+    const event = created(epic.id);
+    await startRun(event, deps());
+    const run = await getRunBySession(db, event.sessionId);
+    expect(run).toMatchObject({ kind: "children", linearIssueId: epic.id });
+    expect((await listStories(db, run!.id)).map((s) => s.identifier)).toEqual(["ENG-36", "ENG-37"]);
+  });
+
   it("loads a delegated sub-issue's epic, focused on that story", async () => {
     const epic = linear.add({ identifier: "ENG-30", title: "Epic", stateType: "started" });
     linear.add({ identifier: "ENG-31", title: "One", parentId: epic.id });
