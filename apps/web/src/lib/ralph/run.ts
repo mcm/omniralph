@@ -429,12 +429,17 @@ async function usableHarnessId(
   return agent.id;
 }
 
-/** The run's agent (its main lane's), while it may still take the run's jobs. */
+/**
+ * The agent that holds a lane's worktree (the one that started its last job),
+ * while it may still take the run's jobs. No pinned fallback: another agent
+ * doesn't have the worktree.
+ */
 export async function stickyHarnessId(
   db: Database,
-  run: Pick<RalphRun, "harnessId" | "organizationId">,
+  run: Pick<RalphRun, "organizationId">,
+  lane: Pick<RalphLane, "harnessId">,
 ): Promise<string | undefined> {
-  return usableHarnessId(db, run.organizationId, run.harnessId);
+  return usableHarnessId(db, run.organizationId, lane.harnessId);
 }
 
 /**
@@ -809,8 +814,8 @@ async function describeLane(
 
 /**
  * Runs an approved manual-story preparation: a `worktree.exec` system RPC (the
- * run's one job, on its sticky agent; on both coding paths) with the story's
- * commands as they are now and the approval they must match. Its outcome is
+ * run's one job, on its lane's agent, `laneHarnessId`; on both coding paths)
+ * with the story's commands as they are now and the approval they must match. Its outcome is
  * applied by `applyPreparationJob`.
  */
 async function enqueuePreparation(
@@ -836,7 +841,7 @@ async function enqueuePreparation(
     repositoryId: run.repositoryId,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId: await stickyHarnessId(deps.db, run),
+    targetHarnessId: await laneHarnessId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
   const state = preparationOf(run);
