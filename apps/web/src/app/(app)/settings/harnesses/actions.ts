@@ -22,6 +22,7 @@ import { getDb } from "@/lib/db";
 
 function revalidate(): void {
   revalidatePath("/settings/harnesses");
+  revalidatePath("/settings/harnesses/host-tools");
   revalidatePath("/harnesses", "layout");
 }
 

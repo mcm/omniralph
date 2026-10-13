@@ -77,12 +77,15 @@ process.env.APP_URL = "https://omniralph.example.com/";
 
 const { default: HarnessesPage } = await import("./page");
 const { default: HarnessPage } = await import("./[id]/page");
+const { default: HarnessHostToolsPage } = await import("./[id]/host-tools/page");
 const { default: HarnessSettingsPage } = await import("../settings/harnesses/page");
+const { default: HostToolsSettingsPage } = await import("../settings/harnesses/host-tools/page");
 const {
   createEnrollment,
   deleteHarness,
   pinRepository,
   revokeHarness,
+  searchPinnableRepositories,
   setHarnessDesiredVersion,
   setHostToolPath,
   unpinRepository,
@@ -193,6 +196,11 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
     expect(await pinRepository(b.harnessId, a.repoId)).toMatchObject({ ok: false });
     expect(await pinRepository(a.harnessId, b.repoId)).toMatchObject({ ok: false });
     expect(await unpinRepository(b.harnessId, b.repoId)).toMatchObject({ ok: false });
+    // The pins picker only finds the active organization's repositories.
+    expect(await searchPinnableRepositories("shared/app")).toEqual({
+      ok: true,
+      repositories: [{ id: a.repoId, provider: expect.any(String), fullPath: "shared/app" }],
+    });
 
     const other = (await getHarnessOverview(db, b.orgId, b.harnessId))!;
     expect(other).toMatchObject({ maxConcurrency: null, desiredVersion: null, revokedAt: null });
@@ -244,10 +252,10 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
     const ours = await addHostTool({ name: "semgrep", description: "ours" });
     if (!ours.ok) throw new Error(ours.error);
     expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toEqual([ours.hostToolId]);
-    expect((await HarnessSettingsPage()).props.hostTools).toEqual([
+    expect((await HostToolsSettingsPage()).props.hostTools).toEqual([
       { id: ours.hostToolId, name: "semgrep", description: "ours" },
     ]);
-    const detail = await HarnessPage(params(a.harnessId));
+    const detail = await HarnessHostToolsPage(params(a.harnessId));
     expect((detail.props.hostTools as { hostToolId: string }[]).map((t) => t.hostToolId)).toEqual([
       ours.hostToolId,
     ]);

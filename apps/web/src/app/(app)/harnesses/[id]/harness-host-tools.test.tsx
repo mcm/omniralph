@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { HarnessRow } from "@/lib/harnesses/rows";
-import { HostToolsCard } from "./harness-detail-view";
+import { HostToolsSection } from "./harness-detail-view";
 import type { HostToolRow } from "./harness-host-tools";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
@@ -74,15 +74,15 @@ function cells(row: string): string[] {
   );
 }
 
-describe("HostToolsCard", () => {
+describe("HostToolsSection", () => {
   it("lists every catalog tool with its configured path, report and effective path", () => {
-    const html = renderToStaticMarkup(<HostToolsCard harness={harness} hostTools={tools} />);
+    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
     const byName = rows(html);
     expect(Object.keys(byName)).toEqual(tools.map((t) => t.name));
     // Tool, configured path (form), configured path exists, discovered path, effective path.
     expect(cells(byName["configured-exists"]!)).toEqual([
       "configured-exists Found where configured",
-      "[/opt/ce/bin/ce] Save",
+      "[/opt/ce/bin/ce]",
       "Exists",
       "/usr/bin/configured-exists",
       "/opt/ce/bin/ce",
@@ -90,35 +90,35 @@ describe("HostToolsCard", () => {
     // A configured path wins even when missing: no fallback to the discovered one.
     expect(cells(byName["configured-missing"]!)).toEqual([
       "configured-missing",
-      "[/opt/cm/bin/cm] Save",
+      "[/opt/cm/bin/cm]",
       "Missing",
       "/usr/bin/configured-missing",
       "Unavailable",
     ]);
     expect(cells(byName["configured-unchecked"]!)).toEqual([
       "configured-unchecked",
-      "[/opt/cu/bin/cu] Save",
+      "[/opt/cu/bin/cu]",
       "Not checked yet",
       "Not found on PATH",
       "Unavailable",
     ]);
     expect(cells(byName.discovered!)).toEqual([
       "discovered",
-      "[] Save",
+      "[]",
       "Not configured",
       "/usr/local/bin/discovered",
       "/usr/local/bin/discovered",
     ]);
     expect(cells(byName["not-found"]!)).toEqual([
       "not-found",
-      "[] Save",
+      "[]",
       "Not configured",
       "Not found on PATH",
       "Unavailable",
     ]);
     expect(cells(byName["never-reported"]!)).toEqual([
       "never-reported",
-      "[] Save",
+      "[]",
       "Not configured",
       "Not reported yet",
       "Unavailable",
@@ -126,7 +126,7 @@ describe("HostToolsCard", () => {
   });
 
   it("names each fact in the phone meta, discovered path included", () => {
-    const html = renderToStaticMarkup(<HostToolsCard harness={harness} hostTools={tools} />);
+    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
     const meta = (name: string) => {
       const dl = rows(html)[name]!.match(/<dl class="host-tool-facts">([\s\S]*?)<\/dl>/)![1]!;
       return dl
@@ -144,17 +144,25 @@ describe("HostToolsCard", () => {
     );
   });
 
-  it("shows the configured paths without forms on a revoked harness", () => {
+  it("saves every changed path with the section's one save", () => {
+    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
+    expect(html.match(/<form/g)).toHaveLength(1);
+    expect(html.match(/type="submit"/g)).toHaveLength(1);
+    expect(html).toContain("Save host tools");
+  });
+
+  it("shows the configured paths without inputs or a save on a revoked harness", () => {
     const html = renderToStaticMarkup(
-      <HostToolsCard harness={{ ...harness, revoked: true }} hostTools={tools} />,
+      <HostToolsSection harness={{ ...harness, revoked: true }} hostTools={tools} />,
     );
-    expect(html).not.toContain("<form");
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain('type="submit"');
     expect(cells(rows(html)["configured-exists"]!)[1]).toBe("/opt/ce/bin/ce");
     expect(cells(rows(html).discovered!)[1]).toBe("Not configured");
   });
 
   it("points to the catalog when there are no host tools", () => {
-    const html = renderToStaticMarkup(<HostToolsCard harness={harness} hostTools={[]} />);
+    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={[]} />);
     expect(html).toContain("No host tools");
     expect(html).toContain("Settings › Harness defaults");
   });

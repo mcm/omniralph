@@ -27,17 +27,21 @@ import {
   Input,
   Label,
   Muted,
-  NativeSelect,
   Stack,
 } from "@iamthemcmaster/ui";
-import { IconBan, IconCloudDownload, IconPin, IconPinnedOff, IconTrash } from "@tabler/icons-react";
+import { IconBan, IconCloudDownload, IconTrash } from "@tabler/icons-react";
 import { defaultPoolLimit } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
-import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { SettingsCard } from "@/components/settings-card";
+import { MultiSelect, type MultiSelectOption } from "@/components/pickers";
+import {
+  saveInOrder,
+  SettingsPanel,
+  SettingsSection,
+  SettingsSubsection,
+} from "@/components/settings-section";
 import { useAction } from "@/components/use-action";
 import {
   formatSettingValue,
@@ -53,10 +57,13 @@ import {
   pinRepository,
   requestHarnessUpdate,
   revokeHarness,
+  searchPinnableRepositories,
   setHarnessDesiredVersion,
+  setHostToolPath,
   unpinRepository,
   updateHarnessConfig,
   type HarnessConfigForm,
+  type PinnableRepository,
 } from "../actions";
 import {
   formatPoolLimits,
@@ -65,7 +72,6 @@ import {
   TaskTypeBadges,
   UpdateStatusBadge,
 } from "../harness-parts";
-import { ProviderIcon } from "../../repositories/repositories-view";
 import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit-log";
 import { HarnessHostTools, type HostToolRow } from "./harness-host-tools";
 import {
@@ -75,18 +81,19 @@ import {
   type InstallJobRow,
   type InstallableRow,
 } from "./harness-installables";
+import { HarnessNav } from "./harness-nav";
+import { HARNESS_TAB_LABELS, type HarnessTab } from "./harness-tabs";
 
 interface HarnessDetailViewProps {
+  tab: HarnessTab;
   harness: HarnessRow;
   now: number;
-  /** Connected repositories (for pinning). */
-  repositories: { id: string; provider: "github" | "gitlab"; fullPath: string }[];
   audit: AuditRow[];
   /** The installables the harness reported in its last heartbeat. */
   installables: InstallableRow[];
-  /** `install` jobs targeted at the harness in the last 24 hours, newest first. */
+  /** `install` jobs targeted at the harness in the last 24 hours, newest first (Installables tab). */
   installJobs: InstallJobRow[];
-  /** Every host tool of the organization's catalog with this harness's path and report, by name. */
+  /** Every host tool of the organization's catalog with this harness's path and report, by name (Host tools tab). */
   hostTools: HostToolRow[];
   /** Settings › Harness defaults version (described when it tracks npm's latest), used when the harness has no override. */
   globalDesiredVersion: string | null;
@@ -252,16 +259,111 @@ function InheritCheck({
   );
 }
 
-export function ConfigCard({ harness }: { harness: HarnessRow }) {
+const PROVIDER_LABELS: Record<PinnableRepository["provider"], string> = {
+  github: "GitHub",
+  gitlab: "GitLab",
+};
+
+function repositoryOption(repo: PinnableRepository): MultiSelectOption {
+  return { value: repo.id, label: repo.fullPath, hint: PROVIDER_LABELS[repo.provider] };
+}
+
+/** The repositories matching a search, for the pins picker; a failed search shows its error. */
+async function searchRepositoryOptions(query: string): Promise<MultiSelectOption[]> {
+  const result = await searchPinnableRepositories(query);
+  if (!result.ok) throw new Error(result.error);
+  return (result.repositories ?? []).map(repositoryOption);
+}
+
+const VERSION_SPEC: SettingSpec = {
+  key: "versionOverride",
+  label: "Desired version override",
+  format: (value) =>
+    value === "" ? "Not set (organization's version)" : formatSettingValue(value),
+};
+
+function pinSpec(labels: ReadonlyMap<string, string>): SettingSpec {
+  return {
+    key: "pinnedRepositoryIds",
+    label: "Pinned repositories",
+    format: (value) =>
+      Array.isArray(value) && value.length > 0
+        ? value.map((id) => labels.get(id) ?? id).join(", ")
+        : "None",
+  };
+}
+
+/** What pinning says about the repositories the harness serves. */
+function pinsDescription(count: number): string {
+  if (count === 0) {
+    return "None: this harness serves every repository that isn't pinned elsewhere. Jobs for a pinned repository only go to the harnesses it's pinned to, which pre-clone it.";
+  }
+  const repos = count === 1 ? "this repository" : `these ${count} repositories`;
+  return `Jobs for ${repos} only go to the harnesses they're pinned to; this harness pre-clones them.`;
+}
+
+/**
+ * The harness's central settings, saved together: concurrency and pool limits, task types,
+ * pinned repositories and its desired version override. They reach the harness with its next
+ * heartbeat.
+ */
+export function HarnessSettingsSection({
+  harness,
+  globalDesiredVersion,
+}: {
+  harness: HarnessRow;
+  globalDesiredVersion: string | null;
+}) {
+  const { pending, run } = useAction();
   const saved = React.useMemo(() => configDraft(harness), [harness]);
   const [draft, setDraft] = React.useState(saved);
+  const savedOverride = harness.desiredVersionOverride ?? "";
+  const [override, setOverride] = React.useState(savedOverride);
+  const savedPins = React.useMemo(
+    () => harness.pinnedRepositories.map((repo) => repo.id),
+    [harness.pinnedRepositories],
+  );
+  const [pins, setPins] = React.useState<string[]>(savedPins);
+  const pinnedOptions = React.useMemo(
+    () => harness.pinnedRepositories.map(repositoryOption),
+    [harness.pinnedRepositories],
+  );
+  // Repository paths by id, for the change list: the saved pins and every search result.
+  const [labels, setLabels] = React.useState<ReadonlyMap<string, string>>(
+    () => new Map(pinnedOptions.map((option) => [option.value, option.label])),
+  );
+  const search = React.useCallback(async (query: string) => {
+    const options = await searchRepositoryOptions(query);
+    setLabels((known) => {
+      const next = new Map(known);
+      for (const option of options) next.set(option.value, option.label);
+      return next;
+    });
+    return options;
+  }, []);
+
   const { defaults } = harness;
+  const readOnly = harness.revoked;
   const maxConcurrency = draft.inheritMaxConcurrency
     ? defaults.maxConcurrency
     : Number(draft.maxConcurrency);
   const slots = maxConcurrency >= 1 ? Math.floor(maxConcurrency) : 1;
   const taskTypes = draft.inheritTaskTypes ? defaults.acceptedTaskTypes : draft.taskTypes;
-  const specs = React.useMemo(() => configSpecs(defaults), [defaults]);
+  const specs = React.useMemo(
+    () => [...configSpecs(defaults), VERSION_SPEC, pinSpec(labels)],
+    [defaults, labels],
+  );
+  const values = (config: ConfigDraft, version: string, pinned: readonly string[]) => ({
+    ...configValues(config),
+    versionOverride: version.trim(),
+    // The saved pins come back in path order: compare them as a set.
+    pinnedRepositoryIds: [...pinned].sort(),
+  });
+  const changes = settingChanges(
+    specs,
+    values(saved, savedOverride, savedPins),
+    values(draft, override, pins),
+  );
 
   const toggle = (taskType: string, on: boolean) =>
     setDraft((d) => ({
@@ -269,146 +371,244 @@ export function ConfigCard({ harness }: { harness: HarnessRow }) {
       taskTypes: TASK_TYPES.filter((t) => (t === taskType ? on : d.taskTypes.includes(t))),
     }));
 
-  const prepare = () => ({
-    action: () => updateHarnessConfig(harness.id, configInput(draft)),
-    success: "Saved. The harness picks it up with its next heartbeat.",
-  });
+  const prepare = () => {
+    const changed = new Set(changes.map((change) => change.key));
+    const configChanged = [...changed].some(
+      (key) => key !== "versionOverride" && key !== "pinnedRepositoryIds",
+    );
+    const added = pins.filter((id) => !savedPins.includes(id));
+    const removed = savedPins.filter((id) => !pins.includes(id));
+    return {
+      action: () =>
+        saveInOrder([
+          ...(configChanged ? [() => updateHarnessConfig(harness.id, configInput(draft))] : []),
+          ...(changed.has("versionOverride")
+            ? [() => setHarnessDesiredVersion(harness.id, override)]
+            : []),
+          ...removed.map((id) => () => unpinRepository(harness.id, id)),
+          ...added.map((id) => () => pinRepository(harness.id, id)),
+        ]),
+      success:
+        added.length > 0
+          ? "Saved. The harness picks it up with its next heartbeat and pre-clones the repositories you pinned."
+          : "Saved. The harness picks it up with its next heartbeat.",
+    };
+  };
 
   return (
-    <SettingsCard
-      title="Configuration"
-      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Each uses the organization's default unless you set it here."
-      changes={settingChanges(specs, configValues(saved), configValues(draft))}
+    <SettingsSection
+      id="harness-settings"
+      title="Settings"
+      showTitle={false}
+      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Concurrency and task types use the organization's default unless you set them here."
+      changes={changes}
       prepare={prepare}
-      onDiscard={() => setDraft(saved)}
+      onDiscard={() => {
+        setDraft(saved);
+        setOverride(savedOverride);
+        setPins(savedPins);
+      }}
       confirm={{
         consequence:
           "The harness picks these up with its next heartbeat (within 20 seconds). Running jobs aren't cancelled; it takes new jobs by the new limits.",
       }}
-      readOnly={harness.revoked}
+      readOnly={readOnly}
     >
-      <div className="settings-group" role="group" aria-labelledby="max-concurrency-label">
-        <span id="max-concurrency-label" className="settings-group-label">
-          Max concurrency
-        </span>
-        <InheritCheck
-          id="max-concurrency-inherit"
-          checked={draft.inheritMaxConcurrency}
-          disabled={harness.revoked}
-          onChange={(inherit) =>
-            setDraft((d) => ({
-              ...d,
-              inheritMaxConcurrency: inherit,
-              maxConcurrency: inherit ? String(defaults.maxConcurrency) : d.maxConcurrency,
-            }))
-          }
-        />
-        <div className="settings-row">
-          <Field
-            label="Jobs at once"
-            htmlFor="max-concurrency"
-            description={
-              draft.inheritMaxConcurrency
-                ? `Jobs the harness runs at once: the organization's ${defaults.maxConcurrency}.`
-                : withDefault(
-                    "Jobs the harness runs at once (1–32).",
-                    `the organization's ${defaults.maxConcurrency}`,
-                  )
+      <SettingsSubsection
+        id="harness-concurrency"
+        title="Concurrency"
+        description="How many jobs the harness runs at once, and how many of them each pool may take."
+      >
+        <div className="settings-group" role="group" aria-labelledby="max-concurrency-label">
+          <span id="max-concurrency-label" className="settings-group-label">
+            Max concurrency
+          </span>
+          <InheritCheck
+            id="max-concurrency-inherit"
+            checked={draft.inheritMaxConcurrency}
+            disabled={readOnly}
+            onChange={(inherit) =>
+              setDraft((d) => ({
+                ...d,
+                inheritMaxConcurrency: inherit,
+                maxConcurrency: inherit ? String(defaults.maxConcurrency) : d.maxConcurrency,
+              }))
             }
-          >
-            <Input
-              id="max-concurrency"
-              type="number"
-              className="input-number"
-              min={1}
-              max={32}
-              required
-              disabled={harness.revoked || draft.inheritMaxConcurrency}
-              value={
-                draft.inheritMaxConcurrency ? String(defaults.maxConcurrency) : draft.maxConcurrency
-              }
-              onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
-            />
-          </Field>
-        </div>
-      </div>
-      <div className="settings-group" role="group" aria-labelledby="task-types-label">
-        <span id="task-types-label" className="settings-group-label">
-          Accepted task types
-        </span>
-        <Muted>
-          Which tasks this host may run. Housekeeping jobs (repository syncs) always run.
-          Organization default: {taskTypeList(defaults.acceptedTaskTypes)}.
-        </Muted>
-        <InheritCheck
-          id="task-types-inherit"
-          checked={draft.inheritTaskTypes}
-          disabled={harness.revoked}
-          onChange={(inherit) =>
-            setDraft((d) => ({
-              ...d,
-              inheritTaskTypes: inherit,
-              taskTypes: inherit ? defaults.acceptedTaskTypes : d.taskTypes,
-            }))
-          }
-        />
-        {TASK_TYPES.map((taskType) => (
-          <div key={taskType} className="settings-check settings-check-center">
-            <Checkbox
-              id={`task-type-${taskType}`}
-              checked={taskTypes.includes(taskType)}
-              disabled={harness.revoked || draft.inheritTaskTypes}
-              onCheckedChange={(checked) => toggle(taskType, checked === true)}
-            />
-            <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
-            <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
-          </div>
-        ))}
-      </div>
-      <div className="settings-group" role="group" aria-labelledby="pool-limits-label">
-        <span id="pool-limits-label" className="settings-group-label">
-          Concurrency per pool
-        </span>
-        <Muted>
-          Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
-          concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
-          <InlineCode>long</InlineCode> coding tasks. Leave it empty for the default: long leaves
-          one slot free for other work; short may use every slot. Lowering a limit doesn&apos;t
-          cancel running jobs; the harness takes no new ones until it is under the limit.
-        </Muted>
-        <div className="settings-row">
-          {POOLS.map((pool) => (
+          />
+          <div className="settings-row">
             <Field
-              key={pool}
-              label={`${pool[0]!.toUpperCase()}${pool.slice(1)} pool`}
-              htmlFor={`limit-${pool}`}
-              description={`Default: ${defaultPoolLimit(pool, slots)}. Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
+              label="Jobs at once"
+              htmlFor="max-concurrency"
+              description={
+                draft.inheritMaxConcurrency
+                  ? `Jobs the harness runs at once: the organization's ${defaults.maxConcurrency}.`
+                  : withDefault(
+                      "Jobs the harness runs at once (1–32).",
+                      `the organization's ${defaults.maxConcurrency}`,
+                    )
+              }
             >
               <Input
-                id={`limit-${pool}`}
+                id="max-concurrency"
                 type="number"
-                className="input-number-wide"
+                className="input-number"
                 min={1}
-                max={slots}
-                placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
-                disabled={harness.revoked}
-                value={draft.limits[pool] ?? ""}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, limits: { ...d.limits, [pool]: e.target.value } }))
+                max={32}
+                required
+                disabled={readOnly || draft.inheritMaxConcurrency}
+                value={
+                  draft.inheritMaxConcurrency
+                    ? String(defaults.maxConcurrency)
+                    : draft.maxConcurrency
                 }
+                onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
               />
             </Field>
+          </div>
+        </div>
+        <div className="settings-group" role="group" aria-labelledby="pool-limits-label">
+          <span id="pool-limits-label" className="settings-group-label">
+            Concurrency per pool
+          </span>
+          <Muted>
+            Caps how many of the harness&apos;s slots a pool&apos;s jobs may take (1 to the max
+            concurrency): <InlineCode>short</InlineCode> holds query and review tasks,{" "}
+            <InlineCode>long</InlineCode> coding tasks. Leave it empty for the default: long leaves
+            one slot free for other work; short may use every slot. Lowering a limit doesn&apos;t
+            cancel running jobs; the harness takes no new ones until it is under the limit.
+          </Muted>
+          <div className="settings-row">
+            {POOLS.map((pool) => (
+              <Field
+                key={pool}
+                label={`${pool[0]!.toUpperCase()}${pool.slice(1)} pool`}
+                htmlFor={`limit-${pool}`}
+                description={`Default: ${defaultPoolLimit(pool, slots)}. Effective now: ${harness.effectivePoolLimits[pool] ?? "unknown"}.`}
+              >
+                <Input
+                  id={`limit-${pool}`}
+                  type="number"
+                  className="input-number-wide"
+                  min={1}
+                  max={slots}
+                  placeholder={`Default (${defaultPoolLimit(pool, slots)})`}
+                  disabled={readOnly}
+                  value={draft.limits[pool] ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, limits: { ...d.limits, [pool]: e.target.value } }))
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+        </div>
+      </SettingsSubsection>
+
+      <SettingsSubsection
+        id="harness-task-types"
+        title="Task types"
+        description={`Which tasks this host may run. Housekeeping jobs (repository syncs) always run. Organization default: ${taskTypeList(defaults.acceptedTaskTypes)}.`}
+      >
+        <div className="settings-group" role="group" aria-label="Accepted task types">
+          <InheritCheck
+            id="task-types-inherit"
+            checked={draft.inheritTaskTypes}
+            disabled={readOnly}
+            onChange={(inherit) =>
+              setDraft((d) => ({
+                ...d,
+                inheritTaskTypes: inherit,
+                taskTypes: inherit ? defaults.acceptedTaskTypes : d.taskTypes,
+              }))
+            }
+          />
+          {TASK_TYPES.map((taskType) => (
+            <div key={taskType} className="settings-check settings-check-center">
+              <Checkbox
+                id={`task-type-${taskType}`}
+                checked={taskTypes.includes(taskType)}
+                disabled={readOnly || draft.inheritTaskTypes}
+                onCheckedChange={(checked) => toggle(taskType, checked === true)}
+              />
+              <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
+              <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
+            </div>
           ))}
         </div>
-      </div>
-      {harness.updateRequest && (
-        <Muted>
-          Update to {harness.updateRequest.version} requested{" "}
-          <Timestamp iso={harness.updateRequest.requestedAt} inline />; the harness starts it with
-          its next heartbeat.
-        </Muted>
-      )}
-    </SettingsCard>
+      </SettingsSubsection>
+
+      <SettingsSubsection
+        id="harness-pins"
+        title="Pinned repositories"
+        description="Pin repositories to keep their jobs on this harness, for instance one that holds their credentials or a warm clone."
+      >
+        <Field label="Pinned repositories" description={pinsDescription(pins.length)}>
+          <MultiSelect
+            id="pinned-repositories"
+            value={pins}
+            onChange={setPins}
+            onSearch={search}
+            selectedOptions={pinnedOptions}
+            disabled={readOnly}
+            placeholder="No pinned repositories"
+            searchPlaceholder="Search repositories…"
+            searchLabel="Search repositories"
+            staleMessage="It was disconnected. It's kept until you remove it."
+          />
+        </Field>
+      </SettingsSubsection>
+
+      <SettingsSubsection
+        id="harness-version"
+        title="Version"
+        description={
+          harness.selfUpdate === "supported"
+            ? "This harness runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
+            : "This harness can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."
+        }
+      >
+        <Field
+          label="Desired version override"
+          htmlFor="desired-version"
+          description={`Semver, e.g. 1.4.0. Leave it empty to use the organization's version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: not set.`}
+        >
+          <Input
+            id="desired-version"
+            placeholder={`Organization (${globalDesiredVersion ?? "not set"})`}
+            disabled={readOnly}
+            value={override}
+            onChange={(e) => setOverride(e.target.value)}
+            className="settings-mono input-number-wide"
+          />
+        </Field>
+        {harness.selfUpdate === "supported" && !readOnly && (
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pending}
+              title="Update to the saved desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
+              onClick={() =>
+                run(
+                  () => requestHarnessUpdate(harness.id),
+                  `${harness.name} will update with its next heartbeat.`,
+                )
+              }
+            >
+              <IconCloudDownload size={14} />
+              Update now
+            </Button>
+          </div>
+        )}
+        {harness.updateRequest && (
+          <Muted>
+            Update to {harness.updateRequest.version} requested{" "}
+            <Timestamp iso={harness.updateRequest.requestedAt} inline />; the harness starts it with
+            its next heartbeat.
+          </Muted>
+        )}
+      </SettingsSubsection>
+    </SettingsSection>
   );
 }
 
@@ -417,191 +617,9 @@ function ConfigSource({ override }: { override: boolean }) {
   return <span className="fact-secondary">{override ? "(override)" : "(organization)"}</span>;
 }
 
-// ── Version ──────────────────────────────────────────────────────────────────
-
-const VERSION_SPECS: SettingSpec[] = [
-  {
-    key: "override",
-    label: "Desired version override",
-    format: (value) =>
-      value === "" ? "Not set (organization's version)" : formatSettingValue(value),
-  },
-];
-
-function VersionCard({
-  harness,
-  globalDesiredVersion,
-}: {
-  harness: HarnessRow;
-  globalDesiredVersion: string | null;
-}) {
-  const { pending, run } = useAction();
-  const disabled = harness.revoked || pending;
-  const savedOverride = harness.desiredVersionOverride ?? "";
-  const [override, setOverride] = React.useState(savedOverride);
-
-  return (
-    <SettingsCard
-      title="Version"
-      description={
-        harness.selfUpdate === "supported"
-          ? "This harness runs under pm2 and updates itself: it stops taking jobs, lets running ones finish (up to 2 hours), installs the desired version and restarts. A version that doesn't stay up is rolled back and not tried again here unless you use Update now, which also updates to the latest on npm when no version is chosen."
-          : "This harness can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."
-      }
-      changes={settingChanges(
-        VERSION_SPECS,
-        { override: savedOverride.trim() },
-        { override: override.trim() },
-      )}
-      prepare={() => ({
-        action: () => setHarnessDesiredVersion(harness.id, override),
-        success: override.trim()
-          ? `${harness.name} will update to ${override.trim()} with its next heartbeat.`
-          : `${harness.name} follows the organization's version again.`,
-      })}
-      onDiscard={() => setOverride(savedOverride)}
-      readOnly={harness.revoked}
-      actions={
-        harness.selfUpdate === "supported" && (
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={disabled}
-            title="Update to the desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
-            onClick={() =>
-              run(
-                () => requestHarnessUpdate(harness.id),
-                `${harness.name} will update with its next heartbeat.`,
-              )
-            }
-          >
-            <IconCloudDownload size={14} />
-            Update now
-          </Button>
-        )
-      }
-    >
-      <Field
-        label="Desired version override"
-        htmlFor="desired-version"
-        description={`Semver, e.g. 1.4.0. Leave it empty to use the global version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: not set.`}
-      >
-        <Input
-          id="desired-version"
-          placeholder={`Global (${globalDesiredVersion ?? "not set"})`}
-          disabled={harness.revoked}
-          value={override}
-          onChange={(e) => setOverride(e.target.value)}
-          className="settings-mono input-number-wide"
-        />
-      </Field>
-    </SettingsCard>
-  );
-}
-
-// ── Pinned repositories ──────────────────────────────────────────────────────
-
-function PinsCard({
-  harness,
-  repositories,
-}: {
-  harness: HarnessRow;
-  repositories: HarnessDetailViewProps["repositories"];
-}) {
-  const { pending, run } = useAction();
-  const pinnedIds = new Set(harness.pinnedRepositories.map((r) => r.id));
-  const available = repositories.filter((r) => !pinnedIds.has(r.id));
-  const [selected, setSelected] = React.useState("");
-  const selectedRepo = available.find((r) => r.id === selected);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Pinned repositories</CardTitle>
-        <CardDescription>
-          Jobs for a pinned repository only go to the harnesses it&apos;s pinned to. Pinning makes
-          this harness pre-clone the repository.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="list-card-content">
-        {harness.pinnedRepositories.length === 0 ? (
-          <Muted>
-            No pinned repositories. This harness serves every repository that isn&apos;t pinned
-            elsewhere.
-          </Muted>
-        ) : (
-          <Stack gap={2}>
-            {harness.pinnedRepositories.map((repo) => (
-              <div key={repo.id} className="harness-raised-row">
-                <ProviderIcon provider={repo.provider} size={14} />
-                <a
-                  href={repo.webUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="harness-pinned-link"
-                >
-                  <MonoValue value={repo.fullPath} />
-                </a>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={pending || harness.revoked}
-                  aria-label={`Unpin ${repo.fullPath}`}
-                  onClick={() =>
-                    run(() => unpinRepository(harness.id, repo.id), `Unpinned ${repo.fullPath}`)
-                  }
-                >
-                  <IconPinnedOff size={14} />
-                  <span className="list-label-wide">Unpin</span>
-                </Button>
-              </div>
-            ))}
-          </Stack>
-        )}
-        {!harness.revoked && (
-          <div className="harness-inline-form harness-pin-form">
-            <NativeSelect
-              aria-label="Repository to pin"
-              value={selected}
-              disabled={pending || available.length === 0}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              <option value="">
-                {available.length === 0
-                  ? "No other connected repositories"
-                  : "Choose a repository…"}
-              </option>
-              {available.map((repo) => (
-                <option key={repo.id} value={repo.id}>
-                  {repo.fullPath} ({repo.provider === "github" ? "GitHub" : "GitLab"})
-                </option>
-              ))}
-            </NativeSelect>
-            <Button
-              variant="secondary"
-              disabled={pending || !selectedRepo}
-              onClick={() =>
-                selectedRepo &&
-                run(
-                  () => pinRepository(harness.id, selectedRepo.id),
-                  `Pinned ${selectedRepo.fullPath}; the harness will pre-clone it`,
-                  () => setSelected(""),
-                )
-              }
-            >
-              <IconPin size={14} />
-              Pin
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 // ── Installables ─────────────────────────────────────────────────────────────
 
-export function InstallablesCard({
+export function InstallablesSection({
   harness,
   installables,
   installJobs,
@@ -611,70 +629,127 @@ export function InstallablesCard({
   installJobs: InstallJobRow[];
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Installables</CardTitle>
-        <CardDescription>
-          npm packages that add commands, MCP servers and skills to this host, as reported in its
-          last heartbeat. Installing or updating one runs on the harness, which refuses packages its
-          local allowlist doesn&apos;t allow.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="list-card-content">
+    <SettingsPanel
+      id="harness-installables"
+      title="Installables"
+      showTitle={false}
+      description="npm packages that add commands, MCP servers and skills to this host, as reported in its last heartbeat. Installing or updating one runs on the harness, which refuses packages its local allowlist doesn't allow."
+    >
+      <SettingsSubsection
+        id="installables-installed"
+        className="settings-sub-wide"
+        title="Installed"
+      >
         <InstalledInstallables installables={installables} />
-        <Stack gap={2}>
-          <span className="fact-label">Installs in the last 24 hours</span>
-          <InstallJobs jobs={installJobs} />
-        </Stack>
-        {!harness.revoked && <InstallForm harnessId={harness.id} />}
-      </CardContent>
-    </Card>
+      </SettingsSubsection>
+      <SettingsSubsection
+        id="installables-jobs"
+        className="settings-sub-wide"
+        title="Installs in the last 24 hours"
+      >
+        <InstallJobs jobs={installJobs} />
+      </SettingsSubsection>
+      {!harness.revoked && (
+        <SettingsSubsection
+          id="installables-install"
+          title="Install or update"
+          description="Starts an install job on this harness; it picks it up with its next claim."
+        >
+          <InstallForm harnessId={harness.id} />
+        </SettingsSubsection>
+      )}
+    </SettingsPanel>
   );
 }
 
 // ── Host tools ───────────────────────────────────────────────────────────────
 
-export function HostToolsCard({
+function hostToolPaths(hostTools: readonly HostToolRow[]): Record<string, string> {
+  return Object.fromEntries(hostTools.map((tool) => [tool.hostToolId, tool.configuredPath ?? ""]));
+}
+
+const pathFormat = (value: SettingValue) =>
+  value === "" ? "Discover on PATH" : formatSettingValue(value);
+
+/** The configured paths of the harness's host tools, saved together. */
+export function HostToolsSection({
   harness,
   hostTools,
 }: {
   harness: HarnessRow;
   hostTools: HostToolRow[];
 }) {
+  const saved = React.useMemo(() => hostToolPaths(hostTools), [hostTools]);
+  const [paths, setPaths] = React.useState(saved);
+  const specs = React.useMemo(
+    () =>
+      hostTools.map((tool): SettingSpec => ({
+        key: tool.hostToolId,
+        label: `${tool.name} path`,
+        format: pathFormat,
+      })),
+    [hostTools],
+  );
+  const trimmed = (all: Record<string, string>) =>
+    Object.fromEntries(Object.entries(all).map(([id, path]) => [id, path.trim()]));
+  const changes = settingChanges(specs, trimmed(saved), trimmed(paths));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Host tools</CardTitle>
-        <CardDescription>
+    <SettingsSection
+      id="harness-host-tools"
+      title="Host tools"
+      showTitle={false}
+      description={
+        <>
           Software installed on this host by hand. A configured path wins over the one the harness
           discovers on its <InlineCode>PATH</InlineCode>, even when it doesn&apos;t exist: the tool
           is then unavailable. Leave it blank to use the discovered one. The harness gets a new path
           with its next heartbeat and reports on it with the one after; it refuses paths its local{" "}
           <InlineCode>blockedExecPaths</InlineCode> covers.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <HarnessHostTools harnessId={harness.id} revoked={harness.revoked} hostTools={hostTools} />
-      </CardContent>
-    </Card>
+        </>
+      }
+      changes={changes}
+      prepare={() => ({
+        action: () =>
+          saveInOrder(
+            changes.map(
+              (change) => () => setHostToolPath(harness.id, change.key, paths[change.key] ?? ""),
+            ),
+          ),
+        success: "Saved. The harness gets the paths with its next heartbeat.",
+      })}
+      onDiscard={() => setPaths(saved)}
+      readOnly={harness.revoked || hostTools.length === 0}
+    >
+      <SettingsSubsection id="host-tools-paths" className="settings-sub-wide" title="Paths">
+        <HarnessHostTools
+          revoked={harness.revoked}
+          hostTools={hostTools}
+          paths={paths}
+          onPathChange={(id, path) => setPaths((all) => ({ ...all, [id]: path }))}
+        />
+      </SettingsSubsection>
+    </SettingsSection>
   );
 }
 
-// ── Revoke ────────────────────────────────────────────────────────────────────
+// ── Danger zone ───────────────────────────────────────────────────────────────
 
-function RevokeCard({ harness }: { harness: HarnessRow }) {
+function RevokeSubsection({ harness }: { harness: HarnessRow }) {
   const { pending, run } = useAction();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Revoke</CardTitle>
-        <CardDescription>
+    <SettingsSubsection
+      id="harness-revoke"
+      title="Revoke"
+      description={
+        <>
           Revoking is immediate: the harness&apos;s access, refresh and job tokens stop working on
           its next request, its running jobs are redelivered to other harnesses and its pins are
           removed. To use the host again, enroll it as a new harness.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </>
+      }
+    >
+      <div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="danger" disabled={pending}>
@@ -703,26 +778,21 @@ function RevokeCard({ harness }: { harness: HarnessRow }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsSubsection>
   );
 }
 
-// ── Delete ────────────────────────────────────────────────────────────────────
-
-function DeleteCard({ harness }: { harness: HarnessRow }) {
+function DeleteSubsection({ harness }: { harness: HarnessRow }) {
   const router = useRouter();
   const { pending, run } = useAction();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Delete</CardTitle>
-        <CardDescription>
-          Deleting removes the harness from the Harnesses pages for good
-          {harness.revoked ? "." : ", revoking it first."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SettingsSubsection
+      id="harness-delete"
+      title="Delete"
+      description={`Deleting removes the harness from the Harnesses pages for good${harness.revoked ? "." : ", revoking it first."}`}
+    >
+      <div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="danger" disabled={pending}>
@@ -759,17 +829,31 @@ function DeleteCard({ harness }: { harness: HarnessRow }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsSubsection>
   );
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+function DangerZone({ harness }: { harness: HarnessRow }) {
+  return (
+    <SettingsPanel
+      id="harness-danger"
+      title="Danger zone"
+      tone="danger"
+      description="Revoking and deleting can't be undone."
+    >
+      {!harness.revoked && <RevokeSubsection harness={harness} />}
+      <DeleteSubsection harness={harness} />
+    </SettingsPanel>
+  );
+}
+
 export function HarnessDetailView({
+  tab,
   harness,
   now,
-  repositories,
   audit,
   installables,
   installJobs,
@@ -779,10 +863,15 @@ export function HarnessDetailView({
   return (
     <>
       <AppHeader
-        breadcrumbs={[{ label: "Harnesses", href: "/harnesses" }, { label: harness.name }]}
+        breadcrumbs={[
+          { label: "Harnesses", href: "/harnesses" },
+          { label: harness.name },
+          { label: HARNESS_TAB_LABELS[tab] },
+        ]}
       />
       <main className="detail-main">
         <PageHeader title={harness.name} meta={<HarnessStatusBadge harness={harness} />} />
+        <HarnessNav harnessId={harness.id} current={tab} />
 
         <TokenTheftAlert audit={audit} />
         {harness.revoked && harness.revokedAt && (
@@ -795,104 +884,116 @@ export function HarnessDetailView({
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="harness-status-grid">
-              <Fact label="Last heartbeat">
-                {harness.lastHeartbeatAt ? (
-                  <Timestamp iso={harness.lastHeartbeatAt} now={now} inline />
-                ) : (
-                  "Never"
-                )}
-              </Fact>
-              <Fact label="Version">
-                {harness.version ? (
-                  <span className="text-numeric">{harness.version}</span>
-                ) : (
-                  "Unknown"
-                )}
-              </Fact>
-              <Fact label="Desired version">
-                {harness.desiredVersion ? (
-                  <>
-                    <span className="text-numeric">{harness.desiredVersion}</span>{" "}
-                    <span className="fact-secondary">
-                      {harness.desiredVersionOverride
-                        ? "(override)"
-                        : harness.tracksLatest
-                          ? "(latest on npm)"
-                          : "(organization)"}
-                    </span>
-                  </>
-                ) : harness.tracksLatest ? (
-                  "Latest on npm (not read yet)"
-                ) : (
-                  "Not set"
-                )}
-              </Fact>
-              <Fact label="Update status">
-                <Stack gap={1}>
-                  <div>
-                    <UpdateStatusBadge harness={harness} />
+        <div className="settings-sections">
+          {tab === "overview" && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle as="h2">Status</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="harness-status-grid">
+                    <Fact label="Last heartbeat">
+                      {harness.lastHeartbeatAt ? (
+                        <Timestamp iso={harness.lastHeartbeatAt} now={now} inline />
+                      ) : (
+                        "Never"
+                      )}
+                    </Fact>
+                    <Fact label="Version">
+                      {harness.version ? (
+                        <span className="text-numeric">{harness.version}</span>
+                      ) : (
+                        "Unknown"
+                      )}
+                    </Fact>
+                    <Fact label="Desired version">
+                      {harness.desiredVersion ? (
+                        <>
+                          <span className="text-numeric">{harness.desiredVersion}</span>{" "}
+                          <span className="fact-secondary">
+                            {harness.desiredVersionOverride
+                              ? "(override)"
+                              : harness.tracksLatest
+                                ? "(latest on npm)"
+                                : "(organization)"}
+                          </span>
+                        </>
+                      ) : harness.tracksLatest ? (
+                        "Latest on npm (not read yet)"
+                      ) : (
+                        "Not set"
+                      )}
+                    </Fact>
+                    <Fact label="Update status">
+                      <Stack gap={1}>
+                        <div>
+                          <UpdateStatusBadge harness={harness} />
+                        </div>
+                        {harness.update?.error && <Muted>{harness.update.error}</Muted>}
+                      </Stack>
+                    </Fact>
+                    <Fact label="Failed versions">
+                      {harness.failedVersions.length > 0 ? (
+                        <span className="text-numeric">{harness.failedVersions.join(", ")}</span>
+                      ) : (
+                        "None"
+                      )}
+                    </Fact>
+                    <Fact label="Accepted task types">
+                      <Stack gap={1}>
+                        <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
+                        <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
+                      </Stack>
+                    </Fact>
+                    <Fact label="Running jobs" wide>
+                      <Stack gap={1}>
+                        <span>
+                          {harness.runningJobs.length} / {harness.maxConcurrency}{" "}
+                          <ConfigSource override={harness.overrides.maxConcurrency !== null} />
+                        </span>
+                        {harness.runningJobs.map((job) => (
+                          <JobTargetLink key={job.id} job={job} />
+                        ))}
+                      </Stack>
+                    </Fact>
+                    <Fact label="Concurrency per pool">
+                      {formatPoolLimits(harness.effectivePoolLimits)}
+                    </Fact>
+                    <Fact label="Enrolled">
+                      <Timestamp iso={harness.createdAt} inline />
+                    </Fact>
                   </div>
-                  {harness.update?.error && <Muted>{harness.update.error}</Muted>}
-                </Stack>
-              </Fact>
-              <Fact label="Failed versions">
-                {harness.failedVersions.length > 0 ? (
-                  <span className="text-numeric">{harness.failedVersions.join(", ")}</span>
-                ) : (
-                  "None"
-                )}
-              </Fact>
-              <Fact label="Accepted task types">
-                <Stack gap={1}>
-                  <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
-                  <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
-                </Stack>
-              </Fact>
-              <Fact label="Running jobs" wide>
-                <Stack gap={1}>
-                  <span>
-                    {harness.runningJobs.length} / {harness.maxConcurrency}{" "}
-                    <ConfigSource override={harness.overrides.maxConcurrency !== null} />
-                  </span>
-                  {harness.runningJobs.map((job) => (
-                    <JobTargetLink key={job.id} job={job} />
-                  ))}
-                </Stack>
-              </Fact>
-              <Fact label="Concurrency per pool">
-                {formatPoolLimits(harness.effectivePoolLimits)}
-              </Fact>
-              <Fact label="Enrolled">
-                <Timestamp iso={harness.createdAt} inline />
-              </Fact>
-            </div>
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
 
-        <ConfigCard harness={harness} />
-        <VersionCard harness={harness} globalDesiredVersion={globalDesiredVersion} />
-        <PinsCard harness={harness} repositories={repositories} />
-        <InstallablesCard harness={harness} installables={installables} installJobs={installJobs} />
-        <HostToolsCard harness={harness} hostTools={hostTools} />
+              <Card>
+                <CardHeader>
+                  <CardTitle as="h2">Audit log</CardTitle>
+                  <CardDescription>
+                    The 50 most recent security events for this harness.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <HarnessAuditLog audit={audit} />
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Audit log</CardTitle>
-            <CardDescription>The 50 most recent security events for this harness.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <HarnessAuditLog audit={audit} />
-          </CardContent>
-        </Card>
-
-        {!harness.revoked && <RevokeCard harness={harness} />}
-        <DeleteCard harness={harness} />
+              <DangerZone harness={harness} />
+            </>
+          )}
+          {tab === "settings" && (
+            <HarnessSettingsSection harness={harness} globalDesiredVersion={globalDesiredVersion} />
+          )}
+          {tab === "installables" && (
+            <InstallablesSection
+              harness={harness}
+              installables={installables}
+              installJobs={installJobs}
+            />
+          )}
+          {tab === "host-tools" && <HostToolsSection harness={harness} hostTools={hostTools} />}
+        </div>
       </main>
     </>
   );

@@ -27,6 +27,7 @@ import {
 import { IconPlus, IconTool, IconTrash } from "@tabler/icons-react";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
+import { SettingsSubsection } from "@/components/settings-section";
 import { useAction } from "@/components/use-action";
 import { addHostTool, removeHostTool } from "./actions";
 import { EmptyValue } from "@/components/empty-value";
@@ -133,10 +134,27 @@ function AddHostToolForm() {
   );
 }
 
-/** The organization's host tools, by name, with a form to add one. */
+/** The organization's host tools, by name, then a form to add one: a section's two subsections. */
 export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[] }) {
   return (
-    <Stack>
+    <>
+      <SettingsSubsection id="host-tools-catalog" className="settings-sub-wide" title="Catalog">
+        <HostToolsTable hostTools={hostTools} />
+      </SettingsSubsection>
+      <SettingsSubsection
+        id="host-tools-add"
+        title="Add a host tool"
+        description="Harnesses report where they find it with their next heartbeats."
+      >
+        <AddHostToolForm />
+      </SettingsSubsection>
+    </>
+  );
+}
+
+function HostToolsTable({ hostTools }: { hostTools: HostToolCatalogRow[] }) {
+  return (
+    <>
       {hostTools.length === 0 ? (
         <Empty
           icon={<IconTool size={24} />}
@@ -179,7 +197,6 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
           </TableBody>
         </Table>
       )}
-      <AddHostToolForm />
-    </Stack>
+    </>
   );
 }

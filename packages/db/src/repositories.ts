@@ -3,7 +3,19 @@
  * control panel's Repositories page. Connection credentials are JSON encrypted
  * with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, count, eq, inArray, isNull, max, or, sql, type AnyColumn } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  max,
+  or,
+  sql,
+  type AnyColumn,
+} from "drizzle-orm";
 import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
@@ -525,11 +537,16 @@ const overviewColumns = {
   profileName: reviewProfiles.name,
 };
 
-function connectedIn(organizationId: string) {
-  return and(eq(repositories.organizationId, organizationId), isNull(repositories.disconnectedAt));
+function connectedIn(organizationId: string, search?: string) {
+  const pattern = search?.trim() ? `%${search.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
+  return and(
+    eq(repositories.organizationId, organizationId),
+    isNull(repositories.disconnectedAt),
+    pattern === null ? undefined : ilike(repositories.fullPath, pattern),
+  );
 }
 
-function overviewQuery(db: Database, organizationId: string) {
+function overviewQuery(db: Database, organizationId: string, search?: string) {
   return db
     .select(overviewColumns)
     .from(repositories)
@@ -541,7 +558,7 @@ function overviewQuery(db: Database, organizationId: string) {
         eq(reviewProfiles.id, repositories.profileId),
       ),
     )
-    .where(connectedIn(organizationId))
+    .where(connectedIn(organizationId, search))
     .orderBy(asc(repositories.fullPath), asc(repositories.id))
     .$dynamic();
 }
@@ -610,18 +627,22 @@ export async function listRepositoryOverview(
 
 /**
  * One page of `listRepositoryOverview`, ordered by path. A page past the last
- * one comes back empty (with the real `total`).
+ * one comes back empty (with the real `total`). `search` keeps the repositories
+ * whose path contains it, ignoring case.
  */
 export async function listRepositoryOverviewPage(
   db: Database,
   organizationId: string,
-  options: { page?: number; pageSize?: number } = {},
+  options: { page?: number; pageSize?: number; search?: string } = {},
 ): Promise<RepositoryOverviewPage> {
   const pageSize = Math.max(1, Math.floor(options.pageSize ?? REPOSITORY_PAGE_SIZE));
   const page = Math.max(1, Math.floor(options.page ?? 1));
   const [[totalRow], rows] = await Promise.all([
-    db.select({ total: count() }).from(repositories).where(connectedIn(organizationId)),
-    overviewQuery(db, organizationId)
+    db
+      .select({ total: count() })
+      .from(repositories)
+      .where(connectedIn(organizationId, options.search)),
+    overviewQuery(db, organizationId, options.search)
       .limit(pageSize)
       .offset((page - 1) * pageSize),
   ]);

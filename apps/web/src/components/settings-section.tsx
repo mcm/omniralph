@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button, Card, cn, focusFirstInvalid, Muted } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconCheck, IconDeviceFloppy } from "@tabler/icons-react";
+import type { ActionResult } from "@/lib/action-result";
 import type { SettingChange } from "@/lib/settings/changes";
 import {
   ConfirmChangesDialog,
@@ -35,6 +36,20 @@ interface SettingsSectionProps {
   children: React.ReactNode;
 }
 
+/**
+ * A section save made of several actions (e.g. a harness's config, then its pins): runs them in
+ * order and stops at the first that fails, whose result it returns.
+ */
+export async function saveInOrder(
+  saves: readonly (() => Promise<ActionResult>)[],
+): Promise<ActionResult> {
+  for (const save of saves) {
+    const result = await save();
+    if (!result.ok) return result;
+  }
+  return { ok: true };
+}
+
 /** The save footer's status: what a save would do, or why it can't yet. */
 export function sectionStatus({
   changes,
@@ -46,7 +61,8 @@ export function sectionStatus({
   saved: boolean;
 }): string {
   if (changes === 0) return saved ? "Saved" : "No unsaved changes";
-  if (invalid > 0) return invalid === 1 ? "1 field needs attention" : `${invalid} fields need attention`;
+  if (invalid > 0)
+    return invalid === 1 ? "1 field needs attention" : `${invalid} fields need attention`;
   return changes === 1 ? "1 unsaved change" : `${changes} unsaved changes`;
 }
 
@@ -184,6 +200,35 @@ export function SettingsSection({
           }}
         />
       )}
+    </Card>
+  );
+}
+
+/**
+ * A section whose content acts at once instead of being saved, such as a list with add and
+ * delete buttons, or the danger zone's revoke: the same card and header as `SettingsSection`,
+ * without a form or save footer, so it can hold forms of its own.
+ */
+export function SettingsPanel({
+  id,
+  title,
+  showTitle = true,
+  description,
+  tone = "default",
+  children,
+}: Pick<SettingsSectionProps, "id" | "title" | "showTitle" | "description" | "tone" | "children">) {
+  const titleId = React.useId();
+  return (
+    <Card id={id} className="settings-section" data-tone={tone} interactive={false} asChild>
+      <section aria-labelledby={titleId}>
+        <header className="settings-section-header" data-compact={showTitle ? undefined : ""}>
+          <h2 id={titleId} className={showTitle ? "settings-section-title" : "sr-only"}>
+            {title}
+          </h2>
+          <Muted className="settings-section-description">{description}</Muted>
+        </header>
+        <div className="settings-section-body">{children}</div>
+      </section>
     </Card>
   );
 }

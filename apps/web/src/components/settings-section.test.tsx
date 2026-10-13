@@ -6,14 +6,18 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { SettingChange } from "@/lib/settings/changes";
 import type { SettingsSave } from "./settings-card";
-import { sectionStatus, SettingsSection, SettingsSubsection } from "./settings-section";
+import {
+  saveInOrder,
+  sectionStatus,
+  SettingsPanel,
+  SettingsSection,
+  SettingsSubsection,
+} from "./settings-section";
 
-const run = vi.fn(
-  (action: () => unknown, _success: string, onSuccess?: () => void) => {
-    action();
-    onSuccess?.();
-  },
-);
+const run = vi.fn((action: () => unknown, _success: string, onSuccess?: () => void) => {
+  action();
+  onSuccess?.();
+});
 vi.mock("./use-action", () => ({ useAction: () => ({ pending: false, run }) }));
 
 const CHANGE: SettingChange = { key: "model", label: "Model", from: "opus", to: "sonnet" };
@@ -60,9 +64,7 @@ describe("sectionStatus", () => {
     expect(sectionStatus({ changes: 1, invalid: 0, saved: false })).toBe("1 unsaved change");
     expect(sectionStatus({ changes: 3, invalid: 0, saved: false })).toBe("3 unsaved changes");
     expect(sectionStatus({ changes: 3, invalid: 1, saved: false })).toBe("1 field needs attention");
-    expect(sectionStatus({ changes: 3, invalid: 2, saved: false })).toBe(
-      "2 fields need attention",
-    );
+    expect(sectionStatus({ changes: 3, invalid: 2, saved: false })).toBe("2 fields need attention");
   });
 });
 
@@ -122,5 +124,42 @@ describe("SettingsSection", () => {
   it("has no save footer when read-only", () => {
     render(<Section changes={[CHANGE]} readOnly />);
     expect(screen.queryByRole("button", { name: "Save coding" })).toBeNull();
+  });
+});
+
+describe("SettingsPanel", () => {
+  it("is a named section without a form or save, so it can hold forms of its own", () => {
+    const { container } = render(
+      <SettingsPanel id="danger" title="Danger zone" tone="danger" description="Can't be undone.">
+        <SettingsSubsection id="revoke" title="Revoke">
+          <form aria-label="Revoke">
+            <button type="submit">Revoke</button>
+          </form>
+        </SettingsSubsection>
+      </SettingsPanel>,
+    );
+    expect(screen.getByRole("region", { name: "Danger zone" })).toHaveProperty(
+      "dataset.tone",
+      "danger",
+    );
+    expect(container.querySelectorAll("form")).toHaveLength(1);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+describe("saveInOrder", () => {
+  it("runs the saves in order and stops at the first failure", async () => {
+    const calls: string[] = [];
+    const save = (name: string, ok: boolean) => async () => {
+      calls.push(name);
+      return ok ? ({ ok: true } as const) : ({ ok: false, error: `${name} failed` } as const);
+    };
+    expect(await saveInOrder([save("a", true), save("b", true)])).toEqual({ ok: true });
+    expect(await saveInOrder([save("c", false), save("d", true)])).toEqual({
+      ok: false,
+      error: "c failed",
+    });
+    expect(calls).toEqual(["a", "b", "c"]);
+    expect(await saveInOrder([])).toEqual({ ok: true });
   });
 });
