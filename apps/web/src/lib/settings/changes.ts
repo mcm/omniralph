@@ -23,15 +23,21 @@ export interface SettingChange {
   to: string;
 }
 
-/** A value as the change list shows it: On/Off, "None" for empty, lists comma-separated. */
+/**
+ * How the panel words a setting with no value, in descriptions ("Default: not set.") and in the
+ * change list ("Not set"). One wording everywhere, never "none", "empty" or "blank".
+ */
+export const NOT_SET = "not set";
+
+/** A value as the change list shows it: On/Off, "Not set" for empty, lists comma-separated. */
 export function formatSettingValue(value: SettingValue): string {
-  if (value === null) return "None";
+  if (value === null) return "Not set";
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (typeof value === "number") {
     return Number.isFinite(value) ? value.toLocaleString("en-US") : "Not a number";
   }
-  if (typeof value === "string") return value.trim() === "" ? "None" : value;
-  return value.length === 0 ? "None" : value.join(", ");
+  if (typeof value === "string") return value.trim() === "" ? "Not set" : value;
+  return value.length === 0 ? "Not set" : value.join(", ");
 }
 
 /** Whether two setting values are the same (lists element by element, in order). */
@@ -73,7 +79,7 @@ export function withoutFieldErrors(
   );
 }
 
-/** A setting's description followed by its default: "… Default: 3." */
-export function withDefault(description: string, defaultValue: string): string {
+/** A setting's description followed by its default: "… Default: 3." (`NOT_SET` when omitted). */
+export function withDefault(description: string, defaultValue: string = NOT_SET): string {
   return `${description} Default: ${defaultValue}.`;
 }

@@ -142,6 +142,30 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     ],
     viewportOnly: true,
   },
+  {
+    // Two dirty cards: the bar at the bottom of the viewport counts them and links to each.
+    name: "repository-settings-unsaved",
+    path: `/repositories/${ids.repositories.controlPanel}/settings`,
+    page: "(app)/repositories/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
+      { action: "fill", selector: "#ralph-fallback-model", value: "sonnet" },
+    ],
+    viewportOnly: true,
+  },
+  {
+    // Following an in-app link with unsaved changes asks first.
+    name: "repository-settings-leave",
+    path: `/repositories/${ids.repositories.controlPanel}/settings`,
+    page: "(app)/repositories/[id]/settings/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#ralph-fallback-model", value: "sonnet" },
+      { action: "click", selector: 'a[href="/settings/profiles"]' },
+    ],
+    viewportOnly: true,
+  },
   { name: "reviews", path: "/reviews", page: "(app)/reviews/page.tsx", auth: "signed-in" },
   {
     name: "review",

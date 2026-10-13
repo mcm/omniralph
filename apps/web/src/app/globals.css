@@ -462,8 +462,49 @@ body {
   outline-offset: -1px;
 }
 
+/* Unsaved-changes bar (components/unsaved-changes.tsx): sticks to the bottom of the main
+   column while any card on the page has unsaved changes, linking to each. */
+.unsaved-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-6);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-default);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-sm);
+}
+.unsaved-bar-icon {
+  flex-shrink: 0;
+  color: var(--warning-fg);
+}
+.unsaved-bar-summary {
+  font-weight: 600;
+}
+.unsaved-bar-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 767px) {
+  .unsaved-bar {
+    padding-inline: var(--space-4);
+  }
+}
+
 /* Settings cards (components/settings-card.tsx): one save per card, and the "old → new" list
    its confirmation shows. */
+.settings-card {
+  /* Clear the sticky app header when the unsaved-changes bar links here. */
+  scroll-margin-top: calc(52px + var(--space-4));
+}
 .settings-card-fieldset {
   margin: 0;
   padding: 0;

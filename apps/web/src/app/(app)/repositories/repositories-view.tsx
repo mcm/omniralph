@@ -196,7 +196,7 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
                   required
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="https://gitlab.com"
+                  placeholder="e.g. https://gitlab.com"
                 />
               </Field>
               <Field label="Access token" htmlFor="gitlab-token" required>

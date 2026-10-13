@@ -174,7 +174,7 @@ export function repositorySpecs(names: {
       label: "Pinned harnesses",
       format: (value) =>
         Array.isArray(value) && value.length === 0
-          ? "None (any harness)"
+          ? "Not set (any harness)"
           : byName(names.harnesses)(value),
     },
   };
@@ -336,7 +336,7 @@ export function ralphSpecs(
     requestTaskId: byName(taskNames),
     verifyCommands: lines,
     allowedTools: (value) =>
-      Array.isArray(value) && value.length === 0 ? "None (Ralph's whole policy)" : lines(value),
+      Array.isArray(value) && value.length === 0 ? "Not set (Ralph's whole policy)" : lines(value),
     disallowedTools: lines,
   };
   return Object.fromEntries(

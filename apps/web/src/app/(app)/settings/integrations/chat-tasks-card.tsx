@@ -206,7 +206,9 @@ function ConnectionChannels({
               <Input
                 id={`${prefix}-channel`}
                 autoComplete="off"
-                placeholder={connection.platform === "slack" ? "C0123ABCD" : "123456789012345678"}
+                placeholder={
+                  connection.platform === "slack" ? "e.g. C0123ABCD" : "e.g. 123456789012345678"
+                }
                 value={channel}
                 disabled={pending}
                 onChange={(e) => setChannel(e.target.value)}

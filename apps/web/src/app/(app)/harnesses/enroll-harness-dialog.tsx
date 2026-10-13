@@ -159,7 +159,7 @@ export function EnrollHarnessDialog() {
                   maxLength={100}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="coder-review-1"
+                  placeholder="e.g. coder-review-1"
                 />
               </Field>
             </DialogBody>

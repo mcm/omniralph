@@ -51,13 +51,19 @@ describe("SettingChangeList", () => {
       <SettingChangeList
         changes={[
           change,
-          { key: "verifyCommands", label: "Verify commands", from: "None", to: "pnpm test" },
+          { key: "verifyCommands", label: "Verify commands", from: "Not set", to: "pnpm test" },
         ]}
       />,
     );
     expect(html).toContain('<dt class="settings-change-label">Model</dt>');
     expect(html).toMatch(/From <\/span>opus<\/span>.*→.*to <\/span>sonnet<\/span>/);
     expect(html).toContain("Verify commands");
-    expect(html).toMatch(/From <\/span>None<\/span>.*to <\/span>pnpm test<\/span>/);
+    expect(html).toMatch(/From <\/span>Not set<\/span>.*to <\/span>pnpm test<\/span>/);
+  });
+});
+
+describe("SettingsCard anchor", () => {
+  it("gives the card an id the unsaved-changes bar links to", () => {
+    expect(render([change])).toContain('id="settings-ralph-prompt-and-model"');
   });
 });

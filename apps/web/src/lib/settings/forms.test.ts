@@ -91,7 +91,7 @@ describe("Ralph change lists", () => {
       ),
     ).toEqual([
       { key: "model", label: "Model", from: "opus", to: "claude-opus-5-5" },
-      { key: "fallbackModel", label: "Fallback model", from: "sonnet", to: "None" },
+      { key: "fallbackModel", label: "Fallback model", from: "sonnet", to: "Not set" },
     ]);
   });
 
@@ -178,7 +178,7 @@ describe("repository change lists", () => {
         key: "pinnedHarnessIds",
         label: "Pinned harnesses",
         from: "build-01",
-        to: "None (any harness)",
+        to: "Not set (any harness)",
       },
     ]);
   });

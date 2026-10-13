@@ -269,7 +269,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                   <Field
                     label="Fallback model"
                     htmlFor="agent-fallback-model"
-                    description="Used when the model is overloaded. Empty for none."
+                    description="Used when the model is overloaded. Leave it empty for no fallback. Default: not set."
                     error={errors.fallbackModel}
                   >
                     <Input

@@ -26,7 +26,7 @@ const VERSION_SPECS: SettingSpec[] = [
   {
     key: "version",
     label: "Desired version",
-    format: (value) => (value === "" ? "Not set" : formatSettingValue(value)),
+    format: formatSettingValue,
   },
 ];
 
@@ -51,7 +51,7 @@ export function HarnessSettingsView({
   const [version, setVersion] = React.useState(desiredVersion ?? "");
 
   const changed = updatedAt ? ` Last changed ${formatDateTime(updatedAt)}.` : "";
-  let hint = `Semver, e.g. 1.4.0, or latest to follow the latest on npm. Leave blank to not manage versions. Default: blank.${changed}`;
+  let hint = `Semver, e.g. 1.4.0, or latest to follow the latest on npm. Leave it empty to not manage versions. Default: not set.${changed}`;
   if (latest) {
     const read = latest.checkedAt ? ` (read ${formatDateTime(latest.checkedAt)})` : "";
     hint = latest.error
@@ -123,7 +123,7 @@ export function HarnessSettingsView({
           <Field label="Desired version" htmlFor="desired-version" description={hint}>
             <Input
               id="desired-version"
-              placeholder="Not set"
+              placeholder="e.g. 1.4.0"
               value={version}
               onChange={(e) => setVersion(e.target.value)}
               className="settings-mono"
