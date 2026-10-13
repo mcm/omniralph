@@ -971,6 +971,18 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect((await getRun(db, run.id))?.preparation?.request?.headSha).toBe(sha(8));
     });
 
+    it("runs the preparation on the agent of the lane that holds the branch", async () => {
+      const { run } = await manualEpic();
+      await work(run.id, { commitSha: sha(7) });
+      // The run's harness is only a mirror: the job follows the lane's.
+      await db.update(ralphRuns).set({ harnessId: null }).where(eq(ralphRuns.id, run.id));
+      await reply(run, "Run it");
+      expect(await activeJob(run.id)).toMatchObject({
+        type: "worktree.exec",
+        targetHarnessId: agentA,
+      });
+    });
+
     it("runs the preparation as worktree.exec on the tasks coding path too", async () => {
       const codingPath = (path: "legacy" | "tasks") =>
         updateRepositoryRalphSettings(db, repoId, {

@@ -530,7 +530,7 @@ to the next attempt.
 Every branch worktree gets a `pre-push` hook that rejects pushes to any branch but its own (a
 guardrail against mistakes, not a security boundary).
 
-After the run's PR/MR merges, a `worktree.cleanup` system RPC on the run's harness removes the branch worktree
+After a lane's PR/MR merges, a `worktree.cleanup` system RPC on that lane's harness (the one that ran its jobs and holds its worktree) removes the branch worktree
 and deletes the local branch (keeping a branch with unmerged commits until someone answers in
 Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs). After a PR/MR closes
 without merging, or the run is stopped, the same RPC stashes uncommitted work and removes the

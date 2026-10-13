@@ -156,8 +156,9 @@ async function notify(
 }
 
 /**
- * Enqueues a `worktree.cleanup` system RPC for the lane on the run's sticky
- * harness (its token is the only system RPC token that may push).
+ * Enqueues a `worktree.cleanup` system RPC for the lane on the lane's sticky
+ * harness (the one holding its worktree; its token is the only system RPC token
+ * that may push).
  * Null when that's impossible: the repository is gone or the agent can't
  * take ralph jobs anymore (`why`).
  */
@@ -171,7 +172,7 @@ async function enqueueCleanupJob(
   if (!found || found.repository.disconnectedAt) {
     return { why: "the repository is no longer connected" };
   }
-  const harnessId = await stickyHarnessId(deps.db, run);
+  const harnessId = await stickyHarnessId(deps.db, run, lane);
   if (!harnessId) return { why: "the agent that holds the branch can't take coding jobs anymore" };
   const { repository, connection } = found;
   const payload = WorktreeCleanupPayload.parse({
@@ -200,7 +201,7 @@ async function enqueueCleanupJob(
 /**
  * Starts the cleanup of a lane whose PR/MR merged at `mergedSha` (its head),
  * unless it started already (a failed or pending one starts again), the
- * repository opted out (`cleanupMergedWorktrees`), or the run never ran a job
+ * repository opted out (`cleanupMergedWorktrees`), or the lane never ran a job
  * on an agent. Waits (`pending`) while one of the run's jobs is active.
  */
 export function startCleanup(
@@ -267,7 +268,7 @@ async function beginCleanup(
     if (!parseRalphSettings(found.repository.ralphSettings).cleanupMergedWorktrees) {
       return { status: "ignored", reason: "opted_out" };
     }
-    if (!run.harnessId) {
+    if (!current.harnessId) {
       await updateLane(tx, laneId, { cleanup: { ...state, status: "done", at: now() } });
       return { status: "nothing" };
     }

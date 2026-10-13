@@ -241,7 +241,8 @@ How the run behaves:
   by default) are for a person: the run waits for them to be
   completed. A manual story's description may contain a ` ```cyralph-prepare ` block of shell
   commands, one per line; when the story becomes unblocked the session asks **Run it** / **I'll do
-  it myself** / **Not yet**, and **Run it** runs them on the agent in the branch worktree.
+  it myself** / **Not yet**, and **Run it** runs them in the branch worktree, on the agent of the lane that holds
+  it.
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
@@ -349,7 +350,8 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
 - **Cleanup after the merge.** When a ralph PR/MR merges (its merge webhook: GitHub
   `pull_request` closed + merged, GitLab **Merge request events** `merge`; the Linear issue moving
   to a completed state; or `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR), a
-  `worktree.cleanup` system RPC on the run's sticky agent stashes the worktree's uncommitted changes, removes
+  `worktree.cleanup` system RPC on the lane's sticky agent (the one holding its worktree; a lane that
+  never ran a job has nothing to clean up) stashes the worktree's uncommitted changes, removes
   the branch worktree, and deletes the local branch unless it has commits the merged head doesn't
   (remote branches are never deleted). It waits while one of the run's jobs is queued or running.
   The session then says "The pull request `<url>` was merged, so I removed its worktree and the
@@ -539,10 +541,11 @@ Ralph jobs are `coding` tasks in the `long` pool: they run on harnesses that acc
 task type ([deploy-harness.md](deploy-harness.md#ralph)). A harness's `long` pool limit caps how
 many of its slots ralph may take; by default that's max concurrency − 1 (at least 1), so a harness
 with two or more slots keeps one free for reviews while stories run. Each lane sticks to its own
-harness: a lane's story, request, push and describe jobs go to the harness that started the lane's
+harness: a lane's story, request, push and describe jobs and a manual story's preparation go to the harness that started the lane's
 last job while it still accepts `coding`, else to a harness its repository is pinned to, else to
 any harness that accepts `coding`. Lanes of an epic in repositories pinned to different harnesses
-each run on theirs; the run's harness shown on its page is the main lane's.
+each run on theirs; the run's harness shown on its page is the main lane's. A lane's worktree
+cleanup goes only to its sticky harness, which holds the worktree.
 Triage jobs run in the `short` pool on harnesses that accept `query` tasks; like reviews, they may
 take every slot by default, so lower the pool's limit to keep slots free for other work. Harnesses
 under pm2 update themselves to the version chosen on **Settings › Harnesses**
@@ -558,7 +561,7 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
 - **Failed CI on a ralph PR/MR isn't picked up until the cron runs.** The GitHub App lacks
   **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
   events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).
-- **Worktrees of merged ralph PRs/MRs stay on the harness host.** The cleanup runs on the run's
+- **Worktrees of merged ralph PRs/MRs stay on the harness host.** The cleanup runs on the lane's
   sticky harness: if that harness is revoked or no longer accepts `coding`, nothing can reach its
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).

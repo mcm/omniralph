@@ -43,7 +43,7 @@ import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
-import { cleanupDedupeKey, reconcileCleanup } from "./cleanup";
+import { cleanupDedupeKey, reconcileCleanup, startCleanup } from "./cleanup";
 import { cleanupLabel } from "./display";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { handleReply } from "./reply";
@@ -369,6 +369,44 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       failed: 0,
     });
     expect(await cleanupJobs(run.id)).toHaveLength(1);
+  });
+
+  it("cleans up each lane on the agent that holds its worktree", async () => {
+    const { run } = await epicWithPullRequest();
+    const [{ id: agentB }] = (await db
+      .insert(harnesses)
+      .values({ organizationId: orgId, name: "agent-b", acceptedTaskTypes: ["coding"] })
+      .returning({ id: harnesses.id })) as [{ id: string }];
+    const [other] = await db
+      .insert(ralphLanes)
+      .values({
+        runId: run.id,
+        repositoryId: otherRepoId,
+        branch: (await lane(run)).branch,
+        baseBranch: "main",
+        prMerged: true,
+        harnessId: agentB,
+      })
+      .returning();
+    // The run's (main lane's) agent is agentA: the other lane's worktree is on agentB.
+    expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
+    expect(await startCleanup(deps(), other!.id, sha(9))).toMatchObject({ status: "enqueued" });
+    const [job, ...more] = await cleanupJobs(run.id);
+    expect(more).toEqual([]);
+    expect(job).toMatchObject({
+      repositoryId: otherRepoId,
+      targetHarnessId: agentB,
+      dedupeKey: cleanupDedupeKey(other!.id),
+    });
+
+    // A lane that never ran a job on an agent has no worktree to clean up, even when the run did.
+    await db.delete(jobs);
+    await db
+      .update(ralphLanes)
+      .set({ harnessId: null, cleanup: null })
+      .where(eq(ralphLanes.id, other!.id));
+    expect(await startCleanup(deps(), other!.id, sha(9))).toEqual({ status: "nothing" });
+    expect(await cleanupJobs(run.id)).toEqual([]);
   });
 
   it("runs the cleanup as worktree.cleanup on the tasks coding path too", async () => {
