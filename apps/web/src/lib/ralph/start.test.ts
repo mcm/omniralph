@@ -814,6 +814,104 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
   });
 
+  describe("blocked labels", () => {
+    it("refuses a delegation or mention of an issue with a default blocked label, before materializing", async () => {
+      const issue = linear.add({
+        identifier: "ENG-70",
+        title: "PRD",
+        description: PRD,
+        labels: ["Under-Review"],
+      });
+      const event = created(issue.id);
+      expect(await startRun(event, deps())).toEqual({
+        status: "blocked_labels",
+        labels: ["Under-Review"],
+      });
+      const [response] = linear.bodies(event.sessionId, "response");
+      expect(response).toContain("I won't work on **ENG-70**");
+      expect(response).toContain("`acme/api` doesn't let me work issues labeled `Under-Review`");
+      expect(response).toContain("Repository › Settings › Coding › Linear › Blocked labels");
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(await linear.getChildren(issue.id)).toEqual([]);
+      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+
+      const mention = created(issue.id, { commentBody: "@omniralph fix the typo" });
+      expect(await startRun(mention, deps())).toMatchObject({ status: "blocked_labels" });
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+    });
+
+    it("refuses a delegated story of a blocked epic", async () => {
+      const epic = linear.add({ identifier: "ENG-71", title: "Epic", labels: ["blocked"] });
+      const story = linear.add({ identifier: "ENG-72", title: "Store", parentId: epic.id });
+      const event = created(story.id);
+      expect(await startRun(event, deps())).toEqual({
+        status: "blocked_labels",
+        labels: ["blocked"],
+      });
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+    });
+
+    it("uses the routed repository's own labels; none blocks nothing", async () => {
+      await updateRepositoryRalphSettings(
+        db,
+        repoId,
+        routing({
+          linearTeamKeys: ["ENG"],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: ["on hold"] },
+        }),
+      );
+      const held = linear.add({ identifier: "ENG-73", title: "Held", labels: ["On Hold"] });
+      expect(await startRun(created(held.id), deps())).toMatchObject({
+        status: "blocked_labels",
+        labels: ["On Hold"],
+      });
+      const blocked = linear.add({ identifier: "ENG-74", title: "Fine", labels: ["blocked"] });
+      expect(await startRun(created(blocked.id), deps())).toMatchObject({ status: "started" });
+
+      await updateRepositoryRalphSettings(
+        db,
+        otherRepoId,
+        routing({
+          linearLabels: ["frontend"],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: [] },
+        }),
+      );
+      const ui = linear.add({ identifier: "ENG-75", title: "UI", labels: ["Frontend", "blocked"] });
+      expect(await startRun(created(ui.id), deps())).toMatchObject({ status: "started" });
+    });
+
+    it("offers only the repositories that don't block an unrouted issue, else refuses", async () => {
+      await updateRepositoryRalphSettings(
+        db,
+        otherRepoId,
+        routing({
+          linearLabels: ["frontend"],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: [] },
+        }),
+      );
+      const issue = linear.add({
+        identifier: "OPS-70",
+        title: "Infra",
+        teamKey: "OPS",
+        labels: ["blocked"],
+      });
+      const event = created(issue.id);
+      expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
+      expect((await getRunBySession(db, event.sessionId))?.pendingElicitation).toEqual({
+        kind: "repository",
+        repositoryIds: [otherRepoId],
+      });
+
+      await db.delete(ralphRuns);
+      await updateRepositoryRalphSettings(db, otherRepoId, routing({ linearLabels: ["frontend"] }));
+      const refused = created(issue.id);
+      expect(await startRun(refused, deps())).toMatchObject({ status: "blocked_labels" });
+      expect(linear.bodies(refused.sessionId, "response")[0]).toContain(
+        "no repository lets me work issues labeled `blocked`",
+      );
+    });
+  });
+
   it("re-delegation reuses the previous run's branch, PR, guidance and progress", async () => {
     const epic = linear.add({ identifier: "ENG-60", title: "Epic" });
     linear.add({ identifier: "ENG-61", title: "One", parentId: epic.id });

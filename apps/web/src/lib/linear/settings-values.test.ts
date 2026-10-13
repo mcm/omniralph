@@ -19,6 +19,7 @@ describe("unknownLinearValues", () => {
         projects: ["omniralph"],
         teamKeys: ["eng", "OPS"],
         manualLabels: ["manual"],
+        blockedLabels: ["BACKEND"],
         epicCompletedState: "in review",
       }),
     ).toEqual({
@@ -26,6 +27,7 @@ describe("unknownLinearValues", () => {
       projects: [],
       teamKeys: [],
       manualLabels: [],
+      blockedLabels: [],
       epicCompletedState: null,
     });
   });
@@ -37,6 +39,7 @@ describe("unknownLinearValues", () => {
         projects: ["Old Project", "Omniralph"],
         teamKeys: ["ENG", "QA"],
         manualLabels: ["manual", "by-hand"],
+        blockedLabels: ["on-hold", "backend"],
         epicCompletedState: "Shipped",
       }),
     ).toEqual({
@@ -44,6 +47,7 @@ describe("unknownLinearValues", () => {
       projects: ["Old Project"],
       teamKeys: ["QA"],
       manualLabels: ["by-hand"],
+      blockedLabels: ["on-hold"],
       epicCompletedState: "Shipped",
     });
   });
@@ -68,6 +72,7 @@ describe("unknownLinearValues", () => {
       projects: [],
       teamKeys: [],
       manualLabels: [],
+      blockedLabels: [],
       epicCompletedState: null,
     });
   });

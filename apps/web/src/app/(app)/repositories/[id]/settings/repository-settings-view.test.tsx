@@ -436,6 +436,17 @@ describe("RepositorySettingsView Coding pickers", () => {
     expect(text(html)).not.toMatch(/Comma-separated/);
   });
 
+  it("picks blocked labels from the workspace, never flagging the defaults as stale", () => {
+    const html = render("coding", {
+      ralph: { ...picked, blockedLabels: ["under-review", "blocked", "on-hold"] },
+    });
+    const blocked = text(field(html, "ralph-blocked-labels"));
+    expect(blocked).toContain("under-review");
+    expect(blocked).not.toMatch(/“under-review” is not available/);
+    expect(blocked).not.toMatch(/“blocked” is not available/);
+    expect(blocked).toMatch(/“on-hold” is not available/);
+  });
+
   it("describes the first manual label as the one Coding adds, in order", () => {
     const html = render("coding", { ralph: { ...picked, manualLabels: ["by-hand", "manual"] } });
     expect(text(html)).toMatch(/The first, “by-hand”, is the label Coding adds/);

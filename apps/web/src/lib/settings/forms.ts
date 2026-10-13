@@ -244,6 +244,7 @@ export interface RalphDraft {
   cleanupMergedWorktrees: boolean;
   unmergedBranchTimeoutMinutes: string;
   manualLabels: string[];
+  blockedLabels: string[];
   allowPreparation: boolean;
   epicCompletedState: string;
 }
@@ -261,6 +262,7 @@ export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
     maxFixRounds: String(settings.maxFixRounds),
     unmergedBranchTimeoutMinutes: String(settings.unmergedBranchTimeoutMinutes),
     manualLabels: [...settings.manualLabels],
+    blockedLabels: [...settings.blockedLabels],
   };
 }
 
@@ -306,7 +308,7 @@ export const RALPH_CARDS = {
     "cleanupMergedWorktrees",
     "unmergedBranchTimeoutMinutes",
   ],
-  linear: ["manualLabels", "allowPreparation", "epicCompletedState"],
+  linear: ["manualLabels", "blockedLabels", "allowPreparation", "epicCompletedState"],
 } as const satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
 
 /** The settings that rewrite history or delete branches: the Danger zone saves them on their own. */
@@ -363,6 +365,7 @@ const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
   cleanupMergedWorktrees: "Clean up after the merge",
   unmergedBranchTimeoutMinutes: "Unmerged branch timeout (minutes)",
   manualLabels: "Manual labels",
+  blockedLabels: "Blocked labels",
   allowPreparation: "Offer to run preparation",
   epicCompletedState: "Epic completed state",
 };
@@ -383,6 +386,8 @@ export function ralphSpecs(
         ? "Not set (Omniralph's whole coding policy)"
         : lines(value),
     disallowedTools: lines,
+    blockedLabels: (value) =>
+      Array.isArray(value) && value.length === 0 ? "None" : formatSettingValue(value),
   };
   return Object.fromEntries(
     (Object.keys(RALPH_LABELS) as (keyof RalphSettingsInput)[]).map((key) => [
@@ -399,6 +404,7 @@ export const RALPH_DEFAULT_TEXT = {
   maxFixRounds: String(DEFAULT_RALPH_SETTINGS.maxFixRounds),
   unmergedBranchTimeoutMinutes: `${DEFAULT_RALPH_SETTINGS.unmergedBranchTimeoutMinutes} minutes`,
   manualLabels: DEFAULT_RALPH_SETTINGS.manualLabels.join(", "),
+  blockedLabels: DEFAULT_RALPH_SETTINGS.blockedLabels.join(", "),
   historyRewrite: HISTORY_REWRITE_LABELS[DEFAULT_RALPH_SETTINGS.historyRewrite],
   codingPath: CODING_PATH_LABELS[RALPH_REPOSITORY_DEFAULTS.codingPath],
   onOff: (value: boolean) => formatSettingValue(value),

@@ -40,6 +40,7 @@ import {
 } from "@omniralph/ralph";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { blockedLabelsMessage, blockingLabels } from "./blocked-labels";
 import { notifyRunThread } from "./chat-notify";
 import { linearConversation } from "./conversation";
 import {
@@ -90,6 +91,8 @@ export type StartOutcome =
   | { status: "load_failed"; error: string }
   /** An epic-mode start on an issue (or epic) whose PRD still has open questions: no run. */
   | { status: "open_questions"; identifier: string }
+  /** The issue (or its epic) has a label its repository's blocked labels name: no run. */
+  | { status: "blocked_labels"; labels: string[] }
   /** No ralph-enabled repository at all. */
   | { status: "unroutable" }
   /** Routing found no repository: the run waits for a person to pick one. */
@@ -173,6 +176,42 @@ async function refuseOpenQuestions(
     body: openQuestionsMessage(found.issue, found.epic),
   });
   return { status: "open_questions", identifier: found.issue.identifier };
+}
+
+/**
+ * Refuses a new run of an issue that carries (itself, or through its epic) a
+ * blocked label of the repository it routes to (posting why). Unrouted, the
+ * repositories that don't block it are the ones a person may pick, and it's
+ * refused when every one does. Throws when Linear can't be read.
+ */
+async function refuseBlockedLabels(
+  deps: RalphDeps,
+  event: SessionCreatedEvent,
+  repositories: readonly RepositoryWithSwitches[],
+): Promise<{ refused: StartOutcome } | { candidates: RepositoryWithSwitches[] }> {
+  if (repositories.length === 0) return { candidates: [] };
+  const issue = await deps.linear.getIssue(event.issueId);
+  const parent = issue.parentId ? await deps.linear.getIssue(issue.parentId) : null;
+  const root = parent ?? issue;
+  const issues = parent ? [issue, parent] : [issue];
+  const previous = await getRunByIssue(deps.db, deps.organizationId, root.id);
+  const chosen = chooseRepository(root, repositories, previous);
+  const refuse = async (labels: string[], repositoryPath?: string) => {
+    await post(deps, event.sessionId, {
+      type: "response",
+      body: blockedLabelsMessage(issue, labels, repositoryPath),
+    });
+    return { refused: { status: "blocked_labels", labels } as StartOutcome };
+  };
+  if (chosen) {
+    const labels = blockingLabels(issues, chosen.repository);
+    return labels.length > 0
+      ? refuse(labels, chosen.repository.fullPath)
+      : { candidates: [...repositories] };
+  }
+  const candidates = repositories.filter((r) => blockingLabels(issues, r).length === 0);
+  if (candidates.length > 0) return { candidates };
+  return refuse(blockingLabels(issues, repositories[0]!));
 }
 
 /** The repository a run works in and how it was chosen. */
@@ -531,6 +570,19 @@ async function startNewRun(
   const epicMode = start.mode === "epic";
 
   const repositories = await listRalphRepositories(db, deps.organizationId);
+  // Before loading: loading a PRD epic creates its story issues.
+  let candidates: RepositoryWithSwitches[];
+  try {
+    const blocked = await refuseBlockedLabels(deps, event, repositories);
+    if ("refused" in blocked) return blocked.refused;
+    candidates = blocked.candidates;
+  } catch (error) {
+    await post(deps, sessionId, {
+      type: "error",
+      body: `I couldn't load the issue from Linear: ${message(error)}`,
+    });
+    return { status: "load_failed", error: message(error) };
+  }
   let loaded: LoadedEpic;
   try {
     // An issue that was never run may hold a PRD whose materialization stopped half way.
@@ -580,7 +632,14 @@ async function startNewRun(
 
   const chosen = chooseRepository(root, repositories, previous);
   if (!chosen) {
-    return askForRepositoryFirst(deps, { event, loaded, previous, repositories, start });
+    // Only the repositories whose blocked labels let it in are offered.
+    return askForRepositoryFirst(deps, {
+      event,
+      loaded,
+      previous,
+      repositories: candidates,
+      start,
+    });
   }
 
   let baseBranch: string;

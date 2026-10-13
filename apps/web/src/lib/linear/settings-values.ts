@@ -17,6 +17,7 @@ export interface LinearSettingsValues {
   projects?: readonly string[];
   teamKeys?: readonly string[];
   manualLabels?: readonly string[];
+  blockedLabels?: readonly string[];
   epicCompletedState?: string | null;
 }
 
@@ -25,6 +26,7 @@ export interface UnknownLinearValues {
   projects: string[];
   teamKeys: string[];
   manualLabels: string[];
+  blockedLabels: string[];
   /** The epic state when it is neither empty, a state type nor a state name; else null. */
   epicCompletedState: string | null;
 }
@@ -56,6 +58,7 @@ export function unknownLinearValues(
       options.teams.map((t) => t.key),
     ),
     manualLabels: missing(values.manualLabels, options.labels),
+    blockedLabels: missing(values.blockedLabels, options.labels),
     epicCompletedState: knownEpicState ? null : epicState,
   };
 }

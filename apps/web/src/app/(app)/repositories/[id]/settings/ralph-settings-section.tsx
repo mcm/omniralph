@@ -6,6 +6,7 @@ import { Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui"
 import {
   CLAUDE_CODE_TOOLS,
   DEFAULT_RALPH_SETTINGS,
+  DEFAULT_BLOCKED_LABELS,
   fieldErrors as toFieldErrors,
   MAX_APPEND_INSTRUCTION_LENGTH,
   MAX_FIX_ROUNDS,
@@ -82,7 +83,14 @@ export interface CodingChoices {
 const TOOL_OPTIONS: readonly string[] = CLAUDE_CODE_TOOLS;
 
 /** The Linear list fields, picked from the workspace. */
-type LinearListKey = "linearLabels" | "linearProjectNames" | "linearTeamKeys" | "manualLabels";
+type LinearListKey =
+  "linearLabels" | "linearProjectNames" | "linearTeamKeys" | "manualLabels" | "blockedLabels";
+
+/** The workspace's labels and any default blocked label it doesn't have (ignoring case). */
+function withDefaultLabels(labels: readonly string[]): string[] {
+  const have = new Set(labels.map((label) => label.toLowerCase()));
+  return [...labels, ...DEFAULT_BLOCKED_LABELS.filter((label) => !have.has(label))];
+}
 
 /** Why the Linear fields are read-only, with where to fix it. */
 function LinearReadOnlyNote({ linear }: { linear: CodingLinearChoices }) {
@@ -266,6 +274,8 @@ export function CodingSettingsSections({
     linearTeamKeys:
       linearOptions?.teams.map((t) => ({ value: t.key, label: `${t.key} · ${t.name}` })) ?? [],
     manualLabels: linearOptions?.labels ?? [],
+    // The defaults are always offered (and accepted), so they aren't drawn as stale.
+    blockedLabels: linearOptions ? withDefaultLabels(linearOptions.labels) : [],
   };
 
   /** A Linear list as chips from the workspace, or its saved values read-only without one. */
@@ -691,6 +701,16 @@ export function CodingSettingsSections({
                     : "The first is the label Coding adds"
                 } to the manual stories and follow-ups it files.`,
                 RALPH_DEFAULT_TEXT.manualLabels,
+              ),
+              "Choose labels…",
+            )}
+            {linearTags(
+              "blockedLabels",
+              "ralph-blocked-labels",
+              "Blocked labels",
+              withDefault(
+                "Omniralph won't work an issue with any of these labels (on the issue or its epic): a delegation or mention of one is refused. Empty for none.",
+                RALPH_DEFAULT_TEXT.blockedLabels,
               ),
               "Choose labels…",
             )}
