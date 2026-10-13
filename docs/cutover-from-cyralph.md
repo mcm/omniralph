@@ -117,7 +117,7 @@ unless noted.
 | `teamKeys` | **Linear team keys** | |
 | `routingLabels` | **Linear labels** | |
 | `projectKeys`, `projectNames` | **Linear projects** | One field for both. |
-| `githubUrl`, `gitlabUrl` | Not needed | `[repo=…]` tags and the repository question match the full path or its last segment. Tags that used a URL, a cyralph `id` that differs from the path, several repositories (`repo=a,b`) or a branch (`[repo=app#branch]`) must be rewritten as `[repo=<full path>]`. |
+| `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues by label, project or team instead. |
 | `isActive` | **Task types › Coding** | On by default (the organization's default): only repositories that opted in are routed to, offered in the repository question or pushed to. |
 | `verifyCommands` | **Verify commands** | One per line. |
 | `runPrdQualityGates` | **Run the PRD's quality gates** | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
@@ -222,8 +222,8 @@ Integrations** ([linear.md](linear.md#1-create-the-linear-oauth-app), steps 1 to
 cyralph's OAuth app: its webhook points at cyralph.
 
 **Verify:** **Settings › Integrations** shows the workspace. In Linear, the Omniralph app can be
-picked as an issue's delegate and @mentioned. Delegate a throwaway issue tagged with
-`[repo=<full path>]` of a ralph-enabled repository (tags route even without team keys): its
+picked as an issue's delegate and @mentioned. Delegate a throwaway issue with a label routed to a
+ralph-enabled repository (its **Linear labels**): its
 session acknowledges within seconds, the run shows up under **Coding tasks**, a job runs on a
 ralph-enabled harness, and the run ends with a PR/MR. Close that PR/MR afterwards. Also @mention the
 app on an issue with a small request and check that it answers in request mode.
@@ -239,7 +239,7 @@ For each Linear team (and each project or label cyralph routes on its own):
    labels** or **Linear projects**.
 3. Tell the team to delegate (and @mention) the **Omniralph** app from now on.
 
-**Verify:** delegate a small issue of that team without a `[repo=…]` tag to Omniralph: it routes to
+**Verify:** delegate a small issue of that team to Omniralph: it routes to
 the expected repository (no "Which repository should I work in…?" question) and runs. A delegation
 to cyralph for that team no longer routes there (cyralph asks which repository to use, or says
 there's none).

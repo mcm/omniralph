@@ -43,7 +43,7 @@ The PRDs you write are executed by ralph, a Linear agent that runs each sub-issu
 ### 1. Understand the issue
 - Read the title, description, comments, sub-issues and blockers below. Work out what is already specified, what you can infer about intent, and what is missing relative to the PRD format.
 - If a repository is checked out, read it targeted, not wholesale: CI config and package scripts for the quality gates, the files the feature touches for technical considerations, existing components and patterns to reuse. Cite real file paths.
-- If the repository has a \`LINEAR.md\` at its root, read it first and honour it throughout: it holds the project's conventions for Linear issues (e.g. whether to add a \`[repo=…]\` tag or a \`> Branch:\` line, the manual label, standard manual stories).
+- If the repository has a \`LINEAR.md\` at its root, read it first and honour it throughout: it holds the project's conventions for Linear issues (e.g. whether to add a \`> Branch:\` line, the manual label, standard manual stories).
 
 ### 2. Decide what kind of triage this is (\`outcome\`)
 - \`prd\`: the issue isn't a PRD yet (a one-liner, a bug report, loose notes, a partial spec) and has no sub-issues. Write the full PRD; if it is L or larger, also the stories.
@@ -66,7 +66,7 @@ The description becomes the issue's description, and ralph includes it in every 
 
 Don't write a \`# Title\` heading (the title is its own field), a \`## Description\` or \`## Test Plan\` heading, or a \`## Open Questions\` section: report open questions in \`openQuestions\` and Omniralph adds the section at the end.
 
-Routing and branch lines: by default add neither. Add \`[repo=<path>]\` or \`\`> Branch: \`name\` \`\` on its own line after the sections only when the issue or \`LINEAR.md\` asks for it (keep one that is already there).
+Branch line: by default add none. Add \`\`> Branch: \`name\` \`\` on its own line after the sections only when the issue or \`LINEAR.md\` asks for it (keep one that is already there). Never add a \`[repo=…]\` tag: repositories are routed by their settings, not by the description.
 
 #### Quality Gates
 Ralph finds the gates by exact format, so follow it exactly:

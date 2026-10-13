@@ -143,16 +143,16 @@ also changes running epics from their next story on (for example which stories a
 
 A delegated issue is routed to the first repository that matches, trying these rules in order:
 
-1. a `[repo=<fullPath>]` tag in the issue's (or epic's) description, e.g. `[repo=acme/web]` or
-   `[repo=group/subgroup/project]`. A tag is authoritative: an issue tagged with a repository that
-   doesn't have coding on isn't routed by its labels, project or team.
-2. one of the issue's labels in a repository's **Linear labels**
-3. the issue's project in a repository's **Linear projects**
-4. the issue's team key in a repository's **Linear team keys**
+1. one of the issue's labels in a repository's **Linear labels**
+2. the issue's project in a repository's **Linear projects**
+3. the issue's team key in a repository's **Linear team keys**
+
+Routing comes only from these settings: text in the issue's description (such as a
+`[repo=…]` tag) is ignored.
 
 Matching ignores case, and only repositories with coding on are candidates. When several
 repositories match the same rule, the one whose path sorts first wins, so avoid overlapping routes:
-use labels or tags for the exceptions and a team key for the default.
+use labels for the exceptions and a team key for the default.
 
 An issue that routes nowhere gets a question in its agent session: "Which repository should I work
 in for this issue?", with every ralph-enabled repository as an option. Nothing is built until you
@@ -164,18 +164,18 @@ Routing runs again whenever the issue is delegated again:
 
 - A repository someone picked stays, even when routing would now choose another one.
 - When routing would have to ask, the previous run's repository stays.
-- When routing now chooses another repository (for example, a new `[repo=…]` tag), the new run
+- When routing now chooses another repository (for example, a new routing label), the new run
   works there on a new branch, and the agent session says that the earlier branch and PR/MR stay
   as they are.
 
 If no repository has coding on at all, the session gets an error explaining how to enable one.
 
 **Stories in other repositories.** In an epic with sub-issues, each story is also routed on the
-signals it doesn't share with the epic, in the same order: its own `[repo=…]` tag, a routing
-label, a project other than the epic's, a team other than the epic's. A story without any stays
-in the epic's repository. A story routed to another ralph-enabled repository gets a lane there:
+signals it doesn't share with the epic, in the same order: its own routing label, a project
+other than the epic's, a team other than the epic's. A story without any stays in the epic's
+repository. A story routed to another ralph-enabled repository gets a lane there:
 its own branch (the epic's branch name, based on that repository's default branch) and its own
-PR/MR, and the run's start message says so. A story whose tag or project matches no
+PR/MR, and the run's start message says so. A story whose project matches no
 ralph-enabled repository is treated like a manual step ("isn't in a repository I have"), shown as
 "(manual: no repository here)" in the plan: nothing is built for it, and stories that depend on it
 wait until a person completes it. Teams and labels often span repositories, so an unknown one
@@ -443,8 +443,8 @@ status set and the open questions).
 
 ### Repository and session
 
-The issue is routed with ralph's rules ([4. Configure routing](#4-configure-routing): `[repo=…]`
-tag, labels, project, team; only ralph-enabled repositories). With a repository, the agent checks
+The issue is routed with ralph's rules ([4. Configure routing](#4-configure-routing): labels,
+project, team; only ralph-enabled repositories). With a repository, the agent checks
 out its default branch and the PRD's quality gates and file paths come from the source (CI config
 first, and the repository's `LINEAR.md` if it has one). Without one, triage still runs from Linear
 alone and adds an open question asking which repository the issue belongs in; it never asks the
@@ -558,8 +558,7 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
-  issue: add its label, project or team to a repository's routing, or tag the issue with
-  `[repo=<path>]`.
+  issue: add its label, project or team to a repository's routing.
 - **"No repository has coding on".** Turn coding on for a repository under
   **Repository › Settings › Task types**.
 - **Stories fail to push.** The code host credentials lack write access: see

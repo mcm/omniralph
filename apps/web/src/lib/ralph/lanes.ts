@@ -72,7 +72,6 @@ export async function routeStories(
     const route = routeStory(
       repositories,
       {
-        description: s.sourceText ?? null,
         labels: s.labels ?? [],
         projectName: s.projectName ?? null,
         teamKey: s.teamKey ?? null,

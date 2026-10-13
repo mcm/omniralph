@@ -5,7 +5,6 @@ import {
   parsePrdJson,
   parsePrdMarkdown,
   parseQualityGates,
-  parseRepoTags,
 } from "./prd.js";
 import {
   buildStoryIssueBody,
@@ -161,15 +160,6 @@ describe("story issue body", () => {
 });
 
 describe("parsePrd extras", () => {
-  it("reads [repo=…] tags, including Linear's escaped form, without duplicates", () => {
-    const prd = parsePrd(
-      `${PRD}\n\nBuild it in \\[repo=group/app\\] (also [repo=Group/App.git] and [repo=other/lib]).`,
-    );
-    expect(prd?.repoTags).toEqual(["group/app", "other/lib"]);
-    expect(parseRepoTags(null)).toEqual([]);
-    expect(parsePrd(PRD)?.repoTags).toEqual([]);
-  });
-
   it("reads the branch line and quality gates around a prd.json block", () => {
     const json = JSON.stringify({ name: "X", userStories: [{ id: "US-001", title: "A" }] });
     const prd = parsePrd(
