@@ -159,8 +159,8 @@ async function notify(
  * Enqueues a `worktree.cleanup` system RPC for the lane on the lane's sticky
  * harness (the one holding its worktree; its token is the only system RPC token
  * that may push).
- * Null when that's impossible: the repository is gone or the agent can't
- * take ralph jobs anymore (`why`).
+ * Null when that's impossible: the repository is gone or the lane's agent can't
+ * take ralph jobs anymore (`why`, naming the lane's repository).
  */
 async function enqueueCleanupJob(
   deps: RalphDeps,
@@ -172,9 +172,13 @@ async function enqueueCleanupJob(
   if (!found || found.repository.disconnectedAt) {
     return { why: "the repository is no longer connected" };
   }
-  const harnessId = await stickyHarnessId(deps.db, run, lane);
-  if (!harnessId) return { why: "the agent that holds the branch can't take coding jobs anymore" };
   const { repository, connection } = found;
+  const harnessId = await stickyHarnessId(deps.db, run, lane);
+  if (!harnessId) {
+    return {
+      why: `the agent that holds the branch in \`${repository.fullPath}\` can't take coding jobs anymore`,
+    };
+  }
   const payload = WorktreeCleanupPayload.parse({
     runId: run.id,
     repositoryId: repository.id,

@@ -6,6 +6,7 @@ import {
   closeDb,
   createDb,
   getJob,
+  getLane,
   getMainLane,
   getRun,
   getRunBySession,
@@ -407,6 +408,19 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
       .where(eq(ralphLanes.id, other!.id));
     expect(await startCleanup(deps(), other!.id, sha(9))).toEqual({ status: "nothing" });
     expect(await cleanupJobs(run.id)).toEqual([]);
+
+    // The lane's agent can't take jobs anymore: no other agent has its worktree, and the
+    // reason names the lane's repository.
+    await db
+      .update(ralphLanes)
+      .set({ harnessId: agentB, cleanup: null })
+      .where(eq(ralphLanes.id, other!.id));
+    await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+    expect(await startCleanup(deps(), other!.id, sha(9))).toEqual({ status: "nothing" });
+    expect(await cleanupJobs(run.id)).toEqual([]);
+    expect((await getLane(db, other!.id))?.cleanup?.error).toBe(
+      "the agent that holds the branch in `acme/web` can't take coding jobs anymore",
+    );
   });
 
   it("runs the cleanup as worktree.cleanup on the tasks coding path too", async () => {
