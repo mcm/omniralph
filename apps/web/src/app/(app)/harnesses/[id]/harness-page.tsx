@@ -56,7 +56,9 @@ export async function renderHarnessPage(params: Promise<{ id: string }>, tab: Ha
       )}
       globalDesiredVersion={
         organizationVersion.tracksLatest
-          ? `latest on npm, ${organizationVersion.version ?? "not read yet"}`
+          ? organizationVersion.version
+            ? `${organizationVersion.version} (latest on npm)`
+            : "the latest on npm"
           : organizationVersion.version
       }
       now={now.getTime()}

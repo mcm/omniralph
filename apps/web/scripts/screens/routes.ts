@@ -114,6 +114,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#limit-short", value: "2" },
+      { action: "click", selector: "#desired-version-source-override" },
       { action: "fill", selector: "#desired-version", value: "1.4.0" },
       { action: "click", selector: '#harness-settings [type="submit"]' },
     ],

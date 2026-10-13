@@ -30,7 +30,7 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconCloudDownload, IconTrash } from "@tabler/icons-react";
-import { defaultPoolLimit } from "@omniralph/shared";
+import { defaultPoolLimit, HarnessVersion } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
@@ -46,7 +46,6 @@ import { useAction } from "@/components/use-action";
 import {
   formatSettingValue,
   settingChanges,
-  withDefault,
   type SettingSpec,
   type SettingValue,
 } from "@/lib/settings/changes";
@@ -95,7 +94,7 @@ interface HarnessDetailViewProps {
   installJobs: InstallJobRow[];
   /** Every host tool of the organization's catalog with this harness's path and report, by name (Host tools tab). */
   hostTools: HostToolRow[];
-  /** Settings › Harness defaults version (described when it tracks npm's latest), used when the harness has no override. */
+  /** Settings › Harness defaults version ("1.5.0 (latest on npm)" when it tracks npm's latest), used when the harness has no override; null: not set. */
   globalDesiredVersion: string | null;
 }
 
@@ -157,8 +156,8 @@ export interface ConfigDraft {
 }
 
 /**
- * The form for a harness. Inherited fields start from the organization's values, so turning
- * "Use organization default" off overrides from what the harness runs now.
+ * The form for a harness. Inherited fields start from the organization's values, so overriding
+ * starts from what the harness runs now.
  */
 export function configDraft(harness: HarnessRow): ConfigDraft {
   return {
@@ -207,22 +206,25 @@ export function configInput(draft: ConfigDraft): HarnessConfigForm {
 const poolLimitFormat = (value: SettingValue) =>
   value === null ? "Default" : formatSettingValue(value);
 
+/** What an inherited setting shows: "Inherits 6 from the organization". */
+export function inheritsText(value: string): string {
+  return `Inherits ${value} from the organization`;
+}
+
 function configSpecs(defaults: HarnessRow["defaults"]): SettingSpec[] {
   return [
     {
       key: "maxConcurrency",
       label: "Max concurrency",
       format: (value) =>
-        value === null
-          ? `Organization default (${defaults.maxConcurrency})`
-          : formatSettingValue(value),
+        value === null ? inheritsText(String(defaults.maxConcurrency)) : formatSettingValue(value),
     },
     {
       key: "acceptedTaskTypes",
       label: "Accepted task types",
       format: (value) =>
         value === null
-          ? `Organization default (${taskTypeList(defaults.acceptedTaskTypes)})`
+          ? inheritsText(taskTypeList(defaults.acceptedTaskTypes))
           : taskTypeList(value as readonly string[]),
     },
     ...POOLS.map((pool) => ({
@@ -233,28 +235,86 @@ function configSpecs(defaults: HarnessRow["defaults"]): SettingSpec[] {
   ];
 }
 
-/** The "Use organization default" switch of a field. */
-function InheritCheck({
+/**
+ * A setting the harness inherits from the organization unless it overrides it. While inherited
+ * it says "Inherits N from the organization" with an Override button; while overridden it shows
+ * its controls and a button to inherit again. Switching moves focus to what replaced the button.
+ */
+function InheritableSetting({
   id,
-  checked,
-  disabled,
-  onChange,
+  label,
+  inherited,
+  organizationValue,
+  readOnly,
+  onInheritChange,
+  children,
 }: {
   id: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (inherit: boolean) => void;
+  /** The setting's name, lowercased in the buttons' accessible names. */
+  label: string;
+  inherited: boolean;
+  /** The organization's value, as words. */
+  organizationValue: string;
+  readOnly: boolean;
+  onInheritChange: (inherit: boolean) => void;
+  /** The harness's own value's controls, shown while it overrides. */
+  children: React.ReactNode;
 }) {
+  const groupRef = React.useRef<HTMLDivElement>(null);
+  const switched = React.useRef(false);
+  React.useEffect(() => {
+    if (!switched.current) return;
+    switched.current = false;
+    const target = inherited
+      ? groupRef.current?.querySelector<HTMLElement>(`#${id}-override`)
+      : groupRef.current?.querySelector<HTMLElement>(
+          `.settings-inherit-controls :is(input, button, [role="checkbox"]):not(:disabled)`,
+        );
+    target?.focus();
+  }, [id, inherited]);
+  const change = (inherit: boolean) => {
+    switched.current = true;
+    onInheritChange(inherit);
+  };
+  const name = label.toLowerCase();
+
   return (
-    <div className="settings-check settings-check-center">
-      <Checkbox
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={(value) => onChange(value === true)}
-      />
-      <Label htmlFor={id}>Use organization default</Label>
-      <Muted>Settings › Harnesses; follows it when it changes.</Muted>
+    <div ref={groupRef} className="settings-group" role="group" aria-labelledby={`${id}-label`}>
+      <span id={`${id}-label`} className="settings-group-label">
+        {label}
+      </span>
+      <div className="settings-inherit" data-inherited={inherited ? "" : undefined}>
+        <Muted id={`${id}-source`} className="settings-inherit-text">
+          {inherited
+            ? `${inheritsText(organizationValue)}.`
+            : `Overrides the organization's ${organizationValue}.`}
+        </Muted>
+        {!readOnly &&
+          (inherited ? (
+            <Button
+              id={`${id}-override`}
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-label={`Override ${name}`}
+              onClick={() => change(false)}
+            >
+              Override
+            </Button>
+          ) : (
+            <Button
+              id={`${id}-inherit`}
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-label={`Inherit ${name} from the organization`}
+              onClick={() => change(true)}
+            >
+              Inherit
+            </Button>
+          ))}
+      </div>
+      {!inherited && <div className="settings-inherit-controls">{children}</div>}
     </div>
   );
 }
@@ -275,12 +335,55 @@ async function searchRepositoryOptions(query: string): Promise<MultiSelectOption
   return (result.repositories ?? []).map(repositoryOption);
 }
 
-const VERSION_SPEC: SettingSpec = {
-  key: "versionOverride",
-  label: "Desired version override",
-  format: (value) =>
-    value === "" ? "Not set (organization's version)" : formatSettingValue(value),
-};
+/** The organization's desired version as words, for "Inherits N from the organization". */
+function organizationVersionText(globalDesiredVersion: string | null): string {
+  return globalDesiredVersion ?? "no version";
+}
+
+function versionSpec(globalDesiredVersion: string | null): SettingSpec {
+  return {
+    key: "versionOverride",
+    label: "Desired version",
+    format: (value) =>
+      value === null
+        ? inheritsText(organizationVersionText(globalDesiredVersion))
+        : value === ""
+          ? "Empty"
+          : formatSettingValue(value),
+  };
+}
+
+export interface VersionDraft {
+  /** Use the organization's desired version (no override, stored as null). */
+  inherit: boolean;
+  /** The harness's own desired version, used unless it inherits. */
+  version: string;
+}
+
+export function versionDraft(harness: Pick<HarnessRow, "desiredVersionOverride">): VersionDraft {
+  return {
+    inherit: harness.desiredVersionOverride === null,
+    version: harness.desiredVersionOverride ?? "",
+  };
+}
+
+/** The version as compared: null while inherited, else the trimmed override. */
+function versionValue(draft: VersionDraft): string | null {
+  return draft.inherit ? null : draft.version.trim();
+}
+
+/**
+ * What `setHarnessDesiredVersion` saves for the draft ("" clears the override), or an error
+ * when the override isn't a version.
+ */
+export function versionInput(draft: VersionDraft): { version: string } | { error: string } {
+  const version = versionValue(draft);
+  if (version === null) return { version: "" };
+  if (!HarnessVersion.safeParse(version.replace(/^v(?=\d)/, "")).success) {
+    return { error: "Enter a version like 1.4.0, or inherit the organization's." };
+  }
+  return { version };
+}
 
 function pinSpec(labels: ReadonlyMap<string, string>): SettingSpec {
   return {
@@ -317,8 +420,9 @@ export function HarnessSettingsSection({
   const { pending, run } = useAction();
   const saved = React.useMemo(() => configDraft(harness), [harness]);
   const [draft, setDraft] = React.useState(saved);
-  const savedOverride = harness.desiredVersionOverride ?? "";
-  const [override, setOverride] = React.useState(savedOverride);
+  const savedVersion = React.useMemo(() => versionDraft(harness), [harness]);
+  const [version, setVersion] = React.useState(savedVersion);
+  const [versionError, setVersionError] = React.useState<string | undefined>();
   const savedPins = React.useMemo(
     () => harness.pinnedRepositories.map((repo) => repo.id),
     [harness.pinnedRepositories],
@@ -348,21 +452,20 @@ export function HarnessSettingsSection({
     ? defaults.maxConcurrency
     : Number(draft.maxConcurrency);
   const slots = maxConcurrency >= 1 ? Math.floor(maxConcurrency) : 1;
-  const taskTypes = draft.inheritTaskTypes ? defaults.acceptedTaskTypes : draft.taskTypes;
   const specs = React.useMemo(
-    () => [...configSpecs(defaults), VERSION_SPEC, pinSpec(labels)],
-    [defaults, labels],
+    () => [...configSpecs(defaults), versionSpec(globalDesiredVersion), pinSpec(labels)],
+    [defaults, globalDesiredVersion, labels],
   );
-  const values = (config: ConfigDraft, version: string, pinned: readonly string[]) => ({
+  const values = (config: ConfigDraft, versionDraft: VersionDraft, pinned: readonly string[]) => ({
     ...configValues(config),
-    versionOverride: version.trim(),
+    versionOverride: versionValue(versionDraft),
     // The saved pins come back in path order: compare them as a set.
     pinnedRepositoryIds: [...pinned].sort(),
   });
   const changes = settingChanges(
     specs,
-    values(saved, savedOverride, savedPins),
-    values(draft, override, pins),
+    values(saved, savedVersion, savedPins),
+    values(draft, version, pins),
   );
 
   const toggle = (taskType: string, on: boolean) =>
@@ -373,6 +476,12 @@ export function HarnessSettingsSection({
 
   const prepare = () => {
     const changed = new Set(changes.map((change) => change.key));
+    const versionSave = changed.has("versionOverride") ? versionInput(version) : null;
+    if (versionSave && "error" in versionSave) {
+      setVersionError(versionSave.error);
+      return null;
+    }
+    setVersionError(undefined);
     const configChanged = [...changed].some(
       (key) => key !== "versionOverride" && key !== "pinnedRepositoryIds",
     );
@@ -382,9 +491,7 @@ export function HarnessSettingsSection({
       action: () =>
         saveInOrder([
           ...(configChanged ? [() => updateHarnessConfig(harness.id, configInput(draft))] : []),
-          ...(changed.has("versionOverride")
-            ? [() => setHarnessDesiredVersion(harness.id, override)]
-            : []),
+          ...(versionSave ? [() => setHarnessDesiredVersion(harness.id, versionSave.version)] : []),
           ...removed.map((id) => () => unpinRepository(harness.id, id)),
           ...added.map((id) => () => pinRepository(harness.id, id)),
         ]),
@@ -400,12 +507,13 @@ export function HarnessSettingsSection({
       id="harness-settings"
       title="Settings"
       showTitle={false}
-      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Concurrency and task types use the organization's default unless you set them here."
+      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Concurrency, task types and the version are inherited from the organization (Settings › Harness defaults) unless you override them here."
       changes={changes}
       prepare={prepare}
       onDiscard={() => {
         setDraft(saved);
-        setOverride(savedOverride);
+        setVersion(savedVersion);
+        setVersionError(undefined);
         setPins(savedPins);
       }}
       confirm={{
@@ -419,34 +527,19 @@ export function HarnessSettingsSection({
         title="Concurrency"
         description="How many jobs the harness runs at once, and how many of them each pool may take."
       >
-        <div className="settings-group" role="group" aria-labelledby="max-concurrency-label">
-          <span id="max-concurrency-label" className="settings-group-label">
-            Max concurrency
-          </span>
-          <InheritCheck
-            id="max-concurrency-inherit"
-            checked={draft.inheritMaxConcurrency}
-            disabled={readOnly}
-            onChange={(inherit) =>
-              setDraft((d) => ({
-                ...d,
-                inheritMaxConcurrency: inherit,
-                maxConcurrency: inherit ? String(defaults.maxConcurrency) : d.maxConcurrency,
-              }))
-            }
-          />
+        <InheritableSetting
+          id="max-concurrency-source"
+          label="Max concurrency"
+          inherited={draft.inheritMaxConcurrency}
+          organizationValue={String(defaults.maxConcurrency)}
+          readOnly={readOnly}
+          onInheritChange={(inherit) => setDraft((d) => ({ ...d, inheritMaxConcurrency: inherit }))}
+        >
           <div className="settings-row">
             <Field
               label="Jobs at once"
               htmlFor="max-concurrency"
-              description={
-                draft.inheritMaxConcurrency
-                  ? `Jobs the harness runs at once: the organization's ${defaults.maxConcurrency}.`
-                  : withDefault(
-                      "Jobs the harness runs at once (1–32).",
-                      `the organization's ${defaults.maxConcurrency}`,
-                    )
-              }
+              description="Jobs the harness runs at once (1–32)."
             >
               <Input
                 id="max-concurrency"
@@ -455,17 +548,13 @@ export function HarnessSettingsSection({
                 min={1}
                 max={32}
                 required
-                disabled={readOnly || draft.inheritMaxConcurrency}
-                value={
-                  draft.inheritMaxConcurrency
-                    ? String(defaults.maxConcurrency)
-                    : draft.maxConcurrency
-                }
+                disabled={readOnly}
+                value={draft.maxConcurrency}
                 onChange={(e) => setDraft((d) => ({ ...d, maxConcurrency: e.target.value }))}
               />
             </Field>
           </div>
-        </div>
+        </InheritableSetting>
         <div className="settings-group" role="group" aria-labelledby="pool-limits-label">
           <span id="pool-limits-label" className="settings-group-label">
             Concurrency per pool
@@ -507,34 +596,29 @@ export function HarnessSettingsSection({
       <SettingsSubsection
         id="harness-task-types"
         title="Task types"
-        description={`Which tasks this host may run. Housekeeping jobs (repository syncs) always run. Organization default: ${taskTypeList(defaults.acceptedTaskTypes)}.`}
+        description="Which tasks this host may run. Housekeeping jobs (repository syncs) always run."
       >
-        <div className="settings-group" role="group" aria-label="Accepted task types">
-          <InheritCheck
-            id="task-types-inherit"
-            checked={draft.inheritTaskTypes}
-            disabled={readOnly}
-            onChange={(inherit) =>
-              setDraft((d) => ({
-                ...d,
-                inheritTaskTypes: inherit,
-                taskTypes: inherit ? defaults.acceptedTaskTypes : d.taskTypes,
-              }))
-            }
-          />
+        <InheritableSetting
+          id="task-types-source"
+          label="Accepted task types"
+          inherited={draft.inheritTaskTypes}
+          organizationValue={taskTypeList(defaults.acceptedTaskTypes)}
+          readOnly={readOnly}
+          onInheritChange={(inherit) => setDraft((d) => ({ ...d, inheritTaskTypes: inherit }))}
+        >
           {TASK_TYPES.map((taskType) => (
             <div key={taskType} className="settings-check settings-check-center">
               <Checkbox
                 id={`task-type-${taskType}`}
-                checked={taskTypes.includes(taskType)}
-                disabled={readOnly || draft.inheritTaskTypes}
+                checked={draft.taskTypes.includes(taskType)}
+                disabled={readOnly}
                 onCheckedChange={(checked) => toggle(taskType, checked === true)}
               />
               <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
               <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
             </div>
           ))}
-        </div>
+        </InheritableSetting>
       </SettingsSubsection>
 
       <SettingsSubsection
@@ -567,20 +651,36 @@ export function HarnessSettingsSection({
             : "This harness can't update itself (it isn't running under pm2, or its version predates self-update). Install the desired version on the host."
         }
       >
-        <Field
-          label="Desired version override"
-          htmlFor="desired-version"
-          description={`Semver, e.g. 1.4.0. Leave it empty to use the organization's version (${globalDesiredVersion ?? "not set"}, Settings › Harness defaults). Default: not set.`}
+        <InheritableSetting
+          id="desired-version-source"
+          label="Desired version"
+          inherited={version.inherit}
+          organizationValue={organizationVersionText(globalDesiredVersion)}
+          readOnly={readOnly}
+          onInheritChange={(inherit) => {
+            setVersionError(undefined);
+            setVersion((v) => ({ ...v, inherit }));
+          }}
         >
-          <Input
-            id="desired-version"
-            placeholder={`Organization (${globalDesiredVersion ?? "not set"})`}
-            disabled={readOnly}
-            value={override}
-            onChange={(e) => setOverride(e.target.value)}
-            className="settings-mono input-number-wide"
-          />
-        </Field>
+          <Field
+            label="Version"
+            htmlFor="desired-version"
+            description="Semver, e.g. 1.4.0. The organization's version is set in Settings › Harness defaults."
+            error={versionError}
+          >
+            <Input
+              id="desired-version"
+              placeholder="e.g. 1.4.0"
+              disabled={readOnly}
+              value={version.version}
+              onChange={(e) => {
+                setVersionError(undefined);
+                setVersion((v) => ({ ...v, version: e.target.value }));
+              }}
+              className="settings-mono input-number-wide"
+            />
+          </Field>
+        </InheritableSetting>
         {harness.selfUpdate === "supported" && !readOnly && (
           <div>
             <Button
@@ -671,7 +771,12 @@ function hostToolPaths(hostTools: readonly HostToolRow[]): Record<string, string
 const pathFormat = (value: SettingValue) =>
   value === "" ? "Discover on PATH" : formatSettingValue(value);
 
-/** The configured paths of the harness's host tools, saved together. */
+/**
+ * The configured paths of the harness's host tools, saved together like the Settings tab. They
+ * are settings of the harness, not a list to add to or delete from: the catalog (Settings ›
+ * Harness defaults) holds the tools, and every path reaches the harness with the same heartbeat,
+ * so one save with a change list and Discard fits better than a save per row.
+ */
 export function HostToolsSection({
   harness,
   hostTools,
