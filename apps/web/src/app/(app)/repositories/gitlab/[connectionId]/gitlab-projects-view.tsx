@@ -13,7 +13,8 @@ interface GitLabProjectsViewProps {
   connectionId: string;
   /** Connection name, `<bot user> @ <host>`. */
   name: string;
-  projects: GitLabProjectRow[];
+  /** `null` while the projects are loading. */
+  projects: GitLabProjectRow[] | null;
   /** Whether the list was cut off at the most projects listed. */
   truncated: boolean;
   error: string | null;
@@ -70,7 +71,7 @@ export function GitLabProjectsView({
           Projects where the bot token&apos;s user has the Maintainer role (or Owner) are listed;
           archived projects aren&apos;t. To add a project, make the bot a Maintainer of it on
           GitLab.
-          {truncated && ` Only the first ${projects.length} projects are shown.`}
+          {truncated && projects && ` Only the first ${projects.length} projects are shown.`}
         </>
       }
       emptyIcon={<IconBrandGitlab size={24} />}

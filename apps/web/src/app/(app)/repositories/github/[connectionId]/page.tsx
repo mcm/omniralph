@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getScmConnection, listConnectionRepositories } from "@omniralph/db";
+import { Suspense } from "react";
+import { getScmConnection, listConnectionRepositories, type ScmConnection } from "@omniralph/db";
 import { getInstallation, listInstallationRepos } from "@omniralph/scm";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { requirePageUser } from "@/lib/auth/session";
@@ -24,13 +25,35 @@ export default async function GitHubInstallationPage({
     `/repositories/github/${connectionId}`,
   );
   const admin = await requirePageUser("admin");
-  const db = getDb();
-  const connection = await getScmConnection(db, admin.organization.id, connectionId);
+  const connection = await getScmConnection(getDb(), admin.organization.id, connectionId);
   if (!connection || connection.provider !== "github" || !connection.externalId) notFound();
 
+  // The page renders right away; the list streams in once GitHub answers.
+  return (
+    <Suspense
+      fallback={
+        <GitHubReposView
+          connectionId={connection.id}
+          account={connection.name}
+          manageUrl={null}
+          repos={null}
+          error={null}
+        />
+      }
+    >
+      <InstallationRepos connection={connection} />
+    </Suspense>
+  );
+}
+
+/** The installation's repositories from GitHub, marked with the ones connected here. */
+async function InstallationRepos({ connection }: { connection: ScmConnection }) {
   const installationId = Number(connection.externalId);
   const connected = new Map(
-    (await listConnectionRepositories(db, connection.id)).map((repo) => [repo.externalId, repo]),
+    (await listConnectionRepositories(getDb(), connection.id)).map((repo) => [
+      repo.externalId,
+      repo,
+    ]),
   );
   let loaded: { account: string; manageUrl: string | null; repos: InstallationRepoRow[] };
   let error: string | null = null;

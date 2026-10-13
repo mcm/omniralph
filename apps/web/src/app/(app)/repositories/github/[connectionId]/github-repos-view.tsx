@@ -14,7 +14,8 @@ interface GitHubReposViewProps {
   account: string;
   /** Installation settings on GitHub (add or remove repositories there). */
   manageUrl: string | null;
-  repos: InstallationRepoRow[];
+  /** `null` while the installation's repositories are loading. */
+  repos: InstallationRepoRow[] | null;
   error: string | null;
 }
 
