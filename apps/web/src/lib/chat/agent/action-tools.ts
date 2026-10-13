@@ -36,7 +36,7 @@ import {
  * `answer_run_permission` and `answer_run_cleanup`.
  */
 
-const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/ralph/${run.id}`;
+const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/coding/${run.id}`;
 
 export const startWork = defineChatTool({
   tier: "action",

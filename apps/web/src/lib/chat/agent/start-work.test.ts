@@ -411,7 +411,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
     expect(toolOutput(calls[1]!)).toMatchObject({
       status: "started",
       runId: run.id,
-      url: `${APP_URL}/ralph/${run.id}`,
+      url: `${APP_URL}/coding/${run.id}`,
       task: "builtin:handle-request",
       repository: "acme/app",
       followUp: false,

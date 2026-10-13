@@ -188,7 +188,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
       <TableRow data-has-error={run.error ? true : undefined}>
         <TableCell className="list-col-main">
           <Link
-            href={`/ralph/${run.id}`}
+            href={`/coding/${run.id}`}
             className="list-title list-title-stacked"
             aria-describedby={errorId}
           >
