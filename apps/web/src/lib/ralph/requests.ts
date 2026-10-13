@@ -50,6 +50,7 @@ import { jobFailure } from "./outcome";
 import {
   changeRequestTerm,
   laneRepository,
+  linkPullRequestToIssue,
   postableText,
   sessionLinkLabel,
   type LinearLink,
@@ -314,7 +315,7 @@ function shipNote(result: RalphRequestResult, branch: string): string {
   return commit ? `${commit}.` : `Nothing new to commit or push on \`${branch}\`.`;
 }
 
-/** Records a lane's PR/MR and adds it to the agent session. */
+/** Records a lane's PR/MR and adds it to the agent session and the Linear issue. */
 async function recordPullRequest(
   deps: RalphDeps,
   tx: RalphTransaction,
@@ -331,6 +332,7 @@ async function recordPullRequest(
     `Adding the ${changeRequestTerm(repository.provider)} to ${conversation.name}`,
     () => conversation.addLink(label, pr.url),
   );
+  await linkPullRequestToIssue(deps, run, label, pr.url);
   await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
 }
 

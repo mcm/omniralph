@@ -186,6 +186,11 @@ export interface LinearGateway {
   /** Delegates the issue to an (agent) user, e.g. the app user from `getViewer`. */
   delegateIssue(issueId: string, delegateId: string): Promise<void>;
   addComment(issueId: string, body: string): Promise<void>;
+  /**
+   * Links a URL (e.g. a PR/MR) to the issue as an attachment
+   * (`attachmentLinkURL`). Linking the same URL again updates the one there.
+   */
+  linkUrl(issueId: string, url: string, title?: string): Promise<void>;
   /** Opens an agent session on the issue (as the app) and returns its ID. */
   createAgentSessionOnIssue(issueId: string): Promise<string>;
   createActivity(
@@ -843,6 +848,20 @@ export class SdkLinearGateway implements LinearGateway {
         }
       `,
       { input: { issueId, body } },
+    );
+  }
+
+  async linkUrl(issueId: string, url: string, title?: string): Promise<void> {
+    await this.mutate(
+      "attachmentLinkURL",
+      /* GraphQL */ `
+        mutation LinkUrl($issueId: String!, $url: String!, $title: String) {
+          attachmentLinkURL(issueId: $issueId, url: $url, title: $title) {
+            success
+          }
+        }
+      `,
+      { issueId, url, title: title ?? null },
     );
   }
 

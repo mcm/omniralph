@@ -55,6 +55,8 @@ export class FakeLinearGateway implements LinearGateway {
     "completed",
     "canceled",
   ].map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
+  /** Every `linkUrl` call, in order. */
+  links: Array<{ issueId: string; url: string; title?: string }> = [];
   /** Every `setIssueState` call, in order. */
   stateChanges: Array<{ issueId: string; target: { type?: string; name?: string } }> = [];
   /** Every `updateIssue` call, in order. */
@@ -263,6 +265,10 @@ export class FakeLinearGateway implements LinearGateway {
   }
   async updateSessionPlan(sessionId: string, plan: PlanStep[]) {
     this.plans.set(sessionId, [...(this.plans.get(sessionId) ?? []), plan]);
+  }
+  async linkUrl(issueId: string, url: string, title?: string) {
+    this.fail("linkUrl");
+    this.links.push({ issueId, url, ...(title !== undefined && { title }) });
   }
   async addSessionExternalUrl(sessionId: string, label: string, url: string) {
     this.urls.push({ sessionId, label, url });

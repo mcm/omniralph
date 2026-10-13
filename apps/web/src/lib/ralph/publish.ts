@@ -215,6 +215,23 @@ export async function sessionLinkLabel(
 }
 
 /**
+ * Links a lane's PR/MR to the run's Linear issue (the epic, or the single
+ * issue) as an attachment, whether or not the code host's Linear integration
+ * links it too. A chat run has no issue. A failure is logged, never fails the run.
+ */
+export async function linkPullRequestToIssue(
+  deps: Pick<RalphDeps, "linear">,
+  run: Pick<RalphRun, "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId">,
+  label: string,
+  url: string,
+): Promise<void> {
+  if (!isLinearRun(run)) return;
+  await quietly(`Linking ${url} to ${run.linearIdentifier}`, () =>
+    deps.linear.linkUrl(run.linearIssueId, url, label),
+  );
+}
+
+/**
  * `openPullRequestEarly` (per lane, with its repository's setting, or on the
  * `tasks` path its story task's `draftPullRequest`: `opensPullRequestEarly`):
  * once a story of a lane is pushed, opens a draft PR/MR with a templated body (or
@@ -286,6 +303,7 @@ async function openEarlyLanePullRequest(
   await quietly(`Adding the ${term} to ${conversation.name}`, () =>
     conversation.addLink(label, pr.url),
   );
+  await linkPullRequestToIssue(deps, run, label, pr.url);
   await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
   await postActivity(conversationFor(run, deps), {
     type: "thought",
@@ -404,6 +422,7 @@ export async function applyPullRequestJob(
   await quietly(`Adding the ${term} to ${conversation.name}`, () =>
     conversation.addLink(label, pr.url),
   );
+  await linkPullRequestToIssue(deps, run, label, pr.url);
   await notifyRunThread(deps, run, { kind: "pr_opened", label, url: pr.url });
   return { busy: false };
 }

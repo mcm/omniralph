@@ -405,6 +405,35 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     expect((await lane(run)).cleanup).toMatchObject({ status: "done", questions: [] });
   });
 
+  it("links the PR to the epic and resolves the epic once the PR merged", async () => {
+    const { run, epicId } = await epicWithPullRequest();
+    const pr = scm.changeRequests.at(-1)!;
+    expect(linear.links).toContainEqual({
+      issueId: epicId,
+      url: pr.url,
+      title: `Pull request #${pr.number}`,
+    });
+    // Still open: the epic is left alone.
+    await reconcileCleanup(deps());
+    expect(linear.issues.get(epicId)?.stateType).not.toBe("completed");
+
+    merge(pr.number);
+    await reconcileCleanup(deps());
+    expect(linear.issues.get(epicId)?.stateType).toBe("completed");
+    expect(linear.stateChanges.at(-1)).toEqual({ issueId: epicId, target: { type: "completed" } });
+    expect((await lane(run)).prMerged).toBe(true);
+  });
+
+  it("leaves a canceled epic alone when its PR merged", async () => {
+    const { epicId } = await epicWithPullRequest();
+    linear.issues.get(epicId)!.stateType = "canceled";
+    const changes = linear.stateChanges.length;
+    merge();
+    await reconcileCleanup(deps());
+    expect(linear.issues.get(epicId)?.stateType).toBe("canceled");
+    expect(linear.stateChanges).toHaveLength(changes);
+  });
+
   it("cleans up when the cron or the merge webhook sees the PR merged", async () => {
     // The cron, as a fallback for a missed webhook.
     const first = await epicWithPullRequest();
