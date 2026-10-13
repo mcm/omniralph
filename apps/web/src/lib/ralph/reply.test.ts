@@ -11,6 +11,7 @@ import {
   getRun,
   getRunBySession,
   jobs,
+  listLanes,
   listPendingRequests,
   listStories,
   ralphRuns,
@@ -90,6 +91,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
   let repoId: string;
+  let connectionId: string;
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
@@ -117,6 +119,7 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       },
       randomBytes(32),
     ))!;
+    connectionId = connection.id;
     repoId = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -980,6 +983,159 @@ describe.skipIf(!dockerAvailable)("replies in a run's agent session", () => {
       expect(await activeJob(run.id)).toMatchObject({
         type: "worktree.exec",
         targetHarnessId: agentA,
+      });
+    });
+
+    describe("in a story's own repository", () => {
+      /** Routes project Web to `acme/web` and sets each repository's manual labels and preparation. */
+      async function twoRepositories(
+        api: { manualLabels: string[]; allowPreparation: boolean },
+        web: { manualLabels: string[]; allowPreparation: boolean },
+      ): Promise<string> {
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...api },
+        });
+        const webId = (
+          await connectRepository(db, {
+            connectionId,
+            provider: "github",
+            externalId: "2",
+            fullPath: "acme/web",
+          })
+        ).id;
+        await updateRepositoryRalphSettings(db, webId, {
+          ralphEnabled: true,
+          linearTeamKeys: [],
+          linearProjectNames: ["Web"],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...web },
+        });
+        return webId;
+      }
+
+      async function restore(webId: string) {
+        await updateRepositoryRalphSettings(db, webId, {
+          ralphEnabled: false,
+          linearTeamKeys: [],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+        });
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+        });
+      }
+
+      /**
+       * ENG-2 (API), then ENG-3 (Web, `by hand`, with preparation, needs ENG-2),
+       * ENG-4 (Web, `manual`) and ENG-5 (API, `by hand`).
+       */
+      async function twoRepositoryEpic() {
+        const epic = linear.add({
+          identifier: "ENG-1",
+          title: "Epic",
+          description: EPIC_DESCRIPTION,
+        });
+        const story = (identifier: string, title: string, priority: number, more = {}) =>
+          linear.add({ identifier, title, parentId: epic.id, priority, ...more });
+        const alpha = story("ENG-2", "Alpha", 1);
+        const bucket = story("ENG-3", "Create the bucket", 2, {
+          projectName: "Web",
+          labels: ["By Hand"],
+          description: MANUAL_DESCRIPTION,
+        });
+        story("ENG-4", "Web page", 3, { projectName: "Web", labels: ["manual"] });
+        story("ENG-5", "API docs", 4, { labels: ["by hand"] });
+        await linear.createBlocksRelation(alpha.id, bucket.id);
+        const run = await delegate(epic.id);
+        return { bucket, run };
+      }
+
+      it("reads each story's manual labels and preparation from the repository it routes to", async () => {
+        const webId = await twoRepositories(
+          { manualLabels: ["manual"], allowPreparation: false },
+          { manualLabels: ["by hand"], allowPreparation: true },
+        );
+        try {
+          const { bucket, run } = await twoRepositoryEpic();
+          // `manual` isn't a manual label of acme/web, nor `by hand` of acme/api: both are worked.
+          expect((await work(run.id, { commitSha: sha(7) })).story.identifier).toBe("ENG-2");
+          const web = await work(run.id, { commitSha: sha(8) });
+          expect(web).toMatchObject({ story: { identifier: "ENG-4" }, repositoryId: webId });
+          expect((await work(run.id, { commitSha: sha(9) })).story.identifier).toBe("ENG-5");
+          const lanes = await listLanes(db, run.id);
+          const webLane = lanes.find((l) => l.repositoryId === webId)!;
+          expect(
+            (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId]),
+          ).toEqual(
+            expect.arrayContaining([
+              ["ENG-3", "manual", webLane.id],
+              ["ENG-4", "completed", webLane.id],
+            ]),
+          );
+
+          // ENG-3 is prepared although acme/api offers no preparation: in acme/web's lane, at its commit.
+          const [question, ...more] = selects(run);
+          expect(more).toEqual([]);
+          expect((question!.content as { body: string }).body).toContain(
+            `\`${webLane.branch}\` at \`${sha(8).slice(0, 10)}\``,
+          );
+          expect((await getRun(db, run.id))?.preparation?.request).toMatchObject({
+            storyIssueId: bucket.id,
+            headSha: sha(8),
+            laneId: webLane.id,
+          });
+          await reply(run, "Run it");
+          expect(await activeJob(run.id)).toMatchObject({
+            type: "worktree.exec",
+            repositoryId: webId,
+            targetHarnessId: agentA,
+          });
+          const payload = await prepare(run.id, {});
+          expect(payload).toMatchObject({
+            repositoryId: webId,
+            repository: { fullPath: "acme/web" },
+            branch: webLane.branch,
+            commands: PREPARE_COMMANDS,
+            approvedHeadSha: sha(8),
+          });
+          expect((await getRun(db, run.id))?.preparation).toMatchObject({
+            handled: { [bucket.id]: { how: "prepared" } },
+            head: { sha: sha(8), laneId: webLane.id },
+          });
+        } finally {
+          await restore(webId);
+        }
+      });
+
+      it("offers no preparation for a story whose repository has it off", async () => {
+        const webId = await twoRepositories(
+          { manualLabels: ["manual"], allowPreparation: true },
+          { manualLabels: ["by hand", "manual"], allowPreparation: false },
+        );
+        try {
+          const { run } = await twoRepositoryEpic();
+          expect((await work(run.id, { commitSha: sha(7) })).story.identifier).toBe("ENG-2");
+          expect((await work(run.id, { commitSha: sha(9) })).story.identifier).toBe("ENG-5");
+          expect(await activeJobs(run.id)).toEqual([]);
+          expect(selects(run)).toEqual([]);
+          const waiting = (await getRun(db, run.id))!;
+          expect(waiting).toMatchObject({ status: "waiting", preparation: null });
+          expect(waiting.waitingOn?.manual.map((m) => m.identifier).sort()).toEqual([
+            "ENG-3",
+            "ENG-4",
+          ]);
+        } finally {
+          await restore(webId);
+        }
       });
     });
 

@@ -9,6 +9,8 @@
  */
 import {
   getJob,
+  getLane,
+  getMainLane,
   updateRun,
   type Job,
   type RalphPreparation,
@@ -27,9 +29,9 @@ import {
 } from "@omniralph/ralph";
 import { WorktreeExecPayload, WorktreeExecResult } from "@omniralph/shared";
 import { conversationFor } from "./conversation";
-import { mainBranch } from "./lanes";
 import { postActivity, tail } from "./notify";
 import { jobFailure } from "./outcome";
+import { laneRows } from "./publish";
 import type { RalphDeps } from "./run";
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
@@ -45,17 +47,18 @@ const storyIdOf = (s: Story) => s.issueId ?? s.key;
 const nameOf = (s: Pick<Story, "identifier" | "storyId">) => s.identifier ?? s.storyId;
 
 /**
- * The branch's HEAD as far as the control panel knows: the newest of the
- * stories' commits (ordered by when their job finished) and the HEAD the last
- * `worktree.exec` RPC reported. Null when nothing was committed yet.
+ * The branch's HEAD in a lane as far as the control panel knows: the newest of
+ * the lane's stories' commits (ordered by when their job finished) and the
+ * HEAD the last `worktree.exec` RPC in that lane reported. Null when nothing
+ * was committed yet.
  */
 export async function knownBranchHead(
   deps: Pick<RalphDeps, "db">,
   rows: readonly RalphStory[],
-  state: RalphPreparation,
+  head: RalphPreparation["head"],
 ): Promise<string | null> {
-  let newest: { sha: string; at: number } | null = state.head
-    ? { sha: state.head.sha, at: Date.parse(state.head.at) }
+  let newest: { sha: string; at: number } | null = head
+    ? { sha: head.sha, at: Date.parse(head.at) }
     : null;
   for (const row of rows) {
     if (!row.commitSha) continue;
@@ -108,7 +111,16 @@ export async function offerPreparation(
   }
 
   const commands = next.preparation ?? [];
-  const headSha = await knownBranchHead(deps, input.rows, state);
+  // It's prepared in its lane's worktree: that lane's commits and last reported HEAD.
+  const main = await getMainLane(tx, run);
+  const row = input.rows.find((r) => r.linearIssueId === storyIdOf(next));
+  const lane = (row?.laneId ? await getLane(tx, row.laneId) : null) ?? main;
+  const laneId = lane && lane.id !== main?.id ? lane.id : null;
+  const headSha = await knownBranchHead(
+    deps,
+    lane ? laneRows(input.rows, lane, main) : [...input.rows],
+    (state.head?.laneId ?? null) === laneId ? state.head : undefined,
+  );
   const lead = [state.lead, input.waiting].filter(Boolean).join("\n\n") || undefined;
   delete state.lead;
   state.request = {
@@ -118,6 +130,7 @@ export async function offerPreparation(
     commandsHash: preparationHash(commands),
     headSha,
     askedAt: new Date().toISOString(),
+    ...(laneId && { laneId }),
   };
   await updateRun(tx, run.id, { preparation: state });
   await postActivity(
@@ -126,7 +139,7 @@ export async function offerPreparation(
       type: "elicitation",
       body: preparationQuestion({
         story: { storyId: nameOf(next), title: next.title },
-        branch: await mainBranch(tx, run),
+        branch: lane?.branch ?? "",
         headSha,
         commands,
         lead,
@@ -209,7 +222,11 @@ export async function applyPreparationJob(
     body = next.lead;
   } else {
     const result = parsed.data;
-    next.head = { sha: result.headSha, at: now.toISOString() };
+    next.head = {
+      sha: result.headSha,
+      at: now.toISOString(),
+      ...(request.laneId && { laneId: request.laneId }),
+    };
     const at = `\`${result.headSha.slice(0, 10)}\``;
     if (result.status === "completed") {
       next.handled[request.storyIssueId] = {
@@ -233,7 +250,7 @@ export async function applyPreparationJob(
     } else {
       const changed = [
         payload?.success && payload.data.approvedHeadSha !== result.headSha
-          ? `\`${await mainBranch(tx, run)}\` (now at ${at})`
+          ? `\`${payload.data.branch}\` (now at ${at})`
           : "",
         payload?.success && preparationHash(payload.data.commands) !== request.commandsHash
           ? "its commands"

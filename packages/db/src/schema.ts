@@ -1605,6 +1605,8 @@ export interface RalphPreparationRequest {
   answeredAt?: string;
   /** The `ralph.prepare` job running the approved commands, until its outcome is applied. */
   jobId?: string;
+  /** The lane whose worktree the story is prepared in (unset: the main lane). */
+  laneId?: string | null;
 }
 
 /** Preparation of a run's manual stories (cyralph's `preparation*` session fields). */
@@ -1614,8 +1616,11 @@ export interface RalphPreparation {
   handled: Record<string, { how: "prepared" | "myself"; at: string; headSha?: string }>;
   /** `rerun preparation`: the next question is about the earliest open one, even if handled. */
   rerun?: boolean;
-  /** The branch HEAD a `ralph.prepare` job last reported (ISO `at` orders it against story commits). */
-  head?: { sha: string; at: string };
+  /**
+   * The branch HEAD a `ralph.prepare` job last reported (ISO `at` orders it against story commits),
+   * in the lane it ran in (unset: the main lane).
+   */
+  head?: { sha: string; at: string; laneId?: string | null };
   /** Leads the next question (why it's asked again: a failure, or a stale approval). */
   lead?: string;
 }

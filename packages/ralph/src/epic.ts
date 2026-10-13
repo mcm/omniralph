@@ -166,19 +166,31 @@ function storyFromIssue(
       external[b.id] = b.identifier;
     }
   }
-  const manual = isManualIssue(issue, opts.manualLabels);
+  return withManualOptions(
+    { ...linearStory(issue), dependsOn, status: statusFromStateType(issue.stateType) },
+    opts,
+  );
+}
+
+/**
+ * `story` (of a sub-issue) read with `opts`: manual when one of its labels is
+ * one of `opts.manualLabels`, with the preparation of its description when
+ * manual and `opts.allowPreparation` isn't off. Used again once a story is
+ * routed to a repository whose manual labels and preparation setting differ.
+ */
+export function withManualOptions<S extends Story>(story: S, opts: EpicOptions): S {
+  const { manual: _manual, preparation: _preparation, ...rest } = story;
+  const manual = isManualIssue({ labels: story.labels ?? [] }, opts.manualLabels);
   // Preparation is only ever offered for manual stories: blocks anywhere else are plain text.
   const preparation =
     manual && opts.allowPreparation !== false
-      ? parsePrepareBlocks(stripLegacyMetadata(issue.description))
+      ? parsePrepareBlocks(stripLegacyMetadata(story.sourceText ?? ""))
       : [];
   return {
-    ...linearStory(issue),
-    dependsOn,
-    status: statusFromStateType(issue.stateType),
+    ...rest,
     ...(manual && { manual: true }),
     ...(preparation.length > 0 && { preparation }),
-  };
+  } as S;
 }
 
 /** The branch an epic builds on: the PRD's branch name, else a `Branch:` line, else Linear's suggestion. */
