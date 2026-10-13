@@ -13,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
   Empty,
-  Muted,
   NativeSelect,
   Table,
   TableBody,
@@ -31,7 +30,7 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { ExternalRowLink, ListStatus, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
@@ -205,15 +204,8 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
           )}
         </div>
       </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          <RalphRunStatusBadge status={run.status} />
-          {run.error && (
-            <Muted title={run.error} className="list-error">
-              {run.error.length > 80 ? `${run.error.slice(0, 80)}…` : run.error}
-            </Muted>
-          )}
-        </div>
+      <TableCell className={`${WIDE_COLUMN} list-col-status`}>
+        <ListStatus badge={<RalphRunStatusBadge status={run.status} />} error={run.error} />
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <span className="list-text text-numeric list-nowrap">
@@ -354,7 +346,7 @@ export function RalphRunsView({
                     <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
                       Repository / branch
                     </TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
                     <TableHead className={WIDE_COLUMN}>Stories</TableHead>
                     <TableHead className={`${WIDE_COLUMN} list-nowrap`}>PR / MR</TableHead>
                     <TableHead className={WIDE_COLUMN}>Harness</TableHead>

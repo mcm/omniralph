@@ -40,7 +40,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
-import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { ListStatus, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -530,7 +530,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
           <TableHeader>
             <TableRow>
               <TableHead>Type</TableHead>
-              <TableHead className={WIDE_COLUMN}>Status</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
               <TableHead className={WIDE_COLUMN}>Deliveries</TableHead>
               <TableHead className={WIDE_COLUMN}>Harness</TableHead>
               <TableHead className={WIDE_COLUMN}>Created</TableHead>
@@ -549,15 +549,8 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                     <Timestamp iso={job.finishedAt ?? job.createdAt} />
                   </PhoneMeta>
                 </TableCell>
-                <TableCell className={WIDE_COLUMN}>
-                  <div className="list-cell-stack">
-                    <JobStatusBadge job={job} />
-                    {job.error && (
-                      <Muted title={job.error} className="list-error">
-                        {truncate(job.error, 80)}
-                      </Muted>
-                    )}
-                  </div>
+                <TableCell className={`${WIDE_COLUMN} list-col-status`}>
+                  <ListStatus badge={<JobStatusBadge job={job} />} error={job.error} />
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
                   <span className="list-text">{job.deliveryCount}</span>

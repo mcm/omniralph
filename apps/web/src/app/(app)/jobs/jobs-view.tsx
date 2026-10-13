@@ -21,7 +21,6 @@ import {
   CardHeader,
   CardTitle,
   Empty,
-  Muted,
   NativeSelect,
   Table,
   TableBody,
@@ -34,7 +33,7 @@ import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
-import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { ListStatus, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
@@ -93,17 +92,15 @@ function JobTableRow({
           {shortJobId(job.id)}
         </a>
         <PhoneMeta>
-          <span className="list-time text-numeric">{job.type}</span>
           <JobStatusBadge job={job} />
           <Timestamp iso={job.finishedAt ?? job.createdAt} />
+          <span className="list-time text-numeric">{job.type}</span>
         </PhoneMeta>
       </TableCell>
       <TableCell className={`${WIDE_COLUMN} jobs-col-type`}>
-        <div className="list-cell-stack">
-          <span className="list-filters">
-            <span className="list-time list-text-primary text-numeric">{job.type}</span>
-            <Badge variant="neutral">{job.taskType}</Badge>
-          </span>
+        <div className="jobs-type-line">
+          <span className="list-time list-text-primary text-numeric">{job.type}</span>
+          <Badge variant="neutral">{job.taskType}</Badge>
           {job.target &&
             (job.target.url ? (
               <a
@@ -121,15 +118,8 @@ function JobTableRow({
             ))}
         </div>
       </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          <JobStatusBadge job={job} />
-          {job.error && (
-            <Muted title={job.error} className="list-error">
-              {job.error.length > 80 ? `${job.error.slice(0, 80)}…` : job.error}
-            </Muted>
-          )}
-        </div>
+      <TableCell className={`${WIDE_COLUMN} list-col-status`}>
+        <ListStatus badge={<JobStatusBadge job={job} />} error={job.error} />
       </TableCell>
       <TableCell className={WIDE_COLUMN} numeric>
         {job.deliveryCount}
@@ -137,11 +127,14 @@ function JobTableRow({
       <TableCell className={WIDE_COLUMN}>
         {job.agent ? (
           isAdmin ? (
-            <Link href={`/harnesses/${job.agent.id}`} className="list-text list-text-primary">
+            <Link
+              href={`/harnesses/${job.agent.id}`}
+              className="list-text list-text-primary list-nowrap"
+            >
               {job.agent.name}
             </Link>
           ) : (
-            <span className="list-text">{job.agent.name}</span>
+            <span className="list-text list-nowrap">{job.agent.name}</span>
           )
         ) : (
           <EmptyValue />
@@ -151,7 +144,7 @@ function JobTableRow({
         <Timestamp iso={job.createdAt} />
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
-        {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
+        {job.finishedAt ? <Timestamp iso={job.finishedAt} after={job.createdAt} /> : <EmptyValue />}
       </TableCell>
       {isAdmin && (
         <TableCell className="list-actions">
@@ -163,9 +156,9 @@ function JobTableRow({
                   variant="ghost"
                   disabled={pending}
                   aria-label={`Cancel job ${shortJobId(job.id)}`}
+                  title="Cancel job"
                 >
                   <IconX size={14} />
-                  <span className="list-label-wide">Cancel</span>
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -287,7 +280,7 @@ export function JobsView({
                   <TableRow>
                     <TableHead>Job</TableHead>
                     <TableHead className={`${WIDE_COLUMN} jobs-col-type`}>Type</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
                     <TableHead className={WIDE_COLUMN} numeric>
                       Deliveries
                     </TableHead>

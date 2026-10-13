@@ -303,8 +303,28 @@ body {
 .list-text-danger {
   color: var(--danger-fg);
 }
+/* Status badge + error on one line (ListStatus). The line fills its cell without adding to
+   the column's width (0 width, 100% min); the column's min-width gives the error room. */
+.list-col-status {
+  min-width: 9rem;
+}
+.list-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 0;
+  min-width: 100%;
+}
+.list-status > :first-child {
+  flex-shrink: 0;
+}
 .list-error {
-  max-width: 32ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }
 .list-table th {
   white-space: nowrap;
@@ -394,15 +414,40 @@ body {
   }
 }
 
-/* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`). */
-/* Jobs Type column: room for most targets; longer ones truncate in the middle instead of
-   widening the table past its actions. */
-.jobs-col-type {
-  min-width: 12rem;
+/* Jobs Type column: takes the table's free width and holds type, task and target on one
+   line; a long target truncates in the middle instead of widening the table past its
+   actions. */
+@media (min-width: 768px) {
+  .jobs-col-type {
+    width: 100%;
+    max-width: 0;
+    min-width: 11rem;
+  }
 }
-.jobs-target {
+.jobs-type-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 0;
   min-width: 100%;
+}
+.jobs-type-line > :not(.jobs-target) {
+  flex-shrink: 0;
+}
+.jobs-target {
+  min-width: 0;
+  overflow: hidden;
+}
+/* A tail wider than the cell truncates too (the head goes first), so it never runs under
+   the link icon. */
+.jobs-target .mono-value-head {
+  flex-shrink: 1000;
+}
+.jobs-target .mono-value-tail {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .jobs-target > svg {
   flex-shrink: 0;
@@ -410,9 +455,11 @@ body {
 .job-row {
   scroll-margin-top: var(--space-16);
 }
+/* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`): tint and a full outline. */
 .job-row[data-targeted] {
   background: var(--accent-tint);
-  box-shadow: inset 3px 0 0 var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* Settings cards (components/settings-card.tsx): one save per card, and the "old → new" list
