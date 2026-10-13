@@ -56,7 +56,6 @@ import {
   askForRepository,
   leftBehind,
   leftBehindNote,
-  repositoryQuestionFor,
   ROUTED_BY_SELECTION,
 } from "./repository-selection";
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
@@ -111,8 +110,8 @@ export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   return [
     `I can't build **${epic.identifier}**: no repository has coding on.`,
     "Turn coding on for a repository under **Repository › Settings › Task types** (and add this " +
-      "issue's label, project or team to its Linear routing under **Repository › Settings › Coding**, or a `[repo=<owner/name>]` tag to the issue " +
-      "description). Then delegate it to me again.",
+      "issue's label, project or team to its Linear routing under **Repository › Settings › Coding**). " +
+      "Then delegate it to me again.",
   ].join("\n\n");
 }
 
@@ -374,11 +373,7 @@ async function askForRepositoryFirst(
     }
     return { status: "started", run, created: false };
   }
-  await askForRepository(
-    linearConversation(deps.linear, event.sessionId),
-    repositories,
-    repositoryQuestionFor(root.description),
-  );
+  await askForRepository(linearConversation(deps.linear, event.sessionId), repositories);
   await notifyRunThread(deps, run, { kind: "started" });
   return { status: "selecting", run };
 }

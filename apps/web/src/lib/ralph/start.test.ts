@@ -430,7 +430,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     const [error] = linear.bodies(unroutable.sessionId, "error");
     expect(error).toContain("no repository has coding on");
     expect(error).toContain("Repository › Settings › Task types");
-    expect(error).toContain("[repo=<owner/name>]");
+    expect(error).not.toContain("[repo=");
 
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
     expect(linear.issues.get(elsewhere.id)?.stateType).toBe("unstarted");
@@ -514,7 +514,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
         "Which repository should I work in for this issue?",
       );
-      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain("`[repo=owner/name]`");
+      expect(linear.bodies(event.sessionId, "elicitation")[0]).not.toContain("[repo=");
       expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
         "Repository › Settings › Coding",
       );
@@ -639,16 +639,17 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
       expect(selects()).toHaveLength(1);
     });
 
-    it("says why a `[repo=…]` tag didn't route", async () => {
+    it("ignores a `[repo=…]` tag in the description", async () => {
       const tagged = linear.add({
-        identifier: "ENG-41",
+        identifier: "OPS-41",
         title: "Tagged",
-        description: "[repo=acme/unknown]",
+        teamKey: "OPS",
+        description: "[repo=acme/api]",
       });
       const event = created(tagged.id);
       expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
       const [question] = linear.bodies(event.sessionId, "elicitation");
-      expect(question).toContain("Its `[repo=…]` tag (`acme/unknown`) names no repository");
+      expect(question).not.toContain("[repo=");
       expect(question).toContain("Which repository should I work in for this issue?");
     });
   });
@@ -667,14 +668,14 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
     });
     await db.delete(jobs);
 
-    // A new `[repo=…]` tag sends it to api.
-    linear.issues.get(epic.id)!.description = "Now \\[repo=acme/api\\]";
+    // Without its label, its team sends it to api.
+    linear.issues.get(epic.id)!.labels = [];
     const second = created(epic.id);
     await startRun(second, deps());
     const moved = await withLane(await getRunBySession(db, second.sessionId));
     expect(moved).toMatchObject({
       repositoryId: repoId,
-      routedBy: "`[repo=…]` tag `acme/api`",
+      routedBy: "team `ENG`",
       prNumber: null,
       prUrl: null,
     });

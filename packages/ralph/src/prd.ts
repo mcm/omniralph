@@ -25,8 +25,6 @@ export interface ParsedPrd {
   branchName?: string;
   qualityGates: string[];
   stories: PrdStory[];
-  /** Repository paths named by `[repo=…]` tags in the text, in order (see `parseRepoTags`). */
-  repoTags: string[];
   source: "markdown" | "json";
 }
 
@@ -60,20 +58,6 @@ export function parseQualityGates(markdown: string): string[] {
 export function parseBranchLine(text: string | null | undefined): string | undefined {
   if (!text) return undefined;
   return /^>\s*Branch:\s*`?([^`\n]+)`?/m.exec(unwrap(text))?.[1]?.trim() || undefined;
-}
-
-/**
- * Repository paths named by `[repo=<fullPath>]` tags in `text` (Linear may escape them as
- * `\[repo=…\]`), in order, without duplicates (compared ignoring case, slashes and `.git`).
- */
-export function parseRepoTags(text: string | null | undefined): string[] {
-  if (!text) return [];
-  const paths: string[] = [];
-  for (const match of text.matchAll(/\\?\[repo=([^\s\]]+?)\\?\]/gi)) {
-    const path = match[1]!.replace(/\\(.)/g, "$1");
-    if (!paths.some((p) => normalizeRepoPath(p) === normalizeRepoPath(path))) paths.push(path);
-  }
-  return paths;
 }
 
 /** A repository path for comparison: lower case, no surrounding slashes, no `.git` suffix. */
@@ -192,7 +176,6 @@ export function parsePrdMarkdown(markdown: string): ParsedPrd | null {
     branchName: parseBranchLine(text),
     qualityGates: parseQualityGates(text),
     stories,
-    repoTags: parseRepoTags(text),
     source: "markdown",
   };
 }
@@ -245,7 +228,6 @@ export function parsePrdJson(input: string | unknown): ParsedPrd | null {
     // prd.json bakes quality gates into each story's acceptance criteria.
     qualityGates: [],
     stories,
-    repoTags: [],
     source: "json",
   };
 }
@@ -254,8 +236,8 @@ export function parsePrdJson(input: string | unknown): ParsedPrd | null {
  * Find a PRD anywhere in an issue description: a fenced ```json prd.json block takes precedence
  * over markdown user stories. Null when the text has no user stories (it isn't a PRD).
  *
- * The `> Branch:` line, `## Quality Gates` and `[repo=…]` tags are read from the whole text, so a
- * prd.json block's surrounding markdown can still name them.
+ * The `> Branch:` line and `## Quality Gates` are read from the whole text, so a prd.json block's
+ * surrounding markdown can still name them.
  */
 export function parsePrd(text: string | undefined | null): ParsedPrd | null {
   if (!text?.trim()) return null;
@@ -265,7 +247,6 @@ export function parsePrd(text: string | undefined | null): ParsedPrd | null {
     ...prd,
     branchName: prd.branchName || parseBranchLine(text),
     qualityGates: prd.qualityGates.length > 0 ? prd.qualityGates : parseQualityGates(text),
-    repoTags: parseRepoTags(text),
   };
 }
 

@@ -4,21 +4,17 @@
  * allowed task types) are candidates; the rules are tried in order and the first
  * one that matches wins:
  *
- *   1. tag      a `[repo=<fullPath>]` tag in the description (Linear may escape it as `\[repo=…\]`)
- *   2. label    one of the issue's labels is in the repository's `linear_labels`
- *   3. project  the issue's project is in its `linear_project_names`
- *   4. team     the issue's team key is in its `linear_team_keys`
+ *   1. label    one of the issue's labels is in the repository's `linear_labels`
+ *   2. project  the issue's project is in its `linear_project_names`
+ *   3. team     the issue's team key is in its `linear_team_keys`
  *
  * Matching ignores case. When several repositories match the same rule, the
- * one with the first `full_path` wins. A tag is authoritative: an issue whose
- * tags name no enabled repository isn't routed by its labels, project or team.
+ * one with the first `full_path` wins. Routing comes only from these settings,
+ * never from the issue's description.
  */
-import { normalizeRepoPath, parseRepoTags } from "@omniralph/ralph";
-
-export { parseRepoTags };
+import { normalizeRepoPath } from "@omniralph/ralph";
 
 export interface RoutableIssue {
-  description?: string | null;
   /** Label names. */
   labels: readonly string[];
   projectName?: string | null;
@@ -34,17 +30,16 @@ export interface RoutableRepository {
   linearLabels: readonly string[];
 }
 
-export type RoutingRule = "tag" | "label" | "project" | "team";
+export type RoutingRule = "label" | "project" | "team";
 
 export interface RouteMatch<R extends RoutableRepository> {
   repository: R;
   rule: RoutingRule;
-  /** What matched: the tagged path, the label, the project name or the team key (as on the issue). */
+  /** What matched: the label, the project name or the team key (as on the issue). */
   value: string;
 }
 
 const RULE_LABEL: Record<RoutingRule, string> = {
-  tag: "`[repo=…]` tag",
   label: "label",
   project: "project",
   team: "team",
@@ -67,17 +62,6 @@ export function routeIssue<R extends RoutableRepository>(
   const candidates = repositories
     .filter((r) => r.effective.coding)
     .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
-
-  const tags = parseRepoTags(issue.description);
-  if (tags.length > 0) {
-    for (const tag of tags) {
-      const repository = candidates.find(
-        (r) => normalizeRepoPath(r.fullPath) === normalizeRepoPath(tag),
-      );
-      if (repository) return { repository, rule: "tag", value: tag };
-    }
-    return null;
-  }
 
   for (const repository of candidates) {
     const routed = lower(repository.linearLabels);
@@ -110,9 +94,9 @@ export type StoryRoute<R extends RoutableRepository> =
 
 /**
  * Routes a story of an epic (cyralph's `routeStory`). Only the story's own
- * signals count, in the usual order: a repo tag, a routing label, a project
- * other than the epic's, a team other than the epic's. A story without any
- * stays in the epic's repository. A repo tag or a different project that no
+ * signals count, in the usual order: a routing label, a project other than
+ * the epic's, a team other than the epic's. A story without any stays in the
+ * epic's repository. A different project that no
  * repository here matches means the story belongs to a repository Omniralph
  * doesn't have (teams and labels often span repositories, so they never make a
  * story unroutable).
@@ -125,20 +109,6 @@ export function routeStory<R extends RoutableRepository>(
   const candidates = repositories
     .filter((r) => r.effective.coding)
     .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
-
-  const tags = parseRepoTags(story.description);
-  for (const tag of tags) {
-    const repository = candidates.find(
-      (r) => normalizeRepoPath(r.fullPath) === normalizeRepoPath(tag),
-    );
-    if (repository) return { type: "selected", repository, rule: "tag", value: tag };
-  }
-  if (tags.length > 0) {
-    return {
-      type: "unroutable",
-      reason: `its \`[repo=${tags.join(",")}]\` tag names no repository here`,
-    };
-  }
 
   const labels = story.labels ?? [];
   for (const repository of candidates) {
@@ -169,19 +139,16 @@ export function routeStory<R extends RoutableRepository>(
 
 const lastSegment = (path: string) => normalizeRepoPath(path).split("/").pop() ?? "";
 
-/** Whether `tag` names the repository: its full path or the last segment of it. */
-function tagNamesRepository(
-  tag: string,
-  repository: Pick<RoutableRepository, "fullPath">,
-): boolean {
-  const t = normalizeRepoPath(tag);
+/** Whether `name` names the repository: its full path or the last segment of it. */
+function namesRepository(name: string, repository: Pick<RoutableRepository, "fullPath">): boolean {
+  const t = normalizeRepoPath(name);
   return t === normalizeRepoPath(repository.fullPath) || t === lastSegment(repository.fullPath);
 }
 
 /**
  * Matches a reply to the repository question (cyralph's `matchSelection`), in
  * order: a 1-based option number, the option text (the full path), a
- * tag-style name (the full path or its last segment), then a reply that
+ * repository name (the full path or its last segment), then a reply that
  * contains a repository's full path.
  */
 export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
@@ -194,7 +161,7 @@ export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
   const said = text.toLowerCase();
   return (
     candidates.find((r) => r.fullPath.trim().toLowerCase() === said) ??
-    candidates.find((r) => tagNamesRepository(text, r)) ??
+    candidates.find((r) => namesRepository(text, r)) ??
     mentionedRepository(said, candidates)
   );
 }

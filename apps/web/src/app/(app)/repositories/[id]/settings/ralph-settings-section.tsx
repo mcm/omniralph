@@ -225,8 +225,7 @@ export function RalphSettingsSection({
           <>
             How Linear issues delegated to the Omniralph app are built here, story by story, once
             coding is on under Task types. A delegation goes to the first repository with coding on
-            that matches its <code>[repo=&lt;path&gt;]</code> tag, then its labels, project and
-            team.
+            that matches its labels, then its project, then its team.
           </>
         }
         confirm={RUN_AFFECTING}

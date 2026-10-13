@@ -22,7 +22,7 @@ import {
   type ScmProvider,
   isLinearRun,
 } from "@omniralph/db";
-import { epicBranchName, parseRepoTags } from "@omniralph/ralph";
+import { epicBranchName } from "@omniralph/ralph";
 import { conversationFor, type RunConversation } from "./conversation";
 import { errorMessage, postActivity, quietly } from "./notify";
 import { changeRequestTerm } from "./publish";
@@ -35,8 +35,8 @@ export const ROUTED_BY_SELECTION = "your selection";
 /** cyralph's question, with Omniralph's routing settings in the hint. */
 export const REPOSITORY_QUESTION =
   "Which repository should I work in for this issue?\n\n" +
-  "(Add a `[repo=owner/name]` tag to the issue description, or this issue's label, project or " +
-  "team to a repository's routing under **Repository › Settings › Coding**, to skip this next time.)";
+  "(Add this issue's label, project or team to a repository's routing under " +
+  "**Repository › Settings › Coding** to skip this next time.)";
 
 /** The repositories a run asks to choose from, or null when it isn't asking. */
 export function repositorySelectionOf(run: Pick<RalphRun, "pendingElicitation">): string[] | null {
@@ -58,14 +58,6 @@ export async function askForRepository(
       signalMetadata: { options: candidates.map((r) => ({ value: r.fullPath })) },
     },
   );
-}
-
-/** The question for an issue routing found no repository for (says why when a tag missed). */
-export function repositoryQuestionFor(description: string | null | undefined): string {
-  const tags = parseRepoTags(description);
-  if (tags.length === 0) return REPOSITORY_QUESTION;
-  const named = tags.map((t) => `\`${t}\``).join(", ");
-  return `Its \`[repo=…]\` tag (${named}) names no repository with coding on.\n\n${REPOSITORY_QUESTION}`;
 }
 
 /** The work a run left in the repository it worked in before re-routing moved it. */

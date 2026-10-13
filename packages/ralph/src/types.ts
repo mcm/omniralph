@@ -46,7 +46,7 @@ export interface Story {
    * command, in order. Run only with a person's approval; never set on non-manual stories.
    */
   preparation?: string[];
-  /** The story issue's full description as written (its `[repo=…]` tags route it). */
+  /** The story issue's full description as written. */
   sourceText?: string;
   /** The story issue's routing fields: its Linear project, team and labels. */
   projectName?: string;
