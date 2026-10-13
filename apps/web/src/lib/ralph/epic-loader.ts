@@ -2,7 +2,9 @@
  * Loads a delegated Linear issue as a ralph epic (ported from cyralph's
  * `src/linear/epic-loader.ts`; the pure builders live in `@omniralph/ralph`):
  *
- *  1. The issue has sub-issues         -> `children`: each sub-issue is a story.
+ *  1. The issue has sub-issues         -> `children`: each sub-issue is a story. Only
+ *                                         canceled ones (an epic turned back into a plain
+ *                                         issue) don't count: it loads as below.
  *  2. It is a sub-issue itself         -> its parent's epic, focused on this story.
  *  3. Its description holds a PRD      -> `prd`: each PRD story is created as a sub-issue
  *                                         (priority, order, blocks relations, manual label),
@@ -202,7 +204,7 @@ export async function loadEpic(
   const issue = await linear.getIssue(issueId);
 
   const children = await linear.getChildren(issue.id);
-  if (children.length > 0) {
+  if (children.some((child) => child.stateType !== "canceled")) {
     const epicOptions = epicOptionsFor(options, issue);
     const prd = options.completePrd ? parsePrd(issue.description) : null;
     const created = prd
