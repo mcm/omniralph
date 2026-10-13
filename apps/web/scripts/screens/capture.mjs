@@ -73,6 +73,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     finalPath: null,
     scrollWidth: null,
     overflow: false,
+    retiredWording: [],
     themeForced: false,
     consoleErrors: [],
     error: null,
@@ -116,6 +117,20 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.finalPath = url.pathname + url.search;
     result.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     result.overflow = result.scrollWidth > viewport.width;
+    // The product says "Coding", never "Ralph" (TOOL-419): the visible text around each "Ralph".
+    // Identifiers shown as data keep the old word: job types (`ralph.story`) and the
+    // `ralph-run` sink of a task definition.
+    result.retiredWording = await page.evaluate(() => {
+      const text = document.body.innerText.replace(/\bralph(\.[a-z-]+|-run)\b/gi, (word) =>
+        "_".repeat(word.length),
+      );
+      return [...text.matchAll(/\bralph\b/gi)].map((match) =>
+        text
+          .slice(Math.max(0, match.index - 40), match.index + 45)
+          .replace(/\s+/g, " ")
+          .trim(),
+      );
+    });
 
     result.screenshot = `${base}.png`;
     await page.screenshot({
@@ -133,6 +148,7 @@ async function capture(context, route, viewportName, viewport, theme) {
   const flags = [
     result.error ? "ERROR" : null,
     result.overflow ? `overflow ${result.scrollWidth}px` : null,
+    result.retiredWording.length > 0 ? `shows "Ralph"` : null,
   ].filter(Boolean);
   console.log(`${base} ${result.status ?? "-"}${flags.length ? ` (${flags.join(", ")})` : ""}`);
   return result;

@@ -26,9 +26,9 @@ export interface ThreadRun {
   working: boolean;
 }
 
-/** The marker of a recorded message posted for a ralph run (its progress and answers). */
+/** The marker of a recorded message posted for a coding task (its progress and answers). */
 export function ralphRunMarker(runId: string): string {
-  return `[ralph run ${runId}]`;
+  return `[coding task ${runId}]`;
 }
 
 function threadRunRules(run: ThreadRun): string[] {

@@ -5,7 +5,7 @@
  * In cyralph it was a `progress.md` file; here it is text (`ralph_runs.progress`).
  */
 
-export const PROGRESS_HEADER = `# Ralph Progress Log
+export const PROGRESS_HEADER = `# Progress Log
 
 ## Codebase Patterns (Study These First)
 *Add reusable patterns discovered during development here.*

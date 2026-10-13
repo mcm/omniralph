@@ -50,7 +50,7 @@ the host. It runs unattended:
 Output goes to `apps/web/.screens/<timestamp>/` (gitignored), one set per route, viewport and
 theme: `<route>.<desktop|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
 inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP status, final path,
-`scrollWidth`, console errors). The screenshot paths go to stdout, the summary to stderr.
+`scrollWidth`, visible "Ralph" text, console errors). The screenshot paths go to stdout, the summary to stderr.
 
 | Option              | Effect                                                                |
 | ------------------- | --------------------------------------------------------------------- |
@@ -60,7 +60,10 @@ inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP sta
 | `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`) |
 | `--skip-build`      | Don't build the workspace packages first                              |
 
-Routes wider than their viewport are always reported; failed captures always exit non-zero.
+Routes wider than their viewport are always reported; failed captures always exit non-zero, and
+so does any page whose visible text (`document.body.innerText`) says "Ralph": the product says
+"Coding" (see `src/user-facing-wording.test.ts` for the source-level check). Job types
+(`ralph.story`) and the `ralph-run` sink are identifiers and don't count.
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a

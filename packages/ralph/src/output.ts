@@ -387,7 +387,7 @@ export function validateTriageOutput(
   if (parsePrd(description)) {
     return {
       problem:
-        "ralph would split the description into stories: no story-style headings or `userStories` JSON",
+        "a coding task would split the description into stories: no story-style headings or `userStories` JSON",
     };
   }
   const epic = EPIC_SIZES.has(data.size);

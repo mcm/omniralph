@@ -286,7 +286,7 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
   });
   if (!jobIds) return;
   for (const jobId of jobIds) {
-    await quietly(`Canceling job ${jobId} of ralph run ${previous.id}`, () =>
+    await quietly(`Canceling job ${jobId} of coding task ${previous.id}`, () =>
       deps.dispatcher.cancel(jobId),
     );
   }
