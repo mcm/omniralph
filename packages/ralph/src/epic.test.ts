@@ -108,6 +108,16 @@ describe("childrenEpic (Linear metadata only)", () => {
     expect(childrenEpic(issue({ branchName: "linear-branch" }), [child()]).branchName).toBe(
       "linear-branch",
     );
+    expect(epic).not.toHaveProperty("repositoryQualityGates");
+  });
+
+  it("scopes the description's gates under a repository heading to that repository", () => {
+    const parent = issue({
+      description: "## Quality Gates\n- `pnpm test`\n\n### `Acme/Web`\n- `pnpm build`",
+    });
+    const epic = childrenEpic(parent, [child()]);
+    expect(epic.qualityGates).toEqual(["pnpm test"]);
+    expect(epic.repositoryQualityGates).toEqual({ "acme/web": ["pnpm build"] });
   });
 });
 

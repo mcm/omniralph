@@ -23,7 +23,10 @@ export interface ParsedPrd {
   name: string;
   description: string;
   branchName?: string;
+  /** Shared quality gates (see `parseRepositoryQualityGates`). */
   qualityGates: string[];
+  /** Quality gates scoped to a repository, keyed by `normalizeRepoPath`; absent when there are none. */
+  repositoryQualityGates?: Record<string, string[]>;
   stories: PrdStory[];
   source: "markdown" | "json";
 }
@@ -40,18 +43,68 @@ function unwrap(text: string): string {
   return (m?.[1] ?? text).replace(/\r\n/g, "\n");
 }
 
-/** Extract commands from a Quality Gates section: the first backticked span of each bullet. */
-export function parseQualityGates(markdown: string): string[] {
+/** A PRD's quality gates: shared by every repository, plus the ones scoped to a repository. */
+export interface QualityGates {
+  /** Bullets before any repository heading (or under a heading that isn't a repository path). */
+  shared: string[];
+  /** Bullets under `### <repository full path>`, keyed by `normalizeRepoPath` of the heading. */
+  byRepository: Record<string, string[]>;
+}
+
+/** A repository full path (`group/name`, subgroups allowed), as `normalizeRepoPath` gives it. */
+const REPO_PATH = /^[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)+$/;
+
+/** The repository a `###` heading under Quality Gates names (normalized), if it is one. */
+function gateHeadingRepository(heading: string): string | undefined {
+  const text = heading
+    .trim()
+    .replace(/\\([\\`*_{}[\]()#+\-.!~|<>])/g, "$1") // Linear escapes markdown characters
+    .replace(/:$/, "")
+    .trim()
+    .replace(/^`([^`]+)`$/, "$1");
+  const path = normalizeRepoPath(text);
+  return REPO_PATH.test(path) ? path : undefined;
+}
+
+/**
+ * Extract commands from a Quality Gates section: the first backticked span of each bullet.
+ * Bullets under `### <repository full path>` (optionally backticked) apply to that repository
+ * only; every other bullet, including those under any other `###` heading, is shared.
+ */
+export function parseRepositoryQualityGates(markdown: string): QualityGates {
+  const gates: QualityGates = { shared: [], byRepository: {} };
   const text = unwrap(markdown);
   const m = /^##\s+Quality Gates\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/im.exec(text);
-  if (!m?.[1]) return [];
-  const gates: string[] = [];
+  if (!m?.[1]) return gates;
+  let current = gates.shared;
   for (const line of m[1].split("\n")) {
+    const heading = /^\s*#{3,6}\s+(.+?)\s*#*\s*$/.exec(line)?.[1];
+    if (heading !== undefined) {
+      const repository = gateHeadingRepository(heading);
+      current = repository ? (gates.byRepository[repository] ??= []) : gates.shared;
+      continue;
+    }
     // Only the first backticked span of a bullet is the command: "- `pnpm lint` - Linting"
     const cmd = /^\s*[-*]\s+`([^`]+)`/.exec(line)?.[1]?.trim();
-    if (cmd && !gates.includes(cmd)) gates.push(cmd);
+    if (cmd && !current.includes(cmd)) current.push(cmd);
   }
   return gates;
+}
+
+/** The PRD's shared quality gates (see `parseRepositoryQualityGates` for the scoped ones). */
+export function parseQualityGates(markdown: string): string[] {
+  return parseRepositoryQualityGates(markdown).shared;
+}
+
+/** A PRD's `qualityGates` and `repositoryQualityGates` (only when some gate is scoped). */
+export function prdQualityGates(
+  markdown: string,
+): Pick<ParsedPrd, "qualityGates" | "repositoryQualityGates"> {
+  const { shared, byRepository } = parseRepositoryQualityGates(markdown);
+  return {
+    qualityGates: shared,
+    ...(Object.keys(byRepository).length > 0 && { repositoryQualityGates: byRepository }),
+  };
 }
 
 /** The branch named by a `> Branch: <name>` line (optionally backticked), if any. */
@@ -174,7 +227,7 @@ export function parsePrdMarkdown(markdown: string): ParsedPrd | null {
     name,
     description: overview ?? "",
     branchName: parseBranchLine(text),
-    qualityGates: parseQualityGates(text),
+    ...prdQualityGates(text),
     stories,
     source: "markdown",
   };
@@ -246,7 +299,7 @@ export function parsePrd(text: string | undefined | null): ParsedPrd | null {
   return {
     ...prd,
     branchName: prd.branchName || parseBranchLine(text),
-    qualityGates: prd.qualityGates.length > 0 ? prd.qualityGates : parseQualityGates(text),
+    ...(prd.qualityGates.length > 0 || prd.repositoryQualityGates ? {} : prdQualityGates(text)),
   };
 }
 
