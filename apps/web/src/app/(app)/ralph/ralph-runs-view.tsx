@@ -31,7 +31,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
-import { ListErrorRow } from "@/components/list-error";
+import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
@@ -182,11 +182,16 @@ const RUN_COLUMNS = 8;
 function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
   const external = externalSource(run);
   const title = run.origin === "linear" ? run.linearTitle : null;
+  const errorId = useListErrorId(run.error);
   return (
     <>
       <TableRow data-has-error={run.error ? true : undefined}>
         <TableCell className="list-col-main">
-          <Link href={`/ralph/${run.id}`} className="list-title">
+          <Link
+            href={`/ralph/${run.id}`}
+            className="list-title list-title-stacked"
+            aria-describedby={errorId}
+          >
             <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
             {title && <span className="list-title-text">{title}</span>}
           </Link>
@@ -210,7 +215,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
             )}
           </div>
         </TableCell>
-        <TableCell className={WIDE_COLUMN}>
+        <TableCell className={WIDE_COLUMN} aria-describedby={errorId}>
           <RalphRunStatusBadge status={run.status} />
         </TableCell>
         <TableCell className={WIDE_COLUMN}>
@@ -231,7 +236,7 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
           {external && <ExternalRowLink href={external.href} label={external.label} />}
         </TableCell>
       </TableRow>
-      {run.error && <ListErrorRow error={run.error} colSpan={RUN_COLUMNS} />}
+      {run.error && <ListErrorRow error={run.error} colSpan={RUN_COLUMNS} id={errorId} />}
     </>
   );
 }

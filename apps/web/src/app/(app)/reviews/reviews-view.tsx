@@ -25,7 +25,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { ReviewStatusBadge, SeverityCounts, TriggerBadge } from "@/components/review-badges";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
-import { ListErrorRow } from "@/components/list-error";
+import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { MonoPath, MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { totalPages } from "@/lib/pagination";
@@ -94,6 +94,7 @@ function ReviewTableRow({
   const change = `${review.repository.provider === "gitlab" ? "!" : "#"}${review.prNumber}`;
   const host = review.repository.provider === "gitlab" ? "GitLab" : "GitHub";
   const error = review.status === "failed" ? review.error : null;
+  const errorId = useListErrorId(error);
   return (
     <>
       <TableRow data-has-error={error ? true : undefined}>
@@ -103,6 +104,7 @@ function ReviewTableRow({
               href={`/reviews/${review.id}`}
               className="list-title"
               title={review.prTitle ?? undefined}
+              aria-describedby={errorId}
             >
               <span className="text-numeric list-nowrap">{change}</span>
               <span
@@ -129,7 +131,7 @@ function ReviewTableRow({
             <Timestamp iso={review.createdAt} year={year} />
           </PhoneMeta>
         </TableCell>
-        <TableCell className={WIDE_COLUMN}>
+        <TableCell className={WIDE_COLUMN} aria-describedby={errorId}>
           <div className="list-cell-stack">
             <ReviewStatusBadge status={review.status} />
             <TriggerBadge trigger={review.trigger} />
@@ -179,7 +181,7 @@ function ReviewTableRow({
           </div>
         </TableCell>
       </TableRow>
-      {error && <ListErrorRow error={error} colSpan={REVIEW_COLUMNS} />}
+      {error && <ListErrorRow error={error} colSpan={REVIEW_COLUMNS} id={errorId} />}
     </>
   );
 }

@@ -125,6 +125,25 @@ describe("HostToolsCard", () => {
     ]);
   });
 
+  it("names each fact in the phone meta, discovered path included", () => {
+    const html = renderToStaticMarkup(<HostToolsCard harness={harness} hostTools={tools} />);
+    const meta = (name: string) => {
+      const dl = rows(html)[name]!.match(/<dl class="host-tool-facts">([\s\S]*?)<\/dl>/)![1]!;
+      return dl
+        .replace(/<\/span><span class="mono-value-tail">/g, "")
+        .replace(/<\/(dt|dd)>/g, " | ")
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+    expect(meta("discovered")).toBe(
+      "Configured path | Not configured | Discovered | /usr/local/bin/discovered | Runs from | /usr/local/bin/discovered |",
+    );
+    expect(meta("configured-missing")).toBe(
+      "Configured path | Missing | Discovered | /usr/bin/configured-missing | Runs from | Unavailable |",
+    );
+  });
+
   it("shows the configured paths without forms on a revoked harness", () => {
     const html = renderToStaticMarkup(
       <HostToolsCard harness={{ ...harness, revoked: true }} hostTools={tools} />,

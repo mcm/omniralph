@@ -39,6 +39,7 @@ import {
   ANALYTICS_RANGES,
   analyticsHref,
   countTick,
+  tokenTick,
   dayLabel,
   falsePositivesNoun,
   formatRate,
@@ -387,7 +388,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 data={daily}
                 xKey="day"
                 showLegend
-                tickFormatter={formatTokens}
+                tickFormatter={tokenTick}
                 areas={[{ key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES }]}
               />
               <AreaChart
@@ -396,7 +397,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
                 data={daily}
                 xKey="day"
                 showLegend
-                tickFormatter={formatTokens}
+                tickFormatter={tokenTick}
                 areas={[{ key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES }]}
               />
             </CardContent>

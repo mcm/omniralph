@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -146,6 +147,9 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
  */
 function HeaderBreadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
   const last = crumbs.length - 1;
+  // Only a current page longer than the width it is guaranteed on phone (9ch) reserves
+  // it; a short one ("Rules") takes its own width and leaves the rest to its parents.
+  const longCurrent = (crumbs[last]?.label.length ?? 0) > 9;
   return (
     <Breadcrumb className="app-crumbs">
       <BreadcrumbList className="app-crumbs-list">
@@ -161,7 +165,13 @@ function HeaderBreadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
                   <BreadcrumbSeparator className="app-crumb-ellipsis" />
                 </>
               )}
-              <BreadcrumbItem className={middle ? "app-crumb app-crumb-middle" : "app-crumb"}>
+              <BreadcrumbItem
+                className={cn(
+                  "app-crumb",
+                  middle && "app-crumb-middle",
+                  i === last && longCurrent && "app-crumb-long",
+                )}
+              >
                 {i === last ? (
                   <BreadcrumbPage className="app-crumb-label">{crumb.label}</BreadcrumbPage>
                 ) : crumb.href ? (

@@ -166,12 +166,14 @@ body {
   height: auto;
 }
 
-/* Phone: avatar-only user menu, and only the first and current crumbs. */
+/* Phone: avatar-only user menu (no name, no chevron), and only the first and current
+   crumbs. */
 @media (max-width: 767.98px) {
   .app-header {
     padding: var(--space-2) var(--space-3);
   }
-  .app-header-user-name {
+  .app-header-user-name,
+  .app-header-chevron {
     display: none;
   }
   .app-crumb-middle {
@@ -184,7 +186,7 @@ body {
   .app-crumb:not(:last-child) .app-crumb-label {
     max-width: 14ch;
   }
-  .app-crumb:last-child {
+  .app-crumb-long:last-child {
     min-width: 9ch;
   }
   .app-crumb-ellipsis {
@@ -265,6 +267,12 @@ body {
 }
 .list-title-text {
   overflow-wrap: anywhere;
+}
+/* An ID with its title always on the line under it, so every row of the column has the
+   same shape whatever the title's length (Ralph runs). */
+.list-title-stacked {
+  flex-direction: column;
+  align-items: flex-start;
 }
 /* A title that shares its line with a leading icon and wraps beside it. */
 .list-title-fill {
@@ -494,11 +502,35 @@ body {
 .job-row {
   scroll-margin-top: var(--space-16);
 }
-/* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`): tint and a full outline. */
-.job-row[data-targeted] {
-  background: var(--accent-tint);
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+/* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`): a 2px accent ring. A failed
+   job's reason row shares it: the ring goes round both rows, with no line between them.
+   No fill: an accent tint under the tinted status badges takes their text below 4.5:1. */
+.list-table tr[data-targeted] {
+  box-shadow:
+    inset 2px 0 var(--accent),
+    inset -2px 0 var(--accent),
+    inset 0 2px var(--accent),
+    inset 0 -2px var(--accent);
+}
+.list-table tr[data-targeted][data-has-error] {
+  box-shadow:
+    inset 2px 0 var(--accent),
+    inset -2px 0 var(--accent),
+    inset 0 2px var(--accent);
+}
+.list-table tr.list-error-row[data-targeted] {
+  box-shadow:
+    inset 2px 0 var(--accent),
+    inset -2px 0 var(--accent),
+    inset 0 -2px var(--accent);
+}
+/* Phone: the Job column takes the free width, so the target in its meta line truncates
+   in the middle instead of widening the table. */
+@media (max-width: 767.98px) {
+  .jobs-col-job {
+    width: 100%;
+    max-width: 0;
+  }
 }
 
 /* Unsaved-changes bar (components/unsaved-changes.tsx): sticks to the bottom of the main
@@ -1079,6 +1111,14 @@ body {
   overflow-x: auto;
   white-space: pre;
 }
+/* Phone: a suggestion wraps (keeping its indentation) instead of clipping behind a
+   scroll nobody sees. */
+@media (max-width: 767.98px) {
+  .review-code-block {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
 
 /* Repository selection (GitHub/GitLab connection pages): the listing's error. */
 .repo-selection-error {
@@ -1317,6 +1357,24 @@ body {
     width: 100%;
     padding-block: 0;
   }
+}
+/* A host tool's facts on phone (harness-host-tools.tsx): label, then value, one per line. */
+.host-tool-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+.host-tool-facts > dt {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.host-tool-facts > dd {
+  display: flex;
+  min-width: 0;
+  margin: 0;
 }
 /* Phone: the path input takes the cell's width and Save wraps below it. */
 @media (max-width: 767.98px) {

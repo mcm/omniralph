@@ -55,7 +55,7 @@ import { ProviderIcon } from "../../repositories/repositories-view";
 import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 import { EmptyValue } from "@/components/empty-value";
-import { stateLabel } from "@/lib/state-variants";
+import { REVIEW_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
 
 function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
@@ -192,7 +192,7 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
         />
 
         {review.status === "failed" && (
-          <Alert variant="danger">
+          <Alert variant={REVIEW_STATUS_VARIANTS.failed}>
             <IconAlertTriangle size={16} />
             <AlertTitle as="h2">The review failed</AlertTitle>
             <AlertDescription className="review-pre-wrap">
@@ -201,13 +201,13 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           </Alert>
         )}
         {review.status === "skipped" && review.error && (
-          <Alert variant="info">
+          <Alert variant={REVIEW_STATUS_VARIANTS.skipped}>
             <AlertTitle as="h2">The review was skipped</AlertTitle>
             <AlertDescription>{review.error}</AlertDescription>
           </Alert>
         )}
         {review.status === "budget_exhausted" && (
-          <Alert variant="warning">
+          <Alert variant={REVIEW_STATUS_VARIANTS.budget_exhausted}>
             <AlertTitle as="h2">Token budget exhausted</AlertTitle>
             <AlertDescription>
               The review stopped at its token cap; the findings below are partial.

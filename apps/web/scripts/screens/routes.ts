@@ -61,6 +61,17 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { name: "home", path: "/", page: "(app)/page.tsx", auth: "signed-in" },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "jobs", path: "/jobs", page: "(app)/jobs/page.tsx", auth: "signed-in" },
+  {
+    // A `#job-<id>` link to a failed job: the highlight covers the job and its reason row.
+    name: "jobs-targeted",
+    path: "/jobs?status=failed",
+    page: "(app)/jobs/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: 'tr[data-has-error] a[href^="#job-"]' }],
+    // What the link shows: the page scrolled to the row (a full page would draw the
+    // sticky header over it).
+    viewportOnly: true,
+  },
   { name: "harnesses", path: "/harnesses", page: "(app)/harnesses/page.tsx", auth: "signed-in" },
   {
     name: "harness-online",
