@@ -182,7 +182,8 @@ repository has **Offer to run preparation** on. A story whose project matches no
 ralph-enabled repository is treated like a manual step ("isn't in a repository I have"), shown as
 "(manual: no repository here)" in the plan: nothing is built for it, and stories that depend on it
 wait until a person completes it. Teams and labels often span repositories, so an unknown one
-never makes a story manual. The run detail page shows one section per repository with its branch,
+never makes a story manual. Follow-ups a story files carry its team, project and routing
+labels, so they route to its repository too. The run detail page shows one section per repository with its branch,
 PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
@@ -249,7 +250,10 @@ How the run behaves:
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
-  **Manual label** when they need a person). An unfinished story's follow-ups block it; when it
+  **Manual label** of the story's repository when they need a person). They're filed in the
+  story's lane: with the epic's team and project for a story of the epic's repository, and with
+  the story's own team, project and routing labels for a story in another repository, so they're
+  worked there too. An unfinished story's follow-ups block it; when it
   reported blocked, that's a round (above), not a used attempt. A completed story's follow-ups
   block the stories it blocks.
 - **The end.** When every story is done, an agent writes the PR/MR title and body, the control panel
