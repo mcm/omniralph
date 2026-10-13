@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@omniralph/shared": "workspace:*",
+    "@omniralph/tasks": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1"
   },

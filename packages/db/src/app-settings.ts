@@ -1,4 +1,5 @@
 /** Per-organization settings (`app_settings`): one JSON value per organization and key. */
+import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { appSettings } from "./schema.js";
@@ -155,4 +156,92 @@ export async function setChatTaskDefaults(
   updatedBy: string | null,
 ): Promise<void> {
   await setAppSetting(db, organizationId, CHAT_TASKS_KEY, tasks, updatedBy);
+}
+
+/**
+ * The task types the organization's harnesses and repositories allow unless they set their own
+ * (a subset of `TASK_TYPES`, in that order). Absent: `DEFAULT_ALLOWED_TASK_TYPES`.
+ */
+export const ALLOWED_TASK_TYPES_KEY = "tasks.allowedTypes";
+
+/** The task types allowed when the organization hasn't chosen any: all of them. */
+export const DEFAULT_ALLOWED_TASK_TYPES: readonly TaskType[] = TASK_TYPES;
+
+function isTaskType(value: unknown): value is TaskType {
+  return (TASK_TYPES as readonly unknown[]).includes(value);
+}
+
+/** The organization's allowed task types; absent or not a list of task types is the built-in default. */
+export async function getAllowedTaskTypeDefaults(
+  db: Database,
+  organizationId: string,
+): Promise<TaskType[]> {
+  const setting = await getAppSetting(db, organizationId, ALLOWED_TASK_TYPES_KEY);
+  const value = setting?.value;
+  if (!Array.isArray(value) || !value.every(isTaskType)) return [...DEFAULT_ALLOWED_TASK_TYPES];
+  return TASK_TYPES.filter((type) => value.includes(type));
+}
+
+/**
+ * Sets (or, with null, clears back to the built-in default) the organization's allowed task
+ * types. Throws on a type not in `TASK_TYPES`; duplicates are dropped.
+ */
+export async function setAllowedTaskTypeDefaults(
+  db: Database,
+  organizationId: string,
+  types: readonly string[] | null,
+  updatedBy: string | null,
+): Promise<void> {
+  if (types !== null) {
+    const unknown = types.filter((type) => !isTaskType(type));
+    if (unknown.length > 0) throw new Error(`Unknown task types: ${unknown.join(", ")}`);
+  }
+  const value = types === null ? null : TASK_TYPES.filter((type) => types.includes(type));
+  await setAppSetting(db, organizationId, ALLOWED_TASK_TYPES_KEY, value, updatedBy);
+}
+
+/**
+ * How many jobs at once the organization's harnesses run unless they set their own (an integer,
+ * `MIN_MAX_CONCURRENCY`–`MAX_MAX_CONCURRENCY`). Absent: `DEFAULT_MAX_CONCURRENCY`.
+ */
+export const DEFAULT_MAX_CONCURRENCY_KEY = "harness.maxConcurrency";
+
+export const MIN_MAX_CONCURRENCY = 1;
+export const MAX_MAX_CONCURRENCY = 32;
+/** The harness max concurrency when the organization hasn't chosen one. */
+export const DEFAULT_MAX_CONCURRENCY = 5;
+
+function isMaxConcurrency(value: unknown): value is number {
+  return (
+    Number.isInteger(value) &&
+    (value as number) >= MIN_MAX_CONCURRENCY &&
+    (value as number) <= MAX_MAX_CONCURRENCY
+  );
+}
+
+/** The organization's default harness max concurrency; absent or out of range is the built-in default. */
+export async function getDefaultMaxConcurrency(
+  db: Database,
+  organizationId: string,
+): Promise<number> {
+  const value = (await getAppSetting(db, organizationId, DEFAULT_MAX_CONCURRENCY_KEY))?.value;
+  return isMaxConcurrency(value) ? value : DEFAULT_MAX_CONCURRENCY;
+}
+
+/**
+ * Sets (or, with null, clears back to the built-in default) the organization's default harness
+ * max concurrency. Throws unless it is an integer from 1 to 32.
+ */
+export async function setDefaultMaxConcurrency(
+  db: Database,
+  organizationId: string,
+  maxConcurrency: number | null,
+  updatedBy: string | null,
+): Promise<void> {
+  if (maxConcurrency !== null && !isMaxConcurrency(maxConcurrency)) {
+    throw new Error(
+      `Max concurrency must be an integer from ${MIN_MAX_CONCURRENCY} to ${MAX_MAX_CONCURRENCY}`,
+    );
+  }
+  await setAppSetting(db, organizationId, DEFAULT_MAX_CONCURRENCY_KEY, maxConcurrency, updatedBy);
 }
