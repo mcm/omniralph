@@ -22,6 +22,7 @@ import { IconPlus } from "@tabler/icons-react";
 import { TASK_TYPES, type PoolName, type SinkKind, type TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { BuiltinBadge } from "../agents/agent-parts";
 import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "./task-parts";
@@ -81,12 +82,12 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
               <PhoneMeta>
                 <AgentLink id={task.agentId} name={task.agentName} className="list-secondary" />
                 <TriggerBadges triggers={task.triggers} />
-                <span className="font-mono text-xs">{task.sink}</span>
+                <MonoValue value={task.sink} className="text-xs" />
                 <Badge variant="neutral">{task.pool}</Badge>
               </PhoneMeta>
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
-              <span className="font-mono text-xs text-text-secondary">{task.id}</span>
+              <MonoValue value={task.id} className="text-xs text-text-secondary" />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <AgentLink id={task.agentId} name={task.agentName} />
@@ -95,7 +96,7 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
               <TriggerBadges triggers={task.triggers} />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
-              <span className="font-mono text-xs">{task.sink}</span>
+              <MonoValue value={task.sink} className="text-xs" />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <Badge variant="neutral">{task.pool}</Badge>

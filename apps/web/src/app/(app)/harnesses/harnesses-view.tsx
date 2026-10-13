@@ -21,9 +21,9 @@ import {
 import { IconServer } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import type { HarnessRow } from "@/lib/harnesses/rows";
-import { formatRelative } from "@/lib/format-date";
 import {
   HarnessStatusBadge,
   HarnessVersionCell,
@@ -85,7 +85,7 @@ function HarnessTableRow({
       </TableCell>
       <TableCell>
         {harness.lastHeartbeatAt ? (
-          <span className="list-text">{formatRelative(harness.lastHeartbeatAt, now)}</span>
+          <Timestamp iso={harness.lastHeartbeatAt} now={now} />
         ) : (
           <Muted>Never</Muted>
         )}

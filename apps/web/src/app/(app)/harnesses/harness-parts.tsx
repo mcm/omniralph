@@ -10,6 +10,7 @@ import {
   harnessConnectionState,
 } from "@/lib/state-variants";
 import { ProviderIcon } from "../repositories/repositories-view";
+import { MonoValue } from "@/components/mono-value";
 
 const HARNESS_CONNECTION_LABELS = { online: "Online", offline: "Offline", revoked: "Revoked" };
 
@@ -55,10 +56,11 @@ export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] 
   const label = job.target?.label ?? job.id.slice(0, 8);
   const text = (
     <>
-      <span className="text-text-tertiary">{job.type}</span> {label}
+      <MonoValue value={job.type} truncate="end" className="shrink-0 text-text-tertiary" />
+      <MonoValue value={label} />
     </>
   );
-  const className = "list-secondary font-mono";
+  const className = "list-secondary";
   return job.target?.url ? (
     <a href={job.target.url} target="_blank" rel="noreferrer" className={className}>
       {text}

@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconDeviceFloppy, IconTool } from "@tabler/icons-react";
+import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
 import { setHostToolPath } from "../actions";
 
@@ -45,12 +46,12 @@ function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
 }
 
 function DiscoveredPath({ tool }: { tool: HostToolRow }) {
-  if (tool.discoveredPath) return <span className="font-mono text-sm">{tool.discoveredPath}</span>;
+  if (tool.discoveredPath) return <MonoValue value={tool.discoveredPath} className="text-sm" />;
   return <Muted>{tool.reportedAt ? "Not found on PATH" : "Not reported yet"}</Muted>;
 }
 
 function EffectivePath({ tool }: { tool: HostToolRow }) {
-  if (tool.effectivePath) return <span className="font-mono text-sm">{tool.effectivePath}</span>;
+  if (tool.effectivePath) return <MonoValue value={tool.effectivePath} className="text-sm" />;
   return <Badge variant="warning">unavailable</Badge>;
 }
 
@@ -129,14 +130,14 @@ export function HarnessHostTools({
           <TableRow key={tool.hostToolId} data-host-tool={tool.name}>
             <TableCell>
               <Stack gap={1}>
-                <span className="font-mono text-sm">{tool.name}</span>
+                <MonoValue value={tool.name} className="text-sm" />
                 {tool.description && <Muted>{tool.description}</Muted>}
               </Stack>
             </TableCell>
             <TableCell>
               {revoked ? (
                 tool.configuredPath ? (
-                  <span className="font-mono text-sm">{tool.configuredPath}</span>
+                  <MonoValue value={tool.configuredPath} className="text-sm" />
                 ) : (
                   <Muted>Not configured</Muted>
                 )

@@ -38,6 +38,17 @@ const config = [
       "design-system/no-arbitrary-tailwind": "error",
     },
   },
+  {
+    // DESIGN.md's Exact Values Rule: a timestamp on a page is mono and never wraps, so every
+    // rendered formatDateTime(...) goes through <Timestamp> (TOOL-455). Strings (tooltips,
+    // field descriptions) are left alone.
+    files: ["src/app/(app)/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx"],
+    plugins: { "design-system": designSystem },
+    rules: {
+      "design-system/no-bare-timestamp": "error",
+    },
+  },
 ];
 
 export default config;

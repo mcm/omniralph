@@ -39,6 +39,7 @@ import type {
   TokenBudget,
 } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
@@ -97,7 +98,7 @@ function Commands({
         {commands.map((command) => (
           <TableRow key={command.name}>
             <TableCell>
-              <span className="font-mono text-xs">{command.name}</span>
+              <MonoValue value={command.name} className="text-xs" />
             </TableCell>
             <TableCell>
               <pre className="definition-pre definition-pre-compact">{command.command}</pre>
@@ -257,7 +258,7 @@ export function TaskDetailView({
           meta={
             <>
               {builtin && <BuiltinBadge />}
-              <span className="font-mono text-xs text-text-secondary">{task.id}</span>
+              <MonoValue value={task.id} className="text-xs text-text-secondary" />
             </>
           }
           actions={
@@ -284,14 +285,14 @@ export function TaskDetailView({
               <TriggerBadges triggers={task.triggers} />
             </Fact>
             <Fact label="Sink">
-              <span className="font-mono text-xs">{task.sink}</span>
+              <MonoValue value={task.sink} className="text-xs" />
             </Fact>
             <Fact label="Pool">
               <Badge variant="neutral">{task.pool}</Badge>
             </Fact>
             <Fact label="Model override">
               {task.model ? (
-                <span className="font-mono text-xs">{task.model}</span>
+                <MonoValue value={task.model} className="text-xs" />
               ) : (
                 <Muted>Agent model</Muted>
               )}
@@ -433,7 +434,7 @@ export function TaskDetailView({
           <CardContent className="definition-grid">
             <Fact label="Minimum harness version">
               {requirements.minHarnessVersion ? (
-                <span className="font-mono text-xs">{requirements.minHarnessVersion}</span>
+                <MonoValue value={requirements.minHarnessVersion} className="text-xs" />
               ) : (
                 <Muted>Any</Muted>
               )}

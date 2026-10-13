@@ -21,6 +21,7 @@ import { IconPlus } from "@tabler/icons-react";
 import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { agentHref, BuiltinBadge, ModelName, TaskTypeBadges } from "./agent-parts";
 
@@ -101,7 +102,7 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
                       </PhoneMeta>
                     </TableCell>
                     <TableCell className={WIDE_COLUMN}>
-                      <span className="font-mono text-xs text-text-secondary">{agent.id}</span>
+                      <MonoValue value={agent.id} className="text-xs text-text-secondary" />
                     </TableCell>
                     <TableCell className={WIDE_COLUMN}>
                       <TaskTypeBadges taskTypes={agent.taskTypes} />

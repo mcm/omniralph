@@ -29,8 +29,8 @@ import {
   MAX_FEEDBACK_NOTE_LENGTH,
   type FeedbackReasonValue,
 } from "@omniralph/shared";
+import { Timestamp } from "@/components/list-table";
 import { useAction } from "@/components/use-action";
-import { formatDateTime } from "@/lib/format-date";
 import type { FeedbackView, FindingView } from "@/lib/reviews/display";
 import { dismissFinding, restoreFinding } from "./actions";
 
@@ -181,7 +181,7 @@ export function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
                   </Badge>
                   <span>
                     Dismissed by <span className="text-text-primary">{entry.actor}</span> via{" "}
-                    {SOURCE_LABELS[entry.source]} · {formatDateTime(entry.createdAt)}
+                    {SOURCE_LABELS[entry.source]} · <Timestamp iso={entry.createdAt} inline />
                   </span>
                   {entry.restoredAt && (
                     <Badge variant="neutral" size="sm">
@@ -192,7 +192,7 @@ export function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
                 {entry.note && <span className="review-pre-wrap">&ldquo;{entry.note}&rdquo;</span>}
                 {entry.restoredAt && (
                   <Muted className="text-xs">
-                    Restored by {entry.restoredBy} · {formatDateTime(entry.restoredAt)}
+                    Restored by {entry.restoredBy} · <Timestamp iso={entry.restoredAt} inline />
                   </Muted>
                 )}
               </li>

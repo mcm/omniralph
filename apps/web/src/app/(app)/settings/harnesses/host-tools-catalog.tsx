@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconPlus, IconTool, IconTrash } from "@tabler/icons-react";
+import { MonoValue } from "@/components/mono-value";
 import { useAction } from "@/components/use-action";
 import { addHostTool, removeHostTool } from "./actions";
 import { EmptyValue } from "@/components/empty-value";
@@ -155,7 +156,7 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
             {hostTools.map((tool) => (
               <TableRow key={tool.id} data-host-tool={tool.name}>
                 <TableCell>
-                  <span className="font-mono text-sm">{tool.name}</span>
+                  <MonoValue value={tool.name} className="text-sm" />
                 </TableCell>
                 <TableCell>
                   {tool.description ? (

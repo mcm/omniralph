@@ -27,6 +27,7 @@ import {
 import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
 import type { AgentDefinition, NamedContent, TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
@@ -154,7 +155,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
           meta={
             <>
               {builtin && <BuiltinBadge />}
-              <span className="font-mono text-xs text-text-secondary">{agent.id}</span>
+              <MonoValue value={agent.id} className="text-xs text-text-secondary" />
             </>
           }
           actions={isAdmin && <AdminActions agent={agent} builtin={builtin} tasks={tasks} />}
@@ -252,7 +253,7 @@ export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailV
               tasks.map((task) => (
                 <Cluster key={task.id}>
                   <span className="text-sm">{task.name}</span>
-                  <span className="font-mono text-xs text-text-secondary">{task.id}</span>
+                  <MonoValue value={task.id} className="text-xs text-text-secondary" />
                   <Badge variant="neutral">{task.taskType}</Badge>
                   {task.builtin && <BuiltinBadge />}
                 </Cluster>

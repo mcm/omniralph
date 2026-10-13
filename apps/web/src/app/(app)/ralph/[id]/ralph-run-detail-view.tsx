@@ -41,6 +41,7 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import {
   JobStatusBadge,
@@ -269,7 +270,7 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
         ) : (
           <CardTitle as="h2" className="run-lane-title">
             <ProviderIcon provider={lane.repository.provider} />
-            <span className="fact-mono">{lane.repository.fullPath}</span>
+            <MonoValue value={lane.repository.fullPath} className="fact-mono" />
             {lane.main ? <Badge variant="neutral">Main</Badge> : null}
           </CardTitle>
         )}
@@ -374,7 +375,7 @@ function laneRepository(run: RalphRunDetail, laneId: string | null): string | nu
 function JobLink({ id, label }: { id: string; label: string }) {
   return (
     <Link href={jobPageHref(id)} className="run-job-link">
-      {label}
+      <MonoValue value={label} title={id} />
     </Link>
   );
 }
@@ -428,7 +429,7 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
                   )}
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  <span className="list-text">{formatDateTime(request.createdAt)}</span>
+                  <Timestamp iso={request.createdAt} />
                 </TableCell>
               </TableRow>
             ))}
@@ -505,7 +506,7 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                     </Badge>
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
-                    <span className="list-text">{formatDateTime(message.createdAt)}</span>
+                    <Timestamp iso={message.createdAt} />
                   </TableCell>
                 </TableRow>
               );
@@ -565,14 +566,10 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                   <AgentName agent={job.agent} isAdmin={isAdmin} />
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  <span className="list-text">{formatDateTime(job.createdAt)}</span>
+                  <Timestamp iso={job.createdAt} />
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
-                  {job.finishedAt ? (
-                    <span className="list-text">{formatDateTime(job.finishedAt)}</span>
-                  ) : (
-                    <EmptyValue />
-                  )}
+                  {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
                 </TableCell>
               </TableRow>
             ))}
@@ -631,9 +628,17 @@ function RunErrorAlert({ run }: { run: RalphRunDetail }) {
           <span>
             Last failing job:{" "}
             <Link href={jobPageHref(failure.job.id)} className="run-job-link">
-              {failure.job.type} {shortJobId(failure.job.id)}
+              <MonoValue
+                value={`${failure.job.type} ${shortJobId(failure.job.id)}`}
+                title={failure.job.id}
+              />
             </Link>
-            {failure.job.finishedAt && <> · {formatDateTime(failure.job.finishedAt)}</>}
+            {failure.job.finishedAt && (
+              <>
+                {" "}
+                · <Timestamp iso={failure.job.finishedAt} inline />
+              </>
+            )}
           </span>
         )}
         <span>{failure.resume}</span>
@@ -653,7 +658,7 @@ function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
             {run.repository ? (
               <span className="fact-mono fact-repo">
                 <ProviderIcon provider={run.repository.provider} size={14} />
-                <span>{run.repository.fullPath}</span>
+                <MonoValue value={run.repository.fullPath} />
               </span>
             ) : (
               <Muted>Not chosen yet</Muted>
