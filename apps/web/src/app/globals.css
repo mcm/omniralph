@@ -570,6 +570,210 @@ body {
   }
 }
 
+/* Pickers (components/pickers/): a field of removable chips plus an input or a trigger, and a
+   popover list built from the library's Command. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.picker-command {
+  /* The library's Command clips and fills; here it only wraps the field and its list. */
+  height: auto;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+.picker-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: calc(var(--spacing) * 9);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  text-align: start;
+  transition: border-color var(--t-hover) var(--spring-soft);
+}
+.picker-field:focus-within {
+  border-color: var(--focus-ring);
+}
+.picker-field[data-invalid] {
+  border-color: var(--danger);
+}
+.picker-field[data-disabled],
+.picker-field:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background: var(--border-subtle);
+}
+.picker-chips {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.picker-chip {
+  max-width: 100%;
+  gap: var(--space-1);
+}
+.picker-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-chip-note {
+  font-weight: 400;
+  font-style: italic;
+}
+.picker-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-end: calc(var(--space-1) * -1);
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.picker-chip-remove:hover {
+  background: var(--bg-pressed);
+}
+.picker-chip-remove:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.picker-input {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  height: calc(var(--spacing) * 7);
+  padding: 0 var(--space-1);
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+.picker-input::placeholder {
+  color: var(--text-tertiary);
+}
+.picker-trigger {
+  display: flex;
+  flex: 1 1 8rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: calc(var(--spacing) * 7);
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+/* The model picker's trigger is the whole field. */
+.picker-field.picker-trigger {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-input);
+}
+.picker-field.picker-trigger[data-invalid] {
+  border-color: var(--danger);
+}
+.picker-trigger:disabled {
+  cursor: not-allowed;
+}
+.picker-trigger-text {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-trigger-text[data-placeholder] {
+  color: var(--text-tertiary);
+}
+.picker-trigger-text[data-stale] {
+  color: var(--warning-fg);
+}
+.picker-trigger-icon {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  color: var(--text-tertiary);
+}
+.picker-popover {
+  width: var(--radix-popover-trigger-width);
+  min-width: min(18rem, calc(100vw - var(--space-8)));
+  max-width: calc(100vw - var(--space-8));
+  padding: 0;
+  overflow: hidden;
+}
+.picker-list {
+  padding: var(--space-1);
+}
+.picker-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-option-hint {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-ui-xs);
+}
+.picker-option-value {
+  font-family: var(--font-mono);
+}
+.picker-check {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0;
+}
+[data-checked="true"] > .picker-check {
+  opacity: 1;
+}
+.picker-list-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-ui-xs);
+}
+.picker-stale-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--warning-fg);
+  font-size: var(--text-ui-xs);
+}
+.picker-stale-note > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+/* On phones a long option wraps its hint under the label instead of widening the list. */
+.picker-list [cmdk-item] {
+  flex-wrap: wrap;
+}
+
 /* Settings cards (components/settings-card.tsx): one save per card, and the "old → new" list
    its confirmation shows. */
 .settings-card {
