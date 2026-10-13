@@ -27,6 +27,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
+import { EnvDocsLink } from "@/components/env-docs-link";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
@@ -514,19 +515,25 @@ function AppNotConfiguredAlert({
   /** What happens to the platform's events meanwhile, e.g. "mentions in Slack are ignored". */
   ignored: string;
 }) {
-  const vars = envVars.map((name, i) => (
-    <span key={name}>
-      {i > 0 && (i === envVars.length - 1 ? " and " : ", ")}
-      <InlineCode>{name}</InlineCode>
-    </span>
-  ));
+  // One per line: inline, the chips break the sentence apart on a phone.
+  const vars = (
+    <ul className="env-var-list">
+      {envVars.map((name) => (
+        <li key={name}>
+          <InlineCode>{name}</InlineCode>
+        </li>
+      ))}
+    </ul>
+  );
   if (connectedName) {
     return (
       <Alert variant="warning">
         <AlertTitle as="h3">Connected, but the {platform} app isn&apos;t configured</AlertTitle>
         <AlertDescription>
-          The connection to <strong>{connectedName}</strong> is saved, but this server is missing{" "}
-          {vars}, so {ignored} until they&apos;re set (see docs/env.md).
+          The connection to <strong>{connectedName}</strong> is saved, but this server is missing
+          these, so {ignored} until they&apos;re set (see <EnvDocsLink />
+          ):
+          {vars}
         </AlertDescription>
       </Alert>
     );
@@ -535,7 +542,9 @@ function AppNotConfiguredAlert({
     <Alert variant="info">
       <AlertTitle as="h3">{platform} app not configured</AlertTitle>
       <AlertDescription>
-        Set {vars} to connect {platform} (see docs/env.md).
+        To connect {platform}, set these on the server (see <EnvDocsLink />
+        ):
+        {vars}
       </AlertDescription>
     </Alert>
   );

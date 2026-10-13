@@ -42,7 +42,11 @@ import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
-import { RalphRunStatusBadge, RalphStoryStatusBadge } from "@/components/ralph-badges";
+import {
+  JobStatusBadge,
+  RalphRunStatusBadge,
+  RalphStoryStatusBadge,
+} from "@/components/ralph-badges";
 import { useAction } from "@/components/use-action";
 import { formatDateTime } from "@/lib/format-date";
 import { jobPageHref, shortJobId } from "@/lib/jobs/list";
@@ -59,7 +63,7 @@ import {
   truncate,
   type RalphRunDetailView as RalphRunDetail,
 } from "@/lib/ralph/display";
-import { JOB_STATUS_VARIANTS, RALPH_MESSAGE_STATE_VARIANTS } from "@/lib/state-variants";
+import { RALPH_MESSAGE_STATE_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { stopRalphRun } from "../actions";
 import {
@@ -68,6 +72,7 @@ import {
   LinearNotConnected,
   PullRequestLink,
 } from "../ralph-runs-view";
+import { EmptyValue } from "@/components/empty-value";
 
 /** Characters of a story's last feedback shown in the table (all of it on hover). */
 const FEEDBACK_PREVIEW = 120;
@@ -207,7 +212,7 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
               {story.commitSha ? (
                 <InlineCode title={story.commitSha}>{shortSha(story.commitSha)}</InlineCode>
               ) : (
-                <Muted>—</Muted>
+                <EmptyValue />
               )}
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
@@ -216,14 +221,14 @@ function StoriesTable({ run, stories }: { run: RalphRunDetail; stories: RalphSto
                   {truncate(story.lastFeedback, FEEDBACK_PREVIEW)}
                 </Muted>
               ) : (
-                <Muted>—</Muted>
+                <EmptyValue />
               )}
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               {story.lastJobId ? (
                 <JobLink id={story.lastJobId} label={shortJobId(story.lastJobId)} />
               ) : (
-                <Muted>—</Muted>
+                <EmptyValue />
               )}
             </TableCell>
           </TableRow>
@@ -272,11 +277,15 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
           {!single && (
             <>
               <InlineCode>{lane.branch}</InlineCode> from{" "}
-              {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : "—"}
+              {lane.baseBranch ? <InlineCode>{lane.baseBranch}</InlineCode> : <EmptyValue />}
               {" · "}
               {lane.repository.provider === "gitlab" ? "Merge request" : "Pull request"}{" "}
               {/* Not <PullRequestLink>: its empty state is a <p>, invalid inside this <p>. */}
-              {lane.pullRequest ? <PullRequestLink pullRequest={lane.pullRequest} /> : "—"}
+              {lane.pullRequest ? (
+                <PullRequestLink pullRequest={lane.pullRequest} />
+              ) : (
+                <EmptyValue />
+              )}
               {" · "}
             </>
           )}
@@ -397,7 +406,9 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
               <TableRow key={request.id}>
                 {multiLane && (
                   <TableCell className={WIDE_COLUMN}>
-                    <span className="fact-mono">{laneRepository(run, request.laneId) ?? "—"}</span>
+                    <span className="fact-mono">
+                      {laneRepository(run, request.laneId) ?? <EmptyValue />}
+                    </span>
                   </TableCell>
                 )}
                 <TableCell>
@@ -413,7 +424,7 @@ function PendingRequestsCard({ run }: { run: RalphRunDetail }) {
                   {request.author ? (
                     <span className="list-text">{request.author}</span>
                   ) : (
-                    <Muted>—</Muted>
+                    <EmptyValue />
                   )}
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
@@ -454,6 +465,10 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
           <TableBody>
             {run.messages.map((message) => {
               const settledAt = message.deliveredAt ?? message.consumedAt;
+              // The row shows one time (Created); when it settled is the state badge's tooltip.
+              const settledTitle = settledAt
+                ? `${RALPH_MESSAGE_STATE_LABELS[message.state]} ${formatDateTime(settledAt)}`
+                : undefined;
               return (
                 <TableRow key={message.id}>
                   <TableCell className={WIDE_COLUMN}>
@@ -474,19 +489,20 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
                     {message.author ? (
                       <span className="list-text">{message.author}</span>
                     ) : (
-                      <Muted>—</Muted>
+                      <EmptyValue />
                     )}
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
                     <JobLink id={message.job.id} label={message.job.type} />
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
-                    <div className="list-cell-stack">
-                      <Badge variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]} dot>
-                        {RALPH_MESSAGE_STATE_LABELS[message.state]}
-                      </Badge>
-                      {settledAt && <Muted className="text-xs">{formatDateTime(settledAt)}</Muted>}
-                    </div>
+                    <Badge
+                      variant={RALPH_MESSAGE_STATE_VARIANTS[message.state]}
+                      dot
+                      title={settledTitle}
+                    >
+                      {RALPH_MESSAGE_STATE_LABELS[message.state]}
+                    </Badge>
                   </TableCell>
                   <TableCell className={WIDE_COLUMN}>
                     <span className="list-text">{formatDateTime(message.createdAt)}</span>
@@ -528,18 +544,13 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                     {job.type}
                   </Link>
                   <PhoneMeta>
-                    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
-                      {job.status}
-                    </Badge>
+                    <JobStatusBadge job={job} />
                     <Timestamp iso={job.finishedAt ?? job.createdAt} />
                   </PhoneMeta>
                 </TableCell>
                 <TableCell className={WIDE_COLUMN}>
                   <div className="list-cell-stack">
-                    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
-                      {job.status}
-                      {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
-                    </Badge>
+                    <JobStatusBadge job={job} />
                     {job.error && (
                       <Muted title={job.error} className="list-error">
                         {truncate(job.error, 80)}
@@ -560,7 +571,7 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                   {job.finishedAt ? (
                     <span className="list-text">{formatDateTime(job.finishedAt)}</span>
                   ) : (
-                    <Muted>—</Muted>
+                    <EmptyValue />
                   )}
                 </TableCell>
               </TableRow>
@@ -660,7 +671,7 @@ function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
                 )}
               </span>
             ) : (
-              <Muted>—</Muted>
+              <EmptyValue />
             )}
           </Fact>
           <Fact label={run.repository?.provider === "gitlab" ? "Merge request" : "Pull request"}>

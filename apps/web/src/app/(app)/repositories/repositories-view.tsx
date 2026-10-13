@@ -65,6 +65,7 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { EnvDocsLink } from "@/components/env-docs-link";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
@@ -536,12 +537,22 @@ export function RepositoriesView({
           <Alert variant="info">
             <AlertTitle as="h2">GitHub App not configured</AlertTitle>
             <AlertDescription>
-              Set <InlineCode>GITHUB_APP_ID</InlineCode>, a signing key (
-              <InlineCode>GITHUB_APP_KMS_ISSUER_ID</InlineCode> or{" "}
-              <InlineCode>GITHUB_APP_PRIVATE_KEY</InlineCode>) and optionally{" "}
-              <InlineCode>GITHUB_APP_SLUG</InlineCode> to connect GitHub repositories. The
-              app&apos;s Setup URL must be <InlineCode>/repositories/github/callback</InlineCode> on
-              this control panel.
+              To connect GitHub repositories, set these on the server (see <EnvDocsLink />
+              ):
+              <ul className="env-var-list">
+                <li>
+                  <InlineCode>GITHUB_APP_ID</InlineCode>
+                </li>
+                <li>
+                  a signing key: <InlineCode>GITHUB_APP_KMS_ISSUER_ID</InlineCode> or{" "}
+                  <InlineCode>GITHUB_APP_PRIVATE_KEY</InlineCode>
+                </li>
+                <li>
+                  <InlineCode>GITHUB_APP_SLUG</InlineCode> (optional)
+                </li>
+              </ul>
+              The app&apos;s Setup URL must be{" "}
+              <InlineCode>/repositories/github/callback</InlineCode> on this control panel.
             </AlertDescription>
           </Alert>
         )}

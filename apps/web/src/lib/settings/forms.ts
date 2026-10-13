@@ -21,6 +21,16 @@ export function typedNumber(value: string): number {
   return value.trim() === "" ? Number.NaN : Number(value);
 }
 
+/** A large count as the form shows it, with separators: 60000 → "60,000". */
+export function groupedNumber(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+/** A typed count that may have separators ("60,000", "60 000", "60_000"); NaN when empty. */
+export function typedGroupedNumber(value: string): number {
+  return typedNumber(value.replace(/[,_\s]/g, ""));
+}
+
 /** `keys` of `source`. */
 export function pickKeys<T extends object, K extends keyof T>(
   source: T,
@@ -362,7 +372,7 @@ export interface ProfileDraft {
 export function profileDraft(profile: ReviewProfileInput): ProfileDraft {
   return {
     model: profile.model,
-    maxTokensPerReview: String(profile.maxTokensPerReview),
+    maxTokensPerReview: groupedNumber(profile.maxTokensPerReview),
     maxFiles: String(profile.maxFiles),
     allowRepoExploration: profile.allowRepoExploration,
   };
@@ -371,7 +381,7 @@ export function profileDraft(profile: ReviewProfileInput): ProfileDraft {
 export function profileValues(draft: ProfileDraft): ReviewProfileInput {
   return {
     model: draft.model.trim(),
-    maxTokensPerReview: typedNumber(draft.maxTokensPerReview),
+    maxTokensPerReview: typedGroupedNumber(draft.maxTokensPerReview),
     maxFiles: typedNumber(draft.maxFiles),
     allowRepoExploration: draft.allowRepoExploration,
   };

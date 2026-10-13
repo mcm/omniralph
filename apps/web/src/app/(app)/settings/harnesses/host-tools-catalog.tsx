@@ -16,7 +16,6 @@ import {
   Empty,
   Field,
   Input,
-  Muted,
   Stack,
   Table,
   TableBody,
@@ -28,6 +27,7 @@ import {
 import { IconPlus, IconTool, IconTrash } from "@tabler/icons-react";
 import { useAction } from "@/components/use-action";
 import { addHostTool, removeHostTool } from "./actions";
+import { EmptyValue } from "@/components/empty-value";
 
 /** A host tool of the organization's catalog. */
 export interface HostToolCatalogRow {
@@ -161,7 +161,7 @@ export function HostToolsCatalog({ hostTools }: { hostTools: HostToolCatalogRow[
                   {tool.description ? (
                     <span className="text-sm">{tool.description}</span>
                   ) : (
-                    <Muted>—</Muted>
+                    <EmptyValue />
                   )}
                 </TableCell>
                 <TableCell className="text-right">

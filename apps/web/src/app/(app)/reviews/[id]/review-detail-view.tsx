@@ -53,6 +53,7 @@ import {
 import { ProviderIcon } from "../../repositories/repositories-view";
 import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
+import { EmptyValue } from "@/components/empty-value";
 
 function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
@@ -219,9 +220,9 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
           <Fact label="Base SHA">
             <InlineCode title={review.baseSha}>{review.baseSha.slice(0, 12)}</InlineCode>
           </Fact>
-          <Fact label="Profile">{review.profileName ?? "—"}</Fact>
+          <Fact label="Profile">{review.profileName ?? <EmptyValue />}</Fact>
           <Fact label="Model">
-            {review.model ? <span className="fact-mono">{review.model}</span> : "—"}
+            {review.model ? <span className="fact-mono">{review.model}</span> : <EmptyValue />}
           </Fact>
           <Fact label="Harness">
             {review.agent ? (
@@ -240,7 +241,11 @@ export function ReviewDetailView({ review }: { review: ReviewDetail }) {
             <Timestamp iso={review.createdAt} />
           </Fact>
           <Fact label="Duration">
-            {active ? <Muted>In progress</Muted> : (formatDuration(review.durationMs) ?? "—")}
+            {active ? (
+              <Muted>In progress</Muted>
+            ) : (
+              (formatDuration(review.durationMs) ?? <EmptyValue />)
+            )}
           </Fact>
           <Fact label="Stop reason">{review.stopReason ?? <Muted>In progress</Muted>}</Fact>
           <Fact label="Tokens" wide>

@@ -40,8 +40,9 @@ import { useAction } from "@/components/use-action";
 import type { JobRow } from "@/lib/harnesses/rows";
 import { jobIdFromHash, jobListHref, jobPageHref, shortJobId } from "@/lib/jobs/list";
 import { pageRange, totalPages } from "@/lib/pagination";
-import { JOB_STATUS_VARIANTS } from "@/lib/state-variants";
+import { JobStatusBadge } from "@/components/ralph-badges";
 import { cancelJob } from "./actions";
+import { EmptyValue } from "@/components/empty-value";
 
 type JobStatus = JobRow["status"];
 
@@ -61,15 +62,6 @@ interface JobsViewProps {
 
 export function isCancelable(job: Pick<JobRow, "status" | "cancelRequested">): boolean {
   return job.status === "queued" || (job.status === "running" && !job.cancelRequested);
-}
-
-function JobStatusBadge({ job }: { job: JobRow }) {
-  return (
-    <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot>
-      {job.status}
-      {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
-    </Badge>
-  );
 }
 
 function JobTableRow({
@@ -151,14 +143,14 @@ function JobTableRow({
             <span className="list-text">{job.agent.name}</span>
           )
         ) : (
-          <Muted>—</Muted>
+          <EmptyValue />
         )}
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <Timestamp iso={job.createdAt} />
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
-        {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <Muted>—</Muted>}
+        {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
       </TableCell>
       {isAdmin && (
         <TableCell className="list-actions">

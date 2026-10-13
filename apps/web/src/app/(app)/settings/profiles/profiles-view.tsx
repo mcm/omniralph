@@ -142,9 +142,7 @@ function ProfileCard({ profile }: { profile: ProfileRow }) {
         >
           <Input
             id={`${idPrefix}-max-tokens`}
-            type="number"
-            min={MIN_PROFILE_TOKEN_CAP}
-            step={1000}
+            inputMode="numeric"
             error={Boolean(errors.maxTokensPerReview)}
             aria-invalid={Boolean(errors.maxTokensPerReview)}
             value={draft.maxTokensPerReview}

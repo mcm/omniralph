@@ -40,6 +40,7 @@ import {
 import { ProviderIcon } from "../repositories/repositories-view";
 import { RepositoryNav } from "../repositories/[id]/repository-nav";
 import { RerunReviewDialog } from "./rerun-review-dialog";
+import { EmptyValue } from "@/components/empty-value";
 
 interface ReviewsViewProps {
   /** The repository whose reviews are listed; null lists all repositories. */
@@ -123,7 +124,9 @@ function ReviewTableRow({
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <div className="list-cell-stack">
-          <span className="list-text list-text-primary">{review.profileName ?? "—"}</span>
+          <span className="list-text list-text-primary">
+            {review.profileName ?? <EmptyValue />}
+          </span>
           {review.agent ? (
             isAdmin ? (
               <Link href={`/harnesses/${review.agent.id}`} className="list-text">
@@ -149,7 +152,7 @@ function ReviewTableRow({
             {formatTokens(review.tokensUsed)} / {formatTokens(review.budget)}
           </span>
           <span className="list-time text-numeric" title="Duration">
-            {formatDuration(review.durationMs) ?? "—"}
+            {formatDuration(review.durationMs) ?? <EmptyValue />}
           </span>
         </div>
       </TableCell>
@@ -287,13 +290,15 @@ export function ReviewsView({ repository, reviews, params, total, pageSize }: Re
               <Table className="list-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>
+                    <TableHead className="list-nowrap">
                       {repository ? (repository.provider === "gitlab" ? "MR" : "PR") : "PR / MR"}
                     </TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status / trigger</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Profile / agent</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Status / trigger</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Profile / agent</TableHead>
                     <TableHead className={WIDE_COLUMN}>Findings</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Tokens / duration</TableHead>
+                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
+                      Tokens / duration
+                    </TableHead>
                     <TableHead className={WIDE_COLUMN}>Created</TableHead>
                     <TableHead aria-label="Actions" />
                   </TableRow>

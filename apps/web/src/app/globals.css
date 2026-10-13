@@ -1337,3 +1337,24 @@ body {
   align-items: center;
   gap: var(--space-2);
 }
+.empty-value {
+  color: var(--text-secondary);
+}
+/* A link inside running text: underlined, in the text's own color. */
+.inline-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.inline-link:hover {
+  text-decoration-thickness: 2px;
+}
+/* Environment variables named in an alert, one per line so none breaks mid-sentence. */
+.env-var-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
