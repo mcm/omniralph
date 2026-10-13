@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
     image: null;
   } | null,
   desired: "1.4.0",
+  defaults: null as { allowedTaskTypes: string[]; maxConcurrency: number } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
@@ -21,6 +22,12 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@omniralph/db", () => ({
   DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
   TRACK_LATEST_HARNESS_VERSION: "latest",
+  DEFAULT_ALLOWED_TASK_TYPES: ["query", "review", "coding"],
+  DEFAULT_MAX_CONCURRENCY: 5,
+  // Nothing saved: the built-in defaults, as the real getters return them.
+  getAllowedTaskTypeDefaults: async () =>
+    state.defaults?.allowedTaskTypes ?? ["query", "review", "coding"],
+  getDefaultMaxConcurrency: async () => state.defaults?.maxConcurrency ?? 5,
   getAppSetting: async () => ({
     value: state.desired,
     updatedBy: "admin-1",
@@ -74,8 +81,23 @@ describe("Settings › Harness defaults page", () => {
       updatedAt: "2026-10-01T00:00:00.000Z",
       latest: null,
       packageName: "@omniralph/harness",
+      defaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+      builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
       hostTools: [{ id: "tool-1", name: "semgrep", description: "SAST scanner" }],
     });
+  });
+
+  it("shows the organization's saved defaults", async () => {
+    state.user = user("admin");
+    state.defaults = { allowedTaskTypes: ["review"], maxConcurrency: 2 };
+    try {
+      expect((await HarnessSettingsPage()).props).toMatchObject({
+        defaults: { allowedTaskTypes: ["review"], maxConcurrency: 2 },
+        builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+      });
+    } finally {
+      state.defaults = null;
+    }
   });
 
   it("shows the version read from npm when the organization tracks latest", async () => {

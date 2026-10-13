@@ -3,10 +3,15 @@
 import {
   createHostTool,
   deleteHostTool,
+  MAX_MAX_CONCURRENCY,
+  MIN_MAX_CONCURRENCY,
+  setAllowedTaskTypeDefaults,
+  setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   TRACK_LATEST_HARNESS_VERSION,
 } from "@omniralph/db";
 import { HarnessVersion } from "@omniralph/shared";
+import { TASK_TYPES } from "@omniralph/tasks";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
@@ -69,6 +74,45 @@ export async function trackLatestHarnessVersion(): Promise<HarnessVersionResult>
     revalidate();
   });
   return result.ok ? { ...result, version } : result;
+}
+
+const OrganizationDefaults = z.object({
+  allowedTaskTypes: z.array(z.enum(TASK_TYPES)),
+  maxConcurrency: z.number().int().min(MIN_MAX_CONCURRENCY).max(MAX_MAX_CONCURRENCY),
+});
+
+export interface OrganizationDefaultsForm {
+  /** Task types harnesses and repositories allow unless they set their own (`query`, `review`, `coding`). */
+  allowedTaskTypes: string[];
+  /** Jobs a harness runs at once unless it sets its own (1–32). */
+  maxConcurrency: number;
+}
+
+/**
+ * Sets the task types and max concurrency every harness and repository of the organization
+ * inherits unless it sets its own; they take effect with the next claim or heartbeat.
+ */
+export async function setOrganizationDefaults(
+  input: OrganizationDefaultsForm,
+): Promise<ActionResult> {
+  return runAdminAction(async (admin) => {
+    const parsed = OrganizationDefaults.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: `Max concurrency must be ${MIN_MAX_CONCURRENCY}–${MAX_MAX_CONCURRENCY} and task types known ones.`,
+      };
+    }
+    const db = getDb();
+    await setAllowedTaskTypeDefaults(
+      db,
+      admin.organization.id,
+      parsed.data.allowedTaskTypes,
+      admin.id,
+    );
+    await setDefaultMaxConcurrency(db, admin.organization.id, parsed.data.maxConcurrency, admin.id);
+    revalidate();
+  });
 }
 
 /** Longest host tool description accepted. */
