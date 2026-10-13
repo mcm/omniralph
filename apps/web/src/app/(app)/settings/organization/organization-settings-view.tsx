@@ -381,7 +381,7 @@ function InvitationsCard({
         <CardContent>
           <Cluster gap={3} align="end" asChild>
             <form onSubmit={submit}>
-              <Field label="Email" htmlFor="invite-email" required className="flex-1">
+              <Field label="Email" htmlFor="invite-email" required className="org-invite-email">
                 <Input
                   id="invite-email"
                   type="email"

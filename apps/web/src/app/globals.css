@@ -1154,6 +1154,11 @@ body {
 .org-role-select {
   width: 7.5rem;
 }
+/* The invite email grows on a wide row; below this width Role and Invite wrap under it. */
+.org-invite-email {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
 .org-danger-icon {
   color: var(--danger-fg);
 }
