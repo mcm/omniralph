@@ -12,7 +12,7 @@
  * Stories are described by Linear's own fields only: identifier, title, priority, sub-issue order,
  * state, labels and "blocks" relations. Title prefixes (`US-001: …`) and body metadata are not parsed.
  */
-import { type ParsedPrd, parseBranchLine, parsePrd, parseQualityGates } from "./prd.js";
+import { type ParsedPrd, parseBranchLine, parsePrd, prdQualityGates } from "./prd.js";
 import {
   buildStoryIssueBody,
   linearPriorityFor,
@@ -201,9 +201,12 @@ function epicBase(issue: EpicIssue, prd: ParsedPrd | null): Omit<Epic, "kind" | 
     ...(issue.projectName !== undefined && { projectName: issue.projectName }),
     ...(issue.teamKey !== undefined && { teamKey: issue.teamKey }),
     branchName: epicBranchName(issue, prd),
-    qualityGates: prd?.qualityGates.length
-      ? prd.qualityGates
-      : parseQualityGates(issue.description),
+    ...(prd?.qualityGates.length || prd?.repositoryQualityGates
+      ? {
+          qualityGates: prd.qualityGates,
+          ...(prd.repositoryQualityGates && { repositoryQualityGates: prd.repositoryQualityGates }),
+        }
+      : prdQualityGates(issue.description)),
   };
 }
 

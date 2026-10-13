@@ -78,8 +78,13 @@ export interface Epic {
   projectName?: string;
   teamKey?: string;
   branchName: string;
-  /** Shell commands the PRD requires to pass for every story. */
+  /** Shell commands the PRD requires to pass for every story, in every repository. */
   qualityGates: string[];
+  /**
+   * Commands the PRD requires only in one repository (`### <repository>` under Quality Gates),
+   * keyed by `normalizeRepoPath` of the repository's full path; absent when there are none.
+   */
+  repositoryQualityGates?: Record<string, string[]>;
   stories: Story[];
   /** Open issues outside the epic that block one of its stories: Linear id -> identifier (e.g. "ENG-99"). */
   externalIssues?: Record<string, string>;

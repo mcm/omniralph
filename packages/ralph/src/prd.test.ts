@@ -5,6 +5,7 @@ import {
   parsePrdJson,
   parsePrdMarkdown,
   parseQualityGates,
+  parseRepositoryQualityGates,
 } from "./prd.js";
 import {
   buildStoryIssueBody,
@@ -185,6 +186,67 @@ describe("parsePrd extras", () => {
     expect(parseBranchLine("No branch here")).toBeUndefined();
     expect(parsePrd("> Branch: feat/epic\n\nJust prose.")).toBeNull();
     expect(parsePrd("")).toBeNull();
+  });
+});
+
+describe("repository quality gates", () => {
+  const gates = (body: string) => parseRepositoryQualityGates(`## Quality Gates\n${body}`);
+
+  it("keeps shared gates only when no repository is named", () => {
+    expect(gates("- `pnpm lint`\n- `pnpm test`\n")).toEqual({
+      shared: ["pnpm lint", "pnpm test"],
+      byRepository: {},
+    });
+    expect(parsePrd(`${PRD}`)).not.toHaveProperty("repositoryQualityGates");
+  });
+
+  it("scopes bullets under a repository heading to that repository", () => {
+    const body = [
+      "- `pnpm lint` - Linting",
+      "",
+      "### mcm/Omniralph",
+      "- `pnpm test`",
+      "",
+      "### `Group/Sub/API.git`",
+      "- `go test ./...`",
+      "",
+      "## Non-Goals",
+      "- `not a gate`",
+    ].join("\n");
+    expect(gates(body)).toEqual({
+      shared: ["pnpm lint"],
+      byRepository: { "mcm/omniralph": ["pnpm test"], "group/sub/api": ["go test ./..."] },
+    });
+    expect(parseQualityGates(`## Quality Gates\n${body}`)).toEqual(["pnpm lint"]);
+  });
+
+  it("keeps bullets under a heading that isn't a repository path shared", () => {
+    expect(
+      gates(
+        "- `pnpm lint`\n\n### For UI stories, also:\n- `pnpm e2e`\n\n### acme/web\n- `pnpm build`\n\n### Other checks\n- `pnpm audit`",
+      ),
+    ).toEqual({
+      shared: ["pnpm lint", "pnpm e2e", "pnpm audit"],
+      byRepository: { "acme/web": ["pnpm build"] },
+    });
+  });
+
+  it("reads repository headings Linear escaped", () => {
+    expect(gates("* `make check`\n\n### acme/my\\_repo\\-x:\n* `make test`")).toEqual({
+      shared: ["make check"],
+      byRepository: { "acme/my_repo-x": ["make test"] },
+    });
+  });
+
+  it("drops duplicates within a scope and merges repeated repository headings", () => {
+    expect(
+      gates("- `a`\n- `a`\n### acme/web\n- `b`\n- `a`\n### ACME/web.git\n- `b`\n- `c`"),
+    ).toEqual({ shared: ["a"], byRepository: { "acme/web": ["b", "a", "c"] } });
+  });
+
+  it("carries scoped gates on the parsed PRD", () => {
+    const text = `${PRD.replace("## Quality Gates", "## Quality Gates\n### acme/web\n- `pnpm build`\n\n### Shared again")}`;
+    expect(parsePrd(text)?.repositoryQualityGates).toEqual({ "acme/web": ["pnpm build"] });
   });
 });
 
