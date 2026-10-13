@@ -620,6 +620,11 @@ body {
   padding: 0;
   list-style: none;
 }
+.picker-chips > li {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
 .picker-chip {
   max-width: 100%;
   gap: var(--space-1);
@@ -1071,6 +1076,47 @@ body {
   font-weight: var(--font-weight-medium);
 }
 /* Review profiles as a radio table: one row each, so their facts line up for comparison. */
+.settings-pin-list {
+  display: flex;
+  flex-direction: column;
+  max-width: 56rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-pin {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.settings-pin-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+.settings-pin-name {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-pin-detail {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.settings-pin-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 .settings-profile-table-wrap {
   overflow-x: auto;
 }

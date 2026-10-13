@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import {
   getAllowedTaskTypeDefaults,
   getRepositoryWithConnection,
-  listPinnableHarnesses,
+  listHarnessOverview,
   listReportedModels,
   listRepositoryCodingHarnessIds,
   listRepositoryPinnedHarnessIds,
@@ -15,6 +15,8 @@ import { enterResourceOrganization } from "@/lib/auth/resource-page";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { harnessRow } from "@/lib/harnesses/rows";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
 import {
   CORRELATION_TASKS,
@@ -77,7 +79,8 @@ export async function renderRepositorySettings(
   const orgId = user.organization.id;
   const [
     profiles,
-    agents,
+    harnesses,
+    organizationVersion,
     pinnedHarnessIds,
     reviewTasks,
     correlationTasks,
@@ -86,7 +89,8 @@ export async function renderRepositorySettings(
     allowedTaskTypes,
   ] = await Promise.all([
     listReviewProfiles(db, orgId),
-    listPinnableHarnesses(db, orgId),
+    listHarnessOverview(db, orgId),
+    organizationHarnessVersion(db, orgId),
     listRepositoryPinnedHarnessIds(db, id),
     listTaskDefinitions(db, orgId, REVIEW_TASKS),
     listTaskChoices(db, orgId, CORRELATION_TASKS),
@@ -95,6 +99,7 @@ export async function renderRepositorySettings(
     getAllowedTaskTypeDefaults(db, orgId),
   ]);
   const { repository, connection } = found;
+  const now = new Date();
   const codingChoices = tab === "coding" ? await loadCodingChoices(orgId, id) : null;
 
   return (
@@ -131,11 +136,17 @@ export async function renderRepositorySettings(
         maxFiles: p.maxFiles,
         allowRepoExploration: p.allowRepoExploration,
       }))}
-      agents={agents.map((a) => ({
-        id: a.id,
-        name: a.name,
-        lastHeartbeatAt: a.lastHeartbeatAt?.toISOString() ?? null,
-      }))}
+      harnesses={harnesses.map((harness) => {
+        const row = harnessRow(harness, now, organizationVersion.version);
+        return {
+          id: row.id,
+          name: row.name,
+          online: row.online,
+          revoked: row.revoked,
+          updating: row.updateStatus === "updating",
+          acceptedTaskTypes: row.acceptedTaskTypes,
+        };
+      })}
       ralph={
         user.role === "admin"
           ? {
