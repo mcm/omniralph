@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
+  getAllowedTaskTypeDefaults,
   getRepositoryWithConnection,
   listPinnableHarnesses,
   listRepositoryPinnedHarnessIds,
   listReviewProfiles,
-  resolveRepositorySwitches,
+  repositorySwitchOverrides,
 } from "@omniralph/db";
 import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { z } from "zod";
@@ -47,7 +48,7 @@ export default async function RepositorySettingsPage({
     correlationTasks,
     storyTasks,
     requestTasks,
-    switches,
+    allowedTaskTypes,
   ] = await Promise.all([
     listReviewProfiles(db, orgId),
     listPinnableHarnesses(db, orgId),
@@ -56,7 +57,7 @@ export default async function RepositorySettingsPage({
     listTaskChoices(db, orgId, CORRELATION_TASKS),
     listTaskChoices(db, orgId, STORY_TASKS),
     listTaskChoices(db, orgId, REQUEST_TASKS),
-    resolveRepositorySwitches(db, found.repository),
+    getAllowedTaskTypeDefaults(db, orgId),
   ]);
   const { repository, connection } = found;
 
@@ -101,7 +102,6 @@ export default async function RepositorySettingsPage({
       ralph={
         user.role === "admin"
           ? {
-              ralphEnabled: switches.coding,
               linearTeamKeys: repository.linearTeamKeys,
               linearProjectNames: repository.linearProjectNames,
               linearLabels: repository.linearLabels,
@@ -114,6 +114,14 @@ export default async function RepositorySettingsPage({
           : null
       }
       codingTasks={{ story: storyTasks, request: requestTasks }}
+      taskTypes={{
+        overrides: repositorySwitchOverrides(repository),
+        inherited: {
+          query: allowedTaskTypes.includes("query"),
+          review: allowedTaskTypes.includes("review"),
+          coding: allowedTaskTypes.includes("coding"),
+        },
+      }}
     />
   );
 }

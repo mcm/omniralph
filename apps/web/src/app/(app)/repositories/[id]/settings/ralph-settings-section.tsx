@@ -50,11 +50,11 @@ const RUN_AFFECTING: SettingsConfirmation = {
 };
 
 /**
- * Repository › Settings › Ralph (admin-only): opts the repository into
- * Linear-driven builds, says which Linear issues route to it and how its runs
+ * Repository › Settings › Ralph (admin-only): says which Linear issues route
+ * to the repository (coding itself is switched under Task types) and how its runs
  * work (cyralph's per-repository settings), grouped as Verification, Prompt
  * and model, Tools, PR follow-up and Linear. Each card saves on its own; the
- * ones that change what runs do (enabling, coding path, verification, model,
+ * ones that change what runs do (coding path, verification, model,
  * tools) confirm their change list first.
  */
 export function RalphSettingsSection({
@@ -193,7 +193,6 @@ export function RalphSettingsSection({
 
   const switchInput = (
     key:
-      | "ralphEnabled"
       | "runPrdQualityGates"
       | "openPullRequestEarly"
       | "respondToReviews"
@@ -224,21 +223,15 @@ export function RalphSettingsSection({
         title="Ralph"
         description={
           <>
-            Let Linear issues delegated to the Omniralph app be built here, story by story. A
-            delegation goes to the first enabled repository that matches its{" "}
-            <code>[repo=&lt;path&gt;]</code> tag, then its labels, project and team.
+            How Linear issues delegated to the Omniralph app are built here, story by story, once
+            coding is on under Task types. A delegation goes to the first repository with coding on
+            that matches its <code>[repo=&lt;path&gt;]</code> tag, then its labels, project and
+            team.
           </>
         }
         confirm={RUN_AFFECTING}
         {...card(RALPH_CARDS.ralph)}
       >
-        {switchInput(
-          "ralphEnabled",
-          "ralph-enabled",
-          "Enable Ralph",
-          "Delegated Linear issues may build in this repository and push branches to it.",
-          RALPH_DEFAULT_TEXT.ralphEnabled,
-        )}
         <Field
           label="Coding path"
           htmlFor="ralph-coding-path"

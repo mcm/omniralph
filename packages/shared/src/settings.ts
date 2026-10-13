@@ -110,6 +110,24 @@ export const RepositorySettingsInput = z.object({
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
+const TaskTypeSwitch = z
+  .boolean({ error: "Choose the organization's default, on or off." })
+  .nullable();
+
+/**
+ * Which task types a repository runs (`repositories.query_enabled`, `enabled`, `ralph_enabled`):
+ * each on, off, or null for the organization's default.
+ */
+export const RepositoryTaskTypesInput = z.object({
+  /** Externally triggered query tasks (mentions, chat, triage). */
+  query: TaskTypeSwitch,
+  /** Reviews of its pull and merge requests. */
+  review: TaskTypeSwitch,
+  /** Coding (Linear delegations and requests). */
+  coding: TaskTypeSwitch,
+});
+export type RepositoryTaskTypesInput = z.infer<typeof RepositoryTaskTypesInput>;
+
 const ClaudeModel = z
   .string()
   .trim()
@@ -326,8 +344,6 @@ const optionalText = (schema: z.ZodType) =>
 
 /** The Ralph section of Repository › Settings (`repositories.ralph_*`). */
 export const RalphSettingsInput = z.object({
-  /** Linear delegations may build in this repository. */
-  ralphEnabled: z.boolean(),
   /** Linear team keys routed here, e.g. `ENG`. */
   linearTeamKeys: routingValues(
     z
@@ -415,7 +431,6 @@ export function ralphSettingsFormValues(
   settings: RalphSettings,
 ): Omit<
   RalphSettingsInput,
-  | "ralphEnabled"
   | "linearTeamKeys"
   | "linearProjectNames"
   | "linearLabels"

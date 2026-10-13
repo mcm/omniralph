@@ -109,8 +109,8 @@ export const ACTIVE_RALPH_RUN_STATUSES = [
 // ── Repositories ─────────────────────────────────────────────────────────────
 
 export interface RepositoryRalphSettingsUpdate {
-  /** Null inherits the organization's allowed task types (`coding`). */
-  ralphEnabled: boolean | null;
+  /** Null inherits the organization's allowed task types (`coding`); omitted: unchanged. */
+  ralphEnabled?: boolean | null;
   linearTeamKeys: string[];
   linearProjectNames: string[];
   linearLabels: string[];
@@ -135,7 +135,7 @@ export async function updateRepositoryRalphSettings(
   const [row] = await db
     .update(repositories)
     .set({
-      ralphEnabled: input.ralphEnabled,
+      ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
       linearTeamKeys: input.linearTeamKeys,
       linearProjectNames: input.linearProjectNames,
       linearLabels: input.linearLabels,

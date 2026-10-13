@@ -51,7 +51,11 @@ export default async function RepositoriesPage({
         provider: repo.provider,
         fullPath: repo.fullPath,
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
-        enabled: repo.enabled,
+        taskTypes: {
+          query: { on: repo.queryEnabled, inherited: repo.overrides.query === null },
+          review: { on: repo.enabled, inherited: repo.overrides.review === null },
+          coding: { on: repo.ralphEnabled, inherited: repo.overrides.coding === null },
+        },
         profileName: repo.profileName,
         pinnedHarnesses: repo.pinnedHarnesses,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,

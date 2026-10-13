@@ -49,6 +49,7 @@ import { ProfileFacts, type ProfileSummary } from "../../../settings/profiles/pr
 import { updateRepositorySettings } from "./actions";
 import { RalphSettingsSection, type RalphSettingsValues } from "./ralph-settings-section";
 import { TaskPicker, type TaskChoiceOption } from "./task-picker";
+import { TaskTypesCard, type TaskTypesValues } from "./task-types-card";
 
 interface RepositorySettingsViewProps {
   repository: {
@@ -77,6 +78,8 @@ interface RepositorySettingsViewProps {
   ralph: RalphSettingsValues | null;
   /** The Ralph section's story and request task choices. */
   codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
+  /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
+  taskTypes: TaskTypesValues;
 }
 
 function InlineError({ message }: { message?: string }) {
@@ -118,6 +121,7 @@ export function RepositorySettingsView({
   agents,
   ralph,
   codingTasks,
+  taskTypes,
 }: RepositorySettingsViewProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const disabled = !isAdmin;
@@ -220,6 +224,8 @@ export function RepositorySettingsView({
         <RepositoryNav repositoryId={repository.id} current="settings" />
 
         {!isAdmin && <Muted>Only admins can change repository settings.</Muted>}
+
+        <TaskTypesCard repositoryId={repository.id} values={taskTypes} readOnly={!isAdmin} />
 
         <SettingsCard
           title="Review profile"

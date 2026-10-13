@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import { RepositorySettingsView } from "./repository-settings-view";
 import type { RalphSettingsValues } from "./ralph-settings-section";
+import {
+  inheritLabel,
+  taskTypeChoice,
+  taskTypeValue,
+  type TaskTypesValues,
+} from "./task-types-card";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "admin" }) }));
@@ -13,7 +19,11 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/settings",
   useRouter: () => ({ push: vi.fn() }),
 }));
-vi.mock("./actions", () => ({ updateRalphSettings: vi.fn(), updateRepositorySettings: vi.fn() }));
+vi.mock("./actions", () => ({
+  updateRalphSettings: vi.fn(),
+  updateRepositorySettings: vi.fn(),
+  updateRepositoryTaskTypes: vi.fn(),
+}));
 // `ProviderIcon`'s module imports the Repositories page's server actions.
 vi.mock("../../actions", () => ({
   connectGitLab: vi.fn(),
@@ -29,7 +39,6 @@ const STORY_ID = "33333333-3333-4333-8333-333333333333";
 const REQUEST_ID = "44444444-4444-4444-8444-444444444444";
 
 const ralph: RalphSettingsValues = {
-  ralphEnabled: true,
   linearTeamKeys: [],
   linearProjectNames: [],
   linearLabels: [],
@@ -39,7 +48,18 @@ const ralph: RalphSettingsValues = {
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
-function render(overrides: { correlationTaskId?: string; ralph?: RalphSettingsValues } = {}) {
+const inheritAll: TaskTypesValues = {
+  overrides: { query: null, review: null, coding: null },
+  inherited: { query: true, review: true, coding: false },
+};
+
+function render(
+  overrides: {
+    correlationTaskId?: string;
+    ralph?: RalphSettingsValues;
+    taskTypes?: TaskTypesValues;
+  } = {},
+) {
   return renderToStaticMarkup(
     <RepositorySettingsView
       repository={{
@@ -83,6 +103,7 @@ function render(overrides: { correlationTaskId?: string; ralph?: RalphSettingsVa
           { id: REQUEST_ID, name: "Careful request", builtin: false },
         ],
       }}
+      taskTypes={overrides.taskTypes ?? inheritAll}
     />,
   );
 }
@@ -135,8 +156,8 @@ describe("RepositorySettingsView task pickers", () => {
 describe("RepositorySettingsView cards", () => {
   it("gives every card its own save action", () => {
     const html = render();
-    // 5 review cards and 6 Ralph cards.
-    expect(html.match(/type="submit"/g)).toHaveLength(11);
+    // Task types, 5 review cards and 6 Ralph cards.
+    expect(html.match(/type="submit"/g)).toHaveLength(12);
     expect(html).not.toContain("Save settings");
     expect(html).not.toContain("Save Ralph settings");
   });
@@ -155,5 +176,63 @@ describe("RepositorySettingsView cards", () => {
     expect(html).toContain("Default: opus.");
     expect(html).toContain("Default: Legacy jobs.");
     expect(html).toContain("Default: Correlate findings.");
+  });
+});
+
+describe("RepositorySettingsView task types", () => {
+  const SWITCHES = ["query", "review", "coding"] as const;
+
+  it("offers Use organization default (showing the inherited value), On and Off for each", () => {
+    const html = render();
+    expect(select(html, "task-type-query")).toContain(
+      '<option value="inherit" selected="">Use organization default (On)</option>',
+    );
+    expect(select(html, "task-type-review")).toContain(
+      '<option value="inherit" selected="">Use organization default (On)</option>',
+    );
+    expect(select(html, "task-type-coding")).toContain(
+      '<option value="inherit" selected="">Use organization default (Off)</option>',
+    );
+    for (const key of SWITCHES) {
+      const options = select(html, `task-type-${key}`);
+      expect(options).toContain('<option value="on">On</option>');
+      expect(options).toContain('<option value="off">Off</option>');
+    }
+    expect(html).toContain(">Query<");
+    expect(html).toContain(">Reviews<");
+    expect(html).toContain(">Coding<");
+  });
+
+  it("selects each switch's own value: inherit, on or off", () => {
+    for (const key of SWITCHES) {
+      for (const [value, choice] of [
+        [null, "inherit"],
+        [true, "on"],
+        [false, "off"],
+      ] as const) {
+        const html = render({
+          taskTypes: { ...inheritAll, overrides: { ...inheritAll.overrides, [key]: value } },
+        });
+        expect(select(html, `task-type-${key}`)).toMatch(
+          new RegExp(`<option value="${choice}" selected="">`),
+        );
+      }
+    }
+  });
+
+  it("no longer has a Ralph enable switch", () => {
+    const html = render();
+    expect(html).not.toContain("Enable Ralph");
+    expect(html).not.toContain('id="ralph-enabled"');
+  });
+
+  it("maps choices to stored values and back", () => {
+    for (const value of [true, false, null]) {
+      expect(taskTypeValue(taskTypeChoice(value))).toBe(value);
+    }
+    expect(taskTypeChoice(null)).toBe("inherit");
+    expect(taskTypeValue("on")).toBe(true);
+    expect(taskTypeValue("off")).toBe(false);
+    expect(inheritLabel(false)).toBe("Use organization default (Off)");
   });
 });

@@ -211,7 +211,6 @@ export const RALPH_REPOSITORY_DEFAULTS = {
 
 /** The Ralph form: lists as comma-separated or one-per-line text, numbers as typed. */
 export interface RalphDraft {
-  ralphEnabled: boolean;
   linearTeamKeys: string;
   linearProjectNames: string;
   linearLabels: string;
@@ -280,7 +279,6 @@ export function ralphValues(draft: RalphDraft): RalphSettingsInput {
 /** The Ralph section's cards and the settings each one saves. */
 export const RALPH_CARDS = {
   ralph: [
-    "ralphEnabled",
     "codingPath",
     "storyTaskId",
     "requestTaskId",
@@ -315,7 +313,6 @@ export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
 };
 
 const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
-  ralphEnabled: "Enable Ralph",
   codingPath: "Coding path",
   storyTaskId: "Story task",
   requestTaskId: "Request task",
@@ -375,8 +372,6 @@ export const RALPH_DEFAULT_TEXT = {
   manualLabels: DEFAULT_RALPH_SETTINGS.manualLabels.join(", "),
   historyRewrite: HISTORY_REWRITE_LABELS[DEFAULT_RALPH_SETTINGS.historyRewrite],
   codingPath: CODING_PATH_LABELS[RALPH_REPOSITORY_DEFAULTS.codingPath],
-  /** `ralph_enabled` has no column default: null inherits the organization's task types. */
-  ralphEnabled: "the organization's default",
   onOff: (value: boolean) => formatSettingValue(value),
 };
 
