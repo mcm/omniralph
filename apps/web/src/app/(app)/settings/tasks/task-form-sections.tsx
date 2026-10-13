@@ -13,6 +13,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import {
+  CODING_DEFAULTS,
   DEFAULT_COMMAND_OUTPUT_BYTES,
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
@@ -27,6 +28,8 @@ import {
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
 import type { TaskChoice } from "@/lib/definitions";
+import { withDefault } from "@/lib/settings/changes";
+import { groupedNumber } from "@/lib/settings/forms";
 
 /** A setup or teardown command being edited; numbers as typed (empty uses the default). */
 export interface CommandDraft {
@@ -113,11 +116,11 @@ export function CommandsEditor({
             <Field
               label="Name"
               htmlFor={id("name")}
-              description={
+              description={withDefault(
                 setup
                   ? `Its output is {{setup.${command.name.trim() || "<name>"}}} in the template.`
-                  : "Names it in the run log."
-              }
+                  : "Names it in the run log.",
+              )}
               error={error("name")}
               required
             >
@@ -134,7 +137,7 @@ export function CommandsEditor({
             <Field
               label="Command"
               htmlFor={id("command")}
-              description="Run with sh -c in the working directory."
+              description={withDefault("Run with sh -c in the working directory.")}
               error={error("command")}
               required
             >
@@ -152,13 +155,16 @@ export function CommandsEditor({
               <Field
                 label="Timeout (seconds)"
                 htmlFor={id("timeoutSeconds")}
+                description={withDefault(
+                  "Stops the command after this long.",
+                  `${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds`,
+                )}
                 error={error("timeoutSeconds")}
               >
                 <Input
                   id={id("timeoutSeconds")}
                   type="number"
                   min={1}
-                  placeholder={String(DEFAULT_COMMAND_TIMEOUT_SECONDS)}
                   disabled={disabled}
                   error={Boolean(error("timeoutSeconds"))}
                   aria-invalid={Boolean(error("timeoutSeconds"))}
@@ -169,13 +175,16 @@ export function CommandsEditor({
               <Field
                 label="Output cap (bytes)"
                 htmlFor={id("maxOutputBytes")}
+                description={withDefault(
+                  "Keeps at most this much of its output.",
+                  `${groupedNumber(DEFAULT_COMMAND_OUTPUT_BYTES)} bytes`,
+                )}
                 error={error("maxOutputBytes")}
               >
                 <Input
                   id={id("maxOutputBytes")}
                   type="number"
                   min={1}
-                  placeholder={String(DEFAULT_COMMAND_OUTPUT_BYTES)}
                   disabled={disabled}
                   error={Boolean(error("maxOutputBytes"))}
                   aria-invalid={Boolean(error("maxOutputBytes"))}
@@ -187,7 +196,10 @@ export function CommandsEditor({
                 <Field
                   label="Fence"
                   htmlFor={id("fence")}
-                  description="Info string of the fence around the output (e.g. json)."
+                  description={withDefault(
+                    "Info string of the fence around the output, e.g. json.",
+                    "a plain fence",
+                  )}
                   error={error("fence")}
                 >
                   <Input
@@ -263,7 +275,7 @@ export function parseOutputSchema(
   return { schema: value as Record<string, unknown> };
 }
 
-const TOOL_SETTINGS: { key: keyof ToolSettings; label: string; queryOnly?: boolean }[] = [
+export const TOOL_SETTINGS: { key: keyof ToolSettings; label: string; queryOnly?: boolean }[] = [
   { key: "shell", label: "Shell (Bash)", queryOnly: true },
   { key: "linearRead", label: "Linear read access (the agent's Linear tools)" },
   { key: "network", label: "Network access beyond the control panel" },
@@ -320,14 +332,25 @@ export interface CodingDraft {
   maxFixRounds: string;
 }
 
-const LIMITS = [
-  ["maxAttemptsPerStory", "Attempts per story"],
-  ["maxRoundsPerStory", "Rounds per story"],
-  ["stallRounds", "Rounds without progress"],
-  ["maxIterationsPerRun", "Story attempts per run"],
-  ["maxReviewRounds", "Review fix rounds"],
-  ["maxFixRounds", "CI fix rounds"],
+/** The coding run's limits: key, label and what the limit does. */
+export const LIMITS = [
+  ["maxAttemptsPerStory", "Attempts per story", "Attempts before a story is marked exhausted."],
+  ["maxRoundsPerStory", "Rounds per story", "Review loop rounds a story gets."],
+  ["stallRounds", "Rounds without progress", "Rounds a story's metric may fail to improve."],
+  ["maxIterationsPerRun", "Story attempts per run", "Attempts before the run stops and asks."],
+  ["maxReviewRounds", "Review fix rounds", "Caps the repository's review fix rounds."],
+  ["maxFixRounds", "CI fix rounds", "Caps the repository's CI fix rounds."],
 ] as const;
+
+/** What an empty limit becomes. */
+export const LIMIT_DEFAULTS: Record<(typeof LIMITS)[number][0], number> = {
+  maxAttemptsPerStory: CODING_DEFAULTS.maxAttemptsPerStory,
+  maxRoundsPerStory: CODING_DEFAULTS.maxRoundsPerStory,
+  stallRounds: CODING_DEFAULTS.stallRounds,
+  maxIterationsPerRun: CODING_DEFAULTS.maxIterationsPerRun,
+  maxReviewRounds: CODING_DEFAULTS.maxReviewRounds,
+  maxFixRounds: CODING_DEFAULTS.maxFixRounds,
+};
 
 export function codingDraft(task: TaskDefinition | null): CodingDraft {
   const text = (value: number | undefined) => (value === undefined ? "" : String(value));
@@ -354,11 +377,11 @@ export function codingFields(draft: CodingDraft): Partial<TaskDefinition> {
   };
 }
 
-const PUSH_TIMING_LABELS: Record<PushTiming, string> = {
+export const PUSH_TIMING_LABELS: Record<PushTiming, string> = {
   "per-story": "After each story",
   end: "Once at the end",
 };
-const DRAFT_PULL_REQUEST_LABELS: Record<DraftPullRequestTiming, string> = {
+export const DRAFT_PULL_REQUEST_LABELS: Record<DraftPullRequestTiming, string> = {
   early: "Early (after the first story)",
   end: "At the end",
 };
@@ -389,7 +412,10 @@ export function CodingFields({
         <Field
           label="Push"
           htmlFor="task-push-timing"
-          description="When the run pushes its branch."
+          description={withDefault(
+            "When the run pushes its branch.",
+            PUSH_TIMING_LABELS[CODING_DEFAULTS.pushTiming].toLowerCase(),
+          )}
           error={errors.pushTiming}
         >
           <NativeSelect
@@ -409,7 +435,7 @@ export function CodingFields({
         <Field
           label="Draft PR"
           htmlFor="task-draft-pull-request"
-          description="When the run opens its draft PR."
+          description={withDefault("When the run opens its draft PR.", "the repository's setting")}
           error={errors.draftPullRequest}
         >
           <NativeSelect
@@ -432,7 +458,11 @@ export function CodingFields({
         <Field
           label="PR description task"
           htmlFor="task-pr-description-task"
-          description="A query task started by run.invoked that outputs { title, body }."
+          description={withDefault(
+            "A query task started by run.invoked that outputs { title, body }.",
+            prDescriptionTasks.find((task) => task.id === CODING_DEFAULTS.prDescriptionTaskId)
+              ?.name ?? CODING_DEFAULTS.prDescriptionTaskId,
+          )}
           error={errors.prDescriptionTaskId}
           required
         >
@@ -455,12 +485,15 @@ export function CodingFields({
         </Field>
       </div>
       <div className="definition-grid">
-        {LIMITS.map(([key, label]) => (
+        {LIMITS.map(([key, label, effect]) => (
           <Field
             key={key}
             label={label}
             htmlFor={`task-${key}`}
-            description="Empty uses the default."
+            description={withDefault(
+              `${effect} Leave it empty for the default.`,
+              String(LIMIT_DEFAULTS[key]),
+            )}
             error={errors[key]}
           >
             <Input

@@ -22,6 +22,14 @@ const AGENT = {
   referenceDocs: [{ name: "threat-model", content: "Our threat model." }],
 };
 
+/** The form's submit button, from its tag to its label. */
+const submitButton = (html: string) => {
+  const at = html.indexOf('type="submit"');
+  expect(at, "a submit button").toBeGreaterThan(-1);
+  const start = html.lastIndexOf("<button", at);
+  return html.slice(start, html.indexOf("</button>", at));
+};
+
 /** The `for` of the last label before `text`: the field `text` is shown in. */
 const fieldOf = (html: string, text: string) => {
   const at = html.indexOf(text);
@@ -57,6 +65,17 @@ describe("AgentForm", () => {
     expect(html).toContain('value="owasp"');
     expect(html).toContain("Our threat model.");
     expect(html).toContain("Save agent");
+  });
+
+  it("disables Save on an unchanged edit and states each field's default", () => {
+    const html = renderToStaticMarkup(<AgentForm agent={AGENT} />);
+    expect(submitButton(html)).toContain('disabled=""');
+    expect(submitButton(html)).toContain("Save agent");
+    expect(html).not.toContain("Discard");
+    expect(fieldOf(html, "Default: the profile&#x27;s model.")).toBe("agent-model");
+    expect(fieldOf(html, "Default: append to the Claude Code system prompt.")).toBe(
+      "agent-system-prompt-mode",
+    );
   });
 
   it("renders an empty form for a new agent", () => {

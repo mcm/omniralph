@@ -505,6 +505,10 @@ body {
   /* Clear the sticky app header when the unsaved-changes bar links here. */
   scroll-margin-top: calc(52px + var(--space-4));
 }
+/* The task and agent editors' save row (settings/agents/form-parts.tsx), which the bar links to. */
+.definition-actions {
+  scroll-margin-top: calc(52px + var(--space-4));
+}
 .settings-card-fieldset {
   margin: 0;
   padding: 0;

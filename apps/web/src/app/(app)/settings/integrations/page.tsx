@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import {
+  DEFAULT_CHAT_TASKS,
   getChatTaskDefaults,
   getIntegration,
   getUserById,
@@ -99,6 +100,7 @@ export default async function IntegrationsPage({
       discordNotice={toNotice(discord)}
       chatTasks={{
         defaults: chatTaskDefaults,
+        builtinDefaults: DEFAULT_CHAT_TASKS,
         choices: { askAboutCode: askAboutCodeChoices, startWork: startWorkChoices },
         connections: chatConnections.map((c) => ({
           id: c.id,

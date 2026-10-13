@@ -16,8 +16,11 @@ import {
   NativeSelect,
   Stack,
 } from "@iamthemcmaster/ui";
-import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
+import { SettingsCard } from "@/components/settings-card";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 import { useAction } from "@/components/use-action";
+import { settingChanges, withDefault, type SettingSpec } from "@/lib/settings/changes";
 import { removeChatChannelTasks, saveChatChannelTasks, saveChatTaskDefaults } from "./actions";
 
 type Role = "askAboutCode" | "startWork";
@@ -49,6 +52,8 @@ export interface ChannelTasks {
 export interface ChatTasksSettings {
   /** The organization's tasks (the built-in ones unless chosen). */
   defaults: Record<Role, string>;
+  /** The built-in tasks the organization runs until it chooses others (`DEFAULT_CHAT_TASKS`). */
+  builtinDefaults: Record<Role, string>;
   /** The tasks each can run (the organization's passing `CHAT_TASK_FILTERS`). */
   choices: Record<Role, TaskChoice[]>;
   connections: Array<{
@@ -75,66 +80,97 @@ function TaskOptions({ choices, value }: { choices: TaskChoice[]; value: string 
   );
 }
 
-/** Settings › Integrations: the tasks chat runs, for the organization and per channel. */
-export function ChatTasksCard({ defaults, choices, connections }: ChatTasksSettings) {
+const SPEC_DESCRIPTIONS: Record<Role, string> = {
+  askAboutCode: "Answers a question about code asked in Slack or Discord.",
+  startWork: "Handles a request to start work made in Slack or Discord.",
+};
+
+/**
+ * Settings › Integrations: the tasks chat runs for the organization (a settings card that
+ * confirms its change list), and each connection's channel overrides.
+ */
+export function ChatTasksCard({
+  defaults,
+  builtinDefaults,
+  choices,
+  connections,
+}: ChatTasksSettings) {
   const { pending, run } = useAction();
   const [chosen, setChosen] = React.useState(defaults);
-  const changed = ROLES.some((role) => chosen[role] !== defaults[role]);
+  const names = new Map(
+    ROLES.flatMap((role) => choices[role].map((choice) => [choice.id, choice.name] as const)),
+  );
+  const nameOf = (id: string) => names.get(id) ?? id;
+  const specs: SettingSpec<Role>[] = ROLES.map((role) => ({
+    key: role,
+    label: LABELS[role],
+    format: (value) => (typeof value === "string" ? nameOf(value) : String(value)),
+  }));
+  const changes = settingChanges(specs, defaults, chosen);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Chat tasks</CardTitle>
-        <CardDescription>
-          The tasks a question about code and a request to start work run when asked in Slack or
-          Discord. A channel can run different ones.
-        </CardDescription>
-      </CardHeader>
-      <Stack gap={6} asChild>
-        <CardContent>
-          <Cluster gap={3} align="end" asChild>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(() => saveChatTaskDefaults(chosen), "Saved the chat tasks");
-              }}
+    <>
+      <SettingsCard
+        title="Chat tasks"
+        description="The tasks a question about code and a request to start work run when asked in Slack or Discord. A channel can run different ones."
+        changes={changes}
+        prepare={() => ({
+          action: () => saveChatTaskDefaults(chosen),
+          success: "Saved the chat tasks",
+        })}
+        onDiscard={() => setChosen(defaults)}
+        confirm={{
+          consequence:
+            "The next question or request in every channel without its own tasks runs the new task.",
+        }}
+      >
+        <div className="settings-row">
+          {ROLES.map((role) => (
+            <Field
+              key={role}
+              label={LABELS[role]}
+              htmlFor={`chat-task-${role}`}
+              description={withDefault(SPEC_DESCRIPTIONS[role], nameOf(builtinDefaults[role]))}
             >
-              {ROLES.map((role) => (
-                <Field
-                  key={role}
-                  label={LABELS[role]}
-                  htmlFor={`chat-task-${role}`}
-                  className="flex-1"
-                >
-                  <NativeSelect
-                    id={`chat-task-${role}`}
-                    value={chosen[role]}
-                    disabled={pending}
-                    onChange={(e) => setChosen({ ...chosen, [role]: e.target.value })}
-                  >
-                    <TaskOptions choices={choices[role]} value={chosen[role]} />
-                  </NativeSelect>
-                </Field>
-              ))}
-              <Button type="submit" variant="primary" disabled={pending || !changed}>
-                <IconDeviceFloppy size={14} />
-                Save
-              </Button>
-            </form>
-          </Cluster>
-
-          {connections.map((connection) => (
-            <ConnectionChannels
-              key={connection.id}
-              connection={connection}
-              choices={choices}
-              pending={pending}
-              run={run}
-            />
+              <NativeSelect
+                id={`chat-task-${role}`}
+                value={chosen[role]}
+                onChange={(e) => setChosen({ ...chosen, [role]: e.target.value })}
+              >
+                <TaskOptions choices={choices[role]} value={chosen[role]} />
+              </NativeSelect>
+            </Field>
           ))}
-        </CardContent>
-      </Stack>
-    </Card>
+        </div>
+      </SettingsCard>
+
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">Channel tasks</CardTitle>
+          <CardDescription>
+            Channels that run different tasks from the organization&apos;s. Each change saves on its
+            own.
+          </CardDescription>
+        </CardHeader>
+        <Stack gap={6} asChild>
+          <CardContent>
+            {connections.length === 0 ? (
+              <Muted>Connect Slack or Discord to give a channel its own tasks.</Muted>
+            ) : (
+              connections.map((connection) => (
+                <ConnectionChannels
+                  key={connection.id}
+                  connection={connection}
+                  choices={choices}
+                  pending={pending}
+                  run={run}
+                />
+              ))
+            )}
+          </CardContent>
+        </Stack>
+      </Card>
+    </>
   );
 }
 
@@ -267,9 +303,10 @@ function ChannelRow({
   const [tasks, setTasks] = React.useState<Record<Role, string>>(initial);
   const changed = ROLES.some((role) => tasks[role] !== initial[role]);
   const prefix = `chat-channel-${connectionId}-${override.channel}`;
+  useUnsavedChanges(`Channel ${override.channel}`, prefix, changed);
 
   return (
-    <Cluster gap={3} align="end">
+    <Cluster id={prefix} gap={3} align="end" className="settings-card">
       <div className="flex-1 pb-2">
         <InlineCode>{override.channel}</InlineCode>
       </div>
@@ -303,6 +340,12 @@ function ChannelRow({
         <IconDeviceFloppy size={14} />
         Save
       </Button>
+      {changed && (
+        <Button variant="ghost" disabled={pending} onClick={() => setTasks(initial)}>
+          <IconArrowBackUp size={14} />
+          Discard
+        </Button>
+      )}
       <Button
         variant="danger"
         disabled={pending}

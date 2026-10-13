@@ -1,6 +1,10 @@
 /** Form pieces shared by the agent and task forms. */
-import { Checkbox, Cluster, Label } from "@iamthemcmaster/ui";
+import * as React from "react";
+import Link from "next/link";
+import { Badge, Button, Checkbox, Cluster, Label } from "@iamthemcmaster/ui";
+import { IconArrowBackUp, IconDeviceFloppy } from "@tabler/icons-react";
 import type { FieldErrors } from "@omniralph/shared";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 
 /** Names from a comma- or newline-separated list. */
 export function splitNames(value: string): string[] {
@@ -52,6 +56,68 @@ export function Choices<T extends string>({
           </Label>
         </div>
       ))}
+    </Cluster>
+  );
+}
+
+/**
+ * An editor's save row: while an edit has unsaved changes, a badge and Discard; Save is disabled
+ * while it has none. A dirty editor shows in the page's unsaved-changes bar and asks before the
+ * page is left.
+ */
+export function EditorActions({
+  anchorId,
+  label,
+  editing,
+  dirty,
+  pending,
+  saveLabel,
+  onDiscard,
+  cancelHref,
+}: {
+  /** The row's id, which the unsaved-changes bar links to. */
+  anchorId: string;
+  /** What the unsaved-changes bar calls the editor, e.g. "Security review". */
+  label: string;
+  /** Editing a saved definition (a new one is always saveable). */
+  editing: boolean;
+  dirty: boolean;
+  pending: boolean;
+  /** E.g. "Save task" or "Create task". */
+  saveLabel: string;
+  onDiscard: () => void;
+  /** Where Cancel goes. */
+  cancelHref: string;
+}) {
+  const statusId = React.useId();
+  useUnsavedChanges(label, anchorId, dirty);
+  const showDirty = editing && dirty;
+  return (
+    <Cluster id={anchorId} align="center" className="definition-actions">
+      <Button
+        type="submit"
+        variant={!editing || dirty ? "primary" : "secondary"}
+        disabled={pending || (editing && !dirty)}
+        aria-describedby={showDirty ? statusId : undefined}
+      >
+        <IconDeviceFloppy size={14} />
+        {pending ? "Saving…" : saveLabel}
+      </Button>
+      {showDirty && (
+        <Button type="button" variant="ghost" disabled={pending} onClick={onDiscard}>
+          <IconArrowBackUp size={14} />
+          Discard
+        </Button>
+      )}
+      {/* A link, so leaving with unsaved changes asks first. */}
+      <Button asChild variant="ghost">
+        <Link href={cancelHref}>Cancel</Link>
+      </Button>
+      {showDirty && (
+        <Badge variant="warning" size="sm" id={statusId}>
+          Unsaved changes
+        </Badge>
+      )}
     </Cluster>
   );
 }

@@ -74,6 +74,14 @@ const SETUP = {
   optional: true,
 };
 
+/** The form's submit button, from its tag to its label. */
+const submitButton = (html: string) => {
+  const at = html.indexOf('type="submit"');
+  expect(at, "a submit button").toBeGreaterThan(-1);
+  const start = html.lastIndexOf("<button", at);
+  return html.slice(start, html.indexOf("</button>", at));
+};
+
 /** The `for` of the last label before `text`: the field `text` is shown in. */
 const fieldOf = (html: string, text: string) => {
   const at = html.indexOf(text);
@@ -105,6 +113,28 @@ describe("TaskForm", () => {
     expect(html).toContain('value="claude-opus-5-5"');
     expect(html).toContain('value="50000"');
     expect(html).toContain("Save task");
+  });
+
+  it("disables Save on an unchanged edit, without Discard or the unsaved badge", () => {
+    const html = render(TASK);
+    expect(submitButton(html)).toContain('disabled=""');
+    expect(submitButton(html)).toContain("Save task");
+    expect(html).not.toContain("Discard");
+    expect(html).not.toContain("Unsaved changes");
+    // A new task can always be submitted.
+    expect(submitButton(render(null))).not.toContain('disabled=""');
+  });
+
+  it("states the default of the sink, pool, token budget and model", () => {
+    const html = render(TASK);
+    for (const [field, text] of [
+      ["task-sink", "What applies the run&#x27;s output. Default: not set."],
+      ["task-pool", "Whose concurrency slots its runs take. Default: short."],
+      ["task-token-budget", "Default: the profile budget."],
+      ["task-model", "Default: the agent&#x27;s model."],
+    ]) {
+      expect(fieldOf(html, text!)).toBe(field);
+    }
   });
 
   it("offers only the agents, triggers and sinks the task type accepts", () => {

@@ -9,7 +9,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Cluster,
   Field,
   Input,
   Muted,
@@ -17,10 +16,11 @@ import {
   Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
-import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import {
   HARNESS_TOOLS,
   LINEAR_TOOLS,
+  SYSTEM_PROMPT_MODES,
   TASK_TYPES,
   type AgentDefinition,
   type NamedContent,
@@ -29,14 +29,22 @@ import {
 import type { FieldErrors } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { PageHeader } from "@/components/page-header";
+import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useAction } from "@/components/use-action";
+import { withDefault } from "@/lib/settings/changes";
 import {
   createAgentDefinition,
   updateAgentDefinition,
   type AgentDefinitionFields,
 } from "./actions";
+import {
+  agentChanges,
+  agentDraft,
+  SYSTEM_PROMPT_MODE_LABELS,
+  type AgentDraft,
+} from "./agent-changes";
 import { agentHref } from "./agent-parts";
-import { Choices, errorFor, splitNames } from "./form-parts";
+import { Choices, EditorActions, errorFor, splitNames } from "./form-parts";
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
@@ -89,7 +97,7 @@ function Documents({
             <Field
               label="Content"
               htmlFor={`agent-${prefix}-content`}
-              description="Markdown."
+              description={withDefault("Markdown.")}
               error={errors[`${prefix}.content`]}
               required
             >
@@ -136,43 +144,31 @@ function Documents({
 export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
   const router = useRouter();
   const { pending, run } = useAction();
-  const [name, setName] = React.useState(agent?.name ?? "");
-  const [description, setDescription] = React.useState(agent?.description ?? "");
-  const [systemPrompt, setSystemPrompt] = React.useState(agent?.systemPrompt ?? "");
-  const [systemPromptMode, setSystemPromptMode] = React.useState<SystemPromptMode>(
-    agent?.systemPromptMode ?? "append",
-  );
-  const [builtinTools, setBuiltinTools] = React.useState(agent?.tools.builtin.join(", ") ?? "");
-  const [harnessTools, setHarnessTools] = React.useState(agent?.tools.harness ?? []);
-  const [linearTools, setLinearTools] = React.useState(agent?.tools.linear ?? []);
-  const [mcpServers, setMcpServers] = React.useState(agent?.tools.mcpServers.join(", ") ?? "");
-  const [skills, setSkills] = React.useState<NamedContent[]>(agent?.skills ?? []);
-  const [referenceDocs, setReferenceDocs] = React.useState<NamedContent[]>(
-    agent?.referenceDocs ?? [],
-  );
-  const [model, setModel] = React.useState(agent?.model ?? "");
-  const [fallbackModel, setFallbackModel] = React.useState(agent?.fallbackModel ?? "");
-  const [taskTypes, setTaskTypes] = React.useState(agent?.taskTypes ?? []);
+  const [saved, setSaved] = React.useState(() => agentDraft(agent));
+  const [draft, setDraft] = React.useState(saved);
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
+  const [confirming, setConfirming] = React.useState(false);
+  const set = (change: Partial<AgentDraft>) => setDraft((current) => ({ ...current, ...change }));
+  const changes = agentChanges(saved, draft);
+  const dirty = changes.length > 0;
 
-  const save = (e: React.FormEvent) => {
-    e.preventDefault();
+  const save = () => {
     const input: AgentDefinitionFields = {
-      name,
-      description,
-      systemPrompt,
-      systemPromptMode,
+      name: draft.name,
+      description: draft.description,
+      systemPrompt: draft.systemPrompt,
+      systemPromptMode: draft.systemPromptMode,
       tools: {
-        builtin: splitNames(builtinTools),
-        harness: harnessTools,
-        linear: linearTools,
-        mcpServers: splitNames(mcpServers),
+        builtin: splitNames(draft.builtinTools),
+        harness: draft.harnessTools,
+        linear: draft.linearTools,
+        mcpServers: splitNames(draft.mcpServers),
       },
-      skills,
-      referenceDocs,
-      model: model.trim() || null,
-      fallbackModel: fallbackModel.trim() || null,
-      taskTypes,
+      skills: draft.skills,
+      referenceDocs: draft.referenceDocs,
+      model: draft.model.trim() || null,
+      fallbackModel: draft.fallbackModel.trim() || null,
+      taskTypes: draft.taskTypes,
     };
     let savedId = agent?.id;
     run(
@@ -182,13 +178,27 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
         if (result.ok && "id" in result) savedId = result.id;
         return result;
       },
-      agent ? `${name} saved` : `${name} created`,
+      agent ? `${draft.name} saved` : `${draft.name} created`,
       () => {
         setErrors({});
+        setSaved(draft);
         if (savedId) router.push(agentHref(savedId));
       },
       (result) => setErrors(result.fieldErrors ?? {}),
     );
+  };
+
+  /** An edit confirms its change list first; a new agent saves straight away. */
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pending) return;
+    if (!agent) save();
+    else if (dirty) setConfirming(true);
+  };
+
+  const discard = () => {
+    setDraft(saved);
+    setErrors({});
   };
 
   const title = agent ? `Edit ${agent.name}` : "New agent";
@@ -207,7 +217,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
           description="An agent is the persona tasks run on. Changes apply to the next run of every task using it."
         />
         <Stack gap={6} asChild>
-          <form onSubmit={save} noValidate>
+          <form onSubmit={submit} noValidate>
             {errors.form && <p className="m-0 text-danger-fg">{errors.form}</p>}
             <Card>
               <CardHeader>
@@ -220,8 +230,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     disabled={pending}
                     error={Boolean(errors.name)}
                     aria-invalid={Boolean(errors.name)}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={draft.name}
+                    onChange={(e) => set({ name: e.target.value })}
                   />
                 </Field>
                 <Field label="Description" htmlFor="agent-description" error={errors.description}>
@@ -230,22 +240,22 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     rows={2}
                     disabled={pending}
                     aria-invalid={Boolean(errors.description)}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    value={draft.description}
+                    onChange={(e) => set({ description: e.target.value })}
                   />
                 </Field>
                 <Field
                   label="Suited task types"
                   htmlFor="agent-task-types"
-                  description="Tasks of these types may run on the agent."
+                  description={withDefault("Tasks of these types may run on the agent.")}
                   error={errorFor(errors, "taskTypes")}
                   required
                 >
                   <Choices
                     id="agent-task-types"
                     options={TASK_TYPES}
-                    value={taskTypes}
-                    onChange={setTaskTypes}
+                    value={draft.taskTypes}
+                    onChange={(taskTypes) => set({ taskTypes })}
                     disabled={pending}
                   />
                 </Field>
@@ -253,7 +263,10 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                   <Field
                     label="Model"
                     htmlFor="agent-model"
-                    description="Claude model ID. Empty uses the repository profile's model."
+                    description={withDefault(
+                      "Claude model ID. Leave it empty to use the repository profile's model.",
+                      "the profile's model",
+                    )}
                     error={errors.model}
                   >
                     <Input
@@ -261,15 +274,17 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                       disabled={pending}
                       error={Boolean(errors.model)}
                       aria-invalid={Boolean(errors.model)}
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
+                      value={draft.model}
+                      onChange={(e) => set({ model: e.target.value })}
                       className="settings-mono"
                     />
                   </Field>
                   <Field
                     label="Fallback model"
                     htmlFor="agent-fallback-model"
-                    description="Used when the model is overloaded. Leave it empty for no fallback. Default: not set."
+                    description={withDefault(
+                      "Used when the model is overloaded. Leave it empty for no fallback.",
+                    )}
                     error={errors.fallbackModel}
                   >
                     <Input
@@ -277,8 +292,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                       disabled={pending}
                       error={Boolean(errors.fallbackModel)}
                       aria-invalid={Boolean(errors.fallbackModel)}
-                      value={fallbackModel}
-                      onChange={(e) => setFallbackModel(e.target.value)}
+                      value={draft.fallbackModel}
+                      onChange={(e) => set({ fallbackModel: e.target.value })}
                       className="settings-mono"
                     />
                   </Field>
@@ -294,21 +309,29 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Mode"
                   htmlFor="agent-system-prompt-mode"
+                  description={withDefault(
+                    "How the agent's prompt combines with Claude Code's own.",
+                    "append to the Claude Code system prompt",
+                  )}
                   error={errors.systemPromptMode}
                 >
                   <NativeSelect
                     id="agent-system-prompt-mode"
                     disabled={pending}
-                    value={systemPromptMode}
-                    onChange={(e) => setSystemPromptMode(e.target.value as SystemPromptMode)}
+                    value={draft.systemPromptMode}
+                    onChange={(e) => set({ systemPromptMode: e.target.value as SystemPromptMode })}
                   >
-                    <option value="append">Append to the Claude Code system prompt</option>
-                    <option value="replace">Replace the Claude Code system prompt</option>
+                    {SYSTEM_PROMPT_MODES.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {SYSTEM_PROMPT_MODE_LABELS[mode]}
+                      </option>
+                    ))}
                   </NativeSelect>
                 </Field>
                 <Field
                   label="System prompt"
                   htmlFor="agent-system-prompt"
+                  description={withDefault("Markdown.")}
                   error={errors.systemPrompt}
                 >
                   <Textarea
@@ -316,8 +339,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     rows={12}
                     disabled={pending}
                     aria-invalid={Boolean(errors.systemPrompt)}
-                    value={systemPrompt}
-                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    value={draft.systemPrompt}
+                    onChange={(e) => set({ systemPrompt: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
@@ -335,7 +358,7 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Field
                   label="Claude Code tools"
                   htmlFor="agent-tools-builtin"
-                  description="Comma-separated, e.g. Read, Grep, Glob."
+                  description={withDefault("Comma-separated, e.g. Read, Grep, Glob.")}
                   error={errorFor(errors, "tools.builtin")}
                 >
                   <Input
@@ -343,42 +366,51 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     disabled={pending}
                     error={Boolean(errorFor(errors, "tools.builtin"))}
                     aria-invalid={Boolean(errorFor(errors, "tools.builtin"))}
-                    value={builtinTools}
-                    onChange={(e) => setBuiltinTools(e.target.value)}
+                    value={draft.builtinTools}
+                    onChange={(e) => set({ builtinTools: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
                 <Field
                   label="Harness tools"
                   htmlFor="agent-tools-harness"
+                  description={withDefault(
+                    "Tools from the harness's omniralph MCP server.",
+                    "none chosen",
+                  )}
                   error={errorFor(errors, "tools.harness")}
                 >
                   <Choices
                     id="agent-tools-harness"
                     options={HARNESS_TOOLS}
-                    value={harnessTools}
-                    onChange={setHarnessTools}
+                    value={draft.harnessTools}
+                    onChange={(harnessTools) => set({ harnessTools })}
                     disabled={pending}
                   />
                 </Field>
                 <Field
                   label="Linear tools"
                   htmlFor="agent-tools-linear"
-                  description="Read-only; a task must also enable Linear reads."
+                  description={withDefault(
+                    "Read-only; a task must also enable Linear reads.",
+                    "none chosen",
+                  )}
                   error={errorFor(errors, "tools.linear")}
                 >
                   <Choices
                     id="agent-tools-linear"
                     options={LINEAR_TOOLS}
-                    value={linearTools}
-                    onChange={setLinearTools}
+                    value={draft.linearTools}
+                    onChange={(linearTools) => set({ linearTools })}
                     disabled={pending}
                   />
                 </Field>
                 <Field
                   label="MCP servers"
                   htmlFor="agent-tools-mcp"
-                  description="Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable)."
+                  description={withDefault(
+                    "Comma-separated names of configured MCP servers, or an installable's as <package>:<server> (its tasks then need that installable).",
+                  )}
                   error={errorFor(errors, "tools.mcpServers")}
                 >
                   <Input
@@ -386,8 +418,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                     disabled={pending}
                     error={Boolean(errorFor(errors, "tools.mcpServers"))}
                     aria-invalid={Boolean(errorFor(errors, "tools.mcpServers"))}
-                    value={mcpServers}
-                    onChange={(e) => setMcpServers(e.target.value)}
+                    value={draft.mcpServers}
+                    onChange={(e) => set({ mcpServers: e.target.value })}
                     className="settings-mono"
                   />
                 </Field>
@@ -405,8 +437,8 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Documents
                   field="skills"
                   noun="skill"
-                  documents={skills}
-                  onChange={setSkills}
+                  documents={draft.skills}
+                  onChange={(skills) => set({ skills })}
                   errors={errors}
                   disabled={pending}
                 />
@@ -422,30 +454,39 @@ export function AgentForm({ agent, initialErrors = {} }: AgentFormProps) {
                 <Documents
                   field="referenceDocs"
                   noun="reference doc"
-                  documents={referenceDocs}
-                  onChange={setReferenceDocs}
+                  documents={draft.referenceDocs}
+                  onChange={(referenceDocs) => set({ referenceDocs })}
                   errors={errors}
                   disabled={pending}
                 />
               </CardContent>
             </Card>
 
-            <Cluster>
-              <Button type="submit" variant="primary" disabled={pending}>
-                <IconDeviceFloppy size={14} />
-                {pending ? "Saving…" : agent ? "Save agent" : "Create agent"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => router.push(agent ? agentHref(agent.id) : "/settings/agents")}
-              >
-                Cancel
-              </Button>
-            </Cluster>
+            <EditorActions
+              anchorId="agent-form-actions"
+              label={agent?.name ?? "New agent"}
+              editing={agent !== null}
+              dirty={dirty}
+              pending={pending}
+              saveLabel={agent ? "Save agent" : "Create agent"}
+              onDiscard={discard}
+              cancelHref={agent ? agentHref(agent.id) : "/settings/agents"}
+            />
           </form>
         </Stack>
+        {agent && (
+          <ConfirmChangesDialog
+            open={confirming}
+            onCancel={() => setConfirming(false)}
+            title={`Save ${agent.name}?`}
+            consequence="The next run of every task using this agent uses the new settings."
+            changes={changes}
+            onConfirm={() => {
+              setConfirming(false);
+              save();
+            }}
+          />
+        )}
       </main>
     </>
   );
