@@ -33,10 +33,19 @@ export function TriggerBadges({ triggers }: { triggers: readonly string[] }) {
 }
 
 /** A task's agent: its name linking to its page, or the bare ID when it doesn't resolve. */
-export function AgentLink({ id, name }: { id: string; name: string | null }) {
+export function AgentLink({
+  id,
+  name,
+  className = "text-sm text-text-primary",
+}: {
+  id: string;
+  name: string | null;
+  /** E.g. `list-secondary` under a row's title on phone. */
+  className?: string;
+}) {
   if (name === null) return <span className="font-mono text-xs text-text-secondary">{id}</span>;
   return (
-    <Link href={agentHref(id)} className="text-sm text-text-primary">
+    <Link href={agentHref(id)} className={className}>
       {name}
     </Link>
   );

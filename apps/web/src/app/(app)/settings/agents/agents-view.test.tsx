@@ -132,3 +132,16 @@ describe("AgentDetailView", () => {
     expect(html).not.toContain(">Delete<");
   });
 });
+
+describe("AgentsView on phone", () => {
+  it("repeats the task types and model under the name and hides their columns", () => {
+    const html = renderToStaticMarkup(<AgentsView agents={[CUSTOM]} isAdmin={false} />);
+    const tr = row(html, "Security reviewer");
+    const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
+    const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));
+    expect(meta).toContain(">review<");
+    expect(meta).toContain("claude-opus-5-5");
+    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(3);
+    expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(3);
+  });
+});

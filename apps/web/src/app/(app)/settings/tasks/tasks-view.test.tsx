@@ -276,3 +276,19 @@ describe("TaskDetailView", () => {
     expect(member).not.toContain("Delete");
   });
 });
+
+describe("TasksView on phone", () => {
+  it("repeats the agent, triggers, sink and pool under the name and hides their columns", () => {
+    const html = renderToStaticMarkup(<TasksView isAdmin={false} tasks={[CUSTOM_REVIEW]} />);
+    const tr = row(html, "Security review");
+    const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
+    const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));
+    expect(meta).toContain(`href="/settings/agents/${AGENT_ID}"`);
+    expect(meta).toContain(">Security reviewer<");
+    for (const trigger of CUSTOM_REVIEW.triggers) expect(meta).toContain(`>${trigger}<`);
+    expect(meta).toContain(`>${CUSTOM_REVIEW.sink}<`);
+    expect(meta).toContain(`>${CUSTOM_REVIEW.pool}<`);
+    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(5);
+    expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(5);
+  });
+});
