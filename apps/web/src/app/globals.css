@@ -1147,6 +1147,27 @@ body {
   flex: 1;
   min-width: 10rem;
 }
+/* Task type badges, two to a line, so the fleet list keeps its rows short and fits at 1440. */
+.harness-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: 9rem;
+}
+/* A running job's target, truncated in the middle so the fleet list fits at 1440. */
+.list-table .harness-job-link {
+  max-width: 14rem;
+  overflow: hidden;
+}
+.list-table .harness-job-link .mono-value-head {
+  flex-shrink: 1000;
+}
+.list-table .harness-job-link .mono-value-tail {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .harness-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

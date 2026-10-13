@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Cluster, Muted, Stack } from "@iamthemcmaster/ui";
+import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
@@ -21,11 +21,7 @@ export function HarnessStatusBadge({
 }) {
   const state = harnessConnectionState(harness);
   return (
-    <Badge
-      variant={HARNESS_CONNECTION_VARIANTS[state]}
-      dot={state === "offline"}
-      live={state === "online"}
-    >
+    <Badge variant={HARNESS_CONNECTION_VARIANTS[state]} dot live={state === "online"}>
       {HARNESS_CONNECTION_LABELS[state]}
     </Badge>
   );
@@ -35,13 +31,13 @@ export function HarnessStatusBadge({
 export function TaskTypeBadges({ accepted }: { accepted: string[] }) {
   if (accepted.length === 0) return <Muted>None</Muted>;
   return (
-    <Cluster gap={1}>
+    <div className="harness-badge-row">
       {accepted.map((taskType) => (
         <Badge key={taskType} variant="neutral">
           {taskType}
         </Badge>
       ))}
-    </Cluster>
+    </div>
   );
 }
 
@@ -60,7 +56,7 @@ export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] 
       <MonoValue value={label} />
     </>
   );
-  const className = "list-secondary";
+  const className = "list-secondary harness-job-link";
   return job.target?.url ? (
     <a href={job.target.url} target="_blank" rel="noreferrer" className={className}>
       {text}
@@ -117,7 +113,12 @@ export function UpdateStatusBadge({
         ? `${harness.desiredVersion} failed on this harness, so it won't try it again unless you use Update now on its page.`
         : undefined;
   return (
-    <Badge variant={HARNESS_UPDATE_STATUS_VARIANTS[harness.updateStatus]} title={title}>
+    <Badge
+      variant={HARNESS_UPDATE_STATUS_VARIANTS[harness.updateStatus]}
+      dot
+      live={harness.updateStatus === "updating"}
+      title={title}
+    >
       {UPDATE_STATUS_LABELS[harness.updateStatus]}
       {harness.updateStatus === "updating" && step && ` (${step})`}
     </Badge>
@@ -125,21 +126,16 @@ export function UpdateStatusBadge({
 }
 
 /** The reported version, and the desired one when it differs. */
-export function HarnessVersionCell({ harness }: { harness: HarnessRow }) {
+export function HarnessVersion({ harness }: { harness: HarnessRow }) {
   const target = harness.updateRequest?.version ?? harness.desiredVersion;
-  return (
-    <Stack gap={1}>
-      {harness.version ? (
-        <span className="font-mono text-sm text-text-secondary">
-          {harness.version}
-          {target && target !== harness.version && (
-            <span className="text-text-tertiary"> → {target}</span>
-          )}
-        </span>
-      ) : (
-        <Muted>Unknown</Muted>
+  return harness.version ? (
+    <span className="list-text text-numeric list-nowrap">
+      {harness.version}
+      {target && target !== harness.version && (
+        <span className="text-text-tertiary"> → {target}</span>
       )}
-      {!harness.revoked && <UpdateStatusBadge harness={harness} />}
-    </Stack>
+    </span>
+  ) : (
+    <Muted>Unknown</Muted>
   );
 }

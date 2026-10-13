@@ -9,8 +9,6 @@ import {
   CardTitle,
   Empty,
   InlineCode,
-  Muted,
-  Stack,
   Table,
   TableBody,
   TableCell,
@@ -21,16 +19,17 @@ import {
 import { IconServer } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import { Timestamp } from "@/components/list-table";
+import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import {
   HarnessStatusBadge,
-  HarnessVersionCell,
+  HarnessVersion,
   formatPoolLimits,
   JobTargetLink,
   RepositoryBadges,
   TaskTypeBadges,
+  UpdateStatusBadge,
 } from "./harness-parts";
 import { EnrollHarnessDialog } from "./enroll-harness-dialog";
 
@@ -38,6 +37,15 @@ interface HarnessesViewProps {
   harnesses: HarnessRow[];
   /** When the page was rendered (ms since epoch), for relative times. */
   now: number;
+}
+
+/** The last heartbeat, relative to the render time. */
+function Heartbeat({ harness, now }: { harness: HarnessRow; now: number }) {
+  return harness.lastHeartbeatAt ? (
+    <Timestamp iso={harness.lastHeartbeatAt} now={now} />
+  ) : (
+    <span className="list-time">No heartbeat yet</span>
+  );
 }
 
 function HarnessTableRow({
@@ -52,43 +60,51 @@ function HarnessTableRow({
   return (
     <TableRow>
       <TableCell>
-        <Stack gap={1}>
+        <div className="list-cell-stack">
           {isAdmin ? (
-            <Link href={`/harnesses/${harness.id}`} className="list-text-primary font-medium">
+            <Link href={`/harnesses/${harness.id}`} className="list-title font-medium">
               {harness.name}
             </Link>
           ) : (
-            <span className="text-text-primary font-medium">{harness.name}</span>
+            <span className="list-title font-medium">{harness.name}</span>
           )}
+          <span className="list-label-wide">
+            <HarnessStatusBadge harness={harness} />
+          </span>
+        </div>
+        <PhoneMeta>
           <HarnessStatusBadge harness={harness} />
-        </Stack>
+          {!harness.revoked && <UpdateStatusBadge harness={harness} />}
+          <Heartbeat harness={harness} now={now} />
+        </PhoneMeta>
       </TableCell>
-      <TableCell>
-        <HarnessVersionCell harness={harness} />
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <HarnessVersion harness={harness} />
+          {!harness.revoked && <UpdateStatusBadge harness={harness} />}
+        </div>
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
       </TableCell>
-      <TableCell>
-        <Stack gap={1}>
-          <span className="list-text">
+      <TableCell className={WIDE_COLUMN}>
+        <div className="list-cell-stack">
+          <span className="list-text text-numeric list-nowrap">
             {harness.runningJobs.length} / {harness.maxConcurrency}
           </span>
-          <Muted>Pools: {formatPoolLimits(harness.effectivePoolLimits)}</Muted>
+          <span className="list-secondary">
+            Pools: {formatPoolLimits(harness.effectivePoolLimits)}
+          </span>
           {harness.runningJobs.map((job) => (
             <JobTargetLink key={job.id} job={job} />
           ))}
-        </Stack>
+        </div>
       </TableCell>
-      <TableCell>
+      <TableCell className={WIDE_COLUMN}>
         <RepositoryBadges repositories={harness.pinnedRepositories} />
       </TableCell>
-      <TableCell>
-        {harness.lastHeartbeatAt ? (
-          <Timestamp iso={harness.lastHeartbeatAt} now={now} />
-        ) : (
-          <Muted>Never</Muted>
-        )}
+      <TableCell className={WIDE_COLUMN}>
+        <Heartbeat harness={harness} now={now} />
       </TableCell>
     </TableRow>
   );
@@ -132,15 +148,15 @@ export function HarnessesView({ harnesses, now }: HarnessesViewProps) {
                 }
               />
             ) : (
-              <Table>
+              <Table className="list-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Harness</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Task types</TableHead>
-                    <TableHead>Running jobs</TableHead>
-                    <TableHead>Pinned repositories</TableHead>
-                    <TableHead>Last heartbeat</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Version</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Task types</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Running jobs</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Pinned repositories</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Last heartbeat</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
