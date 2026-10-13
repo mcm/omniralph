@@ -1,37 +1,52 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Tabs, TabsList, TabsTrigger } from "@iamthemcmaster/ui";
-import { IconGavel, IconHistory, IconSettings } from "@tabler/icons-react";
+import {
+  IconCode,
+  IconGavel,
+  IconHistory,
+  IconServer,
+  IconSettings,
+} from "@tabler/icons-react";
+import { useCurrentUser } from "@/components/current-user";
 
 const tabs = [
-  { value: "reviews", label: "Reviews", icon: IconHistory },
-  { value: "rules", label: "Rules", icon: IconGavel },
-  { value: "settings", label: "Settings", icon: IconSettings },
+  { value: "reviews", label: "Reviews", icon: IconHistory, adminOnly: false },
+  { value: "rules", label: "Rules", icon: IconGavel, adminOnly: false },
+  { value: "settings", label: "Review settings", icon: IconSettings, adminOnly: false },
+  { value: "coding", label: "Coding", icon: IconCode, adminOnly: true },
+  { value: "harnesses", label: "Harnesses", icon: IconServer, adminOnly: false },
 ] as const;
 
-/** Tabs between a repository's pages. */
+/** A repository page, as its tab and route segment. */
+export type RepositoryPage = (typeof tabs)[number]["value"];
+
+/**
+ * Tabs between a repository's pages. Each tab is a link, so leaving a tab with unsaved
+ * settings asks first (the unsaved-changes guard watches link clicks).
+ */
 export function RepositoryNav({
   repositoryId,
   current,
 }: {
   repositoryId: string;
-  current: (typeof tabs)[number]["value"];
+  current: RepositoryPage;
 }) {
-  const router = useRouter();
+  const isAdmin = useCurrentUser().role === "admin";
   return (
-    <Tabs
-      variant="underline"
-      value={current}
-      onValueChange={(value) => router.push(`/repositories/${repositoryId}/${value}`)}
-    >
-      <TabsList aria-label="Repository pages">
-        {tabs.map(({ value, label, icon: Icon }) => (
-          <TabsTrigger key={value} value={value}>
-            <Icon size={14} />
-            {label}
-          </TabsTrigger>
-        ))}
+    <Tabs variant="underline" value={current}>
+      <TabsList aria-label="Repository pages" className="repository-tabs">
+        {tabs
+          .filter((tab) => isAdmin || !tab.adminOnly)
+          .map(({ value, label, icon: Icon }) => (
+            <TabsTrigger key={value} value={value} asChild>
+              <Link href={`/repositories/${repositoryId}/${value}`}>
+                <Icon size={14} />
+                {label}
+              </Link>
+            </TabsTrigger>
+          ))}
       </TabsList>
     </Tabs>
   );

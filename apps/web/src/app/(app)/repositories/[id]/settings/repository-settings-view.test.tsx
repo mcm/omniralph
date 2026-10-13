@@ -1,14 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
-import { RepositorySettingsView } from "./repository-settings-view";
+import { RepositorySettingsView, type RepositorySettingsTab } from "./repository-settings-view";
 import type { RalphSettingsValues } from "./ralph-settings-section";
+import { updateRalphSettings, updateRepositoryTaskTypes } from "./actions";
 import {
   inheritLabel,
+  saveWithTaskTypes,
   taskTypeChoice,
   taskTypeValue,
   type TaskTypesValues,
-} from "./task-types-card";
+} from "./task-types";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "admin" }) }));
@@ -53,7 +55,14 @@ const inheritAll: TaskTypesValues = {
   inherited: { query: true, review: true, coding: false },
 };
 
+/** Coding on for the repository, so the Coding tab shows its settings. */
+const codingOn: TaskTypesValues = {
+  ...inheritAll,
+  overrides: { ...inheritAll.overrides, coding: true },
+};
+
 function render(
+  tab: RepositorySettingsTab,
   overrides: {
     correlationTaskId?: string;
     ralph?: RalphSettingsValues;
@@ -62,6 +71,7 @@ function render(
 ) {
   return renderToStaticMarkup(
     <RepositorySettingsView
+      tab={tab}
       repository={{
         id: "repo-1",
         provider: "github",
@@ -90,7 +100,17 @@ function render(
         { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
         { id: CORRELATION_ID, name: "Strict correlation", builtin: false },
       ]}
-      profiles={[]}
+      profiles={[
+        {
+          id: "standard",
+          name: "Standard",
+          description: "Balanced.",
+          model: "claude-sonnet-4-5",
+          maxTokensPerReview: 200000,
+          maxFiles: 50,
+          allowRepoExploration: true,
+        },
+      ]}
       agents={[]}
       ralph={overrides.ralph ?? ralph}
       codingTasks={{
@@ -103,7 +123,7 @@ function render(
           { id: REQUEST_ID, name: "Careful request", builtin: false },
         ],
       }}
-      taskTypes={overrides.taskTypes ?? inheritAll}
+      taskTypes={overrides.taskTypes ?? (tab === "coding" ? codingOn : inheritAll)}
     />,
   );
 }
@@ -115,9 +135,23 @@ function select(html: string, id: string): string {
   return match![1]!;
 }
 
+/** The page's visible text, tags dropped. */
+function text(html: string): string {
+  return html.replace(/<[^>]+>/g, " ");
+}
+
+/** The labels of every tab. */
+function allLabels(): string[] {
+  return (["settings", "coding", "harnesses"] as const).flatMap((tab) =>
+    [...render(tab).matchAll(/<label[^>]*>(.*?)<\/label>/g)].map((m) =>
+      m[1]!.replace(/<[^>]+>/g, ""),
+    ),
+  );
+}
+
 describe("RepositorySettingsView task pickers", () => {
   it("lists custom review tasks beside the built-ins, checked when enabled", () => {
-    const html = render();
+    const html = render("settings");
     expect(html).toContain("Security review");
     expect(html).toMatch(
       new RegExp(`<button[^>]*aria-checked="true"[^>]*id="review-task-${REVIEW_ID}"`),
@@ -126,7 +160,7 @@ describe("RepositorySettingsView task pickers", () => {
   });
 
   it("offers a custom correlation task, selected when it is the repository's", () => {
-    const options = select(render(), "correlation-task");
+    const options = select(render("settings"), "correlation-task");
     expect(options).toContain(
       '<option value="builtin:correlate-findings">Correlate findings (built-in)</option>',
     );
@@ -135,8 +169,8 @@ describe("RepositorySettingsView task pickers", () => {
     );
   });
 
-  it("offers custom story and request tasks in the Ralph section", () => {
-    const html = render();
+  it("offers custom story and request tasks on the Coding tab", () => {
+    const html = render("coding");
     const story = select(html, "ralph-story-task");
     expect(story).toContain("Implement story (built-in)");
     expect(story).toContain(`<option value="${STORY_ID}" selected="">Careful story</option>`);
@@ -147,70 +181,123 @@ describe("RepositorySettingsView task pickers", () => {
 
   it("keeps a current task that is no longer offered selectable", () => {
     const gone = "55555555-5555-4555-8555-555555555555";
-    const html = render({ correlationTaskId: gone, ralph: { ...ralph, storyTaskId: gone } });
-    expect(select(html, "correlation-task")).toContain(`<option value="${gone}" selected="">`);
-    expect(select(html, "ralph-story-task")).toContain(`<option value="${gone}" selected="">`);
+    const changed = { correlationTaskId: gone, ralph: { ...ralph, storyTaskId: gone } };
+    expect(select(render("settings", changed), "correlation-task")).toContain(
+      `<option value="${gone}" selected="">`,
+    );
+    expect(select(render("coding", changed), "ralph-story-task")).toContain(
+      `<option value="${gone}" selected="">`,
+    );
   });
 });
 
-describe("RepositorySettingsView cards", () => {
-  it("gives every card its own save action", () => {
-    const html = render();
-    // Task types, 5 review cards and 6 Ralph cards.
-    expect(html.match(/type="submit"/g)).toHaveLength(12);
-    expect(html).not.toContain("Save settings");
-    expect(html).not.toContain("Save Ralph settings");
+describe("RepositorySettingsView tabs", () => {
+  it("shows one section with one save per tab, and the Danger zone apart on Coding", () => {
+    const saves = (tab: RepositorySettingsTab) =>
+      [...render(tab).matchAll(/<button[^>]*type="submit"[^>]*>(.*?)<\/button>/g)].map((m) =>
+        m[1]!.replace(/<[^>]+>/g, ""),
+      );
+    expect(saves("settings")).toEqual(["Save review settings"]);
+    expect(saves("coding")).toEqual(["Save coding", "Save danger zone"]);
+    expect(saves("harnesses")).toEqual(["Save harnesses"]);
+  });
+
+  it("shows only its own tab's settings", () => {
+    const settings = render("settings");
+    expect(settings).toContain('id="path-excludes"');
+    expect(settings).not.toContain('id="ralph-model"');
+    expect(settings).not.toContain("Pinned harnesses");
+    const coding = render("coding");
+    expect(coding).toContain('id="ralph-model"');
+    expect(coding).not.toContain('id="path-excludes"');
+    const harnesses = render("harnesses");
+    expect(harnesses).toContain("Any harness can run this repository&#x27;s jobs.");
+    expect(harnesses).not.toContain('id="path-excludes"');
+  });
+
+  it("names the tab in the breadcrumb-free section only for screen readers", () => {
+    const html = render("settings");
+    expect(html).toMatch(/<h2[^>]*class="sr-only"[^>]*>Review settings<\/h2>/);
+    expect(html).toMatch(/<h3[^>]*>When<\/h3>/);
+    expect(html).toMatch(/<h3[^>]*>Who reviews<\/h3>/);
+    expect(html).toMatch(/<h3[^>]*>Scope<\/h3>/);
+  });
+
+  it("compares review profiles in a radio table", () => {
+    const html = render("settings");
+    expect(html).toContain('class="settings-profile-table"');
+    for (const column of ["Profile", "Model", "Token cap", "Max files", "Exploration"]) {
+      expect(html).toMatch(new RegExp(`<th[^>]*>${column}</th>`));
+    }
+    expect(html).toContain("200,000");
+    expect(html).toContain("Explores the repository");
+  });
+
+  it("keeps the settings that rewrite history or delete branches in the red Danger zone", () => {
+    const html = render("coding");
+    const danger = html.slice(html.indexOf('id="danger-zone"'));
+    expect(html).toMatch(/id="danger-zone"[^>]*data-tone="danger"/);
+    for (const id of ["ralph-history-rewrite", "ralph-cleanup", "ralph-unmerged-timeout"]) {
+      expect(danger).toContain(`id="${id}"`);
+      expect(html.indexOf(`id="${id}"`)).toBeGreaterThan(html.indexOf('id="danger-zone"'));
+    }
   });
 
   it("labels settings in plain words, not by their config keys", () => {
-    const labels = [...render().matchAll(/<label[^>]*>(.*?)<\/label>/g)].map((m) =>
-      m[1]!.replace(/<[^>]+>/g, ""),
-    );
+    const labels = allLabels();
     expect(labels.length).toBeGreaterThan(20);
     for (const label of labels) expect(label).not.toMatch(/\b[a-z]+[A-Z][a-zA-Z]*\b/);
   });
 
   it("states each setting's default", () => {
-    const html = render();
-    expect(html).toContain("Default: Off.");
-    expect(html).toContain("Default: opus.");
-    expect(html).toContain("Default: Legacy jobs.");
-    expect(html).toContain("Default: Correlate findings.");
+    const settings = render("settings");
+    expect(settings).toContain("Default: Off.");
+    expect(settings).toContain("Default: Correlate findings.");
+    const coding = render("coding");
+    expect(coding).toContain("Default: opus.");
+    expect(coding).toContain("Default: Legacy jobs.");
   });
 });
 
 describe("RepositorySettingsView task types", () => {
-  const SWITCHES = ["query", "review", "coding"] as const;
-
   it("offers Use organization default (showing the inherited value), On and Off for each", () => {
-    const html = render();
-    expect(select(html, "task-type-query")).toContain(
+    const settings = render("settings");
+    const coding = render("coding", { taskTypes: inheritAll });
+    expect(select(settings, "task-type-query")).toContain(
       '<option value="inherit" selected="">Use organization default (On)</option>',
     );
-    expect(select(html, "task-type-review")).toContain(
+    expect(select(settings, "task-type-review")).toContain(
       '<option value="inherit" selected="">Use organization default (On)</option>',
     );
-    expect(select(html, "task-type-coding")).toContain(
+    expect(select(coding, "task-type-coding")).toContain(
       '<option value="inherit" selected="">Use organization default (Off)</option>',
     );
-    for (const key of SWITCHES) {
+    for (const [html, key] of [
+      [settings, "query"],
+      [settings, "review"],
+      [coding, "coding"],
+    ] as const) {
       const options = select(html, `task-type-${key}`);
       expect(options).toContain('<option value="on">On</option>');
       expect(options).toContain('<option value="off">Off</option>');
     }
-    expect(html).toContain(">Query<");
-    expect(html).toContain(">Reviews<");
-    expect(html).toContain(">Coding<");
+    expect(settings).toContain(">Query<");
+    expect(settings).toContain(">Reviews<");
+    expect(coding).toContain(">Coding<");
   });
 
   it("selects each switch's own value: inherit, on or off", () => {
-    for (const key of SWITCHES) {
+    for (const [key, tab] of [
+      ["query", "settings"],
+      ["review", "settings"],
+      ["coding", "coding"],
+    ] as const) {
       for (const [value, choice] of [
         [null, "inherit"],
         [true, "on"],
         [false, "off"],
       ] as const) {
-        const html = render({
+        const html = render(tab, {
           taskTypes: { ...inheritAll, overrides: { ...inheritAll.overrides, [key]: value } },
         });
         expect(select(html, `task-type-${key}`)).toMatch(
@@ -220,25 +307,37 @@ describe("RepositorySettingsView task types", () => {
     }
   });
 
+  it("hides the Coding settings while coding is off, keeping them", () => {
+    const off = render("coding", { taskTypes: inheritAll });
+    expect(off).toContain("Coding is off");
+    expect(off).toMatch(/<div hidden="">\s*<section id="coding-routing"/);
+    const on = render("coding");
+    expect(on).not.toContain("Coding is off");
+    expect(on).not.toContain('hidden=""');
+  });
+
+  it("says when reviews are off", () => {
+    expect(render("settings")).not.toContain("Reviews are off");
+    const off = render("settings", {
+      taskTypes: { ...inheritAll, overrides: { ...inheritAll.overrides, review: false } },
+    });
+    expect(off).toContain("Reviews are off");
+  });
+
   it("no longer has a Ralph enable switch", () => {
-    const html = render();
+    const html = render("coding");
     expect(html).not.toContain("Enable Ralph");
     expect(html).not.toContain('id="ralph-enabled"');
   });
 
-  it("calls the coding cards Coding, not Ralph", () => {
-    const text = render().replace(/<[^>]+>/g, " ");
-    for (const title of [
-      "Coding",
-      "Coding › Verification",
-      "Coding › Prompt and model",
-      "Coding › Tools",
-      "Coding › PR follow-up",
-      "Coding › Linear",
-    ]) {
-      expect(text).toContain(title);
+  it("calls the coding settings Coding, not Ralph", () => {
+    const coding = text(render("coding"));
+    for (const title of ["Coding", "Routing", "Agent", "Verification", "Pull requests", "Linear"]) {
+      expect(coding).toContain(title);
     }
-    expect(text).not.toMatch(/\bRalph\b/);
+    for (const tab of ["settings", "coding", "harnesses"] as const) {
+      expect(text(render(tab))).not.toMatch(/\bRalph\b/);
+    }
   });
 
   it("maps choices to stored values and back", () => {
@@ -249,5 +348,48 @@ describe("RepositorySettingsView task types", () => {
     expect(taskTypeValue("on")).toBe(true);
     expect(taskTypeValue("off")).toBe(false);
     expect(inheritLabel(false)).toBe("Use organization default (Off)");
+  });
+});
+
+describe("saveWithTaskTypes", () => {
+  const saved = { query: null, review: null, coding: null };
+
+  it("saves only the section's switches, the others as saved, then its settings", async () => {
+    vi.mocked(updateRepositoryTaskTypes).mockResolvedValueOnce({ ok: true });
+    vi.mocked(updateRalphSettings).mockResolvedValueOnce({ ok: true });
+    const save = saveWithTaskTypes(
+      "repo-1",
+      saved,
+      { query: false, review: true, coding: true },
+      ["coding"],
+      () => updateRalphSettings("repo-1", ralph),
+    );
+    await expect(save()).resolves.toEqual({ ok: true });
+    expect(updateRepositoryTaskTypes).toHaveBeenLastCalledWith("repo-1", {
+      query: null,
+      review: null,
+      coding: true,
+    });
+    expect(updateRalphSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips unchanged switches, and stops at a failed switch save", async () => {
+    vi.mocked(updateRepositoryTaskTypes).mockClear();
+    const settingsSave = vi.fn().mockResolvedValue({ ok: true });
+    await saveWithTaskTypes("repo-1", saved, saved, ["coding"], settingsSave)();
+    expect(updateRepositoryTaskTypes).not.toHaveBeenCalled();
+    expect(settingsSave).toHaveBeenCalledTimes(1);
+
+    vi.mocked(updateRepositoryTaskTypes).mockResolvedValueOnce({ ok: false, error: "Nope" });
+    settingsSave.mockClear();
+    const result = await saveWithTaskTypes(
+      "repo-1",
+      saved,
+      { ...saved, review: false },
+      ["review"],
+      settingsSave,
+    )();
+    expect(result).toEqual({ ok: false, error: "Nope" });
+    expect(settingsSave).not.toHaveBeenCalled();
   });
 });

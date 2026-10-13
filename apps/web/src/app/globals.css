@@ -923,35 +923,219 @@ body {
 .settings-check-center {
   align-items: center;
 }
-.settings-profile-choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: var(--space-3);
+/* Settings sections (components/settings-section.tsx): each repository settings tab is one
+   surface with one save. Its concerns stack in ruled blocks, and its footer sticks to the
+   viewport bottom while the section is on screen. */
+.detail-main:has(.settings-sections) {
+  /* The document scrolls, so the main column must not be a (non-scrolling) scroll container,
+     or the save footer can't stick. */
+  overflow: visible;
 }
-.settings-profile-choice {
+.settings-sections {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
-}
-.settings-profile-choice[data-selected] {
-  border-color: var(--accent);
-}
-.settings-profile-choice:has(:disabled) {
-  cursor: default;
-}
-.settings-profile-text {
+  flex-direction: column;
+  gap: var(--space-6);
   min-width: 0;
 }
-.settings-profile-name {
+.settings-section {
+  /* Clear the sticky app header when a link or a failed validation scrolls here. */
+  scroll-margin-top: calc(52px + var(--space-4));
+}
+.settings-section[data-tone="danger"] {
+  border-color: var(--danger-border);
+}
+.settings-section[data-dirty] {
+  border-color: var(--accent-border);
+}
+.settings-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.settings-section-header[data-compact] {
+  padding-block: var(--space-4);
+}
+.settings-section-heading {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.settings-section-title {
+  margin: 0;
+  font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+}
+.settings-section[data-tone="danger"] .settings-section-title {
+  color: var(--danger-fg);
+}
+.settings-section-description {
+  max-width: 72ch;
+}
+/* The section-wide switch beside the description (e.g. Coding on, off or the default). */
+.settings-section-toggle {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+.settings-section-toggle select {
+  width: auto;
+  max-width: 100%;
+}
+.settings-section-body {
+  padding-inline: var(--space-6);
+}
+.settings-section-off {
+  display: block;
+  padding-block: var(--space-6) 0;
+  max-width: 72ch;
+}
+.settings-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block: var(--space-6);
+}
+.settings-sub + .settings-sub {
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-sub-intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.settings-sub-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.settings-sub-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 56rem;
+}
+/* A switch and the number it enables, side by side. */
+.settings-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12rem;
+  gap: var(--space-4);
+  align-items: start;
+}
+.settings-section-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--border-default);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  background: var(--bg-raised);
+}
+.settings-section-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: auto;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.settings-section-status svg {
+  color: var(--success-fg);
+}
+.settings-section-status[data-state="dirty"] {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+.settings-section-status[data-state="invalid"] {
+  color: var(--danger-fg);
+  font-weight: var(--font-weight-medium);
+}
+/* Review profiles as a radio table: one row each, so their facts line up for comparison. */
+.settings-profile-table-wrap {
+  overflow-x: auto;
+}
+.settings-profile-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.settings-profile-table th {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
+}
+.settings-profile-table td {
+  padding: var(--space-3);
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+.settings-profile-table th:first-child,
+.settings-profile-table td:first-child {
+  width: 2rem;
+  padding-right: 0;
+}
+.settings-profile-table .numeric {
+  text-align: right;
+}
+.settings-profile-table tbody tr {
+  cursor: pointer;
+}
+.settings-profile-table tbody tr[data-disabled] {
+  cursor: default;
+}
+.settings-profile-table tbody tr:not([data-disabled]):hover {
+  background: var(--bg-hover);
+}
+.settings-profile-table tbody tr[data-selected] {
+  background: var(--accent-tint);
+}
+.settings-profile-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.settings-profile-desc {
+  display: block;
+  margin-top: var(--space-1);
+}
+.settings-profile-model {
+  white-space: nowrap;
+}
+@media (max-width: 767.98px) {
+  .settings-section-header,
+  .settings-section-body,
+  .settings-section-footer {
+    padding-inline: var(--space-4);
+  }
+  .settings-section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .settings-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-profile-wide {
+    display: none;
+  }
 }
 
 /* A detail page's main column. */
@@ -2066,4 +2250,12 @@ body {
 }
 .settings-saved svg {
   color: var(--success-fg);
+}
+
+/* Repository page tabs (repository-nav.tsx): the strip scrolls on its own when the tabs don't
+   fit, instead of widening the page. */
+.repository-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }

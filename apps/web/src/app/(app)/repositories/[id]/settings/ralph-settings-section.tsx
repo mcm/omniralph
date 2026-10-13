@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Field, Input, NativeSelect, Textarea } from "@iamthemcmaster/ui";
+import { Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui";
 import {
   DEFAULT_RALPH_SETTINGS,
   fieldErrors as toFieldErrors,
@@ -12,17 +12,19 @@ import {
   RALPH_CODING_PATHS,
   RALPH_HISTORY_REWRITE_POLICIES,
   RalphSettingsInput,
+  RepositoryTaskTypesInput,
   type FieldErrors,
   type RalphCodingPath,
   type RalphHistoryRewrite,
 } from "@omniralph/shared";
-import { SettingsCard, SwitchField, type SettingsConfirmation } from "@/components/settings-card";
+import { SwitchField, type SettingsConfirmation } from "@/components/settings-card";
+import { SettingsSection, SettingsSubsection } from "@/components/settings-section";
 import { settingChanges, withDefault, withoutFieldErrors } from "@/lib/settings/changes";
 import {
   CODING_PATH_LABELS,
+  CODING_SECTIONS,
   HISTORY_REWRITE_LABELS,
   pickKeys,
-  RALPH_CARDS,
   RALPH_DEFAULT_TEXT,
   RALPH_REPOSITORY_DEFAULTS,
   ralphDraft,
@@ -32,6 +34,14 @@ import {
 } from "@/lib/settings/forms";
 import { updateRalphSettings } from "./actions";
 import { TaskPicker, type TaskChoiceOption } from "./task-picker";
+import {
+  saveWithTaskTypes,
+  TaskTypeSelect,
+  taskTypeOn,
+  taskTypeSpec,
+  type TaskTypeSwitch,
+  type TaskTypesValues,
+} from "./task-types";
 
 /** The form's values: the saved settings, with empty text and lists for none. */
 export type RalphSettingsValues = RalphSettingsInput;
@@ -43,32 +53,44 @@ function listError(errors: FieldErrors, field: string): string | undefined {
 
 const onOff = RALPH_DEFAULT_TEXT.onOff;
 
-/** Confirmation of a card that changes how runs work. */
+/** Confirmation of the section that changes how runs work. */
 const RUN_AFFECTING: SettingsConfirmation = {
   consequence:
     "Every run of this repository picks these up with its next job, including runs in progress.",
 };
 
+/** Confirmation of the Danger zone. */
+const DESTRUCTIVE: SettingsConfirmation = {
+  consequence:
+    "These decide when a run may force-push and when Omniralph deletes branches. Runs in progress pick them up with their next job.",
+};
+
+/** The task-type switch the Coding section saves. */
+const CODING_TASK_TYPES = ["coding"] as const satisfies readonly TaskTypeSwitch[];
+
 /**
- * Repository › Settings › Coding (admin-only): says which Linear issues route
- * to the repository (coding itself is switched under Task types) and how its runs
- * work (cyralph's per-repository settings), grouped as Verification, Prompt
- * and model, Tools, PR follow-up and Linear. Each card saves on its own; the
- * ones that change what runs do (coding path, verification, model,
- * tools) confirm their change list first.
+ * Repository › Coding (admin-only): whether coding runs here (the task-type switch beside the
+ * description), which Linear issues route to the repository and how its runs work (cyralph's
+ * per-repository settings). One section with one save, in subsections (Routing, Agent,
+ * Verification, Pull requests, Linear), and a separate Danger zone for the settings that
+ * force-push or delete branches. Both confirm their change list.
  */
-export function RalphSettingsSection({
+export function CodingSettingsSections({
   repositoryId,
   settings,
   codingTasks,
+  taskTypes,
 }: {
   repositoryId: string;
   settings: RalphSettingsValues;
   /** The coding tasks its story and request runs can use (built-in and the organization's). */
   codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
+  /** The repository's task-type switches; this tab saves Coding's. */
+  taskTypes: TaskTypesValues;
 }) {
   const saved = React.useMemo(() => ralphDraft(settings), [settings]);
   const [draft, setDraft] = React.useState(saved);
+  const [coding, setCoding] = React.useState(taskTypes.overrides.coding);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const set = <K extends keyof RalphDraft>(key: K, value: RalphDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -85,36 +107,65 @@ export function RalphSettingsSection({
   );
   const taskName = (id: string) => tasks.find((t) => t.id === id)?.name ?? id;
 
-  /** The props of the settings card saving `keys`. */
-  const card = (keys: readonly (keyof RalphSettingsInput)[]) => ({
-    changes: settingChanges(
+  /** The props of the section saving `keys` and the task-type switches `types`. */
+  const section = (
+    keys: readonly (keyof RalphSettingsInput)[],
+    types: readonly TaskTypeSwitch[] = [],
+  ) => {
+    const typesDraft = { ...taskTypes.overrides, coding };
+    const errorKeys = [...keys, ...types];
+    const settingsChanges = settingChanges(
       keys.map((key) => specs[key]),
       savedValues,
       draftValues,
-    ),
-    onDiscard: () => {
-      setDraft((d) => ({ ...d, ...pickKeys(saved, keys) }));
-      setErrors((e) => withoutFieldErrors(e, keys));
-    },
-    prepare: () => {
-      // The saved settings with this card's changes only.
-      const parsed = RalphSettingsInput.safeParse({
-        ...savedValues,
-        ...pickKeys(draftValues, keys),
-      });
-      if (!parsed.success) {
-        setErrors((e) => ({ ...withoutFieldErrors(e, keys), ...toFieldErrors(parsed.error) }));
-        return null;
-      }
-      return {
-        action: () => updateRalphSettings(repositoryId, parsed.data),
-        success: "Coding settings saved; they apply to the next job of every run",
-        onSuccess: () => setErrors((e) => withoutFieldErrors(e, keys)),
-        onError: (result: { fieldErrors?: FieldErrors }) =>
-          setErrors((e) => ({ ...e, ...result.fieldErrors })),
-      };
-    },
-  });
+    );
+    return {
+      changes: [
+        ...settingChanges(
+          types.map((key) => taskTypeSpec(taskTypes, key)),
+          taskTypes.overrides,
+          typesDraft,
+        ),
+        ...settingsChanges,
+      ],
+      onDiscard: () => {
+        setDraft((d) => ({ ...d, ...pickKeys(saved, keys) }));
+        if (types.length > 0) setCoding(taskTypes.overrides.coding);
+        setErrors((e) => withoutFieldErrors(e, errorKeys));
+      },
+      prepare: () => {
+        // The saved settings with this section's changes only.
+        const parsed = RalphSettingsInput.safeParse({
+          ...savedValues,
+          ...pickKeys(draftValues, keys),
+        });
+        const parsedTypes = RepositoryTaskTypesInput.safeParse(typesDraft);
+        if (!parsed.success || !parsedTypes.success) {
+          setErrors((e) => ({
+            ...withoutFieldErrors(e, errorKeys),
+            ...(parsed.success ? {} : toFieldErrors(parsed.error)),
+            ...(parsedTypes.success ? {} : toFieldErrors(parsedTypes.error)),
+          }));
+          return null;
+        }
+        return {
+          action: saveWithTaskTypes(
+            repositoryId,
+            taskTypes.overrides,
+            parsedTypes.data,
+            types,
+            settingsChanges.length > 0
+              ? () => updateRalphSettings(repositoryId, parsed.data)
+              : null,
+          ),
+          success: "Coding settings saved; they apply to the next job of every run",
+          onSuccess: () => setErrors((e) => withoutFieldErrors(e, errorKeys)),
+          onError: (result: { fieldErrors?: FieldErrors }) =>
+            setErrors((e) => ({ ...e, ...result.fieldErrors })),
+        };
+      },
+    };
+  };
 
   const textInput = (
     key: keyof RalphDraft & keyof RalphSettingsInput,
@@ -202,323 +253,370 @@ export function RalphSettingsSection({
     id: string,
     label: string,
     hint: string,
-    defaultValue: boolean | string,
+    defaultValue: boolean,
   ) => (
     <SwitchField
       id={id}
       label={label}
-      description={withDefault(
-        hint,
-        typeof defaultValue === "string" ? defaultValue : onOff(defaultValue),
-      )}
+      description={withDefault(hint, onOff(defaultValue))}
       checked={draft[key]}
       disabled={false}
       onChange={(value) => set(key, value)}
     />
   );
 
+  const codingOn = taskTypeOn(taskTypes, "coding", coding);
+
   return (
     <>
-      <SettingsCard
+      <SettingsSection
+        id="coding"
         title="Coding"
+        showTitle={false}
         description={
           <>
-            How Linear issues delegated to the Omniralph app are built here, story by story, once
-            coding is on under Task types. A delegation goes to the first repository with coding on
-            that matches its labels, then its project, then its team.
+            Build Linear issues delegated to the Omniralph app in this repository, story by story.
+            A delegation goes to the first repository with coding on that matches its labels, then
+            its project, then its team.
           </>
         }
-        confirm={RUN_AFFECTING}
-        {...card(RALPH_CARDS.ralph)}
-      >
-        <Field
-          label="Coding path"
-          htmlFor="ralph-coding-path"
-          description={withDefault(
-            "How runs work stories and requests: the legacy jobs, or coding runs of the story and request tasks below.",
-            RALPH_DEFAULT_TEXT.codingPath,
-          )}
-          error={errors.codingPath}
-        >
-          <NativeSelect
-            id="ralph-coding-path"
-            value={draft.codingPath}
-            onChange={(e) => set("codingPath", e.target.value as RalphCodingPath)}
-          >
-            {RALPH_CODING_PATHS.map((path) => (
-              <option key={path} value={path}>
-                {CODING_PATH_LABELS[path]}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
-        <div className="settings-row">
-          <TaskPicker
-            id="ralph-story-task"
-            label="Story task"
-            hint={withDefault(
-              "The coding task that works delegated stories on the coding-tasks path.",
-              taskName(RALPH_REPOSITORY_DEFAULTS.storyTaskId),
-            )}
-            value={draft.storyTaskId}
-            choices={codingTasks.story}
+        headerControl={
+          <TaskTypeSelect
+            compact
+            name="coding"
+            values={taskTypes}
+            value={coding}
             disabled={false}
-            error={errors.storyTaskId}
-            onChange={(value) => set("storyTaskId", value)}
+            error={errors.coding}
+            onChange={setCoding}
           />
-          <TaskPicker
-            id="ralph-request-task"
-            label="Request task"
-            hint={withDefault(
-              "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path.",
-              taskName(RALPH_REPOSITORY_DEFAULTS.requestTaskId),
-            )}
-            value={draft.requestTaskId}
-            choices={codingTasks.request}
-            disabled={false}
-            error={errors.requestTaskId}
-            onChange={(value) => set("requestTaskId", value)}
-          />
-        </div>
-        {textInput(
-          "linearLabels",
-          "ralph-labels",
-          "Linear labels",
-          withDefault("Comma-separated. Issues with any of these labels route here."),
-          { placeholder: "e.g. backend, api" },
-        )}
-        {textInput(
-          "linearProjectNames",
-          "ralph-projects",
-          "Linear projects",
-          withDefault("Comma-separated project names."),
-          { placeholder: "e.g. Omniralph" },
-        )}
-        {textInput(
-          "linearTeamKeys",
-          "ralph-teams",
-          "Linear team keys",
-          withDefault("Comma-separated team keys."),
-          { placeholder: "e.g. ENG, OPS" },
-        )}
-      </SettingsCard>
-
-      <SettingsCard
-        title="Coding › Verification"
-        description="The quality gates the job runs after a story's session reports it complete; a failing gate sends its output back for the next attempt."
+        }
         confirm={RUN_AFFECTING}
-        {...card(RALPH_CARDS.verification)}
+        {...section(CODING_SECTIONS.coding, CODING_TASK_TYPES)}
       >
-        {linesInput(
-          "verifyCommands",
-          "ralph-verify-commands",
-          "Verify commands",
-          withDefault(
-            "One per line. Run as quality gates for every story and request in this repository, before the PRD's.",
-          ),
-          "e.g. pnpm typecheck\npnpm test",
+        {!codingOn && (
+          <Muted className="settings-section-off">
+            Coding is off: delegated Linear issues don&apos;t build here. Turn it on to choose
+            which issues route to this repository and how they&apos;re built. The settings below
+            are kept while it&apos;s off.
+          </Muted>
         )}
-        {switchInput(
-          "runPrdQualityGates",
-          "ralph-run-prd-gates",
-          "Run the PRD's quality gates",
-          "Also run the commands under the PRD's ## Quality Gates heading. A single issue only runs the verify commands.",
-          DEFAULT_RALPH_SETTINGS.runPrdQualityGates,
-        )}
-        {textInput(
-          "setupCommand",
-          "ralph-setup-command",
-          "Setup command",
-          withDefault(
-            `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters.`,
-          ),
-          { placeholder: "e.g. pnpm install --frozen-lockfile", mono: true },
-        )}
-      </SettingsCard>
-
-      <SettingsCard
-        title="Coding › Prompt and model"
-        description="What the Claude sessions are told and which model runs them."
-        confirm={RUN_AFFECTING}
-        {...card(RALPH_CARDS.prompt)}
-      >
-        <Field
-          label="Appended instruction"
-          htmlFor="ralph-append-instruction"
-          description={withDefault(
-            `Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`,
-          )}
-          error={errors.appendInstruction}
-        >
-          <Textarea
-            id="ralph-append-instruction"
-            rows={4}
-            aria-invalid={Boolean(errors.appendInstruction)}
-            value={draft.appendInstruction}
-            onChange={(e) => set("appendInstruction", e.target.value)}
-          />
-        </Field>
-        <div className="settings-row">
-          {textInput(
-            "model",
-            "ralph-model",
-            "Model",
-            withDefault("Claude model alias or ID the sessions use.", RALPH_DEFAULT_TEXT.model),
-            { mono: true, required: true },
-          )}
-          {textInput(
-            "fallbackModel",
-            "ralph-fallback-model",
-            "Fallback model",
-            withDefault("Used when the model is overloaded. Leave it empty for no fallback."),
-            { mono: true, placeholder: "e.g. sonnet" },
-          )}
-        </div>
-      </SettingsCard>
-
-      <SettingsCard
-        title="Coding › Tools"
-        description="Agent SDK tools or permission rules, one per line. They can only narrow Omniralph's coding tool policy, never widen it."
-        confirm={RUN_AFFECTING}
-        {...card(RALPH_CARDS.tools)}
-      >
-        {linesInput(
-          "allowedTools",
-          "ralph-allowed-tools",
-          "Allowed tools",
-          withDefault(
-            "Leave it empty for Omniralph's whole coding policy. Otherwise only these tools are available, and only calls matching these rules run.",
-          ),
-          "e.g. Read\nEdit\nBash(pnpm test:*)",
-        )}
-        {linesInput(
-          "disallowedTools",
-          "ralph-disallowed-tools",
-          "Disallowed tools",
-          withDefault("Always denied, on top of Omniralph's coding policy."),
-          "e.g. WebFetch",
-        )}
-      </SettingsCard>
-
-      <SettingsCard
-        title="Coding › PR follow-up"
-        description="The run's pull or merge request: when it opens, and how Omniralph looks after it (reviews, CI and cleanup after the merge)."
-        {...card(RALPH_CARDS.followUp)}
-      >
-        {switchInput(
-          "openPullRequestEarly",
-          "ralph-open-pr-early",
-          "Open the pull request early",
-          "Open a draft pull or merge request after the first story is pushed, and mark it ready when the run finishes.",
-          DEFAULT_RALPH_SETTINGS.openPullRequestEarly,
-        )}
-        <Field
-          label="History rewrites"
-          htmlFor="ralph-history-rewrite"
-          description={withDefault(
-            "Whether a request may rebase and push with --force-with-lease when someone asks for it.",
-            RALPH_DEFAULT_TEXT.historyRewrite,
-          )}
-          error={errors.historyRewrite}
-        >
-          <NativeSelect
-            id="ralph-history-rewrite"
-            value={draft.historyRewrite}
-            onChange={(e) => set("historyRewrite", e.target.value as RalphHistoryRewrite)}
+        <div hidden={!codingOn}>
+          <SettingsSubsection
+            id="coding-routing"
+            title="Routing"
+            description="Which delegated Linear issues build here. Any match routes the issue."
           >
-            {RALPH_HISTORY_REWRITE_POLICIES.map((policy) => (
-              <option key={policy} value={policy}>
-                {HISTORY_REWRITE_LABELS[policy]}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
-        {switchInput(
-          "respondToReviews",
-          "ralph-respond-to-reviews",
-          "Fix review findings",
-          "Omniralph's review findings and @bot requests on the run's pull or merge request become requests the run works on.",
-          DEFAULT_RALPH_SETTINGS.respondToReviews,
-        )}
-        {numberInput(
-          "maxReviewRounds",
-          "ralph-max-review-rounds",
-          "Max review rounds",
-          withDefault(
-            `Reviews acted on per pull or merge request before Omniralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
-            RALPH_DEFAULT_TEXT.maxReviewRounds,
-          ),
-          MAX_FIX_ROUNDS,
-        )}
-        {switchInput(
-          "respondToCiFailures",
-          "ralph-respond-to-ci",
-          "Fix failed CI",
-          "A failed CI run on the head commit becomes a request with the failed jobs' logs.",
-          DEFAULT_RALPH_SETTINGS.respondToCiFailures,
-        )}
-        {numberInput(
-          "maxFixRounds",
-          "ralph-max-fix-rounds",
-          "Max CI fix rounds",
-          withDefault(
-            `Failed CI runs acted on per pull or merge request (0–${MAX_FIX_ROUNDS}).`,
-            RALPH_DEFAULT_TEXT.maxFixRounds,
-          ),
-          MAX_FIX_ROUNDS,
-        )}
-        {switchInput(
-          "cleanupMergedWorktrees",
-          "ralph-cleanup",
-          "Clean up after the merge",
-          "Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first. A request closed without merging, or a stopped run, only has its worktree removed: the branch stays.",
-          DEFAULT_RALPH_SETTINGS.cleanupMergedWorktrees,
-        )}
-        {numberInput(
-          "unmergedBranchTimeoutMinutes",
-          "ralph-unmerged-timeout",
-          "Unmerged branch timeout (minutes)",
-          withDefault(
-            "A branch with unmerged commits is deleted after this long without an answer.",
-            RALPH_DEFAULT_TEXT.unmergedBranchTimeoutMinutes,
-          ),
-          MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
-          1,
-        )}
-      </SettingsCard>
+            <div className="settings-row">
+              {textInput(
+                "linearLabels",
+                "ralph-labels",
+                "Linear labels",
+                withDefault("Comma-separated. Issues with any of these labels route here."),
+                { placeholder: "e.g. backend, api" },
+              )}
+              {textInput(
+                "linearProjectNames",
+                "ralph-projects",
+                "Linear projects",
+                withDefault("Comma-separated project names."),
+                { placeholder: "e.g. Omniralph" },
+              )}
+              {textInput(
+                "linearTeamKeys",
+                "ralph-teams",
+                "Linear team keys",
+                withDefault("Comma-separated team keys."),
+                { placeholder: "e.g. ENG, OPS" },
+              )}
+            </div>
+          </SettingsSubsection>
 
-      <SettingsCard
-        title="Coding › Linear"
-        description="How Omniralph reads and updates the Linear epic."
-        {...card(RALPH_CARDS.linear)}
+          <SettingsSubsection
+            id="coding-agent"
+            title="Agent"
+            description="How stories and requests are worked: which tasks, which model, what the sessions are told and which tools they may use."
+          >
+            <Field
+              label="Coding path"
+              htmlFor="ralph-coding-path"
+              description={withDefault(
+                "How runs work stories and requests: the legacy jobs, or coding runs of the story and request tasks below.",
+                RALPH_DEFAULT_TEXT.codingPath,
+              )}
+              error={errors.codingPath}
+            >
+              <NativeSelect
+                id="ralph-coding-path"
+                value={draft.codingPath}
+                onChange={(e) => set("codingPath", e.target.value as RalphCodingPath)}
+              >
+                {RALPH_CODING_PATHS.map((path) => (
+                  <option key={path} value={path}>
+                    {CODING_PATH_LABELS[path]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <div className="settings-row">
+              <TaskPicker
+                id="ralph-story-task"
+                label="Story task"
+                hint={withDefault(
+                  "The coding task that works delegated stories on the coding-tasks path.",
+                  taskName(RALPH_REPOSITORY_DEFAULTS.storyTaskId),
+                )}
+                value={draft.storyTaskId}
+                choices={codingTasks.story}
+                disabled={false}
+                error={errors.storyTaskId}
+                onChange={(value) => set("storyTaskId", value)}
+              />
+              <TaskPicker
+                id="ralph-request-task"
+                label="Request task"
+                hint={withDefault(
+                  "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path.",
+                  taskName(RALPH_REPOSITORY_DEFAULTS.requestTaskId),
+                )}
+                value={draft.requestTaskId}
+                choices={codingTasks.request}
+                disabled={false}
+                error={errors.requestTaskId}
+                onChange={(value) => set("requestTaskId", value)}
+              />
+            </div>
+            <div className="settings-row">
+              {textInput(
+                "model",
+                "ralph-model",
+                "Model",
+                withDefault("Claude model alias or ID the sessions use.", RALPH_DEFAULT_TEXT.model),
+                { mono: true, required: true },
+              )}
+              {textInput(
+                "fallbackModel",
+                "ralph-fallback-model",
+                "Fallback model",
+                withDefault("Used when the model is overloaded. Leave it empty for no fallback."),
+                { mono: true, placeholder: "e.g. sonnet" },
+              )}
+            </div>
+            <Field
+              label="Appended instruction"
+              htmlFor="ralph-append-instruction"
+              description={withDefault(
+                `Appended to every story and request prompt. At most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString()} characters.`,
+              )}
+              error={errors.appendInstruction}
+            >
+              <Textarea
+                id="ralph-append-instruction"
+                rows={3}
+                aria-invalid={Boolean(errors.appendInstruction)}
+                value={draft.appendInstruction}
+                onChange={(e) => set("appendInstruction", e.target.value)}
+              />
+            </Field>
+            <div className="settings-row">
+              {linesInput(
+                "allowedTools",
+                "ralph-allowed-tools",
+                "Allowed tools",
+                withDefault(
+                  "Agent SDK tools or permission rules, one per line; they can only narrow Omniralph's coding tool policy. Leave it empty for the whole policy.",
+                ),
+                "e.g. Read\nEdit\nBash(pnpm test:*)",
+              )}
+              {linesInput(
+                "disallowedTools",
+                "ralph-disallowed-tools",
+                "Disallowed tools",
+                withDefault("One per line. Always denied, on top of Omniralph's coding policy."),
+                "e.g. WebFetch",
+              )}
+            </div>
+          </SettingsSubsection>
+
+          <SettingsSubsection
+            id="coding-verification"
+            title="Verification"
+            description="The quality gates run after a story's session reports it complete. A failing gate sends its output back for the next attempt."
+          >
+            {textInput(
+              "setupCommand",
+              "ralph-setup-command",
+              "Setup command",
+              withDefault(
+                `Runs once in a new branch worktree, e.g. to install dependencies. At most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString()} characters.`,
+              ),
+              { placeholder: "e.g. pnpm install --frozen-lockfile", mono: true },
+            )}
+            {linesInput(
+              "verifyCommands",
+              "ralph-verify-commands",
+              "Verify commands",
+              withDefault(
+                "One per line. Run as quality gates for every story and request in this repository, before the PRD's.",
+              ),
+              "e.g. pnpm typecheck\npnpm test",
+            )}
+            {switchInput(
+              "runPrdQualityGates",
+              "ralph-run-prd-gates",
+              "Run the PRD's quality gates",
+              "Also run the commands under the PRD's ## Quality Gates heading. A single issue only runs the verify commands.",
+              DEFAULT_RALPH_SETTINGS.runPrdQualityGates,
+            )}
+          </SettingsSubsection>
+
+          <SettingsSubsection
+            id="coding-pull-requests"
+            title="Pull requests"
+            description="When the run's pull or merge request opens, and what Omniralph fixes on it before leaving it to a person."
+          >
+            {switchInput(
+              "openPullRequestEarly",
+              "ralph-open-pr-early",
+              "Open the pull request early",
+              "Open a draft pull or merge request after the first story is pushed, and mark it ready when the run finishes.",
+              DEFAULT_RALPH_SETTINGS.openPullRequestEarly,
+            )}
+            <div className="settings-pair">
+              {switchInput(
+                "respondToReviews",
+                "ralph-respond-to-reviews",
+                "Fix review findings",
+                "Omniralph's review findings and @bot requests on the run's pull or merge request become requests the run works on.",
+                DEFAULT_RALPH_SETTINGS.respondToReviews,
+              )}
+              {numberInput(
+                "maxReviewRounds",
+                "ralph-max-review-rounds",
+                "Max review rounds",
+                withDefault(
+                  `Reviews acted on per pull or merge request before Omniralph leaves it to a person (0–${MAX_FIX_ROUNDS}).`,
+                  RALPH_DEFAULT_TEXT.maxReviewRounds,
+                ),
+                MAX_FIX_ROUNDS,
+              )}
+            </div>
+            <div className="settings-pair">
+              {switchInput(
+                "respondToCiFailures",
+                "ralph-respond-to-ci",
+                "Fix failed CI",
+                "A failed CI run on the head commit becomes a request with the failed jobs' logs.",
+                DEFAULT_RALPH_SETTINGS.respondToCiFailures,
+              )}
+              {numberInput(
+                "maxFixRounds",
+                "ralph-max-fix-rounds",
+                "Max CI fix rounds",
+                withDefault(
+                  `Failed CI runs acted on per pull or merge request (0–${MAX_FIX_ROUNDS}).`,
+                  RALPH_DEFAULT_TEXT.maxFixRounds,
+                ),
+                MAX_FIX_ROUNDS,
+              )}
+            </div>
+          </SettingsSubsection>
+
+          <SettingsSubsection
+            id="coding-linear"
+            title="Linear"
+            description="How Omniralph reads and updates the Linear epic."
+          >
+            {textInput(
+              "manualLabels",
+              "ralph-manual-labels",
+              "Manual labels",
+              withDefault(
+                "Comma-separated. Stories with any of these labels are steps for a person: Omniralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Omniralph files.",
+                RALPH_DEFAULT_TEXT.manualLabels,
+              ),
+              { placeholder: "e.g. manual" },
+            )}
+            {switchInput(
+              "allowPreparation",
+              "ralph-allow-preparation",
+              "Offer to run preparation",
+              "Ask whether to run a manual story's cyralph-prepare commands (“Run it”). Off, those blocks are plain text.",
+              DEFAULT_RALPH_SETTINGS.allowPreparation,
+            )}
+            {textInput(
+              "epicCompletedState",
+              "ralph-epic-completed-state",
+              "Epic completed state",
+              withDefault(
+                "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Not set leaves the epic alone.",
+              ),
+              { placeholder: "e.g. In Review" },
+            )}
+          </SettingsSubsection>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        id="danger-zone"
+        title="Danger zone"
+        tone="danger"
+        description="Settings that rewrite history or delete branches. Saving them always asks first."
+        confirm={DESTRUCTIVE}
+        {...section(CODING_SECTIONS.danger)}
       >
-        {textInput(
-          "manualLabels",
-          "ralph-manual-labels",
-          "Manual labels",
-          withDefault(
-            "Comma-separated. Stories with any of these labels are steps for a person: Omniralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Omniralph files.",
-            RALPH_DEFAULT_TEXT.manualLabels,
-          ),
-          { placeholder: "e.g. manual" },
-        )}
-        {switchInput(
-          "allowPreparation",
-          "ralph-allow-preparation",
-          "Offer to run preparation",
-          "Ask whether to run a manual story's cyralph-prepare commands (“Run it”). Off, those blocks are plain text.",
-          DEFAULT_RALPH_SETTINGS.allowPreparation,
-        )}
-        {textInput(
-          "epicCompletedState",
-          "ralph-epic-completed-state",
-          "Epic completed state",
-          withDefault(
-            "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Not set leaves the epic alone.",
-          ),
-          { placeholder: "e.g. In Review" },
-        )}
-      </SettingsCard>
+        <SettingsSubsection
+          id="danger-history"
+          title="History rewrites"
+          description="Force-pushing the run's branch."
+        >
+          <Field
+            label="History rewrites"
+            htmlFor="ralph-history-rewrite"
+            description={withDefault(
+              "Whether a request may rebase and push with --force-with-lease when someone asks for it.",
+              RALPH_DEFAULT_TEXT.historyRewrite,
+            )}
+            error={errors.historyRewrite}
+          >
+            <NativeSelect
+              id="ralph-history-rewrite"
+              value={draft.historyRewrite}
+              onChange={(e) => set("historyRewrite", e.target.value as RalphHistoryRewrite)}
+            >
+              {RALPH_HISTORY_REWRITE_POLICIES.map((policy) => (
+                <option key={policy} value={policy}>
+                  {HISTORY_REWRITE_LABELS[policy]}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        </SettingsSubsection>
+        <SettingsSubsection
+          id="danger-cleanup"
+          title="Branch cleanup"
+          description="Deleting worktrees and branches once a pull or merge request is done."
+        >
+          {switchInput(
+            "cleanupMergedWorktrees",
+            "ralph-cleanup",
+            "Clean up after the merge",
+            "Remove the worktree and local branch once the pull or merge request merges. Leftover stashes and unmerged commits are offered to a person first. A request closed without merging, or a stopped run, only has its worktree removed: the branch stays.",
+            DEFAULT_RALPH_SETTINGS.cleanupMergedWorktrees,
+          )}
+          {numberInput(
+            "unmergedBranchTimeoutMinutes",
+            "ralph-unmerged-timeout",
+            "Unmerged branch timeout (minutes)",
+            withDefault(
+              `A branch with unmerged commits is deleted after this long without an answer (1–${MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES.toLocaleString()}).`,
+              RALPH_DEFAULT_TEXT.unmergedBranchTimeoutMinutes,
+            ),
+            MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
+            1,
+          )}
+        </SettingsSubsection>
+      </SettingsSection>
     </>
   );
 }
