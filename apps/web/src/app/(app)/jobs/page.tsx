@@ -43,6 +43,7 @@ export default async function JobsPage({
       pageSize={page.pageSize}
       total={page.total}
       targetJobId={targetPage ? params.jobId : null}
+      year={new Date().getFullYear()}
     />
   );
 }

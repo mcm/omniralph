@@ -30,13 +30,8 @@ import {
 } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
-import {
-  ExternalRowLink,
-  ListStatus,
-  PhoneMeta,
-  Timestamp,
-  WIDE_COLUMN,
-} from "@/components/list-table";
+import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
+import { ListErrorRow } from "@/components/list-error";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
@@ -181,57 +176,63 @@ function externalSource(run: RalphRunRow): { href: string; label: string } | nul
   return { href: run.linearUrl, label: `Open ${runSourceLabel(run)} in Linear` };
 }
 
+/** The runs table's column count, which a failed run's reason row spans. */
+const RUN_COLUMNS = 8;
+
 function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
   const external = externalSource(run);
   const title = run.origin === "linear" ? run.linearTitle : null;
   return (
-    <TableRow>
-      <TableCell className="list-col-main">
-        <Link href={`/ralph/${run.id}`} className="list-title">
-          <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
-          {title && <span className="list-title-text">{title}</span>}
-        </Link>
-        <PhoneMeta>
+    <>
+      <TableRow data-has-error={run.error ? true : undefined}>
+        <TableCell className="list-col-main">
+          <Link href={`/ralph/${run.id}`} className="list-title">
+            <span className="text-numeric list-nowrap">{runSourceLabel(run)}</span>
+            {title && <span className="list-title-text">{title}</span>}
+          </Link>
+          <PhoneMeta>
+            <RalphRunStatusBadge status={run.status} />
+            <Timestamp iso={run.updatedAt} />
+          </PhoneMeta>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <div className="list-cell-stack">
+            {run.repository ? (
+              <span className="list-secondary text-numeric list-nowrap">
+                <ProviderIcon provider={run.repository.provider} size={12} />
+                {run.repository.fullPath}
+              </span>
+            ) : (
+              <span className="list-secondary">Not chosen yet</span>
+            )}
+            {run.branch && (
+              <span className="list-secondary text-numeric list-nowrap">{run.branch}</span>
+            )}
+          </div>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
           <RalphRunStatusBadge status={run.status} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <span className="list-text text-numeric list-nowrap">
+            {run.stories.completed} / {run.stories.total}
+          </span>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <PullRequestLink pullRequest={run.pullRequest} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <AgentName agent={run.agent} isAdmin={isAdmin} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
           <Timestamp iso={run.updatedAt} />
-        </PhoneMeta>
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <div className="list-cell-stack">
-          {run.repository ? (
-            <span className="list-secondary text-numeric list-nowrap">
-              <ProviderIcon provider={run.repository.provider} size={12} />
-              {run.repository.fullPath}
-            </span>
-          ) : (
-            <span className="list-secondary">Not chosen yet</span>
-          )}
-          {run.branch && (
-            <span className="list-secondary text-numeric list-nowrap">{run.branch}</span>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className={`${WIDE_COLUMN} list-col-status`}>
-        <ListStatus badge={<RalphRunStatusBadge status={run.status} />} error={run.error} />
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <span className="list-text text-numeric list-nowrap">
-          {run.stories.completed} / {run.stories.total}
-        </span>
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <PullRequestLink pullRequest={run.pullRequest} />
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <AgentName agent={run.agent} isAdmin={isAdmin} />
-      </TableCell>
-      <TableCell className={WIDE_COLUMN}>
-        <Timestamp iso={run.updatedAt} />
-      </TableCell>
-      <TableCell className="list-actions">
-        {external && <ExternalRowLink href={external.href} label={external.label} />}
-      </TableCell>
-    </TableRow>
+        </TableCell>
+        <TableCell className="list-actions">
+          {external && <ExternalRowLink href={external.href} label={external.label} />}
+        </TableCell>
+      </TableRow>
+      {run.error && <ListErrorRow error={run.error} colSpan={RUN_COLUMNS} />}
+    </>
   );
 }
 
@@ -353,7 +354,7 @@ export function RalphRunsView({
                     <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
                       Repository / branch
                     </TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-col-status`}>Status</TableHead>
+                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
                     <TableHead className={WIDE_COLUMN}>Stories</TableHead>
                     <TableHead className={`${WIDE_COLUMN} list-nowrap`}>PR / MR</TableHead>
                     <TableHead className={WIDE_COLUMN}>Harness</TableHead>

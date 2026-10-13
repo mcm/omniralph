@@ -317,28 +317,49 @@ body {
 .list-text-danger {
   color: var(--danger-fg);
 }
-/* Status badge + error on one line (ListStatus). The line fills its cell without adding to
-   the column's width (0 width, 100% min); the column's min-width gives the error room. */
-.list-col-status {
-  min-width: 9rem;
+/* A failed row's reason (components/list-error.tsx): its own row under the failed one,
+   across the table's width, clamped to two lines with a "Show all" toggle beside it. The
+   failed row drops its bottom border so the two read as one. */
+.list-table tr[data-has-error],
+.list-table tr[data-has-error] > td {
+  border-bottom-color: transparent;
 }
-.list-status {
+.list-table .list-error-row > td {
+  padding-top: 0;
+}
+.list-error-line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
-  width: 0;
-  min-width: 100%;
-}
-.list-status > :first-child {
-  flex-shrink: 0;
+  min-width: 0;
 }
 .list-error {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 80ch;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+.list-error-expanded {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+}
+.list-error-toggle {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-xs);
+  color: var(--text-accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 .list-table th {
   white-space: nowrap;
@@ -434,40 +455,30 @@ body {
   }
 }
 
-/* Jobs Type column: takes the table's free width and holds type, task and target on one
-   line; a long target truncates in the middle instead of widening the table past its
-   actions. */
+/* Jobs Target column: takes the table's free width, and at least fits `owner/repo#123`; a
+   longer target truncates in the middle, keeping its repository name and PR/MR number. */
 @media (min-width: 768px) {
-  .jobs-col-type {
+  .jobs-col-target {
     width: 100%;
     max-width: 0;
-    min-width: 11rem;
+    min-width: 13rem;
+  }
+  /* Nine columns at 1440: a step less padding than other lists so they fit the card. */
+  .jobs-table th,
+  .jobs-table td {
+    padding-inline: var(--space-3);
   }
 }
 .jobs-type-line {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  width: 0;
-  min-width: 100%;
-}
-.jobs-type-line > :not(.jobs-target) {
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 .jobs-target {
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
-}
-/* A tail wider than the cell truncates too (the head goes first), so it never runs under
-   the link icon. */
-.jobs-target .mono-value-head {
-  flex-shrink: 1000;
-}
-.jobs-target .mono-value-tail {
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .jobs-target > svg {
   flex-shrink: 0;
@@ -1226,17 +1237,11 @@ body {
 }
 /* A running job's target, truncated in the middle so the fleet list fits at 1440. */
 .list-table .harness-job-link {
-  max-width: 14rem;
+  max-width: 16rem;
   overflow: hidden;
 }
 .list-table .harness-job-link .mono-value-head {
   flex-shrink: 1000;
-}
-.list-table .harness-job-link .mono-value-tail {
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .harness-status-grid {
   display: grid;
