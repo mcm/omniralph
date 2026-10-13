@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   // native modules (`zlib-sync`, …) the bundler can't resolve; load it from
   // node_modules at runtime instead.
   serverExternalPackages: ["@chat-adapter/discord", "discord.js"],
+  allowedDevOrigins: ["host.docker.internal"],
 };
 
 export default nextConfig;

@@ -150,6 +150,17 @@ export const REPOSITORY_CARDS = {
   pinning: ["pinnedHarnessIds"],
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
+/** The repository settings page's sections and the settings each one saves. */
+export const REPOSITORY_SECTIONS = {
+  review: [
+    ...REPOSITORY_CARDS.triggers,
+    ...REPOSITORY_CARDS.profile,
+    ...REPOSITORY_CARDS.tasks,
+    ...REPOSITORY_CARDS.files,
+  ],
+  harnesses: REPOSITORY_CARDS.pinning,
+} as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
+
 /** The repository settings' labels, showing profiles, tasks and harnesses by name. */
 export function repositorySpecs(names: {
   profiles: ReadonlyMap<string, string>;
@@ -285,9 +296,31 @@ export const RALPH_CARDS = {
   linear: ["manualLabels", "allowPreparation", "epicCompletedState"],
 } as const satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
 
+/** The settings that delete or rewrite work: the Danger zone section saves them on their own. */
+const DANGER_KEYS = [
+  "historyRewrite",
+  "cleanupMergedWorktrees",
+  "unmergedBranchTimeoutMinutes",
+] as const satisfies readonly (keyof RalphSettingsInput)[];
+
+/** The Coding Tasks sections and the settings each one saves. */
+export const CODING_TASKS_SECTIONS = {
+  codingTasks: [
+    ...RALPH_CARDS.ralph,
+    ...RALPH_CARDS.prompt,
+    ...RALPH_CARDS.tools,
+    ...RALPH_CARDS.verification,
+    ...RALPH_CARDS.followUp.filter(
+      (key) => !(DANGER_KEYS as readonly string[]).includes(key),
+    ),
+    ...RALPH_CARDS.linear,
+  ],
+  danger: DANGER_KEYS,
+} satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
+
 export const CODING_PATH_LABELS: Record<RalphCodingPath, string> = {
   legacy: "Legacy jobs",
-  tasks: "Coding tasks",
+  tasks: "Story and request tasks",
 };
 
 export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
@@ -296,7 +329,7 @@ export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
 };
 
 const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
-  ralphEnabled: "Enable Ralph",
+  ralphEnabled: "Coding Tasks enabled",
   codingPath: "Coding path",
   storyTaskId: "Story task",
   requestTaskId: "Request task",
@@ -336,7 +369,7 @@ export function ralphSpecs(
     requestTaskId: byName(taskNames),
     verifyCommands: lines,
     allowedTools: (value) =>
-      Array.isArray(value) && value.length === 0 ? "None (Ralph's whole policy)" : lines(value),
+      Array.isArray(value) && value.length === 0 ? "None (the whole Coding Tasks policy)" : lines(value),
     disallowedTools: lines,
   };
   return Object.fromEntries(

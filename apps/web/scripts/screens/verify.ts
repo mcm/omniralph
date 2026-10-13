@@ -96,7 +96,7 @@ async function main(): Promise<number> {
     image,
     outDir,
     config: {
-      baseUrl,
+      baseUrl: baseUrl.replace("localhost", "host.docker.internal"),
       signInPath: `/sign-in/dev?email=${encodeURIComponent(FIXTURE_EMAILS.admin)}&callbackUrl=/`,
       routes: routes.map(({ name, path, auth, steps, viewportOnly }) => ({
         name,

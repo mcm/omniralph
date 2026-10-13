@@ -130,15 +130,38 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    // A run-affecting card's save asks first, listing the changes.
+    name: "repository-coding-tasks",
+    path: `/repositories/${ids.repositories.controlPanel}/coding-tasks`,
+    page: "(app)/repositories/[id]/coding-tasks/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "repository-harnesses",
+    path: `/repositories/${ids.repositories.controlPanel}/harnesses`,
+    page: "(app)/repositories/[id]/harnesses/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // A run-affecting section's save asks first, listing the changes.
     name: "repository-settings-confirm",
-    path: `/repositories/${ids.repositories.controlPanel}/settings`,
-    page: "(app)/repositories/[id]/settings/page.tsx",
+    path: `/repositories/${ids.repositories.controlPanel}/coding-tasks`,
+    page: "(app)/repositories/[id]/coding-tasks/page.tsx",
     auth: "signed-in",
     steps: [
-      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
-      { action: "fill", selector: "#ralph-setup-command", value: "" },
-      { action: "click", selector: 'form[aria-label="Ralph › Verification"] [type="submit"]' },
+      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm lint" },
+      { action: "fill", selector: "#ralph-model", value: "sonnet" },
+      { action: "click", selector: '#coding-tasks form [type="submit"]' },
+    ],
+    viewportOnly: true,
+  },
+  {
+    name: "repository-settings-dirty",
+    path: `/repositories/${ids.repositories.controlPanel}/coding-tasks`,
+    page: "(app)/repositories/[id]/coding-tasks/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm lint" },
+      { action: "fill", selector: "#ralph-model", value: "sonnet" },
     ],
     viewportOnly: true,
   },
