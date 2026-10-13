@@ -928,6 +928,23 @@ body {
 .settings-check-center {
   align-items: center;
 }
+/* A harness setting inherited from the organization (harness-detail-view.tsx): where the value
+   comes from, and the button that overrides it or inherits again. */
+.settings-inherit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.settings-inherit-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-inherit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
 /* Settings sections (components/settings-section.tsx): each repository settings tab is one
    surface with one save. Its concerns stack in ruled blocks, and its footer sticks to the
    viewport bottom while the section is on screen. */
