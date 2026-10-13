@@ -276,6 +276,12 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     // ── Harnesses ─────────────────────────────────────────────────────────
     const allTypes = ["query", "review", "coding"];
     const installables = [{ name: "@omniralph/code-graph", version: "0.4.1" }];
+    const models = [
+      { value: "default", displayName: "Default (recommended)" },
+      { value: "opus", displayName: "Opus" },
+      { value: "sonnet", displayName: "Sonnet" },
+      { value: "haiku", displayName: "Haiku" },
+    ];
     await tx.insert(harnesses).values([
       {
         id: H.online,
@@ -286,6 +292,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         poolLimits: { long: 2 },
         reportedVersion: FIXTURE_DESIRED_VERSION,
         reportedInstallables: installables,
+        reportedModels: models,
         selfUpdate: "supported",
         updateState: {
           state: "idle",

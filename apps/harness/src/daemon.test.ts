@@ -237,6 +237,7 @@ function setup(options: {
   dataDir?: string;
   localConfig?: DaemonOptions["localConfig"];
   hostToolSearchPath?: string;
+  models?: DaemonOptions["models"];
 }) {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
@@ -264,6 +265,7 @@ function setup(options: {
     localConfig: options.localConfig,
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
+    models: options.models,
   });
   return { api, state, claims, tokens, daemon };
 }
@@ -428,6 +430,17 @@ describe("AgentDaemon", () => {
     }
   });
 
+  it("reports the models Claude can run in every heartbeat", async () => {
+    const opus = { value: "opus", displayName: "Opus" };
+    const current = vi.fn(async () => [opus]);
+    const { api, daemon } = setup({ models: { current } });
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ models: [opus] }));
+    current.mockResolvedValueOnce([]);
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ models: [] }));
+  });
+
   it("heartbeats every 20s with its version, running jobs and free slots", async () => {
     const { api, daemon } = setup({});
     void daemon.run();
@@ -442,6 +455,7 @@ describe("AgentDaemon", () => {
       failedVersions: [],
       installables: [],
       hostTools: [],
+      models: [],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);

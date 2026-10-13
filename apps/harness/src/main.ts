@@ -28,6 +28,7 @@ import {
   type InstallableInstaller,
 } from "./installables.js";
 import { createLogger, type Logger } from "./logger.js";
+import { ModelReporter, sdkListModels, type ListModels } from "./models.js";
 import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import {
   SelfUpdater,
@@ -92,6 +93,8 @@ export interface MainDeps {
   installer?: Installer;
   /** Installs installables for the `install` RPC (default: `npm install --prefix`). */
   installableInstaller?: InstallableInstaller;
+  /** Reads the models Claude can run, for the heartbeat (default: the Agent SDK's `supportedModels()`). */
+  listModels?: ListModels;
   /** Clock for self-update confirmation (ms since epoch). */
   now?: () => number;
   /** The running harness version (default: this package's). */
@@ -318,6 +321,7 @@ async function runStart(
     ),
     logger,
     dataDir: harnessDataDir,
+    models: new ModelReporter({ list: deps.listModels ?? sdkListModels(), logger }),
     localConfig: config,
     updater,
   });

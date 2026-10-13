@@ -19,6 +19,7 @@ import {
 import { execPathBlocked, type HarnessConfig } from "./config.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
+import type { ModelReporter } from "./models.js";
 import { runCodingTask } from "./lifecycle/coding.js";
 import { runQueryTask } from "./lifecycle/query.js";
 import { runReviewTask } from "./lifecycle/review.js";
@@ -90,6 +91,8 @@ export interface DaemonOptions {
   localConfig?: Pick<HarnessConfig, "blockedExecPaths">;
   /** The `PATH` host tools are discovered on (default: the harness process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
+  /** The Claude models reported in every heartbeat (none when unset). */
+  models?: Pick<ModelReporter, "current">;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
 }
@@ -317,6 +320,7 @@ export class AgentDaemon implements DrainableDaemon {
     const rejectedMessageIds = ids(false);
     const installables = await this.installedInstallables();
     const hostTools = await this.checkHostTools();
+    const models = (await this.options.models?.current()) ?? [];
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
@@ -327,6 +331,7 @@ export class AgentDaemon implements DrainableDaemon {
         failedVersions: [],
         installables,
         hostTools,
+        models,
         ...this.options.updater?.report(),
       });
       this.lastHeartbeatAt = new Date();

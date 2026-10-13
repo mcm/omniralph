@@ -218,6 +218,52 @@ export async function getHarnessOverview(
   return agent ?? null;
 }
 
+/** A Claude model the organization's harnesses report, with the harnesses that can run it. */
+export interface ReportedModelOption {
+  value: string;
+  displayName: string;
+  harnessIds: string[];
+}
+
+/**
+ * The de-duplicated models the organization's non-revoked harnesses (or those of
+ * `harnessIds` among them) last reported, sorted by display name. A model's
+ * display name is the first reported one, by harness name.
+ */
+export async function listReportedModels(
+  db: Database,
+  organizationId: string,
+  options: { harnessIds?: readonly string[] } = {},
+): Promise<ReportedModelOption[]> {
+  if (options.harnessIds?.length === 0) return [];
+  const rows = await db
+    .select({ id: harnesses.id, models: harnesses.reportedModels })
+    .from(harnesses)
+    .where(
+      and(
+        eq(harnesses.organizationId, organizationId),
+        isNull(harnesses.revokedAt),
+        isNull(harnesses.deletedAt),
+        options.harnessIds && inArray(harnesses.id, [...options.harnessIds]),
+      ),
+    )
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+  const byValue = new Map<string, ReportedModelOption>();
+  for (const row of rows) {
+    for (const model of row.models) {
+      const option = byValue.get(model.value);
+      if (!option) {
+        byValue.set(model.value, { ...model, harnessIds: [row.id] });
+      } else if (!option.harnessIds.includes(row.id)) {
+        option.harnessIds.push(row.id);
+      }
+    }
+  }
+  return [...byValue.values()].sort(
+    (a, b) => a.displayName.localeCompare(b.displayName) || a.value.localeCompare(b.value),
+  );
+}
+
 export interface HarnessConfigInput {
   /** Null inherits the organization's default. */
   maxConcurrency: number | null;

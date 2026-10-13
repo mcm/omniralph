@@ -1278,6 +1278,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
             version: "0.2.0",
             runningJobIds: [running, canceled, takenOver],
             freeSlots: 0,
+            models: [{ value: "opus", displayName: "Opus" }],
           },
         }),
       );
@@ -1320,6 +1321,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
       const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       expect(agent).toMatchObject({
         reportedVersion: "0.2.0",
+        reportedModels: [{ value: "opus", displayName: "Opus" }],
       });
       expect(agent!.lastHeartbeatAt).toBeInstanceOf(Date);
       await db.delete(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId));
