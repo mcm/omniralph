@@ -7,8 +7,14 @@ import {
   unpinRepositoryFromHarness,
   updateRepositorySettings,
   type Database,
+  type Repository,
 } from "@omniralph/db";
-import type { FieldErrors, RalphSettingsInput, RepositorySettingsInput } from "@omniralph/shared";
+import {
+  parseRalphSettings,
+  type FieldErrors,
+  type RalphSettingsInput,
+  type RepositorySettingsInput,
+} from "@omniralph/shared";
 import {
   CORRELATION_TASKS,
   getTaskChoice,
@@ -17,6 +23,9 @@ import {
   STORY_TASKS,
 } from "@/lib/definitions";
 import { pinRepository } from "@/lib/harnesses/pins";
+import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { unknownLinearValues } from "@/lib/linear/settings-values";
+import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
 import type { JobDispatcher } from "@/lib/dispatch";
 
 export type SaveRepositorySettingsResult =
@@ -114,6 +123,80 @@ export async function ralphTaskErrors(
     ...(!request && {
       requestTaskId:
         "Choose a coding task of this organization that accepts every request trigger.",
+    }),
+  };
+}
+
+/** The Linear routing values a repository has saved, as the Coding tab shows them. */
+type SavedLinearValues = Pick<
+  Repository,
+  "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "ralphSettings"
+>;
+
+/** `values` not in `saved`, ignoring case. */
+function newValues(values: readonly string[], saved: readonly string[]): string[] {
+  const have = new Set(saved.map((v) => v.toLowerCase()));
+  return values.filter((v) => !have.has(v.toLowerCase()));
+}
+
+function notInWorkspace(values: readonly string[], what: string): string {
+  const list = values.map((v) => `“${v}”`).join(", ");
+  return values.length === 1
+    ? `${list} isn't a ${what} in your Linear workspace.`
+    : `${list} aren't ${what}s in your Linear workspace.`;
+}
+
+/**
+ * Field errors of a Coding form's Linear values: each label, project, team key, manual label
+ * and the epic completed state must exist in the organization's connected Linear workspace.
+ * Values the repository already has saved are kept even when they went stale (a renamed label
+ * stays until a person removes it); only new ones are checked. Without a connected workspace
+ * nothing is checked. `"unavailable"` when the workspace couldn't be read.
+ */
+export async function ralphLinearErrors(
+  organizationId: string,
+  saved: SavedLinearValues,
+  input: Pick<
+    RalphSettingsInput,
+    "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "manualLabels" | "epicCompletedState"
+  >,
+): Promise<FieldErrors | "unavailable"> {
+  const savedEpicState = parseRalphSettings(saved.ralphSettings).epicCompletedState ?? "";
+  const epicState = input.epicCompletedState.trim();
+  const added = {
+    labels: newValues(input.linearLabels, saved.linearLabels),
+    projects: newValues(input.linearProjectNames, saved.linearProjectNames),
+    teamKeys: newValues(input.linearTeamKeys, saved.linearTeamKeys),
+    manualLabels: newValues(input.manualLabels, repositoryManualLabels(saved)),
+    epicCompletedState:
+      epicState.toLowerCase() === savedEpicState.trim().toLowerCase() ? null : epicState,
+  };
+  const anyAdded =
+    added.labels.length + added.projects.length + added.teamKeys.length > 0 ||
+    added.manualLabels.length > 0 ||
+    Boolean(added.epicCompletedState);
+  if (!anyAdded) return {};
+  let options;
+  try {
+    options = await getLinearSettingsOptions(organizationId);
+  } catch {
+    return "unavailable";
+  }
+  if (!options) return {};
+  const unknown = unknownLinearValues(options, added);
+  return {
+    ...(unknown.labels.length > 0 && { linearLabels: notInWorkspace(unknown.labels, "label") }),
+    ...(unknown.projects.length > 0 && {
+      linearProjectNames: notInWorkspace(unknown.projects, "project"),
+    }),
+    ...(unknown.teamKeys.length > 0 && {
+      linearTeamKeys: notInWorkspace(unknown.teamKeys, "team key"),
+    }),
+    ...(unknown.manualLabels.length > 0 && {
+      manualLabels: notInWorkspace(unknown.manualLabels, "label"),
+    }),
+    ...(unknown.epicCompletedState && {
+      epicCompletedState: `“${unknown.epicCompletedState}” isn't a workflow state in your Linear workspace.`,
     }),
   };
 }

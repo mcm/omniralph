@@ -35,7 +35,7 @@ export interface TagInputProps {
   onChange: (value: string[]) => void;
   /** The values that may be chosen. Matching ignores case. */
   options: readonly (string | TagOption)[];
-  /** Whether Enter adds the typed text when it isn't an option. */
+  /** Whether Enter adds the typed text when it isn't an option (such values aren't stale). */
   allowCustom?: boolean;
   /** The most values that may be chosen. */
   max?: number;
@@ -101,7 +101,9 @@ export function TagInput(props: TagInputProps) {
     [normalized],
   );
   const selectedKeys = React.useMemo(() => new Set(value.map(key)), [value]);
-  const stale = value.filter((item) => !optionByKey.has(key(item)));
+  // With `allowCustom`, values that aren't options were typed on purpose: none is stale.
+  const isStale = (item: string) => !allowCustom && !optionByKey.has(key(item));
+  const stale = value.filter(isStale);
   const atMax = max !== undefined && value.length >= max;
 
   const deferredQuery = React.useDeferredValue(query);
@@ -191,7 +193,7 @@ export function TagInput(props: TagInputProps) {
                     <li key={`${item}-${index}`}>
                       <PickerChip
                         label={labelOf(item)}
-                        stale={!optionByKey.has(key(item))}
+                        stale={isStale(item)}
                         disabled={disabled}
                         onRemove={() => {
                           remove(index);
@@ -259,7 +261,7 @@ export function TagInput(props: TagInputProps) {
                   onSelect={() => add(option.value)}
                 >
                   <span className="picker-option-label">{option.label ?? option.value}</span>
-                  {option.label || option.hint ? (
+                  {option.hint || (option.label && !option.label.includes(option.value)) ? (
                     <span className="picker-option-hint">{option.hint ?? option.value}</span>
                   ) : null}
                 </CommandItem>

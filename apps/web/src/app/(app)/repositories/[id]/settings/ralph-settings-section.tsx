@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui";
 import {
+  CLAUDE_CODE_TOOLS,
   DEFAULT_RALPH_SETTINGS,
   fieldErrors as toFieldErrors,
   MAX_APPEND_INSTRUCTION_LENGTH,
@@ -17,8 +19,17 @@ import {
   type RalphCodingPath,
   type RalphHistoryRewrite,
 } from "@omniralph/shared";
+import {
+  ModelPicker,
+  NOT_AVAILABLE,
+  StaleNote,
+  TagInput,
+  type ModelOption,
+  type TagOption,
+} from "@/components/pickers";
 import { SwitchField, type SettingsConfirmation } from "@/components/settings-card";
 import { SettingsSection, SettingsSubsection } from "@/components/settings-section";
+import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 import { settingChanges, withDefault, withoutFieldErrors } from "@/lib/settings/changes";
 import {
   CODING_PATH_LABELS,
@@ -45,6 +56,54 @@ import {
 
 /** The form's values: the saved settings, with empty text and lists for none. */
 export type RalphSettingsValues = RalphSettingsInput;
+
+/**
+ * The organization's Linear workspace the Linear fields pick from: its values when connected,
+ * else the fields show the saved values read-only (`disconnected`: no workspace connected,
+ * `unavailable`: it couldn't be read).
+ */
+export type CodingLinearChoices =
+  | { status: "connected"; options: LinearSettingsOptions }
+  | { status: "disconnected" }
+  | { status: "unavailable" };
+
+/** Where the Coding tab's pickers get their choices. */
+export interface CodingChoices {
+  linear: CodingLinearChoices;
+  /** The models the harnesses that may run the repository's coding jobs report. */
+  models: ModelOption[];
+  /** How many harnesses those are. */
+  harnessCount: number;
+  /** Whether they're the repository's pinned harnesses (else every harness accepting coding). */
+  pinned: boolean;
+}
+
+/** Built-in Claude Code tools, suggested by the tool fields (rules can still be typed). */
+const TOOL_OPTIONS: readonly string[] = CLAUDE_CODE_TOOLS;
+
+/** The Linear list fields, picked from the workspace. */
+type LinearListKey = "linearLabels" | "linearProjectNames" | "linearTeamKeys" | "manualLabels";
+
+/** Why the Linear fields are read-only, with where to fix it. */
+function LinearReadOnlyNote({ linear }: { linear: CodingLinearChoices }) {
+  if (linear.status === "connected") return null;
+  return (
+    <Muted className="settings-note">
+      {linear.status === "disconnected" ? (
+        <>
+          Linear isn&apos;t connected, so these show the saved values read-only. Connect it in{" "}
+          <Link href="/settings/integrations">Settings › Integrations</Link> to change them.
+        </>
+      ) : (
+        <>
+          Your Linear workspace couldn&apos;t be read just now, so these show the saved values
+          read-only. Reload the page to try again, or check the connection in{" "}
+          <Link href="/settings/integrations">Settings › Integrations</Link>.
+        </>
+      )}
+    </Muted>
+  );
+}
 
 /** The first error of a list field (`linearLabels` or `linearLabels.2`). */
 function listError(errors: FieldErrors, field: string): string | undefined {
@@ -78,11 +137,14 @@ const CODING_TASK_TYPES = ["coding"] as const satisfies readonly TaskTypeSwitch[
 export function CodingSettingsSections({
   repositoryId,
   settings,
+  choices,
   codingTasks,
   taskTypes,
 }: {
   repositoryId: string;
   settings: RalphSettingsValues;
+  /** The Linear values and models the pickers offer. */
+  choices: CodingChoices;
   /** The coding tasks its story and request runs can use (built-in and the organization's). */
   codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
   /** The repository's task-type switches; this tab saves Coding's. */
@@ -196,8 +258,68 @@ export function CodingSettingsSections({
     );
   };
 
+  const linear = choices.linear;
+  const linearOptions = linear.status === "connected" ? linear.options : null;
+  const linearListOptions: Record<LinearListKey, readonly (string | TagOption)[]> = {
+    linearLabels: linearOptions?.labels ?? [],
+    linearProjectNames: linearOptions?.projects ?? [],
+    linearTeamKeys:
+      linearOptions?.teams.map((t) => ({ value: t.key, label: `${t.key} · ${t.name}` })) ?? [],
+    manualLabels: linearOptions?.labels ?? [],
+  };
+
+  /** A Linear list as chips from the workspace, or its saved values read-only without one. */
+  const linearTags = (
+    key: LinearListKey,
+    id: string,
+    label: string,
+    hint: string,
+    placeholder: string,
+  ) => {
+    const error = listError(errors, key);
+    const readOnly = !linearOptions;
+    return (
+      <Field label={label} htmlFor={id} description={hint} error={error}>
+        <TagInput
+          id={id}
+          value={draft[key]}
+          onChange={(value) => set(key, value)}
+          // Read-only, the saved values are its options so none is drawn as stale.
+          options={readOnly ? draft[key] : linearListOptions[key]}
+          disabled={readOnly}
+          placeholder={readOnly ? "None" : placeholder}
+          staleMessage="It's no longer in your Linear workspace (renamed or deleted). It's kept until you remove it."
+        />
+      </Field>
+    );
+  };
+
+  /** A tool list: suggestions from Claude Code's tools, and any rule typed in. */
+  const toolTags = (
+    key: "allowedTools" | "disallowedTools",
+    id: string,
+    label: string,
+    hint: string,
+    placeholder: string,
+  ) => {
+    const error = listError(errors, key);
+    return (
+      <Field label={label} htmlFor={id} description={hint} error={error}>
+        <TagInput
+          id={id}
+          value={draft[key]}
+          onChange={(value) => set(key, value)}
+          options={TOOL_OPTIONS}
+          allowCustom
+          placeholder={placeholder}
+          className="settings-mono"
+        />
+      </Field>
+    );
+  };
+
   const linesInput = (
-    key: "verifyCommands" | "allowedTools" | "disallowedTools",
+    key: "verifyCommands",
     id: string,
     label: string,
     hint: string,
@@ -266,6 +388,9 @@ export function CodingSettingsSections({
   );
 
   const codingOn = taskTypeOn(taskTypes, "coding", coding);
+  const modelSource = choices.pinned
+    ? "the repository's pinned harnesses"
+    : "the harnesses that accept coding";
 
   return (
     <>
@@ -296,9 +421,9 @@ export function CodingSettingsSections({
       >
         {!codingOn && (
           <Muted className="settings-section-off">
-            Coding is off: delegated Linear issues don&apos;t build here. Turn it on to choose
-            which issues route to this repository and how they&apos;re built. The settings below
-            are kept while it&apos;s off.
+            Coding is off: delegated Linear issues don&apos;t build here. Turn it on to choose which
+            issues route to this repository and how they&apos;re built. The settings below are kept
+            while it&apos;s off.
           </Muted>
         )}
         <div hidden={!codingOn}>
@@ -307,27 +432,28 @@ export function CodingSettingsSections({
             title="Routing"
             description="Which delegated Linear issues build here. Any match routes the issue."
           >
+            <LinearReadOnlyNote linear={linear} />
             <div className="settings-row">
-              {textInput(
+              {linearTags(
                 "linearLabels",
                 "ralph-labels",
                 "Linear labels",
-                withDefault("Comma-separated. Issues with any of these labels route here."),
-                { placeholder: "e.g. backend, api" },
+                withDefault("Issues with any of these labels route here."),
+                "Choose labels…",
               )}
-              {textInput(
+              {linearTags(
                 "linearProjectNames",
                 "ralph-projects",
                 "Linear projects",
-                withDefault("Comma-separated project names."),
-                { placeholder: "e.g. Omniralph" },
+                withDefault("Issues in any of these projects route here."),
+                "Choose projects…",
               )}
-              {textInput(
+              {linearTags(
                 "linearTeamKeys",
                 "ralph-teams",
-                "Linear team keys",
-                withDefault("Comma-separated team keys."),
-                { placeholder: "e.g. ENG, OPS" },
+                "Linear teams",
+                withDefault("Issues of any of these teams route here."),
+                "Choose teams…",
               )}
             </div>
           </SettingsSubsection>
@@ -386,21 +512,47 @@ export function CodingSettingsSections({
                 onChange={(value) => set("requestTaskId", value)}
               />
             </div>
+            {choices.harnessCount === 0 && (
+              <Muted className="settings-note">
+                No active harness accepts coding jobs, so there are no models to choose from. Let a
+                harness accept Coding in its settings, or pin one under Harnesses.
+              </Muted>
+            )}
             <div className="settings-row">
-              {textInput(
-                "model",
-                "ralph-model",
-                "Model",
-                withDefault("Claude model alias or ID the sessions use.", RALPH_DEFAULT_TEXT.model),
-                { mono: true, required: true },
-              )}
-              {textInput(
-                "fallbackModel",
-                "ralph-fallback-model",
-                "Fallback model",
-                withDefault("Used when the model is overloaded. Leave it empty for no fallback."),
-                { mono: true, placeholder: "e.g. sonnet" },
-              )}
+              <Field
+                label="Model"
+                description={withDefault(
+                  `The model the sessions use, from those ${modelSource} report.`,
+                  RALPH_DEFAULT_TEXT.model,
+                )}
+                error={errors.model}
+                required
+              >
+                <ModelPicker
+                  id="ralph-model"
+                  value={draft.model}
+                  onChange={(value) => set("model", value ?? "")}
+                  options={choices.models}
+                  harnessCount={choices.harnessCount}
+                />
+              </Field>
+              <Field
+                label="Fallback model"
+                description={withDefault(
+                  "Used when the model is overloaded. None runs without a fallback.",
+                )}
+                error={errors.fallbackModel}
+              >
+                <ModelPicker
+                  id="ralph-fallback-model"
+                  value={draft.fallbackModel}
+                  onChange={(value) => set("fallbackModel", value ?? "")}
+                  options={choices.models}
+                  harnessCount={choices.harnessCount}
+                  allowNone
+                  noneLabel="None"
+                />
+              </Field>
             </div>
             <Field
               label="Appended instruction"
@@ -419,21 +571,21 @@ export function CodingSettingsSections({
               />
             </Field>
             <div className="settings-row">
-              {linesInput(
+              {toolTags(
                 "allowedTools",
                 "ralph-allowed-tools",
                 "Allowed tools",
                 withDefault(
-                  "Agent SDK tools or permission rules, one per line; they can only narrow Omniralph's coding tool policy. Leave it empty for the whole policy.",
+                  "Claude Code tools or permission rules such as Bash(pnpm test:*); they can only narrow Omniralph's coding tool policy. None allows the whole policy.",
                 ),
-                "e.g. Read\nEdit\nBash(pnpm test:*)",
+                "Add a tool or rule…",
               )}
-              {linesInput(
+              {toolTags(
                 "disallowedTools",
                 "ralph-disallowed-tools",
                 "Disallowed tools",
-                withDefault("One per line. Always denied, on top of Omniralph's coding policy."),
-                "e.g. WebFetch",
+                withDefault("Always denied, on top of Omniralph's coding policy."),
+                "Add a tool or rule…",
               )}
             </div>
           </SettingsSubsection>
@@ -527,15 +679,20 @@ export function CodingSettingsSections({
             title="Linear"
             description="How Omniralph reads and updates the Linear epic."
           >
-            {textInput(
+            <LinearReadOnlyNote linear={linear} />
+            {linearTags(
               "manualLabels",
               "ralph-manual-labels",
               "Manual labels",
               withDefault(
-                "Comma-separated. Stories with any of these labels are steps for a person: Omniralph skips them and waits until they're done. The first one labels the manual stories and follow-ups Omniralph files.",
+                `Stories with any of these labels are steps for a person: Omniralph skips them and waits until they're done. ${
+                  draft.manualLabels[0]
+                    ? `The first, “${draft.manualLabels[0]}”, is the label Coding adds`
+                    : "The first is the label Coding adds"
+                } to the manual stories and follow-ups it files.`,
                 RALPH_DEFAULT_TEXT.manualLabels,
               ),
-              { placeholder: "e.g. manual" },
+              "Choose labels…",
             )}
             {switchInput(
               "allowPreparation",
@@ -544,15 +701,12 @@ export function CodingSettingsSections({
               "Ask whether to run a manual story's cyralph-prepare commands (“Run it”). Off, those blocks are plain text.",
               DEFAULT_RALPH_SETTINGS.allowPreparation,
             )}
-            {textInput(
-              "epicCompletedState",
-              "ralph-epic-completed-state",
-              "Epic completed state",
-              withDefault(
-                "When every story of an epic is complete, move the epic to this state: a state name, or started / completed for the first state of that type. Not set leaves the epic alone.",
-              ),
-              { placeholder: "e.g. In Review" },
-            )}
+            <EpicStateSelect
+              value={draft.epicCompletedState}
+              states={linearOptions?.states ?? null}
+              error={errors.epicCompletedState}
+              onChange={(value) => set("epicCompletedState", value)}
+            />
           </SettingsSubsection>
         </div>
       </SettingsSection>
@@ -618,5 +772,85 @@ export function CodingSettingsSections({
         </SettingsSubsection>
       </SettingsSection>
     </>
+  );
+}
+
+/** The epic state choices that aren't workspace state names. */
+const EPIC_STATE_TYPES = [
+  { value: "started", label: "started: the team's first started state" },
+  { value: "completed", label: "completed: the team's first completed state" },
+] as const;
+
+/**
+ * Epic completed state: leave the epic alone, the team's first started or completed state, or
+ * one of the workspace's state names. A saved state the workspace no longer has stays chosen
+ * with a warning; without a workspace (`states` null) the saved value is shown read-only.
+ */
+function EpicStateSelect({
+  value,
+  states,
+  error,
+  onChange,
+}: {
+  value: string;
+  states: readonly string[] | null;
+  error?: string;
+  onChange: (value: string) => void;
+}) {
+  const id = "ralph-epic-completed-state";
+  const noteId = `${id}-stale`;
+  const current = value.trim();
+  const known = (list: readonly string[]) =>
+    list.some((state) => state.toLowerCase() === current.toLowerCase());
+  const isType = EPIC_STATE_TYPES.some((t) => t.value === current);
+  const stale = states !== null && current !== "" && !isType && !known(states);
+  const readOnly = states === null;
+  return (
+    <Field
+      label="Epic completed state"
+      htmlFor={id}
+      description={withDefault(
+        "When every story of an epic is complete, move the epic to this state.",
+        "Leave the epic alone",
+      )}
+      error={error}
+    >
+      <NativeSelect
+        id={id}
+        value={current}
+        disabled={readOnly}
+        aria-invalid={Boolean(error)}
+        aria-describedby={stale ? noteId : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Leave the epic alone</option>
+        {EPIC_STATE_TYPES.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+        {readOnly && current !== "" && !isType && <option value={current}>{current}</option>}
+        {stale && (
+          <option value={current}>
+            {current} ({NOT_AVAILABLE})
+          </option>
+        )}
+        {states && states.length > 0 && (
+          <optgroup label="Workflow states">
+            {states.map((state) => (
+              <option key={state} value={state}>
+                {state}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </NativeSelect>
+      {stale && (
+        <StaleNote id={noteId}>
+          “{current}” is {NOT_AVAILABLE}: no team in your Linear workspace has that state any more.
+          It&apos;s kept until you choose another.
+        </StaleNote>
+      )}
+    </Field>
   );
 }

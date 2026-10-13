@@ -33,6 +33,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { getBuiltinTask } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 
 vi.mock("server-only", () => ({}));
 // A second built-in review task, beside `builtin:review-pr`.
@@ -60,11 +61,21 @@ const SECURITY_TASK_ID = "builtin:security-review";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
+  /** The connected Linear workspace's options (null: none connected), or a load failure. */
+  linear: null as LinearSettingsOptions | null | Error,
+  linearLoads: 0,
   orgId: "",
   db: undefined as unknown as Database,
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/linear/settings-options", () => ({
+  getLinearSettingsOptions: async () => {
+    state.linearLoads++;
+    if (state.linear instanceof Error) throw state.linear;
+    return state.linear;
+  },
+}));
 vi.mock("@/lib/auth/session", () => ({
   // The signed-in user works in `state.orgId`.
   requireUser: async (role: Role = "member") =>
@@ -823,6 +834,117 @@ describe.skipIf(!dockerAvailable)("repository settings and review profiles: serv
       await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["members"] }),
     ).toMatchObject({ ok: false });
     expect((await getRepository(db, repoId))!.linearLabels).toEqual(before);
+  });
+
+  describe("Linear values", () => {
+    const workspace = {
+      teams: [{ key: "ENG", name: "Engineering" }],
+      labels: ["backend", "manual", "Needs Human"],
+      projects: ["Omniralph"],
+      states: ["In Review"],
+    };
+
+    beforeEach(async () => {
+      state.linear = null;
+      state.linearLoads = 0;
+      expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+      state.linearLoads = 0;
+    });
+
+    afterAll(() => {
+      state.linear = null;
+    });
+
+    it("saves values of the connected workspace, ignoring case", async () => {
+      state.linear = workspace;
+      expect(
+        await updateRalphSettings(repoId, {
+          ...baseRalph,
+          linearTeamKeys: ["eng"],
+          linearLabels: ["Backend"],
+          linearProjectNames: ["Omniralph"],
+          manualLabels: ["needs human", "manual"],
+          epicCompletedState: "in review",
+        }),
+      ).toEqual({ ok: true });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        linearTeamKeys: ["ENG"],
+        linearLabels: ["Backend"],
+      });
+      expect(
+        await updateRalphSettings(repoId, { ...baseRalph, epicCompletedState: "completed" }),
+      ).toEqual({ ok: true });
+    });
+
+    it("rejects values the workspace doesn't have, with an error on each field", async () => {
+      state.linear = workspace;
+      expect(
+        await updateRalphSettings(repoId, {
+          ...baseRalph,
+          linearTeamKeys: ["ENG", "OPS"],
+          linearLabels: ["backend", "frontend", "api"],
+          linearProjectNames: ["Cyralph"],
+          manualLabels: ["by-hand"],
+          epicCompletedState: "Shipped",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "Fix the highlighted fields.",
+        fieldErrors: {
+          linearTeamKeys: "“OPS” isn't a team key in your Linear workspace.",
+          linearLabels: "“frontend”, “api” aren't labels in your Linear workspace.",
+          linearProjectNames: "“Cyralph” isn't a project in your Linear workspace.",
+          manualLabels: "“by-hand” isn't a label in your Linear workspace.",
+          epicCompletedState: "“Shipped” isn't a workflow state in your Linear workspace.",
+        },
+      });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        linearTeamKeys: [],
+        linearLabels: [],
+      });
+    });
+
+    it("keeps saved values that went stale, rejecting only new ones", async () => {
+      // Saved while the workspace still had them.
+      state.linear = { ...workspace, labels: [...workspace.labels, "old-name"] };
+      const saved = { ...baseRalph, linearLabels: ["old-name"] };
+      expect(await updateRalphSettings(repoId, saved)).toEqual({ ok: true });
+      // Renamed in Linear since: other changes still save, and the stale label stays.
+      state.linear = workspace;
+      expect(await updateRalphSettings(repoId, { ...saved, maxFixRounds: 2 })).toEqual({
+        ok: true,
+      });
+      expect((await getRepository(db, repoId))!.linearLabels).toEqual(["old-name"]);
+      expect(
+        await updateRalphSettings(repoId, { ...saved, linearLabels: ["old-name", "new-one"] }),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: { linearLabels: "“new-one” isn't a label in your Linear workspace." },
+      });
+    });
+
+    it("doesn't check the values without a connected workspace", async () => {
+      state.linear = null;
+      expect(
+        await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["anything"] }),
+      ).toEqual({ ok: true });
+      expect(state.linearLoads).toBe(1);
+    });
+
+    it("reads Linear only when a Linear value changed, and fails when it can't", async () => {
+      state.linear = new Error("Linear is down");
+      expect(await updateRalphSettings(repoId, { ...baseRalph, maxFixRounds: 1 })).toEqual({
+        ok: true,
+      });
+      expect(state.linearLoads).toBe(0);
+      expect(
+        await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["backend"] }),
+      ).toEqual({
+        ok: false,
+        error: "Couldn't check the Linear values against your workspace. Try again in a moment.",
+      });
+      expect((await getRepository(db, repoId))!.linearLabels).toEqual([]);
+    });
   });
 
   describe("task types", () => {

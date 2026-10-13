@@ -5,7 +5,6 @@
  */
 import {
   DEFAULT_RALPH_SETTINGS,
-  parseCommaList,
   parseLines,
   parsePathExcludes,
   type RalphCodingPath,
@@ -220,11 +219,11 @@ export const RALPH_REPOSITORY_DEFAULTS = {
   requestTaskId: "builtin:handle-request",
 } as const satisfies Partial<RalphSettingsInput>;
 
-/** The Ralph form: lists as comma-separated or one-per-line text, numbers as typed. */
+/** The Ralph form: picked lists as chips, commands one per line, numbers as typed. */
 export interface RalphDraft {
-  linearTeamKeys: string;
-  linearProjectNames: string;
-  linearLabels: string;
+  linearTeamKeys: string[];
+  linearProjectNames: string[];
+  linearLabels: string[];
   codingPath: RalphCodingPath;
   storyTaskId: string;
   requestTaskId: string;
@@ -234,8 +233,8 @@ export interface RalphDraft {
   appendInstruction: string;
   model: string;
   fallbackModel: string;
-  allowedTools: string;
-  disallowedTools: string;
+  allowedTools: string[];
+  disallowedTools: string[];
   openPullRequestEarly: boolean;
   historyRewrite: RalphHistoryRewrite;
   respondToReviews: boolean;
@@ -244,7 +243,7 @@ export interface RalphDraft {
   maxFixRounds: string;
   cleanupMergedWorktrees: boolean;
   unmergedBranchTimeoutMinutes: string;
-  manualLabels: string;
+  manualLabels: string[];
   allowPreparation: boolean;
   epicCompletedState: string;
 }
@@ -252,16 +251,16 @@ export interface RalphDraft {
 export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
   return {
     ...settings,
-    linearTeamKeys: settings.linearTeamKeys.join(", "),
-    linearProjectNames: settings.linearProjectNames.join(", "),
-    linearLabels: settings.linearLabels.join(", "),
+    linearTeamKeys: [...settings.linearTeamKeys],
+    linearProjectNames: [...settings.linearProjectNames],
+    linearLabels: [...settings.linearLabels],
     verifyCommands: settings.verifyCommands.join("\n"),
-    allowedTools: settings.allowedTools.join("\n"),
-    disallowedTools: settings.disallowedTools.join("\n"),
+    allowedTools: [...settings.allowedTools],
+    disallowedTools: [...settings.disallowedTools],
     maxReviewRounds: String(settings.maxReviewRounds),
     maxFixRounds: String(settings.maxFixRounds),
     unmergedBranchTimeoutMinutes: String(settings.unmergedBranchTimeoutMinutes),
-    manualLabels: settings.manualLabels.join(", "),
+    manualLabels: [...settings.manualLabels],
   };
 }
 
@@ -269,20 +268,17 @@ export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
 export function ralphValues(draft: RalphDraft): RalphSettingsInput {
   return {
     ...draft,
-    linearTeamKeys: parseCommaList(draft.linearTeamKeys).map((key) => key.toUpperCase()),
-    linearProjectNames: parseCommaList(draft.linearProjectNames),
-    linearLabels: parseCommaList(draft.linearLabels),
+    linearTeamKeys: draft.linearTeamKeys.map((key) => key.toUpperCase()),
     verifyCommands: parseLines(draft.verifyCommands),
     setupCommand: draft.setupCommand.trim(),
     appendInstruction: draft.appendInstruction.trim(),
     model: draft.model.trim(),
     fallbackModel: draft.fallbackModel.trim(),
-    allowedTools: parseLines(draft.allowedTools),
-    disallowedTools: parseLines(draft.disallowedTools),
+    allowedTools: draft.allowedTools.map((tool) => tool.trim()).filter(Boolean),
+    disallowedTools: draft.disallowedTools.map((tool) => tool.trim()).filter(Boolean),
     maxReviewRounds: typedNumber(draft.maxReviewRounds),
     maxFixRounds: typedNumber(draft.maxFixRounds),
     unmergedBranchTimeoutMinutes: typedNumber(draft.unmergedBranchTimeoutMinutes),
-    manualLabels: parseCommaList(draft.manualLabels),
     epicCompletedState: draft.epicCompletedState.trim(),
   };
 }
@@ -327,9 +323,7 @@ export const CODING_SECTIONS = {
     ...RALPH_CARDS.prompt,
     ...RALPH_CARDS.tools,
     ...RALPH_CARDS.verification,
-    ...RALPH_CARDS.followUp.filter(
-      (key) => !(DANGER_KEYS as readonly string[]).includes(key),
-    ),
+    ...RALPH_CARDS.followUp.filter((key) => !(DANGER_KEYS as readonly string[]).includes(key)),
     ...RALPH_CARDS.linear,
   ],
   danger: DANGER_KEYS,

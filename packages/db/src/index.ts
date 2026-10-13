@@ -146,6 +146,7 @@ export {
   listHarnessInstallJobs,
   listHarnessOverview,
   listReportedModels,
+  listRepositoryCodingHarnessIds,
   listQueuedJobsTargetingHarness,
   listRecentHarnessAudit,
   listRecentJobs,

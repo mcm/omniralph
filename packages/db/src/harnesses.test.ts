@@ -12,6 +12,7 @@ import {
   listHarnessInstallJobs,
   listHarnessOverview,
   listReportedModels,
+  listRepositoryCodingHarnessIds,
   markHarnessDeleted,
   requestHarnessUpdate,
   setHarnessDesiredVersion,
@@ -254,6 +255,54 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
     it("ignores revoked harnesses, even when asked for them", async () => {
       expect(await listReportedModels(db, org, { harnessIds: [revoked] })).toEqual([]);
       expect((await listReportedModels(db, org)).map((m) => m.value)).not.toContain(fable.value);
+    });
+  });
+
+  it("lists a repository's coding harnesses: its pinned ones, else those accepting coding", async () => {
+    const [row] = await db.insert(organizations).values({ name: "Coding harnesses" }).returning();
+    const org = row!.id;
+    await seedReviewProfiles(db, org);
+    const [connection] = await db
+      .insert(scmConnections)
+      .values({
+        organizationId: org,
+        provider: "github",
+        name: "coding",
+        baseUrl: "https://api.github.com",
+        encryptedCredentials: "x",
+      })
+      .returning();
+    const repo = await connectRepository(db, {
+      connectionId: connection!.id,
+      provider: "github",
+      externalId: "coding-1",
+      fullPath: "acme/coding",
+    });
+    const inheriting = await enroll(org, "coding-a-inherits");
+    const reviewOnly = await enroll(org, "coding-b-review-only");
+    const revoked = await enroll(org, "coding-c-revoked");
+    await updateHarnessConfig(db, org, reviewOnly, {
+      maxConcurrency: null,
+      acceptedTaskTypes: ["review"],
+      poolLimits: {},
+    });
+    // A pin to a harness that was revoked since counts as none.
+    await pinRepositoryToHarness(db, { harnessId: revoked, repositoryId: repo.id });
+    await revokeHarness(db, revoked, { organizationId: org });
+    await enroll(orgB, "coding-other-org");
+
+    // Unpinned: every active harness that accepts coding (its own types, else the default).
+    const unpinned = (harnessIds: string[]) => ({ pinned: false, harnessIds });
+    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
+    await setAllowedTaskTypeDefaults(db, org, ["review"], null);
+    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([]));
+    await setAllowedTaskTypeDefaults(db, org, ["review", "coding"], null);
+
+    // Pinned: its active pinned harnesses, whatever they accept.
+    await pinRepositoryToHarness(db, { harnessId: reviewOnly, repositoryId: repo.id });
+    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual({
+      pinned: true,
+      harnessIds: [reviewOnly],
     });
   });
 

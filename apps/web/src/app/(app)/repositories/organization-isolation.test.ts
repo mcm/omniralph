@@ -5,6 +5,11 @@ import {
   closeDb,
   connectRepository,
   createCustomRule,
+  createHarnessEnrollment,
+  enrollHarness,
+  pinRepositoryToHarness,
+  recordHarnessHeartbeat,
+  updateHarnessConfig,
   createDb,
   createOrganization,
   createReview,
@@ -58,6 +63,8 @@ vi.mock("@/lib/auth/session", async () => {
   };
 });
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
+// No Linear workspace is connected.
+vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("./repositories-view", () => ({ RepositoriesView: () => null }));
 vi.mock("./[id]/settings/repository-settings-view", () => ({
@@ -80,6 +87,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const { default: RepositoriesPage } = await import("./page");
 const { default: RepositorySettingsPage } = await import("./[id]/settings/page");
+const { default: RepositoryCodingPage } = await import("./[id]/coding/page");
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
 const { default: RepositoryReviewsPage } = await import("./[id]/reviews/page");
 const { default: GitHubInstallationPage } = await import("./github/[connectionId]/page");
@@ -214,6 +222,65 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
     const repoReviews = await RepositoryReviewsPage({ ...params(a.repoId), ...noSearch });
     expect((repoReviews.props.reviews as { id: string }[]).map((r) => r.id)).toEqual([a.reviewId]);
     expect((await ReviewPage(params(a.reviewId))).props.review.id).toBe(a.reviewId);
+  });
+
+  it("offers the Coding tab the models of its pinned harnesses, else of those accepting coding", async () => {
+    state.userId = a.userId;
+    const harness = async (name: string, models: { value: string; displayName: string }[]) => {
+      const enrollment = await createHarnessEnrollment(db, { organizationId: a.orgId, name });
+      const { harnessId } = (await enrollHarness(db, {
+        enrollmentToken: enrollment.token,
+        name,
+        version: "1.0.0",
+      }))!;
+      await recordHarnessHeartbeat(db, harnessId, { version: "1.0.0", models });
+      return harnessId;
+    };
+    const opus = { value: "opus", displayName: "Opus" };
+    const sonnet = { value: "sonnet", displayName: "Sonnet" };
+    const haiku = { value: "haiku", displayName: "Haiku" };
+    const coder = await harness("coder", [opus, sonnet]);
+    const reviewer = await harness("reviewer", [haiku]);
+    await updateHarnessConfig(db, a.orgId, reviewer, {
+      maxConcurrency: null,
+      acceptedTaskTypes: ["review"],
+      poolLimits: {},
+    });
+    // Another organization's harness never counts.
+    const other = await createHarnessEnrollment(db, { organizationId: b.orgId, name: "other" });
+    const { harnessId: otherId } = (await enrollHarness(db, {
+      enrollmentToken: other.token,
+      name: "other",
+      version: "1.0.0",
+    }))!;
+    await recordHarnessHeartbeat(db, otherId, { version: "1.0.0", models: [haiku] });
+
+    const choices = async () =>
+      (await RepositoryCodingPage(params(a.repoId))).props.codingChoices as {
+        linear: unknown;
+        models: { value: string; harnessIds: string[] }[];
+        harnessCount: number;
+        pinned: boolean;
+      };
+    // Unpinned: every harness accepting coding.
+    expect(await choices()).toEqual({
+      linear: { status: "disconnected" },
+      models: [
+        { ...opus, harnessIds: [coder] },
+        { ...sonnet, harnessIds: [coder] },
+      ],
+      harnessCount: 1,
+      pinned: false,
+    });
+    // Pinned: its pinned harnesses, whatever they accept.
+    await pinRepositoryToHarness(db, { harnessId: reviewer, repositoryId: a.repoId });
+    expect(await choices()).toMatchObject({
+      models: [{ ...haiku, harnessIds: [reviewer] }],
+      harnessCount: 1,
+      pinned: true,
+    });
+    // Other tabs don't load them.
+    expect((await RepositorySettingsPage(params(a.repoId))).props.codingChoices).toBeNull();
   });
 
   it("returns 404 for another organization's repository, review and installation pages", async () => {

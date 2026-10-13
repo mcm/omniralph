@@ -47,6 +47,7 @@ put them in `apps/web/.env.local`.
 | `AUTH_GITLAB_URL` | no | `https://gitlab.com` | Self-managed GitLab instance for sign-in. |
 | `ALLOWED_EMAIL_DOMAINS` | yes | — (nobody but invited emails) | Comma-separated email domains allowed to sign in (exact match, no subdomains), in addition to emails with a pending, unexpired invitation to an organization. The only instance-wide access setting: there are no instance admins. Signed-in users create organizations (becoming their admin) or join them; roles and organization email domains are managed per organization under **Settings › Organization** and never widen this gate. |
 | `OMNIRALPH_DEV_SIGNIN` | no | — (off) | Local development only: `1` adds a sign-in by email without OAuth (`/sign-in/dev?email=…`), for rendering the panel against the fixture database (`pnpm --filter @omniralph/web fixtures:up`, see [apps/web/scripts/fixtures](../apps/web/scripts/fixtures/README.md)). Ignored when `NODE_ENV` is `production`. Never set it on a deployment. |
+| `OMNIRALPH_FIXTURE_LINEAR` | no | — (off) | Local development only: `1` makes the settings pickers read a fixture Linear workspace (`apps/web/src/lib/linear/fixture-gateway.ts`) instead of linear.app, for an organization with Linear connected. `fixtures:up` and `verify:screens` set it. Ignored when `NODE_ENV` is `production`. |
 
 ### GitHub App
 

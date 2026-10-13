@@ -13,7 +13,11 @@ import type { ActionResult } from "@/lib/action-result";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { ralphTaskErrors, saveRepositorySettings } from "@/lib/repositories/settings";
+import {
+  ralphLinearErrors,
+  ralphTaskErrors,
+  saveRepositorySettings,
+} from "@/lib/repositories/settings";
 
 /** Refreshes a repository's settings tabs (Review settings, Coding and Harnesses). */
 function revalidateRepositorySettings(repositoryId: string) {
@@ -115,7 +119,8 @@ export async function updateRepositoryTaskTypes(
  * Saves a repository's Coding tab: which Linear issues route to it, whether its runs use the legacy jobs or
  * coding tasks (`coding_path`) and which story and request tasks (built-in
  * or the organization's own), and how its runs work (cyralph's
- * per-repository settings). The next job and decision of every run pick it up.
+ * per-repository settings). New Linear values must exist in the connected workspace
+ * (`ralphLinearErrors`). The next job and decision of every run pick it up.
  */
 export async function updateRalphSettings(
   repositoryId: string,
@@ -139,12 +144,23 @@ export async function updateRalphSettings(
       requestTaskId,
     } = parsed.data;
     const db = getDb();
-    if (!(await getRepository(db, repositoryId, admin.organization.id))) {
+    const repository = await getRepository(db, repositoryId, admin.organization.id);
+    if (!repository) {
       return { ok: false, error: "That repository isn't connected." };
     }
-    const taskErrors = await ralphTaskErrors(db, admin.organization.id, parsed.data);
-    if (Object.keys(taskErrors).length > 0) {
-      return { ok: false, error: "Fix the highlighted fields.", fieldErrors: taskErrors };
+    const [taskErrors, linearErrors] = await Promise.all([
+      ralphTaskErrors(db, admin.organization.id, parsed.data),
+      ralphLinearErrors(admin.organization.id, repository, parsed.data),
+    ]);
+    if (linearErrors === "unavailable") {
+      return {
+        ok: false,
+        error: "Couldn't check the Linear values against your workspace. Try again in a moment.",
+      };
+    }
+    const errors = { ...taskErrors, ...linearErrors };
+    if (Object.keys(errors).length > 0) {
+      return { ok: false, error: "Fix the highlighted fields.", fieldErrors: errors };
     }
     const saved = await updateRepositoryRalphSettings(db, repositoryId, {
       linearTeamKeys: linearTeamKeys.map((key) => key.toUpperCase()),

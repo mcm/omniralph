@@ -3,6 +3,8 @@ import {
   getAllowedTaskTypeDefaults,
   getRepositoryWithConnection,
   listPinnableHarnesses,
+  listReportedModels,
+  listRepositoryCodingHarnessIds,
   listRepositoryPinnedHarnessIds,
   listReviewProfiles,
   repositorySwitchOverrides,
@@ -10,6 +12,7 @@ import {
 import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { z } from "zod";
 import { enterResourceOrganization } from "@/lib/auth/resource-page";
+import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { requirePageUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
@@ -22,10 +25,41 @@ import {
   STORY_TASKS,
 } from "@/lib/definitions";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import type { CodingChoices, CodingLinearChoices } from "./settings/ralph-settings-section";
 import {
   RepositorySettingsView,
   type RepositorySettingsTab,
 } from "./settings/repository-settings-view";
+
+/**
+ * The Coding tab's picker choices: the organization's Linear workspace, and the models of the
+ * harnesses that may run the repository's coding jobs (its pinned ones, else every harness
+ * accepting coding).
+ */
+async function loadCodingChoices(
+  organizationId: string,
+  repositoryId: string,
+): Promise<CodingChoices> {
+  const db = getDb();
+  const [linear, { pinned, harnessIds }] = await Promise.all([
+    getLinearSettingsOptions(organizationId).then(
+      (options): CodingLinearChoices =>
+        options ? { status: "connected", options } : { status: "disconnected" },
+      (error: unknown): CodingLinearChoices => {
+        console.error("Loading the Linear settings options failed", error);
+        return { status: "unavailable" };
+      },
+    ),
+    listRepositoryCodingHarnessIds(db, organizationId, repositoryId),
+  ]);
+  const models = await listReportedModels(db, organizationId, { harnessIds });
+  return {
+    linear,
+    models,
+    harnessCount: harnessIds.length,
+    pinned,
+  };
+}
 
 /** A repository settings tab: Review settings, Coding (admins only) or Harnesses. */
 export async function renderRepositorySettings(
@@ -61,6 +95,7 @@ export async function renderRepositorySettings(
     getAllowedTaskTypeDefaults(db, orgId),
   ]);
   const { repository, connection } = found;
+  const codingChoices = tab === "coding" ? await loadCodingChoices(orgId, id) : null;
 
   return (
     <RepositorySettingsView
@@ -115,6 +150,7 @@ export async function renderRepositorySettings(
             }
           : null
       }
+      codingChoices={codingChoices}
       codingTasks={{ story: storyTasks, request: requestTasks }}
       taskTypes={{
         overrides: repositorySwitchOverrides(repository),
