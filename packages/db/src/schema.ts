@@ -115,7 +115,7 @@ export const ralphStoryStatus = pgEnum("ralph_story_status", [
 export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "request"]);
 /**
  * How a run treats its session: `epic` builds the epic story by story (a
- * delegation, or `/ralph`); `request` only does what a mention asks.
+ * delegation, or `/coding`); `request` only does what a mention asks.
  */
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 /** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
@@ -143,7 +143,7 @@ export const ralphMessageTrigger = pgEnum("ralph_message_trigger", [
 ]);
 /** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
 export const repositoryCodingPath = pgEnum("repository_coding_path", ["legacy", "tasks"]);
-/** What started a triage run: an `@omniralph /triage` mention, or the `ralph:triage` label. */
+/** What started a triage run: an `@omniralph /triage` mention, or the triage label. */
 export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
 /** A Linear issue draft posted from chat: `creating` while its **Create** click runs. */
 export const chatLinearIssueDraftStatus = pgEnum("chat_linear_issue_draft_status", [

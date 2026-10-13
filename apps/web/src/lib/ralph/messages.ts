@@ -47,7 +47,7 @@ export const LIVE_SESSION_JOB_TYPES: readonly string[] = [
 /** How a run treats replies: as guidance for its stories (`epic`), or as requests. */
 export type RalphRunMode = RalphRun["mode"];
 
-/** A run's mode: `request` for a mention (until `/ralph`), else `epic`. */
+/** A run's mode: `request` for a mention (until `/coding`), else `epic`. */
 export function runMode(run: Pick<RalphRun, "mode">): RalphRunMode {
   return run.mode;
 }

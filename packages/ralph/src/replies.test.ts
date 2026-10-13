@@ -184,7 +184,9 @@ describe("/ship", () => {
     expect(prompt).toContain("a".repeat(40));
     expect(prompt).toContain("set `pullRequest` to `open`");
     expect(prompt).not.toContain("You may commit");
-    expect(requestSystemAppend("when-asked", "linear", { ship: true })).toContain("Don't run `git commit`");
+    expect(requestSystemAppend("when-asked", "linear", { ship: true })).toContain(
+      "Don't run `git commit`",
+    );
     expect(requestSystemAppend("when-asked")).toContain("You may use git (commit, push)");
   });
 });
@@ -223,7 +225,18 @@ describe("parseInstruction", () => {
     expect(parseInstruction(undefined)).toEqual({ text: "", wantsLoop: false, wantsTriage: false });
   });
 
-  it("recognizes /ralph (and /label-based-prompt) and strips it", () => {
+  it("recognizes /coding and strips it", () => {
+    expect(parseInstruction("@omniralph /coding keep it small")).toEqual({
+      text: "keep it small",
+      wantsLoop: true,
+      wantsTriage: false,
+    });
+    expect(parseInstruction("/CODING").wantsLoop).toBe(true);
+    expect(parseInstruction("see a/coding path").wantsLoop).toBe(false);
+    expect(parseInstruction("/codings").wantsLoop).toBe(false);
+  });
+
+  it("still recognizes /ralph (and /label-based-prompt) and strips it", () => {
     expect(parseInstruction("@omniralph /ralph keep it small")).toEqual({
       text: "keep it small",
       wantsLoop: true,

@@ -5,7 +5,7 @@
  * gets it in its next heartbeat (`queueLiveReply`); otherwise it becomes a
  * pending request (`addInstruction`) and the run is advanced, so it runs as
  * soon as the current job finishes. Chat runs stay in request mode: there is
- * no `/ralph`, stop or preparation handling here, and permission answers come
+ * no `/coding`, stop or preparation handling here, and permission answers come
  * from the chat assistant's `answer_run_permission` tool (`answerPermission`)
  * rather than from matching the text. `/ship [notes]` is always a pending ship
  * request (`reply.ts` step 4a).

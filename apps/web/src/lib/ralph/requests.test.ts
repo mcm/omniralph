@@ -644,19 +644,19 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       expect((await getRun(db, delegated.id))?.status).toBe("waiting");
     });
 
-    it("`/ralph` in a reply switches a mention's run to the epic loop, its requests becoming guidance", async () => {
+    it("`/coding` in a reply switches a mention's run to the epic loop, its requests becoming guidance", async () => {
       const { epic } = threeStoryEpic();
       const { run } = await session(epic.id, "@omniralph use smallint everywhere");
       await request(run!.id);
       expect((await getRun(db, run!.id))?.status).toBe("completed");
 
-      await reply(run!, "/ralph");
+      await reply(run!, "/coding");
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "epic", status: "running" });
       const first = await work(run!.id);
       expect(first.story.identifier).toBe("ENG-2");
     });
 
-    it("`/ralph` doesn't switch a mention's run to the epic loop while the PRD has open questions", async () => {
+    it("`/coding` (or `/ralph`) doesn't switch a mention's run to the epic loop while the PRD has open questions", async () => {
       const { epic } = threeStoryEpic();
       const root = linear.issues.get(epic.id)!;
       root.description = `${EPIC_DESCRIPTION}\n## Open Questions\n\n1. Which column type?\n`;
@@ -672,7 +672,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       await request(run!.id);
       expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
-      expect(last(run!.linearAgentSessionId, "response")).toContain("Then reply `/ralph` again.");
+      expect(last(run!.linearAgentSessionId, "response")).toContain("Then reply `/coding` again.");
       expect(await activeJobs(run!.id)).toEqual([]);
 
       // Linear can't be read: refused too.
@@ -684,9 +684,9 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
       );
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
 
-      // Answered: `/ralph` starts the loop.
+      // Answered: `/coding` starts the loop.
       root.description = EPIC_DESCRIPTION;
-      await reply(run!, "/ralph");
+      await reply(run!, "/coding");
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "epic", status: "running" });
     });
   });

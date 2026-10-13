@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyWebhook, signBody, verifyWebhook } from "./webhook";
+import { classifyWebhook, signBody, TRIAGE_LABEL, verifyWebhook } from "./webhook";
 
 const SECRET = "linear-secret";
 const NOW = 1_790_000_000_000;
@@ -120,7 +120,27 @@ describe("classifyWebhook", () => {
     });
   });
 
-  it("classifies an update that adds the ralph:triage label, ignoring case", () => {
+  it("classifies an update that adds the coding:triage label, ignoring case", () => {
+    const update = (labels: Array<{ id: string; name: string }>, before: string[]) => ({
+      type: "Issue",
+      action: "update",
+      updatedFrom: { labelIds: before },
+      data: { id: "i3", identifier: "TOOL-3", labelIds: labels.map((l) => l.id), labels },
+    });
+    for (const name of [TRIAGE_LABEL, "Coding:Triage"]) {
+      expect(classifyWebhook(update([{ id: "l1", name }], []))).toEqual({
+        kind: "triage_label_added",
+        issueId: "i3",
+        identifier: "TOOL-3",
+        labelId: "l1",
+      });
+    }
+    expect(classifyWebhook(update([{ id: "l1", name: "coding:triaged" }], []))).toMatchObject({
+      kind: "ignored",
+    });
+  });
+
+  it("still classifies an update that adds the ralph:triage label, ignoring case", () => {
     const update = (labels: Array<{ id: string; name: string }>, before: string[]) => ({
       type: "Issue",
       action: "update",

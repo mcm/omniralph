@@ -154,7 +154,7 @@ when only that host has its toolchain.
   it** / **I'll do it myself** / **Not yet**, and **Run it** runs them on the harness (unless the
   repository's **Offer to run preparation** is off). There's no need to rename them.
 - **PRDs, `> Branch:` lines, `## Quality Gates`, `**Labels:** manual` stories, manual labels,
-  blocker relations and replies** (`stop`, `start anyway`, `rerun preparation`, `/ralph`, guidance)
+  blocker relations and replies** (`stop`, `start anyway`, `rerun preparation`, `/ralph` (now also `/coding`), guidance)
   mean the same thing, and the agent session messages keep cyralph's wording.
 - **Stash branches move** from `cyralph/stash/<epic>` to `ralph/stash/<epic>`: after the merge,
   **Push to a branch on origin** pushes leftover stashes to `ralph/stash/<epic>`. Existing

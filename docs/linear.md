@@ -286,7 +286,7 @@ Reply in the agent session to steer a run:
 | `/continue` | Resets the per-run iteration cap (50 story attempts), so the run keeps going. On its own, it continues without guidance (unfinished stories get fresh attempts and rounds, and their metric history is cleared); anything after `/continue` is handled as a reply of its own (usually guidance). |
 | Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
 | Anything else | Stored as guidance for the next story attempts (unfinished stories get fresh attempts and rounds) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
-| `/ralph` | Switches a mention's run (request mode) to the story loop; its requests become guidance. |
+| `/coding` | Switches a mention's run (request mode) to the story loop; its requests become guidance. `/ralph`, its name before the rename to Coding, still works. |
 | `/ship [notes]` | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
 | `Allow` / `Deny` (or `yes` / `no`) | Answers a request session's permission question (below). |
 
@@ -308,7 +308,7 @@ MR", "rebase on main", "what's left on this epic?"): like Cyrus, Omniralph does 
 epic as context. The mention's text (without a leading `@name`) is the request.
 
 - **No story loop.** A mention never builds stories, never changes the issue's state in Linear and
-  ignores blockers. Add `/ralph` to the mention (or a later reply) to build the epic instead, with
+  ignores blockers. Add `/coding` to the mention (or a later reply) to build the epic instead, with
   the rest of the comment as guidance.
 - **One session per request.** A `ralph.request` job runs one Claude session in the branch worktree
   of the issue's run (the branch, lanes, PR/MR, stashes and guidance of an earlier run carry
@@ -446,8 +446,9 @@ questions. It never writes code, branches, commits or PRs/MRs.
 - Let a harness accept `query` tasks under **Harnesses › <harness>** (it applies with the next
   heartbeat). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until a harness
   that accepts them, at version 0.9.0 or later, claims them.
-- For the label trigger, create a label named `ralph:triage` in the Linear workspace (a
-  workspace label, or one on each team that should use it). The app's **Issues** webhook events
+- For the label trigger, create a label named `coding:triage` in the Linear workspace (a
+  workspace label, or one on each team that should use it). A `ralph:triage` label, its name
+  before the rename to Coding, works too, so existing workspaces needn't rename it. The app's **Issues** webhook events
   (step 1) deliver the label changes.
 
 ### Starting triage
@@ -455,7 +456,8 @@ questions. It never writes code, branches, commits or PRs/MRs.
 - **Mention.** @mention the app with `/triage` in an issue's comment, e.g. `@omniralph /triage`
   (the rest of the comment is passed along like a reply). A mention without `/triage` is a ralph
   request, as before.
-- **Label.** Add the `ralph:triage` label to an issue (the name matches ignoring case). The control
+- **Label.** Add the `coding:triage` (or `ralph:triage`) label to an issue (the name matches
+  ignoring case). The control
   panel opens an agent session on the issue itself, so the label trigger gets the same activities
   and reply handling as a mention. The label is removed when triage finishes (or fails, is stopped
   or can't start), so adding it again triages again. Adding the label in the same edit as a state
@@ -549,11 +551,11 @@ Editing the description yourself and triaging again works too.
 
 ### Ralph refuses issues with open questions
 
-Ralph doesn't start a delegated issue, or a `/ralph` mention, while the issue's description (or,
+Ralph doesn't start a delegated issue, or a `/coding` mention, while the issue's description (or,
 for a sub-issue, its parent epic's) has a non-empty `## Open Questions` section: it answers in the
 session that the questions need answering first, and materializes nothing and changes no state.
 Answer them (a reply in the triage session, or by editing the description) and delegate again.
-The same goes for `/ralph` switching a mention's run to the story loop (in a reply or a new
+The same goes for `/coding` switching a mention's run to the story loop (in a reply or a new
 mention): the run stays in request mode until the questions are answered. Request-mode @mentions
 and epic runs that are already going aren't affected.
 
@@ -597,7 +599,7 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
   Linear refused the connected workspace's token (reconnect it under **Settings › Integrations**);
   `larger than 25 MB` files aren't downloaded; `skipped: more than 20 attachments` ones are
   downloaded by the run's next job.
-- **Triage never starts from the label.** The `ralph:triage` label doesn't exist in the workspace
+- **Triage never starts from the label.** Neither a `coding:triage` nor a `ralph:triage` label exists in the workspace
   (or under another name), or **Issues** webhook events are disabled. A triage that can't start
   removes the label again; the session it opened says why.
 - **"Triaging …" but nothing happens.** No harness accepts `query` tasks, or none runs version

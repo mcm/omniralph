@@ -1,5 +1,5 @@
 /**
- * The `ralph:triage` label trigger: adding the label to an issue opens an
+ * The triage label trigger (`coding:triage`, or the older `ralph:triage`): adding the label to an issue opens an
  * agent session on it (so triage reports there and replies reach it, as for
  * an `@omniralph /triage` mention) and starts triage in it. The label is
  * removed once triage is over, so adding it again triages again.
@@ -15,7 +15,7 @@ import {
   type TriageRun,
 } from "@omniralph/db";
 import type { LinearGateway } from "@/lib/linear/gateway";
-import { isTriageLabel, TRIAGE_LABEL, type LinearWebhookEvent } from "@/lib/linear/webhook";
+import { isTriageLabel, type LinearWebhookEvent } from "@/lib/linear/webhook";
 import { errorMessage, quietly } from "@/lib/ralph/notify";
 import {
   startTriage,
@@ -57,21 +57,20 @@ export async function isOwnTriageSession(
   return !!active && active.trigger === "label" && isPending(active);
 }
 
-/** Removes the `ralph:triage` label from the issue, if it has it. */
+/** Removes the triage labels from the issue, if it has any. */
 export async function removeTriageLabel(linear: LinearGateway, issueId: string): Promise<void> {
   const issue = await linear.getIssue(issueId);
-  if (!issue.labels.some(isTriageLabel)) return;
-  const label = await linear.findLabel(issue.teamId, TRIAGE_LABEL);
-  if (label) await linear.removeIssueLabel(issue.id, label.id);
+  for (const name of issue.labels.filter(isTriageLabel)) {
+    const label = await linear.findLabel(issue.teamId, name);
+    if (label) await linear.removeIssueLabel(issue.id, label.id);
+  }
 }
 
 /** Removes the label, logging (not throwing) a failure. */
 export const removeTriageLabelQuietly = (linear: LinearGateway, issueId: string) =>
-  quietly(`Removing the ${TRIAGE_LABEL} label from ${issueId}`, () =>
-    removeTriageLabel(linear, issueId),
-  );
+  quietly(`Removing the triage label from ${issueId}`, () => removeTriageLabel(linear, issueId));
 
-/** Handles an issue update that added the `ralph:triage` label. */
+/** Handles an issue update that added a triage label. */
 export async function startLabelTriage(
   event: TriageLabelEvent,
   deps: TriageDeps,

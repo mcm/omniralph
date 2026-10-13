@@ -25,7 +25,12 @@ import { handleLinearEvent, type HandledLinearEvent } from "@/lib/linear/events"
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { onTriageJobCompleted, onTriageJobFinishedWithoutResult } from "./apply";
-import { isOwnTriageSession, startLabelTriage, type TriageLabelEvent } from "./label";
+import {
+  isOwnTriageSession,
+  removeTriageLabel,
+  startLabelTriage,
+  type TriageLabelEvent,
+} from "./label";
 import type { TriageDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -69,7 +74,36 @@ const RESULT: QueryRunResult = {
   durationMs: 10,
 };
 
-describe.skipIf(!dockerAvailable)("starting triage from the ralph:triage label", () => {
+describe("removeTriageLabel", () => {
+  it("removes coding:triage and the older ralph:triage, leaving other labels", async () => {
+    const linear = new FakeLinearGateway();
+    const issue = linear.add({
+      title: "rotate keys",
+      labels: ["Coding:Triage", "ralph:triage", "ops"],
+    });
+    const coding = await linear.createLabel(issue.teamId, "coding:triage");
+    const ralph = await linear.createLabel(issue.teamId, "ralph:triage");
+    await linear.createLabel(issue.teamId, "ops");
+
+    await removeTriageLabel(linear, issue.id);
+
+    expect(linear.labelChanges).toEqual([
+      { issueId: issue.id, removed: [coding.id] },
+      { issueId: issue.id, removed: [ralph.id] },
+    ]);
+  });
+
+  it("does nothing when the issue has no triage label", async () => {
+    const linear = new FakeLinearGateway();
+    const issue = linear.add({ title: "rotate keys", labels: ["ops"] });
+
+    await removeTriageLabel(linear, issue.id);
+
+    expect(linear.labelChanges).toEqual([]);
+  });
+});
+
+describe.skipIf(!dockerAvailable)("starting triage from a triage label", () => {
   let container: StartedPostgreSqlContainer;
   let db: Database;
   let orgId: string;

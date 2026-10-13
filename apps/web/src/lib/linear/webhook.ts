@@ -82,13 +82,13 @@ export type LinearWebhookEvent =
       stateType?: string;
       removed: boolean;
       /**
-       * The same update also added the `ralph:triage` label (a bulk edit, or
+       * The same update also added a triage label (a bulk edit, or
        * moving and labelling at once): triage starts after the state change.
        */
       triageLabelId?: string;
     }
   | {
-      /** An issue update added the `ralph:triage` label: triage the issue. */
+      /** An issue update added a triage label (`coding:triage`): triage the issue. */
       kind: "triage_label_added";
       issueId: string;
       identifier?: string;
@@ -97,9 +97,15 @@ export type LinearWebhookEvent =
   | { kind: "ignored"; reason: string };
 
 /** The label that asks for triage (matched ignoring case). */
-export const TRIAGE_LABEL = "ralph:triage";
+export const TRIAGE_LABEL = "coding:triage";
 
-export const isTriageLabel = (name: string) => name.toLowerCase() === TRIAGE_LABEL;
+/**
+ * A label that asks for triage: `coding:triage`, or the label's name from
+ * before the rename to Coding, which workspaces may still use.
+ */
+const TRIAGE_LABEL_NAME = /^(coding|ralph):triage$/i;
+
+export const isTriageLabel = (name: string) => TRIAGE_LABEL_NAME.test(name);
 
 function obj(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
@@ -113,7 +119,7 @@ function strings(v: unknown): string[] {
 }
 
 /**
- * The `ralph:triage` label's ID when the update added it: Linear sends the
+ * The triage label's ID when the update added it: Linear sends the
  * issue's `labelIds` (and its `labels` with names) in `data`, and the previous
  * `labelIds` in `updatedFrom`.
  */

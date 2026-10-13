@@ -396,14 +396,14 @@ async function delegatingThread(
   return delegation?.threadId ?? null;
 }
 
-/** How a new run starts: a delegation (or `/ralph`) builds the epic; a mention does what it asks. */
+/** How a new run starts: a delegation (or `/coding`) builds the epic; a mention does what it asks. */
 interface StartOptions {
   mode: RalphRunMode;
-  /** The mention's instruction (without `/ralph` and the leading `@name`; `ship` for `/ship`). */
+  /** The mention's instruction (without `/coding` and the leading `@name`; `ship` for `/ship`). */
   instruction?: { text: string; author: string | null; wantsLoop: boolean; ship?: boolean };
 }
 
-/** A mention's instruction becomes the new run's first pending request (and guidance with `/ralph`). */
+/** A mention's instruction becomes the new run's first pending request (and guidance with `/coding`). */
 async function addStartInstruction(
   tx: RalphTransaction,
   run: RalphRun,
@@ -441,8 +441,8 @@ export async function startRun(
  * An @mention (cyralph's `onCreated`): like Cyrus, it addresses its comment.
  * A bare mention does nothing. On an issue whose run is working right now,
  * the text goes to that run: into its running job's live session, or else as
- * a request (or `/ralph`) for it, and that session answers. Otherwise a new
- * run starts in request mode (`/ralph`: epic mode, the text as guidance),
+ * a request (or `/coding`) for it, and that session answers. Otherwise a new
+ * run starts in request mode (`/coding`: epic mode, the text as guidance),
  * carrying over the issue's earlier run.
  */
 async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Promise<StartOutcome> {
@@ -472,7 +472,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     activeOnly: true,
   });
   if (active) {
-    // `/ralph` on a mention's run switches it to the story loop: an epic-mode start.
+    // `/coding` on a mention's run switches it to the story loop: an epic-mode start.
     if (wantsLoop && active.mode === "request") {
       const refused = await refuseOpenQuestions(deps, event);
       if (refused) return refused;

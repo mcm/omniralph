@@ -66,7 +66,7 @@ export async function acknowledgeLinearEvent(
  * Acts on a verified, deduplicated Linear event after the webhook response:
  * a new agent session starts a ralph run (or triage, when its instruction
  * contains `/triage`; the sessions triage opens itself are left alone); the
- * `ralph:triage` label added to an issue starts triage; an issue's state change (or
+ * A triage label (`coding:triage`) added to an issue starts triage; an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
  * completed, cleans up its runs' merged PRs/MRs), then starts triage when the
  * same update added the label; a reply in an agent
