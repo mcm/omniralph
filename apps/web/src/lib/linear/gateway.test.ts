@@ -506,6 +506,16 @@ describe("SdkLinearGateway writes", () => {
     await gateway().addComment("1", "Done: summary");
     expect(calls[0]?.variables).toEqual({ input: { issueId: "1", body: "Done: summary" } });
   });
+
+  it("links a URL to an issue", async () => {
+    resolvers.LinkUrl = () => ({ attachmentLinkURL: { success: true } });
+    await gateway().linkUrl("1", "https://github.com/acme/api/pull/7", "Pull request #7");
+    expect(calls[0]?.variables).toEqual({
+      issueId: "1",
+      url: "https://github.com/acme/api/pull/7",
+      title: "Pull request #7",
+    });
+  });
 });
 
 describe("SdkLinearGateway agent sessions", () => {

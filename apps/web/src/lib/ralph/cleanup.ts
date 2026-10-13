@@ -3,6 +3,7 @@
  * `SessionManager.cleanupMerged`, `answerCleanup` and
  * `expireCleanupRequests`, `session-manager.ts:177-375`).
  *
+ * - A merge also resolves the run's Linear issue (`resolveMergedIssue`).
  * - Triggers: the PR/MR's merge webhook, the Linear issue moving to completed,
  *   any follow-up check that finds it merged (`recordClosedPullRequest`), and
  *   the reconcile cron (`reconcileCleanup`) as the fallback.
@@ -34,6 +35,7 @@ import {
   getRepositoryWithConnection,
   getRun,
   getRunByIssue,
+  isLinearRun,
   listActiveRunJobIds,
   listLanes,
   listLanesToCleanUp,
@@ -350,6 +352,31 @@ export async function recordClosedPullRequest(
     else await startKeepBranchCleanup(deps, lane.id, "closed");
   } catch (error) {
     console.error(`Starting the cleanup of ${lane.branch} (ralph lane ${lane.id}) failed`, error);
+  }
+  if (state.state === "merged") await resolveMergedIssue(deps, lane);
+}
+
+/**
+ * A lane's PR/MR merged: the run's Linear issue (the epic, or the single
+ * issue) moves to the team's first completed state, whether or not the code
+ * host's Linear integration does it too. Not while another lane's PR/MR is
+ * still open, nor when the issue is already completed or canceled; a chat run
+ * has no issue. A failure is logged.
+ */
+async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<void> {
+  try {
+    const run = await getRun(deps.db, lane.runId);
+    if (!run || !isLinearRun(run)) return;
+    const lanes = await listLanes(deps.db, run.id);
+    if (lanes.some((l) => l.id !== lane.id && l.prNumber !== null && !l.prClosed)) return;
+    const issue = await deps.linear.getIssue(run.linearIssueId);
+    if (issue.stateType === "completed" || issue.stateType === "canceled") return;
+    await deps.linear.setIssueState(run.linearIssueId, { type: "completed" });
+  } catch (error) {
+    console.error(
+      `Resolving the Linear issue of ralph lane ${lane.id} after its merge failed`,
+      error,
+    );
   }
 }
 
