@@ -253,12 +253,19 @@ function laneStories(run: RalphRunDetail, lane: RalphLane): RalphStoryRow[] {
 function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
   const stories = laneStories(run, lane);
   const done = stories.filter((s) => s.status === "completed").length;
-  // With one repository the fact strip already shows it, its branch and its PR/MR.
+  // With one repository the fact strip already shows it, its branch, its PR/MR
+  // and the stories done; with several, each lane's count is for its repository.
   const single = run.lanes.length === 1;
   const rounds = (
     <>
-      {done} of {stories.length} {stories.length === 1 ? "story" : "stories"} done
-      {" · "}
+      {!single && (
+        <>
+          <span className="text-numeric">{done}</span> of{" "}
+          <span className="text-numeric">{stories.length}</span>{" "}
+          {stories.length === 1 ? "story" : "stories"} done in this repository
+          {" · "}
+        </>
+      )}
       Review rounds {roundsLabel(lane.reviewRounds)}
       {" · "}
       CI fix rounds {roundsLabel(lane.ciFixRounds)}
@@ -341,7 +348,7 @@ function ElsewhereCard({ run }: { run: RalphRunDetail }) {
 }
 
 /** One section per lane (repository), or a single stories table before the run has one. */
-function StoriesCard({ run }: { run: RalphRunDetail }) {
+export function StoriesCard({ run }: { run: RalphRunDetail }) {
   if (run.lanes.length > 0) {
     return (
       <>
@@ -358,9 +365,8 @@ function StoriesCard({ run }: { run: RalphRunDetail }) {
     <Card>
       <CardHeader>
         <CardTitle as="h2">Stories</CardTitle>
-        <CardDescription>
-          {run.storyCounts.completed} of {run.storyCounts.total} done, in sub-issue order.
-        </CardDescription>
+        {/* The fact strip states the stories done. */}
+        <CardDescription>In sub-issue order.</CardDescription>
       </CardHeader>
       <CardContent>
         <StoriesTable run={run} stories={run.stories} />
@@ -653,8 +659,10 @@ function RunErrorAlert({ run }: { run: RalphRunDetail }) {
 }
 
 /** The run's key facts, each once: the lane cards below carry the rest. */
-function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
+export function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
   const singleRepository = run.lanes.length <= 1;
+  // The total counts every story; say how many the repository cards don't list.
+  const outside = run.lanes.length > 0 ? run.stories.filter((s) => s.elsewhere).length : 0;
   return (
     <FactStrip label="Run facts">
       {singleRepository ? (
@@ -700,6 +708,12 @@ function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
         <span className="text-numeric">
           {run.storyCounts.completed} / {run.storyCounts.total}
         </span>
+        {outside > 0 && (
+          <span className="fact-secondary fact-note">
+            <span className="text-numeric">{outside}</span>{" "}
+            {singleRepository ? "outside this repository" : "outside these repositories"}
+          </span>
+        )}
       </Fact>
       <Fact label="Jobs enqueued">
         <span className="text-numeric">{run.iterations}</span>
