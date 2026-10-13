@@ -356,7 +356,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         {repo.pinnedHarnesses.length > 0 ? (
           <div className="list-filters">
             {repo.pinnedHarnesses.map((agent) => (
-              <Badge key={agent.id} variant="info">
+              <Badge key={agent.id} variant="neutral">
                 {agent.name}
               </Badge>
             ))}

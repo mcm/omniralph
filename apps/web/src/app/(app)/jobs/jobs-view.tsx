@@ -34,7 +34,7 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ListPagination } from "@/components/list-pagination";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
-import { ListErrorRow } from "@/components/list-error";
+import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
@@ -83,6 +83,7 @@ function JobTableRow({
   year: number;
 }) {
   const { pending, run } = useAction();
+  const errorId = useListErrorId(job.error);
   return (
     <>
       {/* Target of the job links on the Ralph run pages and in chat (`#job-<id>`). */}
@@ -93,19 +94,21 @@ function JobTableRow({
         data-has-error={job.error ? true : undefined}
         aria-current={targeted || undefined}
       >
-        <TableCell>
+        <TableCell className="jobs-col-job">
           <a
             href={`#job-${job.id}`}
             className="list-title text-numeric list-nowrap"
             title={job.id}
             aria-label={`Job ${job.id}`}
+            aria-describedby={errorId}
           >
             {shortJobId(job.id)}
           </a>
           <PhoneMeta>
             <JobStatusBadge job={job} />
-            <Timestamp iso={job.finishedAt ?? job.createdAt} />
+            <Timestamp iso={job.finishedAt ?? job.createdAt} year={year} />
             <span className="list-time text-numeric">{job.type}</span>
+            {job.target && <MonoValue value={job.target.label} className="list-time" />}
           </PhoneMeta>
         </TableCell>
         <TableCell className={WIDE_COLUMN}>
@@ -134,7 +137,7 @@ function JobTableRow({
             <EmptyValue />
           )}
         </TableCell>
-        <TableCell className={WIDE_COLUMN}>
+        <TableCell className={WIDE_COLUMN} aria-describedby={errorId}>
           <JobStatusBadge job={job} />
         </TableCell>
         <TableCell className={WIDE_COLUMN} numeric>
@@ -206,7 +209,12 @@ function JobTableRow({
         )}
       </TableRow>
       {job.error && (
-        <ListErrorRow error={job.error} colSpan={isAdmin ? JOB_COLUMNS + 1 : JOB_COLUMNS} />
+        <ListErrorRow
+          error={job.error}
+          colSpan={isAdmin ? JOB_COLUMNS + 1 : JOB_COLUMNS}
+          id={errorId}
+          targeted={targeted}
+        />
       )}
     </>
   );
@@ -303,7 +311,7 @@ export function JobsView({
               <Table className="list-table jobs-table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Job</TableHead>
+                    <TableHead className="jobs-col-job">Job</TableHead>
                     <TableHead className={WIDE_COLUMN}>Type</TableHead>
                     <TableHead className={`${WIDE_COLUMN} jobs-col-target`}>Target</TableHead>
                     <TableHead className={WIDE_COLUMN}>Status</TableHead>

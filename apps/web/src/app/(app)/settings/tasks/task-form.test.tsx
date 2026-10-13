@@ -130,7 +130,7 @@ describe("TaskForm", () => {
     for (const required of [
       "Agents suited to the task type.",
       "the task type decides which it accepts.",
-      "Rendered with the trigger&#x27;s variables.",
+      "Variables go in double braces, e.g. {{pr.title}}.",
       "What applies the run&#x27;s output.",
     ]) {
       expect(html).not.toContain(`${required} Default: not set.`);

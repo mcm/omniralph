@@ -23,5 +23,11 @@ export default async function RalphRunPage({ params }: { params: Promise<{ id: s
   ]);
   if (!detail) notFound();
   const run = await ralphRunDetailView(detail, organizationDefinitions(db, user.organization.id));
-  return <RalphRunDetailView run={run} linearConnected={integration !== null} />;
+  return (
+    <RalphRunDetailView
+      run={run}
+      linearConnected={integration !== null}
+      year={new Date().getFullYear()}
+    />
+  );
 }

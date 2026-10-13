@@ -3,6 +3,7 @@ import {
   analyticsData,
   analyticsHref,
   countTick,
+  tokenTick,
   dayLabel,
   falsePositivesNoun,
   formatRate,
@@ -63,6 +64,14 @@ describe("formatting", () => {
     expect(countTick(1200)).toBe("1,200");
     expect(countTick(0.5)).toBe("");
     expect(countTick(1.5)).toBe("");
+  });
+
+  it("pads token ticks to one width, so stacked token charts share a plot area", () => {
+    const ticks = [0, 950, 9_500, 120_000, 1_200_000, 12_300_000].map(tokenTick);
+    expect(new Set(ticks.map((tick) => tick.length))).toEqual(new Set([5]));
+    expect(ticks[0]).toBe("\u2007\u2007\u2007\u20070");
+    expect(ticks[4]).toBe("\u20071.2M");
+    expect(ticks[5]).toBe("12.3M");
   });
 
   it("formats rates", () => {

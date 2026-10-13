@@ -59,6 +59,29 @@ function EffectivePath({ tool }: { tool: HostToolRow }) {
   return <Badge variant={HOST_TOOL_PATH_VARIANTS.unavailable}>Unavailable</Badge>;
 }
 
+/**
+ * Below 768px, where the status and path columns are hidden: what the harness reported,
+ * each fact named, since a bare path or "Not configured" says nothing on its own.
+ */
+function HostToolPhoneFacts({ tool }: { tool: HostToolRow }) {
+  return (
+    <dl className="host-tool-facts">
+      <dt>Configured path</dt>
+      <dd>
+        <ConfiguredPathStatus tool={tool} />
+      </dd>
+      <dt>Discovered</dt>
+      <dd>
+        <DiscoveredPath tool={tool} />
+      </dd>
+      <dt>Runs from</dt>
+      <dd>
+        <EffectivePath tool={tool} />
+      </dd>
+    </dl>
+  );
+}
+
 /** Sets or (blank) clears the tool's configured path on the harness. */
 function ConfiguredPathForm({ harnessId, tool }: { harnessId: string; tool: HostToolRow }) {
   const { pending, run } = useAction();
@@ -138,8 +161,7 @@ export function HarnessHostTools({
                 {tool.description && <Muted>{tool.description}</Muted>}
               </Stack>
               <PhoneMeta>
-                <ConfiguredPathStatus tool={tool} />
-                <EffectivePath tool={tool} />
+                <HostToolPhoneFacts tool={tool} />
               </PhoneMeta>
             </TableCell>
             <TableCell>

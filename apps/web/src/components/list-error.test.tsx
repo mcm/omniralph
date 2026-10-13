@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ListError, ListErrorRow } from "./list-error";
+import { ListError, ListErrorRow, useListErrorId } from "./list-error";
 
 const css = readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
 
@@ -27,6 +27,46 @@ describe("ListErrorRow", () => {
     expect(html).toContain("list-error-row");
     expect(html).toContain('colSpan="8"');
     expect(html).toContain(`>${error}</span>`);
+  });
+});
+
+describe("ListErrorRow ties", () => {
+  it("takes the id the failed row's cells name in aria-describedby", () => {
+    const html = renderToStaticMarkup(
+      <table>
+        <tbody>
+          <ListErrorRow error={error} colSpan={8} id="job-error" />
+        </tbody>
+      </table>,
+    );
+    expect(html).toContain(`<span id="job-error" class="list-error">${error}</span>`);
+    expect(html).not.toContain("data-targeted");
+  });
+
+  it("carries a targeted row's highlight onto the reason row, outlined round both", () => {
+    const html = renderToStaticMarkup(
+      <table>
+        <tbody>
+          <ListErrorRow error={error} colSpan={8} targeted />
+        </tbody>
+      </table>,
+    );
+    expect(html).toMatch(/<tr[^>]*class="[^"]*list-error-row"[^>]*data-targeted="true"/);
+    // The failed row drops its bottom edge and the reason row its top one.
+    expect(rule(".list-table tr[data-targeted][data-has-error]")).not.toContain("0 -2px");
+    expect(rule(".list-table tr.list-error-row[data-targeted]")).not.toContain("0 2px");
+  });
+});
+
+describe("useListErrorId", () => {
+  function Row({ error }: { error: string | null }) {
+    const id = useListErrorId(error);
+    return <td aria-describedby={id} />;
+  }
+
+  it("is undefined when the row has no error", () => {
+    expect(renderToStaticMarkup(<Row error={null} />)).not.toContain("aria-describedby");
+    expect(renderToStaticMarkup(<Row error={error} />)).toContain("aria-describedby=");
   });
 });
 

@@ -9,6 +9,7 @@ import type {
   RalphRunOutcome,
   RalphStoryOutcomes,
 } from "@omniralph/db";
+import { formatTokens } from "@/lib/reviews/display";
 
 /** Client-safe copy of the DB's `ANALYTICS_RANGES`. */
 export const ANALYTICS_RANGES = [7, 30, 90] as const satisfies readonly AnalyticsRange[];
@@ -139,6 +140,18 @@ export function dayLabel(date: string): string {
  */
 export function countTick(value: number): string {
   return Number.isInteger(value) ? value.toLocaleString("en-US") : "";
+}
+
+/** The widest `formatTokens` value ("12.3M"). */
+const TOKEN_TICK_WIDTH = 5;
+
+/**
+ * A token-axis tick, padded at the start with figure spaces (a digit's width in the
+ * mono tick face) to one width. Charts size their y axis to its widest tick, so stacked
+ * token charts that use this share a plot area, and a day sits at the same x in each.
+ */
+export function tokenTick(value: number): string {
+  return formatTokens(value).padStart(TOKEN_TICK_WIDTH, "\u2007");
 }
 
 /** Mean tokens per review across profiles, weighted by their review counts. */

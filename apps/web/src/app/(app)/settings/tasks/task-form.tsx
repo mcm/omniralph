@@ -332,7 +332,7 @@ export function TaskForm({
                   label="Template"
                   htmlFor="task-prompt-template"
                   description={[
-                    "Rendered with the trigger's variables.",
+                    "Variables go in double braces, e.g. {{pr.title}}.",
                     setupHint(draft.setupCommands),
                   ]
                     .filter(Boolean)

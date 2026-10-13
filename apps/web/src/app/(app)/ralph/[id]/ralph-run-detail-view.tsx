@@ -1,6 +1,5 @@
 "use client";
 
-import { Fragment } from "react";
 import Link from "next/link";
 import {
   Alert,
@@ -41,7 +40,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
-import { ListErrorRow } from "@/components/list-error";
+import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
@@ -527,7 +526,68 @@ function MessagesCard({ run }: { run: RalphRunDetail }) {
   );
 }
 
-function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
+/** The run's jobs table's column count, which a failed job's reason row spans. */
+const RUN_JOB_COLUMNS = 6;
+
+function RunJobRow({
+  job,
+  isAdmin,
+  year,
+}: {
+  job: RalphRunDetail["jobs"][number];
+  isAdmin: boolean;
+  year: number;
+}) {
+  const errorId = useListErrorId(job.error);
+  return (
+    <>
+      <TableRow data-has-error={job.error ? true : undefined}>
+        <TableCell>
+          <Link
+            href={jobPageHref(job.id)}
+            className="fact-mono list-text-primary"
+            aria-describedby={errorId}
+          >
+            {job.type}
+          </Link>
+          <PhoneMeta>
+            <JobStatusBadge job={job} />
+            {/* The ID a story's "Last job" names, so the two can be matched. */}
+            <JobLink id={job.id} label={shortJobId(job.id)} />
+            <Timestamp iso={job.finishedAt ?? job.createdAt} year={year} />
+          </PhoneMeta>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <JobLink id={job.id} label={shortJobId(job.id)} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN} aria-describedby={errorId}>
+          <JobStatusBadge job={job} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <span className="list-text">{job.deliveryCount}</span>
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          <AgentName agent={job.agent} isAdmin={isAdmin} />
+        </TableCell>
+        <TableCell className={WIDE_COLUMN}>
+          {/* The Jobs page's format: the current year dropped, and the finished time
+              without the date parts it shares with the created one. */}
+          <span className="list-time">
+            <Timestamp iso={job.createdAt} year={year} /> →{" "}
+            {job.finishedAt ? (
+              <Timestamp iso={job.finishedAt} after={job.createdAt} />
+            ) : (
+              <EmptyValue />
+            )}
+          </span>
+        </TableCell>
+      </TableRow>
+      {job.error && <ListErrorRow error={job.error} colSpan={RUN_JOB_COLUMNS} id={errorId} />}
+    </>
+  );
+}
+
+function JobsCard({ run, isAdmin, year }: { run: RalphRunDetail; isAdmin: boolean; year: number }) {
   return (
     <Card>
       <CardHeader>
@@ -543,46 +603,12 @@ function JobsCard({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boolean }) {
               <TableHead className={WIDE_COLUMN}>Status</TableHead>
               <TableHead className={WIDE_COLUMN}>Deliveries</TableHead>
               <TableHead className={WIDE_COLUMN}>Harness</TableHead>
-              <TableHead className={WIDE_COLUMN}>Created</TableHead>
-              <TableHead className={WIDE_COLUMN}>Finished</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created → finished</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {run.jobs.map((job) => (
-              <Fragment key={job.id}>
-                <TableRow data-has-error={job.error ? true : undefined}>
-                  <TableCell>
-                    <Link href={jobPageHref(job.id)} className="fact-mono list-text-primary">
-                      {job.type}
-                    </Link>
-                    <PhoneMeta>
-                      <JobStatusBadge job={job} />
-                      {/* The ID a story's "Last job" names, so the two can be matched. */}
-                      <JobLink id={job.id} label={shortJobId(job.id)} />
-                      <Timestamp iso={job.finishedAt ?? job.createdAt} />
-                    </PhoneMeta>
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    <JobLink id={job.id} label={shortJobId(job.id)} />
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    <JobStatusBadge job={job} />
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    <span className="list-text">{job.deliveryCount}</span>
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    <AgentName agent={job.agent} isAdmin={isAdmin} />
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    <Timestamp iso={job.createdAt} />
-                  </TableCell>
-                  <TableCell className={WIDE_COLUMN}>
-                    {job.finishedAt ? <Timestamp iso={job.finishedAt} /> : <EmptyValue />}
-                  </TableCell>
-                </TableRow>
-                {job.error && <ListErrorRow error={job.error} colSpan={7} />}
-              </Fragment>
+              <RunJobRow key={job.id} job={job} isAdmin={isAdmin} year={year} />
             ))}
           </TableBody>
         </Table>
@@ -731,10 +757,13 @@ export function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boole
 export function RalphRunDetailView({
   run,
   linearConnected,
+  year,
 }: {
   run: RalphRunDetail;
   /** False while no Linear workspace is connected. */
   linearConnected: boolean;
+  /** The current year, which job times leave out. */
+  year: number;
 }) {
   const isAdmin = useCurrentUser().role === "admin";
   const stoppable = STOPPABLE_RALPH_RUN_STATUSES.includes(run.status);
@@ -825,7 +854,7 @@ export function RalphRunDetailView({
           </Card>
         )}
 
-        {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} />}
+        {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} year={year} />}
       </main>
     </>
   );
