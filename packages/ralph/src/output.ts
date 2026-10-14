@@ -17,7 +17,7 @@ export interface FollowUp {
   manual?: boolean;
 }
 
-/** At most this many recommendations are kept from one story session. */
+/** At most this many recommendations are kept from one story session (`MAX_RALPH_RESULT_RECOMMENDATIONS` in `@omniralph/shared`). */
 export const MAX_RECOMMENDATIONS = 10;
 
 /**
