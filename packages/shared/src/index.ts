@@ -15,3 +15,4 @@ export * from "./run-result.js";
 export * from "./run-linear.js";
 export * from "./correlation.js";
 export * from "./claude-code-tools.js";
+export * from "./text.js";

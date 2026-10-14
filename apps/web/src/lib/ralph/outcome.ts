@@ -19,6 +19,7 @@ import {
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
 import {
+  excerpt,
   MAX_ATTEMPTS_PER_STORY,
   RalphStoryResult,
   type RalphFollowUp,
@@ -258,17 +259,17 @@ export async function recordFailedAttempt(
   if (options.setAside) {
     await postActivity(conversation, {
       type: "thought",
-      body: `🚧 **${story.identifier}** is blocked, so I'm setting it aside without retrying.${saved} Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
+      body: `🚧 **${story.identifier}** is blocked, so I'm setting it aside without retrying.${saved} Stories that don't depend on it carry on.\n\n${excerpt(feedback, 1500)}`,
     });
   } else if (exhausted) {
     await postActivity(conversation, {
       type: "error",
-      body: `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside. Stories that don't depend on it carry on.\n\n${tail(feedback, 1500)}`,
+      body: `⚠️ **${story.identifier}** did not complete after ${attempt} attempts, so I'm setting it aside. Stories that don't depend on it carry on.\n\n${excerpt(feedback, 1500)}`,
     });
   } else {
     await postActivity(conversation, {
       type: "thought",
-      body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${tail(feedback, 1500)}`,
+      body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${excerpt(feedback, 1500)}`,
     });
   }
 }
@@ -309,17 +310,17 @@ export async function recordRound(
   if (capped) {
     await postActivity(conversation, {
       type: "error",
-      body: `⚠️ **${story.identifier}** reached its round cap (${max} rounds) without completing, so I'm setting it aside.${saved} ${setAside}${trend}\n\n${tail(feedback, 1500)}`,
+      body: `⚠️ **${story.identifier}** reached its round cap (${max} rounds) without completing, so I'm setting it aside.${saved} ${setAside}${trend}\n\n${excerpt(feedback, 1500)}`,
     });
   } else if (stalled && metrics) {
     await postActivity(conversation, {
       type: "error",
-      body: `⚠️ **${story.identifier}**'s ${metrics.name} hasn't beaten its best (${bestValue(metrics)}) in ${stallRounds} rounds, so I'm setting it aside after round ${round}.${saved} ${setAside}${trend}\n\n${tail(feedback, 1500)}`,
+      body: `⚠️ **${story.identifier}**'s ${metrics.name} hasn't beaten its best (${bestValue(metrics)}) in ${stallRounds} rounds, so I'm setting it aside after round ${round}.${saved} ${setAside}${trend}\n\n${excerpt(feedback, 1500)}`,
     });
   } else {
     await postActivity(conversation, {
       type: "thought",
-      body: `🔁 **${story.identifier}** round ${round}/${max} filed follow-ups; it runs again once they're done.${saved}${trend}\n\n${tail(feedback, 1500)}`,
+      body: `🔁 **${story.identifier}** round ${round}/${max} filed follow-ups; it runs again once they're done.${saved}${trend}\n\n${excerpt(feedback, 1500)}`,
     });
   }
 }
