@@ -104,9 +104,9 @@ Discord** (a server belongs to one organization). Add the redirect
 `<APP_URL>/api/integrations/discord/callback` under **OAuth2 › Redirects**; set the **Interactions
 Endpoint URL** to `<APP_URL>/api/webhooks/discord`. The deployment-wide bot token is used for every
 server, so nothing per-server is stored. Without all four variables, **Connect Discord** is
-disabled. Ordinary messages arrive over the Discord Gateway, which the `/api/cron/discord-gateway`
-cron keeps connected (every 9 minutes, each run listening for 10, so runs overlap); enable the
-**Message Content Intent** under **Bot**.
+disabled. Ordinary messages only arrive over the Discord Gateway, which the control panel doesn't
+connect to yet ([chat.md](chat.md#ordinary-discord-messages-arent-received-yet)); enable the
+**Message Content Intent** under **Bot** for when it does.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |

@@ -79,7 +79,10 @@ export async function handleSlackWebhook(req: Request, deps: ChatWebhookDeps): P
   return res;
 }
 
-/** The header the Gateway forwarder (`startGatewayListener`) authenticates with. */
+/**
+ * The header a Gateway forwarder (the adapter's `startGatewayListener`) authenticates with.
+ * Nothing runs a forwarder at the moment (the Gateway connection is to be redesigned).
+ */
 export const DISCORD_GATEWAY_TOKEN_HEADER = "x-discord-gateway-token";
 
 interface ForwardedGatewayEvent {
