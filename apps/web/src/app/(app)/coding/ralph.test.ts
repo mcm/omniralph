@@ -413,6 +413,7 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
         lastJobId: job.id,
         laneId: null,
         elsewhere: null,
+        recommendations: [],
       },
       {
         id: s2!.id,
@@ -425,6 +426,7 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
         lastJobId: null,
         laneId: null,
         elsewhere: null,
+        recommendations: [],
       },
     ]);
     expect(view.jobs).toMatchObject([

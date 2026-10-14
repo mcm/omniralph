@@ -346,6 +346,47 @@ function ElsewhereCard({ run }: { run: RalphRunDetail }) {
   );
 }
 
+/** Advice the stories' sessions gave for other projects or repositories: shown, never filed. */
+export function RecommendationsCard({ run }: { run: RalphRunDetail }) {
+  const items = run.stories.flatMap((story) =>
+    story.recommendations.map((recommendation) => ({ story, recommendation })),
+  );
+  if (items.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle as="h2">Recommendations</CardTitle>
+        <CardDescription>
+          Changes to other projects or repositories that stories suggested, e.g. an upstream fix
+          that would let a workaround go. They aren&apos;t filed as issues and don&apos;t hold
+          stories up.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="run-guidance">
+          {items.map(({ story, recommendation }) => (
+            <li key={`${story.id}-${recommendation.title}`} className="run-guidance-item">
+              <span className="text-sm font-medium">{recommendation.title}</span>
+              <Muted>
+                From{" "}
+                <IssueRef
+                  identifier={story.identifier}
+                  title={story.title}
+                  runUrl={run.linearUrl}
+                />{" "}
+                · <Timestamp iso={recommendation.at} inline />
+              </Muted>
+              {recommendation.description && (
+                <span className="run-guidance-text">{recommendation.description}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** One section per lane (repository), or a single stories table before the run has one. */
 export function StoriesCard({ run }: { run: RalphRunDetail }) {
   if (run.lanes.length > 0) {
@@ -814,6 +855,8 @@ export function RalphRunDetailView({
         <RunFacts run={run} isAdmin={isAdmin} />
 
         <StoriesCard run={run} />
+
+        <RecommendationsCard run={run} />
 
         <EmptySections names={empty} />
 

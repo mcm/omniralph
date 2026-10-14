@@ -1,0 +1,1 @@
+ALTER TABLE "ralph_stories" ADD COLUMN "recommendations" jsonb DEFAULT '[]'::jsonb NOT NULL;

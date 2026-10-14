@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { RalphLaneView, RalphRunDetailView, RalphStoryView } from "@/lib/ralph/display";
-import { RunFacts, StoriesCard } from "./ralph-run-detail-view";
+import { RecommendationsCard, RunFacts, StoriesCard } from "./ralph-run-detail-view";
 
 vi.mock("../actions", () => ({ stopRalphRun: vi.fn() }));
 vi.mock("../../repositories/actions", () => ({}));
@@ -39,6 +39,7 @@ function story(
     lastJobId: null,
     laneId,
     elsewhere,
+    recommendations: [],
   };
 }
 
@@ -144,5 +145,34 @@ describe("run detail stories-done counts", () => {
     expect(stories).toContain("In sub-issue order.");
     expect(stories).not.toMatch(/\d+ of \d+/);
     expect(text(renderToStaticMarkup(<RunFacts run={r} isAdmin />))).not.toContain("outside");
+  });
+});
+
+describe("run detail recommendations", () => {
+  it("lists each story's recommendations with the story they came from", () => {
+    const main = lane("lane-1", "fixture-labs/api", true);
+    const advised = {
+      ...story("completed", main.id),
+      recommendations: [
+        {
+          title: "Fix the date parser upstream",
+          description: "In fixture-labs/dates: accept offsets, so api can drop its shim.",
+          at: "2026-10-14T10:00:00.000Z",
+        },
+      ],
+    };
+    const r = run([main], [advised, story("pending", main.id)]);
+    const card = text(renderToStaticMarkup(<RecommendationsCard run={r} />));
+    expect(card).toContain("Recommendations");
+    expect(card).toContain("aren't filed as issues");
+    expect(card).toContain("Fix the date parser upstream");
+    expect(card).toContain(`From ${advised.identifier}`);
+    expect(card).toContain("so api can drop its shim.");
+  });
+
+  it("renders nothing without recommendations", () => {
+    const main = lane("lane-1", "fixture-labs/api", true);
+    const r = run([main], [story("completed", main.id)]);
+    expect(renderToStaticMarkup(<RecommendationsCard run={r} />)).toBe("");
   });
 });

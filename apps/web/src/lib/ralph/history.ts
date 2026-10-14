@@ -134,6 +134,11 @@ export async function ralphRunDetailView(
       lastJobId: story.lastJobId,
       laneId: story.laneId,
       elsewhere: story.elsewhere,
+      recommendations: story.recommendations.map(({ title, description, at }) => ({
+        title,
+        description,
+        at,
+      })),
     })),
     jobs: detail.jobs.map((job) => ({
       id: job.id,

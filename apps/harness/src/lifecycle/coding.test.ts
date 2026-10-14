@@ -459,6 +459,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         summary: "I need an API key for the payment sandbox.",
         commit: { summary: "Add the payment client" },
         followUps: [{ title: "Get a sandbox key", description: "We need one.", manual: true }],
+        recommendations: [{ title: "Fix it upstream", description: "In acme/sdk: drop our shim." }],
         metric: { name: "critique score", value: 26, direction: "higher" },
       });
     });
@@ -473,6 +474,9 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(out.feedback).toContain("reported it was blocked");
     expect(out.followUps).toEqual([
       { title: "Get a sandbox key", description: "We need one.", manual: true },
+    ]);
+    expect(out.recommendations).toEqual([
+      { title: "Fix it upstream", description: "In acme/sdk: drop our shim." },
     ]);
     expect(out.metric).toEqual({ name: "critique score", value: 26, direction: "higher" });
     expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");

@@ -108,6 +108,7 @@ describe("ralphRunFailure", () => {
     lastJobId: "job-2",
     laneId: null,
     elsewhere: null,
+    recommendations: [],
     ...over,
   });
   const job = (id: string, status: RalphJobView["status"]): RalphJobView => ({

@@ -16,6 +16,7 @@ import {
   MAX_LEASE_SECONDS,
   ralphStashPrefix,
   type RalphFollowUp,
+  type RalphRecommendation,
   type RalphStoryPayload,
   type RalphStoryResult,
   type RalphStoryStatus,
@@ -152,6 +153,14 @@ function followUpsOf(outcome: StoryOutcome | undefined): RalphFollowUp[] {
     title: clip(f.title, 255),
     description: clip(f.description),
     manual: f.manual === true,
+  }));
+}
+
+/** Recommendations that fit `RalphStoryResult`. */
+function recommendationsOf(outcome: StoryOutcome | undefined): RalphRecommendation[] {
+  return (outcome?.recommendations ?? []).map((r) => ({
+    title: clip(r.title, 255),
+    description: clip(r.description),
   }));
 }
 
@@ -340,6 +349,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           await dropApplied(worktree, offered, outcome?.appliedStashes ?? [], log);
           const summary = clip(outcome?.summary.trim() || session.output.trim());
           const followUps = followUpsOf(outcome);
+          const recommendations = recommendationsOf(outcome);
           const result = (
             status: RalphStoryStatus,
             extra: { feedback: string | null; commitSha?: string; hiddenRef?: HiddenRefPush },
@@ -349,6 +359,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             ...(extra.commitSha && { commitSha: extra.commitSha }),
             ...(extra.hiddenRef && { hiddenRef: extra.hiddenRef }),
             followUps,
+            ...(recommendations.length > 0 && { recommendations }),
             ...(outcome?.metric && { metric: outcome.metric }),
             feedback: extra.feedback === null ? null : clip(extra.feedback),
             ...progress,

@@ -210,6 +210,19 @@ export const RalphFollowUp = z.object({
 });
 export type RalphFollowUp = z.infer<typeof RalphFollowUp>;
 
+/** Most recommendations kept per story. */
+export const MAX_RALPH_RECOMMENDATIONS = 20;
+
+/**
+ * Advice the session gave for another project or repository (e.g. an upstream fix that would let a
+ * workaround go): shown in the run, never filed as an issue, and it doesn't hold the story up.
+ */
+export const RalphRecommendation = z.object({
+  title: z.string().trim().min(1).max(255),
+  description: z.string().max(20_000),
+});
+export type RalphRecommendation = z.infer<typeof RalphRecommendation>;
+
 export const RALPH_METRIC_DIRECTIONS = ["higher", "lower"] as const;
 export type RalphMetricDirection = (typeof RALPH_METRIC_DIRECTIONS)[number];
 
@@ -238,6 +251,8 @@ export const RalphStoryResult = z.object({
    */
   hiddenRef: z.object({ ref: z.string().min(1).max(255), sha: CommitSha }).optional(),
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
+  /** Advice for other projects (older harnesses never send any). */
+  recommendations: z.array(RalphRecommendation).max(MAX_RALPH_RECOMMENDATIONS).optional(),
   /** The story's progress metric this round, when it reports one (older harnesses never do). */
   metric: RalphStoryMetric.optional(),
   /** Why the attempt didn't complete (e.g. failed gate output), for the next attempt; null when complete. */

@@ -17,6 +17,18 @@ export interface FollowUp {
   manual?: boolean;
 }
 
+/** At most this many recommendations are kept from one story session. */
+export const MAX_RECOMMENDATIONS = 10;
+
+/**
+ * Advice for outside this project (e.g. an upstream fix that would let a workaround go): shown, never
+ * filed as an issue, and it doesn't hold the story up.
+ */
+export interface Recommendation {
+  title: string;
+  description: string;
+}
+
 /** A JSON schema for `outputFormat`, from a zod schema. */
 function jsonSchema(schema: z.ZodType): Record<string, unknown> {
   const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
@@ -67,7 +79,22 @@ export const StoryAgentOutput = z.object({
       }),
     )
     .describe(
-      "Work outside this story's scope for the orchestrator to file as new stories. Empty when there is none.",
+      "Work outside this story's scope, in this project, for the orchestrator to file as new stories. Never work for another project or repository. Empty when there is none.",
+    ),
+  recommendations: z
+    .array(
+      z.object({
+        title: z.string().describe("Short imperative title."),
+        description: z
+          .string()
+          .describe(
+            "Which project or repository, what to change there, and what it would let this one drop (e.g. a workaround).",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "Advice for another project or repository (e.g. an upstream fix that would let a workaround go). Shown to people, never filed as issues, and it doesn't hold this story up.",
     ),
   metric: z
     .object({
@@ -91,13 +118,17 @@ export function isWaitingStory(structured: unknown): boolean {
 }
 
 /** A story session's result after `readStoryOutcome`'s clean-up. */
-export type StoryOutcome = Omit<StoryAgentOutput, "followUps"> & { followUps: FollowUp[] };
+export type StoryOutcome = Omit<StoryAgentOutput, "followUps" | "recommendations"> & {
+  followUps: FollowUp[];
+  recommendations?: Recommendation[];
+};
 
 /** `outputFormat` schema of a story session. */
 export const STORY_OUTPUT_SCHEMA = jsonSchema(StoryAgentOutput);
 
 /**
- * A story session's structured result, with follow-ups trimmed, deduplicated by title and capped. A result
+ * A story session's structured result, with follow-ups and recommendations trimmed, deduplicated by title
+ * and capped. A result
  * that is missing or doesn't match the schema gives the problem instead.
  */
 export function readStoryOutcome(
@@ -111,11 +142,19 @@ export function readStoryOutcome(
     if (!title || followUps.some((x) => x.title.toLowerCase() === title.toLowerCase())) continue;
     followUps.push({ title, description: f.description.trim(), ...(f.manual && { manual: true }) });
   }
+  const recommendations: Recommendation[] = [];
+  for (const r of parsed.data.recommendations ?? []) {
+    const title = r.title.replace(/\s+/g, " ").trim();
+    if (!title || recommendations.some((x) => x.title.toLowerCase() === title.toLowerCase())) {
+      continue;
+    }
+    recommendations.push({ title, description: r.description.trim() });
+  }
   const commit = parsed.data.commit?.summary.trim()
     ? { summary: parsed.data.commit.summary.replace(/\s+/g, " ").trim() }
     : undefined;
   // A metric without a name or a finite value is dropped, not an invalid result.
-  const { metric: reported, ...rest } = parsed.data;
+  const { metric: reported, recommendations: _, ...rest } = parsed.data;
   const name = reported?.name.replace(/\s+/g, " ").trim().slice(0, 200);
   const metric =
     reported && name && Number.isFinite(reported.value)
@@ -132,6 +171,9 @@ export function readStoryOutcome(
       ...rest,
       commit,
       followUps: followUps.slice(0, MAX_FOLLOW_UPS),
+      ...(recommendations.length > 0 && {
+        recommendations: recommendations.slice(0, MAX_RECOMMENDATIONS),
+      }),
       ...(metric && { metric }),
     },
   };

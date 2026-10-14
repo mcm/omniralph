@@ -47,6 +47,9 @@ Your session ends with a structured result (the JSON schema you were given). It 
 
 - Leave `followUps` empty.
 
+## Recommendations
+Never file follow-ups, or create issues yourself, for another project or repository (an upstream library, a tool or service another team owns): `followUps` are only for work in this project. When a change elsewhere would help (e.g. "fix this upstream in X so we can remove the Y workaround"), work around it here and add one entry to `recommendations`: a short imperative `title`, and a `description` naming the project or repository, what to change there, and what it would let this one drop. Recommendations are shown to people, never filed as issues, and don't hold ENG-7 up: report its status as you would without them. Only when ENG-7 can't be done without the change elsewhere, report it `blocked` and say why in `summary`.
+
 ## Rules
 You are working a Linear epic one user story at a time (the coding loop).
 - Work only on the single story you are given; other stories get their own sessions.

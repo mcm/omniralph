@@ -127,11 +127,14 @@ Your session ends with a structured result (the JSON schema you were given). It 
 - `summary` is posted to Linear: what you did, or what is in the way.
 
 ## Follow-up Work
-If you find work this story needs that is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to `followUps`, and the orchestrator files each as a new story (a sub-issue of ENG-10): a short imperative `title`, and a `description` of what is wrong, where, and what done looks like (acceptance criteria as `- [ ]` checkboxes).
+If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to `followUps`, and the orchestrator files each as a new story (a sub-issue of ENG-10): a short imperative `title`, and a `description` of what is wrong, where, and what done looks like (acceptance criteria as `- [ ]` checkboxes).
 - If ENG-12 can't be completed until they are fixed, report it `blocked`, not complete. They will block ENG-12, be worked first, and then ENG-12 runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
 - If ENG-12 measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as `metric`: a `name`, the `value`, its `direction` (`higher` or `lower` is better) and, if it has one, the `target`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave `metric` out.
 - If ENG-12 is complete anyway, report it complete, and they join the epic as new stories.
 - If an item is work only a person can do (granting access, changing settings in an outside service, a decision), set `manual: true`. It is filed for a person and never attempted by an agent; stories it blocks wait until a person marks it done.
+
+## Recommendations
+Never file follow-ups, or create issues yourself, for another project or repository (an upstream library, a tool or service another team owns): `followUps` are only for work in this project. When a change elsewhere would help (e.g. "fix this upstream in X so we can remove the Y workaround"), work around it here and add one entry to `recommendations`: a short imperative `title`, and a `description` naming the project or repository, what to change there, and what it would let this one drop. Recommendations are shown to people, never filed as issues, and don't hold ENG-12 up: report its status as you would without them. Only when ENG-12 can't be done without the change elsewhere, report it `blocked` and say why in `summary`.
 
 ## Rules
 You are working a Linear epic one user story at a time (the coding loop).
