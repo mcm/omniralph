@@ -6,6 +6,7 @@ import {
   type SelfUpdateSupport,
 } from "@omniralph/shared";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { triageJobRun } from "@/lib/triage/view";
 import { isHarnessOnline, jobTarget, type JobTarget } from "./display";
 import { harnessUpdateStatus, type HarnessUpdateStatus } from "./update";
 
@@ -139,6 +140,8 @@ export interface JobRow {
   error: string | null;
   agent: { id: string; name: string } | null;
   target: JobTarget | null;
+  /** The triage run of a `triage.run` job (`label`: its issue), linked to its page. */
+  triageRun: { id: string; label: string } | null;
   createdAt: string;
   finishedAt: string | null;
 }
@@ -154,6 +157,7 @@ export function jobRow(job: JobListEntry): JobRow {
     error: job.error,
     agent: job.agent,
     target: jobTarget(job),
+    triageRun: triageJobRun(job),
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
   };

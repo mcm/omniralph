@@ -39,6 +39,8 @@ import {
   seedPools,
   taskDefinitions,
   seedReviewProfiles,
+  runActivities,
+  triageRuns,
   users,
   type Database,
 } from "@omniralph/db";
@@ -429,6 +431,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await seedRalph(tx, now);
     await seedReviews(tx, now);
     await seedOtherJobs(tx, now);
+    await seedTriage(tx, now);
   });
 }
 
@@ -1181,6 +1184,222 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       createdAt: ago(15 * DAY),
     },
   ]);
+}
+
+// ── Triage ──────────────────────────────────────────────────────────────────
+
+/** A `triage.run` job's payload, as `enqueueTriage` builds it (trimmed to what the panel reads). */
+function triagePayload(
+  triageRunId: string,
+  identifier: string,
+  title: string,
+  extra: { branch?: string; reply?: string } = {},
+) {
+  return {
+    trigger: {
+      kind: "linear.triage",
+      context: {
+        triageRunId,
+        issue: {
+          identifier,
+          title,
+          description: "",
+          stateType: "triage",
+          creator: { name: "Fixture Admin" },
+          url: `https://linear.app/fixture-labs/issue/${identifier}`,
+        },
+        repository: extra.branch ? "fixture-labs/control-panel" : null,
+        branch: extra.branch ?? null,
+        reply: extra.reply ?? null,
+      },
+    },
+    ...(extra.branch ? { repositoryId: R.controlPanel, ref: extra.branch } : {}),
+  };
+}
+
+async function seedTriage(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const T = FIXTURE_IDS.triageRuns;
+  const usage = { inputTokens: 48_210, outputTokens: 6_930 };
+  await tx.insert(triageRuns).values([
+    {
+      id: T.completed,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-triage-1",
+      linearAgentSessionId: "fixture-session-triage-1",
+      trigger: "mention",
+      status: "completed",
+      lastResult: {
+        summary:
+          "Rewrote **FIX-310** as an epic PRD (size L) with three stories. One question is open, so it stays in Backlog.",
+        error: null,
+        outcome: {
+          outcome: "prd",
+          size: "L",
+          title: "Export review findings as CSV",
+          description: [
+            "## Problem",
+            "",
+            "Teams copy findings into spreadsheets by hand to track them across releases.",
+            "",
+            "## Goals",
+            "",
+            "- Export a review's findings as CSV from its page",
+            "- Keep severity, status and file paths",
+          ].join("\n"),
+          openQuestions: ["Should dismissed findings be part of the export?"],
+          stories: [
+            {
+              title: "Add a CSV export of a review's findings",
+              body: "As a reviewer, I want to download a review's findings as CSV.\n\n## Acceptance Criteria\n\n- [ ] The review page has an Export button",
+              priority: 2,
+              dependsOn: [],
+              manual: false,
+            },
+            {
+              title: "Document the export",
+              body: "As an admin, I want the export documented.\n\n## Acceptance Criteria\n\n- [ ] The docs describe the columns",
+              priority: 3,
+              dependsOn: [0],
+              manual: false,
+            },
+            {
+              title: "Validate functional requirements",
+              body: "Verify the epic meets the PRD.\n\n## Acceptance Criteria\n\n- [ ] All quality gates pass",
+              priority: 3,
+              dependsOn: [0, 1],
+              manual: false,
+            },
+          ],
+          subIssueUpdates: [],
+        },
+        usage,
+        durationMs: 3 * MINUTE + 12_000,
+      },
+      createdAt: ago(2 * DAY),
+      updatedAt: ago(2 * DAY - 40 * MINUTE),
+    },
+    {
+      id: T.failed,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-triage-2",
+      linearAgentSessionId: "fixture-session-triage-2",
+      trigger: "label",
+      status: "failed",
+      lastResult: {
+        summary: "the triage ended without a result (max_turns)",
+        error: "the triage ended without a result (max_turns)",
+        outcome: null,
+        usage: { inputTokens: 91_400, outputTokens: 12_050 },
+        durationMs: 9 * MINUTE,
+      },
+      createdAt: ago(5 * HOUR),
+      updatedAt: ago(5 * HOUR - 10 * MINUTE),
+    },
+    {
+      id: T.running,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-triage-3",
+      linearAgentSessionId: "fixture-session-triage-3",
+      trigger: "mention",
+      status: "running",
+      pendingReply: "Please keep it to the GitHub provider for now.",
+      createdAt: ago(4 * MINUTE),
+      updatedAt: ago(3 * MINUTE),
+    },
+  ]);
+
+  const firstJob = nextJobId();
+  const replyJob = nextJobId();
+  const failedJob = nextJobId();
+  const runningJob = nextJobId();
+  const query = {
+    organizationId: O.main,
+    type: "triage.run",
+    taskType: "query",
+    pool: "short",
+  } as const;
+  await tx.insert(jobs).values([
+    {
+      ...query,
+      id: firstJob,
+      payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", { branch: "main" }),
+      status: "completed",
+      repositoryId: R.controlPanel,
+      harnessId: H.online,
+      deliveryCount: 1,
+      createdAt: ago(2 * DAY + 30 * MINUTE),
+      startedAt: ago(2 * DAY + 29 * MINUTE),
+      finishedAt: ago(2 * DAY + 25 * MINUTE),
+    },
+    {
+      ...query,
+      id: replyJob,
+      payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", {
+        branch: "main",
+        reply: "Make it an epic: the docs need their own story.",
+      }),
+      status: "completed",
+      repositoryId: R.controlPanel,
+      harnessId: H.online,
+      deliveryCount: 1,
+      createdAt: ago(2 * DAY - 35 * MINUTE),
+      startedAt: ago(2 * DAY - 36 * MINUTE),
+      finishedAt: ago(2 * DAY - 40 * MINUTE),
+    },
+    {
+      ...query,
+      id: failedJob,
+      payload: triagePayload(T.failed, "FIX-322", "Faster harness startup"),
+      status: "completed",
+      harnessId: H.online,
+      deliveryCount: 1,
+      createdAt: ago(5 * HOUR),
+      startedAt: ago(5 * HOUR - MINUTE),
+      finishedAt: ago(5 * HOUR - 10 * MINUTE),
+    },
+    {
+      ...query,
+      id: runningJob,
+      payload: triagePayload(T.running, "FIX-331", "GitLab merge request templates", {
+        branch: "main",
+      }),
+      status: "running",
+      repositoryId: R.controlPanel,
+      harnessId: H.online,
+      deliveryCount: 1,
+      leaseExpiresAt: new Date(now.getTime() + 10 * MINUTE),
+      createdAt: ago(4 * MINUTE),
+      startedAt: ago(3 * MINUTE),
+    },
+  ]);
+  await tx
+    .update(triageRuns)
+    .set({ currentJobId: runningJob })
+    .where(sql`${triageRuns.id} = ${T.running}`);
+
+  const activities: [string, "thought" | "action", string, string | null][] = [
+    [replyJob, "thought", "Reading the issue and the review pages it mentions.", null],
+    [replyJob, "action", "Grep", "findings"],
+    [replyJob, "action", "Read", "apps/web/src/app/(app)/reviews/[id]/review-detail-view.tsx"],
+    [replyJob, "thought", "The reply asks for an epic, so the docs get their own story.", null],
+    [runningJob, "thought", "Looking at how merge requests are opened today.", null],
+    [runningJob, "action", "Grep", "createMergeRequest"],
+  ];
+  await tx.insert(runActivities).values(
+    activities.map(([jobId, type, body, parameter], i) => ({
+      id: fixtureId("runActivity", i + 1),
+      jobId,
+      organizationId: O.main,
+      type,
+      body,
+      parameter,
+      createdAt:
+        jobId === runningJob
+          ? ago(3 * MINUTE - (i - 3) * 20_000)
+          : ago(2 * DAY - 36 * MINUTE - i * 30_000),
+    })),
+  );
 }
 
 // ── Other jobs: every job status ────────────────────────────────────────────

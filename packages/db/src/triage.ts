@@ -3,9 +3,18 @@
  * panel looks runs up by session (replies) and by issue (the label trigger),
  * and records the `triage.run` job whose outcome it applies next.
  */
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { triageRuns, type TriageLastResult } from "./schema.js";
+import { repositoryLink, repositoryLinkColumns, type RepositoryLink } from "./harnesses.js";
+import type { JobStatus } from "./jobs.js";
+import {
+  harnesses,
+  jobs,
+  repositories,
+  scmConnections,
+  triageRuns,
+  type TriageLastResult,
+} from "./schema.js";
 
 export type TriageRun = typeof triageRuns.$inferSelect;
 export type TriageRunStatus = TriageRun["status"];
@@ -316,4 +325,150 @@ export async function stopTriageRun(db: Database, runId: string): Promise<Triage
       .where(eq(triageRuns.id, runId));
     return run;
   });
+}
+
+// ── Triage pages ─────────────────────────────────────────────────────────────
+
+/** Triage runs per page of the Triage list. */
+export const TRIAGE_RUN_PAGE_SIZE = 50;
+
+/** The job type of a triage run's jobs (`TRIAGE_RUN_JOB_TYPE` in `@omniralph/shared`). */
+const TRIAGE_RUN_JOB_TYPE = "triage.run";
+
+/** A `triage.run` job of a triage run, as the Triage pages show it. */
+export interface TriageRunJob {
+  id: string;
+  triageRunId: string;
+  status: JobStatus;
+  deliveryCount: number;
+  cancelRequested: boolean;
+  error: string | null;
+  /** The run spec payload; its trigger context holds the issue as triage read it. */
+  payload: Record<string, unknown>;
+  agent: { id: string; name: string } | null;
+  repository: RepositoryLink | null;
+  createdAt: Date;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
+/** A triage run with its jobs, newest first. */
+export interface TriageRunWithJobs {
+  run: TriageRun;
+  jobs: TriageRunJob[];
+}
+
+export interface TriageRunListPage {
+  runs: TriageRunWithJobs[];
+  /** Matching runs across all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** The trigger context's `triageRunId` of a `triage.run` job's payload (`enqueueTriage`). */
+const jobTriageRunId = sql<string>`${jobs.payload}->'trigger'->'context'->>'triageRunId'`;
+
+/** The organization's `triage.run` jobs of the runs `runIds`, newest first. */
+async function listTriageRunJobs(
+  db: Executor,
+  organizationId: string,
+  runIds: readonly string[],
+): Promise<TriageRunJob[]> {
+  if (runIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: jobs.id,
+      triageRunId: jobTriageRunId,
+      status: jobs.status,
+      deliveryCount: jobs.deliveryCount,
+      cancelRequested: jobs.cancelRequested,
+      error: jobs.error,
+      payload: jobs.payload,
+      harnessId: harnesses.id,
+      harnessName: harnesses.name,
+      createdAt: jobs.createdAt,
+      startedAt: jobs.startedAt,
+      finishedAt: jobs.finishedAt,
+      ...repositoryLinkColumns,
+    })
+    .from(jobs)
+    .leftJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+    .leftJoin(repositories, eq(repositories.id, jobs.repositoryId))
+    .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.type, TRIAGE_RUN_JOB_TYPE),
+        inArray(jobTriageRunId, [...runIds]),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt), desc(jobs.id));
+  return rows.map((row) => ({
+    id: row.id,
+    triageRunId: row.triageRunId,
+    status: row.status,
+    deliveryCount: row.deliveryCount,
+    cancelRequested: row.cancelRequested,
+    error: row.error,
+    payload: row.payload,
+    agent:
+      row.harnessId && row.harnessName !== null
+        ? { id: row.harnessId, name: row.harnessName }
+        : null,
+    repository: repositoryLink(row),
+    createdAt: row.createdAt,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+  }));
+}
+
+/** One page of an organization's triage runs with their jobs, newest first, optionally of one status. */
+export async function listTriageRuns(
+  db: Executor,
+  organizationId: string,
+  filter: { status?: TriageRunStatus; page?: number; pageSize?: number } = {},
+): Promise<TriageRunListPage> {
+  const pageSize = Math.max(1, Math.floor(filter.pageSize ?? TRIAGE_RUN_PAGE_SIZE));
+  const page = Math.max(1, Math.floor(filter.page ?? 1));
+  const where = and(
+    eq(triageRuns.organizationId, organizationId),
+    filter.status ? eq(triageRuns.status, filter.status) : undefined,
+  );
+  const [[totalRow], runs] = await Promise.all([
+    db.select({ total: count() }).from(triageRuns).where(where),
+    db
+      .select()
+      .from(triageRuns)
+      .where(where)
+      .orderBy(desc(triageRuns.createdAt), desc(triageRuns.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+  ]);
+  const runJobs = await listTriageRunJobs(
+    db,
+    organizationId,
+    runs.map((r) => r.id),
+  );
+  return {
+    runs: runs.map((run) => ({ run, jobs: runJobs.filter((j) => j.triageRunId === run.id) })),
+    total: totalRow?.total ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+/** The organization's triage run with its jobs, or null. */
+export async function getTriageRunDetail(
+  db: Executor,
+  organizationId: string,
+  runId: string,
+): Promise<TriageRunWithJobs | null> {
+  const [run] = await db
+    .select()
+    .from(triageRuns)
+    .where(and(eq(triageRuns.id, runId), eq(triageRuns.organizationId, organizationId)))
+    .limit(1);
+  if (!run) return null;
+  return { run, jobs: await listTriageRunJobs(db, organizationId, [run.id]) };
 }

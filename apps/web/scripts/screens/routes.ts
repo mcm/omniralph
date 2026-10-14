@@ -168,6 +168,25 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/coding/[id]/page.tsx",
     auth: "signed-in",
   },
+  { name: "triage", path: "/triage", page: "(app)/triage/page.tsx", auth: "signed-in" },
+  {
+    name: "triage-run-completed",
+    path: `/triage/${ids.triageRuns.completed}`,
+    page: "(app)/triage/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "triage-run-failed",
+    path: `/triage/${ids.triageRuns.failed}`,
+    page: "(app)/triage/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "triage-run-running",
+    path: `/triage/${ids.triageRuns.running}`,
+    page: "(app)/triage/[id]/page.tsx",
+    auth: "signed-in",
+  },
   {
     name: "repositories",
     path: "/repositories",
