@@ -86,24 +86,12 @@ server, and the same bot token is used for every server.
 View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Read Message History
 and Add Reactions. You don't set them in the portal.
 
-### The Discord Gateway cron
+### Ordinary Discord messages aren't received yet
 
-Mentions and replies in Discord don't arrive as webhooks: Discord only sends ordinary messages
-over the Gateway WebSocket. The control panel keeps a Gateway connection open with a cron,
-`/api/cron/discord-gateway` (declared in `apps/web/vercel.json`): every 9 minutes it starts a
-listener that stays connected for 10 minutes and forwards each event to
-`/api/webhooks/discord`. Runs overlap by a minute so no message falls into a gap; events that
-both listeners forward are deduplicated.
-
-- **It needs a Vercel Pro (or Enterprise) plan.** The route runs for up to 800 seconds
-  (`maxDuration`), which Hobby doesn't allow, and Hobby cron jobs run at most once a day. With
-  Hobby, Discord can be connected but the bot won't see messages.
-- Like every cron, it only runs on the production deployment and authenticates with
-  `CRON_SECRET` ([deploy-control-panel.md](deploy-control-panel.md#7-vercel-cron-cron_secret)).
-  Without the Discord env vars it does nothing.
-- Each run keeps a function instance busy for its whole duration, so Discord adds roughly one
-  always-running function to the deployment's usage.
-- After a deploy, the bot can take up to 9 minutes to come back online in Discord.
+Discord only sends ordinary messages (mentions and thread replies) over its Gateway WebSocket,
+not as webhooks. The control panel doesn't hold a Gateway connection at the moment: the earlier
+cron-based listener didn't work and was removed until it's redesigned. Until then, the bot only
+receives what Discord posts to the Interactions Endpoint URL (`/api/webhooks/discord`).
 
 ## 3. Set up the AI Gateway
 
@@ -517,7 +505,7 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | **Connect** is disabled                                  | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
 | Slack install fails for other workspaces                 | Public distribution is activated (step 1.3).                                                                                                                                                                 |
 | The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
-| The bot doesn't react to a Discord mention               | The Vercel plan is Pro or Enterprise; the `/api/cron/discord-gateway` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the **Message Content Intent** is on; the bot can view the channel. |
+| The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)). |
 | "The Omniralph assistant isn't configured"               | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
 | The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
 | A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                                                    |

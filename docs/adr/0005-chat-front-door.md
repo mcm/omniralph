@@ -65,6 +65,9 @@ to `/api/webhooks/discord` with the bot token as proof. Consecutive runs overlap
 nothing falls into a gap; Chat SDK's dedupe absorbs events forwarded twice. The route needs
 `maxDuration = 800`, so Discord chat needs a Vercel Pro or Enterprise plan.
 
+**Update (TOOL-492):** the cron never worked and was removed; the Gateway connection is to be
+redesigned. Until then, ordinary Discord messages don't reach the bot.
+
 ### The control-panel agent on the AI Gateway
 
 The bot's replies come from an LLM running in the control panel (`apps/web/src/lib/chat/agent/`),

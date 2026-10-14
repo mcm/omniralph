@@ -74,7 +74,7 @@ details.
    │                            │   credential broker            │
    │                            │ • Vercel KMS-signed tokens     │
    │ Slack / Discord ─webhooks─▶│ • chat bot (Chat SDK) and      │        ┌──────────────┐
-   │   ▲  (Discord Gateway cron)│   control-panel agent ─────────┼──────▶ │ Vercel AI    │
+   │   ▲                        │   control-panel agent ─────────┼──────▶ │ Vercel AI    │
    │   └──thread replies ────── │   (AI SDK)                     │        │ Gateway      │
    │                            └───────────────▲────────────────┘        └──────────────┘
    │                                            │ outbound HTTPS only
@@ -106,7 +106,7 @@ details.
   over once their 2-minute lease lapses, and rate-limited jobs are retried after a backoff.
   See [ADR 0006: Postgres job queue](docs/adr/0006-postgres-job-queue.md).
 - **Chat runs in the control panel.** Slack events arrive as webhooks; Discord messages arrive over
-  its Gateway WebSocket, which a cron keeps connected and forwards to the Discord webhook route.
+  its Gateway WebSocket, which the control panel doesn't connect to yet (to be redesigned).
   Chat SDK handles both platforms, with its state in Postgres; Slack bot tokens and the
   workspace/server → organization mappings live in our own tables. The control-panel agent
   answers with a model from the Vercel AI Gateway through `read`-tier tools scoped to the

@@ -139,7 +139,6 @@ running jobs aren't lost.
 | Path | Schedule | Does |
 | -- | -- | -- |
 | `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured |
-| `/api/cron/discord-gateway` | every 9 minutes | Holds the Discord Gateway connection for 10 minutes and forwards messages to the Discord webhook route; needs a Pro or Enterprise plan ([chat.md](chat.md#the-discord-gateway-cron)). Does nothing without the Discord env vars |
 | `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them) |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old harness API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |

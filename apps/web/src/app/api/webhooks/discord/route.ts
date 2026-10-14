@@ -4,7 +4,7 @@ import { handleDiscordWebhook } from "@/lib/chat/webhooks";
 import { getDb } from "@/lib/db";
 
 /**
- * Discord interactions and Gateway events forwarded by the Gateway listener:
+ * Discord interactions and forwarded Gateway events (no Gateway listener runs yet):
  * the Chat SDK Discord adapter verifies them and hands mentions and thread
  * replies to the bot after responding.
  */

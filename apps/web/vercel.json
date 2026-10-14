@@ -4,7 +4,6 @@
   "git": { "deploymentEnabled": false },
   "crons": [
     { "path": "/api/cron/chat-run-events", "schedule": "* * * * *" },
-    { "path": "/api/cron/discord-gateway", "schedule": "*/9 * * * *" },
     { "path": "/api/cron/expire-jobs", "schedule": "0 * * * *" },
     { "path": "/api/cron/gitlab-maintenance", "schedule": "45 4 * * *" },
     { "path": "/api/cron/prune-hidden-refs", "schedule": "40 3 * * *" },
