@@ -442,6 +442,25 @@ describe("ralph.story", { timeout: 60_000 }, () => {
     expect(stashes[0]).toContain("unverified (attempt 1)");
   });
 
+  it("runs gates without colours and names the failing tests in plain text", async () => {
+    const { query } = fakeQuery(async function* () {
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const gate = [
+      `echo "colour=\${NO_COLOR:-unset}/\${FORCE_COLOR:-unset}"`,
+      `printf '\\033[41m FAIL \\033[49m src/a.test.ts \\033[2m>\\033[22m works\\n'`,
+      "exit 1",
+    ].join("; ");
+    const ctx = context();
+    const env = ctx.env;
+    ctx.env = (extra) => ({ ...env(extra), FORCE_COLOR: "1" });
+    const out = await runStory(job({ qualityGates: [gate] }), ctx, options(query));
+    expect(out.status).toBe("failed");
+    expect(out.feedback).toContain("colour=1/unset");
+    expect(out.feedback).toContain("Failing tests:\n- `src/a.test.ts > works`");
+    expect(out.feedback).not.toContain("\u001b");
+  });
+
   it("gives the session the last feedback and the guidance", async () => {
     const { query, calls } = fakeQuery(async function* (call) {
       await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");

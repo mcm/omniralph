@@ -13,8 +13,10 @@ import {
   type StoryOutcome,
 } from "@omniralph/ralph";
 import {
+  failingTests,
   MAX_LEASE_SECONDS,
   ralphStashPrefix,
+  stripAnsi,
   type RalphFollowUp,
   type RalphRecommendation,
   type RalphStoryPayload,
@@ -548,10 +550,24 @@ interface GateFailure {
   output: string;
 }
 
-/** "the quality gate `x` failed (exit n):" and the output's tail. */
+/**
+ * "the quality gate `x` failed (exit n):", the failing tests it names, and
+ * the output's tail, without terminal colours.
+ */
 function gateFailureText(failure: GateFailure): string {
   const exit = failure.exitCode !== null ? ` (exit ${failure.exitCode})` : "";
-  return `the quality gate \`${failure.gate}\` failed${exit}:\n\n\`\`\`\n${tail(failure.output, MAX_FEEDBACK_OUTPUT)}\n\`\`\``;
+  const output = stripAnsi(failure.output);
+  const tests = failingTests(output);
+  const failing =
+    tests.length > 0 ? `\n\nFailing tests:\n${tests.map((t) => `- \`${t}\``).join("\n")}` : "";
+  return `the quality gate \`${failure.gate}\` failed${exit}:${failing}\n\n\`\`\`\n${tail(output, MAX_FEEDBACK_OUTPUT)}\n\`\`\``;
+}
+
+/** A gate's environment: no colours, so its output reads as plain text in Linear. */
+function gateEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  // FORCE_COLOR wins over NO_COLOR (and Node warns when both are set).
+  const { FORCE_COLOR: _force, ...rest } = env;
+  return { ...rest, NO_COLOR: "1" };
 }
 
 /** Runs the gates in order (`bash -lc`); the first failure, if any. */
@@ -565,7 +581,7 @@ async function runQualityGates(
   for (const gate of gates) {
     relay.post({ type: "action", body: "Quality gate", parameter: gate, ephemeral: true });
     try {
-      await runShell(gate, { cwd, env, signal });
+      await runShell(gate, { cwd, env: gateEnv(env), signal });
     } catch (error) {
       signal.throwIfAborted();
       const exitCode = error instanceof CommandError ? error.exitCode : null;

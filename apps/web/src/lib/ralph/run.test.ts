@@ -777,6 +777,39 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect((await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).length).toBe(4);
     });
 
+    it("pauses with a readable gate failure and names the stuck story a chain waits on", async () => {
+      const epic = linear.add({ identifier: "ENG-40", title: "Epic" });
+      const x = linear.add({ identifier: "ENG-41", title: "X", parentId: epic.id, priority: 1 });
+      const y = linear.add({ identifier: "ENG-42", title: "Y", parentId: epic.id, priority: 2 });
+      const z = linear.add({ identifier: "ENG-43", title: "Z", parentId: epic.id, priority: 3 });
+      await linear.createBlocksRelation(x.id, y.id);
+      await linear.createBlocksRelation(y.id, z.id);
+      const run = await delegate(epic.id);
+      const output = Array.from({ length: 300 }, (_, i) => `\u001b[31mline ${i}\u001b[39m`);
+      const feedback = [
+        "The agent reported the story complete, but the quality gate `pnpm test` failed (exit 1):",
+        "",
+        "```",
+        ...output,
+        "```",
+      ].join("\n");
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await work(run.id, { status: "failed", summary: "Gate failed", feedback });
+      }
+
+      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+      for (const body of [error!, elicitation!]) {
+        expect(body).toContain(
+          "The agent reported the story complete, but the quality gate `pnpm test` failed (exit 1):\n\n```\n…\n",
+        );
+        expect(body).toContain("line 299\n```");
+        expect(body).not.toContain("\u001b");
+      }
+      expect(elicitation).toContain("**ENG-42** is blocked by ENG-41.");
+      expect(elicitation).toContain("**ENG-43** is blocked by ENG-42, which waits on **ENG-41**.");
+    });
+
     it("builds a single issue as one story", async () => {
       const issue = linear.add({ identifier: "ENG-80", title: "Fix the login bug" });
       const run = await delegate(issue.id);

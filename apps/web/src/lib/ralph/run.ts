@@ -52,6 +52,7 @@ import {
   type WaitingIssue,
 } from "@omniralph/ralph";
 import {
+  excerpt,
   MAX_ATTEMPTS_PER_STORY,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PUSH_JOB_TYPE,
@@ -88,7 +89,7 @@ import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { deleteRunHiddenRefs } from "./hidden-refs";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
-import { postActivity, quietly, tail } from "./notify";
+import { postActivity, quietly } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
 import { awaitRepository } from "./repository-selection";
@@ -998,6 +999,26 @@ async function complete(
   return { action: "completed", run: completed };
 }
 
+/**
+ * The stuck (exhausted, unfinished) stories `story` waits on, directly or
+ * through other unfinished stories: what has to move for it to run.
+ */
+function stuckDependencies(stories: readonly Story[], story: Story): string[] {
+  const byKey = new Map(stories.map((s) => [s.key, s]));
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const visit = (key: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const dep = byKey.get(key);
+    if (!dep || isStoryDone(dep)) return;
+    if (dep.exhausted) found.push(key);
+    else dep.dependsOn.forEach(visit);
+  };
+  story.dependsOn.forEach(visit);
+  return found;
+}
+
 const bold = (issues: readonly WaitingIssue[]) =>
   issues.map((i) => `**${i.identifier}**`).join(", ");
 
@@ -1115,7 +1136,7 @@ async function wait(
     }
     for (const s of stuck) {
       const row = feedback.get(s.issueId ?? s.key);
-      const problem = tail(row?.lastFeedback ?? "unknown", 1500);
+      const problem = excerpt(row?.lastFeedback ?? "unknown", 1500);
       lines.push(
         isBlockedFeedback(row?.lastFeedback)
           ? `**${s.storyId}: ${s.title}** is blocked:\n\n${problem}`
@@ -1127,8 +1148,14 @@ async function wait(
         const dep = stories.find((x) => x.key === d);
         return !dep || !isStoryDone(dep);
       });
-      const names = open.map((d) => dependencyLabel({ ...epic, stories }, d));
-      lines.push(`**${s.storyId}** is blocked by ${names.join(", ")}.`);
+      const label = (d: string) => dependencyLabel({ ...epic, stories }, d);
+      // The stuck stories it waits on through the stories it depends on, named too.
+      const roots = stuckDependencies(stories, s).filter((d) => !open.includes(d));
+      const through =
+        roots.length > 0
+          ? `, which ${open.length > 1 ? "wait" : "waits"} on ${roots.map((d) => `**${label(d)}**`).join(", ")}`
+          : "";
+      lines.push(`**${s.storyId}** is blocked by ${open.map(label).join(", ")}${through}.`);
     }
     if (all.length > 0) {
       lines.push(
