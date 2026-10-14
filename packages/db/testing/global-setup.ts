@@ -27,17 +27,24 @@ export default async function setup(project: TestProject): Promise<(() => Promis
     ])
     .withTmpFs({ "/var/lib/postgresql/data": "rw" })
     .start();
-  const uri = container.getConnectionUri();
-  const client = new pg.Client({ connectionString: uri });
-  await client.connect();
+  // Vitest only calls the returned teardown when setup succeeds: stop the container
+  // ourselves if creating or migrating the template fails.
   try {
-    await client.query(`create database ${TEMPLATE_DATABASE}`);
-  } finally {
-    await client.end();
+    const uri = container.getConnectionUri();
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      await client.query(`create database ${TEMPLATE_DATABASE}`);
+    } finally {
+      await client.end();
+    }
+    // Cloning needs the template to have no connections: runMigrations closes its own.
+    await runMigrations(withDatabase(uri, TEMPLATE_DATABASE));
+    project.provide("testPostgresUri", uri);
+  } catch (error) {
+    await container.stop();
+    throw error;
   }
-  // Cloning needs the template to have no connections: runMigrations closes its own.
-  await runMigrations(withDatabase(uri, TEMPLATE_DATABASE));
-  project.provide("testPostgresUri", uri);
   return async () => {
     await container.stop();
   };
