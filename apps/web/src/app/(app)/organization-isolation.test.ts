@@ -23,7 +23,6 @@ import {
   insertJob,
   insertMessage,
   organizationMembers,
-  runMigrations,
   saveIntegration,
   setActiveOrganization,
   setDesiredHarnessVersion,
@@ -33,9 +32,12 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { JSX } from "react";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -152,10 +154,7 @@ const { default: OrganizationSettingsPage } = await import("./settings/organizat
 const { cancelJob } = await import("./jobs/actions");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 /** One organization's rows; every name, path and text contains `name`. */
 interface Tenant {
@@ -190,8 +189,8 @@ const redirectLocation = (page: Promise<unknown>) =>
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const search = (query: Record<string, string> = {}) => ({ searchParams: Promise.resolve(query) });
 
-describe.skipIf(!dockerAvailable)("organization isolation of every page", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization isolation of every page", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let a: Tenant;
   let b: Tenant;
@@ -362,9 +361,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     a = await tenant("alpha", "1");
     b = await tenant("beta", "2");
@@ -372,7 +370,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of every page", () => 
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   /** The content a page streams in behind its Suspense boundary. */

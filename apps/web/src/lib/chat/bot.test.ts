@@ -12,19 +12,21 @@ import {
   getChatConnectionByExternalId,
   organizationMembers,
   organizations,
-  runMigrations,
   saveChatConnection,
   users,
   type ChatConnection,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Message, Thread } from "chat";
 import { MockLanguageModelV2 } from "ai/test";
 import { asc, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatConversationContext, ChatConversationHandler } from "./bot";
 import type { SlackCredentials } from "./slack-oauth";
@@ -41,10 +43,7 @@ const {
   slackUninstalledId,
 } = await import("./webhooks");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const SLACK = { clientId: "client-1", clientSecret: "secret-1", signingSecret: "signing-1" };
 const SLACK_BOT_USER = "UBOT";
@@ -260,8 +259,8 @@ interface Handled {
   context: ChatConversationContext;
 }
 
-describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("chat bot webhooks", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
@@ -349,11 +348,9 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
   };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    // After the container: Testcontainers talks HTTP to the Docker API.
+    testDb = await createTestDatabase();
     server.listen({ onUnhandledFrame: "error" });
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    db = createDb(testDb.uri);
     const [org, other] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -384,7 +381,7 @@ describe.skipIf(!dockerAvailable)("chat bot webhooks", () => {
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const threadMessages = async (externalThreadId: string) => {

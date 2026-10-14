@@ -1,34 +1,32 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "../../testing/index.js";
 import { legacyJobRouting } from "@omniralph/shared";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
-import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
 import { jobs, ralphRuns, ralphStories, organizations } from "../schema.js";
 import { getRalphAnalytics } from "./ralph-analytics.js";
 import { seedReviewProfiles } from "../settings.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const key = randomBytes(32);
 const now = new Date("2026-10-05T12:00:00Z");
 
-describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("ralph analytics queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoA: string;
   let repoB: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -167,7 +165,7 @@ describe.skipIf(!dockerAvailable)("ralph analytics queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("totals ralph job tokens from their recorded usage, per UTC day", async () => {

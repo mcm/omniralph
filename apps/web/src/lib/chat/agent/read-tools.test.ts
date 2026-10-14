@@ -13,7 +13,6 @@ import {
   insertJob,
   organizations,
   repositories,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   updateLane,
@@ -22,11 +21,14 @@ import {
   type Database,
   type RalphRunStatus,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Message, Thread } from "chat";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ChatConversationContext } from "../bot";
 import type { ChatActor } from "../identity";
@@ -38,10 +40,7 @@ const { CHAT_TOOL_RESULT_LIMIT, readTools } = await import("./read-tools");
 const { chatTools } = await import("./registry");
 const { createChatAgentHandler } = await import("./handler");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const member: ChatActor = { kind: "member", userId: "ada", role: "member", name: "Ada" };
@@ -61,9 +60,9 @@ interface SeededOrg {
 /** A tool's result as a loose record. */
 type Result = Record<string, unknown> & { [key: string]: unknown };
 
-describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
+describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let acme: SeededOrg;
   let other: SeededOrg;
@@ -197,9 +196,8 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     acme = await seedOrg("Acme", "acme");
     other = await seedOrg("Other", "other");
 
@@ -227,7 +225,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent read tools", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("registers the read tools as `read` and the ralph and Linear tools as `action`", () => {

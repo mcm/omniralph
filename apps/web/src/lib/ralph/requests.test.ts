@@ -17,7 +17,6 @@ import {
   listMessages,
   listPendingRequests,
   ralphRuns,
-  runMigrations,
   claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
@@ -36,9 +35,12 @@ import {
   type RalphRequestResult,
   type RalphStoryResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeHarness } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
@@ -58,10 +60,7 @@ import { AGENT_SESSION_MARKER, startRun, type StartRunDeps, type StartOutcome } 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 
@@ -71,8 +70,8 @@ const EPIC_DESCRIPTION = `Build the thing.
 - \`pnpm test\`
 `;
 
-describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -93,9 +92,8 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
   });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -145,7 +143,7 @@ describe.skipIf(!dockerAvailable)("request mode (mentions and requests)", () => 
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

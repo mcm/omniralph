@@ -10,7 +10,6 @@ import {
   jobs,
   organizations,
   repositories,
-  runMigrations,
   scmConnections,
   seedReviewProfiles,
   type Database,
@@ -24,9 +23,12 @@ import {
   type AgentDefinitionInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -47,10 +49,7 @@ const {
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const securityAgent: AgentDefinitionInput = {
   ...getBuiltinAgent("builtin:reviewer")!,
@@ -63,16 +62,15 @@ const securityReview: TaskDefinitionInput = { ...getBuiltinTask("builtin:review-
 /** A higher minimum harness version than any task type needs. */
 const STORED_MIN_VERSION = "99.1.0";
 
-describe.skipIf(!dockerAvailable)("definition resolver", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("definition resolver", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org, other] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -83,7 +81,7 @@ describe.skipIf(!dockerAvailable)("definition resolver", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function customAgent(organizationId = orgId, definition: object = securityAgent) {

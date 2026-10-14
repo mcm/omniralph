@@ -5,14 +5,16 @@ import {
   getIntegrationWithCredentials,
   integrations,
   organizations,
-  runMigrations,
   saveIntegration,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinearCredentials } from "./oauth";
 
@@ -20,10 +22,7 @@ vi.mock("server-only", () => ({}));
 
 const { getLinearGateway, LinearNotConnectedError } = await import("./client");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const key = randomBytes(32);
 const config = { clientId: "client-1", clientSecret: "secret-1" };
@@ -51,16 +50,15 @@ const server = setupServer(
   }),
 );
 
-describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let organizationId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org, other] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -73,7 +71,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {
@@ -153,7 +151,7 @@ describe.skipIf(!dockerAvailable)("getLinearGateway", () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(-1) });
     token.delayMs = 50;
     // Two separate "processes": separate pools and no shared in-process dedupe.
-    const otherDb = createDb(container.getConnectionUri());
+    const otherDb = createDb(testDb.uri);
     try {
       vi.resetModules();
       const other = await import("./client");

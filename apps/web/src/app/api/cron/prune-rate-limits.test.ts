@@ -1,7 +1,10 @@
-import { closeDb, createDb, rateLimits, runMigrations, type Database } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { closeDb, createDb, rateLimits, type Database } from "@omniralph/db";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -22,10 +25,7 @@ const {
   recordAuthFailure,
 } = await import("@/lib/rate-limit");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 function cronRequest(secret?: string) {
   return new Request("http://localhost/api/cron/prune-rate-limits", {
@@ -35,20 +35,19 @@ function cronRequest(secret?: string) {
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000);
 
-describe.skipIf(!dockerAvailable)("GET /api/cron/prune-rate-limits", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/cron/prune-rate-limits", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
   }, 120_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

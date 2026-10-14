@@ -13,17 +13,19 @@ import {
   organizations,
   ralphRuns,
   runActivities,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   upsertScmConnection,
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Thread } from "chat";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ChatActor } from "../identity";
 import type { ChatToolContext } from "./tools";
@@ -32,19 +34,16 @@ vi.mock("server-only", () => ({}));
 
 const { RUN_STATUS_ACTIVITY_LIMIT, readTools } = await import("./read-tools");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const domain: ChatActor = { kind: "domain", email: "ada@acme.test" };
 
 type Result = Record<string, unknown>;
 
-describe.skipIf(!dockerAvailable)("get_run_status", () => {
+describe.skipIf(!databaseAvailable)("get_run_status", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
@@ -159,9 +158,8 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -206,7 +204,7 @@ describe.skipIf(!dockerAvailable)("get_run_status", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("reports a coding run from its state, open approvals, requests and latest activity", async () => {

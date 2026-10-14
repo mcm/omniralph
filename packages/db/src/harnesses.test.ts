@@ -1,6 +1,5 @@
 // Harnesses, enrollments and harness settings are scoped to organizations.
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarnessEnrollment, enrollHarness, revokeHarness } from "./harness-auth.js";
@@ -28,19 +27,15 @@ import {
 } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { recordHarnessHeartbeat } from "./jobs.js";
-import { runMigrations } from "./migrate.js";
 import { getResourceOrganizationId } from "./resource-organization.js";
 import { connectRepository, pinRepositoryToHarness } from "./repositories.js";
 import { harnesses, jobs, organizations, scmConnections } from "./schema.js";
 import { filterActiveHarnessIds, listPinnableHarnesses, seedReviewProfiles } from "./settings.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
@@ -55,9 +50,8 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
   };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [a] = await db.insert(organizations).values({ name: "A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "B" }).returning();
     orgA = a!.id;
@@ -68,7 +62,7 @@ describe.skipIf(!dockerAvailable)("organization-scoped harnesses", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("creates the harness in the enrollment's organization", async () => {

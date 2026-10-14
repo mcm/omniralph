@@ -20,14 +20,16 @@ import {
   getRepositoryReviewSettings,
   getReviewProfile,
   listRepositoryRules,
-  runMigrations,
   upsertScmConnection,
   users,
   type Database,
 } from "@omniralph/db";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues, RERUN_MODES } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -107,10 +109,7 @@ const { dismissFinding, restoreFinding } = await import("../reviews/[id]/actions
 const { rerunReview } = await import("../reviews/actions");
 const { updateReviewProfile } = await import("../settings/profiles/actions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 interface Tenant {
   userId: string;
@@ -125,8 +124,8 @@ interface Tenant {
 /** Next.js `notFound()` throws an error whose digest marks a 404. */
 const notFound = { digest: expect.stringContaining("404") };
 
-describe.skipIf(!dockerAvailable)("organization isolation of repositories and reviews", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization isolation of repositories and reviews", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let a: Tenant;
   let b: Tenant;
@@ -193,9 +192,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     a = await tenant("alpha", "1");
     b = await tenant("beta", "2");
@@ -203,7 +201,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of repositories and re
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });

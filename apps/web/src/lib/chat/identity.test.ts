@@ -10,7 +10,6 @@ import {
   listChatIdentities,
   organizationMembers,
   organizations,
-  runMigrations,
   saveChatConnection,
   setOrganizationDomains,
   unlinkChatIdentity,
@@ -18,9 +17,12 @@ import {
   type ChatConnection,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SlackCredentials } from "./slack-oauth";
 
@@ -36,10 +38,7 @@ const env = {
   APP_URL: "https://omniralph.example.com/",
 } as unknown as NodeJS.ProcessEnv;
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 /** A fake Slack `users.info`: profiles by user ID, every call recorded. */
 function fakeSlack(profiles: Record<string, Record<string, unknown>>) {
@@ -135,8 +134,8 @@ describe("link state", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("chat identities", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("chat identities", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
@@ -146,9 +145,8 @@ describe.skipIf(!dockerAvailable)("chat identities", () => {
   let now: Date;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     await db.insert(users).values([
       { id: "ada", email: "ada@acme.test", name: "Ada" },
       { id: "bob", email: "bob@acme.test", name: "Bob" },
@@ -158,7 +156,7 @@ describe.skipIf(!dockerAvailable)("chat identities", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const connect = async (organizationId: string, platform: "slack" | "discord", id: string) => {

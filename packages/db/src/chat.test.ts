@@ -2,10 +2,9 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createPostgresState, postgresSchemaStatements } from "@chat-adapter/state-pg";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import pg from "pg";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   CHAT_TASKS_KEY,
@@ -53,7 +52,7 @@ import {
 } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
-import { migrationsFolder, runMigrations } from "./migrate.js";
+import { migrationsFolder } from "./migrate.js";
 import {
   chatChannelTaskSettings,
   chatConnections,
@@ -70,10 +69,7 @@ import {
   users,
 } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 interface Creds {
   botToken: string;
@@ -90,17 +86,16 @@ describe("chat state migration", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("chat queries", () => {
+describe.skipIf(!databaseAvailable)("chat queries", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     await db.insert(users).values([
       { id: "admin-1", email: "admin@example.com" },
       { id: "member-1", email: "member@example.com" },
@@ -109,7 +104,7 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {
@@ -872,7 +867,7 @@ describe.skipIf(!dockerAvailable)("chat queries", () => {
   });
 
   it("lets the Chat SDK state adapter run on the migrated tables", async () => {
-    const pool = new pg.Pool({ connectionString: container.getConnectionUri() });
+    const pool = new pg.Pool({ connectionString: testDb.uri });
     const state = createPostgresState({ client: pool, autoCreateSchema: false });
     try {
       await state.connect();

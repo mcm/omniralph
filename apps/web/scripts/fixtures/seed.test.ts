@@ -16,13 +16,12 @@ import {
   reviewRuns,
   reviews,
   rules,
-  runMigrations,
   scmConnections,
   taskDefinitions,
   users,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, type TestDatabase } from "@omniralph/db/testing";
 import { AgentDefinition, TaskDefinition, TaskRequirements } from "@omniralph/tasks";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -30,19 +29,18 @@ import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
 
 describe("seedFixtures", () => {
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     await seedFixtures(db);
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const values = <T>(rows: T[], key: keyof T) => new Set(rows.map((r) => r[key]));

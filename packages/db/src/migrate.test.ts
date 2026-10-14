@@ -1,6 +1,6 @@
-// Applies the real migrations to a throwaway Postgres (Testcontainers).
-// Skipped when no container runtime (Docker) is available.
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+// Applies the real migrations to a throwaway database in the test run's Postgres
+// (Testcontainers, see testing/global-setup.ts). Skipped when no container runtime (Docker) is available.
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,6 @@ import { asc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
@@ -23,28 +22,24 @@ import {
   scmConnections,
 } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("migrations", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("migrations", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("is idempotent", async () => {
-    await expect(runMigrations(container.getConnectionUri())).resolves.toBeUndefined();
+    await expect(runMigrations(testDb.uri)).resolves.toBeUndefined();
   });
 
   it("seeds the quick, standard and deep profiles per organization (0031)", async () => {
@@ -222,7 +217,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("backfills GitLab connections' bot username from their name (0035)", async () => {
     await db.execute(sql`create database bot_usernames`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/bot_usernames");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/bot_usernames");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -269,7 +264,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("makes existing runs Linear runs (0043)", async () => {
     await db.execute(sql`create database run_origins`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/run_origins");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/run_origins");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -322,7 +317,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("targets per-agent topic jobs at their agent and leases running jobs (0052)", async () => {
     await db.execute(sql`create database job_queue`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/job_queue");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/job_queue");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -530,7 +525,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("renames agents to harnesses and keeps their rows (0055)", async () => {
     await db.execute(sql`create database harnesses`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/harnesses");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/harnesses");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -626,7 +621,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("backfills task types, pools, accepted task types and pool limits (0056)", async () => {
     await db.execute(sql`create database task_types`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/task_types");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/task_types");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -773,7 +768,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("makes harnesses inherit the organization defaults (0075)", async () => {
     await db.execute(sql`create database harness_defaults`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/harness_defaults");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/harness_defaults");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -838,7 +833,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("makes repositories inherit the organization's task types (0076)", async () => {
     await db.execute(sql`create database repository_defaults`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/repository_defaults");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/repository_defaults");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -916,7 +911,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("backfills each lane's harness from its run (0077)", async () => {
     await db.execute(sql`create database lane_harnesses`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/lane_harnesses");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/lane_harnesses");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -1003,7 +998,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("cancels legacy review.run jobs and renames review task jobs (0063)", async () => {
     await db.execute(sql`create database legacy_review_jobs`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/legacy_review_jobs");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/legacy_review_jobs");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -1093,7 +1088,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
 
   it("maps chat runs and code questions to their threads (0067)", async () => {
     await db.execute(sql`create database thread_runs`);
-    const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/thread_runs");
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/thread_runs");
     const before = mkdtempSync(join(tmpdir(), "migrations-"));
     try {
       cpSync(migrationsFolder, before, { recursive: true });
@@ -1257,7 +1252,7 @@ describe.skipIf(!dockerAvailable)("migrations", () => {
     async () => {
       // A fresh database migrated up to 0023, with a v2a run, then migrated the rest of the way.
       await db.execute(sql`create database lanes`);
-      const uri = container.getConnectionUri().replace(/\/[^/]*$/, "/lanes");
+      const uri = testDb.uri.replace(/\/[^/]*$/, "/lanes");
       const before = mkdtempSync(join(tmpdir(), "migrations-"));
       try {
         cpSync(migrationsFolder, before, { recursive: true });

@@ -30,7 +30,6 @@ import {
   ralphLanes,
   ralphRuns,
   repositories,
-  runMigrations,
   claimJob,
   updateRepositoryRalphSettings,
   updateRun,
@@ -59,9 +58,12 @@ import {
   type RalphRequestResult,
   type RalphStoryResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeHarness } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
@@ -96,10 +98,7 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 process.env.CRON_SECRET = "cron-secret";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 
@@ -114,8 +113,8 @@ it("caps a run's story attempts at the coding tasks' default maxIterationsPerRun
   expect(CODING_DEFAULTS.maxIterationsPerRun).toBe(MAX_ITERATIONS_PER_RUN);
 });
 
-describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("driving the ralph loop from story results", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -139,9 +138,8 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
   });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -203,7 +201,7 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

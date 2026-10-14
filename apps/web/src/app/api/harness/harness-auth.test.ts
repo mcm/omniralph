@@ -8,13 +8,15 @@ import {
   jobs,
   listHarnessAudit,
   organizations,
-  runMigrations,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -32,10 +34,7 @@ const { requireHarness, requireJob } = await import("@/lib/harness-auth/verify")
 const { revokeHarness } = await import("@/lib/harness-auth/revoke");
 const { getTokenSigner, LocalTokenSigner } = await import("@/lib/harness-auth/signer");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 
@@ -74,15 +73,14 @@ function authed(accessToken: string, ip: string): Request {
   });
 }
 
-describe.skipIf(!dockerAvailable)("harness auth", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("harness auth", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
@@ -94,7 +92,7 @@ describe.skipIf(!dockerAvailable)("harness auth", () => {
   afterAll(async () => {
     vi.useRealTimers();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function enrollNew(ip = newIp()) {

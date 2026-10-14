@@ -8,7 +8,6 @@ import {
   jobs,
   listHarnessAudit,
   repositories,
-  runMigrations,
   upsertScmConnection,
   type Database,
   organizations,
@@ -30,11 +29,14 @@ import {
 import { preparationHash } from "@omniralph/ralph";
 import { getBuiltinTask } from "@omniralph/tasks";
 import type { DispatchJobInput } from "@/lib/dispatch/dispatcher";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -65,10 +67,7 @@ const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("@/lib/runs/job");
 const { signJobTokens } = await import("@/lib/harness-api/jobs");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const GITLAB = "https://gitlab.example.com";
 const tokenRequests: { url: string; body: unknown }[] = [];
@@ -121,8 +120,8 @@ function credentialRequest(token?: string, body?: unknown): Request {
   });
 }
 
-describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let gitlabConnectionId: string;
@@ -131,9 +130,8 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   let disconnectedRepoId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -190,7 +188,7 @@ describe.skipIf(!dockerAvailable)("credential broker and repo pinning", () => {
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

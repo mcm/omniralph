@@ -12,14 +12,16 @@ import {
   getActiveOrganization,
   hasPendingInvitation,
   listPendingInvitationsForEmail,
-  runMigrations,
   upsertScmConnection,
   users,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { JSX } from "react";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { isEmailAllowed } from "@/lib/auth/allowlist";
 import { assertRole, AuthorizationError, type Role } from "@/lib/auth/roles";
@@ -95,10 +97,7 @@ const { default: HarnessesPage } = await import("./harnesses/page");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 /** `isEmailAllowed` as `auth.ts` calls it, with no `ALLOWED_EMAIL_DOMAINS`. */
 const signInAllowed = (db: Database, email: string) =>
@@ -110,20 +109,19 @@ const signInAllowed = (db: Database, email: string) =>
 
 const props = (element: JSX.Element) => JSON.stringify(element.props);
 
-describe.skipIf(!dockerAvailable)("organization onboarding journey", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function signUp(email: string) {

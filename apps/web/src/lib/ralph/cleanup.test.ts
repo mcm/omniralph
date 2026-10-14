@@ -13,7 +13,6 @@ import {
   jobs,
   ralphRuns,
   repositories,
-  runMigrations,
   claimJob,
   updateLane,
   updateRepositoryRalphSettings,
@@ -35,9 +34,12 @@ import {
   type RalphRequestResult,
   type RalphStoryResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
@@ -56,10 +58,7 @@ vi.mock("server-only", () => ({}));
 const isCleanupJob = (type: string) => type === "worktree.cleanup" || type === "ralph.cleanup";
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const MINUTE = 60_000;
@@ -71,8 +70,8 @@ const EPIC_DESCRIPTION = `Build the thing.
 `;
 
 /** Ported from cyralph's "cleanup after a merge" (`test/engine.test.ts`), for the control panel's side. */
-describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -101,9 +100,8 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
     });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -139,7 +137,7 @@ describe.skipIf(!dockerAvailable)("cleanup after a merge", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

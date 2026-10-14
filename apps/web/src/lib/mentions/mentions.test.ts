@@ -15,7 +15,6 @@ import {
   ralphRuns,
   repositories,
   reviews,
-  runMigrations,
   setAllowedTaskTypeDefaults,
   updateLane,
   updateRepositoryRalphSettings,
@@ -34,9 +33,12 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -161,15 +163,12 @@ function replyContext(job: Job): Record<string, unknown> {
   return RunSpecJobPayload.parse(job.payload).trigger.context;
 }
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 
-describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -177,9 +176,8 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
   let deferred: Promise<void>[] = [];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -210,7 +208,7 @@ describe.skipIf(!dockerAvailable)("@bot mention commands", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   /** Delivers a comment webhook and waits for the deferred command to finish. */

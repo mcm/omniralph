@@ -1,18 +1,17 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "../../testing/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
-import { runMigrations } from "../migrate.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
 import { harnesses, feedback, findings, jobs, reviews, organizations } from "../schema.js";
 import { analyticsWindow, getAnalytics, listAnalyticsRepositories } from "./analytics.js";
 import { seedReviewProfiles } from "../settings.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const key = randomBytes(32);
 const now = new Date("2026-10-05T12:00:00Z");
@@ -29,8 +28,8 @@ describe("analyticsWindow", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("analytics queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("analytics queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoA: string;
@@ -39,9 +38,8 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
   let agent2: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -192,7 +190,7 @@ describe.skipIf(!dockerAvailable)("analytics queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("totals reviews and tokens over the last 7 days", async () => {

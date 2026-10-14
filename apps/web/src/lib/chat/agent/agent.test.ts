@@ -6,18 +6,20 @@ import {
   ensureChatThread,
   organizations,
   rateLimits,
-  runMigrations,
   saveChatConnection,
   type ChatConnection,
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Logger, Message, Thread } from "chat";
 import { asc, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { ChatConversationContext } from "../bot";
@@ -30,10 +32,7 @@ vi.mock("server-only", () => ({}));
 const { createChatAgentHandler, ERROR_REPLY, NOT_CONFIGURED_REPLY, RATE_LIMITED_REPLY } =
   await import("./handler");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const ENV = { APP_URL: "https://omniralph.example.com" } as unknown as NodeJS.ProcessEnv;
 const USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -94,8 +93,8 @@ describe("chatAgentConfig", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("control-panel agent", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("control-panel agent", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
@@ -199,9 +198,8 @@ describe.skipIf(!dockerAvailable)("control-panel agent", () => {
   ) => createChatAgentHandler({ db, model, tools, logger, env: ENV, ...extra });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org, other] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -244,7 +242,7 @@ describe.skipIf(!dockerAvailable)("control-panel agent", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("answers in plain text with the thread's history and a system prompt", async () => {

@@ -1,6 +1,9 @@
-import { closeDb, createDb, runMigrations, webhookDeliveries, type Database } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { closeDb, createDb, webhookDeliveries, type Database } from "@omniralph/db";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -11,10 +14,7 @@ process.env.CRON_SECRET = "cron-secret";
 
 const { GET: pruneRoute } = await import("./prune-webhook-deliveries/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 function cronRequest(secret?: string) {
   return new Request("http://localhost/api/cron/prune-webhook-deliveries", {
@@ -24,20 +24,19 @@ function cronRequest(secret?: string) {
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
 
-describe.skipIf(!dockerAvailable)("GET /api/cron/prune-webhook-deliveries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/cron/prune-webhook-deliveries", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
   }, 120_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

@@ -30,8 +30,13 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Install, typecheck, lint and test
-        run: pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # One turbo run, so typechecking and linting overlap the (database-bound) tests
+      # rather than running one after the other.
+      - name: Typecheck, lint and test
+        run: pnpm turbo run typecheck lint test
 
       - name: Smoke-test the agent package
         run: ./scripts/smoke-agent-package.sh

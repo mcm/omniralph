@@ -12,7 +12,6 @@ import {
   listStories,
   organizations,
   repositories,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   updateStory,
@@ -23,10 +22,13 @@ import {
   type RalphRun,
   type RalphRunStatus,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Thread } from "chat";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -40,10 +42,7 @@ vi.mock("server-only", () => ({}));
 
 const { chatTools } = await import("./registry");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const member: ChatActor = { kind: "member", userId: "ada", role: "member", name: "Ada" };
@@ -51,9 +50,9 @@ const domain: ChatActor = { kind: "domain", email: "ada@acme.test" };
 
 type Result = Record<string, unknown>;
 
-describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () => {
+describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
@@ -170,9 +169,8 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     ({ id: orgId, repositoryId } = await seedOrg("Acme", "acme"));
     ({ id: otherOrgId, repositoryId: otherRepositoryId } = await seedOrg("Other", "other"));
     const saved = await saveChatConnection(
@@ -198,7 +196,7 @@ describe.skipIf(!dockerAvailable)("send_ralph_guidance and get_ralph_run", () =>
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

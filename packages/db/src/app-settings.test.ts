@@ -1,6 +1,5 @@
 // Organization defaults for allowed task types and harness max concurrency.
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALLOWED_TASK_TYPES_KEY,
@@ -13,24 +12,19 @@ import {
   setDefaultMaxConcurrency,
 } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
-import { runMigrations } from "./migrate.js";
 import { appSettings, organizations } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("organization task-type and concurrency defaults", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization task-type and concurrency defaults", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [a] = await db.insert(organizations).values({ name: "A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "B" }).returning();
     orgA = a!.id;
@@ -39,7 +33,7 @@ describe.skipIf(!dockerAvailable)("organization task-type and concurrency defaul
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

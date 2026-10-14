@@ -10,7 +10,6 @@ import {
   listRunEvents,
   mapThreadRun,
   organizations,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   upsertScmConnection,
@@ -19,10 +18,13 @@ import {
   type Job,
 } from "@omniralph/db";
 import type { QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Adapter } from "chat";
 import { asc, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import { applyChatAnswer, chatThreadSink, onChatAnswerFailed } from "./chat-thread";
@@ -30,10 +32,7 @@ import { parseSinkResult, type SinkResult } from "./index";
 
 vi.mock("server-only", () => ({}));
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const SLACK_THREAD = "slack:C1:1700000000.000100";
@@ -65,18 +64,17 @@ describe("chatThreadSink", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
+describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
   let threads = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -104,7 +102,7 @@ describe.skipIf(!dockerAvailable)("chat-thread sink", () => {
 
   afterAll(async () => {
     await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   let warn: ReturnType<typeof vi.spyOn>;

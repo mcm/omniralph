@@ -17,7 +17,6 @@ import {
   reviewRuns,
   reviews,
   rules,
-  runMigrations,
   stickyComments,
   upsertScmConnection,
   type Database,
@@ -39,11 +38,14 @@ import {
   type ReviewJobResult,
 } from "@omniralph/shared";
 import type * as Tasks from "@omniralph/tasks";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, asc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
@@ -108,10 +110,7 @@ const { cloneTaskDefinition, updateTaskDefinition } =
 const { getAgentDefinition, getTaskDefinition } = await import("@/lib/definitions");
 const { saveRepositorySettings } = await import("@/lib/repositories/settings");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 /** A deterministic git repo standing in for the harness's worktree. */
 class Repo {
@@ -269,8 +268,8 @@ function agentRequest(path: string, accessToken: string, body?: unknown): Reques
 }
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
-describe.skipIf(!dockerAvailable)("review capability end to end", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("review capability end to end", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
@@ -282,9 +281,8 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   const postReview = vi.spyOn(GitHubAdapter.prototype, "postReview");
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -321,7 +319,7 @@ describe.skipIf(!dockerAvailable)("review capability end to end", () => {
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
     rmSync(repo.dir, { recursive: true, force: true });
   });
 

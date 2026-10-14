@@ -1,6 +1,5 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
@@ -16,28 +15,23 @@ import {
   updateAgentDefinition,
   updateTaskDefinition,
 } from "./definitions.js";
-import { runMigrations } from "./migrate.js";
 import { agentDefinitions, jobs, organizations, taskDefinitions, users } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const agent = { name: "Security reviewer", systemPrompt: "Find vulnerabilities." };
 const task = { name: "Security review", agentId: "builtin:reviewer" };
 const requirements = { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] };
 
-describe.skipIf(!dockerAvailable)("definition queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("definition queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [a, b] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -52,7 +46,7 @@ describe.skipIf(!dockerAvailable)("definition queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   describe("agent definitions", () => {

@@ -7,7 +7,6 @@ import {
   feedback,
   findings,
   getReviewDetail,
-  runMigrations,
   upsertScmConnection,
   users,
   type Database,
@@ -15,9 +14,12 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -52,24 +54,20 @@ const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
 const { reviewDetailView } = await import("@/lib/reviews/history");
 const { revalidatePath } = await import("next/cache");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
 
-describe.skipIf(!dockerAvailable)("finding dismiss and restore: server actions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("finding dismiss and restore: server actions", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let reviewId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -117,7 +115,7 @@ describe.skipIf(!dockerAvailable)("finding dismiss and restore: server actions",
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function addFinding(over: Partial<typeof findings.$inferInsert> = {}): Promise<FindingRow> {

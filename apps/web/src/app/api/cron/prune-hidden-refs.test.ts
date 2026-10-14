@@ -13,7 +13,6 @@ import {
   organizations,
   ralphRuns,
   recordHiddenRef,
-  runMigrations,
   seedReviewProfiles,
   upsertScmConnection,
   type Database,
@@ -26,9 +25,12 @@ import {
   WorktreeCleanupPayload,
   type WorktreeCleanupResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -44,10 +46,7 @@ process.env.CRON_SECRET = "cron-secret";
 const { GET: pruneRoute } = await import("./prune-hidden-refs/route");
 const { applyHiddenRefsJob, HIDDEN_REF_MAX_AGE_DAYS } = await import("@/lib/ralph/hidden-refs");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 function cronRequest(secret?: string) {
   return new Request("http://localhost/api/cron/prune-hidden-refs", {
@@ -58,8 +57,8 @@ function cronRequest(secret?: string) {
 const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 
-describe.skipIf(!dockerAvailable)("GET /api/cron/prune-hidden-refs", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -68,9 +67,8 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-hidden-refs", () => {
   let seq = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
@@ -104,7 +102,7 @@ describe.skipIf(!dockerAvailable)("GET /api/cron/prune-hidden-refs", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {
