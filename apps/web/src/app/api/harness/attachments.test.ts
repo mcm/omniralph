@@ -6,7 +6,6 @@ import {
   createDb,
   createRun,
   jobs,
-  runMigrations,
   updateRun,
   upsertScmConnection,
   type Database,
@@ -14,8 +13,11 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 
@@ -47,10 +49,7 @@ process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 const { getTokenSigner } = await import("@/lib/harness-auth/signer");
 const { GET: download } = await import("./jobs/[id]/attachments/[attachmentId]/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 function downloadRequest(jobId: string, attachmentId: string, token: string | undefined) {
@@ -70,17 +69,16 @@ const UPLOAD = "https://uploads.linear.app/org/a1b2/shot";
 const ID = "a".repeat(32);
 const OTHER = "b".repeat(32);
 
-describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attachmentId}", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{attachmentId}", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
   let harnessId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -114,7 +112,7 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/jobs/{id}/attachments/{attac
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

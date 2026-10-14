@@ -1,11 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
-import { runMigrations } from "./migrate.js";
 import {
   connectionCredentials,
   connectRepository,
@@ -44,22 +42,18 @@ import {
   updateReviewProfile,
 } from "./settings.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const key = randomBytes(32);
 
-describe.skipIf(!dockerAvailable)("repository queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("repository queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -67,7 +61,7 @@ describe.skipIf(!dockerAvailable)("repository queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("upserts connections by provider, base URL and external ID, encrypting credentials", async () => {

@@ -1,9 +1,7 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { runMigrations } from "./migrate.js";
 import { listPoolNames } from "./pools.js";
 import {
   acceptInvitation,
@@ -72,24 +70,20 @@ describe("emailDomain / normalizeDomain", () => {
   });
 });
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("organization queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function user(email: string | null) {

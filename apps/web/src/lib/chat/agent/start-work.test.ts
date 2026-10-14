@@ -19,7 +19,6 @@ import {
   mapThreadRun,
   organizations,
   ralphRuns,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   claimJob,
@@ -41,11 +40,14 @@ import {
   RalphRequestPayload,
   type RalphRequestResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -63,10 +65,7 @@ const { LINK_REQUIRED_RESULT } = await import("./tools");
 const { askPermission } = await import("@/lib/ralph/permissions");
 const { onRalphJobFinished, onRalphJobStarted } = await import("@/lib/ralph/jobs");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const ENV = { APP_URL } as unknown as NodeJS.ProcessEnv;
@@ -115,9 +114,9 @@ const toolOutput = (call: LanguageModelV2CallOptions) => {
 const REQUEST =
   "Fix the typo in the README of acme/app. The heading says 'Omniralhp'; it should say 'Omniralph'.";
 
-describe.skipIf(!dockerAvailable)("start_work", () => {
+describe.skipIf(!databaseAvailable)("start_work", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let appRepoId: string;
@@ -280,9 +279,8 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -340,7 +338,7 @@ describe.skipIf(!dockerAvailable)("start_work", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

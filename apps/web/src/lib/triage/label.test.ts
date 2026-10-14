@@ -10,15 +10,17 @@ import {
   jobs,
   organizations,
   ralphRuns,
-  runMigrations,
   triageRuns,
   type Database,
   type Job,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { QueryRunResult } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent, type HandledLinearEvent } from "@/lib/linear/events";
@@ -36,10 +38,7 @@ import type { TriageDeps } from "./start";
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
   "## Introduction",
@@ -103,8 +102,8 @@ describe("removeTriageLabel", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("starting triage from a triage label", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("starting triage from a triage label", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let linear: FakeLinearGateway;
@@ -165,16 +164,15 @@ describe.skipIf(!dockerAvailable)("starting triage from a triage label", () => {
   };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

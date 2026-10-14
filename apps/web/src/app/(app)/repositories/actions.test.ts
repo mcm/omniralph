@@ -8,7 +8,6 @@ import {
   organizations,
   repositories,
   reviews,
-  runMigrations,
   scmConnections,
   scmCredentialCache,
   seedReviewProfiles,
@@ -17,11 +16,14 @@ import {
   type Database,
 } from "@omniralph/db";
 import { GitHubAppAuth } from "@omniralph/scm";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq, isNull } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -125,13 +127,10 @@ const server = setupServer(
   }),
 );
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("repository server actions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("repository server actions", () => {
+  let testDb: TestDatabase;
   const adminId = "admin-1";
   let orgId: string;
   let otherOrgId: string;
@@ -139,9 +138,8 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
     process.env.APP_URL = "https://omniralph.example.com/";
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    state.db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    state.db = createDb(testDb.uri);
     await state.db.insert(users).values([
       { id: adminId, email: "admin@example.com" },
       { id: "member-1", email: "member@example.com" },
@@ -154,7 +152,6 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
     otherOrgId = other!.id;
     await seedReviewProfiles(state.db, orgId);
     await seedReviewProfiles(state.db, otherOrgId);
-    // After Testcontainers is done talking to Docker over HTTP.
     server.listen({ onUnhandledFrame: "error" });
   }, 180_000);
 
@@ -175,7 +172,7 @@ describe.skipIf(!dockerAvailable)("repository server actions", () => {
   afterAll(async () => {
     server.close();
     if (state.db) await closeDb(state.db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const form = { baseUrl: `${GITLAB}/`, token: TOKEN };

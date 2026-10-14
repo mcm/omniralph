@@ -12,7 +12,6 @@ import {
   listRepositoryRules,
   restoreFinding,
   rules,
-  runMigrations,
   upsertScmConnection,
   users,
   type Database,
@@ -27,9 +26,12 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -67,17 +69,14 @@ const { organizationDefinitions } = await import("@/lib/definitions");
 const { enqueueLearnRule } = await import("@/lib/rules/learn");
 const { ruleView } = await import("@/lib/rules/display");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const admin = { id: "admin-1", role: "admin" as const, name: null, email: null, image: null };
 const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
 
-describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -85,9 +84,8 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
   let prNumber = 100;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -136,7 +134,7 @@ describe.skipIf(!dockerAvailable)("repository rules and learned rules", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function addFinding(over: Partial<typeof findings.$inferInsert> = {}): Promise<FindingRow> {

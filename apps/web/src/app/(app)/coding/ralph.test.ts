@@ -17,7 +17,6 @@ import {
   listStories,
   ralphMessages,
   ralphRuns,
-  runMigrations,
   RUN_DETAIL_MESSAGE_LIMIT,
   saveChatConnection,
   saveIntegration,
@@ -35,10 +34,13 @@ import {
   type LinearRun,
   type NewLinearRalphRunInput,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import type { ReactElement } from "react";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
@@ -91,10 +93,7 @@ const { default: RalphRunsPage } = await import("./page");
 const { default: RalphRunPage } = await import("./[id]/page");
 const { disconnectedLinearGateway } = await import("@/lib/linear/client");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const admin: TestUser = {
   id: "admin-1",
@@ -131,8 +130,8 @@ async function detailPage(
   return element.props;
 }
 
-describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoA: string;
@@ -142,9 +141,8 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
   let session = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -196,7 +194,7 @@ describe.skipIf(!dockerAvailable)("Ralph runs pages", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

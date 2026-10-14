@@ -20,7 +20,6 @@ import {
   ralphRuns,
   reviewRuns,
   reviews,
-  runMigrations,
   claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
@@ -39,9 +38,12 @@ import {
   type RalphRequestResult,
   type RalphStoryResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -54,10 +56,7 @@ import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 
@@ -67,8 +66,8 @@ const EPIC_DESCRIPTION = `Build the thing.
 - \`pnpm test\`
 `;
 
-describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -97,9 +96,8 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
     });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -135,7 +133,7 @@ describe.skipIf(!dockerAvailable)("Omniralph reviews of ralph pull requests", ()
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

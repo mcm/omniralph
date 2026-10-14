@@ -1,8 +1,6 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { runMigrations } from "./migrate.js";
 import { getActiveOrganization, listOrganizationsForUser } from "./organizations.js";
 import { accounts, sessions } from "./schema.js";
 import {
@@ -20,24 +18,20 @@ describe("normalizeEmail", () => {
   });
 });
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("user queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("user queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("creates users, the first one included, without any organization or admin role", async () => {

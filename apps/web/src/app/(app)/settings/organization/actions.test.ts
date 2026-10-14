@@ -9,15 +9,17 @@ import {
   getOrganization,
   listOrganizationDomains,
   listPendingInvitationsForOrganization,
-  runMigrations,
   updateOrganization,
   users,
   INVITATION_TTL_MS,
   type Database,
 } from "@omniralph/db";
 import { inArray } from "drizzle-orm";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -71,27 +73,23 @@ const {
   setAllowDomainJoin,
 } = await import("./actions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const failure = { ok: false, error: expect.any(String) };
 
-describe.skipIf(!dockerAvailable)("organization settings actions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization settings actions", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

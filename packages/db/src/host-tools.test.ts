@@ -1,6 +1,5 @@
 // Host tool catalogs and harness paths are scoped to organizations.
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
@@ -14,7 +13,6 @@ import {
   recordHarnessHostTools,
   setHarnessHostToolPath,
 } from "./host-tools.js";
-import { runMigrations } from "./migrate.js";
 import { harnessHostTools, harnesses, organizations } from "./schema.js";
 
 describe("effectiveHostToolPath", () => {
@@ -39,13 +37,10 @@ describe("effectiveHostToolPath", () => {
   });
 });
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("host tools", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("host tools", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
@@ -56,9 +51,8 @@ describe.skipIf(!dockerAvailable)("host tools", () => {
   };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [a] = await db.insert(organizations).values({ name: "A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "B" }).returning();
     orgA = a!.id;
@@ -67,7 +61,7 @@ describe.skipIf(!dockerAvailable)("host tools", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("creates, lists and deletes catalog entries per organization", async () => {

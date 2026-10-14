@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { ensureChatThread, listThreadRuns, saveChatConnection } from "./chat.js";
@@ -13,7 +12,6 @@ import {
   recordHiddenRef,
 } from "./hidden-refs.js";
 import { insertJob } from "./jobs.js";
-import { runMigrations } from "./migrate.js";
 import {
   appendGuidance,
   appendProgress,
@@ -77,14 +75,11 @@ import {
 } from "./schema.js";
 import { seedReviewProfiles } from "./settings.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("ralph queries", () => {
+describe.skipIf(!databaseAvailable)("ralph queries", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoA: string;
@@ -93,9 +88,8 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
   let session = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -135,7 +129,7 @@ describe.skipIf(!dockerAvailable)("ralph queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

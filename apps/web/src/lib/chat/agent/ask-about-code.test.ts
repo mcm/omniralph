@@ -17,7 +17,6 @@ import {
   listChatMessages,
   organizations,
   repositories,
-  runMigrations,
   saveChatConnection,
   setAllowedTaskTypeDefaults,
   seedReviewProfiles,
@@ -33,11 +32,14 @@ import {
   type QueryRunResult,
 } from "@omniralph/shared";
 import { deriveTaskRequirements, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -55,10 +57,7 @@ const { createChatAgentHandler } = await import("./handler");
 const { chatAskContext, chatAskDedupeKey } = await import("../ask");
 const { queryClaimableHarnesses } = await import("@/lib/harnesses/claimable");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const member: ChatActor = { kind: "member", userId: "ada", role: "member", name: "Ada" };
@@ -203,9 +202,9 @@ describe("chatAskContext", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("ask_about_code", () => {
+describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
@@ -313,9 +312,8 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
     db.update(harnesses).set(values).where(eq(harnesses.id, id));
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     ({ id: orgId, repositoryId, harnessId } = await seedOrg("Acme", "acme"));
     ({ harnessId: otherHarnessId } = await seedOrg("Other", "other"));
     const saved = await saveChatConnection(
@@ -337,7 +335,7 @@ describe.skipIf(!dockerAvailable)("ask_about_code", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

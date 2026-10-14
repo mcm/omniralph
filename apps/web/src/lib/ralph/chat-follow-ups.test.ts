@@ -17,7 +17,6 @@ import {
   organizations,
   ralphMessages,
   ralphRuns,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   claimJob,
@@ -38,11 +37,14 @@ import {
   type RalphCleanupResult,
   type RalphRequestResult,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, eq, inArray } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { attachmentMetadata, attachmentRef } from "@/lib/chat/attachments";
 import type { ChatConversationContext } from "@/lib/chat/bot";
@@ -65,10 +67,7 @@ const { startChatRequest } = await import("./chat-start");
 const { sendToChatRun } = await import("./chat-reply");
 const { askPermission, readPermission } = await import("./permissions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const THREAD_ID = "discord:G1:CH1:TH1";
@@ -78,9 +77,9 @@ const JOB_URL = "https://github.com/acme/app/actions/runs/5/job/1";
  * PR/MR follow-ups of a run from chat (CI fixes, `@bot fix`, cleanup after
  * the merge): they report to the run's thread and never touch Linear.
  */
-describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
+describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -277,9 +276,8 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
     }) as Message;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -332,7 +330,7 @@ describe.skipIf(!dockerAvailable)("PR follow-ups of a chat run", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

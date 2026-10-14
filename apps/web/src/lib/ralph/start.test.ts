@@ -18,7 +18,6 @@ import {
   listStories,
   lockRun,
   ralphRuns,
-  runMigrations,
   saveIntegration,
   setAllowedTaskTypeDefaults,
   updateLane,
@@ -36,9 +35,12 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
@@ -58,10 +60,7 @@ import {
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const DELEGATION = `${AGENT_SESSION_MARKER}. Delegated by Steve.`;
 
@@ -89,8 +88,8 @@ const PRD = `# PRD: Priorities
 - [ ] badge shows
 `;
 
-describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -156,9 +155,8 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
   };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -194,7 +192,7 @@ describe.skipIf(!dockerAvailable)("starting ralph runs from Linear delegations",
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

@@ -6,25 +6,24 @@ import {
   insertTaskDefinition,
   organizations,
   repositories,
-  runMigrations,
   scmConnections,
   seedReviewProfiles,
   setChatTaskDefaults,
   type Database,
 } from "@omniralph/db";
 import { getBuiltinTask } from "@omniralph/tasks";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 const { findTaskReferrers, hasNoReferrers } = await import("./referrers");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 /** A stored definition from a built-in (the row holds `id` and `name`). */
 function stored(builtinId: string, overrides: Record<string, unknown> = {}) {
@@ -32,16 +31,15 @@ function stored(builtinId: string, overrides: Record<string, unknown> = {}) {
   return { ...definition, ...overrides };
 }
 
-describe.skipIf(!dockerAvailable)("findTaskReferrers", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("findTaskReferrers", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org, other] = await db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -52,7 +50,7 @@ describe.skipIf(!dockerAvailable)("findTaskReferrers", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function repository(organizationId: string, fullPath: string, values: object) {

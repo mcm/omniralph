@@ -14,7 +14,6 @@ import {
   listHarnessHostTools,
   listHarnessOverview,
   listRecentHarnessAudit,
-  runMigrations,
   scmConnections,
   setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
@@ -28,9 +27,12 @@ import {
   seedReviewProfiles,
 } from "@omniralph/db";
 import type { HeartbeatResponse } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -92,10 +94,7 @@ const { POST: heartbeat } = await import("@/app/api/harness/heartbeat/route");
 const { requireJob } = await import("@/lib/harness-auth/verify");
 const { getTokenSigner } = await import("@/lib/harness-auth/signer");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 function newIp(): string {
@@ -117,8 +116,8 @@ function post(path: string, body: unknown, accessToken?: string): Request {
 
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
 
-describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoA: string;
@@ -126,9 +125,8 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
   const adminId = "admin-1";
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -172,7 +170,7 @@ describe.skipIf(!dockerAvailable)("harnesses and jobs pages: server actions", ()
   afterAll(async () => {
     vi.useRealTimers();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   async function newEnrollment(name = "") {

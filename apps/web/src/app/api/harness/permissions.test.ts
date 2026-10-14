@@ -11,15 +11,17 @@ import {
   harnesses,
   jobs,
   organizations,
-  runMigrations,
   seedReviewProfiles,
   updateRun,
   upsertScmConnection,
   type Database,
 } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 
@@ -55,10 +57,7 @@ const { getTokenSigner } = await import("@/lib/harness-auth/signer");
 const { POST: ask } = await import("./jobs/[id]/permissions/route");
 const { GET: read, DELETE: close } = await import("./jobs/[id]/permissions/[requestId]/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 function headers(token: string | undefined) {
@@ -109,17 +108,16 @@ function permission(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe.skipIf(!dockerAvailable)("/api/harness/jobs/{id}/permissions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("/api/harness/jobs/{id}/permissions", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
   let harnessId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -153,7 +151,7 @@ describe.skipIf(!dockerAvailable)("/api/harness/jobs/{id}/permissions", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

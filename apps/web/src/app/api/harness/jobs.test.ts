@@ -18,7 +18,6 @@ import {
   ralphRuns,
   repositories,
   rules,
-  runMigrations,
   scmConnections,
   type Database,
   organizations,
@@ -32,10 +31,13 @@ import {
   type JobOutcomeResponse,
   JobStartResponse,
 } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq, inArray } from "drizzle-orm";
 import { decodeJwt } from "jose";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type * as Tasks from "@omniralph/tasks";
@@ -113,10 +115,7 @@ const { POST: activities } = await import("./jobs/[id]/activities/route");
 const { GET: attachment } = await import("./jobs/[id]/attachments/[attachmentId]/route");
 const { GET: expireJobs } = await import("../cron/expire-jobs/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 function newIp(): string {
@@ -147,16 +146,15 @@ const RUN_PAYLOAD = {
   trigger: { kind: "finding.dismissed", context: { finding: { title: "Unused import" } } },
 };
 
-describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let repositoryId: string;
   let orgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
 
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
@@ -188,7 +186,7 @@ describe.skipIf(!dockerAvailable)("job dispatch and harness API", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   /** Harness IDs by access token, for `startAs`. */

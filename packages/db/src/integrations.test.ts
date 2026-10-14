@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
@@ -14,30 +13,25 @@ import {
   saveIntegration,
   updateIntegrationCredentials,
 } from "./integrations.js";
-import { runMigrations } from "./migrate.js";
 import { integrations, oauthStateUses, organizations, users } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 interface Creds {
   accessToken: string;
   version: number;
 }
 
-describe.skipIf(!dockerAvailable)("integration queries", () => {
+describe.skipIf(!databaseAvailable)("integration queries", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     await db.insert(users).values({ id: "admin-1", email: "admin@example.com" });
     const [org, other] = await db
       .insert(organizations)
@@ -49,7 +43,7 @@ describe.skipIf(!dockerAvailable)("integration queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

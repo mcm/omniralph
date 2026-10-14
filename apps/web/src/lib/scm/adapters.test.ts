@@ -3,27 +3,26 @@ import {
   closeDb,
   createDb,
   organizations,
-  runMigrations,
   scmConnections,
   updateScmConnectionCredentials,
   upsertScmConnection,
   type Database,
   type ScmConnection,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 const { scmAdapterFor } = await import("./adapters");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const HOST = "https://gitlab.example.com";
 const repo = { fullPath: "acme/web", externalId: "10" };
@@ -47,26 +46,24 @@ const server = setupServer(
   }),
 );
 
-describe.skipIf(!dockerAvailable)("scmAdapterFor (GitLab)", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("scmAdapterFor (GitLab)", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
 
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    // After Testcontainers is done talking to Docker over HTTP.
     server.listen({ onUnhandledFrame: "error" });
   }, 120_000);
 
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

@@ -4,13 +4,15 @@ import {
   createDb,
   integrations,
   organizations,
-  runMigrations,
   saveIntegration,
   webhookDeliveries,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HandledLinearEvent, LinearEventContext } from "@/lib/linear/events";
 import { signBody } from "@/lib/linear/webhook";
@@ -50,10 +52,7 @@ process.env.LINEAR_WEBHOOK_SECRET = SECRET;
 const { POST } = await import("./route");
 const { handleLinearWebhook, linearDeliveryKey } = await import("@/lib/linear/ingest");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const createdPayload = (overrides: Record<string, unknown> = {}) => ({
   type: "AgentSessionEvent",
@@ -88,15 +87,14 @@ async function flush() {
   for (const task of tasks) await task();
 }
 
-describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
+  let testDb: TestDatabase;
   let orgId: string;
   let otherOrgId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    state.db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    state.db = createDb(testDb.uri);
     const [org, other] = await state.db
       .insert(organizations)
       .values([{ name: "Acme" }, { name: "Other" }])
@@ -107,7 +105,7 @@ describe.skipIf(!dockerAvailable)("POST /api/webhooks/linear", () => {
 
   afterAll(async () => {
     if (state.db) await closeDb(state.db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

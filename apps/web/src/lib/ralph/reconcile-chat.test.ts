@@ -10,7 +10,6 @@ import {
   jobs,
   organizations,
   ralphRuns,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   updateRepositoryRalphSettings,
@@ -20,10 +19,13 @@ import {
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Adapter } from "chat";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher, type JobDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -36,10 +38,7 @@ process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 const { startChatRequest } = await import("./chat-start");
 const { reconcileAllOrganizations } = await import("./reconcile-cron");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const THREAD_ID = "discord:G1:CH1:TH1";
 
@@ -47,9 +46,9 @@ const THREAD_ID = "discord:G1:CH1:TH1";
  * The reconcile cron and chat runs of an organization without Linear: they
  * are reconciled (with a disconnected Linear gateway); its Linear runs aren't.
  */
-describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear", () => {
+describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let connection: ChatConnection;
@@ -68,9 +67,8 @@ describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear",
   });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -119,7 +117,7 @@ describe.skipIf(!dockerAvailable)("reconcile cron, organization without Linear",
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

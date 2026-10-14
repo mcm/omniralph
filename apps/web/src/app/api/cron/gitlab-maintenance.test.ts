@@ -5,7 +5,6 @@ import {
   connectRepository,
   createDb,
   organizations,
-  runMigrations,
   scmConnections,
   seedReviewProfiles,
   updateScmConnectionCredentials,
@@ -13,11 +12,14 @@ import {
   type Database,
   type ScmConnection,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -28,10 +30,7 @@ process.env.CRON_SECRET = "cron-secret";
 
 const { GET } = await import("./gitlab-maintenance/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const HEALTHY = "https://healthy.gitlab.example.com";
 const BROKEN = "https://broken.gitlab.example.com";
@@ -98,28 +97,26 @@ const cron = (secret?: string) =>
     }),
   );
 
-describe.skipIf(!dockerAvailable)("GET /api/cron/gitlab-maintenance", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/cron/gitlab-maintenance", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
 
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
-    // After Testcontainers is done talking to Docker over HTTP.
     server.listen({ onUnhandledFrame: "error" });
   }, 120_000);
 
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

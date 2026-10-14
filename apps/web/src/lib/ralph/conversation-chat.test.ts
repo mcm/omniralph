@@ -11,7 +11,6 @@ import {
   insertJob,
   listRunEvents,
   organizations,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   updateRun,
@@ -19,10 +18,13 @@ import {
   type Database,
   type RalphRun,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { Adapter } from "chat";
 import { asc, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import {
@@ -38,26 +40,22 @@ import { askPermission, expirePermission } from "./permissions";
 
 vi.mock("server-only", () => ({}));
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const SLACK_THREAD = "slack:C1:1700000000.000100";
 
-describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
+describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
   let threads = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -85,7 +83,7 @@ describe.skipIf(!dockerAvailable)("a chat run's conversation", () => {
 
   afterAll(async () => {
     await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   let warn: ReturnType<typeof vi.spyOn>;

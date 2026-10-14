@@ -10,7 +10,6 @@ import {
   repositories,
   reviewRuns,
   reviews,
-  runMigrations,
   scmConnections,
   upsertScmConnection,
   type Database,
@@ -21,9 +20,12 @@ import {
 } from "@omniralph/db";
 import type { ChangeRequest, ChangeRequestState, InlineComment, ScmAdapter } from "@omniralph/scm";
 import { reviewTriggerContext, type Finding, type ReviewJobResult } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -173,17 +175,14 @@ const { onCorrelationFailed } = await import("./correlate");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { rerunReview } = await import("@/app/(app)/reviews/actions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const admin = { id: "admin-1", role: "admin" as const, name: null, email: null, image: null };
 const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
 
-describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repoId: string;
@@ -191,9 +190,8 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
   let prCounter = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -226,7 +224,7 @@ describe.skipIf(!dockerAvailable)("re-running reviews", { timeout: 30_000 }, () 
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   /** A completed webhook review of the PR with open findings posted as threads `thread-<i>`. */

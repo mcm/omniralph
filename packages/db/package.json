@@ -9,7 +9,8 @@
       "@omniralph/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./testing": "./testing/index.ts"
   },
   "files": [
     "dist",

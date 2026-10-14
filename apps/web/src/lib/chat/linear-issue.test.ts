@@ -10,17 +10,19 @@ import {
   getChatLinearIssueDraft,
   listChatMessages,
   organizations,
-  runMigrations,
   saveChatConnection,
   users,
   type ChatConnection,
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import type { ActionEvent, Adapter, CardElement, Thread } from "chat";
 import { asc, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { disconnectedLinearGateway } from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -44,10 +46,7 @@ const {
   handleLinearIssueAction,
 } = await import("./linear-issue");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const THREAD_ID = "discord:G1:CH1:TH1";
 const CARD_ID = "card-1";
@@ -67,8 +66,8 @@ function cardText(card: CardElement): string {
   return JSON.stringify(card);
 }
 
-describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let connection: ChatConnection;
@@ -92,9 +91,8 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     orgId = org!.id;
@@ -114,7 +112,7 @@ describe.skipIf(!dockerAvailable)("Linear issues drafted in chat", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

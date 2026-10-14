@@ -14,7 +14,6 @@ import {
   mapThreadRun,
   organizationMembers,
   organizations,
-  runMigrations,
   saveChatConnection,
   seedReviewProfiles,
   upsertScmConnection,
@@ -25,11 +24,14 @@ import {
   type Job,
 } from "@omniralph/db";
 import type { QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import { Chat, Message, parseMarkdown, type Adapter, type Logger, type StateAdapter } from "chat";
 import { asc, eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { ChatChannel } from "@/lib/ralph/conversation";
@@ -42,10 +44,7 @@ vi.mock("server-only", () => ({}));
 
 const { processPendingRunEvents, processThreadRunEvents, wakeUpMessage } = await import("./wake");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const APP_URL = "https://omniralph.example.com";
 const USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -142,9 +141,9 @@ describe("wakeUpMessage", () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)("processThreadRunEvents", () => {
+describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
   const key = randomBytes(32);
-  let container: StartedPostgreSqlContainer;
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let repositoryId: string;
@@ -152,9 +151,8 @@ describe.skipIf(!dockerAvailable)("processThreadRunEvents", () => {
   let threads = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     await seedReviewProfiles(db, orgId);
@@ -205,7 +203,7 @@ describe.skipIf(!dockerAvailable)("processThreadRunEvents", () => {
 
   afterAll(async () => {
     await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   /** A Discord thread where `author` asked something (before any run was mapped). */

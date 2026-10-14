@@ -8,7 +8,6 @@ import {
   jobs,
   repositories,
   reviews,
-  runMigrations,
   upsertScmConnection,
   webhookDeliveries,
   type Database,
@@ -17,11 +16,14 @@ import {
   setAllowedTaskTypeDefaults,
 } from "@omniralph/db";
 import { reviewTriggerContext } from "@omniralph/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Dispatch from "@/lib/dispatch";
 
@@ -59,10 +61,7 @@ process.env.GITHUB_WEBHOOK_SECRET = "github-secret";
 const { POST: github } = await import("./github/route");
 const { POST: gitlab } = await import("./gitlab/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 const GITLAB_URL = "https://gitlab.example.com";
 const GITLAB_SECRET = "gitlab-secret";
@@ -176,8 +175,8 @@ function gitlabRequest(
   });
 }
 
-describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let githubRepoId: string;
@@ -185,9 +184,8 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
   let prCounter = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
@@ -231,7 +229,7 @@ describe.skipIf(!dockerAvailable)("webhook ingestion", () => {
   afterAll(async () => {
     server.close();
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

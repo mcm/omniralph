@@ -1,6 +1,5 @@
 // The `jobs` table as a queue: claiming, leases and delayed retries.
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import type { ReportedHostTool } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -17,16 +16,12 @@ import {
   type NewJobInput,
 } from "./jobs.js";
 import { createHostTool, recordHarnessHostTools, setHarnessHostToolPath } from "./host-tools.js";
-import { runMigrations } from "./migrate.js";
 import { harnessHostTools, harnesses, hostTools, jobs, organizations } from "./schema.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("job queue", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("job queue", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
@@ -75,9 +70,8 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
     });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [a] = await db.insert(organizations).values({ name: "A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "B" }).returning();
     orgA = a!.id;
@@ -99,7 +93,7 @@ describe.skipIf(!dockerAvailable)("job queue", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   it("returns null when nothing is claimable", async () => {

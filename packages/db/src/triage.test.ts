@@ -1,10 +1,8 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { failCompletedJob, insertJob } from "./jobs.js";
-import { runMigrations } from "./migrate.js";
 import { jobs, organizations, triageRuns } from "./schema.js";
 import {
   createTriageRun,
@@ -22,22 +20,18 @@ import {
   type NewTriageRunInput,
 } from "./triage.js";
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("triage queries", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("triage queries", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let otherOrgId: string;
   let session = 0;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     orgId = org!.id;
@@ -46,7 +40,7 @@ describe.skipIf(!dockerAvailable)("triage queries", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(async () => {

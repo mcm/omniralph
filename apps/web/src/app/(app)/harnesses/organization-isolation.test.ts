@@ -13,16 +13,18 @@ import {
   getDesiredHarnessVersion,
   listHarnessHostTools,
   listHostTools,
-  runMigrations,
   setDesiredHarnessVersion,
   upsertScmConnection,
   users,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { getContainerRuntimeClient } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -94,10 +96,7 @@ const {
 const { addHostTool, removeHostTool, setGlobalHarnessVersion, setOrganizationDefaults } =
   await import("../settings/harnesses/actions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 interface Tenant {
   userId: string;
@@ -109,8 +108,8 @@ interface Tenant {
 /** Next.js `notFound()` throws an error whose digest marks a 404. */
 const notFound = { digest: expect.stringContaining("404") };
 
-describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let a: Tenant;
   let b: Tenant;
@@ -148,9 +147,8 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
   }
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
     a = await tenant("alpha", "1");
     b = await tenant("beta", "2");
@@ -158,7 +156,7 @@ describe.skipIf(!dockerAvailable)("organization isolation of harnesses", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });

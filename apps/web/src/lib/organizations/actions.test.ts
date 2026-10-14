@@ -7,14 +7,16 @@ import {
   getMembership,
   hasPendingInvitation,
   listOrganizationsForUser,
-  runMigrations,
   setOrganizationDomains,
   updateOrganization,
   users,
   type Database,
 } from "@omniralph/db";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ORGANIZATION_COOKIE } from "@/lib/auth/routes";
@@ -53,25 +55,21 @@ const {
   switchOrganization,
 } = await import("./actions");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!dockerAvailable)("organization actions", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("organization actions", () => {
+  let testDb: TestDatabase;
   let db: Database;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     state.db = db;
   }, 180_000);
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {

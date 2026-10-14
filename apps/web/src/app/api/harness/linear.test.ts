@@ -1,19 +1,14 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { InvalidInputLinearError } from "@linear/sdk";
-import {
-  harnesses,
-  closeDb,
-  createDb,
-  jobs,
-  runMigrations,
-  type Database,
-  organizations,
-} from "@omniralph/db";
+import { harnesses, closeDb, createDb, jobs, type Database, organizations } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
 import type * as Tasks from "@omniralph/tasks";
 import type * as LinearClient from "@/lib/linear/client";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { getContainerRuntimeClient } from "testcontainers";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 
@@ -100,10 +95,7 @@ const { GET: getIssue } = await import("./runs/[id]/linear/issues/[issueId]/rout
 const { GET: listComments } = await import("./runs/[id]/linear/issues/[issueId]/comments/route");
 const { GET: getDocument } = await import("./runs/[id]/linear/documents/[documentId]/route");
 
-const dockerAvailable = await getContainerRuntimeClient().then(
-  () => true,
-  () => false,
-);
+const databaseAvailable = testDatabaseAvailable();
 
 let ipCounter = 0;
 function request(path: string, token: string | undefined): Request {
@@ -135,16 +127,15 @@ const call = {
     }),
 };
 
-describe.skipIf(!dockerAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
-  let container: StartedPostgreSqlContainer;
+describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
+  let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
   let harnessId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    await runMigrations(container.getConnectionUri());
-    db = createDb(container.getConnectionUri());
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     state.db = db;
@@ -157,7 +148,7 @@ describe.skipIf(!dockerAvailable)("GET /api/harness/runs/{id}/linear/*", () => {
 
   afterAll(async () => {
     if (db) await closeDb(db);
-    await container?.stop();
+    await testDb?.stop();
   });
 
   beforeEach(() => {
