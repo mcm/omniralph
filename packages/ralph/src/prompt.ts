@@ -203,7 +203,7 @@ Your session ends with a structured result (the JSON schema you were given). It 
 {{#if followUps}}
 
 ## Follow-up Work
-If you find work this story needs that is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epicIdentifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
+If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epicIdentifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
 - If {{storyId}} can't be completed until they are fixed, report it \`blocked\`, not complete. They will block {{storyId}}, be worked first, and then {{storyId}} runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
 - If {{storyId}} measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as \`metric\`: a \`name\`, the \`value\`, its \`direction\` (\`higher\` or \`lower\` is better) and, if it has one, the \`target\`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave \`metric\` out.
 - If {{storyId}} is complete anyway, report it complete, and they join the epic as new stories.
@@ -211,6 +211,9 @@ If you find work this story needs that is outside its scope (bugs elsewhere, mis
 {{else}}
 - Leave \`followUps\` empty.
 {{/if}}
+
+## Recommendations
+Never file follow-ups, or create issues yourself, for another project or repository (an upstream library, a tool or service another team owns): \`followUps\` are only for work in this project. When a change elsewhere would help (e.g. "fix this upstream in X so we can remove the Y workaround"), work around it here and add one entry to \`recommendations\`: a short imperative \`title\`, and a \`description\` naming the project or repository, what to change there, and what it would let this one drop. Recommendations are shown to people, never filed as issues, and don't hold {{storyId}} up: report its status as you would without them. Only when {{storyId}} can't be done without the change elsewhere, report it \`blocked\` and say why in \`summary\`.
 `;
 
 type Vars = Record<string, string | number | undefined>;

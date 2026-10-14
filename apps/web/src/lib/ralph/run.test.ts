@@ -1832,6 +1832,30 @@ describe.skipIf(!dockerAvailable)("driving the ralph loop from story results", (
     expect(await storyStates(run.id)).toContainEqual([grant.identifier, "manual", 0]);
   });
 
+  it("keeps recommendations on the story without filing them or holding it up", async () => {
+    const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
+    linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id, priority: 1 });
+    linear.add({ identifier: "ENG-57", title: "Second", parentId: epic.id, priority: 2 });
+    const run = await delegate(epic.id);
+    const issues = linear.issues.size;
+
+    await work(run.id, {
+      recommendations: [
+        { title: "Fix the parser upstream", description: "In acme/lib: drop our shim." },
+      ],
+    });
+    expect(linear.issues.size).toBe(issues);
+    const first = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-56")!;
+    expect(first.status).toBe("completed");
+    expect(first.recommendations).toEqual([
+      {
+        title: "Fix the parser upstream",
+        description: "In acme/lib: drop our shim.",
+        at: expect.any(String),
+      },
+    ]);
+  });
+
   it("makes a completed story's follow-ups block the stories it blocks", async () => {
     const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
     const first = linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id });

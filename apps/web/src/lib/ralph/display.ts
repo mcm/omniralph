@@ -130,6 +130,8 @@ export interface RalphStoryView {
   laneId: string | null;
   /** Why it's treated as manual: it belongs in a repository Omniralph doesn't have. */
   elsewhere: string | null;
+  /** Advice its sessions gave for other projects or repositories (never filed as issues). */
+  recommendations: { title: string; description: string; at: string }[];
 }
 
 /** One repository the run works in, with its branch and PR/MR. */

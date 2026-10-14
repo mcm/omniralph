@@ -541,6 +541,38 @@ describe("structured results", () => {
     expect("outcome" in many && many.outcome.followUps).toHaveLength(10);
   });
 
+  it("reads recommendations, drops repeats by title, and caps the count", () => {
+    const read = readStoryOutcome({
+      status: "complete",
+      summary: "Done.",
+      followUps: [],
+      recommendations: [
+        { title: " Fix the  parser upstream ", description: "In acme/lib: drop our shim.\n" },
+        { title: "fix the parser upstream", description: "dup" },
+        { title: " ", description: "no title" },
+      ],
+    });
+    expect(read).toEqual({
+      outcome: {
+        status: "complete",
+        summary: "Done.",
+        followUps: [],
+        recommendations: [
+          { title: "Fix the parser upstream", description: "In acme/lib: drop our shim." },
+        ],
+      },
+    });
+    const many = readStoryOutcome({
+      status: "complete",
+      summary: "",
+      followUps: [],
+      recommendations: Array.from({ length: 15 }, (_, i) => ({ title: `R${i}`, description: "x" })),
+    });
+    expect("outcome" in many && many.outcome.recommendations).toHaveLength(10);
+    const none = readStoryOutcome({ status: "complete", summary: "", followUps: [] });
+    expect("outcome" in none && none.outcome.recommendations).toBeUndefined();
+  });
+
   it("keeps a blocked result's commit and applied stashes", () => {
     const read = readStoryOutcome({
       status: "blocked",

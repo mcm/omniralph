@@ -1843,6 +1843,17 @@ export interface RalphRoundMetrics {
   values: { round: number; value: number; at: string }[];
 }
 
+/**
+ * Advice a story's sessions gave for another project or repository (`ralph_stories.recommendations`):
+ * shown in the run, never filed as an issue.
+ */
+export interface RalphStoryRecommendation {
+  title: string;
+  description: string;
+  /** ISO timestamp of the result that last gave it. */
+  at: string;
+}
+
 /** Uncommitted work ralph stashed in a lane's repository and hasn't dropped or pushed yet. */
 export interface RalphStash {
   sha: string;
@@ -2027,6 +2038,11 @@ export const ralphStories = pgTable(
     rounds: integer("rounds").notNull().default(0),
     /** The progress metric the story reported in its rounds; null until it reports one. */
     roundMetrics: jsonb("round_metrics").$type<RalphRoundMetrics>(),
+    /** Advice for other projects its sessions gave, latest per title (never filed as issues). */
+    recommendations: jsonb("recommendations")
+      .$type<RalphStoryRecommendation[]>()
+      .notNull()
+      .default([]),
     /** Why the last attempt didn't complete, passed to the next one. */
     lastFeedback: text("last_feedback"),
     commitSha: text("commit_sha"),

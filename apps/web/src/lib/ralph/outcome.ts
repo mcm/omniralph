@@ -32,6 +32,7 @@ import { repositoryManualLabels, runManualLabels } from "./epic-loader";
 import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
+import { addRecommendations } from "./recommendations";
 import { addRoundMetric, bestValue, isStalled, metricTrend } from "./rounds";
 import type { RalphDeps } from "./run";
 
@@ -144,6 +145,15 @@ async function applyStoryResult(
   let run = ctx.run;
   if (result.progress !== undefined) {
     run = (await updateRun(tx, run.id, { progress: result.progress })) ?? run;
+  }
+  if (result.recommendations?.length) {
+    // Advice for other projects: shown in the run, never filed, and it doesn't change the outcome.
+    const recommendations = addRecommendations(
+      story.recommendations,
+      result.recommendations,
+      ctx.now ?? new Date(),
+    );
+    await updateStory(tx, story.id, { recommendations });
   }
   if (result.status !== "complete") {
     const blocked = result.status === "blocked";

@@ -1264,6 +1264,7 @@ export type RalphStoryUpdate = Partial<
     | "attempts"
     | "rounds"
     | "roundMetrics"
+    | "recommendations"
     | "lastFeedback"
     | "commitSha"
     | "lastJobId"
