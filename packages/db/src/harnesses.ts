@@ -109,14 +109,14 @@ export async function resolveHarnessConfig(
   return { acceptedTaskTypes: [...acceptedTaskTypes], maxConcurrency };
 }
 
-const repositoryLinkColumns = {
+export const repositoryLinkColumns = {
   repoId: repositories.id,
   provider: repositories.provider,
   fullPath: repositories.fullPath,
   baseUrl: scmConnections.baseUrl,
 };
 
-function repositoryLink(row: {
+export function repositoryLink(row: {
   repoId: string | null;
   provider: "github" | "gitlab" | null;
   fullPath: string | null;

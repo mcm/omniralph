@@ -1,10 +1,17 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { harnesses, ralphRuns, repositories, reviews, scmConnections } from "./schema.js";
+import {
+  harnesses,
+  ralphRuns,
+  repositories,
+  reviews,
+  scmConnections,
+  triageRuns,
+} from "./schema.js";
 
 /** Resources with their own URL in the control panel. */
 export type OrganizationResource =
-  "harness" | "ralph_run" | "repository" | "review" | "scm_connection";
+  "harness" | "ralph_run" | "repository" | "review" | "scm_connection" | "triage_run";
 
 /**
  * The organization a resource belongs to, whichever organization the caller is
@@ -44,6 +51,11 @@ export async function getResourceOrganizationId(
           .select({ organizationId: scmConnections.organizationId })
           .from(scmConnections)
           .where(eq(scmConnections.id, id));
+      case "triage_run":
+        return db
+          .select({ organizationId: triageRuns.organizationId })
+          .from(triageRuns)
+          .where(eq(triageRuns.id, id));
     }
   };
   const [row] = await query().limit(1);

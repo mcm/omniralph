@@ -12,6 +12,7 @@ import {
   SEVERITY_VARIANT_WEIGHT,
   SEVERITY_VARIANTS,
   stateLabel,
+  TRIAGE_RUN_STATUS_VARIANTS,
 } from "./state-variants";
 import { FINDING_SEVERITIES } from "./reviews/display";
 
@@ -43,6 +44,7 @@ const MAPS = {
   story: RALPH_STORY_STATUS_VARIANTS,
   job: JOB_STATUS_VARIANTS,
   review: REVIEW_STATUS_VARIANTS,
+  triage: TRIAGE_RUN_STATUS_VARIANTS,
   harness: HARNESS_CONNECTION_VARIANTS,
   harnessUpdate: HARNESS_UPDATE_STATUS_VARIANTS,
 };

@@ -2308,3 +2308,8 @@ body {
 .page-tabs > * {
   white-space: nowrap;
 }
+
+/* Triage run detail: a story's or sub-issue's folded body. */
+.triage-story-body {
+  margin-top: var(--space-2);
+}

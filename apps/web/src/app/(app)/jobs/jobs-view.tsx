@@ -45,6 +45,7 @@ import { JobStatusBadge } from "@/components/ralph-badges";
 import { cancelJob } from "./actions";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
+import { triageRunHref } from "@/lib/triage/display";
 
 type JobStatus = JobRow["status"];
 
@@ -108,7 +109,13 @@ function JobTableRow({
             <JobStatusBadge job={job} />
             <Timestamp iso={job.finishedAt ?? job.createdAt} year={year} />
             <span className="list-time text-numeric">{job.type}</span>
-            {job.target && <MonoValue value={job.target.label} className="list-time" />}
+            {job.triageRun ? (
+              <Link href={triageRunHref(job.triageRun.id)} className="list-time">
+                <MonoValue value={job.triageRun.label} />
+              </Link>
+            ) : (
+              job.target && <MonoValue value={job.target.label} className="list-time" />
+            )}
           </PhoneMeta>
         </TableCell>
         <TableCell className={WIDE_COLUMN}>
@@ -118,7 +125,15 @@ function JobTableRow({
           </div>
         </TableCell>
         <TableCell className={`${WIDE_COLUMN} jobs-col-target`}>
-          {job.target ? (
+          {job.triageRun ? (
+            <Link
+              href={triageRunHref(job.triageRun.id)}
+              className="list-secondary jobs-target"
+              aria-label={`Open the triage run of ${job.triageRun.label}`}
+            >
+              <MonoValue value={job.triageRun.label} />
+            </Link>
+          ) : job.target ? (
             job.target.url ? (
               <a
                 href={job.target.url}

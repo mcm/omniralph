@@ -9,6 +9,7 @@ import {
   harnessRepoPins,
   integrations,
   jobs,
+  listTriageRuns,
   organizationMembers,
   ralphRuns,
   ralphStories,
@@ -23,6 +24,7 @@ import {
 } from "@omniralph/db";
 import { createTestDatabase, type TestDatabase } from "@omniralph/db/testing";
 import { AgentDefinition, TaskDefinition, TaskRequirements } from "@omniralph/tasks";
+import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FIXTURE_IDS } from "./ids";
@@ -155,6 +157,17 @@ describe("seedFixtures", () => {
     expect(parsedTask.success).toBe(true);
     expect(parsedTask.data?.agentId).toBe(FIXTURE_IDS.definitions.agent);
     expect(TaskRequirements.safeParse(task!.requirements).success).toBe(true);
+  });
+
+  it("has triage runs with their jobs and valid results", async () => {
+    const page = await listTriageRuns(db, FIXTURE_IDS.organizations.main);
+    expect(new Set(page.runs.map((r) => r.run.id))).toEqual(
+      new Set(Object.values(FIXTURE_IDS.triageRuns)),
+    );
+    for (const { run, jobs: runJobs } of page.runs) {
+      expect(runJobs.length, run.id).toBeGreaterThan(0);
+      if (run.lastResult) expect(TriageRunResult.safeParse(run.lastResult).success).toBe(true);
+    }
   });
 
   it("has jobs in every state", async () => {

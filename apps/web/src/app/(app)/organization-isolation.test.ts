@@ -15,6 +15,7 @@ import {
   createOrganization,
   createReview,
   createRun,
+  createTriageRun,
   enrollHarness,
   ensureLane,
   findings,
@@ -119,6 +120,8 @@ vi.mock("./harnesses/harnesses-view", () => ({ HarnessesView: () => null }));
 vi.mock("./harnesses/[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
 vi.mock("./coding/ralph-runs-view", () => ({ RalphRunsView: () => null }));
 vi.mock("./coding/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
+vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
+vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
 vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
@@ -145,6 +148,8 @@ const { default: HarnessesPage } = await import("./harnesses/page");
 const { default: HarnessPage } = await import("./harnesses/[id]/page");
 const { default: RalphRunsPage } = await import("./coding/page");
 const { default: RalphRunPage } = await import("./coding/[id]/page");
+const { default: TriageRunsPage } = await import("./triage/page");
+const { default: TriageRunPage } = await import("./triage/[id]/page");
 const { default: JobsPage } = await import("./jobs/page");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
@@ -172,6 +177,8 @@ interface Tenant {
   laneId: string;
   storyId: string;
   messageId: string;
+  triageRunId: string;
+  triageJobId: string;
   invitationId: string;
 }
 
@@ -335,6 +342,24 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       repositoryId: repo.id,
       ralphRunId: run.id,
     });
+    const { run: triageRun } = await createTriageRun(db, {
+      organizationId: org.id,
+      linearIssueId: `${name}-triage-issue`,
+      linearAgentSessionId: `${name}-triage-session`,
+      trigger: "mention",
+    });
+    const { job: triageJob } = await insertJob(db, {
+      organizationId: org.id,
+      type: "triage.run",
+      taskType: "query",
+      pool: "short",
+      payload: {
+        trigger: {
+          kind: "linear.triage",
+          context: { triageRunId: triageRun.id, issue: { identifier: `${name.toUpperCase()}-9` } },
+        },
+      },
+    });
     const message = await insertMessage(db, {
       runId: run.id,
       kind: "guidance",
@@ -356,6 +381,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       laneId: lane.id,
       storyId: story!.id,
       messageId: message.id,
+      triageRunId: triageRun.id,
+      triageJobId: triageJob.id,
       invitationId: invitation.invitation.id,
     };
   }
@@ -399,6 +426,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       harness: await HarnessPage(params(own.harnessId)),
       ralphRuns: await RalphRunsPage(search()),
       ralphRun: await RalphRunPage(params(own.runId)),
+      triageRuns: await TriageRunsPage(search()),
+      triageRun: await TriageRunPage(params(own.triageRunId)),
       jobs: await JobsPage(search()),
       analytics: await AnalyticsPage(search()),
       profiles: await ProfilesPage(),
@@ -447,8 +476,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(pages.ralphRuns!.props.linearConnected).toBe(true);
       expect(pages.ralphRun!.props.run.id).toBe(own.runId);
       expect(JSON.stringify(pages.ralphRun!.props.run)).toContain(own.storyId);
-      expect(ids(pages.jobs!.props.jobs)).toHaveLength(2);
+      expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
+      expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
+      expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
+      expect(ids(pages.jobs!.props.jobs)).toHaveLength(3);
       expect(ids(pages.jobs!.props.jobs)).toContain(own.jobId);
+      expect(pages.jobs!.props.jobs).toContainEqual(
+        expect.objectContaining({
+          id: own.triageJobId,
+          triageRun: { id: own.triageRunId, label: `${own.name.toUpperCase()}-9` },
+        }),
+      );
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
@@ -499,6 +537,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
     await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
+    await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
     const enter = async (url: string) =>
@@ -536,6 +575,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
       [`/harnesses/${b.harnessId}`, () => HarnessPage(params(b.harnessId)), b.harnessId],
       [`/coding/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
+      [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
       [
         `/repositories/${b.repoId}/settings`,
         () => RepositorySettingsPage(params(b.repoId)),

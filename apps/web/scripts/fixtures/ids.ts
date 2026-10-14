@@ -26,6 +26,8 @@ const KINDS = {
   pin: 0x103,
   agentDefinition: 0x104,
   taskDefinition: 0x105,
+  triageRun: 0x106,
+  runActivity: 0x107,
 } as const;
 
 /** The fixture UUID `n` of a kind of row. */
@@ -72,6 +74,12 @@ export const FIXTURE_IDS = {
     failed: fixtureId("ralphRun", 4),
     stopped: fixtureId("ralphRun", 5),
     pending: fixtureId("ralphRun", 6),
+  },
+  triageRuns: {
+    /** An epic PRD with stories and an open question, after a reply. */
+    completed: fixtureId("triageRun", 1),
+    failed: fixtureId("triageRun", 2),
+    running: fixtureId("triageRun", 3),
   },
   /** A custom agent and a task on it (built-ins are read-only). */
   definitions: {

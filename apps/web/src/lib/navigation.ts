@@ -4,6 +4,7 @@ export type NavIcon =
   | "repositories"
   | "reviews"
   | "ralph"
+  | "triage"
   | "harnesses"
   | "jobs"
   | "analytics"
@@ -40,6 +41,7 @@ export const navGroups: NavGroup[] = [
       { href: "/repositories", label: "Repositories", icon: "repositories" },
       { href: "/reviews", label: "Reviews", icon: "reviews" },
       { href: "/coding", label: "Coding tasks", icon: "ralph" },
+      { href: "/triage", label: "Triage", icon: "triage" },
       { href: "/harnesses", label: "Harnesses", icon: "harnesses" },
       { href: "/jobs", label: "Jobs", icon: "jobs" },
       { href: "/analytics", label: "Analytics", icon: "analytics" },

@@ -10,6 +10,8 @@ import {
   getActiveTriageRun,
   getTriageRun,
   getTriageRunBySession,
+  getTriageRunDetail,
+  listTriageRuns,
   setTriageRunJob,
   setTriageRunSession,
   setTriageRunStatus,
@@ -269,5 +271,59 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     const { run } = await createTriageRun(db, runInput({ organizationId: org!.id }));
     await db.delete(organizations).where(eq(organizations.id, org!.id));
     expect(await getTriageRun(db, run.id)).toBeNull();
+  });
+
+  const runJob = async (runId: string, organizationId = orgId, type = "triage.run") =>
+    (
+      await insertJob(db, {
+        organizationId,
+        type,
+        taskType: "query",
+        pool: "short",
+        payload: {
+          trigger: { kind: "linear.triage", context: { triageRunId: runId, issue: {} } },
+        },
+      })
+    ).job;
+
+  it("lists an organization's runs newest first with their jobs", async () => {
+    const { run: first } = await createTriageRun(db, runInput({ linearIssueId: "issue-a" }));
+    const { run: second } = await createTriageRun(db, runInput({ linearIssueId: "issue-b" }));
+    await setTriageRunStatus(db, second.id, "completed");
+    await createTriageRun(db, runInput({ organizationId: otherOrgId }));
+    const job1 = await runJob(first.id);
+    const job2 = await runJob(first.id);
+    // Another job type, or another organization's job, naming the run isn't one of its jobs.
+    await runJob(first.id, orgId, "ralph.story");
+    await runJob(first.id, otherOrgId);
+
+    const page = await listTriageRuns(db, orgId);
+    expect(page).toMatchObject({ total: 2, page: 1, pageSize: 50 });
+    expect(page.runs.map((r) => r.run.id)).toEqual([second.id, first.id]);
+    expect(page.runs[0]!.jobs).toEqual([]);
+    expect(page.runs[1]!.jobs.map((j) => j.id)).toEqual([job2.id, job1.id]);
+    expect(page.runs[1]!.jobs[0]).toMatchObject({
+      triageRunId: first.id,
+      status: "queued",
+      agent: null,
+      repository: null,
+    });
+
+    const completed = await listTriageRuns(db, orgId, { status: "completed" });
+    expect(completed.total).toBe(1);
+    expect(completed.runs.map((r) => r.run.id)).toEqual([second.id]);
+
+    const paged = await listTriageRuns(db, orgId, { page: 2, pageSize: 1 });
+    expect(paged).toMatchObject({ total: 2, page: 2, pageSize: 1 });
+    expect(paged.runs.map((r) => r.run.id)).toEqual([first.id]);
+  });
+
+  it("loads one of the organization's runs with its jobs", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    const job = await runJob(run.id);
+    const detail = await getTriageRunDetail(db, orgId, run.id);
+    expect(detail?.run.id).toBe(run.id);
+    expect(detail?.jobs.map((j) => j.id)).toEqual([job.id]);
+    expect(await getTriageRunDetail(db, otherOrgId, run.id)).toBeNull();
   });
 });
