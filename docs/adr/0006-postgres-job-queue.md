@@ -3,6 +3,11 @@
 - **Status:** Accepted (TOOL-254). Supersedes [ADR 0001](0001-job-dispatch.md).
 - **Date:** 2026-10-10
 
+> **Superseded in part by [ADR 0009](0009-ably-wake-signals.md):** the long-poll, when
+> `ABLY_API_KEY` is set. Harnesses then claim with `waitSeconds: 0` when an Ably wake message or the
+> heartbeat's `claimable` flag says there may be a job, and hold no claim requests. Without the key,
+> and for harnesses or control panels on older versions, the long-poll below still applies.
+
 > **Superseded in part by [ADR 0008](0008-agents-tasks-and-the-harness.md):** capabilities. Jobs
 > no longer have a `capability`; the claim selects by task type (in the harness's
 > `accepted_task_types`), pool (in the claim request's `pools`) and `min_harness_version`, and
