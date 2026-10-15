@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   ClaimRequest,
+  Heartbeat,
   HeartbeatResponse,
   JobFailure,
   JobOutcomeResponse,
@@ -25,6 +26,7 @@ import {
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
+import type { WakeEvent, WakeSubscription } from "./wake.js";
 import type { RepoCache } from "./workspace/repoCache.js";
 import { SelfUpdater, readUpdateState } from "./update.js";
 
@@ -133,13 +135,16 @@ function runResponse(j: JobPayload): JobStartResponse {
 /**
  * An in-memory stand-in for `POST /api/harness/claim`: hands out the first
  * queued job of a requested pool (or a `system` job, which has none), else holds the claim until a job is
- * pushed, the claim is aborted or 50s pass (null).
+ * pushed, the claim is aborted or 50s pass (null). A claim with
+ * `waitSeconds: 0` returns null at once when there's no job.
  */
 class FakeClaims {
   private readonly jobs: JobPayload[] = [];
   private readonly waiting = new Set<() => void>();
   /** Pools of every claim, in order. */
   readonly calls: string[][] = [];
+  /** `waitSeconds` of every claim, in order (undefined: the default long-poll). */
+  readonly waits: (number | undefined)[] = [];
   /** Pools of every aborted claim. */
   readonly aborted: string[][] = [];
   inFlight = 0;
@@ -151,16 +156,18 @@ class FakeClaims {
   }
 
   readonly claim = async (
-    { pools }: ClaimRequest,
+    { pools, waitSeconds }: ClaimRequest,
     signal?: AbortSignal,
   ): Promise<JobStartResponse | null> => {
     this.calls.push(pools);
+    this.waits.push(waitSeconds);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {
       for (;;) {
         const index = this.jobs.findIndex((j) => j.pool === null || pools.includes(j.pool));
         if (index >= 0) return runResponse(this.jobs.splice(index, 1)[0]!);
+        if (waitSeconds === 0) return null;
         const outcome = await new Promise<"pushed" | "timeout">((resolve, reject) => {
           const finish = (settle: () => void) => {
             clearTimeout(timer);
@@ -189,7 +196,7 @@ class FakeClaims {
 function fakeApi(claims: FakeClaims, config: HeartbeatResponse = centralConfig()) {
   const state = { config };
   const api = {
-    heartbeat: vi.fn(async () => state.config),
+    heartbeat: vi.fn(async (_body: Heartbeat) => state.config),
     claim: vi.fn(claims.claim),
     submitResult: vi.fn(async (): Promise<JobOutcomeResponse> => ({ status: "completed" })),
     submitFailure: vi.fn(async (_id: string, body: JobFailure): Promise<JobOutcomeResponse> =>
@@ -199,6 +206,32 @@ function fakeApi(claims: FakeClaims, config: HeartbeatResponse = centralConfig()
     ),
   } satisfies ControlPanelApi;
   return { api, state };
+}
+
+/** A stand-in for the Ably wake subscription: tests emit its events. */
+class FakeWake implements WakeSubscription {
+  readonly tokens: { token: string; expiresAt: string }[] = [];
+  closed = false;
+  private readonly listeners = new Map<WakeEvent, (() => void)[]>();
+
+  constructor(readonly organizationId: string) {}
+
+  setToken(token: string, expiresAt: string): void {
+    this.tokens.push({ token, expiresAt });
+  }
+
+  on(event: WakeEvent, listener: () => void): void {
+    this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.listeners.clear();
+  }
+
+  emit(event: WakeEvent): void {
+    for (const listener of this.listeners.get(event) ?? []) listener();
+  }
 }
 
 function deferred() {
@@ -238,10 +271,20 @@ function setup(options: {
   localConfig?: DaemonOptions["localConfig"];
   hostToolSearchPath?: string;
   models?: DaemonOptions["models"];
+  /** Opens fake wake subscriptions (into `wakes`); without it the daemon has no wake transport. */
+  wake?: boolean;
 }) {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
   const tokens = { refresh: vi.fn(async () => "access") };
+  const wakes: FakeWake[] = [];
+  const wakeSubscription = options.wake
+    ? (organizationId: string) => {
+        const wake = new FakeWake(organizationId);
+        wakes.push(wake);
+        return wake;
+      }
+    : undefined;
   const daemon = new AgentDaemon({
     server: "https://omniralph.example",
     workspaceRoot: "/tmp/omniralph-test",
@@ -266,8 +309,9 @@ function setup(options: {
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
     models: options.models,
+    wakeSubscription,
   });
-  return { api, state, claims, tokens, daemon };
+  return { api, state, claims, tokens, daemon, wakes };
 }
 
 /** Lets pending promises and zero-delay timers run. */
@@ -1542,5 +1586,299 @@ describe("self-update", () => {
       expect.objectContaining({ selfUpdate: "unsupported", freeSlots: 1 }),
     );
     await daemon.shutdown();
+  });
+});
+
+describe("AgentDaemon wake mode", () => {
+  const ABLY = { token: "ably-jwt", expiresAt: "2026-10-16T00:00:00.000Z" };
+
+  /** A daemon whose first heartbeat hands over an Ably token. */
+  async function started(
+    options: Parameters<typeof setup>[0] & { connect?: boolean } = {},
+  ): Promise<ReturnType<typeof setup>> {
+    const result = setup({ wake: true, config: centralConfig({ ably: ABLY }), ...options });
+    void result.daemon.run();
+    await settle();
+    if (options.connect ?? true) {
+      result.wakes[0]!.emit("connected");
+      await settle();
+    }
+    return result;
+  }
+
+  it("opens the wake subscription on a token and claims without waiting once connected", async () => {
+    const { api, claims, daemon, wakes } = await started({ connect: false });
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.organizationId).toBe(ORG_ID);
+    expect(wakes[0]!.tokens).toEqual([ABLY]);
+    expect(claims.calls).toEqual([]);
+
+    wakes[0]!.emit("connected");
+    await settle();
+    expect(api.claim).toHaveBeenCalledWith(
+      { pools: ["short"], waitSeconds: 0 },
+      expect.any(AbortSignal),
+    );
+    // No job: nothing more until a trigger, heartbeats or not.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(claims.calls).toEqual([["short"]]);
+    expect(wakes[0]!.tokens).toHaveLength(4);
+    await daemon.shutdown();
+  });
+
+  it("reports its token's expiry and, with a free slot, its claimable pools in the heartbeat", async () => {
+    const gate = deferred();
+    const { api, claims, daemon, wakes } = await started({
+      run: () => gate.promise.then(() => ({})),
+    });
+    expect(api.heartbeat.mock.calls[0]![0]).not.toHaveProperty("ablyTokenExpiresAt");
+    expect(api.heartbeat.mock.calls[0]![0]).not.toHaveProperty("claimablePools");
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ablyTokenExpiresAt: ABLY.expiresAt, claimablePools: ["short"] }),
+    );
+
+    claims.push(job(randomUUID()));
+    wakes[0]!.emit("wake");
+    await settle();
+    expect(daemon.status().runningJobIds).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(20_000);
+    const last = api.heartbeat.mock.lastCall![0];
+    expect(last).toMatchObject({ ablyTokenExpiresAt: ABLY.expiresAt, freeSlots: 0 });
+    expect(last).not.toHaveProperty("claimablePools");
+    gate.resolve();
+    await daemon.shutdown();
+  });
+
+  it("claims on a wake, again at once after a job, and when a job ends", async () => {
+    const gates = new Map<string, ReturnType<typeof deferred>>();
+    const { claims, daemon, wakes } = await started({
+      config: centralConfig({ ably: ABLY, maxConcurrency: 2 }),
+      run: async (j) => {
+        const gate = deferred();
+        gates.set(j.id, gate);
+        await gate.promise;
+        return {};
+      },
+    });
+    expect(claims.calls).toHaveLength(1);
+    const ids = [randomUUID(), randomUUID()];
+    claims.push(...ids.map((id) => job(id)));
+    wakes[0]!.emit("wake");
+    await settle();
+    // Two jobs, then the harness is full: no third claim.
+    expect(claims.calls).toHaveLength(3);
+    expect(daemon.status().runningJobIds).toEqual(ids);
+
+    wakes[0]!.emit("wake");
+    await settle();
+    expect(claims.calls).toHaveLength(3);
+
+    gates.get(ids[0]!)!.resolve();
+    await settle();
+    expect(claims.calls).toHaveLength(4);
+    expect(claims.waits).toEqual([0, 0, 0, 0]);
+    expect(claims.inFlight).toBe(0);
+    gates.get(ids[1]!)!.resolve();
+    await daemon.shutdown();
+  });
+
+  it("claims when its claimable pools change", async () => {
+    const { state, claims, daemon } = await started({
+      config: centralConfig({ ably: ABLY, poolLimits: { short: 1 } }),
+    });
+    expect(claims.calls).toEqual([["short"]]);
+    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(claims.calls).toEqual([["short"], ["short", "long"]]);
+    expect(claims.waits).toEqual([0, 0]);
+    await daemon.shutdown();
+  });
+
+  it("claims on claimable: true from the heartbeat", async () => {
+    const { state, claims, daemon } = await started();
+    expect(claims.calls).toHaveLength(1);
+    state.config = centralConfig({ claimable: false });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(claims.calls).toHaveLength(1);
+    state.config = centralConfig({ claimable: true });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(claims.calls).toHaveLength(2);
+    expect(claims.waits).toEqual([0, 0]);
+    await daemon.shutdown();
+  });
+
+  it("while disconnected neither long-polls nor claims on other triggers, only on claimable: true", async () => {
+    const { state, claims, daemon, wakes } = await started();
+    expect(claims.calls).toHaveLength(1);
+    wakes[0]!.emit("disconnected");
+    wakes[0]!.emit("wake");
+    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(claims.calls).toHaveLength(1);
+
+    state.config = centralConfig({ poolLimits: { short: 1, long: 1 }, claimable: true });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(claims.calls).toHaveLength(2);
+    expect(claims.waits).toEqual([0, 0]);
+
+    // Reconnecting is a trigger of its own.
+    wakes[0]!.emit("connected");
+    await settle();
+    expect(claims.calls).toHaveLength(3);
+    await daemon.shutdown();
+  });
+
+  it("claims exactly once more after triggers that arrive while a claim is in flight", async () => {
+    const gate = deferred();
+    const { api, state, daemon, wakes } = await started({ connect: false });
+    api.claim.mockImplementationOnce(async () => {
+      await gate.promise;
+      return null;
+    });
+    wakes[0]!.emit("connected");
+    await settle();
+    expect(api.claim).toHaveBeenCalledTimes(1);
+
+    wakes[0]!.emit("wake");
+    wakes[0]!.emit("wake");
+    state.config = centralConfig({ claimable: true });
+    await vi.advanceTimersByTimeAsync(20_000);
+    wakes[0]!.emit("wake");
+    expect(api.claim).toHaveBeenCalledTimes(1);
+
+    gate.resolve();
+    await settle();
+    expect(api.claim).toHaveBeenCalledTimes(2);
+    state.config = centralConfig();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(api.claim).toHaveBeenCalledTimes(2);
+    await daemon.shutdown();
+  });
+
+  it("drops back to the long-poll on ably: null; an absent ably changes nothing", async () => {
+    const { api, state, claims, daemon, wakes } = await started();
+    state.config = centralConfig();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.closed).toBe(false);
+    expect(claims.calls).toHaveLength(1);
+
+    state.config = centralConfig({ ably: null });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(wakes[0]!.closed).toBe(true);
+    expect(claims.waits).toEqual([0, undefined]);
+    expect(claims.inFlight).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    const last = api.heartbeat.mock.lastCall![0];
+    expect(last).not.toHaveProperty("ablyTokenExpiresAt");
+    expect(last).not.toHaveProperty("claimablePools");
+    await daemon.shutdown();
+  });
+
+  it("stops a long-poll in flight when a token arrives", async () => {
+    const { state, claims, daemon, wakes } = setup({ wake: true });
+    void daemon.run();
+    await settle();
+    expect(claims.inFlight).toBe(1);
+    expect(claims.waits).toEqual([undefined]);
+
+    state.config = centralConfig({ ably: ABLY });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(claims.aborted).toEqual([["short"]]);
+    expect(claims.inFlight).toBe(0);
+    wakes[0]!.emit("connected");
+    await settle();
+    expect(claims.waits).toEqual([undefined, 0]);
+    await daemon.shutdown();
+  });
+
+  it("ignores Ably tokens without a wake transport", async () => {
+    const { api, claims, daemon } = setup({ config: centralConfig({ ably: ABLY }) });
+    void daemon.run();
+    await settle();
+    expect(claims.waits).toEqual([undefined]);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat.mock.lastCall![0]).not.toHaveProperty("ablyTokenExpiresAt");
+    await daemon.shutdown();
+  });
+
+  it("backs off on claim errors in wake mode", async () => {
+    const { api, daemon, wakes } = await started({ connect: false });
+    api.claim.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
+    api.claim.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
+    wakes[0]!.emit("connected");
+    await settle();
+    expect(api.claim).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(api.claim).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.claim).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(api.claim).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.claim).toHaveBeenCalledTimes(3);
+    expect(api.claim).toHaveBeenLastCalledWith(
+      { pools: ["short"], waitSeconds: 0 },
+      expect.any(AbortSignal),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(api.claim).toHaveBeenCalledTimes(3);
+    await daemon.shutdown();
+  });
+
+  it("drain aborts the claim in flight and closes the subscription; resume reopens it", async () => {
+    const { api, claims, daemon, wakes } = await started({ connect: false });
+    let aborted = false;
+    api.claim.mockImplementationOnce(
+      (_body, signal) =>
+        new Promise((_resolve, reject) =>
+          signal!.addEventListener("abort", () => {
+            aborted = true;
+            reject(signal!.reason);
+          }),
+        ),
+    );
+    wakes[0]!.emit("connected");
+    await settle();
+    await daemon.drain(1_000);
+    expect(aborted).toBe(true);
+    expect(wakes[0]!.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(wakes).toHaveLength(1);
+    const last = api.heartbeat.mock.lastCall![0];
+    expect(last).toMatchObject({ ablyTokenExpiresAt: ABLY.expiresAt });
+    expect(last).not.toHaveProperty("claimablePools");
+    expect(api.claim).toHaveBeenCalledTimes(1);
+
+    daemon.resume();
+    expect(wakes).toHaveLength(2);
+    expect(wakes[1]!.tokens).toEqual([ABLY]);
+    wakes[1]!.emit("connected");
+    await settle();
+    expect(claims.waits).toEqual([0]);
+    expect(api.claim).toHaveBeenCalledTimes(2);
+    await daemon.shutdown();
+    expect(wakes[1]!.closed).toBe(true);
+  });
+
+  it("shutdown aborts the claim in flight and closes the subscription", async () => {
+    const { api, daemon, wakes } = await started({ connect: false });
+    let aborted = false;
+    api.claim.mockImplementationOnce(
+      (_body, signal) =>
+        new Promise((_resolve, reject) =>
+          signal!.addEventListener("abort", () => {
+            aborted = true;
+            reject(signal!.reason);
+          }),
+        ),
+    );
+    wakes[0]!.emit("connected");
+    await settle();
+    await daemon.shutdown();
+    expect(aborted).toBe(true);
+    expect(wakes[0]!.closed).toBe(true);
   });
 });

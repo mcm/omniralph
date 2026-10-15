@@ -30,6 +30,7 @@ import { SessionTokenFile } from "./session-token-file.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
+import type { WakeSubscription } from "./wake.js";
 
 /** How long SIGTERM waits for running jobs before exiting. */
 export const SHUTDOWN_GRACE_MS = 60_000;
@@ -95,6 +96,11 @@ export interface DaemonOptions {
   models?: Pick<ModelReporter, "current">;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
+  /**
+   * Opens the Ably wake subscription for the harness's organization, once a
+   * heartbeat hands over an Ably token. Without it the harness always long-polls.
+   */
+  wakeSubscription?: (organizationId: string) => WakeSubscription;
 }
 
 /** Runs one claimed job with its context and returns its output. */
@@ -134,8 +140,8 @@ export interface DaemonStatus {
 /**
  * The agent's main loop: heartbeats (central config, cancellations, job
  * tokens; the control panel renews the running jobs' leases), a claim loop
- * that long-polls for a job while a slot is free, and the job lifecycle
- * (claim → run → result/fail).
+ * that, while a slot is free, long-polls for a job or (with an Ably token)
+ * claims on wake signals, and the job lifecycle (claim → run → result/fail).
  */
 export class AgentDaemon implements DrainableDaemon {
   private config: HeartbeatResponse | null = null;
@@ -165,6 +171,15 @@ export class AgentDaemon implements DrainableDaemon {
   /** Message IDs already acknowledged (oldest first). */
   private readonly ackedMessageIds = new Set<string>();
   private readonly hostTools: HostToolPaths;
+  /** The latest Ably token from a heartbeat: while held, the harness is in wake mode (no long-poll). */
+  private ablyToken: { token: string; expiresAt: string } | null = null;
+  /** The open wake subscription and its organization (none while draining or stopping). */
+  private wake: { subscription: WakeSubscription; organizationId: string } | null = null;
+  private wakeConnected = false;
+  /** In wake mode: a trigger asked for a claim the loop hasn't sent yet. */
+  private claimRequested = false;
+  /** The claimable pools `refreshClaim` last saw (to claim when they change). */
+  private lastClaimablePools: string | null = null;
 
   constructor(private readonly options: DaemonOptions) {
     this.hostTools = new HostToolPaths({
@@ -233,6 +248,7 @@ export class AgentDaemon implements DrainableDaemon {
   async drain(timeoutMs: number): Promise<void> {
     this.draining = true;
     for (const wake of this.sleepers) wake();
+    this.syncWakeSubscription();
     this.refreshClaim();
     if (this.handlers.size === 0) return;
     const log = this.options.logger;
@@ -257,6 +273,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (!this.draining) return;
     this.draining = false;
     this.options.logger.info("taking jobs again");
+    this.syncWakeSubscription();
     this.refreshClaim();
   }
 
@@ -296,6 +313,7 @@ export class AgentDaemon implements DrainableDaemon {
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     this.heartbeatTimer = null;
     for (const wake of this.sleepers) wake();
+    this.syncWakeSubscription();
     this.refreshClaim();
   }
 
@@ -333,6 +351,7 @@ export class AgentDaemon implements DrainableDaemon {
         hostTools,
         models,
         ...this.options.updater?.report(),
+        ...this.wakeReport(),
       });
       this.lastHeartbeatAt = new Date();
       for (const id of [...deliveredMessageIds, ...rejectedMessageIds]) {
@@ -441,7 +460,9 @@ export class AgentDaemon implements DrainableDaemon {
     }
     this.hostTools.update(config.hostTools);
     this.deliverMessages(config.jobMessages);
+    this.applyAbly(config);
     this.refreshClaim();
+    if (config.claimable === true) this.requestClaim("claimable");
   }
 
   /**
@@ -467,6 +488,100 @@ export class AgentDaemon implements DrainableDaemon {
       // A 401 from /token itself stops the daemon (TokenManager → fail()).
       this.options.tokens.refresh().catch(() => {});
     }
+  }
+
+  // --- Wake mode ------------------------------------------------------------------------
+
+  /** In wake mode (holding an Ably token) the harness claims on triggers, never long-polling. */
+  private wakeMode(): boolean {
+    return this.ablyToken !== null;
+  }
+
+  /** The heartbeat's Ably fields: the held token's expiry, and in wake mode the pools to check. */
+  private wakeReport(): Pick<Heartbeat, "ablyTokenExpiresAt" | "claimablePools"> {
+    if (!this.ablyToken) return {};
+    const pools = this.claimablePools();
+    return {
+      ablyTokenExpiresAt: this.ablyToken.expiresAt,
+      ...(pools === null ? {} : { claimablePools: pools }),
+    };
+  }
+
+  /**
+   * A heartbeat's `ably`: a token starts (or keeps) wake mode, null drops back
+   * to the long-poll, absent changes nothing.
+   */
+  private applyAbly(config: HeartbeatResponse): void {
+    if (!this.options.wakeSubscription || config.ably === undefined) return;
+    if (config.ably === null) {
+      if (this.ablyToken) this.options.logger.info("Ably is off; long-polling for jobs");
+      this.ablyToken = null;
+    } else {
+      const entering = this.ablyToken === null;
+      this.ablyToken = { token: config.ably.token, expiresAt: config.ably.expiresAt };
+      if (entering) {
+        this.options.logger.info("claiming on Ably wake signals");
+        // A long-poll in flight would hold its request open: claim on triggers instead.
+        this.claim?.controller.abort();
+      }
+    }
+    this.syncWakeSubscription();
+    this.wakeClaimLoop?.();
+  }
+
+  /**
+   * Opens the wake subscription while there's a token and jobs may be taken
+   * (closes it otherwise, e.g. while draining) and hands it the latest token.
+   */
+  private syncWakeSubscription(): void {
+    const create = this.options.wakeSubscription;
+    const organizationId = this.config?.organizationId;
+    const wanted =
+      create !== undefined &&
+      this.ablyToken !== null &&
+      organizationId !== undefined &&
+      !this.stopping &&
+      !this.draining;
+    if (this.wake && (!wanted || this.wake.organizationId !== organizationId)) {
+      this.wake.subscription.close();
+      this.wake = null;
+      this.wakeConnected = false;
+    }
+    if (!wanted || !this.ablyToken) return;
+    if (!this.wake) {
+      let subscription: WakeSubscription;
+      try {
+        subscription = create(organizationId);
+      } catch (error) {
+        this.options.logger.warn({ err: error }, "cannot open the wake subscription; long-polling");
+        this.ablyToken = null;
+        return;
+      }
+      const wake = { subscription, organizationId };
+      subscription.on("wake", () => this.requestClaim("wake"));
+      subscription.on("connected", () => {
+        if (this.wake !== wake) return;
+        this.wakeConnected = true;
+        this.requestClaim("connected");
+      });
+      subscription.on("disconnected", () => {
+        if (this.wake === wake) this.wakeConnected = false;
+      });
+      this.wake = wake;
+    }
+    this.wake.subscription.setToken(this.ablyToken.token, this.ablyToken.expiresAt);
+  }
+
+  /**
+   * A wake-mode trigger: claims once a slot is free. Coalesces: any number of
+   * triggers during a claim cause one more claim after it. While the Ably
+   * connection is down only the heartbeat's `claimable` counts.
+   */
+  private requestClaim(trigger: "wake" | "claimable" | "connected" | "job-ended" | "pools"): void {
+    if (!this.wakeMode() || this.claimablePools() === null) return;
+    if (trigger !== "claimable" && !this.wakeConnected) return;
+    this.claimRequested = true;
+    this.wakeClaimLoop?.();
   }
 
   // --- Claiming --------------------------------------------------------------------------
@@ -523,30 +638,46 @@ export class AgentDaemon implements DrainableDaemon {
     if (this.claim && (pools === null || this.claim.pools.join() !== pools.join())) {
       this.claim.controller.abort();
     }
+    const key = pools === null ? null : pools.join();
+    if (key !== this.lastClaimablePools) {
+      this.lastClaimablePools = key;
+      this.requestClaim("pools");
+    }
     this.wakeClaimLoop?.();
   }
 
   /**
-   * One claim at a time: long-polls while a slot is free, starts the job it
-   * gets and claims again at once. Backs off (up to 30s) on API errors.
+   * One claim at a time while a slot is free, starting the job it gets and
+   * claiming again at once. Long-polls without an Ably token; in wake mode
+   * claims without waiting, only when a trigger asked (`requestClaim`).
+   * Backs off (up to 30s) on API errors.
    */
   private async claimLoop(): Promise<void> {
     while (!this.stopping) {
       const pools = this.claimablePools();
-      if (pools === null) {
+      const wakeMode = this.wakeMode();
+      // Triggers only count while a slot is free.
+      if (pools === null) this.claimRequested = false;
+      if (pools === null || (wakeMode && !this.claimRequested)) {
         await new Promise<void>((resolve) => (this.wakeClaimLoop = resolve));
         this.wakeClaimLoop = null;
         continue;
       }
+      this.claimRequested = false;
       const controller = new AbortController();
       this.claim = { controller, pools };
       let start: JobStartResponse | null;
       try {
-        start = await this.options.api.claim({ pools }, controller.signal);
+        start = await this.options.api.claim(
+          wakeMode ? { pools, waitSeconds: 0 } : { pools },
+          controller.signal,
+        );
         this.claimBackoffMs = 0;
       } catch (error) {
         if (controller.signal.aborted) continue;
         this.onApiError(error, "claim failed");
+        // The trigger wasn't served: claim again after the back-off.
+        if (wakeMode) this.claimRequested = true;
         this.claimBackoffMs = Math.min(
           MAX_CLAIM_BACKOFF_MS,
           Math.max(CLAIM_BACKOFF_MS, this.claimBackoffMs * 2),
@@ -556,7 +687,11 @@ export class AgentDaemon implements DrainableDaemon {
       } finally {
         this.claim = null;
       }
-      if (start) this.startJob(start);
+      if (start) {
+        this.startJob(start);
+        // There may be more: claim again at once while a slot is free.
+        if (wakeMode) this.claimRequested = true;
+      }
     }
   }
 
@@ -693,6 +828,7 @@ export class AgentDaemon implements DrainableDaemon {
       this.running.delete(job.id);
       running.sessionTokenFile.close();
       this.refreshClaim();
+      this.requestClaim("job-ended");
     }
     if ([...this.pendingAcks.values()].some((ack) => ack.jobId === job.id)) {
       // Acknowledge the job's messages before its outcome, so none is taken for undelivered.

@@ -40,6 +40,7 @@ import {
   type Installer,
 } from "./update.js";
 import { AGENT_VERSION } from "./version.js";
+import { createWakeSubscription } from "./wake.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
 
@@ -324,6 +325,8 @@ async function runStart(
     models: new ModelReporter({ list: deps.listModels ?? sdkListModels(), logger }),
     localConfig: config,
     updater,
+    wakeSubscription: (organizationId) =>
+      createWakeSubscription({ harnessId: config.agentId, organizationId, logger }),
   });
   running.daemon = daemon;
   if (fatal) daemon.fail(fatal);
