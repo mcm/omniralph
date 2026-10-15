@@ -144,7 +144,7 @@ See [ADR 0006](adr/0006-postgres-job-queue.md).
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
 | `CRON_SECRET` | yes | — | Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to `/api/cron/*`; requests without it get 401. |
-| `ABLY_API_KEY` | no | — (Ably off) | Ably API key, `<keyName>:<keySecret>` (Ably dashboard › your app › **API Keys**; needs publish and subscribe). When set, each heartbeat hands the harness a 12-hour, subscribe-only JWT for its wake channels (`harness:<harnessId>`, `org:<organizationId>`), signed locally with the key secret; harnesses never see the key. Unset (or malformed, which is logged) means `ably: null` in heartbeats, and harnesses long-poll their claims as before. |
+| `ABLY_API_KEY` | no | — (Ably off) | Ably API key, `<keyName>:<keySecret>` (Ably dashboard › your app › **API Keys**; needs publish and subscribe). When set, each heartbeat hands the harness a 12-hour, subscribe-only JWT for its wake channels (`harness:<harnessId>`, `org:<organizationId>`), signed locally with the key secret; harnesses never see the key. Unset (or malformed, which is logged) means `ably: null` in heartbeats, and harnesses long-poll their claims as before. See [ADR 0009](adr/0009-ably-wake-signals.md). |
 
 ### Set by Vercel
 

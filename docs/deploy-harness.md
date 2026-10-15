@@ -1,9 +1,14 @@
 # Deploying a harness
 
 `omniralph-harness` is a Node 22 daemon that claims jobs from the control panel and runs them with
-the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control panel (its harness API)
-and to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
-push with brokered write tokens). It opens no port except an optional `/healthz` on `127.0.0.1`.
+the Claude Agent SDK. It only makes **outbound HTTPS** calls: to the control panel (its harness API),
+to the code host (git clone/fetch with brokered, read-only tokens; `ralph` jobs also
+push with brokered write tokens) and, when the control panel has `ABLY_API_KEY` set, to Ably's
+realtime endpoint (a WebSocket to `main.realtime.ably.net:443`, falling back to
+`main.[a-e].fallback.ably-realtime.com` and checking connectivity at `internet-up.ably-realtime.com`)
+for its job wake signals ([ADR 0009](adr/0009-ably-wake-signals.md)). If Ably is unreachable the
+harness still picks jobs up through its heartbeat, within 20s. It opens no port except an optional
+`/healthz` on `127.0.0.1`.
 
 This guide sets one up on a Coder workspace, running as the **workspace user** (`coder`): the
 harness's config, repo cache and Claude login live in that user's home, which the workspace persists.

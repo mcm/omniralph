@@ -104,7 +104,10 @@ details.
   accepted task types and free pools, and jobs targeted at it (pinned repos, running ralph runs, `repo.sync`)
   come first. The heartbeat renews the leases of running jobs: a crashed harness's jobs are taken
   over once their 2-minute lease lapses, and rate-limited jobs are retried after a backoff.
-  See [ADR 0006: Postgres job queue](docs/adr/0006-postgres-job-queue.md).
+  See [ADR 0006: Postgres job queue](docs/adr/0006-postgres-job-queue.md). With `ABLY_API_KEY` set,
+  harnesses don't hold claims: a dispatch publishes an Ably wake message and the harness claims at
+  once, with the heartbeat's `claimable` flag as the fallback. See
+  [ADR 0009: Ably wake signals](docs/adr/0009-ably-wake-signals.md).
 - **Chat runs in the control panel.** Slack events arrive as webhooks; Discord messages arrive over
   its Gateway WebSocket, which the control panel doesn't connect to yet (to be redesigned).
   Chat SDK handles both platforms, with its state in Postgres; Slack bot tokens and the
@@ -213,6 +216,7 @@ details.
 | [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md)                            | Chat SDK, our tables owning installations, the Discord Gateway cron, the control-panel agent on the AI Gateway, tool tiers and access levels                                                                                                                                                                                                                                                                                                                                                                                 |
 | [ADR 0006: Postgres job queue](docs/adr/0006-postgres-job-queue.md)                      | The `jobs` table as the queue: the claim query, the long-poll, leases renewed by the heartbeat, delayed retry, the cutover from Vercel Queues                                                                                                                                                                                                                                                                                                                                                                                |
 | [ADR 0008: agents, tasks and the harness](docs/adr/0008-agents-tasks-and-the-harness.md) | Agent and task definitions, task types and their lifecycles, run specs resolved at claim time, sinks, pools, lifecycle and session tokens, setup commands; review runs: fan-out per review task, correlation, one posted review, sticky comments                                                                                                                                                                                                                                                                             |
+| [ADR 0009: Ably wake signals](docs/adr/0009-ably-wake-signals.md)                        | Wake messages on dispatch instead of the claim long-poll: channels, subscribe-only JWTs on the heartbeat, the `claimable` fallback flag, harness modes, the cutover                                                                                                                                                                                                                                                                                                                                                          |
 
 ## Layout
 

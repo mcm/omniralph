@@ -128,6 +128,13 @@ There's nothing to provision: the `jobs` table in Postgres is the job queue
 holds the request for up to 50s while there's nothing to claim (its `maxDuration` is 60s), and
 renew the leases of their running jobs with each heartbeat.
 
+Held claims are billed as Fluid compute memory for the whole hold. To avoid them, set
+`ABLY_API_KEY` ([env.md](env.md)) to an API key of an Ably app (the free plan is enough) with the
+publish and subscribe capabilities: each dispatch then publishes a wake message, and harnesses on a
+current version claim once on it instead of long-polling. Follow the
+[cutover](adr/0009-ably-wake-signals.md#cutover) of ADR 0009; removing the key goes back to the
+long-poll within one heartbeat.
+
 If the project still has a `QUEUE_REGIONS` variable from an older release, remove it after
 deploying; nothing reads it. Follow the [cutover](adr/0006-postgres-job-queue.md#cutover) so
 running jobs aren't lost.
