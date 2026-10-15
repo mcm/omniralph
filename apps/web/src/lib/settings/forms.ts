@@ -338,6 +338,7 @@ export const CODING_PATH_LABELS: Record<RalphCodingPath, string> = {
 
 export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
   "when-asked": "When asked",
+  always: "Always (rebase, never merge)",
   never: "Never",
 };
 

@@ -307,7 +307,7 @@ describe("RalphSettings", () => {
     const result = RalphSettings.safeParse({
       verifyCommands: ["pnpm test\nrm -rf /"],
       allowedTools: ["Bash(git log:*", "rm -rf"],
-      historyRewrite: "always",
+      historyRewrite: "sometimes",
       maxReviewRounds: -1,
       unmergedBranchTimeoutMinutes: 0,
     });

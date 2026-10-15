@@ -815,7 +815,7 @@ export interface RalphSettings {
    * issue: a delegation or mention of an issue (or its epic) with one is refused.
    */
   blockedLabels: string[];
-  historyRewrite: "when-asked" | "never";
+  historyRewrite: "when-asked" | "always" | "never";
   respondToReviews: boolean;
   maxReviewRounds: number;
   respondToCiFailures: boolean;

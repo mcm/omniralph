@@ -436,7 +436,7 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
 }
 
 /** Whether a request may rewrite the branch's history (`ralph_settings.historyRewrite`). */
-export type HistoryRewritePolicy = "when-asked" | "never";
+export type HistoryRewritePolicy = "when-asked" | "always" | "never";
 
 /** Where a request session's requests come from: a Linear agent session or a chat thread. */
 export type RequestSource = "linear" | "chat";
@@ -447,7 +447,8 @@ export const REQUEST_HEADING = "## Request from your team";
 /**
  * System prompt addition of a request session (cyralph's `requestSystemAppend`):
  * it may commit and push its branch, never another one, rewrites history only
- * when asked (and allowed), and asks for PR/MR changes in its result.
+ * when asked (and allowed) or, with `always`, rebases instead of ever merging,
+ * and asks for PR/MR changes in its result.
  */
 export function requestSystemAppend(
   historyRewrite: HistoryRewritePolicy = "when-asked",
@@ -456,9 +457,11 @@ export function requestSystemAppend(
 ): string {
   if (options.ship) return shipSystemAppend(source);
   const rewrite =
-    historyRewrite === "when-asked"
-      ? "- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on the epic branch and push with `git push --force-with-lease`. That is allowed here."
-      : "- Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.";
+    historyRewrite === "always"
+      ? "- History rewrites are allowed on the epic branch without being asked, and merges are not: never merge the base branch (or any other branch) into it. When it needs the base branch (it is behind or conflicts with it), or the request asks for a rebase, squash, amend or reword, do it and push with `git push --force-with-lease`, never a plain `--force`."
+      : historyRewrite === "when-asked"
+        ? "- Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on the epic branch and push with `git push --force-with-lease`. That is allowed here."
+        : "- Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.";
   const where =
     source === "chat"
       ? "a request in a chat thread about a repository"
@@ -517,7 +520,7 @@ export interface RequestPromptContext {
   qualityGates: readonly string[];
   /** "pull request" or "merge request". */
   prTerm?: string;
-  /** May an explicit request rewrite the epic branch's history? Default "when-asked". */
+  /** May a request rewrite the epic branch's history (`always`: rebase, never merge)? Default "when-asked". */
   historyRewrite?: HistoryRewritePolicy;
   /** Markdown list of the Linear attachments the session can open. */
   attachments?: string;
@@ -594,9 +597,11 @@ function requestInstructions(ctx: RequestPromptContext, term: string): string[] 
     "## How to handle it",
     "- This is a direct request, not a story. Do what it asks, and nothing beyond it.",
     `- You may commit, and push \`${ctx.branch}\` to \`origin\` (\`git push -u origin ${ctx.branch}\`), when the request calls for it. Never push to \`${ctx.baseBranch}\` or any other branch.`,
-    (ctx.historyRewrite ?? "when-asked") === "when-asked"
-      ? `- History rewrites are allowed on \`${ctx.branch}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/${ctx.baseBranch}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin ${ctx.branch}\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.`
-      : `- History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`${ctx.baseBranch}\` into \`${ctx.branch}\` instead.`,
+    ctx.historyRewrite === "always"
+      ? `- History rewrites are allowed on \`${ctx.branch}\` without being asked, and merges are not: never merge \`${ctx.baseBranch}\` (or any other branch) into \`${ctx.branch}\`. When \`${ctx.branch}\` needs \`${ctx.baseBranch}\` (it is behind or conflicts with it) or the request asks for a rebase: \`git fetch origin && git rebase origin/${ctx.baseBranch}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin ${ctx.branch}\`. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.`
+      : (ctx.historyRewrite ?? "when-asked") === "when-asked"
+        ? `- History rewrites are allowed on \`${ctx.branch}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/${ctx.baseBranch}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin ${ctx.branch}\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.`
+        : `- History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`${ctx.baseBranch}\` into \`${ctx.branch}\` instead.`,
     ctx.remoteUrl
       ? `- For the ${term}, don't run \`gh\` or \`glab\`. Push \`${ctx.branch}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`${ctx.baseBranch}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see ${chat ? "the chat thread" : "Linear"}: what it does and why, notable changes, and any breaking changes or judgement calls.${chat ? "" : " Don't list the user stories."}`
       : "- There is no `origin` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.",
@@ -821,8 +826,10 @@ export interface RequestTemplateContext {
   prTermCapitalized: string;
   progressFile: string;
   qualityGates: CommandList;
-  /** An explicit request may rewrite the branch's history (`historyRewrite: when-asked`). */
+  /** A request may rewrite the branch's history (`historyRewrite: when-asked` or `always`). */
   historyRewriteAllowed: boolean;
+  /** Rebase instead of ever merging, without being asked (`historyRewrite: always`). */
+  historyRewriteAlways: boolean;
   /** `/ship`: the session prepares one commit; the orchestrator commits and pushes. */
   ship: boolean;
   /** `/ship`: what earlier request sessions left stashed, newest first. */
@@ -864,7 +871,8 @@ export function requestTemplateContext(ctx: RequestPromptContext): RequestTempla
     prTermCapitalized: capitalize(term),
     progressFile: ctx.progressFile,
     qualityGates: commandList(uniqueCommands(ctx.qualityGates)),
-    historyRewriteAllowed: (ctx.historyRewrite ?? "when-asked") === "when-asked",
+    historyRewriteAllowed: (ctx.historyRewrite ?? "when-asked") !== "never",
+    historyRewriteAlways: ctx.historyRewrite === "always",
     ship: ctx.ship !== undefined,
     stashes: templateList(ctx.ship?.stashes),
     attachments: ctx.attachments || null,

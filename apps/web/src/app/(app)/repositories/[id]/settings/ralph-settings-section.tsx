@@ -410,9 +410,9 @@ export function CodingSettingsSections({
         showTitle={false}
         description={
           <>
-            Build Linear issues delegated to the Omniralph app in this repository, story by story.
-            A delegation goes to the first repository with coding on that matches its labels, then
-            its project, then its team.
+            Build Linear issues delegated to the Omniralph app in this repository, story by story. A
+            delegation goes to the first repository with coding on that matches its labels, then its
+            project, then its team.
           </>
         }
         headerControl={
@@ -748,7 +748,7 @@ export function CodingSettingsSections({
             label="History rewrites"
             htmlFor="ralph-history-rewrite"
             description={withDefault(
-              "Whether a request may rebase and push with --force-with-lease when someone asks for it.",
+              "Whether a request may rebase and push with --force-with-lease: only when someone asks for it, always (it rebases onto the base branch instead of ever merging it), or never.",
               RALPH_DEFAULT_TEXT.historyRewrite,
             )}
             error={errors.historyRewrite}

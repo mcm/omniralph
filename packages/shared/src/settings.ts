@@ -188,14 +188,18 @@ export const MAX_VERIFY_COMMANDS = 50;
 export const MAX_TOOL_RULES = 100;
 export const MAX_FIX_ROUNDS = 20;
 export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
-/** Whether request mode may rebase and `--force-with-lease` (`historyRewrite`). */
 /**
  * How a repository's ralph runs work (`repositories.coding_path`): the legacy
  * `ralph.story`/`ralph.request` jobs, or coding runs of its story and request tasks.
  */
 export const RALPH_CODING_PATHS = ["legacy", "tasks"] as const;
 export type RalphCodingPath = (typeof RALPH_CODING_PATHS)[number];
-export const RALPH_HISTORY_REWRITE_POLICIES = ["when-asked", "never"] as const;
+/**
+ * Whether request mode may rebase and `--force-with-lease` (`historyRewrite`):
+ * only when a request asks for it, `always` (rebasing instead of ever merging
+ * the base branch, without being asked) or `never`.
+ */
+export const RALPH_HISTORY_REWRITE_POLICIES = ["when-asked", "always", "never"] as const;
 export type RalphHistoryRewrite = (typeof RALPH_HISTORY_REWRITE_POLICIES)[number];
 /** Linear state types `epicCompletedState` may name instead of a state name. */
 export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;

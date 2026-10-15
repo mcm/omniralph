@@ -507,10 +507,10 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
   it("refuses `forceWithLease` when history rewrites are off, and force-pushes the rebased branch when they're allowed", async () => {
     await remote.commit({ "feature.txt": "v1\n" }, branch);
     const published = remoteHead();
-    const rewrite = (historyRewrite: "never" | "when-asked") =>
+    const rewrite = (historyRewrite: "never" | "when-asked" | "always") =>
       fakeQuery(async function* (call) {
         const cwd = call.options.cwd!;
-        await writeFile(path.join(cwd, "feature.txt"), "v2\n");
+        await writeFile(path.join(cwd, "feature.txt"), `${historyRewrite}\n`);
         git(cwd, "commit", "--quiet", "-a", "--amend", "-m", "Squashed");
         const out = await ship(call, { forceWithLease: true });
         // Refused: the session gives up its rewrite.
@@ -528,6 +528,12 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     expect(out.summary).toBe("when-asked: pushed");
     expect(remoteHead()).not.toBe(published);
     expect(git(remote.bare, "log", "-1", "--format=%s", branch)).toBe("Squashed");
+
+    const pushedOnce = remoteHead();
+    const always = rewrite("always");
+    const again = await run(spec(payload({ historyRewrite: "always" })), always.query);
+    expect(again.summary).toBe("always: pushed");
+    expect(remoteHead()).not.toBe(pushedOnce);
   });
 
   it("only ever ships the run's branch", async () => {
