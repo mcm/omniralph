@@ -11,6 +11,8 @@ import {
   type Job,
   type NewJobInput,
 } from "@omniralph/db";
+import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
+import type { WakePublisher } from "@/lib/ably/publisher";
 
 export interface DispatchJobInput extends NewJobInput {
   /**
@@ -46,19 +48,26 @@ export interface JobDispatcher {
  * `JobDispatcher` on Postgres: the `jobs` table is the queue and agents claim
  * jobs from it. Dispatching only inserts the job, with `target_harness_id` set to
  * the given target agent, else the repo's pinned agent (both of the job's
- * organization), else null (any agent of the organization).
+ * organization), else null (any agent of the organization). With a wake
+ * publisher (Ably), it then wakes the agents that may claim the job; a failed
+ * wake is only logged (the heartbeat's `claimable` flag picks the job up).
  */
 export class PostgresDispatcher implements JobDispatcher {
   private readonly db: Database;
+  private readonly wakePublisher: WakePublisher | null;
 
-  constructor(options: { db: Database }) {
+  constructor(options: { db: Database; wakePublisher?: WakePublisher | null }) {
     this.db = options.db;
+    this.wakePublisher = options.wakePublisher ?? null;
   }
 
   async createAndPublish(input: DispatchJobInput): Promise<DispatchedJob> {
     const { targetHarnessId, ...jobInput } = input;
     const target = await this.targetFor(jobInput, targetHarnessId);
-    return insertJob(this.db, { ...jobInput, targetHarnessId: target });
+    const dispatched = await insertJob(this.db, { ...jobInput, targetHarnessId: target });
+    // Also for a deduplicated job: a wake costs at most one empty claim.
+    await this.wake(dispatched.job);
+    return dispatched;
   }
 
   cancel(jobId: string): Promise<CancelJobResult> {
@@ -68,7 +77,23 @@ export class PostgresDispatcher implements JobDispatcher {
   async republish(jobId: string): Promise<boolean> {
     const job = await getJob(this.db, jobId);
     if (!job || job.status !== "queued") return false;
-    return setQueuedJobTarget(this.db, job.id, await this.targetFor(job, undefined));
+    const target = await this.targetFor(job, undefined);
+    if (!(await setQueuedJobTarget(this.db, job.id, target))) return false;
+    await this.wake({ organizationId: job.organizationId, targetHarnessId: target });
+    return true;
+  }
+
+  /** Wakes the job's target agent, else its organization's agents. Never throws. */
+  private async wake(job: Pick<Job, "organizationId" | "targetHarnessId">): Promise<void> {
+    if (!this.wakePublisher) return;
+    const channel = job.targetHarnessId
+      ? harnessWakeChannel(job.targetHarnessId)
+      : orgWakeChannel(job.organizationId);
+    try {
+      await this.wakePublisher.wake(channel);
+    } catch (error) {
+      console.error(`Couldn't publish a wake to ${channel}`, error);
+    }
   }
 
   private async targetFor(

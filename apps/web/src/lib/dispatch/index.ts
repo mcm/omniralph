@@ -1,4 +1,5 @@
 import "server-only";
+import { getWakePublisher } from "@/lib/ably/publisher";
 import { getDb } from "@/lib/db";
 import { PostgresDispatcher, type JobDispatcher } from "./dispatcher";
 
@@ -11,8 +12,8 @@ export {
 
 let dispatcher: JobDispatcher | undefined;
 
-/** The control panel's job dispatcher (Postgres), created on first use. */
+/** The control panel's job dispatcher (Postgres, waking agents over Ably when configured), created on first use. */
 export function getDispatcher(): JobDispatcher {
-  dispatcher ??= new PostgresDispatcher({ db: getDb() });
+  dispatcher ??= new PostgresDispatcher({ db: getDb(), wakePublisher: getWakePublisher() });
   return dispatcher;
 }
