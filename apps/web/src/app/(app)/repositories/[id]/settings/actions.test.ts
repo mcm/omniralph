@@ -762,6 +762,10 @@ describe.skipIf(!databaseAvailable)(
         unmergedBranchTimeoutMinutes: 120,
         epicCompletedState: "In Review",
       });
+      expect(await updateRalphSettings(repoId, { ...baseRalph, historyRewrite: "always" })).toEqual(
+        { ok: true },
+      );
+      expect((await getRepository(db, repoId))!.ralphSettings.historyRewrite).toBe("always");
       expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
       expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
     });
@@ -773,7 +777,7 @@ describe.skipIf(!databaseAvailable)(
           verifyCommands: ["pnpm test", "  "],
           allowedTools: ["not a tool"],
           fallbackModel: "x y",
-          historyRewrite: "always" as never,
+          historyRewrite: "sometimes" as never,
           maxReviewRounds: -1,
           maxFixRounds: 2.5,
           unmergedBranchTimeoutMinutes: 0,

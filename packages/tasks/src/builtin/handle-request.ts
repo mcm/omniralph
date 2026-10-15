@@ -28,9 +28,14 @@ You are responding to a request in {{#fromChat}}a chat thread about a repository
 - Do what the request asks. You may commit when the request calls for it; push only through the \`ship\` tool.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
 - Only ship \`{{branch}}\`, the branch you are on. Never push to, or force-push, the base branch or any other branch.
+{{#historyRewriteAlways}}
+- History rewrites are allowed on \`{{branch}}\` without being asked, and merges are not: never merge the base branch (or any other branch) into it. When it needs the base branch (it is behind or conflicts with it), or the request asks for a rebase, squash, amend or reword, do it and ship it with \`forceWithLease: true\`.
+{{/historyRewriteAlways}}
+{{^historyRewriteAlways}}
 {{#historyRewriteAllowed}}
 - Don't rewrite history on your own initiative. When the request explicitly asks for it (rebase, squash, amend, reword), do it on \`{{branch}}\` and ship it with \`forceWithLease: true\`. That is allowed here.
 {{/historyRewriteAllowed}}
+{{/historyRewriteAlways}}
 {{^historyRewriteAllowed}}
 - Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.
 {{/historyRewriteAllowed}}
@@ -41,9 +46,14 @@ You are responding to a request in {{#fromChat}}a chat thread about a repository
 /** "How to handle it" of an ordinary request (`requestInstructions`). */
 const REQUEST_INSTRUCTIONS = `- This is a direct request{{^epic.single}}, not a story{{/epic.single}}. Do what it asks, and nothing beyond it.
 - You may commit, and publish \`{{branch}}\` to \`origin\`, when the request calls for it. Don't run \`git push\` (your git credentials are read-only): call the \`ship\` tool, which commits what is left in the worktree with the \`message\` you give, pushes \`{{branch}}\` and tells you what it did. It never pushes \`{{baseBranch}}\` or any other branch.
+{{#historyRewriteAlways}}
+- History rewrites are allowed on \`{{branch}}\` without being asked, and merges are not: never merge \`{{baseBranch}}\` (or any other branch) into \`{{branch}}\`. When \`{{branch}}\` needs \`{{baseBranch}}\` (it is behind or conflicts with it) or the request asks for a rebase: \`git fetch origin && git rebase origin/{{baseBranch}}\`, resolve conflicts, run the quality gates, then call \`ship\` with \`forceWithLease: true\`. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.
+{{/historyRewriteAlways}}
+{{^historyRewriteAlways}}
 {{#historyRewriteAllowed}}
 - History rewrites are allowed on \`{{branch}}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/{{baseBranch}}\`, resolve conflicts, run the quality gates, then call \`ship\` with \`forceWithLease: true\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.
 {{/historyRewriteAllowed}}
+{{/historyRewriteAlways}}
 {{^historyRewriteAllowed}}
 - History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`{{baseBranch}}\` into \`{{branch}}\` instead.
 {{/historyRewriteAllowed}}

@@ -559,7 +559,11 @@ export const VARIABLES: readonly VariableDefinition[] = [
       ["remoteUrl", "URL of the worktree's `origin` remote (null without one)."],
       [
         "historyRewriteAllowed",
-        "True when an explicit request may rewrite the branch's history (the repository's `historyRewrite` is `when-asked`).",
+        "True when a request may rewrite the branch's history (the repository's `historyRewrite` is `when-asked` or `always`).",
+      ],
+      [
+        "historyRewriteAlways",
+        "True when the session rebases instead of ever merging, without being asked (the repository's `historyRewrite` is `always`).",
       ],
     ] as const
   ).map(([name, description]): VariableDefinition => ({

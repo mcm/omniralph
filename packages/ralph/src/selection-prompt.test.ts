@@ -296,6 +296,15 @@ describe("prompt", () => {
     expect(RALPH_SYSTEM_APPEND).toContain(GOOD_NEIGHBOR_RULE);
     expect(requestSystemAppend("when-asked")).toContain(GOOD_NEIGHBOR_RULE);
     expect(requestSystemAppend("never")).toContain(GOOD_NEIGHBOR_RULE);
+    expect(requestSystemAppend("always")).toContain(GOOD_NEIGHBOR_RULE);
+  });
+
+  it("rebases and force-pushes with lease without being asked, never merging, under `always`", () => {
+    const system = requestSystemAppend("always");
+    expect(system).toContain("History rewrites are allowed on the epic branch without being asked");
+    expect(system).toContain("never merge the base branch");
+    expect(system).toContain("`git push --force-with-lease`");
+    expect(system).not.toContain("Don't rewrite history on your own initiative");
   });
 });
 
@@ -354,6 +363,16 @@ describe("request prompt", () => {
     expect(p).not.toContain("Status");
     expect(p).not.toContain("stories");
     expect(p).not.toContain("chat-1a2b3c4d");
+  });
+
+  it("rebases onto the base branch instead of merging it under `always`", () => {
+    const p = buildRequestPrompt({ ...base, epic: chatEpic, historyRewrite: "always" });
+    expect(p).toContain(
+      "History rewrites are allowed on `omniralph/x` without being asked, and merges are not: never merge `main`",
+    );
+    expect(p).toContain("`git fetch origin && git rebase origin/main`");
+    expect(p).toContain("`git push --force-with-lease origin omniralph/x`");
+    expect(p).not.toContain("when the request asks for one");
   });
 
   it("has a system prompt for each source", () => {

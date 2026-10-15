@@ -72,7 +72,7 @@ always behaves like cyralph's default and has no setting for it.
 | `openPullRequestEarly` | **Open the pull request early** per repository | Same default (off). On the **Coding tasks** path the story task's `draftPullRequest` wins when set. |
 | `describePullRequest` | Fixed: on | A read-only `ralph.describe-pr` job writes the title and body (on the **Coding tasks** path, a run of the story task's PR description task, `builtin:describe-pr`). |
 | `markPrReadyWhenComplete` | Fixed: on | |
-| `historyRewrite` | **History rewrites** per repository | Same values and default (`when-asked`). |
+| `historyRewrite` | **History rewrites** per repository | Same values and default (`when-asked`), plus `always`: rebase (and push with `--force-with-lease`) without being asked, never merging the base branch. |
 | `allowPreparation` | **Offer to run preparation** per repository | Same default (on). |
 | `manualLabels` | **Manual labels** per repository | Same default (`manual`). |
 | `epicCompletedStateType`, `epicCompletedStateName` | **Epic completed state** per repository | One field: `started` / `completed` (a state type) or a state name such as `In Review`. Empty leaves the epic alone. |

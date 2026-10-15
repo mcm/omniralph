@@ -1,7 +1,7 @@
 /**
  * Inputs of today's coding prompt builders (`@omniralph/ralph`) for the
  * built-in coding task tests: a PRD epic and a single issue (story runs),
- * Linear and chat requests, `/ship` with stashes, `historyRewrite: never`,
+ * Linear and chat requests, `/ship` with stashes, `historyRewrite: never` and `always`,
  * and PR descriptions.
  */
 import type {
@@ -212,6 +212,14 @@ export const REQUEST_FIXTURES: Record<string, RequestPromptContext> = {
     requests: ["Squash the commits, please."],
     historyRewrite: "never",
     appendInstruction: "Sign off every commit.",
+  },
+  "history-rewrite-always": {
+    ...REQUEST_BASE,
+    epic: PRD_EPIC,
+    requests: ["The PR conflicts with main, please fix it."],
+    remoteUrl: "https://github.com/acme/widgets.git",
+    prUrl: "https://github.com/acme/widgets/pull/7",
+    historyRewrite: "always",
   },
 };
 
