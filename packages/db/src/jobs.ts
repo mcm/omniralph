@@ -5,7 +5,20 @@
  * jobs older than the retention become `expired`.
  * See `docs/adr/0006-postgres-job-queue.md`.
  */
-import { and, asc, count, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
 import type { Database } from "./client.js";
@@ -259,41 +272,7 @@ export async function claimJob(
 ): Promise<ClaimJobResult> {
   const now = input.now ?? new Date();
   const settled: SettledJob[] = [];
-  const pooledTaskTypes = input.acceptedTaskTypes
-    .filter(isJobTaskType)
-    .filter((t) => t !== "system");
-  const claimable = and(
-    eq(jobs.organizationId, input.organizationId),
-    or(
-      eq(jobs.taskType, "system"),
-      pooledTaskTypes.length > 0 && input.pools.length > 0
-        ? and(inArray(jobs.taskType, pooledTaskTypes), inArray(jobs.pool, [...input.pools]))
-        : sql`false`,
-    ),
-    or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
-    or(
-      and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
-      and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
-    ),
-  );
-  // The minimum versions among the candidates this harness meets (semver isn't SQL-comparable).
-  const minimums = await db
-    .selectDistinct({ version: jobs.minHarnessVersion })
-    .from(jobs)
-    .where(and(claimable, sql`${jobs.minHarnessVersion} is not null`));
-  const harnessVersion = input.harnessVersion;
-  const metMinimums = minimums
-    .map((m) => m.version!)
-    .filter((minimum) => harnessVersion !== null && harnessVersionAtLeast(harnessVersion, minimum));
-  const { installables, hostTools: tools } = await harnessCapabilities(db, input);
-  const eligible = and(
-    claimable,
-    metMinimums.length > 0
-      ? or(isNull(jobs.minHarnessVersion), inArray(jobs.minHarnessVersion, metMinimums))
-      : isNull(jobs.minHarnessVersion),
-    sql`${jobs.requiredInstallables} <@ ${textArray(installables)}`,
-    sql`${jobs.requiredHostTools} <@ ${textArray(tools)}`,
-  );
+  const eligible = await claimCandidates(db, { ...input, now });
   return db.transaction(async (tx): Promise<ClaimJobResult> => {
     for (;;) {
       const [job] = await tx
@@ -353,6 +332,77 @@ export async function claimJob(
       return { claim: { action: "run", job: claimed! }, settled };
     }
   });
+}
+
+/** Who is claiming: the inputs `claimJob` and `hasClaimableJob` select candidates by. */
+export interface ClaimCandidatesInput {
+  harnessId: string;
+  organizationId: string;
+  acceptedTaskTypes: readonly string[];
+  pools: readonly string[];
+  /** The harness's reported version; null when it reported none. */
+  harnessVersion: string | null;
+}
+
+/**
+ * The `jobs` condition of the candidates `claimJob` would claim at `now` (see
+ * there for the rules), shared with `hasClaimableJob` so the two can't drift.
+ */
+async function claimCandidates(
+  db: Database,
+  input: ClaimCandidatesInput & { now: Date },
+): Promise<SQL | undefined> {
+  const { now } = input;
+  const pooledTaskTypes = input.acceptedTaskTypes
+    .filter(isJobTaskType)
+    .filter((t) => t !== "system");
+  const claimable = and(
+    eq(jobs.organizationId, input.organizationId),
+    or(
+      eq(jobs.taskType, "system"),
+      pooledTaskTypes.length > 0 && input.pools.length > 0
+        ? and(inArray(jobs.taskType, pooledTaskTypes), inArray(jobs.pool, [...input.pools]))
+        : sql`false`,
+    ),
+    or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
+    or(
+      and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
+      and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
+    ),
+  );
+  // The minimum versions among the candidates this harness meets (semver isn't SQL-comparable).
+  const minimums = await db
+    .selectDistinct({ version: jobs.minHarnessVersion })
+    .from(jobs)
+    .where(and(claimable, sql`${jobs.minHarnessVersion} is not null`));
+  const harnessVersion = input.harnessVersion;
+  const metMinimums = minimums
+    .map((m) => m.version!)
+    .filter((minimum) => harnessVersion !== null && harnessVersionAtLeast(harnessVersion, minimum));
+  const { installables, hostTools: tools } = await harnessCapabilities(db, input);
+  return and(
+    claimable,
+    metMinimums.length > 0
+      ? or(isNull(jobs.minHarnessVersion), inArray(jobs.minHarnessVersion, metMinimums))
+      : isNull(jobs.minHarnessVersion),
+    sql`${jobs.requiredInstallables} <@ ${textArray(installables)}`,
+    sql`${jobs.requiredHostTools} <@ ${textArray(tools)}`,
+  );
+}
+
+/**
+ * Whether `claimJob` would find a candidate for the harness right now (the
+ * heartbeat's `claimable`): same conditions, no lock, no claim. A candidate it
+ * would settle (cancel-requested, out of deliveries) counts too: the claim
+ * that follows settles it.
+ */
+export async function hasClaimableJob(
+  db: Database,
+  input: ClaimCandidatesInput & { now?: Date },
+): Promise<boolean> {
+  const eligible = await claimCandidates(db, { ...input, now: input.now ?? new Date() });
+  const [job] = await db.select({ id: jobs.id }).from(jobs).where(eligible).limit(1);
+  return job !== undefined;
 }
 
 /**

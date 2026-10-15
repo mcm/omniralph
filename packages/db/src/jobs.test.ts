@@ -8,6 +8,7 @@ import { listQueuedJobsTargetingHarness } from "./harnesses.js";
 import {
   claimJob,
   failJob,
+  hasClaimableJob,
   getJob,
   insertJob,
   recordHarnessHeartbeat,
@@ -69,6 +70,20 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       now,
     });
 
+  const claimable = (
+    harnessId: string,
+    now: Date,
+    options: { organizationId?: string; pools?: string[]; harnessVersion?: string | null } = {},
+  ) =>
+    hasClaimableJob(db, {
+      harnessId,
+      organizationId: options.organizationId ?? orgA,
+      acceptedTaskTypes: ["query", "review", "coding"],
+      pools: options.pools ?? ["short", "long"],
+      harnessVersion: options.harnessVersion === undefined ? "1.0.0" : options.harnessVersion,
+      now,
+    });
+
   beforeAll(async () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
@@ -98,6 +113,59 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
 
   it("returns null when nothing is claimable", async () => {
     expect(await claim(agentA, at(1))).toEqual({ claim: null, settled: [] });
+  });
+
+  describe("hasClaimableJob", () => {
+    it("is false with nothing queued", async () => {
+      expect(await claimable(agentA, at(1))).toBe(false);
+    });
+
+    it("is true once a queued job's available_at has passed, not before", async () => {
+      await enqueue({ availableAt: at(10) });
+      expect(await claimable(agentA, at(5))).toBe(false);
+      expect(await claimable(agentA, at(10))).toBe(true);
+    });
+
+    it("is true for a running job whose lease lapsed", async () => {
+      await enqueue();
+      await claim(agentA2, at(0));
+      expect(await claimable(agentA, at(60))).toBe(false);
+      expect(await claimable(agentA, at(121))).toBe(true);
+    });
+
+    it("only counts jobs in the given pools", async () => {
+      await enqueue({ pool: "long", taskType: "coding", type: "ralph.run" });
+      expect(await claimable(agentA, at(1), { pools: ["short"] })).toBe(false);
+      expect(await claimable(agentA, at(1), { pools: ["long"] })).toBe(true);
+    });
+
+    it("counts jobs targeted at this harness, not at another one", async () => {
+      await enqueue({ targetHarnessId: agentA2 });
+      expect(await claimable(agentA, at(1))).toBe(false);
+      await enqueue({ targetHarnessId: agentA });
+      expect(await claimable(agentA, at(1))).toBe(true);
+    });
+
+    it("ignores another organization's jobs", async () => {
+      await enqueue({ organizationId: orgB });
+      expect(await claimable(agentA, at(1))).toBe(false);
+      expect(await claimable(agentB, at(1), { organizationId: orgB })).toBe(true);
+    });
+
+    it("applies the minimum harness version like claimJob", async () => {
+      await enqueue({ minHarnessVersion: "2.0.0" });
+      expect(await claimable(agentA, at(1))).toBe(false);
+      expect(await claimable(agentA, at(1), { harnessVersion: null })).toBe(false);
+      expect(await claimable(agentA, at(1), { harnessVersion: "2.0.0" })).toBe(true);
+    });
+
+    it("agrees with claimJob and claims nothing itself", async () => {
+      const id = await enqueue();
+      expect(await claimable(agentA, at(1))).toBe(true);
+      expect(await getJob(db, id)).toMatchObject({ status: "queued", deliveryCount: 0 });
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(id);
+      expect(await claimable(agentA, at(2))).toBe(false);
+    });
   });
 
   it("claims the oldest job, sets it running and leases it", async () => {

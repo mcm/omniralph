@@ -259,6 +259,32 @@ describe("self-update protocol", () => {
     expect(HeartbeatResponse.parse({ ...base, ably }).ably).toEqual(ably);
   });
 
+  it("carries the claimable pools and the claimable flag, both optional", () => {
+    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 1 };
+    expect(Heartbeat.parse(heartbeat).claimablePools).toBeUndefined();
+    expect(Heartbeat.parse({ ...heartbeat, claimablePools: ["short"] }).claimablePools).toEqual([
+      "short",
+    ]);
+    expect(Heartbeat.parse({ ...heartbeat, claimablePools: [] }).claimablePools).toEqual([]);
+    expect(Heartbeat.safeParse({ ...heartbeat, claimablePools: [""] }).success).toBe(false);
+    expect(
+      Heartbeat.safeParse({ ...heartbeat, claimablePools: Array(33).fill("short") }).success,
+    ).toBe(false);
+
+    const base = {
+      maxConcurrency: 1,
+      acceptedTaskTypes: [],
+      poolLimits: {},
+      pinnedRepoIds: [],
+      organizationId: ID,
+      cancelJobIds: [],
+      jobTokens: [],
+    };
+    expect(HeartbeatResponse.parse(base).claimable).toBeUndefined();
+    expect(HeartbeatResponse.parse({ ...base, claimable: true }).claimable).toBe(true);
+    expect(HeartbeatResponse.parse({ ...base, claimable: false }).claimable).toBe(false);
+  });
+
   it("names the Ably wake channels", () => {
     expect(harnessWakeChannel(ID)).toBe(`harness:${ID}`);
     expect(orgWakeChannel(ID)).toBe(`org:${ID}`);

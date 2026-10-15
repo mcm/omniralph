@@ -305,6 +305,12 @@ export const Heartbeat = z.object({
   hostTools: z.array(ReportedHostTool).max(100).default([]),
   /** When the harness's Ably token (`ably` of a response) expires; absent when it has none. */
   ablyTokenExpiresAt: z.iso.datetime().optional(),
+  /**
+   * The pools the harness would claim from right now (`ClaimRequest.pools`),
+   * sent in wake mode while it has a free slot: the response's `claimable`
+   * then says whether a claim would find a job. Absent otherwise.
+   */
+  claimablePools: z.array(poolName).max(32).optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -391,6 +397,11 @@ export const HeartbeatResponse = z.object({
    * long-polls its claims). Absent from older control panels.
    */
   ably: AblyToken.nullable().optional(),
+  /**
+   * Whether a claim for the request's `claimablePools` would find a job right
+   * now. Sent only when the request carried `claimablePools`.
+   */
+  claimable: z.boolean().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
