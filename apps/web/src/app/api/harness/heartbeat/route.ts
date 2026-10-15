@@ -20,6 +20,7 @@ import {
 import { getAblyConfig, heartbeatAblyToken } from "@/lib/ably/token";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
+import { heartbeatClaimable } from "@/lib/harness-api/claimable";
 import { signJobTokens } from "@/lib/harness-api/jobs";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { getDb } from "@/lib/db";
@@ -40,7 +41,9 @@ const NPM_TIMEOUT_MS = 5_000;
  * it handled) and the organization's host tools with this harness's configured
  * paths, plus a subscribe-only Ably token for its wake channels when Ably is
  * on and the harness's token is missing or expires within the hour (`ably:
- * null` when Ably is off). The harness's report on those host tools is stored first.
+ * null` when Ably is off), and, when the request carries `claimablePools`,
+ * whether a claim for them would find a job right now (`claimable`). The
+ * harness's report on those host tools is stored first.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
@@ -96,11 +99,18 @@ export async function POST(req: Request): Promise<Response> {
     console.error(`Exchanging job messages with agent ${harnessId} failed`, error);
   }
 
-  const ably = await heartbeatAblyToken(getAblyConfig(), {
-    harnessId,
-    organizationId: agent.organizationId,
-    tokenExpiresAt: body.data.ablyTokenExpiresAt,
-  });
+  const [ably, claimable] = await Promise.all([
+    heartbeatAblyToken(getAblyConfig(), {
+      harnessId,
+      organizationId: agent.organizationId,
+      tokenExpiresAt: body.data.ablyTokenExpiresAt,
+    }),
+    heartbeatClaimable(
+      db,
+      { ...agent, acceptedTaskTypes: config.acceptedTaskTypes },
+      body.data.claimablePools,
+    ),
+  ]);
 
   return Response.json({
     maxConcurrency: config.maxConcurrency,
@@ -126,5 +136,7 @@ export async function POST(req: Request): Promise<Response> {
     hostTools: hostTools.map(({ name, configuredPath }) => ({ name, configuredPath })),
     // Omitted while the harness's Ably token is good for another hour.
     ...(ably === undefined ? {} : { ably }),
+    // Only when the harness asked (`claimablePools`): it then claims on `true`.
+    ...(claimable === undefined ? {} : { claimable }),
   } satisfies HeartbeatResponse);
 }
