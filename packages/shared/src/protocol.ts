@@ -303,8 +303,28 @@ export const Heartbeat = z.object({
   models: z.array(ReportedModel).max(100).default([]),
   /** The host tools of the last response's `hostTools`, as the harness found them. */
   hostTools: z.array(ReportedHostTool).max(100).default([]),
+  /** When the harness's Ably token (`ably` of a response) expires; absent when it has none. */
+  ablyTokenExpiresAt: z.iso.datetime().optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
+
+/** Ably channel that wakes one harness for jobs targeted at it. */
+export function harnessWakeChannel(harnessId: string): string {
+  return `harness:${harnessId}`;
+}
+
+/** Ably channel that wakes an organization's harnesses for untargeted jobs. */
+export function orgWakeChannel(organizationId: string): string {
+  return `org:${organizationId}`;
+}
+
+/** A subscribe-only Ably token (JWT) for the harness's two wake channels. */
+export const AblyToken = z.object({
+  token: z.string().min(1),
+  /** ISO timestamp. */
+  expiresAt: z.iso.datetime(),
+});
+export type AblyToken = z.infer<typeof AblyToken>;
 
 /**
  * A message for a running job's live Claude session (a Linear reply to a ralph
@@ -365,6 +385,12 @@ export const HeartbeatResponse = z.object({
    * when it isn't usable the tool is unavailable (no fallback to `PATH`).
    */
   hostTools: z.array(KnownHostTool).default([]),
+  /**
+   * A fresh Ably token, sent when the harness has none or its token expires
+   * within the hour; null when the control panel has Ably off (the harness
+   * long-polls its claims). Absent from older control panels.
+   */
+  ably: AblyToken.nullable().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

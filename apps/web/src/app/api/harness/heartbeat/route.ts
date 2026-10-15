@@ -17,6 +17,7 @@ import {
   type HeartbeatResponse,
   type JobMessageDelivery,
 } from "@omniralph/shared";
+import { getAblyConfig, heartbeatAblyToken } from "@/lib/ably/token";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
 import { signJobTokens } from "@/lib/harness-api/jobs";
@@ -37,7 +38,9 @@ const NPM_TIMEOUT_MS = 5_000;
  * should run (its override, else its organization's setting, with `latest`
  * resolved), an admin's pending "Update now" (cleared once the harness reports
  * it handled) and the organization's host tools with this harness's configured
- * paths. The harness's report on those host tools is stored first.
+ * paths, plus a subscribe-only Ably token for its wake channels when Ably is
+ * on and the harness's token is missing or expires within the hour (`ably:
+ * null` when Ably is off). The harness's report on those host tools is stored first.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
@@ -93,6 +96,12 @@ export async function POST(req: Request): Promise<Response> {
     console.error(`Exchanging job messages with agent ${harnessId} failed`, error);
   }
 
+  const ably = await heartbeatAblyToken(getAblyConfig(), {
+    harnessId,
+    organizationId: agent.organizationId,
+    tokenExpiresAt: body.data.ablyTokenExpiresAt,
+  });
+
   return Response.json({
     maxConcurrency: config.maxConcurrency,
     // Legacy fields: old harnesses require them; `topics: []` stops their polling.
@@ -115,5 +124,7 @@ export async function POST(req: Request): Promise<Response> {
         ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
         : null,
     hostTools: hostTools.map(({ name, configuredPath }) => ({ name, configuredPath })),
+    // Omitted while the harness's Ably token is good for another hour.
+    ...(ably === undefined ? {} : { ably }),
   } satisfies HeartbeatResponse);
 }

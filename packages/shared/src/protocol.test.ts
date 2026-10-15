@@ -6,12 +6,14 @@ import {
   effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
+  harnessWakeChannel,
   HostToolName,
   InstallPayload,
   JobFailure,
   JobStartResponse,
   isSystemRpc,
   legacyJobRouting,
+  orgWakeChannel,
   SYSTEM_RPCS,
 } from "./protocol.js";
 
@@ -219,6 +221,47 @@ describe("self-update protocol", () => {
     });
     expect(response.desiredVersion).toBeNull();
     expect(response.hostTools).toEqual([]);
+  });
+
+  it("stays compatible with harnesses and control panels that predate Ably wake-ups", () => {
+    const heartbeat = Heartbeat.parse({ version: "0.1.0", runningJobIds: [], freeSlots: 0 });
+    expect(heartbeat.ablyTokenExpiresAt).toBeUndefined();
+    const expiresAt = "2026-10-16T00:00:00.000Z";
+    expect(
+      Heartbeat.parse({
+        version: "0.1.0",
+        runningJobIds: [],
+        freeSlots: 1,
+        ablyTokenExpiresAt: expiresAt,
+      }).ablyTokenExpiresAt,
+    ).toBe(expiresAt);
+    expect(
+      Heartbeat.safeParse({
+        version: "0.1.0",
+        runningJobIds: [],
+        freeSlots: 1,
+        ablyTokenExpiresAt: "soon",
+      }).success,
+    ).toBe(false);
+
+    const base = {
+      maxConcurrency: 1,
+      acceptedTaskTypes: [],
+      poolLimits: {},
+      pinnedRepoIds: [],
+      organizationId: ID,
+      cancelJobIds: [],
+      jobTokens: [],
+    };
+    expect(HeartbeatResponse.parse(base).ably).toBeUndefined();
+    expect(HeartbeatResponse.parse({ ...base, ably: null }).ably).toBeNull();
+    const ably = { token: "a.b.c", expiresAt };
+    expect(HeartbeatResponse.parse({ ...base, ably }).ably).toEqual(ably);
+  });
+
+  it("names the Ably wake channels", () => {
+    expect(harnessWakeChannel(ID)).toBe(`harness:${ID}`);
+    expect(orgWakeChannel(ID)).toBe(`org:${ID}`);
   });
 
   it("compares agent versions by major, minor and patch", () => {
