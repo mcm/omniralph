@@ -172,10 +172,11 @@ export function ConfirmChangesDialog({
 }
 
 /**
- * Cards whose save just succeeded, by anchor id. Some pages key a card by its saved version
- * so a save remounts it with fresh values; this carries its "Saved" state across that remount.
+ * Cards whose save just succeeded (anchor id → the changes saved). Some pages key a card by
+ * its saved version so a save remounts it with fresh values; this carries its "Saved" state
+ * across that remount.
  */
-const justSaved = new Set<string>();
+const justSaved = new Map<string, string>();
 
 /**
  * A card of related settings with its own save. Save is enabled, and Discard shown, only while
@@ -200,24 +201,28 @@ export function SettingsCard({
   const { pending, run } = useAction();
   const [confirming, setConfirming] = React.useState<SettingsSave | null>(null);
   const dirty = changes.length > 0;
-  // "Saved" next to Save after a save (DESIGN.md, the No Celebration Rule), until the next edit.
+  // "Saved" next to Save after a save (DESIGN.md, the No Celebration Rule), until the next edit:
+  // the changes a save just saved, so it shows once they are gone (the refetched values can
+  // arrive a render after the save resolves) and goes away when other changes are made.
   const statusId = React.useId();
   const anchorId = unsavedAnchorId(title);
-  const [saved, setSaved] = React.useState(() => justSaved.has(anchorId));
+  const changesKey = JSON.stringify(changes);
+  const [savedChanges, setSavedChanges] = React.useState(() => justSaved.get(anchorId) ?? null);
   React.useEffect(() => {
     justSaved.delete(anchorId);
   }, [anchorId]);
-  if (saved && dirty) setSaved(false);
+  if (savedChanges !== null && dirty && savedChanges !== changesKey) setSavedChanges(null);
+  const saved = savedChanges !== null && !dirty;
   useUnsavedChanges(title, anchorId, dirty && !readOnly);
 
   const save = (request: SettingsSave) => {
-    setSaved(false);
+    setSavedChanges(null);
     run(
       request.action,
       request.success,
       () => {
-        justSaved.add(anchorId);
-        setSaved(true);
+        justSaved.set(anchorId, changesKey);
+        setSavedChanges(changesKey);
         request.onSuccess?.();
       },
       request.onError,

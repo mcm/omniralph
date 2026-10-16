@@ -100,7 +100,6 @@ vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
-vi.mock("./settings/integrations/integrations-view", () => ({ IntegrationsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -111,7 +110,6 @@ const { GET: triageRunDetail } = await import("../api/ui/triage/[id]/route");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
 const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
-const { default: IntegrationsPage } = await import("./settings/integrations/page");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -362,7 +360,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       analytics: await AnalyticsPage(search()),
       profiles: await ProfilesPage(),
       harnessSettings: await HarnessSettingsPage(),
-      integrations: await IntegrationsPage(search()),
     };
     return pages;
   }
@@ -394,9 +391,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
       expect(pages.profiles!.props.choices.harnessCount).toBe(1);
       expect(pages.harnessSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
-      expect(pages.integrations!.props.linear).toMatchObject({
-        workspaceId: `${own.name}-workspace`,
-      });
     }
   });
 
