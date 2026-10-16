@@ -352,11 +352,16 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   step finishes."), run as a `ralph.request` job once nothing else runs. A running story agent
   never gets it: story agents don't push, so it waits for the story loop to finish.
 - **People's requests.** On a ralph PR/MR, from users with write access, `@omniralph fix [text]`
-  (anywhere; in a finding's thread it includes that finding) and any other `@omniralph` text
-  outside finding threads become requests on that lane, delivered the same way; a stopped or
-  finished run resumes. The bot replies in the thread with a link to the Linear issue.
-  `review`, `review fresh`, `dismiss`, `help` and questions in finding threads work as before. On
-  PRs/MRs ralph didn't open, `@omniralph fix` replies that it only works on ralph PRs/MRs.
+  (anywhere) and any other `@omniralph` text outside finding threads become requests on that
+  lane, delivered the same way; a stopped or finished run resumes. The bot replies in the thread
+  with a link to the Linear issue. In a finding's thread, `@omniralph fix [text]` and, when the
+  run has a Linear agent session, any other `@omniralph` text go to that session with the
+  finding and the rest of its review (the review's summary and other open findings, reported
+  back by ID as the review's own request is), so with **Fix review findings** off you choose
+  which reviews and findings get fixed. Without a Linear session (or once the run failed),
+  questions in finding threads are answered there as before. `review`, `review fresh`,
+  `dismiss` and `help` work as before. On PRs/MRs ralph didn't open, `@omniralph fix` replies
+  that it only works on ralph PRs/MRs.
 - **Failed CI.** When the CI of a ralph PR/MR's head commit finishes and fails (GitHub Actions
   workflow runs, GitLab pipelines), the failed jobs and the last 4,000 characters of each log
   (at most 5 jobs, then "(N more failed jobs not shown.)"; "(no log available)" when a log can't

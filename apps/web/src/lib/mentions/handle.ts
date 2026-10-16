@@ -1,16 +1,24 @@
 import "server-only";
 import {
   findFindingByScmComment,
+  getReviewRun,
   isLinearRun,
+  listReviewFindings,
+  listReviewRunFindings,
   type Database,
   type FindingRow,
   type RalphLane,
+  type Review,
   type RalphRun,
   type Repository,
   type ScmConnection,
   resolveRepositorySwitches,
 } from "@omniralph/db";
-import { buildPullRequestCommentRequest, type ChangeRequestWord } from "@omniralph/ralph";
+import {
+  buildPullRequestCommentRequest,
+  type ChangeRequestWord,
+  type ReviewContextText,
+} from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -104,7 +112,8 @@ const PROFILE_NAMES: Record<string, string> = {
  * Runs a `@bot` command from a PR/MR comment and replies in the comment's
  * thread (or the conversation). On a PR/MR ralph opened, `@bot fix [text]`
  * and other text outside finding threads become requests for its ralph run
- * (`requestRalph`). `review`, `dismiss`, `fix`, questions in a finding's
+ * (`requestRalph`); so does other text in a finding's thread when the run is
+ * followed in a Linear agent session, carrying the finding's whole review. `review`, `dismiss`, `fix`, questions in a finding's
  * thread and ralph requests need write access to the repository
  * (`ScmAdapter.hasWriteAccess`); others get a polite refusal.
  * Every reply goes through the output sanitizer.
@@ -152,11 +161,15 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     repository.provider === "gitlab" ? "merge request" : "pull request"
   ) satisfies ChangeRequestWord;
 
-  /** Hands a request to the PR/MR's ralph run and says so in the thread, with a link to the Linear issue (if any). */
+  /**
+   * Hands a request to the PR/MR's ralph run and says so in the thread, with
+   * a link to the Linear issue (if any). From a finding's thread it carries
+   * the finding and the rest of its review, as the review itself would.
+   */
   const requestRalph = async (
     found: { lane: RalphLane; run: RalphRun },
     text: string | null,
-    finding: FindingRow | null,
+    thread: { finding: FindingRow; review: Review } | null,
   ): Promise<BotCommandOutcome> => {
     const organizationId = repository.organizationId;
     const deps: RalphDeps = {
@@ -172,7 +185,8 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     const request = buildPullRequestCommentRequest({
       author,
       text,
-      finding,
+      finding: thread?.finding ?? null,
+      review: thread ? await reviewContext(db, thread.review) : null,
       prNumber: comment.number,
       prUrl: found.lane.prUrl ?? "",
       branch: found.lane.branch,
@@ -226,7 +240,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         return { status: "not_ralph" };
       }
       const thread = await inThread();
-      return requestRalph(found, command.text, thread?.finding ?? null);
+      return requestRalph(found, command.text, thread);
     }
     case "review": {
       const cr = await adapter.getChangeRequest(repo, comment.number);
@@ -325,6 +339,12 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       if (!(await adapter.hasWriteAccess(repo, author))) {
         return refuse("ask me about findings");
       }
+      // In a review thread of a ralph PR/MR followed in a Linear agent session:
+      // routed to that session with the review's context, like the review itself.
+      const ralph = (await codingEnabled()) ? await ralphLane() : null;
+      if (ralph && isLinearRun(ralph.run) && ralph.run.status !== "failed") {
+        return requestRalph(ralph, command.text, found);
+      }
       const result = await enqueueReply(db, dispatcher, {
         finding: found.finding,
         review: found.review,
@@ -345,6 +365,22 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       return { status: "help" };
   }
   throw new Error("unreachable");
+}
+
+/**
+ * The review a finding's thread belongs to, for a ralph request: its review
+ * run's summary and open findings (a review from before review runs: its own),
+ * ordered as the review's own request orders them.
+ */
+async function reviewContext(db: Database, review: Review): Promise<ReviewContextText> {
+  const run = review.reviewRunId ? await getReviewRun(db, review.reviewRunId) : null;
+  const rows = run
+    ? await listReviewRunFindings(db, run.id)
+    : await listReviewFindings(db, review.id);
+  const findings = rows
+    .filter((f) => f.status === "open")
+    .sort((a, b) => a.path.localeCompare(b.path) || a.startLine - b.startLine);
+  return { summary: run?.summary ?? null, findings };
 }
 
 /** What a mention's result reports of an enqueued (or already active) review run. */

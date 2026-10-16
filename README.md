@@ -176,7 +176,8 @@ details.
    findings are superseded). Other re-reviews re-check the open findings and resolve the ones
    every review task confirms fixed, along with their threads. `@omniralph dismiss [reason]` in a finding's thread to dismiss it,
    or ask a question there. On PRs/MRs ralph opened, `@omniralph fix [text]` (or any other
-   request outside finding threads) has ralph make the change. Admins can also use **Re-run** on a review's page or history row.
+   request outside finding threads, or in them when the run has a Linear agent session, with
+   the finding's whole review as context) has ralph make the change. Admins can also use **Re-run** on a review's page or history row.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
    Integrations**, enable ralph and its Linear routing on a repository and `coding` tasks
    on a harness, then delegate an epic to the app (or @mention it with a request)

@@ -11,10 +11,13 @@
  *   reason may start with `false positive` (the default), `won't fix`,
  *   `not relevant` or `other`; the rest is kept as the note.
  * - `@bot fix [text]` on a PR/MR ralph opened: ralph makes the change (in a
- *   finding's thread, fixes that finding) and pushes it.
+ *   finding's thread, fixes that finding, with the rest of its review as
+ *   context) and pushes it.
  * - `@bot help` (or a bare mention): lists the commands.
  * - Anything else is a question; in a finding's thread the agent answers it.
- *   Outside finding threads on a ralph PR/MR it is a request for ralph.
+ *   Outside finding threads on a ralph PR/MR it is a request for ralph, and
+ *   so it is in a finding's thread when the ralph run has a Linear agent
+ *   session (with the finding and its review as context).
  *
  * Commands are case-insensitive. Mentions inside code (fenced blocks or
  * inline code), quoted lines (`>`) and HTML comments don't count, so quoting

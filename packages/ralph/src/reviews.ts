@@ -83,14 +83,25 @@ export function buildReviewRequest(args: {
   return lines.join("\n").trim();
 }
 
+/** The Omniralph review a finding's thread belongs to: its summary and open findings. */
+export interface ReviewContextText {
+  summary?: string | null;
+  findings: readonly ReviewFindingText[];
+}
+
+/** The longest review summary a request keeps. */
+export const MAX_REVIEW_SUMMARY = 4000;
+
 /**
  * The request for a person's `@bot fix [text]` (or other `@bot` text) on a
- * ralph PR/MR; in a finding's thread it includes that finding.
+ * ralph PR/MR; in a finding's thread it includes that finding and, given
+ * `review`, the rest of its review (summary and open findings) as context.
  */
 export function buildPullRequestCommentRequest(args: {
   author: string;
   text: string | null;
   finding?: ReviewFindingText | null;
+  review?: ReviewContextText | null;
   prNumber: number;
   prUrl: string;
   branch: string;
@@ -109,7 +120,35 @@ export function buildPullRequestCommentRequest(args: {
     `Do it on \`${branch}\`: make the change, run the quality gates, commit, and push \`${branch}\` so the ${term} updates.`,
     `Don't comment on, reply to or resolve anything on the ${term}.`,
   ];
-  if (finding?.id) lines.push(reportFindings(term, "the finding").slice(2));
+  const review = finding ? args.review : null;
+  if (review) {
+    lines.push(
+      `If @${author} only asked a question, answer it in your summary and change nothing.`,
+    );
+  }
+  if (finding?.id) {
+    const which = review ? "each finding you worked on" : "the finding";
+    lines.push(reportFindings(term, which).slice(2));
+  }
   if (finding) lines.push("", "The finding:", ...formatFinding(finding));
+  if (review) {
+    const others = review.findings.filter((f) => !finding?.id || f.id !== finding.id);
+    lines.push("", `The review it's from, for context (work only on what @${author} asked for):`);
+    const summary = review.summary ? clip(review.summary, MAX_REVIEW_SUMMARY) : "";
+    if (summary) lines.push("", "Summary:", summary);
+    if (others.length === 0) {
+      lines.push("", "It has no other open findings.");
+    } else {
+      lines.push("", `Its other open findings (${others.length}):`);
+      others.slice(0, MAX_REQUEST_FINDINGS).forEach((f, i) => {
+        lines.push(...formatFinding(f, i), "");
+      });
+      if (others.length > MAX_REQUEST_FINDINGS) {
+        lines.push(
+          `(${others.length - MAX_REQUEST_FINDINGS} more findings not shown; see the review on the ${term}.)`,
+        );
+      }
+    }
+  }
   return lines.join("\n").trim();
 }
