@@ -14,6 +14,7 @@ import {
 import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
+import { syncJobsDue, syncJobsDueFromPostgres } from "./due";
 
 export interface DispatchJobInput extends NewJobInput {
   /**
@@ -66,13 +67,17 @@ export class PostgresDispatcher implements JobDispatcher {
     const { targetHarnessId, ...jobInput } = input;
     const target = await this.targetFor(jobInput, targetHarnessId);
     const dispatched = await insertJob(this.db, { ...jobInput, targetHarnessId: target });
+    // Before the wake, so the woken claim finds the job due.
+    if (dispatched.created) await syncJobsDue([dispatched.job]);
     // Also for a deduplicated job: a wake costs at most one empty claim.
     await this.wake(dispatched.job);
     return dispatched;
   }
 
-  cancel(jobId: string): Promise<CancelJobResult> {
-    return requestJobCancel(this.db, jobId);
+  async cancel(jobId: string): Promise<CancelJobResult> {
+    const result = await requestJobCancel(this.db, jobId);
+    if (result === "canceled") await syncJobsDueFromPostgres(this.db, [jobId]);
+    return result;
   }
 
   async republish(jobId: string): Promise<boolean> {

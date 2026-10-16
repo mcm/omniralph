@@ -6,12 +6,12 @@ import {
   getRun,
   listLanes,
   lockRun,
-  skipJob,
   updateLane,
   updateRun,
   type Database,
   type Job,
 } from "@omniralph/db";
+import { skipJobAndClearDue } from "@/lib/dispatch/due";
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -49,7 +49,7 @@ export async function onRalphJobStarted(
     return false;
   });
   if (finished ?? true) {
-    await skipJob(db, job.id, { reason: "The coding task is over" });
+    await skipJobAndClearDue(db, job, { reason: "The coding task is over" });
     return { skip: true, reason: "skipped" };
   }
   return { skip: false };

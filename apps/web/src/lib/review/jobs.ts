@@ -9,10 +9,10 @@ import {
   markReviewRunRunning,
   saveReviewOutcome,
   settleReviewRun,
-  skipJob,
   type Database,
   type Job,
 } from "@omniralph/db";
+import { skipJobAndClearDue, syncJobsDueFromPostgres } from "@/lib/dispatch/due";
 import {
   ReviewJobResult,
   reviewTriggerContext,
@@ -54,7 +54,16 @@ export function reviewJobState(job: Pick<Job, "payload">): ReviewJobState {
  * it is active any more, then posts it if it ended (`finishReviewRun`).
  */
 async function settleAndFinishReviewRun(db: Database, reviewRunId: string): Promise<void> {
-  await settleReviewRun(db, reviewRunId, startCorrelation);
+  let correlationJobId: string | undefined;
+  const status = await settleReviewRun(db, reviewRunId, async (tx, run, inputs) => {
+    const started = await startCorrelation(tx, run, inputs);
+    if ("jobId" in started) correlationJobId = started.jobId;
+    return started;
+  });
+  // The correlation job was inserted in the settle's transaction: due once it committed.
+  if (status === "correlating" && correlationJobId) {
+    await syncJobsDueFromPostgres(db, [correlationJobId]);
+  }
   await finishReviewRun(db, reviewRunId);
 }
 
@@ -73,7 +82,7 @@ export async function settleReviewRunOf(db: Database, reviewId: string): Promise
  */
 async function onReviewStarted(
   db: Database,
-  job: Pick<Job, "id">,
+  job: Pick<Job, "id" | "organizationId">,
   state: ReviewJobState,
   harnessId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
@@ -89,7 +98,7 @@ async function onReviewStarted(
     }));
   if (completed) {
     const reason = `Head ${state.headSha.slice(0, 12)} was already reviewed (review ${completed.id})`;
-    await skipJob(db, job.id, { reason });
+    await skipJobAndClearDue(db, job, { reason });
     await finishReview(db, state.reviewId, { status: "skipped", error: reason });
     if (review?.reviewRunId) await settleAndFinishReviewRun(db, review.reviewRunId);
     return { skip: true, reason: "already_reviewed" };

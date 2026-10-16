@@ -2,6 +2,7 @@ import { expireQueuedJobs, getJob } from "@omniralph/db";
 import { JOB_RETENTION_SECONDS } from "@omniralph/shared";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
+import { syncJobsDueFromPostgres } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
@@ -20,6 +21,7 @@ export async function GET(req: Request): Promise<Response> {
     new Date(now.getTime() - JOB_RETENTION_SECONDS * 1000),
     now,
   );
+  await syncJobsDueFromPostgres(db, expired);
   for (const jobId of expired) {
     try {
       const job = await getJob(db, jobId);

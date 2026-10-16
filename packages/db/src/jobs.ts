@@ -468,6 +468,33 @@ function textArray(values: readonly string[]) {
     : sql`'{}'::text[]`;
 }
 
+/** What the claim's due set (Redis hot state) keeps of a job: when it can next be claimed. */
+export type JobDueState = Pick<
+  Job,
+  "id" | "organizationId" | "status" | "availableAt" | "leaseExpiresAt"
+>;
+
+/**
+ * The due state of the jobs with the given IDs (unknown IDs are left out), or of
+ * every `queued` and `running` job when `jobIds` is omitted.
+ */
+export async function listJobDueStates(
+  db: Database,
+  jobIds?: readonly string[],
+): Promise<JobDueState[]> {
+  if (jobIds?.length === 0) return [];
+  return db
+    .select({
+      id: jobs.id,
+      organizationId: jobs.organizationId,
+      status: jobs.status,
+      availableAt: jobs.availableAt,
+      leaseExpiresAt: jobs.leaseExpiresAt,
+    })
+    .from(jobs)
+    .where(jobIds ? inArray(jobs.id, [...jobIds]) : inArray(jobs.status, ["queued", "running"]));
+}
+
 /**
  * Extends the lease of the given jobs that are `running` on `harnessId` (others
  * are left alone). Returns the IDs whose lease was renewed.

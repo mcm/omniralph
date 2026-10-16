@@ -17,13 +17,13 @@ import {
   finishTriageRunJob,
   getTriageRun,
   setTriageRunStatus,
-  skipJob,
   startTriageRunJob,
   ACTIVE_TRIAGE_RUN_STATUSES,
   type Database,
   type Job,
   type TriageRun,
 } from "@omniralph/db";
+import { skipJobAndClearDue } from "@/lib/dispatch/due";
 import {
   renderOpenQuestions,
   validateTriageOutput,
@@ -488,7 +488,7 @@ export async function onTriageJobStarted(
   const runId = triageRunIdOf(job);
   const run = runId ? await getTriageRun(db, runId) : null;
   if (!run || !(await startTriageRunJob(db, run.id, job.id))) {
-    await skipJob(db, job.id, { reason: "The triage run is over" });
+    await skipJobAndClearDue(db, job, { reason: "The triage run is over" });
     return { skip: true, reason: "skipped" };
   }
 
@@ -505,7 +505,7 @@ export async function onTriageJobStarted(
   }
   if (locked.length === 0) return { skip: false };
   if (!(await finishTriageRunJob(db, run.id, job.id, "stopped"))) return { skip: false };
-  await skipJob(db, job.id, { reason: "The issue is in progress or done" });
+  await skipJobAndClearDue(db, job, { reason: "The issue is in progress or done" });
   await postActivity(linearConversation(linear, run.linearAgentSessionId), {
     type: "response",
     body: lockedMessage(issue, locked),
