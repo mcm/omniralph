@@ -13,6 +13,7 @@ import {
 } from "@omniralph/db";
 import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
+import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 
 export interface DispatchJobInput extends NewJobInput {
   /**
@@ -110,7 +111,9 @@ export class PostgresDispatcher implements JobDispatcher {
       return targetHarnessId;
     }
     return job.repositoryId
-      ? pinnedHarnessFor(this.db, job.organizationId, job.repositoryId)
+      ? pinnedHarnessFor(this.db, job.organizationId, job.repositoryId, {
+          lastHeartbeats: readHarnessLastSeen,
+        })
       : null;
   }
 }

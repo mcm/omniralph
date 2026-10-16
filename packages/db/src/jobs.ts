@@ -159,12 +159,17 @@ export async function getJobForHarness(
  * The agent to send a pinned repo's jobs to: among its pinned, non-revoked
  * agents, the one with the fewest active jobs (then the most recent
  * heartbeat). Null when the repo isn't pinned (any agent of the organization
- * may serve it). Only agents of `organizationId` count.
+ * may serve it). Only agents of `organizationId` count. `lastHeartbeats`
+ * supplies heartbeats more recent than `last_heartbeat_at` (the control
+ * panel's Redis), used where later than the row's.
  */
 export async function pinnedHarnessFor(
   db: Database,
   organizationId: string,
   repositoryId: string,
+  options: {
+    lastHeartbeats?: (harnessIds: string[]) => Promise<ReadonlyMap<string, Date>>;
+  } = {},
 ): Promise<string | null> {
   const active = db
     .select({ harnessId: jobs.harnessId, n: count().as("n") })
@@ -172,8 +177,12 @@ export async function pinnedHarnessFor(
     .where(inArray(jobs.status, ["queued", "running"]))
     .groupBy(jobs.harnessId)
     .as("active");
-  const [row] = await db
-    .select({ harnessId: harnesses.id })
+  const rows = await db
+    .select({
+      harnessId: harnesses.id,
+      activeJobs: sql<number>`coalesce(${active.n}, 0)`.mapWith(Number),
+      lastHeartbeatAt: harnesses.lastHeartbeatAt,
+    })
     .from(harnessRepoPins)
     .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
     .leftJoin(active, eq(active.harnessId, harnesses.id))
@@ -188,9 +197,14 @@ export async function pinnedHarnessFor(
       asc(sql`coalesce(${active.n}, 0)`),
       sql`${harnesses.lastHeartbeatAt} desc nulls last`,
       asc(harnesses.id),
-    )
-    .limit(1);
-  return row?.harnessId ?? null;
+    );
+  if (!options.lastHeartbeats || rows.length < 2) return rows[0]?.harnessId ?? null;
+  const live = await options.lastHeartbeats(rows.map((r) => r.harnessId));
+  const seen = (row: (typeof rows)[number]) =>
+    Math.max(row.lastHeartbeatAt?.getTime() ?? 0, live.get(row.harnessId)?.getTime() ?? 0);
+  // Stable: equal heartbeats keep the query's ID order.
+  const [best] = [...rows].sort((a, b) => a.activeJobs - b.activeJobs || seen(b) - seen(a));
+  return best!.harnessId;
 }
 
 export type CancelJobResult = "canceled" | "cancel_requested" | "not_cancelable" | "not_found";
