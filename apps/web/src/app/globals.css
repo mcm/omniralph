@@ -2333,3 +2333,11 @@ body {
 .freshness-warning {
   color: var(--warning-fg);
 }
+
+/* Enroll harness dialog (harnesses/enroll-harness-dialog.tsx): waiting for the harness to
+   redeem the token. */
+.harness-enroll-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

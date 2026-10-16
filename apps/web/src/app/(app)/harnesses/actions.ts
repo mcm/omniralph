@@ -1,7 +1,6 @@
 "use server";
 
 import {
-  createHarnessEnrollment,
   getDefaultMaxConcurrency,
   getHarnessOverview,
   getDesiredHarnessVersion,
@@ -25,11 +24,9 @@ import {
   revokeHarness as revokeHarnessWithJobs,
 } from "@/lib/harness-auth/revoke";
 import { recordLatestHarnessVersion } from "@/lib/harnesses/desired-version";
-import { enrollCommand } from "@/lib/harnesses/display";
 import { latestHarnessVersion, NpmRegistryError } from "@/lib/harnesses/npm";
 import { enqueueInstall } from "@/lib/harnesses/installables";
 import { pinRepository as pinRepositoryWithSync } from "@/lib/harnesses/pins";
-import { getAppUrl } from "@/lib/app-url";
 import { runAdminAction } from "@/lib/auth/admin-action";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
@@ -43,59 +40,9 @@ function revalidate(harnessId?: string): void {
   revalidatePath("/repositories");
 }
 
-/** The control panel URL harnesses should use: `APP_URL`, else the URL this request came in on. */
-async function serverUrl(): Promise<string> {
-  try {
-    return getAppUrl();
-  } catch {
-    const h = await headers();
-    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-    const proto =
-      h.get("x-forwarded-proto") ??
-      (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https");
-    return `${proto}://${host}`;
-  }
-}
-
 async function clientIp(): Promise<string | null> {
   const h = await headers();
   return h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-}
-
-export type EnrollmentActionResult =
-  | {
-      ok: true;
-      /** Shown once; only its hash is stored. */
-      token: string;
-      /** ISO timestamp (1 hour from now). */
-      expiresAt: string;
-      /** The `omniralph-harness enroll …` command to run on the harness host. */
-      command: string;
-    }
-  | { ok: false; error: string };
-
-const EnrollmentName = z.string().trim().max(100);
-
-/** Creates a one-time enrollment token (valid for 1 hour) for a new harness of the active organization. */
-export async function createEnrollment(name: string): Promise<EnrollmentActionResult> {
-  let created: Extract<EnrollmentActionResult, { ok: true }> | undefined;
-  const result = await runAdminAction(async (admin) => {
-    const parsed = EnrollmentName.safeParse(name);
-    if (!parsed.success) return { ok: false, error: "Names can be at most 100 characters." };
-    const enrollment = await createHarnessEnrollment(getDb(), {
-      organizationId: admin.organization.id,
-      name: parsed.data || null,
-      createdBy: admin.id,
-    });
-    created = {
-      ok: true,
-      token: enrollment.token,
-      expiresAt: enrollment.expiresAt.toISOString(),
-      command: enrollCommand(await serverUrl(), enrollment.token),
-    };
-  });
-  if (!result.ok) return result;
-  return created ?? { ok: false, error: "Couldn't create an enrollment token." };
 }
 
 const HarnessConfig = z.object({

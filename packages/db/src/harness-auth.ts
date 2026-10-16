@@ -69,6 +69,56 @@ export async function createHarnessEnrollment(
   return { id: row!.id, token, expiresAt };
 }
 
+export interface HarnessEnrollmentStatus {
+  id: string;
+  expiresAt: Date;
+  /** The harness that redeemed the token (null while unused, or once that harness is deleted). */
+  harness: { id: string; name: string } | null;
+}
+
+/**
+ * An enrollment of `organizationId` and the harness that redeemed it, if any: what the
+ * enrollment dialog polls to show the harness connecting. Null for another organization's
+ * enrollment.
+ */
+export async function getHarnessEnrollmentStatus(
+  db: Database,
+  organizationId: string,
+  enrollmentId: string,
+): Promise<HarnessEnrollmentStatus | null> {
+  const [row] = await db
+    .select({
+      id: harnessEnrollments.id,
+      expiresAt: harnessEnrollments.expiresAt,
+      harnessId: harnesses.id,
+      harnessName: harnesses.name,
+    })
+    .from(harnessEnrollments)
+    .leftJoin(
+      harnesses,
+      and(
+        eq(harnesses.id, harnessEnrollments.harnessId),
+        eq(harnesses.organizationId, organizationId),
+        isNull(harnesses.deletedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(harnessEnrollments.id, enrollmentId),
+        eq(harnessEnrollments.organizationId, organizationId),
+      ),
+    );
+  if (!row) return null;
+  return {
+    id: row.id,
+    expiresAt: row.expiresAt,
+    harness:
+      row.harnessId && row.harnessName !== null
+        ? { id: row.harnessId, name: row.harnessName }
+        : null,
+  };
+}
+
 export interface EnrollHarnessInput {
   enrollmentToken: string;
   name: string;

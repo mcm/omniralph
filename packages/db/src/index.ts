@@ -122,6 +122,7 @@ export {
   getHarnessAuthState,
   isJobRunningOnHarness,
   latestRateLimitWindow,
+  getHarnessEnrollmentStatus,
   listHarnessAudit,
   pruneRateLimits,
   revokeHarness,
@@ -133,6 +134,7 @@ export {
   type HarnessAuditInput,
   type CreatedEnrollment,
   type EnrollHarnessInput,
+  type HarnessEnrollmentStatus,
   type RevokeHarnessResult,
   type RotateRefreshTokenResult,
 } from "./harness-auth.js";
