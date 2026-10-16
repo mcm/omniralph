@@ -97,8 +97,6 @@ vi.mock("@/lib/scm/github-app", () => ({
 }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
-vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
@@ -112,8 +110,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const { GET: enterOrganization } = await import("../api/organizations/enter/route");
 const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
-const { default: TriageRunsPage } = await import("./triage/page");
-const { default: TriageRunPage } = await import("./triage/[id]/page");
+const { GET: triageRunDetail } = await import("../api/ui/triage/[id]/route");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
 const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
@@ -144,18 +141,17 @@ interface Tenant {
   invitationId: string;
 }
 
-/** Next.js `notFound()` throws an error whose digest marks a 404. */
-const notFound = { digest: expect.stringContaining("404") };
 /** Next.js `redirect(path)` throws an error whose digest carries the path. */
 const redirectTo = (path: string) => ({ digest: expect.stringContaining(`;${path};`) });
-/** Where `page` redirects (`NEXT_REDIRECT;<type>;<url>;<status>;`). */
-const redirectLocation = (page: Promise<unknown>) =>
-  page.then(
-    () => expect.unreachable("expected a redirect"),
-    (error: { digest?: string }) => error.digest?.split(";")[2],
-  );
 
-const params = (id: string) => ({ params: Promise.resolve({ id }) });
+/** A triage run's page asking the API for the run (`next` is the page). */
+const openTriageRun = (id: string, next?: string) =>
+  triageRunDetail(
+    new Request(
+      `http://localhost/api/ui/triage/${id}${next ? `?${new URLSearchParams({ next })}` : ""}`,
+    ),
+    { params: Promise.resolve({ id }) },
+  );
 const search = (query: Record<string, string> = {}) => ({ searchParams: Promise.resolve(query) });
 
 describe.skipIf(!databaseAvailable)("organization isolation of every page", () => {
@@ -367,8 +363,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     state.userId = own.userId;
     const pages: Record<string, JSX.Element> = {
       layout: await AppLayout({ children: null }),
-      triageRuns: await TriageRunsPage(search()),
-      triageRun: await TriageRunPage(params(own.triageRunId)),
       analytics: await AnalyticsPage(search()),
       profiles: await ProfilesPage(),
       harnessSettings: await HarnessSettingsPage(),
@@ -400,9 +394,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       // Every loader found the organization's own rows (the check above isn't vacuous).
       const ids = <T extends { id: string }>(rows: T[]) => rows.map((row) => row.id);
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
-      expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
-      expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
-      expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
@@ -431,7 +422,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
   it("returns 404 on another organization's resource URLs for a non-member", async () => {
     state.userId = a.userId;
-    await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
+    expect((await openTriageRun(b.triageRunId)).status).toBe(404);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
     const enter = async (url: string) =>
@@ -465,24 +456,24 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       .values({ organizationId: b.orgId, userId: user!.id, role: "admin" });
     state.userId = user!.id;
 
-    const resources: [string, () => Promise<JSX.Element>, string][] = [
-      [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
-    ];
-    for (const [path, open, id] of resources) {
-      expect(await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId })).toBe(
-        true,
-      );
-      // The page sends the browser to switch to the resource's organization (pages can't
-      // set cookies), which then reloads the page, showing the resource.
-      const enter = await redirectLocation(open());
-      expect(enter, path).toMatch(new RegExp(`^${ENTER_ORGANIZATION_PATH}\\?token=`));
-      expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
-      const response = await enterOrganization(new NextRequest(`http://localhost${enter}`));
-      expect(response.headers.get("location"), path).toBe(`http://localhost${path}`);
-      expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
-      expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
-      expect(JSON.stringify((await open()).props), path).toContain(id);
-    }
+    // The run's page asks the API, which answers 409 with the signed path that switches to
+    // the run's organization and comes back to the page, showing the run.
+    const path = `/triage/${b.triageRunId}`;
+    expect(await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId })).toBe(
+      true,
+    );
+    const refused = await openTriageRun(b.triageRunId, path);
+    expect(refused.status).toBe(409);
+    const enter = ((await refused.json()) as { enterPath: string }).enterPath;
+    expect(enter).toMatch(new RegExp(`^${ENTER_ORGANIZATION_PATH}\\?token=`));
+    expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
+    const response = await enterOrganization(new NextRequest(`http://localhost${enter}`));
+    expect(response.headers.get("location")).toBe(`http://localhost${path}`);
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
+    expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
+    const opened = await openTriageRun(b.triageRunId, path);
+    expect(opened.status).toBe(200);
+    expect(JSON.stringify(await opened.json())).toContain(b.triageJobId);
   });
 
   it("sends the dashboard to the repositories page", () => {

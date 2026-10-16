@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -14,6 +15,8 @@ import {
   CardTitle,
   InlineCode,
   Muted,
+  Skeleton,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -26,11 +29,14 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { EmptyValue } from "@/components/empty-value";
 import { Fact, FactStrip } from "@/components/fact-strip";
+import { Freshness } from "@/components/freshness";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
 import { JobStatusBadge, TriageRunStatusBadge } from "@/components/ralph-badges";
+import { RelativeTime } from "@/components/relative-time";
 import { jobPageHref, shortJobId } from "@/lib/jobs/list";
 import {
   formatDuration,
@@ -46,6 +52,7 @@ import {
 } from "@/lib/triage/display";
 import { ProviderIcon } from "@/components/provider-icon";
 import { AgentName } from "../../coding/ralph-runs-view";
+import { useTriageRunDetail } from "../triage-queries";
 
 type TriageOutcome = NonNullable<TriageResultView["outcome"]>;
 
@@ -142,7 +149,7 @@ function RunFacts({ run, isAdmin }: { run: TriageRunDetail; isAdmin: boolean }) 
         <Timestamp iso={run.createdAt} />
       </Fact>
       <Fact label="Last updated">
-        <Timestamp iso={run.updatedAt} />
+        <RelativeTime iso={run.updatedAt} />
       </Fact>
     </FactStrip>
   );
@@ -419,17 +426,75 @@ function ActivityCard({ run }: { run: TriageRunDetail }) {
   );
 }
 
-export function TriageRunDetailView({
-  run,
-  year,
-}: {
-  run: TriageRunDetail;
-  /** The current year, which job times leave out. */
-  year: number;
-}) {
-  const isAdmin = useCurrentUser().role === "admin";
-  const label = triageRunLabel(run);
+function TriageRunContent({ run, isAdmin }: { run: TriageRunDetail; isAdmin: boolean }) {
   const outcome = run.result?.outcome ?? null;
+  // Job times leave out the browser's current year.
+  const year = new Date().getFullYear();
+  return (
+    <>
+      <RunErrorAlert run={run} />
+
+      <PendingReplyAlert reply={run.pendingReply} />
+
+      <RunFacts run={run} isAdmin={isAdmin} />
+
+      {run.result && <SummaryCard result={run.result} />}
+
+      {outcome && outcome.openQuestions.length > 0 && (
+        <OpenQuestionsCard questions={outcome.openQuestions} />
+      )}
+
+      {outcome && <PrdCard outcome={outcome} />}
+
+      {outcome && outcome.stories.length > 0 && <StoriesCard outcome={outcome} />}
+
+      {outcome && outcome.subIssueUpdates.length > 0 && <SubIssueUpdatesCard outcome={outcome} />}
+
+      {!run.result && run.jobs.length === 0 && (
+        <Muted className="run-empty-sections">
+          Nothing yet: the result and jobs appear once a triage job is queued.
+        </Muted>
+      )}
+
+      {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} year={year} />}
+
+      {run.activities.length > 0 && <ActivityCard run={run} />}
+    </>
+  );
+}
+
+/** The run's facts and summary while the first load is pending. */
+function TriageRunSkeleton() {
+  return (
+    <>
+      <Skeleton height="4.5rem" />
+      <Card>
+        <CardHeader>
+          <Skeleton width="6rem" height="1.25rem" />
+        </CardHeader>
+        <CardContent>
+          <Stack gap={3}>
+            {Array.from({ length: 4 }, (_, index) => (
+              <Skeleton key={index} width={`${50 + ((index * 17) % 40)}%`} />
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * A triage run's page, live: the run polls (`GET /api/ui/triage/{id}`), so its status,
+ * result, jobs and session activity move while it's open. A run of another of the user's
+ * organizations switches to it first.
+ */
+export function TriageRunDetailView() {
+  const { id } = useParams<{ id: string }>();
+  const detail = useTriageRunDetail(id);
+  const isAdmin = useCurrentUser().role === "admin";
+  const run = detail.data?.run;
+  const label = run ? triageRunLabel(run) : "Triage run";
 
   return (
     <>
@@ -437,21 +502,28 @@ export function TriageRunDetailView({
       <main className="detail-main">
         <PageHeader
           title={
-            <>
-              <span className="text-numeric">{label}</span>
-              {run.issue?.title && <> {run.issue.title}</>}
-            </>
+            run ? (
+              <>
+                <span className="text-numeric">{label}</span>
+                {run.issue?.title && <> {run.issue.title}</>}
+              </>
+            ) : (
+              <Skeleton width="16rem" height="1.75rem" />
+            )
           }
           meta={
-            <>
-              <TriageRunStatusBadge status={run.status} />
-              <Badge variant="neutral" title={TRIAGE_TRIGGER_DESCRIPTIONS[run.trigger]}>
-                {TRIAGE_TRIGGER_LABELS[run.trigger]}
-              </Badge>
-            </>
+            run && (
+              <>
+                <TriageRunStatusBadge status={run.status} />
+                <Badge variant="neutral" title={TRIAGE_TRIGGER_DESCRIPTIONS[run.trigger]}>
+                  {TRIAGE_TRIGGER_LABELS[run.trigger]}
+                </Badge>
+                <Freshness query={detail} />
+              </>
+            )
           }
           actions={
-            run.issue?.url && (
+            run?.issue?.url && (
               <Button asChild variant="ghost" className="page-header-ghost">
                 <a href={run.issue.url} target="_blank" rel="noreferrer">
                   <IconExternalLink size={14} />
@@ -461,34 +533,9 @@ export function TriageRunDetailView({
             )
           }
         />
-
-        <RunErrorAlert run={run} />
-
-        <PendingReplyAlert reply={run.pendingReply} />
-
-        <RunFacts run={run} isAdmin={isAdmin} />
-
-        {run.result && <SummaryCard result={run.result} />}
-
-        {outcome && outcome.openQuestions.length > 0 && (
-          <OpenQuestionsCard questions={outcome.openQuestions} />
-        )}
-
-        {outcome && <PrdCard outcome={outcome} />}
-
-        {outcome && outcome.stories.length > 0 && <StoriesCard outcome={outcome} />}
-
-        {outcome && outcome.subIssueUpdates.length > 0 && <SubIssueUpdatesCard outcome={outcome} />}
-
-        {!run.result && run.jobs.length === 0 && (
-          <Muted className="run-empty-sections">
-            Nothing yet: the result and jobs appear once a triage job is queued.
-          </Muted>
-        )}
-
-        {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} year={year} />}
-
-        {run.activities.length > 0 && <ActivityCard run={run} />}
+        <QueryBoundary query={detail} skeleton={<TriageRunSkeleton />} what="the triage run">
+          {(data) => <TriageRunContent run={data.run} isAdmin={isAdmin} />}
+        </QueryBoundary>
       </main>
     </>
   );

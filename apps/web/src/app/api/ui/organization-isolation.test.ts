@@ -14,6 +14,8 @@ import {
   createOrganization,
   createReview,
   createRun,
+  createTriageRun,
+  insertJob,
   enrollHarness,
   findings,
   getHarnessOverview,
@@ -125,6 +127,8 @@ const findingDismiss = await import("./findings/[id]/dismiss/route");
 const findingRestore = await import("./findings/[id]/restore/route");
 const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
+const triageList = await import("./triage/route");
+const triageDetail = await import("./triage/[id]/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -168,6 +172,7 @@ interface Tenant {
   reviewId: string;
   findingId: string;
   jobId: string;
+  triageRunId: string;
 }
 
 describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
@@ -272,6 +277,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         harnessId,
       })
       .returning();
+    const { run: triageRun } = await createTriageRun(db, {
+      organizationId: org.id,
+      linearIssueId: `${name}-triage-issue`,
+      linearAgentSessionId: `${name}-triage-session`,
+      trigger: "mention",
+    });
     return {
       name,
       adminId: admin!.id,
@@ -289,6 +300,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       reviewId: review.id,
       findingId: finding!.id,
       jobId: job!.id,
+      triageRunId: triageRun.id,
     };
   }
 
@@ -1088,5 +1100,93 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       status: 403,
     });
     expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
+  });
+
+  // Last: the triage jobs created here would show on the job lists above.
+  it("lists and shows each organization's own triage runs to its members, and 404s on the other's", async () => {
+    const triageJobIds = new Map<string, string>();
+    for (const tenant of [a, b]) {
+      const { job } = await insertJob(db, {
+        organizationId: tenant.orgId,
+        type: "triage.run",
+        taskType: "query",
+        pool: "short",
+        payload: {
+          trigger: {
+            kind: "linear.triage",
+            context: {
+              triageRunId: tenant.triageRunId,
+              issue: {
+                identifier: `${tenant.name.toUpperCase()}-9`,
+                title: `${tenant.name} issue`,
+              },
+            },
+          },
+        },
+      });
+      triageJobIds.set(tenant.name, job.id);
+    }
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const list = await call(triageList.GET);
+        expect(list.status).toBe(200);
+        expect(list.body.runs).toMatchObject([
+          { id: own.triageRunId, issue: { identifier: `${own.name.toUpperCase()}-9` } },
+        ]);
+        const queued = await call(triageList.GET, { path: "/api/ui?status=queued" });
+        expect((queued.body.runs as { id: string }[]).map((r) => r.id)).toEqual([own.triageRunId]);
+        const failed = await call(triageList.GET, { path: "/api/ui?status=failed" });
+        expect(failed).toMatchObject({ status: 200, body: { runs: [], total: 0 } });
+
+        const detail = await call(triageDetail.GET, { params: { id: own.triageRunId } });
+        expect(detail).toMatchObject({ status: 200, body: { run: { id: own.triageRunId } } });
+        expect((detail.body.run as { jobs: { id: string }[] }).jobs.map((j) => j.id)).toEqual([
+          triageJobIds.get(own.name),
+        ]);
+        for (const { body } of [list, queued, detail]) {
+          const json = JSON.stringify(body);
+          for (const marker of markers(other)) expect(json).not.toContain(marker);
+          expect(json).not.toContain(triageJobIds.get(other.name));
+        }
+
+        expect(await call(triageDetail.GET, { params: { id: other.triageRunId } })).toMatchObject({
+          status: 404,
+        });
+        expect(await call(triageDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
+          status: 404,
+        });
+      }
+    }
+  });
+
+  it("sends a member of both organizations to switch to the triage run's organization", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-triage-member", email: "both-triage@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+
+    const page = `/triage/${b.triageRunId}`;
+    const { status, body } = await call(triageDetail.GET, {
+      params: { id: b.triageRunId },
+      path: `/api/ui?${new URLSearchParams({ next: page })}`,
+    });
+    expect(status).toBe(409);
+    expect(body).toMatchObject({ code: "enter_organization" });
+    expect(JSON.stringify(body)).not.toContain(b.name);
+    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
+    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
+      organizationId: b.orgId,
+      next: page,
+    });
   });
 });
