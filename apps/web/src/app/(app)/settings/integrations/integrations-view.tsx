@@ -23,22 +23,36 @@ import {
   Cluster,
   InlineCode,
   Muted,
+  Skeleton,
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconPlugConnected, IconUnlink } from "@tabler/icons-react";
+import { redirect, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { useCurrentUser } from "@/components/current-user";
 import { EnvDocsLink } from "@/components/env-docs-link";
 import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
-import type { ActionResult } from "@/lib/action-result";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import type {
+  DiscordServer,
+  IntegrationsSettings,
+  LinearConnection,
+  SlackWorkspace,
+} from "@/lib/api/integrations";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { ACCESS_DENIED_PATH } from "@/lib/auth/routes";
 import {
   INTEGRATION_STATE_LABELS,
   INTEGRATION_STATE_VARIANTS,
   integrationState,
 } from "@/lib/state-variants";
-import { disconnectDiscord, disconnectLinear, disconnectSlack } from "./actions";
-import { ChatTasksCard, type ChatTasksSettings } from "./chat-tasks-card";
+import { ChatTasksCard } from "./chat-tasks-card";
+import { integrationsChanged, useIntegrations } from "./integrations-queries";
+
+export type { DiscordServer, LinearConnection, SlackWorkspace };
 
 export type IntegrationNotice =
   | "connected"
@@ -176,61 +190,48 @@ const discordNotices: Notices = {
   },
 };
 
-export interface SlackWorkspace {
-  /** The chat connection's ID. */
-  id: string;
-  name: string;
-  /** Slack team ID (or enterprise ID for an org-wide install). */
-  workspaceId: string;
-  /** Name or email of the admin who installed it, null when unknown. */
-  installedBy: string | null;
-  /** ISO timestamp. */
-  connectedAt: string;
+/** The OAuth outcome a connect route redirects back with (`?linear=connected`, …). */
+const toNotice = (value: string | null): IntegrationNotice | null =>
+  value && Object.hasOwn(linearNotices, value) ? (value as IntegrationNotice) : null;
+
+function IntegrationsSkeleton() {
+  return (
+    <Stack gap={4}>
+      {[1, 1, 1, 2].map((rows, i) => (
+        <Card key={i}>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-2/3" />
+          </CardHeader>
+          <Stack gap={3} asChild>
+            <CardContent>
+              {Array.from({ length: rows }, (_, row) => (
+                <Skeleton key={row} className="h-9 w-full" />
+              ))}
+            </CardContent>
+          </Stack>
+        </Card>
+      ))}
+    </Stack>
+  );
 }
 
-export interface DiscordServer {
-  /** The chat connection's ID. */
-  id: string;
-  name: string;
-  /** Discord guild ID. */
-  serverId: string;
-  /** Name or email of the admin who added the bot, null when unknown. */
-  installedBy: string | null;
-  /** ISO timestamp. */
-  connectedAt: string;
+/**
+ * Settings › Integrations (admins), live: a connection made in another tab (an OAuth
+ * install) or removed elsewhere shows without a reload, and so do chat task changes.
+ */
+export function IntegrationsView() {
+  const { role } = useCurrentUser();
+  if (role !== "admin") redirect(`${ACCESS_DENIED_PATH}?reason=forbidden`);
+  return <AdminIntegrationsView />;
 }
 
-export interface LinearConnection {
-  name: string;
-  workspaceId: string;
-  /** ISO timestamp. */
-  connectedAt: string;
-}
-
-export function IntegrationsView({
-  linear,
-  linearConfigured,
-  notice,
-  slack,
-  slackConfigured,
-  slackNotice,
-  discord,
-  discordConfigured,
-  discordNotice,
-  chatTasks,
-}: {
-  linear: LinearConnection | null;
-  linearConfigured: boolean;
-  notice: IntegrationNotice | null;
-  slack: SlackWorkspace[];
-  slackConfigured: boolean;
-  slackNotice: IntegrationNotice | null;
-  discord: DiscordServer[];
-  discordConfigured: boolean;
-  discordNotice: IntegrationNotice | null;
-  chatTasks: ChatTasksSettings;
-}) {
-  const { pending, run } = useAction();
+function AdminIntegrationsView() {
+  const query = useIntegrations();
+  const searchParams = useSearchParams();
+  const notice = toNotice(searchParams.get("linear"));
+  const slackNotice = toNotice(searchParams.get("slack"));
+  const discordNotice = toNotice(searchParams.get("discord"));
 
   return (
     <>
@@ -260,119 +261,149 @@ export function IntegrationsView({
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2" className="settings-card-title">
-              Linear
-              <IntegrationBadge connected={Boolean(linear)} configured={linearConfigured} />
-            </CardTitle>
-            <CardDescription>
-              {linear ? (
-                <>
-                  Connected to the <strong>{linear.name}</strong> workspace since{" "}
-                  <Timestamp iso={linear.connectedAt} inline />.
-                </>
-              ) : (
-                "Install the Omniralph app in one Linear workspace so issues can be delegated to it."
-              )}
-            </CardDescription>
-          </CardHeader>
-          <Stack gap={3} asChild>
-            <CardContent>
-              {!linearConfigured && (
-                <AppNotConfiguredAlert
-                  platform="Linear"
-                  envVars={["LINEAR_CLIENT_ID", "LINEAR_CLIENT_SECRET", "LINEAR_WEBHOOK_SECRET"]}
-                  connectedName={linear?.name ?? null}
-                  ignored="delegations from Linear are rejected"
-                />
-              )}
-              <Cluster>
-                {linearConfigured &&
-                  (linear ? (
-                    <Button asChild variant="secondary" disabled={pending}>
-                      {/* A plain link: the route redirects to Linear's consent screen. */}
-                      <a href="/api/integrations/linear/connect">
-                        <IconPlugConnected size={14} />
-                        Reconnect
-                      </a>
-                    </Button>
-                  ) : (
-                    <Button asChild variant="primary">
-                      <a href="/api/integrations/linear/connect">
-                        <IconPlugConnected size={14} />
-                        Connect Linear
-                      </a>
-                    </Button>
-                  ))}
-                {linear && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="danger" disabled={pending}>
-                        <IconUnlink size={14} />
-                        Disconnect
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Disconnect {linear.name}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Omniralph forgets the workspace&apos;s tokens and revokes them.
-                          Delegations from Linear are ignored until you connect again.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          variant="danger"
-                          onClick={() => run(disconnectLinear, `Disconnected ${linear.name}`)}
-                        >
-                          Disconnect
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </Cluster>
-            </CardContent>
-          </Stack>
-        </Card>
-
-        <ChatPlatformCard
-          platform="Slack"
-          description="Install the Omniralph app in a Slack workspace, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
-          envVars={["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET", "SLACK_SIGNING_SECRET"]}
-          configured={slackConfigured}
-          connections={slack}
-          connectHref="/api/integrations/slack/connect"
-          connectAnother="Connect another workspace"
-          disconnectDescription="Omniralph forgets the workspace's bot token and its conversations, and revokes the token. Mentions in Slack are ignored until you connect again."
-          disconnect={disconnectSlack}
-          pending={pending}
-          run={run}
-        />
-
-        <ChatPlatformCard
-          platform="Discord"
-          description="Add the Omniralph bot to a Discord server, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
-          envVars={[
-            "DISCORD_APPLICATION_ID",
-            "DISCORD_CLIENT_SECRET",
-            "DISCORD_BOT_TOKEN",
-            "DISCORD_PUBLIC_KEY",
-          ]}
-          configured={discordConfigured}
-          connections={discord}
-          connectHref="/api/integrations/discord/connect"
-          connectAnother="Connect another server"
-          disconnectDescription="Omniralph forgets the server and its conversations, and the bot leaves it. Mentions in Discord are ignored until you connect again."
-          disconnect={disconnectDiscord}
-          pending={pending}
-          run={run}
-        />
-
-        <ChatTasksCard {...chatTasks} />
+        <QueryBoundary query={query} skeleton={<IntegrationsSkeleton />} what="the integrations">
+          {(settings) => <IntegrationsContent {...settings} />}
+        </QueryBoundary>
       </main>
+    </>
+  );
+}
+
+/** A disconnect request: the integration's `/api/ui/integrations` path. */
+function useDisconnect(path: (id: string) => string) {
+  return useApiMutation({
+    mutationFn: ({ id }: { id: string; name: string }, { organizationId }) =>
+      api.delete(path(id), mutationResultSchema, { organizationId }),
+    invalidate: integrationsChanged,
+    success: (_, { name }) => `Disconnected ${name}`,
+  });
+}
+
+/** The integrations' cards, from `GET /api/ui/integrations`. */
+export function IntegrationsContent({
+  linear,
+  linearConfigured,
+  slack,
+  slackConfigured,
+  discord,
+  discordConfigured,
+  chatTasks,
+}: IntegrationsSettings) {
+  const linearDisconnect = useDisconnect(() => "/api/ui/integrations/linear");
+  const slackDisconnect = useDisconnect((id) => `/api/ui/integrations/slack/${id}`);
+  const discordDisconnect = useDisconnect((id) => `/api/ui/integrations/discord/${id}`);
+  const linearPending = linearDisconnect.isPending;
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2" className="settings-card-title">
+            Linear
+            <IntegrationBadge connected={Boolean(linear)} configured={linearConfigured} />
+          </CardTitle>
+          <CardDescription>
+            {linear ? (
+              <>
+                Connected to the <strong>{linear.name}</strong> workspace since{" "}
+                <Timestamp iso={linear.connectedAt} inline />.
+              </>
+            ) : (
+              "Install the Omniralph app in one Linear workspace so issues can be delegated to it."
+            )}
+          </CardDescription>
+        </CardHeader>
+        <Stack gap={3} asChild>
+          <CardContent>
+            {!linearConfigured && (
+              <AppNotConfiguredAlert
+                platform="Linear"
+                envVars={["LINEAR_CLIENT_ID", "LINEAR_CLIENT_SECRET", "LINEAR_WEBHOOK_SECRET"]}
+                connectedName={linear?.name ?? null}
+                ignored="delegations from Linear are rejected"
+              />
+            )}
+            <Cluster>
+              {linearConfigured &&
+                (linear ? (
+                  <Button asChild variant="secondary" disabled={linearPending}>
+                    {/* A plain link: the route redirects to Linear's consent screen. */}
+                    <a href="/api/integrations/linear/connect">
+                      <IconPlugConnected size={14} />
+                      Reconnect
+                    </a>
+                  </Button>
+                ) : (
+                  <Button asChild variant="primary">
+                    <a href="/api/integrations/linear/connect">
+                      <IconPlugConnected size={14} />
+                      Connect Linear
+                    </a>
+                  </Button>
+                ))}
+              {linear && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="danger" disabled={linearPending}>
+                      <IconUnlink size={14} />
+                      Disconnect
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Disconnect {linear.name}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Omniralph forgets the workspace&apos;s tokens and revokes them. Delegations
+                        from Linear are ignored until you connect again.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        variant="danger"
+                        onClick={() => linearDisconnect.mutate({ id: "linear", name: linear.name })}
+                      >
+                        Disconnect
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </Cluster>
+          </CardContent>
+        </Stack>
+      </Card>
+
+      <ChatPlatformCard
+        platform="Slack"
+        description="Install the Omniralph app in a Slack workspace, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
+        envVars={["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET", "SLACK_SIGNING_SECRET"]}
+        configured={slackConfigured}
+        connections={slack}
+        connectHref="/api/integrations/slack/connect"
+        connectAnother="Connect another workspace"
+        disconnectDescription="Omniralph forgets the workspace's bot token and its conversations, and revokes the token. Mentions in Slack are ignored until you connect again."
+        disconnect={slackDisconnect}
+      />
+
+      <ChatPlatformCard
+        platform="Discord"
+        description="Add the Omniralph bot to a Discord server, then mention it in a channel to ask about runs, reviews, jobs, agents and repositories."
+        envVars={[
+          "DISCORD_APPLICATION_ID",
+          "DISCORD_CLIENT_SECRET",
+          "DISCORD_BOT_TOKEN",
+          "DISCORD_PUBLIC_KEY",
+        ]}
+        configured={discordConfigured}
+        connections={discord}
+        connectHref="/api/integrations/discord/connect"
+        connectAnother="Connect another server"
+        disconnectDescription="Omniralph forgets the server and its conversations, and the bot leaves it. Mentions in Discord are ignored until you connect again."
+        disconnect={discordDisconnect}
+      />
+
+      <ChatTasksCard {...chatTasks} />
     </>
   );
 }
@@ -388,8 +419,6 @@ function ChatPlatformCard({
   connectAnother,
   disconnectDescription,
   disconnect,
-  pending,
-  run,
 }: {
   platform: string;
   description: string;
@@ -399,10 +428,9 @@ function ChatPlatformCard({
   connectHref: string;
   connectAnother: string;
   disconnectDescription: string;
-  disconnect: (connectionId: string) => Promise<ActionResult>;
-  pending: boolean;
-  run: ReturnType<typeof useAction>["run"];
+  disconnect: ReturnType<typeof useDisconnect>;
 }) {
+  const pending = disconnect.isPending;
   return (
     <Card>
       <CardHeader>
@@ -453,9 +481,7 @@ function ChatPlatformCard({
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                       variant="danger"
-                      onClick={() =>
-                        run(() => disconnect(connection.id), `Disconnected ${connection.name}`)
-                      }
+                      onClick={() => disconnect.mutate(connection)}
                     >
                       Disconnect
                     </AlertDialogAction>

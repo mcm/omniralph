@@ -1,16 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
+import type { IntegrationsSettings } from "@/lib/api/integrations";
 import type { ChatTasksSettings } from "./chat-tasks-card";
-import { type DiscordServer, IntegrationsView, type SlackWorkspace } from "./integrations-view";
+import { type DiscordServer, IntegrationsContent, type SlackWorkspace } from "./integrations-view";
 
-vi.mock("./actions", () => ({
-  disconnectLinear: vi.fn(),
-  disconnectSlack: vi.fn(),
-  disconnectDiscord: vi.fn(),
-  saveChatTaskDefaults: vi.fn(),
-  saveChatChannelTasks: vi.fn(),
-  removeChatChannelTasks: vi.fn(),
-}));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
 const WORKSPACE: SlackWorkspace = {
@@ -45,19 +39,23 @@ function render(
   discord: DiscordServer[] = [],
   discordConfigured = true,
 ): string {
+  return renderContent({
+    linear: null,
+    linearConfigured: true,
+    slack,
+    slackConfigured,
+    discord,
+    discordConfigured,
+    chatTasks,
+  });
+}
+
+function renderContent(settings: IntegrationsSettings): string {
+  const Wrapper = queryWrapper(createTestQueryClient());
   return renderToStaticMarkup(
-    <IntegrationsView
-      linear={null}
-      linearConfigured
-      notice={null}
-      slack={slack}
-      slackConfigured={slackConfigured}
-      slackNotice={null}
-      discord={discord}
-      discordConfigured={discordConfigured}
-      discordNotice={null}
-      chatTasks={chatTasks}
-    />,
+    <Wrapper>
+      <IntegrationsContent {...settings} />
+    </Wrapper>,
   );
 }
 
@@ -70,7 +68,7 @@ const discordSection = (html: string) =>
 /** The markup of the chat tasks card (to the end of the page). */
 const chatTasksSection = (html: string) => html.slice(html.indexOf(">Chat tasks<"));
 
-describe("IntegrationsView › Slack", () => {
+describe("IntegrationsContent › Slack", () => {
   it("lists connected workspaces with their installer, a Disconnect button and Connect", () => {
     const html = slackSection(render([WORKSPACE], true));
     expect(html).toContain("Acme Slack");
@@ -88,7 +86,7 @@ describe("IntegrationsView › Slack", () => {
   });
 });
 
-describe("IntegrationsView › connected but not configured", () => {
+describe("IntegrationsContent › connected but not configured", () => {
   it("explains a saved Slack connection whose app credentials are missing", () => {
     const html = slackSection(render([WORKSPACE], false));
     expect(html).toContain("Connected, but the Slack app isn&#x27;t configured");
@@ -97,20 +95,15 @@ describe("IntegrationsView › connected but not configured", () => {
   });
 
   it("explains a connected Linear workspace without the Linear app credentials", () => {
-    const html = renderToStaticMarkup(
-      <IntegrationsView
-        linear={{ name: "Acme", workspaceId: "W01", connectedAt: "2026-10-01T00:00:00.000Z" }}
-        linearConfigured={false}
-        notice={null}
-        slack={[]}
-        slackConfigured
-        slackNotice={null}
-        discord={[]}
-        discordConfigured
-        discordNotice={null}
-        chatTasks={chatTasks}
-      />,
-    );
+    const html = renderContent({
+      linear: { name: "Acme", workspaceId: "W01", connectedAt: "2026-10-01T00:00:00.000Z" },
+      linearConfigured: false,
+      slack: [],
+      slackConfigured: true,
+      discord: [],
+      discordConfigured: true,
+      chatTasks,
+    });
     const linear = html.slice(0, html.indexOf(">Slack<"));
     expect(linear).toContain("Connected, but the Linear app isn&#x27;t configured");
     expect(linear).toContain("delegations from Linear are rejected");
@@ -118,7 +111,7 @@ describe("IntegrationsView › connected but not configured", () => {
   });
 });
 
-describe("IntegrationsView › Discord", () => {
+describe("IntegrationsContent › Discord", () => {
   it("lists connected servers with their installer, a Disconnect button and Connect", () => {
     const html = discordSection(render([], true, [SERVER], true));
     expect(html).toContain("Acme Discord");
@@ -142,7 +135,7 @@ describe("IntegrationsView › Discord", () => {
   });
 });
 
-describe("IntegrationsView › Chat tasks", () => {
+describe("IntegrationsContent › Chat tasks", () => {
   it("shows the organization's tasks and each connection's channel overrides", () => {
     chatTasks = {
       ...chatTasks,
@@ -177,7 +170,7 @@ describe("IntegrationsView › Chat tasks", () => {
   });
 });
 
-describe("IntegrationsView › Chat tasks › custom tasks", () => {
+describe("IntegrationsContent › Chat tasks › custom tasks", () => {
   const QUERY = "11111111-1111-4111-8111-111111111111";
   const CODING = "22222222-2222-4222-8222-222222222222";
 

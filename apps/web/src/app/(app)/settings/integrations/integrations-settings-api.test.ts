@@ -40,7 +40,7 @@ async function storedTaskRows() {
 
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requirePageUser: async (role: Role = "member") =>
+  requireUser: async (role: Role = "member") =>
     assertRole(state.user && { ...state.user, organization: { id: "org-a", name: "Acme" } }, role),
 }));
 vi.mock("@/lib/linear/oauth", () => ({ linearOAuthConfig: () => ({ clientId: "c" }) }));
@@ -127,35 +127,32 @@ vi.mock("@omniralph/db", () => ({
   getUserById: async (_db: unknown, id: string) =>
     id === "user-1" ? { id, name: null, email: "ada@acme.test" } : undefined,
 }));
-vi.mock("./integrations-view", () => ({ IntegrationsView: () => null }));
-
-const { default: IntegrationsPage } = await import("./page");
+const { GET } = await import("@/app/api/ui/integrations/route");
 
 const user = (role: Role) => ({ id: `${role}-1`, role, name: null, email: null, image: null });
-const render = (linear?: string, slack?: string, discord?: string) =>
-  IntegrationsPage({
-    searchParams: Promise.resolve({
-      ...(linear && { linear }),
-      ...(slack && { slack }),
-      ...(discord && { discord }),
-    }),
+/** `GET /api/ui/integrations`: its status and body. */
+async function load() {
+  const response = await GET(new Request("http://localhost/api/ui/integrations"), {
+    params: Promise.resolve({}),
   });
+  return { status: response.status, props: (await response.json()) as Record<string, unknown> };
+}
 
-describe("Settings › Integrations page", () => {
+describe("GET /api/ui/integrations", () => {
   it("is for admins only", async () => {
     state.user = null;
-    await expect(render()).rejects.toThrow();
+    expect((await load()).status).toBe(401);
     state.user = user("member");
-    await expect(render()).rejects.toThrow();
+    expect((await load()).status).toBe(403);
   });
 
-  it("shows the connected workspace and the OAuth outcome to admins", async () => {
+  it("shows the connected workspace and chat connections to admins", async () => {
     state.user = user("admin");
-    const page = await render("connected");
-    expect(page.props).toEqual({
+    const { status, props } = await load();
+    expect(status).toBe(200);
+    expect(props).toEqual({
       linear: { name: "Acme", workspaceId: "org-1", connectedAt: "2026-10-01T00:00:00.000Z" },
       linearConfigured: true,
-      notice: "connected",
       slack: [
         {
           id: "conn-1",
@@ -173,7 +170,6 @@ describe("Settings › Integrations page", () => {
         },
       ],
       slackConfigured: true,
-      slackNotice: null,
       discord: [
         {
           id: "conn-3",
@@ -191,44 +187,37 @@ describe("Settings › Integrations page", () => {
         },
       ],
       discordConfigured: true,
-      discordNotice: null,
       chatTasks: expect.anything(),
     });
-    expect((await render("bogus")).props.notice).toBeNull();
-    expect((await render("other_organization")).props.notice).toBe("other_organization");
   });
 
-  it("shows the Slack OAuth outcome", async () => {
-    state.user = user("admin");
-    for (const notice of [
-      "connected",
-      "other_organization",
-      "denied",
-      "invalid_state",
-      "not_configured",
-    ]) {
-      const { props } = await render(undefined, notice);
-      expect(props.slackNotice).toBe(notice);
-      expect(props.notice).toBeNull();
-    }
-    expect((await render(undefined, "bogus")).props.slackNotice).toBeNull();
-  });
-
-  it("marks Slack as not configured without the Slack app's env vars", async () => {
+  it("marks Slack and Discord as not configured without their apps' env vars", async () => {
     state.user = user("admin");
     state.slackConfigured = false;
     try {
-      expect((await render()).props.slackConfigured).toBe(false);
+      expect((await load()).props).toMatchObject({
+        slackConfigured: false,
+        discordConfigured: true,
+      });
     } finally {
       state.slackConfigured = true;
+    }
+    state.discordConfigured = false;
+    try {
+      expect((await load()).props).toMatchObject({
+        slackConfigured: true,
+        discordConfigured: false,
+      });
+    } finally {
+      state.discordConfigured = true;
     }
   });
 });
 
-describe("Settings › Integrations page › chat tasks", () => {
+describe("GET /api/ui/integrations › chat tasks", () => {
   it("shows the organization's chat tasks, the choices and each connection's channels", async () => {
     state.user = user("admin");
-    const { props } = await render();
+    const { props } = await load();
     expect(props.chatTasks).toEqual({
       defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
       builtinDefaults: {
@@ -277,36 +266,5 @@ describe("Settings › Integrations page › chat tasks", () => {
         { id: "conn-4", name: "Acme Gaming", platform: "discord", channels: [] },
       ],
     });
-  });
-});
-
-describe("Settings › Integrations page › Discord", () => {
-  it("shows the Discord OAuth outcome", async () => {
-    state.user = user("admin");
-    for (const notice of [
-      "connected",
-      "other_organization",
-      "denied",
-      "invalid_state",
-      "not_configured",
-    ]) {
-      const { props } = await render(undefined, undefined, notice);
-      expect(props.discordNotice).toBe(notice);
-      expect(props.slackNotice).toBeNull();
-      expect(props.notice).toBeNull();
-    }
-    expect((await render(undefined, undefined, "bogus")).props.discordNotice).toBeNull();
-  });
-
-  it("marks Discord as not configured without the Discord app's env vars", async () => {
-    state.user = user("admin");
-    state.discordConfigured = false;
-    try {
-      const { props } = await render();
-      expect(props.discordConfigured).toBe(false);
-      expect(props.slackConfigured).toBe(true);
-    } finally {
-      state.discordConfigured = true;
-    }
   });
 });

@@ -9,7 +9,13 @@ import {
   closeDb,
   createInvitation,
   getActiveOrganization,
+  getIntegration,
   getMembership,
+  listChatChannelTaskSettings,
+  listChatConnections,
+  saveChatConnection,
+  saveIntegration,
+  upsertChatChannelTaskSetting,
   getOrganization,
   listChatIdentities,
   listOrganizationDomains,
@@ -60,6 +66,15 @@ vi.mock("@/lib/dispatch", () => ({
       created: true,
     }),
   }),
+}));
+// Disconnecting revokes tokens at Linear and Slack: never in tests.
+vi.mock("@/lib/linear/oauth", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  revokeToken: async () => {},
+}));
+vi.mock("@/lib/chat/slack-oauth", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  revokeSlackToken: async () => {},
 }));
 vi.mock("@/lib/harnesses/npm", () => ({
   NpmRegistryError: class extends Error {},
@@ -159,6 +174,12 @@ const organizationLeave = await import("./organization/leave/route");
 const organizationSwitch = await import("./organizations/switch/route");
 const chatAccounts = await import("./chat-accounts/route");
 const chatAccountUnlink = await import("./chat-accounts/unlink/route");
+const integrations = await import("./integrations/route");
+const linearIntegration = await import("./integrations/linear/route");
+const slackIntegration = await import("./integrations/slack/[id]/route");
+const discordIntegration = await import("./integrations/discord/[id]/route");
+const chatTasks = await import("./integrations/chat-tasks/route");
+const channelTasks = await import("./integrations/chat-connections/[id]/channels/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -1467,6 +1488,204 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ).toEqual({ status: 200, body: { ok: true } });
       expect(await listChatIdentities(db, a.adminId)).toEqual([]);
       expect(await listChatIdentities(db, b.adminId)).toHaveLength(1);
+    });
+  });
+
+  describe("integrations", () => {
+    /** Each tenant's Slack workspace and Discord server, one channel of each with its own tasks. */
+    const chat = new Map<string, { slackId: string; discordId: string }>();
+    const extra = (own: Tenant) => chat.get(own.name)!;
+    const markersOf = (own: Tenant) => [
+      ...markers(own),
+      extra(own).slackId,
+      extra(own).discordId,
+      `${own.name}-linear`,
+      `${own.name}-slack`,
+      `${own.name}-discord`,
+    ];
+
+    beforeAll(async () => {
+      for (const own of [a, b]) {
+        expect(
+          await saveIntegration(db, {
+            organizationId: own.orgId,
+            provider: "linear",
+            externalId: `${own.name}-linear`,
+            name: `${own.name}-linear workspace`,
+            credentials: { accessToken: `lin_${own.name}` },
+            installedByUserId: own.adminId,
+          }),
+        ).not.toBe("other_organization");
+        const connection = async (platform: "slack" | "discord") => {
+          const saved = await saveChatConnection(db, {
+            organizationId: own.orgId,
+            platform,
+            externalId: `${own.name}-${platform}`,
+            name: `${own.name}-${platform} workspace`,
+            credentials: platform === "slack" ? { botToken: `xoxb-${own.name}` } : null,
+            installedByUserId: own.adminId,
+          });
+          if (saved === "other_organization") throw new Error("setup");
+          await upsertChatChannelTaskSetting(db, {
+            organizationId: own.orgId,
+            connectionId: saved.id,
+            channelId:
+              platform === "slack"
+                ? `slack:C${own.name.toUpperCase()}`
+                : `discord:${saved.externalId}:1`,
+            askAboutCodeTaskId: "builtin:ask-about-code",
+            startWorkTaskId: null,
+            updatedBy: own.adminId,
+          });
+          return saved.id;
+        };
+        chat.set(own.name, {
+          slackId: await connection("slack"),
+          discordId: await connection("discord"),
+        });
+      }
+    });
+
+    it("shows each organization's own integrations to its admins only, and none of the other's", async () => {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        state.userId = own.adminId;
+        const { status, body } = await call(integrations.GET);
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+          linear: { workspaceId: `${own.name}-linear` },
+          slack: [{ id: extra(own).slackId, installedBy: `admin@${own.name}.io` }],
+          discord: [{ id: extra(own).discordId }],
+        });
+        const connections = (
+          body.chatTasks as { connections: { id: string; channels: unknown[] }[] }
+        ).connections;
+        expect(connections.map((c) => [c.id, c.channels.length])).toEqual(
+          expect.arrayContaining([
+            [extra(own).slackId, 1],
+            [extra(own).discordId, 1],
+          ]),
+        );
+        const json = JSON.stringify(body);
+        for (const marker of markersOf(other)) expect(json).not.toContain(marker);
+
+        state.userId = own.memberId;
+        expect(await call(integrations.GET)).toMatchObject({ status: 403 });
+      }
+    });
+
+    it("refuses every integration change on the other organization's connections, and to members", async () => {
+      const valid = { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" };
+      state.userId = a.adminId;
+      const otherSlack = { id: extra(b).slackId };
+      const otherDiscord = { id: extra(b).discordId };
+      expect(await call(slackIntegration.DELETE, { method: "DELETE", params: otherSlack })).toEqual(
+        { status: 400, body: { error: "That Slack workspace isn't connected." } },
+      );
+      expect(
+        await call(discordIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
+      ).toEqual({ status: 400, body: { error: "That Discord server isn't connected." } });
+      expect(
+        await call(channelTasks.PUT, {
+          method: "PUT",
+          params: otherSlack,
+          body: { channel: "C0123ABCD", ...valid },
+        }),
+      ).toEqual({ status: 400, body: { error: "That chat connection isn't connected." } });
+      expect(
+        await call(channelTasks.DELETE, {
+          method: "DELETE",
+          params: otherSlack,
+          body: { channelId: "slack:CBETA" },
+        }),
+      ).toEqual({ status: 400, body: { error: "That channel has no task overrides." } });
+      // Another organization's id under its own platform's route, and a non-uuid.
+      expect(
+        await call(slackIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
+      ).toMatchObject({ status: 400 });
+      expect(
+        await call(slackIntegration.DELETE, { method: "DELETE", params: { id: "nope" } }),
+      ).toMatchObject({ status: 404 });
+      expect(
+        await call(channelTasks.PUT, { method: "PUT", params: { id: "nope" }, body: {} }),
+      ).toMatchObject({ status: 404 });
+
+      // Members can't change anything.
+      state.userId = b.memberId;
+      for (const result of [
+        await call(linearIntegration.DELETE, { method: "DELETE" }),
+        await call(slackIntegration.DELETE, { method: "DELETE", params: otherSlack }),
+        await call(discordIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
+        await call(chatTasks.PUT, { method: "PUT", body: valid }),
+        await call(channelTasks.PUT, {
+          method: "PUT",
+          params: otherSlack,
+          body: { channel: "C0123ABCD", ...valid },
+        }),
+        await call(channelTasks.DELETE, {
+          method: "DELETE",
+          params: otherSlack,
+          body: { channelId: "slack:CBETA" },
+        }),
+      ]) {
+        expect(result).toMatchObject({ status: 403 });
+      }
+
+      expect(await listChatConnections(db, b.orgId)).toHaveLength(2);
+      expect(await listChatChannelTaskSettings(db, b.orgId)).toHaveLength(2);
+      expect(await getIntegration(db, b.orgId, "linear")).not.toBeNull();
+    });
+
+    it("changes only the active organization's integrations", async () => {
+      state.userId = a.adminId;
+      const chosen = {
+        askAboutCode: "builtin:ask-about-code",
+        startWork: "builtin:handle-request",
+      };
+      expect(await call(chatTasks.PUT, { method: "PUT", body: chosen })).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(
+        await call(channelTasks.PUT, {
+          method: "PUT",
+          params: { id: extra(a).slackId },
+          body: { channel: "C0123ABCD", askAboutCode: null, startWork: "builtin:handle-request" },
+        }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect(
+        await call(channelTasks.DELETE, {
+          method: "DELETE",
+          params: { id: extra(a).slackId },
+          body: { channelId: "slack:CALPHA" },
+        }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect(
+        (await listChatChannelTaskSettings(db, a.orgId)).map((t) => t.channelId).sort(),
+      ).toEqual([`discord:alpha-discord:1`, "slack:C0123ABCD"]);
+
+      expect(
+        await call(slackIntegration.DELETE, { method: "DELETE", params: { id: extra(a).slackId } }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect(await call(linearIntegration.DELETE, { method: "DELETE" })).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(await call(linearIntegration.DELETE, { method: "DELETE" })).toEqual({
+        status: 400,
+        body: { error: "No Linear workspace is connected." },
+      });
+      expect(await call(integrations.GET)).toMatchObject({
+        status: 200,
+        body: { linear: null, slack: [], discord: [{ id: extra(a).discordId }] },
+      });
+
+      // The other organization keeps everything.
+      expect(await getIntegration(db, b.orgId, "linear")).not.toBeNull();
+      expect(await listChatConnections(db, b.orgId)).toHaveLength(2);
+      expect(await listChatChannelTaskSettings(db, b.orgId)).toHaveLength(2);
     });
   });
 });

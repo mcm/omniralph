@@ -19,9 +19,21 @@ import {
 import { IconArrowBackUp, IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
 import { SettingsCard } from "@/components/settings-card";
 import { useUnsavedChanges } from "@/components/unsaved-changes";
-import { useAction } from "@/components/use-action";
+import { useApiAction } from "@/components/use-api-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import type {
+  ChannelTasks,
+  ChannelTasksInput,
+  ChatTasksSettings,
+  TaskChoice,
+} from "@/lib/api/integrations";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { settingChanges, withDefault, type SettingSpec } from "@/lib/settings/changes";
-import { removeChatChannelTasks, saveChatChannelTasks, saveChatTaskDefaults } from "./actions";
+import { integrationsChanged } from "./integrations-queries";
+
+export type { ChannelTasks, ChatTasksSettings, TaskChoice };
 
 type Role = "askAboutCode" | "startWork";
 
@@ -32,37 +44,19 @@ const LABELS: Record<Role, string> = {
   startWork: "Start work",
 };
 
-/** A task a chat setting can pick (built-in or the organization's own). */
-export interface TaskChoice {
-  id: string;
-  name: string;
-  builtin: boolean;
-}
+/** The request that saves a channel's tasks (`PUT …/chat-connections/[id]/channels`). */
+const saveChannel = (connectionId: string, input: ChannelTasksInput, organizationId: string) =>
+  api.put(`/api/ui/integrations/chat-connections/${connectionId}/channels`, mutationResultSchema, {
+    body: input,
+    organizationId,
+  });
 
-export interface ChannelTasks {
-  /** The Chat SDK channel ID (`slack:C…`, `discord:{guild}:{channel}`). */
-  channelId: string;
-  /** The ID the platform shows. */
-  channel: string;
-  /** Null keeps the organization's task. */
-  askAboutCode: string | null;
-  startWork: string | null;
-}
-
-export interface ChatTasksSettings {
-  /** The organization's tasks (the built-in ones unless chosen). */
-  defaults: Record<Role, string>;
-  /** The built-in tasks the organization runs until it chooses others (`DEFAULT_CHAT_TASKS`). */
-  builtinDefaults: Record<Role, string>;
-  /** The tasks each can run (the organization's passing `CHAT_TASK_FILTERS`). */
-  choices: Record<Role, TaskChoice[]>;
-  connections: Array<{
-    id: string;
-    name: string;
-    platform: "slack" | "discord";
-    channels: ChannelTasks[];
-  }>;
-}
+/** A form's task choices as the request sends them: "" keeps the organization's task. */
+const channelInput = (channel: string, tasks: Record<Role, string>): ChannelTasksInput => ({
+  channel,
+  askAboutCode: tasks.askAboutCode || null,
+  startWork: tasks.startWork || null,
+});
 
 /** The options of a task picker; a current task that's no longer a choice stays listed. */
 function TaskOptions({ choices, value }: { choices: TaskChoice[]; value: string }) {
@@ -95,8 +89,9 @@ export function ChatTasksCard({
   choices,
   connections,
 }: ChatTasksSettings) {
-  const { pending, run } = useAction();
-  const [chosen, setChosen] = React.useState(defaults);
+  const apiAction = useApiAction();
+  // Follows a change saved elsewhere while the card isn't being edited.
+  const [chosen, setChosen] = useSeededDraft(defaults);
   const names = new Map(
     ROLES.flatMap((role) => choices[role].map((choice) => [choice.id, choice.name] as const)),
   );
@@ -115,7 +110,15 @@ export function ChatTasksCard({
         description="The tasks a question about code and a request to start work run when asked in Slack or Discord. A channel can run different ones."
         changes={changes}
         prepare={() => ({
-          action: () => saveChatTaskDefaults(chosen),
+          action: () =>
+            apiAction(
+              ({ organizationId }) =>
+                api.put("/api/ui/integrations/chat-tasks", mutationResultSchema, {
+                  body: chosen,
+                  organizationId,
+                }),
+              integrationsChanged,
+            ),
           success: "Saved the chat tasks",
         })}
         onDiscard={() => setChosen(defaults)}
@@ -158,13 +161,7 @@ export function ChatTasksCard({
               <Muted>Connect Slack or Discord to give a channel its own tasks.</Muted>
             ) : (
               connections.map((connection) => (
-                <ConnectionChannels
-                  key={connection.id}
-                  connection={connection}
-                  choices={choices}
-                  pending={pending}
-                  run={run}
-                />
+                <ConnectionChannels key={connection.id} connection={connection} choices={choices} />
               ))
             )}
           </CardContent>
@@ -174,25 +171,30 @@ export function ChatTasksCard({
   );
 }
 
-type Run = ReturnType<typeof useAction>["run"];
-
 /** A connection's channel overrides: change or remove each, and add one by channel ID. */
 function ConnectionChannels({
   connection,
   choices,
-  pending,
-  run,
 }: {
   connection: ChatTasksSettings["connections"][number];
   choices: ChatTasksSettings["choices"];
-  pending: boolean;
-  run: Run;
 }) {
   const [channel, setChannel] = React.useState("");
   const [tasks, setTasks] = React.useState<Record<Role, string>>({
     askAboutCode: "",
     startWork: "",
   });
+  const add = useApiMutation({
+    mutationFn: (input: ChannelTasksInput, { organizationId }) =>
+      saveChannel(connection.id, input, organizationId),
+    invalidate: integrationsChanged,
+    success: (_, input) => `Channel ${input.channel.trim()} runs its own tasks`,
+    onSuccess: () => {
+      setChannel("");
+      setTasks({ askAboutCode: "", startWork: "" });
+    },
+  });
+  const pending = add.isPending;
   const platform = connection.platform === "slack" ? "Slack" : "Discord";
   const prefix = `chat-channel-${connection.id}`;
 
@@ -211,8 +213,6 @@ function ConnectionChannels({
               connectionId={connection.id}
               override={override}
               choices={choices}
-              pending={pending}
-              run={run}
             />
           ))
         )}
@@ -220,18 +220,7 @@ function ConnectionChannels({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              run(
-                () =>
-                  saveChatChannelTasks(connection.id, channel, {
-                    askAboutCode: tasks.askAboutCode || null,
-                    startWork: tasks.startWork || null,
-                  }),
-                `Channel ${channel.trim()} runs its own tasks`,
-                () => {
-                  setChannel("");
-                  setTasks({ askAboutCode: "", startWork: "" });
-                },
-              );
+              add.mutate(channelInput(channel, tasks));
             }}
           >
             <Field
@@ -287,20 +276,34 @@ function ChannelRow({
   connectionId,
   override,
   choices,
-  pending,
-  run,
 }: {
   connectionId: string;
   override: ChannelTasks;
   choices: ChatTasksSettings["choices"];
-  pending: boolean;
-  run: Run;
 }) {
   const initial = {
     askAboutCode: override.askAboutCode ?? "",
     startWork: override.startWork ?? "",
   };
-  const [tasks, setTasks] = React.useState<Record<Role, string>>(initial);
+  // Follows a change saved elsewhere while the row isn't being edited.
+  const [tasks, setTasks] = useSeededDraft<Record<Role, string>>(initial);
+  const save = useApiMutation({
+    mutationFn: (input: ChannelTasksInput, { organizationId }) =>
+      saveChannel(connectionId, input, organizationId),
+    invalidate: integrationsChanged,
+    success: `Saved channel ${override.channel}'s tasks`,
+  });
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(
+        `/api/ui/integrations/chat-connections/${connectionId}/channels`,
+        mutationResultSchema,
+        { body: { channelId: override.channelId }, organizationId },
+      ),
+    invalidate: integrationsChanged,
+    success: `Channel ${override.channel} runs the organization's tasks`,
+  });
+  const pending = save.isPending || remove.isPending;
   const changed = ROLES.some((role) => tasks[role] !== initial[role]);
   const prefix = `chat-channel-${connectionId}-${override.channel}`;
   useUnsavedChanges(`Channel ${override.channel}`, prefix, changed);
@@ -326,16 +329,7 @@ function ChannelRow({
       <Button
         variant="secondary"
         disabled={pending || !changed || (!tasks.askAboutCode && !tasks.startWork)}
-        onClick={() =>
-          run(
-            () =>
-              saveChatChannelTasks(connectionId, override.channel, {
-                askAboutCode: tasks.askAboutCode || null,
-                startWork: tasks.startWork || null,
-              }),
-            `Saved channel ${override.channel}'s tasks`,
-          )
-        }
+        onClick={() => save.mutate(channelInput(override.channel, tasks))}
       >
         <IconDeviceFloppy size={14} />
         Save
@@ -350,12 +344,7 @@ function ChannelRow({
         variant="danger"
         disabled={pending}
         aria-label={`Remove channel ${override.channel}`}
-        onClick={() =>
-          run(
-            () => removeChatChannelTasks(connectionId, override.channelId),
-            `Channel ${override.channel} runs the organization's tasks`,
-          )
-        }
+        onClick={() => remove.mutate()}
       >
         <IconTrash size={14} />
         Remove

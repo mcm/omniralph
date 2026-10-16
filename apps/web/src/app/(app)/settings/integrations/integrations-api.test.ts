@@ -1,10 +1,10 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
@@ -131,14 +131,33 @@ vi.mock("@omniralph/db", async () => ({
   },
 }));
 
-const {
-  disconnectDiscord,
-  disconnectLinear,
-  disconnectSlack,
-  removeChatChannelTasks,
-  saveChatChannelTasks,
-  saveChatTaskDefaults,
-} = await import("./actions");
+const linear = await import("@/app/api/ui/integrations/linear/route");
+const slack = await import("@/app/api/ui/integrations/slack/[id]/route");
+const discord = await import("@/app/api/ui/integrations/discord/[id]/route");
+const chatTasks = await import("@/app/api/ui/integrations/chat-tasks/route");
+const channels = await import("@/app/api/ui/integrations/chat-connections/[id]/channels/route");
+
+/** Chat connection IDs (UUIDs) by the name the tests use. */
+const CONNECTIONS: Record<string, string> = {
+  s1: "c0000000-0000-4000-8000-000000000001",
+  s2: "c0000000-0000-4000-8000-000000000002",
+  d1: "c0000000-0000-4000-8000-000000000003",
+  d2: "c0000000-0000-4000-8000-000000000004",
+  foreign: "c0000000-0000-4000-8000-000000000005",
+  missing: "c0000000-0000-4000-8000-000000000006",
+};
+const cid = (name: string) => CONNECTIONS[name]!;
+
+// The panel's requests, under the names of the server actions they replace.
+type Tasks<T> = { askAboutCode: T; startWork: T };
+const disconnectLinear = () => callAction(linear.DELETE, "DELETE", {});
+const disconnectSlack = (name: string) => callAction(slack.DELETE, "DELETE", { id: cid(name) });
+const disconnectDiscord = (name: string) => callAction(discord.DELETE, "DELETE", { id: cid(name) });
+const saveChatTaskDefaults = (tasks: Tasks<string>) => callAction(chatTasks.PUT, "PUT", {}, tasks);
+const saveChatChannelTasks = (name: string, channel: string, tasks: Tasks<string | null>) =>
+  callAction(channels.PUT, "PUT", { id: cid(name) }, { channel, ...tasks });
+const removeChatChannelTasks = (name: string, channelId: string) =>
+  callAction(channels.DELETE, "DELETE", { id: cid(name) }, { channelId });
 
 const revoked: string[] = [];
 let revokeStatus = 200;
@@ -211,8 +230,8 @@ describe("disconnectLinear", () => {
 });
 
 describe("disconnectSlack", () => {
-  const slack = (id: string, organizationId = "org-a") => ({
-    id,
+  const workspace = (id: string, organizationId = "org-a") => ({
+    id: cid(id),
     organizationId,
     platform: "slack" as const,
     name: `Workspace ${id}`,
@@ -222,10 +241,10 @@ describe("disconnectSlack", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.chat = [
-      slack("s1"),
-      slack("s2"),
-      slack("foreign", "org-b"),
-      { ...slack("d1"), platform: "discord", credentials: null },
+      workspace("s1"),
+      workspace("s2"),
+      workspace("foreign", "org-b"),
+      { ...workspace("d1"), platform: "discord", credentials: null },
     ];
     state.chatDeletes = [];
     slackRevoked.length = 0;
@@ -234,8 +253,12 @@ describe("disconnectSlack", () => {
 
   it("removes the workspace and revokes its bot token", async () => {
     expect(await disconnectSlack("s1")).toEqual({ ok: true });
-    expect(state.chat.map((c) => c.id)).toEqual(["s2", "foreign", "d1"]);
-    expect(state.chatDeletes).toEqual([["org-a", "s1"]]);
+    expect(state.chat.map((c) => c.name)).toEqual([
+      "Workspace s2",
+      "Workspace foreign",
+      "Workspace d1",
+    ]);
+    expect(state.chatDeletes).toEqual([["org-a", cid("s1")]]);
     expect(slackRevoked).toEqual(["Bearer xoxb-s1"]);
   });
 
@@ -251,10 +274,11 @@ describe("disconnectSlack", () => {
       () => HttpResponse.json({ ok: false, error: "ratelimited" }),
     ]) {
       slackRevoke = failure;
-      const id = state.chat[0]!.id;
-      expect(await disconnectSlack(id)).toMatchObject({
+      const { id, name } = state.chat[0]!;
+      const key = Object.keys(CONNECTIONS).find((k) => cid(k) === id)!;
+      expect(await disconnectSlack(key)).toMatchObject({
         ok: true,
-        warning: expect.stringContaining(`Workspace ${id}`),
+        warning: expect.stringContaining(name),
       });
       expect(state.chat.some((c) => c.id === id)).toBe(false);
     }
@@ -281,8 +305,8 @@ describe("disconnectSlack", () => {
 });
 
 describe("disconnectDiscord", () => {
-  const discord = (id: string, organizationId = "org-a") => ({
-    id,
+  const server = (id: string, organizationId = "org-a") => ({
+    id: cid(id),
     organizationId,
     platform: "discord" as const,
     externalId: `guild-${id}`,
@@ -300,10 +324,10 @@ describe("disconnectDiscord", () => {
     Object.assign(process.env, ENV);
     state.user = user("admin");
     state.chat = [
-      discord("d1"),
-      discord("d2"),
-      discord("foreign", "org-b"),
-      { ...discord("s1"), platform: "slack", credentials: { botToken: "xoxb-s1" } },
+      server("d1"),
+      server("d2"),
+      server("foreign", "org-b"),
+      { ...server("s1"), platform: "slack", credentials: { botToken: "xoxb-s1" } },
     ];
     state.chatDeletes = [];
     discordLeft.length = 0;
@@ -315,8 +339,8 @@ describe("disconnectDiscord", () => {
 
   it("removes the server and makes the bot leave it", async () => {
     expect(await disconnectDiscord("d1")).toEqual({ ok: true });
-    expect(state.chat.map((c) => c.id)).toEqual(["d2", "foreign", "s1"]);
-    expect(state.chatDeletes).toEqual([["org-a", "d1"]]);
+    expect(state.chat.map((c) => c.name)).toEqual(["Server d2", "Server foreign", "Server s1"]);
+    expect(state.chatDeletes).toEqual([["org-a", cid("d1")]]);
     expect(discordLeft).toEqual([{ guildId: "guild-d1", authorization: "Bot bot-token-1" }]);
   });
 
@@ -338,7 +362,7 @@ describe("disconnectDiscord", () => {
       warning: expect.stringContaining("Server d2"),
     });
     consoleError.mockRestore();
-    expect(state.chat.map((c) => c.id)).toEqual(["foreign", "s1"]);
+    expect(state.chat.map((c) => c.name)).toEqual(["Server foreign", "Server s1"]);
     expect(discordLeft.map((l) => l.guildId)).toEqual(["guild-d1"]);
   });
 
@@ -425,11 +449,19 @@ describe("saveChatTaskDefaults", () => {
 });
 
 describe("saveChatChannelTasks and removeChatChannelTasks", () => {
+  it("404s on a connection ID that isn't a UUID", async () => {
+    const response = await channels.PUT(
+      new Request("http://localhost/api/ui", { method: "PUT", body: "{}" }),
+      { params: Promise.resolve({ id: "s1" }) },
+    );
+    expect(response.status).toBe(404);
+  });
+
   beforeEach(() => {
     state.user = user("admin");
     state.chat = [
       {
-        id: "s1",
+        id: cid("s1"),
         organizationId: "org-a",
         platform: "slack",
         externalId: "T1",
@@ -437,7 +469,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
         credentials: { botToken: "xoxb" },
       },
       {
-        id: "d1",
+        id: cid("d1"),
         organizationId: "org-a",
         platform: "discord",
         externalId: "111",
@@ -445,7 +477,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
         credentials: null,
       },
       {
-        id: "foreign",
+        id: cid("foreign"),
         organizationId: "org-b",
         platform: "slack",
         externalId: "T2",
@@ -472,7 +504,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
     expect(state.channelTasks).toEqual([
       {
         organizationId: "org-a",
-        connectionId: "s1",
+        connectionId: cid("s1"),
         channelId: "slack:C0123ABCD",
         askAboutCodeTaskId: "builtin:ask-about-code",
         startWorkTaskId: null,
@@ -480,7 +512,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
       },
       {
         organizationId: "org-a",
-        connectionId: "d1",
+        connectionId: cid("d1"),
         channelId: "discord:111:222",
         askAboutCodeTaskId: null,
         startWorkTaskId: "builtin:handle-request",
@@ -488,7 +520,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
       },
     ]);
     expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toEqual({ ok: true });
-    expect(state.channelTasks.map((t) => t.connectionId)).toEqual(["d1"]);
+    expect(state.channelTasks.map((t) => t.connectionId)).toEqual([cid("d1")]);
     expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toMatchObject({ ok: false });
   });
 
@@ -556,7 +588,7 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
     state.channelTasks = [
       {
         organizationId: "org-a",
-        connectionId: "s1",
+        connectionId: cid("s1"),
         channelId: "slack:C1",
         askAboutCodeTaskId: "builtin:ask-about-code",
         startWorkTaskId: null,
