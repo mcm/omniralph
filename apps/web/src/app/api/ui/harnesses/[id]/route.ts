@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { clientIp } from "@/lib/harnesses/request";
 import { deleteHarness } from "@/lib/harnesses/manage";
+import { withHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 
 /** Number of audit events the pages show. */
@@ -36,7 +37,7 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
     const orgId = user.organization.id;
     const now = new Date();
     const [harness, audit, version, pinSyncJobs] = await Promise.all([
-      getHarnessOverview(db, orgId, params.id),
+      getHarnessOverview(db, orgId, params.id).then(withHarnessLastSeen),
       listRecentHarnessAudit(db, params.id, AUDIT_LIMIT),
       organizationHarnessVersion(db, orgId, { timeoutMs: NPM_TIMEOUT_MS }),
       listHarnessPinSyncJobs(db, orgId, params.id, new Date(now.getTime() - PIN_SYNC_WINDOW_MS)),

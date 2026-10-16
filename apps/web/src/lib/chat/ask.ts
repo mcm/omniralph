@@ -29,6 +29,7 @@ import {
   type QueryHarnessStatus,
   type RunHarnessRequirements,
 } from "@/lib/harnesses/claimable";
+import { withLastSeen } from "@/lib/harnesses/last-seen";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
 import { runSpecJobInput, runSpecMinHarnessVersion } from "@/lib/runs/job";
@@ -208,7 +209,7 @@ export async function enqueueChatAsk(
     hostTools: taskRequirements.hostTools,
   };
   const [overview, usableHostTools] = await Promise.all([
-    listHarnessOverview(db, input.organizationId),
+    listHarnessOverview(db, input.organizationId).then(withLastSeen),
     listHarnessesUsableHostTools(db, input.organizationId),
   ]);
   const harnesses = queryClaimableHarnesses(

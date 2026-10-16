@@ -3,7 +3,6 @@ import {
   listHarnessHostTools,
   listHarnessPinnedRepositoryIds,
   listPoolNames,
-  recordHarnessHeartbeat,
   recordHarnessHostTools,
   renewJobLeases,
   resolveHarnessConfig,
@@ -23,6 +22,7 @@ import { requireHarness } from "@/lib/harness-auth/verify";
 import { heartbeatClaimable } from "@/lib/harness-api/claimable";
 import { signJobTokens } from "@/lib/harness-api/jobs";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { recordHeartbeat } from "@/lib/harnesses/last-seen";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
@@ -32,7 +32,8 @@ const NPM_TIMEOUT_MS = 5_000;
 
 /**
  * Harness heartbeat (every 20s). Records the reported version and
- * self-update state, renews the leases of the running jobs the harness keeps,
+ * self-update state (last-seen in Redis; the harness row only when the report
+ * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the harness keeps,
  * applies the acknowledged job messages and returns the central configuration,
  * the running jobs the harness must cancel, fresh job tokens and undelivered
  * messages (`jobMessages`) for the ones it keeps running, and the version it
@@ -53,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const db = getDb();
   const { harnessId } = principal;
-  const agent = await recordHarnessHeartbeat(db, harnessId, {
+  const agent = await recordHeartbeat(db, harnessId, {
     version: body.data.version,
     selfUpdate: body.data.selfUpdate,
     update: body.data.update,

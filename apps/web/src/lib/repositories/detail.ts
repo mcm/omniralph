@@ -22,6 +22,7 @@ import {
   STORY_TASKS,
 } from "@/lib/definitions";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
@@ -54,7 +55,7 @@ export async function loadRepositoryDetail(
     allowedTaskTypes,
   ] = await Promise.all([
     listReviewProfiles(db, organizationId),
-    listHarnessOverview(db, organizationId),
+    listHarnessOverview(db, organizationId).then(withLastSeen),
     organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRepositoryPinnedHarnessIds(db, id),
     listTaskDefinitions(db, organizationId, REVIEW_TASKS),

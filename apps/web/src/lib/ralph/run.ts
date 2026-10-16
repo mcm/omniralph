@@ -75,6 +75,7 @@ import {
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
 import { organizationDefinitions } from "@/lib/definitions";
+import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { notifyRunThread } from "./chat-notify";
@@ -459,7 +460,9 @@ export async function laneHarnessId(
 ): Promise<string | undefined> {
   return (
     (await usableHarnessId(db, run.organizationId, lane.harnessId)) ??
-    (await pinnedHarnessFor(db, run.organizationId, lane.repositoryId)) ??
+    (await pinnedHarnessFor(db, run.organizationId, lane.repositoryId, {
+      lastHeartbeats: readHarnessLastSeen,
+    })) ??
     undefined
   );
 }

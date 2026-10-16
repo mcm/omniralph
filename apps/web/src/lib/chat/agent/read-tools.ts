@@ -27,6 +27,7 @@ import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
 import { organizationDefinitions } from "@/lib/definitions";
 import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
+import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
 import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
 import {
@@ -592,7 +593,7 @@ export const listHarnessesTool = defineChatTool({
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
     const [harnesses, desiredVersion] = await Promise.all([
-      listHarnessOverview(db, organizationId),
+      listHarnessOverview(db, organizationId).then(withLastSeen),
       getDesiredHarnessVersion(db, organizationId),
     ]);
     const shown = harnesses.slice(0, CHAT_TOOL_RESULT_LIMIT);

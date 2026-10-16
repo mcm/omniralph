@@ -21,6 +21,7 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import { reviewTaskNames } from "./post";
 import { finishReviewRun } from "./run";
 
@@ -122,7 +123,9 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
       repositoryId: run.repositoryId,
     })),
     dedupeKey: correlationJobKey(run.id),
-    targetHarnessId: await pinnedHarnessFor(tx, run.organizationId, run.repositoryId),
+    targetHarnessId: await pinnedHarnessFor(tx, run.organizationId, run.repositoryId, {
+      lastHeartbeats: readHarnessLastSeen,
+    }),
   });
   return { jobId: job.id };
 };
